@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import {
-  GraduationCap, Plus, Users, UserPlus, Trash2, Search,
-  School, Layers, ChevronRight, Mail, IdCard, Pencil,
-  Calendar, Tag, MoreVertical, ArrowRightLeft, PauseCircle,
-  PlayCircle, User,
+  GraduationCap, Plus, Users, UserPlus, Trash2,
+  School, Layers, ChevronRight, Pencil,
+  Calendar, MoreVertical, ArrowRightLeft, PauseCircle,
+  PlayCircle,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
-import { analyticsService } from "@/services/analytics";
 import { settingsService } from "@/services/settings";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";

@@ -1,4 +1,4 @@
-import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, Question, ExamPaper, Lecture, ExamPaperQuestion } from "@/types";
+import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture } from "@/types";
 import { db } from "./db";
 import { delay, genId, maybeThrowError } from "./_shared";
 

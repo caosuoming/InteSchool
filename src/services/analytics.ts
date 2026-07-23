@@ -1,4 +1,4 @@
-import type { AnswerRecord, AnswerScore, AnswerSource, Question, Chapter, KnowledgePoint, TreeNode, SchoolClass } from "@/types";
+import type { AnswerRecord, AnswerScore, AnswerSource, Question, TreeNode, SchoolClass } from "@/types";
 import { db } from "./db";
 import { delay, genId } from "./_shared";
 

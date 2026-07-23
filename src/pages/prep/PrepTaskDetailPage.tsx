@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
-  ArrowRight,
   Plus,
   Edit3,
   Trash2,
@@ -34,7 +33,6 @@ import { cn } from "@/lib/utils";
 import type {
   PrepTask,
   PrepWorkflow,
-  PrepAssignment,
   PrepTaskType,
   AssignmentStatus,
   Teacher,

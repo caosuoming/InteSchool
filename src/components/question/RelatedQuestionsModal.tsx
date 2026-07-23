@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { X, Plus, Check, ExternalLink, ShoppingBasket } from "lucide-react";
+import { X, ShoppingBasket } from "lucide-react";
 import { questionService } from "@/services/question";
 import { Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import type { Question } from "@/types";
-import { cn } from "@/lib/utils";
 
 const typeLabel: Record<Question["type"], string> = {
   single: "单选",

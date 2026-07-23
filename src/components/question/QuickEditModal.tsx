@@ -8,7 +8,7 @@ import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
 import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
-import { Textarea, Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Input";
 import { TreeView } from "@/components/tree/TreeView";
 import type { Question, TreeNode, QuestionRemark } from "@/types";
 import { cn } from "@/lib/utils";

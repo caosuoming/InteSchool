@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShoppingBasket, Plus, Trash2, ArrowRight, FileText,
-  ShoppingCart, Clock, FileQuestion, Star, CheckCircle2,
-  GripVertical, BookOpen, Lightbulb, Layers, Tag, GraduationCap,
+  ShoppingCart, Clock, FileQuestion, Star, CheckCircle2, BookOpen, Lightbulb, Tag, GraduationCap,
   TrendingUp, ChevronUp, ChevronDown,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -20,7 +19,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { Basket, Question, Chapter, KnowledgePoint } from "@/types";
+import type { Basket, Question } from "@/types";
 import { timeAgo } from "@/services/_shared";
 import { cn } from "@/lib/utils";
 

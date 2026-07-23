@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ChevronLeft, ChevronRight, Plus, Trash2, GripVertical,
-  Users, Link2, Send, Save, Eye, BookOpen,
-  FileQuestion, Blocks, Sparkles, SplitSquareHorizontal,
+  ChevronLeft, ChevronRight, Plus, Trash2, Send, Save,
+  FileQuestion, Blocks, SplitSquareHorizontal,
   Merge, Edit3, Check, X, MessageSquareText, Star,
   Play,
 } from "lucide-react";
@@ -13,11 +12,9 @@ import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { questionService } from "@/services/question";
 import { reflectionService } from "@/services/reflection";
 import type { LessonCourseware, LessonSlide, Question, Reflection } from "@/types";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Input, Textarea, Select } from "@/components/ui/Input";
+import { Input, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 import { genId } from "@/services/_shared";

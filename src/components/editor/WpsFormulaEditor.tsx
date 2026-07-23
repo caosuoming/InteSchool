@@ -3,14 +3,12 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import {
   Bold, Italic, Underline, Superscript, Subscript,
-  Sigma, Check, X, Pi, Square,
-  Divide, Infinity as InfinityIcon,
+  Sigma, Check,
   ChevronDown, Sigma as FunctionIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { cn } from "@/lib/utils";
 
 interface WpsFormulaEditorProps {
   initialHtml?: string;

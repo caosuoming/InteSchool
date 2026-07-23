@@ -10,7 +10,6 @@ import type {
 } from "@/types";
 import { db } from "./db";
 import { delay, genId } from "./_shared";
-import { questionService } from "./question";
 
 /** 流程类型中文标签 */
 export const taskTypeLabels: Record<PrepTaskType, string> = {

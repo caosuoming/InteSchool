@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
-import { Save, Loader2, BookOpen, Lightbulb, X, Plus, RotateCcw, Edit3 } from "lucide-react";
+import { Save, BookOpen, Lightbulb, X, Plus, Edit3 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
 import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
-import { Textarea, Input, Select } from "@/components/ui/Input";
+import { Textarea, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { TreeView } from "@/components/tree/TreeView";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 import type { Question, Chapter, KnowledgePoint, TreeNode } from "@/types";
-import { cn } from "@/lib/utils";
 
 const typeOptions = [
   { value: "single", label: "单选题" },

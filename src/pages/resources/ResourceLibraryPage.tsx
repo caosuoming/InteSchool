@@ -1,10 +1,10 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  FileText, Plus, Search, FileQuestion, BookOpen, Lightbulb,
-  Calendar, Edit3, Eye, GraduationCap, Presentation, FileBox,
-  ArrowUpDown, Clock, ListFilter, ChevronDown, Library,
-  FileSpreadsheet, Sparkles, Trash2, Download, Upload,
+  FileText, Plus, Search, BookOpen, Lightbulb,
+  Calendar, Eye, Presentation, FileBox,
+  ArrowUpDown, Clock, Library,
+  FileSpreadsheet, Sparkles, Trash2, Upload,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
@@ -17,7 +17,6 @@ import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
@@ -25,8 +24,8 @@ import { Input, Textarea, Select } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type {
   Lecture, ExamPaper, Courseware, Material,
-  TreeNode, Chapter, KnowledgePoint, FilterLogic,
-  CoursewareType, MaterialType, QuestionType,
+  TreeNode, FilterLogic,
+  CoursewareType, MaterialType,
 } from "@/types";
 import { timeAgo } from "@/services/_shared";
 import { cn } from "@/lib/utils";

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Share2, Users, Copy, Check, Send, Loader2 } from "lucide-react";
+import { X, Share2, Users, Copy, Check, Send } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";

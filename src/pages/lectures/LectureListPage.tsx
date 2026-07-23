@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   FileText, Plus, Search, FileQuestion, Users, BookOpen,
   Calendar, Edit3, Eye, GraduationCap, Lightbulb,
-  ArrowUpDown, Clock, Star, ListFilter, ChevronDown,
+  ArrowUpDown, Clock, ListFilter,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";

@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  FileUp, FileText, File, Loader2, Sparkles, CheckCircle2, XCircle,
-  RefreshCw, Globe, ChevronDown, ChevronRight, Upload, FileQuestion,
-  AlertCircle, Check, ArrowRight,
+  FileUp, FileText, File, Sparkles, CheckCircle2, XCircle,
+  RefreshCw, Globe, ChevronDown, ChevronRight, Upload, FileQuestion, Check,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { aiService } from "@/services/ai";
@@ -12,7 +11,6 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { DocumentRecord, RecognitionResult, Chapter, KnowledgePoint } from "@/types";
 import { formatDate } from "@/services/_shared";

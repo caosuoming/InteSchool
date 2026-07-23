@@ -2,8 +2,8 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
-  FileSpreadsheet, GraduationCap, Clock, Award, Users, Send,
-  ChevronUp, ChevronDown, X, Library, Files, FileText, ListOrdered,
+  FileSpreadsheet, GraduationCap, Clock, Users, Send,
+  ChevronUp, ChevronDown, Library, Files, FileText, ListOrdered,
   BarChart3, CheckCircle2, AlertCircle, Lock, Calendar, Layout,
   Sparkles, BookOpen, Lightbulb, Printer,
 } from "lucide-react";
@@ -15,7 +15,6 @@ import { lectureService } from "@/services/lecture";
 import { classService as classSvc } from "@/services/class";
 import { examPublishService } from "@/services/examPublish";
 import { knowledgeService } from "@/services/knowledge";
-import { aiService } from "@/services/ai";
 import { analyticsService, type DateRange } from "@/services/analytics";
 import { settingsService } from "@/services/settings";
 import { toast } from "@/stores/ui";

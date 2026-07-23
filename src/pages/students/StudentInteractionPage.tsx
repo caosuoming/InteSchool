@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import {
-  MessagesSquare, Search, Send, Trash2,
+  MessagesSquare, Search, Trash2,
   Smile, Meh, Frown, Star, Plus,
   Clock, MessageCircle, TrendingUp,
   ChevronDown, ChevronRight, Users, GraduationCap,
@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Input, Textarea, Select } from "@/components/ui/Input";
+import { Textarea, Select } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 
 function timeAgo(dateStr: string): string {

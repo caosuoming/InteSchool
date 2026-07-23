@@ -1,18 +1,16 @@
 import { type ReactNode, useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate, Navigate } from "react-router-dom";
 import {
-  LayoutDashboard, Library, FileUp, FileText, GitBranch,
-  GraduationCap, ShoppingBasket, BarChart3, LogOut,
-  ChevronLeft, School, User, Globe, Network, Settings, Users,
-  FolderOpen, Presentation, FileBox, FileSpreadsheet, Download,
-  ChevronDown, ChevronRight, Building2, Cloud, LineChart,
-  BookOpen, MessagesSquare, Check,
+  LayoutDashboard, LogOut,
+  ChevronLeft, School, User, Settings, Users,
+  FolderOpen, Download,
+  ChevronDown, ChevronRight, Building2, Cloud,
+  BookOpen, Check,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { cn } from "@/lib/utils";
 import { ToastContainer } from "@/components/ui/Toast";
-import type { TeacherAffiliation } from "@/types";
 
 interface NavItem {
   path: string;

@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Search, Library, Filter, X, FileQuestion, BookOpen, Lightbulb,
+  Search, X, FileQuestion, BookOpen, Lightbulb,
   Users, ChevronDown, GraduationCap, Calendar, Clock,
-  ListFilter, Layers, Tag, Edit3, Eye, Plus, CheckCircle2,
+  ListFilter, Layers, Tag, Edit3, Plus, CheckCircle2,
   ArrowUpDown, TrendingUp, Sparkles, Star, Share2, Trash2,
   FileText, ExternalLink,
   Download, RefreshCw, ShoppingBasket,
@@ -18,7 +18,6 @@ import { prepService } from "@/services/prep";
 import { lectureService } from "@/services/lecture";
 import { MathText } from "@/components/ui/MathText";
 import { toast } from "@/stores/ui";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -33,10 +32,9 @@ import { QuickEditModal } from "@/components/question/QuickEditModal";
 import { ShareModal } from "@/components/question/ShareModal";
 import { QuestionActionsBar } from "@/components/question/QuestionActionsBar";
 import { TagSettings } from "@/components/question/TagSettings";
-import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
-import type { Question, TreeNode, Student, SchoolClass, PersonalClass, Chapter, KnowledgePoint, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection } from "@/types";
-import { cn, getOptionsGridCols } from "@/lib/utils";
+import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection } from "@/types";
+import { cn } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
 import { generateQuestionDocx } from "@/lib/docx";
 
@@ -302,7 +300,7 @@ export default function QuestionBankPage() {
       excludeQuestionIds: excludeIds,
     });
 
-    let sorted = [...data];
+    const sorted = [...data];
     if (mode === "use" && selectedStudentIds.length > 0 && sortKey === "weakness") {
       const weakness = await analyticsService.getQuestionWeaknessScore(
         teacher.schoolId!,

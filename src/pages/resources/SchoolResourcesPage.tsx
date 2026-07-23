@@ -22,7 +22,6 @@ import { TreeView } from "@/components/tree/TreeView";
 import type {
   Teacher, TreeNode, FilterLogic,
   SchoolBackupResourceType, SchoolResourceBackup,
-  Chapter, KnowledgePoint,
 } from "@/types";
 import { timeAgo } from "@/services/_shared";
 import { cn } from "@/lib/utils";

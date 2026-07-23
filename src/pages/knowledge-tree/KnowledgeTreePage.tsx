@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   GitBranch, Search, Plus, Folder, FolderOpen, FileText,
-  BookOpen, ArrowRight, Eye, ShoppingBasket,
+  BookOpen, ArrowRight, ShoppingBasket,
   Pencil, Trash2, ChevronUp, ChevronDown, FolderInput,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";

@@ -10,7 +10,6 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
-import { EmptyState } from "@/components/ui/EmptyState";
 import type { Question, Student, Chapter, KnowledgePoint } from "@/types";
 import { cn } from "@/lib/utils";
 

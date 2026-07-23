@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Library, FileText, GraduationCap, ShoppingBasket, FileUp, Plus,
   Clock, ArrowRight, TrendingUp, BookOpen, CheckCircle2, FileQuestion,
-  Users, ClipboardList, Calendar, X,
+  Users, Calendar, X,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
 import { timeAgo } from "@/services/_shared";
-import type { Question, Lecture, Basket, DocumentRecord, PrepTask, PrepTaskType, PrepWorkflow } from "@/types";
+import type { Question, Lecture, Basket, DocumentRecord, PrepTask, PrepTaskType } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface Stats {

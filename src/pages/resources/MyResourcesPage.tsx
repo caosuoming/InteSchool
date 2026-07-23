@@ -4,8 +4,7 @@ import {
   Search, FileQuestion, BookOpen, Lightbulb,
   Calendar, Eye, Presentation, FileBox,
   ArrowUpDown, Clock, ChevronDown, ChevronRight,
-  FileSpreadsheet, Sparkles, Trash2, Share2, Upload,
-  AlertCircle, Filter, Library, FileText, Download,
+  FileSpreadsheet, Sparkles, Trash2, Share2, Upload, Filter, Library, FileText, Download,
   PlayCircle, Copy, MessageSquareText, Star,
   ShoppingCart, CheckSquare, Square, Plus, X,
   Archive, Layout,
@@ -42,7 +41,6 @@ import { cn } from "@/lib/utils";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
-import { extractService } from "@/services/extract";
 import { Badge } from "@/components/ui/Badge";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";

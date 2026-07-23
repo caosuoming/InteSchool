@@ -1,11 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   X, ChevronLeft, ChevronRight, Pen, Eraser, Trash2,
-  Palette, FileQuestion, Blocks, Users, Link2,
-  Check, Eye, EyeOff,
+  Palette, FileQuestion, Blocks, Users, Link2, Eye, EyeOff,
 } from "lucide-react";
 import type { LessonSlide, Question } from "@/types";
-import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
 interface PresentationModeProps {

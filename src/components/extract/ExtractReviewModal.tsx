@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from "react";
-import katex from "katex";
 import "katex/dist/katex.min.css";
 import {
   Sparkles,
@@ -405,7 +404,7 @@ function renderTextWithFormula(text: string, keywords: string[] = [], highlightE
   if (!text) return "";
   
   // 先处理 HTML 转义字符，确保 $ 符号正确
-  let processedText = text
+  const processedText = text
     .replace(/&dollar;/g, "$")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -594,7 +593,7 @@ export function ExtractReviewModal({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   const runExtraction = async () => {
-    let cancelled = false;
+    const cancelled = false;
 
     setPhase("extracting");
     setProgress(0);

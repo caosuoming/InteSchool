@@ -121,5 +121,5 @@ function parseMathText(text: string): Segment[] {
 }
 
 function restoreDollar(text: string): string {
-  return text.replace(/\u0000DOLLAR\u0000/g, "$");
+  return text.split("\u0000DOLLAR\u0000").join("$");
 }

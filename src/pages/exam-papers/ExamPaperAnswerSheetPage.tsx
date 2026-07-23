@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { FileSpreadsheet, Printer, Layout } from "lucide-react";
+import { FileSpreadsheet, Printer } from "lucide-react";
 import { examPaperService } from "@/services/examPaper";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -10,7 +10,6 @@ import { Select } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import type { ExamPaper, ExamPaperQuestion } from "@/types";
-import { cn } from "@/lib/utils";
 
 type PaperSize = "A4" | "A3" | "8K";
 

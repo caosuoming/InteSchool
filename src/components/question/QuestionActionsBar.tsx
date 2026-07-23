@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  Edit3, Download, Share2, Trash2, RefreshCw,
-  MoreHorizontal, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
+  MoreHorizontal, ChevronDown, ChevronLeft, ChevronRight,
   Pin, PinOff, Settings2,
 } from "lucide-react";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
@@ -208,7 +207,11 @@ export function QuestionActionsBar({ question, actions }: QuestionActionsBarProp
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          isCollapsed ? expand(action.key) : collapse(action.key);
+                          if (isCollapsed) {
+                            expand(action.key);
+                          } else {
+                            collapse(action.key);
+                          }
                         }}
                         className={cn(
                           "p-1 rounded transition-colors ml-1",

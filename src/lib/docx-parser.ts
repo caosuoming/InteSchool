@@ -514,7 +514,7 @@ function extractFromItems(items: Array<{ type: "heading" | "paragraph" | "list";
   // 判断是否为解答题的小题
   const isSubQuestion = (text: string): boolean => {
     return /^\s*\(\d+\)\s*/.test(text) ||
-           /^\s*[\(\（]\d+[\)\）]\s*/.test(text) ||
+           /^\s*[(（]\d+[)）]\s*/.test(text) ||
            /^\s*[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]\s*/.test(text);
   };
   
@@ -610,7 +610,7 @@ function extractFromItems(items: Array<{ type: "heading" | "paragraph" | "list";
   };
   
   for (const item of items) {
-    let text = item.text;
+    const text = item.text;
     
     if (!text.trim()) continue;
     
@@ -735,7 +735,7 @@ export function renderInlineMath(text: string): string {
       parts.push(escapeHtml(cleanText.substring(lastIndex, match.index)));
     }
     
-    let latex = match[1].trim();
+    const latex = match[1].trim();
     if (latex) {
       try {
         const formulaHtml = katex.renderToString(latex, {

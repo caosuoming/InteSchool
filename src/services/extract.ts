@@ -6,7 +6,6 @@ import type {
   Question,
   Material,
 } from "@/types";
-import { db } from "./db";
 import { delay, genId } from "./_shared";
 import { questionService } from "./question";
 import { materialService } from "./material";

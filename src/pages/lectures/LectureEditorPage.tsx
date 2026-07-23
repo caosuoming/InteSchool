@@ -1,11 +1,11 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Save, Send, Plus, Sparkles, FileText, BookOpen,
   Trash2, GripVertical, ShoppingBasket, Library, Files,
-  GraduationCap, Users, Wand2, Loader2, X, ChevronDown, ChevronRight, ChevronLeft,
-  Type, ListOrdered, CheckCircle2, Edit3, Eye, EyeOff,
-  UserCheck, Award, Clock, FolderOpen, Presentation, FileBox,
+  GraduationCap, Users, Wand2, Loader2, X, ChevronDown, ChevronRight,
+  Type, ListOrdered, CheckCircle2, Edit3, Eye,
+  UserCheck, Award, Clock, Presentation, FileBox,
   Lightbulb, Minus, Printer, Download, Layout,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -32,7 +32,7 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
 import type {
-  Lecture, LectureSection, Question, Basket, AnyClass, Chapter, KnowledgePoint, TreeNode,
+  Lecture, LectureSection, Question, Basket, AnyClass, TreeNode,
   Student, AnswerRecord, AnswerScore, Courseware, Material, SchoolClass, PersonalClass,
   LectureType,
 } from "@/types";

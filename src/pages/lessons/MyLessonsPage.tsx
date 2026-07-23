@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  BookOpen, Plus, Search, Filter, Eye, Trash2, Send,
+  BookOpen, Plus, Search, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
