@@ -27,6 +27,7 @@ function generateMockQuestions(): Array<{
       options: ["{1}", "{2, 3}", "{2, 3, 4}", "{1, 2, 3, 4}"],
       answer: "B",
       analysis: "集合 A 与 B 的交集为两个集合的共同元素，即 {2, 3}。",
+      summary: "",
       difficulty: 2,
     },
     {
@@ -35,6 +36,7 @@ function generateMockQuestions(): Array<{
       options: ["y = 2x + 1", "y = -x²", "y = log₂x", "y = (1/2)ˣ"],
       answer: "AC",
       analysis: "y=2x+1 斜率为正单调递增；y=log₂x 在定义域内单调递增。",
+      summary: "",
       difficulty: 3,
     },
     {
@@ -42,6 +44,7 @@ function generateMockQuestions(): Array<{
       stem: "函数 y = √(x-1) 的定义域为 [1, +∞)。",
       answer: "正确",
       analysis: "要使根号内非负，需 x-1 ≥ 0，即 x ≥ 1，故定义域为 [1, +∞)。",
+      summary: "",
       difficulty: 2,
     },
     {
@@ -49,6 +52,7 @@ function generateMockQuestions(): Array<{
       stem: "设集合 A = {x | 0 < x < 2}，B = {x | 1 ≤ x ≤ 3}，则 A ∩ B = ___",
       answer: "[1, 2)",
       analysis: "A ∩ B 即两集合的交集，x 同时满足 0<x<2 和 1≤x≤3，得 1≤x<2。",
+      summary: "",
       difficulty: 3,
     },
     {
@@ -56,6 +60,7 @@ function generateMockQuestions(): Array<{
       stem: "已知集合 A = {x | x² - 3x + 2 = 0}，B = {x | x² - mx + 1 = 0}，若 B ⊆ A，求 m 的取值范围。",
       answer: "m ∈ [-2, 2]",
       analysis: "A = {1, 2}。B ⊆ A 分情况讨论：B=∅、B={1}、B={2}、B={1,2}，分别求解后取并集。",
+      summary: "",
       difficulty: 4,
     },
   ];

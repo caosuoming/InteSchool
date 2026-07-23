@@ -9,6 +9,7 @@ export interface QuestionInput {
   options?: string[];
   answer: string;
   analysis: string;
+  summary: string;
   chapterIds: string[];
   knowledgePointIds: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
@@ -133,6 +134,7 @@ export const questionService = {
       options: input.options,
       answer: input.answer,
       analysis: input.analysis,
+      summary: input.summary || "",
       chapterIds: input.chapterIds,
       knowledgePointIds: expandedKpIds,
       difficulty: input.difficulty,

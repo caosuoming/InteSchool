@@ -206,6 +206,11 @@ function parseDocContent(
   const questionPattern = new RegExp(
     `^(?:(${config.questionKeywords.join("|")})|巩固题)[\\d\\s]*(?:题|\\.|\\）|\\))?[\\s\\d]*|^[\\d一二三四五六七八九十]+[、．.．）)]`,
   );
+  
+  // 使用配置中的题型识别关键字
+  const multiChoiceKeywords = config.multipleChoiceKeywords || ["多选", "多项选择", "至少选", "多个正确", "不止一个"];
+  const fillBlankKeywords = config.fillBlankKeywords || ["填空", "填空题", "请填", "___", "____", "______", "（ ）", "()"];
+  const essayKeywords = config.essayKeywords || ["解答", "解答题", "计算", "计算题", "证明", "证明题", "求解", "分析", "论述", "说明"];
   const answerPattern = new RegExp(
     `^(${config.answerKeywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
   );
@@ -257,7 +262,17 @@ function parseDocContent(
       }
       currentBlock.type = "question";
       currentBlock.content = trimmedLine;
-      currentBlock.questionType = "single";
+      
+      // 根据题目内容识别题型
+      let questionType = "single";
+      if (multiChoiceKeywords.some(kw => trimmedLine.includes(kw))) {
+        questionType = "multiple";
+      } else if (fillBlankKeywords.some(kw => trimmedLine.includes(kw))) {
+        questionType = "fillblank";
+      } else if (essayKeywords.some(kw => trimmedLine.includes(kw))) {
+        questionType = "essay";
+      }
+      currentBlock.questionType = questionType;
       currentBlock.options = [];
       return;
     }
@@ -277,19 +292,81 @@ function parseDocContent(
       return;
     }
 
-    if (currentBlock.type === "question" && /^[A-Da-d][、．.）)]\s*/.test(trimmedLine)) {
-      const optionContent = trimmedLine.replace(/^[A-Da-d][、．.）)]\s*/, "");
-      if (currentBlock.options) {
-        currentBlock.options.push(optionContent);
+    if (currentBlock.type === "question") {
+      // 识别选项：支持多种格式
+      // 格式1: A. xxx 或 A、xxx 或 A) xxx
+      const singleOptionMatch = trimmedLine.match(/^([A-Da-d])[、．.）)\s]+(.+)$/);
+      if (singleOptionMatch) {
+        const content = singleOptionMatch[2].trim();
+        if (content) {
+          if (currentBlock.options) {
+            currentBlock.options.push(content);
+          } else {
+            currentBlock.options = [content];
+          }
+          return;
+        }
       }
-      return;
-    }
-
-    if (currentBlock.type === "question" && currentBlock.options && currentBlock.options.length > 0) {
-      if (/^[\d一二三四五六七八九十]+[、．.）)]\s*/.test(trimmedLine)) {
-        const optionContent = trimmedLine.replace(/^[\d一二三四五六七八九十]+[、．.）)]\s*/, "");
-        currentBlock.options.push(optionContent);
+      
+      // 格式2: 同一行有多个选项（如：A. xxx B. xxx C. xxx）
+      const multiOptionPattern = /([A-Da-d])[、．.）)\s]+([^A-Da-d①②③④⑤⑥⑦⑧⑨⑩]+?)(?=[A-Da-d][、．.）)\s]+|$)/g;
+      let match;
+      const foundOptions: string[] = [];
+      
+      while ((match = multiOptionPattern.exec(trimmedLine)) !== null) {
+        const content = match[2].trim();
+        if (content) {
+          foundOptions.push(content);
+        }
+      }
+      
+      if (foundOptions.length > 0) {
+        if (currentBlock.options) {
+          currentBlock.options.push(...foundOptions);
+        } else {
+          currentBlock.options = foundOptions;
+        }
         return;
+      }
+      
+      // 格式3: 带括号的选项 如：(A) xxx
+      const parenOptionMatch = trimmedLine.match(/^\(([A-Da-d])\)\s+(.+)$/);
+      if (parenOptionMatch) {
+        const content = parenOptionMatch[2].trim();
+        if (content) {
+          if (currentBlock.options) {
+            currentBlock.options.push(content);
+          } else {
+            currentBlock.options = [content];
+          }
+          return;
+        }
+      }
+      
+      // 格式4: 带圆圈的选项 如：① xxx ② xxx
+      const circleOptionMatch = trimmedLine.match(/^([①②③④⑤⑥⑦⑧⑨⑩]+)\s+(.+)$/);
+      if (circleOptionMatch) {
+        const content = circleOptionMatch[2].trim();
+        if (content) {
+          if (currentBlock.options) {
+            currentBlock.options.push(content);
+          } else {
+            currentBlock.options = [content];
+          }
+          return;
+        }
+      }
+      
+      // 格式5: 带数字编号的选项（如：1. xxx）- 仅当已有选项时才添加
+      if (currentBlock.options && currentBlock.options.length > 0) {
+        const numOptionMatch = trimmedLine.match(/^[\d一二三四五六七八九十]+[、．.）)]\s+(.+)$/);
+        if (numOptionMatch) {
+          const content = numOptionMatch[1].trim();
+          if (content) {
+            currentBlock.options.push(content);
+          }
+          return;
+        }
       }
     }
 
@@ -413,8 +490,14 @@ function renderTextWithFormula(text: string, keywords: string[] = [], highlightE
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ");
   
+  // 处理 markdown 格式的图片，转换为 HTML img 标签
+  const withImages = processedText.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg border border-ink-200" />'
+  );
+  
   // 先使用 renderInlineMath 渲染公式（和讲义预览使用相同的逻辑）
-  const formulaHtml = renderInlineMath(processedText);
+  const formulaHtml = renderInlineMath(withImages);
   
   // 如果需要高亮关键字
   if (highlightEnabled && keywords.length > 0) {
@@ -584,7 +667,9 @@ export function ExtractReviewModal({
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [showKeywordConfig, setShowKeywordConfig] = useState(false);
   const [newKeywordValue, setNewKeywordValue] = useState("");
-  const [activeKeywordTab, setActiveKeywordTab] = useState<"question" | "answerAnalysis">("question");
+  const [activeKeywordTab, setActiveKeywordTab] = useState<"question" | "answerAnalysis" | "questionType">("question");
+  const [selectedKeywordType, setSelectedKeywordType] = useState<"answer" | "analysis" | "summary">("answer");
+  const [selectedQuestionType, setSelectedQuestionType] = useState<"single" | "multiple" | "fillblank" | "essay">("single");
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // 拖动弹窗状态 - 初始位置居右，靠近切块列表
@@ -650,11 +735,21 @@ export function ExtractReviewModal({
       if (fileName.endsWith(".docx") || fileName.endsWith(".doc")) {
         const parseResult = await parseDocxFromBase64(base64);
         
-        // 提取所有文本内容（包括公式文本）
-        const allItems = parseResult.items
-          .map(item => item.text || item.latex || "")
-          .filter(text => text.trim());
-        blocks = parseDocContent(allItems.join("\n\n"), extractConfig);
+        // 提取所有内容，包括图片和文本（公式已经在text字段中用$...$包裹）
+        const allContentParts: string[] = [];
+        for (const item of parseResult.items) {
+          if (item.type === "formula") {
+            // 公式已经在text字段中，跳过单独的formula item
+            continue;
+          }
+          if (item.type === "image" && item.src) {
+            // 将图片转换为markdown格式
+            allContentParts.push(`![图片](${item.src})`);
+          } else if (item.text) {
+            allContentParts.push(item.text);
+          }
+        }
+        blocks = parseDocContent(allContentParts.join("\n\n"), extractConfig);
       } else {
         throw new Error("暂不支持该格式文档的文档拆解");
       }
@@ -1080,10 +1175,7 @@ export function ExtractReviewModal({
               </div>
             )}
             {block.answer && (
-              <div className="text-xs bg-emerald-50/60 border border-emerald-100 rounded px-2 py-1">
-                <span className="text-emerald-700 font-medium">答案：</span>
-                <span className="text-ink-700">{block.answer}</span>
-              </div>
+              <div className="text-xs bg-emerald-50/60 border border-emerald-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-emerald-700 font-medium">答案：</span>${renderTextWithFormula(block.answer, allKeywords, true)}` }} />
             )}
             {block.analysis && (
               <div className="text-xs bg-blue-50/60 border border-blue-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-blue-700 font-medium">解析：</span>${renderTextWithFormula(block.analysis, allKeywords, true)}` }} />
@@ -1373,6 +1465,18 @@ export function ExtractReviewModal({
         >
           答案解析关键字
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveKeywordTab("questionType")}
+          className={cn(
+            "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+            activeKeywordTab === "questionType"
+              ? "bg-paper text-ink-900 shadow-sm"
+              : "text-ink-500 hover:text-ink-700",
+          )}
+        >
+          题型识别关键字
+        </button>
       </div>
 
       {activeKeywordTab === "question" && (
@@ -1486,7 +1590,7 @@ export function ExtractReviewModal({
 
           <div className="flex gap-1">
             <Select
-              value="answer"
+              value={selectedKeywordType}
               className="text-xs h-7 w-24"
               options={[
                 { value: "answer", label: "答案" },
@@ -1494,17 +1598,7 @@ export function ExtractReviewModal({
                 { value: "summary", label: "总结" },
               ]}
               onChange={(e) => {
-                const type = e.target.value as "answer" | "analysis" | "summary";
-                if (newKeywordValue.trim()) {
-                  if (type === "answer") {
-                    extractConfig.addAnswerKeyword(newKeywordValue.trim());
-                  } else if (type === "analysis") {
-                    extractConfig.addAnalysisKeyword(newKeywordValue.trim());
-                  } else {
-                    extractConfig.addSummaryKeyword(newKeywordValue.trim());
-                  }
-                  setNewKeywordValue("");
-                }
+                setSelectedKeywordType(e.target.value as "answer" | "analysis" | "summary");
               }}
             />
             <Input
@@ -1514,7 +1608,13 @@ export function ExtractReviewModal({
               className="text-xs h-7 flex-1"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && newKeywordValue.trim()) {
-                  extractConfig.addAnswerKeyword(newKeywordValue.trim());
+                  if (selectedKeywordType === "answer") {
+                    extractConfig.addAnswerKeyword(newKeywordValue.trim());
+                  } else if (selectedKeywordType === "analysis") {
+                    extractConfig.addAnalysisKeyword(newKeywordValue.trim());
+                  } else {
+                    extractConfig.addSummaryKeyword(newKeywordValue.trim());
+                  }
                   setNewKeywordValue("");
                 }
               }}
@@ -1524,7 +1624,158 @@ export function ExtractReviewModal({
               variant="outline"
               onClick={() => {
                 if (newKeywordValue.trim()) {
-                  extractConfig.addAnswerKeyword(newKeywordValue.trim());
+                  if (selectedKeywordType === "answer") {
+                    extractConfig.addAnswerKeyword(newKeywordValue.trim());
+                  } else if (selectedKeywordType === "analysis") {
+                    extractConfig.addAnalysisKeyword(newKeywordValue.trim());
+                  } else {
+                    extractConfig.addSummaryKeyword(newKeywordValue.trim());
+                  }
+                  setNewKeywordValue("");
+                }
+              }}
+              className="h-7 px-2"
+            >
+              <Plus className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* 题型识别关键字 */}
+      {activeKeywordTab === "questionType" && (
+        <div className="space-y-3">
+          <div className="text-xs text-ink-500">
+            以下关键字用于识别题目类型，当题目内容包含这些关键字时会自动识别为对应题型
+          </div>
+          
+          {/* 单选题 */}
+          <div>
+            <div className="text-xs text-ink-500 mb-1.5">单选题关键字</div>
+            <div className="flex flex-wrap gap-1">
+              {extractConfig.singleChoiceKeywords.map((keyword, idx) => (
+                <div key={idx} className="flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded">
+                  <span className="text-xs text-blue-700">{keyword}</span>
+                  <button
+                    type="button"
+                    onClick={() => extractConfig.removeSingleChoiceKeyword(idx)}
+                    className="p-0.5 text-blue-400 hover:text-blue-600"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 多选题 */}
+          <div>
+            <div className="text-xs text-ink-500 mb-1.5">多选题关键字</div>
+            <div className="flex flex-wrap gap-1">
+              {extractConfig.multipleChoiceKeywords.map((keyword, idx) => (
+                <div key={idx} className="flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded">
+                  <span className="text-xs text-green-700">{keyword}</span>
+                  <button
+                    type="button"
+                    onClick={() => extractConfig.removeMultipleChoiceKeyword(idx)}
+                    className="p-0.5 text-green-400 hover:text-green-600"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 填空题 */}
+          <div>
+            <div className="text-xs text-ink-500 mb-1.5">填空题关键字</div>
+            <div className="flex flex-wrap gap-1">
+              {extractConfig.fillBlankKeywords.map((keyword, idx) => (
+                <div key={idx} className="flex items-center gap-1 bg-purple-50 px-2 py-0.5 rounded">
+                  <span className="text-xs text-purple-700">{keyword}</span>
+                  <button
+                    type="button"
+                    onClick={() => extractConfig.removeFillBlankKeyword(idx)}
+                    className="p-0.5 text-purple-400 hover:text-purple-600"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 解答题 */}
+          <div>
+            <div className="text-xs text-ink-500 mb-1.5">解答题关键字</div>
+            <div className="flex flex-wrap gap-1">
+              {extractConfig.essayKeywords.map((keyword, idx) => (
+                <div key={idx} className="flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded">
+                  <span className="text-xs text-amber-700">{keyword}</span>
+                  <button
+                    type="button"
+                    onClick={() => extractConfig.removeEssayKeyword(idx)}
+                    className="p-0.5 text-amber-400 hover:text-amber-600"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 添加新关键字 */}
+          <div className="flex gap-1">
+            <Select
+              value={selectedQuestionType || "single"}
+              className="text-xs h-7 w-24"
+              options={[
+                { value: "single", label: "单选" },
+                { value: "multiple", label: "多选" },
+                { value: "fillblank", label: "填空" },
+                { value: "essay", label: "解答" },
+              ]}
+              onChange={(e) => {
+                setSelectedQuestionType(e.target.value as "single" | "multiple" | "fillblank" | "essay");
+              }}
+            />
+            <Input
+              value={newKeywordValue}
+              onChange={(e) => setNewKeywordValue(e.target.value)}
+              placeholder="新增关键字"
+              className="text-xs h-7 flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newKeywordValue.trim()) {
+                  const type = selectedQuestionType || "single";
+                  if (type === "single") {
+                    extractConfig.addSingleChoiceKeyword(newKeywordValue.trim());
+                  } else if (type === "multiple") {
+                    extractConfig.addMultipleChoiceKeyword(newKeywordValue.trim());
+                  } else if (type === "fillblank") {
+                    extractConfig.addFillBlankKeyword(newKeywordValue.trim());
+                  } else {
+                    extractConfig.addEssayKeyword(newKeywordValue.trim());
+                  }
+                  setNewKeywordValue("");
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (newKeywordValue.trim()) {
+                  const type = selectedQuestionType || "single";
+                  if (type === "single") {
+                    extractConfig.addSingleChoiceKeyword(newKeywordValue.trim());
+                  } else if (type === "multiple") {
+                    extractConfig.addMultipleChoiceKeyword(newKeywordValue.trim());
+                  } else if (type === "fillblank") {
+                    extractConfig.addFillBlankKeyword(newKeywordValue.trim());
+                  } else {
+                    extractConfig.addEssayKeyword(newKeywordValue.trim());
+                  }
                   setNewKeywordValue("");
                 }
               }}
@@ -1541,7 +1792,7 @@ export function ExtractReviewModal({
   const renderReview = () => {
     return (
       <>
-        <div className="flex gap-4 h-[70vh]">
+        <div className="flex gap-4 h-full">
           <div
             ref={leftPanelRef}
             className="w-3/5 bg-mist/30 rounded-lg p-4 overflow-y-auto space-y-3"
@@ -1685,7 +1936,7 @@ export function ExtractReviewModal({
             onClick={() => setShowKeywordConfig(false)}
           />
           <div
-            className="fixed z-[2001] w-72 bg-white rounded-lg shadow-xl border border-ink-200 flex flex-col"
+            className="fixed z-[2001] w-96 min-h-[500px] max-h-[80vh] bg-white rounded-lg shadow-xl border border-ink-200 flex flex-col overflow-hidden"
             style={{
               left: dragPosition.x,
               top: dragPosition.y,
@@ -1710,7 +1961,7 @@ export function ExtractReviewModal({
             </div>
             
             {/* 内容区域 */}
-            <div className="p-4 max-h-80 overflow-y-auto">
+            <div className="p-4 flex-1 overflow-y-auto">
               {renderKeywordConfig()}
             </div>
             

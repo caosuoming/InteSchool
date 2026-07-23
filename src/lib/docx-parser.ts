@@ -310,7 +310,6 @@ async function parseParagraph(p: Element, imageData: Record<string, string>, emb
           if (latexFromEmbedding) {
             hasFormula = true;
             formulaText = latexFromEmbedding;
-            text += ` $${latexFromEmbedding}$`;
             return;
           }
           
@@ -378,15 +377,8 @@ async function parseParagraph(p: Element, imageData: Record<string, string>, emb
     results.push(...images);
   }
   
-  // 单独的公式item（用于特殊渲染）
-  if (hasFormula && formulaText) {
-    results.push({
-      type: "formula",
-      latex: formulaText,
-      text: text,
-      displayMode: headingLevel === 0,
-    });
-  }
+  // 公式已经在text字段中用$...$包裹，不需要单独的formula item
+  // 如果需要特殊渲染公式，直接从text中提取即可
   
   return results;
 }

@@ -182,6 +182,16 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
         </div>
       </div>
 
+      {/* 总结 */}
+      {question.summary && (
+        <div>
+          <div className="text-xs font-medium text-ink-500 mb-1.5">总结</div>
+          <div className="p-3 rounded-md bg-amber-50/40 border border-amber-200 text-sm text-amber-900 leading-relaxed whitespace-pre-wrap">
+            <MathText>{question.summary}</MathText>
+          </div>
+        </div>
+      )}
+
       {/* 知识点 */}
       <div className="grid sm:grid-cols-2 gap-4">
         <div>

@@ -273,6 +273,7 @@ export interface Question {
   options?: string[];
   answer: string;
   analysis: string;
+  summary: string;
   chapterIds: string[];
   knowledgePointIds: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;

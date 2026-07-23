@@ -176,7 +176,7 @@ export default function QuestionBankPage() {
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [sortKey, setSortKey] = useState<SortKey>("usage");
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
 
   const [detailQuestion, setDetailQuestion] = useState<Question | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);

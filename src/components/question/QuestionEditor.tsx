@@ -75,6 +75,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     options: question.options ?? [],
     answer: question.answer,
     analysis: question.analysis,
+    summary: question.summary ?? "",
     chapterIds: [...question.chapterIds],
     knowledgePointIds: [...question.knowledgePointIds],
     difficulty: question.difficulty,
@@ -133,6 +134,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         options: form.options.length > 0 ? form.options : undefined,
         answer: form.answer,
         analysis: form.analysis,
+        summary: form.summary,
         chapterIds: form.chapterIds,
         knowledgePointIds: form.knowledgePointIds,
         difficulty: form.difficulty as any,
@@ -340,6 +342,28 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
             <div
               className="text-sm text-ink-800 prose-sm"
               dangerouslySetInnerHTML={{ __html: form.analysis }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* 总结 */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-sm font-medium text-ink-700">总结</label>
+        </div>
+        <Textarea
+          value={form.summary}
+          onChange={(e) => update("summary", e.target.value)}
+          rows={2}
+          placeholder="请输入本题总结（如考点、易错点、解题方法等）"
+        />
+        {containsHtml(form.summary) && (
+          <div className="mt-2 p-2 rounded-md bg-amber-50/40 border border-amber-100">
+            <div className="text-[11px] text-amber-700 mb-1">总结预览：</div>
+            <div
+              className="text-sm text-amber-800 prose-sm"
+              dangerouslySetInnerHTML={{ __html: form.summary }}
             />
           </div>
         )}

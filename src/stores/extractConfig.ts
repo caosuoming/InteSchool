@@ -8,6 +8,12 @@ interface ExtractConfigState {
   summaryKeywords: string[];
   headingKeywords: string[];
   
+  // 题型识别关键字
+  singleChoiceKeywords: string[];
+  multipleChoiceKeywords: string[];
+  fillBlankKeywords: string[];
+  essayKeywords: string[];
+  
   addQuestionKeyword: (keyword: string) => void;
   removeQuestionKeyword: (index: number) => void;
   updateQuestionKeyword: (index: number, keyword: string) => void;
@@ -27,6 +33,18 @@ interface ExtractConfigState {
   addHeadingKeyword: (keyword: string) => void;
   removeHeadingKeyword: (index: number) => void;
   updateHeadingKeyword: (index: number, keyword: string) => void;
+  
+  addSingleChoiceKeyword: (keyword: string) => void;
+  removeSingleChoiceKeyword: (index: number) => void;
+  
+  addMultipleChoiceKeyword: (keyword: string) => void;
+  removeMultipleChoiceKeyword: (index: number) => void;
+  
+  addFillBlankKeyword: (keyword: string) => void;
+  removeFillBlankKeyword: (index: number) => void;
+  
+  addEssayKeyword: (keyword: string) => void;
+  removeEssayKeyword: (index: number) => void;
   
   resetToDefault: () => void;
 }
@@ -86,6 +104,46 @@ const defaultHeadingKeywords = [
   "十二",
 ];
 
+// 题型识别关键字
+const defaultSingleChoiceKeywords = [
+  "单选",
+  "单选题",
+  "单项选择",
+];
+
+const defaultMultipleChoiceKeywords = [
+  "多选",
+  "多选题",
+  "多项选择",
+  "至少选",
+  "多个正确",
+  "不止一个",
+];
+
+const defaultFillBlankKeywords = [
+  "填空",
+  "填空题",
+  "请填",
+  "___",
+  "____",
+  "______",
+  "（ ）",
+  "()",
+];
+
+const defaultEssayKeywords = [
+  "解答",
+  "解答题",
+  "计算",
+  "计算题",
+  "证明",
+  "证明题",
+  "求解",
+  "分析",
+  "论述",
+  "说明",
+];
+
 export const useExtractConfigStore = create<ExtractConfigState>()(
   persist(
     (set) => ({
@@ -94,6 +152,10 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
       analysisKeywords: defaultAnalysisKeywords,
       summaryKeywords: defaultSummaryKeywords,
       headingKeywords: defaultHeadingKeywords,
+      singleChoiceKeywords: defaultSingleChoiceKeywords,
+      multipleChoiceKeywords: defaultMultipleChoiceKeywords,
+      fillBlankKeywords: defaultFillBlankKeywords,
+      essayKeywords: defaultEssayKeywords,
 
       addQuestionKeyword: (keyword) =>
         set((state) => ({
@@ -170,6 +232,43 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
           ),
         })),
 
+      // 题型识别关键字操作
+      addSingleChoiceKeyword: (keyword) =>
+        set((state) => ({
+          singleChoiceKeywords: [...state.singleChoiceKeywords, keyword],
+        })),
+      removeSingleChoiceKeyword: (index) =>
+        set((state) => ({
+          singleChoiceKeywords: state.singleChoiceKeywords.filter((_, i) => i !== index),
+        })),
+
+      addMultipleChoiceKeyword: (keyword) =>
+        set((state) => ({
+          multipleChoiceKeywords: [...state.multipleChoiceKeywords, keyword],
+        })),
+      removeMultipleChoiceKeyword: (index) =>
+        set((state) => ({
+          multipleChoiceKeywords: state.multipleChoiceKeywords.filter((_, i) => i !== index),
+        })),
+
+      addFillBlankKeyword: (keyword) =>
+        set((state) => ({
+          fillBlankKeywords: [...state.fillBlankKeywords, keyword],
+        })),
+      removeFillBlankKeyword: (index) =>
+        set((state) => ({
+          fillBlankKeywords: state.fillBlankKeywords.filter((_, i) => i !== index),
+        })),
+
+      addEssayKeyword: (keyword) =>
+        set((state) => ({
+          essayKeywords: [...state.essayKeywords, keyword],
+        })),
+      removeEssayKeyword: (index) =>
+        set((state) => ({
+          essayKeywords: state.essayKeywords.filter((_, i) => i !== index),
+        })),
+
       resetToDefault: () =>
         set({
           questionKeywords: defaultQuestionKeywords,
@@ -177,6 +276,10 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
           analysisKeywords: defaultAnalysisKeywords,
           summaryKeywords: defaultSummaryKeywords,
           headingKeywords: defaultHeadingKeywords,
+          singleChoiceKeywords: defaultSingleChoiceKeywords,
+          multipleChoiceKeywords: defaultMultipleChoiceKeywords,
+          fillBlankKeywords: defaultFillBlankKeywords,
+          essayKeywords: defaultEssayKeywords,
         }),
     }),
     { name: "zhiti:extract-config" },
