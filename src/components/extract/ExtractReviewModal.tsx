@@ -192,6 +192,10 @@ function parseDocContent(
     answerKeywords: string[];
     analysisKeywords: string[];
     summaryKeywords: string[];
+    singleChoiceKeywords: string[];
+    multipleChoiceKeywords: string[];
+    fillBlankKeywords: string[];
+    essayKeywords: string[];
   },
 ): DocBlock[] {
   const blocks: DocBlock[] = [];
@@ -264,11 +268,11 @@ function parseDocContent(
       currentBlock.content = trimmedLine;
       
       // 根据题目内容识别题型
-      let questionType = "single";
+      let questionType: QuestionType = "single";
       if (multiChoiceKeywords.some(kw => trimmedLine.includes(kw))) {
         questionType = "multiple";
       } else if (fillBlankKeywords.some(kw => trimmedLine.includes(kw))) {
-        questionType = "fillblank";
+        questionType = "short";
       } else if (essayKeywords.some(kw => trimmedLine.includes(kw))) {
         questionType = "essay";
       }

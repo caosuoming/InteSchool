@@ -158,6 +158,7 @@ function addDefaultFields(db: DBSchema): DBSchema {
       sourceType: (["imported", "manual", "shared"] as const)[i % 3],
       category: (["practice", "exam", "homework", "review"] as const)[i % 4],
       lastUsedAt: questionLastUsed.get(q.id) || (q.usageCount > 0 ? q.updatedAt : undefined),
+      summary: "",
       remarks,
       sectionOrder: (q as any).sectionOrder || ["chapter", "knowledge", "remark"],
       ...q,

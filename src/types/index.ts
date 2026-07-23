@@ -273,7 +273,7 @@ export interface Question {
   options?: string[];
   answer: string;
   analysis: string;
-  summary: string;
+  summary?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
@@ -694,6 +694,7 @@ export interface ExtractedQuestionItem {
   options?: string[];
   answer: string;
   analysis: string;
+  summary?: string;
   difficulty: number;
   status: "new" | "duplicate" | "confirmed" | "edited";
   duplicateOf?: Question;

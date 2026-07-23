@@ -16,6 +16,7 @@ describe("mock database", () => {
 
     expect(snapshot.questions.every((question) => question.duplicateHash)).toBe(true);
     expect(snapshot.questions.every((question) => Array.isArray(question.hiddenByExamIds))).toBe(true);
+    expect(snapshot.questions.every((question) => typeof question.summary === "string")).toBe(true);
     expect(snapshot.students.every((student) => student.status)).toBe(true);
     expect(snapshot.schoolBackups.length).toBeGreaterThan(0);
   });

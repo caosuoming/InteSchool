@@ -26,6 +26,7 @@ describe("question service", () => {
 
     expect(question.duplicateHash).toBe(computeDuplicateHash(input.stem, input.answer, input.options));
     expect(question.hiddenByExamIds).toEqual([]);
+    expect(question.summary).toBe("");
   });
 
   it("recomputes the duplicate hash when duplicate-relevant content changes", async () => {

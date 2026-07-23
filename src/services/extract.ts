@@ -18,6 +18,7 @@ function generateMockQuestions(): Array<{
   options?: string[];
   answer: string;
   analysis: string;
+  summary?: string;
   difficulty: number;
 }> {
   return [
@@ -123,6 +124,7 @@ export const extractService = {
           options: q.options,
           answer: q.answer,
           analysis: q.analysis,
+          summary: q.summary,
           difficulty: q.difficulty,
           status: "duplicate",
           duplicateOf: existing[0],
@@ -135,6 +137,7 @@ export const extractService = {
           options: q.options,
           answer: q.answer,
           analysis: q.analysis,
+          summary: q.summary,
           difficulty: q.difficulty,
           status: "new",
         });
@@ -198,6 +201,7 @@ export const extractService = {
           options: q.options,
           answer: q.answer,
           analysis: q.analysis,
+          summary: q.summary || "",
           chapterIds,
           knowledgePointIds,
           difficulty: q.difficulty as 1 | 2 | 3 | 4 | 5,
