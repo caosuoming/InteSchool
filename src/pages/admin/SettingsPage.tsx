@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
   DndContext,
   closestCenter,
@@ -658,7 +658,7 @@ export function SettingsPage() {
     }),
   );
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
@@ -680,11 +680,11 @@ export function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, isClassTypeTab, isExamPaperTypeTab, isLectureTypeTab, schoolId]);
 
   useEffect(() => {
     loadSettings();
-  }, [activeTab, schoolId]);
+  }, [loadSettings]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;

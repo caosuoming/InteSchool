@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, Circle } from "lucide-react";
 import type { TreeNode } from "@/types";
 import { cn } from "@/lib/utils";
@@ -208,9 +208,7 @@ export function TreeView({
     );
   };
 
-  const content = useMemo(() => renderNode(data, 0), [data, expandedIds, checkedIds, selectedId, showDoneCount]);
-
-  return <div className={cn("text-sm", className)}>{content}</div>;
+  return <div className={cn("text-sm", className)}>{renderNode(data, 0)}</div>;
 }
 
 export default TreeView;

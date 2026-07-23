@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, FileText, FileSpreadsheet,
@@ -77,18 +77,14 @@ export default function ResourcePreviewPage() {
     loadData();
   }, [id, resourceType, navigate]);
 
-  useEffect(() => {
-    if (resource && resource.originalFileUrl && resource.originalFileName) {
-      if (resource.originalFileName.endsWith(".docx") || resource.originalFileName.endsWith(".doc")) {
-        loadDocxPreview();
-      }
+  const loadDocxPreview = useCallback(async () => {
+    if (
+      !resource?.originalFileUrl
+      || !resource.originalFileName
+      || (!resource.originalFileName.endsWith(".docx") && !resource.originalFileName.endsWith(".doc"))
+    ) {
+      return;
     }
-  }, [resource]);
-
-
-
-  const loadDocxPreview = async () => {
-    if (!resource?.originalFileUrl) return;
     setDocPreview({ loading: true, html: "", error: "" });
     try {
       const fileUrl = resource.originalFileUrl;
@@ -119,7 +115,11 @@ export default function ResourcePreviewPage() {
     } catch (error) {
       setDocPreview({ loading: false, html: "", error: `加载失败: ${error instanceof Error ? error.message : "未知错误"}` });
     }
-  };
+  }, [resource]);
+
+  useEffect(() => {
+    loadDocxPreview();
+  }, [loadDocxPreview]);
   if (!resource) {
     if (loading) {
       return (

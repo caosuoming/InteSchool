@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import {
   Plus,
@@ -56,12 +56,7 @@ export default function PrepTaskDetailPage() {
   });
   const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
-    if (!taskId || !teacher) return;
-    loadData();
-  }, [taskId, teacher]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [taskData, teacherList] = await Promise.all([
@@ -75,7 +70,12 @@ export default function PrepTaskDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [taskId, teacher]);
+
+  useEffect(() => {
+    if (!taskId || !teacher) return;
+    loadData();
+  }, [loadData, taskId, teacher]);
 
   const getTeacherName = (id: string) => {
     const t = teachers.find((t) => t.id === id);

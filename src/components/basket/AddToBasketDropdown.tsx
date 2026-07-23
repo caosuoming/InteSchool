@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { ShoppingBasket, ChevronDown, Check, Plus } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { basketService } from "@/services/basket";
@@ -30,23 +30,7 @@ export function AddToBasketDropdown({
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (teacher) {
-      loadBaskets();
-    }
-  }, [teacher]);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const loadBaskets = async () => {
+  const loadBaskets = useCallback(async () => {
     if (!teacher) return;
     const bs = await basketService.listBaskets(teacher.id);
     setBaskets(bs);
@@ -59,7 +43,23 @@ export function AddToBasketDropdown({
       }
     });
     setSelectedBasketIds(inBaskets);
-  };
+  }, [resourceId, resourceType, teacher]);
+
+  useEffect(() => {
+    if (teacher) {
+      loadBaskets();
+    }
+  }, [loadBaskets, teacher]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const defaultBasket = baskets.find((b) => b.isDefault);
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import "katex/dist/katex.min.css";
 import {
   Sparkles,
@@ -592,7 +592,7 @@ export function ExtractReviewModal({
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
-  const runExtraction = async () => {
+  const runExtraction = useCallback(async () => {
     const cancelled = false;
 
     setPhase("extracting");
@@ -677,12 +677,12 @@ export function ExtractReviewModal({
       setError(message);
       setPhase("review");
     }
-  };
+  }, [extractConfig, resourceId, resourceType, teacher]);
 
   useEffect(() => {
     if (!open) return;
     runExtraction();
-  }, [open, resourceId, resourceType, teacher]);
+  }, [open, runExtraction]);
 
   // 拖动处理函数
   const handleMouseDown = (e: React.MouseEvent) => {

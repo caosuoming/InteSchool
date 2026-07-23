@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShoppingBasket, Plus, Trash2, ArrowRight, FileText,
@@ -57,10 +57,6 @@ export default function BasketsPage() {
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    load();
-  }, [teacher]);
-
-  useEffect(() => {
     if (!teacher) return;
     Promise.all([
       knowledgeService.listChapters(teacher.schoolId!),
@@ -71,13 +67,17 @@ export default function BasketsPage() {
     });
   }, [teacher]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!teacher) return;
     setLoading(true);
     const bs = await basketService.listBaskets(teacher.id);
     setBaskets(bs);
     setLoading(false);
-  };
+  }, [teacher]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const loadQuestions = async (b: Basket) => {
     setSelectedBasket(b);

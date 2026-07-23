@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Send, Save,
@@ -72,12 +72,7 @@ export function LessonEditorPage() {
     { id: "stu-8", name: "吴十" },
   ]);
 
-  useEffect(() => {
-    if (!id || !teacher) return;
-    loadCourseware();
-  }, [id, teacher]);
-
-  const loadCourseware = async () => {
+  const loadCourseware = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
@@ -115,7 +110,12 @@ export function LessonEditorPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate]);
+
+  useEffect(() => {
+    if (!id || !teacher) return;
+    loadCourseware();
+  }, [id, loadCourseware, teacher]);
 
   const currentSlide = slides[currentIndex];
 

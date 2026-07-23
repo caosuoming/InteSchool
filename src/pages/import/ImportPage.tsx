@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import {
   FileUp, FileText, File, Sparkles, CheckCircle2, XCircle,
   RefreshCw, Globe, ChevronDown, ChevronRight, Upload, FileQuestion, Check,
@@ -40,27 +40,25 @@ export default function ImportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadDocuments();
-    if (teacher) {
-      knowledgeService.listChapters(teacher.schoolId!).then(setChapters);
-      knowledgeService.listKnowledgePoints(teacher.schoolId!).then(setPoints);
-    }
-  }, [teacher]);
-
-  useEffect(() => {
     if (selectedDoc) {
       aiService.getRecognitions(selectedDoc.id).then(setRecognitions);
     }
   }, [selectedDoc]);
 
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     if (!teacher) return;
     const docs = await aiService.listDocuments(teacher.id);
     setDocuments(docs);
-    if (docs.length > 0 && !selectedDoc) {
-      setSelectedDoc(docs[0]);
+    setSelectedDoc((current) => current ?? docs[0] ?? null);
+  }, [teacher]);
+
+  useEffect(() => {
+    loadDocuments();
+    if (teacher) {
+      knowledgeService.listChapters(teacher.schoolId!).then(setChapters);
+      knowledgeService.listKnowledgePoints(teacher.schoolId!).then(setPoints);
     }
-  };
+  }, [loadDocuments, teacher]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import {
   MessagesSquare, Search, Trash2,
   Smile, Meh, Frown, Star, Plus,
@@ -69,13 +69,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [newStatusTag, setNewStatusTag] = useState(statusTagOptions[0]);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (teacher?.schoolId && teacher?.id) {
-      loadStudents();
-    }
-  }, [teacher]);
-
-  const loadStudents = async () => {
+  const loadStudents = useCallback(async () => {
     if (!teacher?.schoolId || !teacher?.id) return;
     setLoading(true);
     try {
@@ -102,23 +96,21 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       });
       setLastInteractionMap(lastMap);
       // 默认选中排序后第一名
-      if (all.length > 0 && !selectedStudentId) {
-        setSelectedStudentId(all[0].id);
-      }
+      setSelectedStudentId((current) => current ?? all[0]?.id ?? null);
     } catch (err) {
       toast.error("加载学生列表失败");
     } finally {
       setLoading(false);
     }
-  };
+  }, [teacher]);
 
   useEffect(() => {
-    if (selectedStudentId) {
-      loadInteractions();
+    if (teacher?.schoolId && teacher?.id) {
+      loadStudents();
     }
-  }, [selectedStudentId]);
+  }, [loadStudents, teacher]);
 
-  const loadInteractions = async () => {
+  const loadInteractions = useCallback(async () => {
     if (!selectedStudentId) return;
     try {
       const list = await studentInteractionService.listByStudent(selectedStudentId);
@@ -137,17 +129,23 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     } catch (err) {
       toast.error("加载互动记录失败");
     }
-  };
+  }, [selectedStudentId]);
+
+  useEffect(() => {
+    if (selectedStudentId) {
+      loadInteractions();
+    }
+  }, [loadInteractions, selectedStudentId]);
 
   // 按最近互动时间排序：越久远（或从未互动）的越靠前
-  const sortStudentsByInteraction = (list: Student[]): Student[] => {
+  const sortStudentsByInteraction = useCallback((list: Student[]): Student[] => {
     return [...list].sort((a, b) => {
       const ta = lastInteractionMap[a.id] ? new Date(lastInteractionMap[a.id]).getTime() : 0;
       const tb = lastInteractionMap[b.id] ? new Date(lastInteractionMap[b.id]).getTime() : 0;
       // 升序：越小（越久远或从未互动）越靠前
       return ta - tb;
     });
-  };
+  }, [lastInteractionMap]);
 
   // 我的班级学生 / 其他班级学生
   const { myStudents, otherStudents } = useMemo(() => {
@@ -167,7 +165,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       myStudents: sortStudentsByInteraction(mine),
       otherStudents: sortStudentsByInteraction(others),
     };
-  }, [allStudents, myClassIds, keyword, lastInteractionMap]);
+  }, [allStudents, keyword, myClassIds, sortStudentsByInteraction]);
 
   const selectedStudent = allStudents.find((s) => s.id === selectedStudentId);
 

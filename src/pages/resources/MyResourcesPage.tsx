@@ -262,7 +262,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     } finally {
       setLoading(false);
     }
-  }, [keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, schoolId, teacher?.id, selectedGrade, selectedYear, teacher]);
+  }, [keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, schoolId, selectedGrade, selectedYear, teacher]);
 
   useEffect(() => {
     knowledgeService.getChapterTree(schoolId).then(setChapterTree);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   GraduationCap, Plus, Users, UserPlus, Trash2,
   School, Layers, ChevronRight, Pencil,
@@ -96,11 +96,7 @@ export default function ClassesPage() {
   // 学生操作菜单
   const [actionMenuStudentId, setActionMenuStudentId] = useState<string | null>(null);
 
-  useEffect(() => {
-    load();
-  }, [teacher]);
-
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!teacher) return;
     setLoading(true);
     const pc = await classService.listPersonalClasses(teacher.id);
@@ -124,7 +120,11 @@ export default function ClassesPage() {
       setSuspendedStudents(susp);
     }
     setLoading(false);
-  };
+  }, [schoolId, teacher]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const loadClassStudents = async (cls: AnyClass) => {
     setSelectedClass(cls);

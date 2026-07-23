@@ -377,21 +377,41 @@ export default function QuestionBankPage() {
   }, [loadQuestions]);
 
   useEffect(() => {
-    if (!teacher || !chapterTree || !knowledgeTree) return;
-    if (selectedStudentIds.length === 0) {
-      knowledgeService.getChapterTree(teacher.schoolId!).then(setChapterTree);
-      knowledgeService.getKnowledgeTree(teacher.schoolId!).then(setKnowledgeTree);
-      return;
-    }
+    if (!teacher) return;
+    let cancelled = false;
     (async () => {
-      const [chAnn, kpAnn] = await Promise.all([
-        analyticsService.annotateTreeWithStudentProgress(chapterTree, selectedStudentIds, "chapter", dateRange),
-        analyticsService.annotateTreeWithStudentProgress(knowledgeTree, selectedStudentIds, "knowledge", dateRange),
+      const [baseChapterTree, baseKnowledgeTree] = await Promise.all([
+        knowledgeService.getChapterTree(teacher.schoolId!),
+        knowledgeService.getKnowledgeTree(teacher.schoolId!),
       ]);
-      setChapterTree(chAnn);
-      setKnowledgeTree(kpAnn);
+      if (cancelled) return;
+      if (selectedStudentIds.length === 0) {
+        setChapterTree(baseChapterTree);
+        setKnowledgeTree(baseKnowledgeTree);
+        return;
+      }
+      const [annotatedChapterTree, annotatedKnowledgeTree] = await Promise.all([
+        analyticsService.annotateTreeWithStudentProgress(
+          baseChapterTree,
+          selectedStudentIds,
+          "chapter",
+          dateRange,
+        ),
+        analyticsService.annotateTreeWithStudentProgress(
+          baseKnowledgeTree,
+          selectedStudentIds,
+          "knowledge",
+          dateRange,
+        ),
+      ]);
+      if (cancelled) return;
+      setChapterTree(annotatedChapterTree);
+      setKnowledgeTree(annotatedKnowledgeTree);
     })();
-  }, [selectedStudentIds, teacher, chapterTree?.id, knowledgeTree?.id, dateRange]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStudentIds, teacher, dateRange]);
 
   // 拉取选中学生的答题记录（用于在题目上方显示答题情况）
   useEffect(() => {

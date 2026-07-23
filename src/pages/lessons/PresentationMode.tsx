@@ -152,7 +152,10 @@ export function PresentationMode({
   }, [slides.length, onExit]);
 
   const goPrev = useCallback(() => setCurrentIndex((i) => Math.max(0, i - 1)), []);
-  const goNext = useCallback(() => setCurrentIndex((i) => Math.min(slides.length - 1, i + 1)), []);
+  const goNext = useCallback(
+    () => setCurrentIndex((i) => Math.min(slides.length - 1, i + 1)),
+    [slides.length],
+  );
 
   const askableStudents = (currentSlide?.askableStudentIds || [])
     .map((id) => students.find((s) => s.id === id))

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BookOpen, Plus, Search, Trash2, Send,
@@ -37,7 +37,7 @@ export function MyLessonsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!teacher?.schoolId) return;
     setLoading(true);
     try {
@@ -56,11 +56,11 @@ export function MyLessonsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [keyword, sourceFilter, statusFilter, teacher]);
 
   useEffect(() => {
     loadData();
-  }, [teacher, keyword, statusFilter, sourceFilter]);
+  }, [loadData]);
 
   const handleDelete = async (id: string) => {
     if (!confirm("确定删除此课件？")) return;

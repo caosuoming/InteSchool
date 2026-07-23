@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   GitBranch, Search, Plus, Folder, FolderOpen, FileText,
@@ -41,19 +41,7 @@ export default function KnowledgeTreePage() {
   const [parentNode, setParentNode] = useState<TreeNode | null>(null);
   const [moveToOpen, setMoveToOpen] = useState(false);
 
-  useEffect(() => {
-    if (!teacher) return;
-    loadTree();
-    basketService.listBaskets(teacher.id).then(setBaskets);
-  }, [teacher, kind]);
-
-  useEffect(() => {
-    if (selectedNode) {
-      loadQuestions();
-    }
-  }, [selectedNode]);
-
-  const loadTree = async () => {
+  const loadTree = useCallback(async () => {
     if (!teacher) return;
     setLoading(true);
     const t =
@@ -62,9 +50,9 @@ export default function KnowledgeTreePage() {
         : await knowledgeService.getKnowledgeTree(teacher.schoolId!);
     setTree(t);
     setLoading(false);
-  };
+  }, [kind, teacher]);
 
-  const loadQuestions = async () => {
+  const loadQuestions = useCallback(async () => {
     if (!teacher || !selectedNode) return;
     setQuestionsLoading(true);
     let filter;
@@ -78,7 +66,19 @@ export default function KnowledgeTreePage() {
     const qs = await questionService.listQuestions(filter);
     setQuestions(qs);
     setQuestionsLoading(false);
-  };
+  }, [kind, selectedNode, teacher]);
+
+  useEffect(() => {
+    if (!teacher) return;
+    loadTree();
+    basketService.listBaskets(teacher.id).then(setBaskets);
+  }, [loadTree, teacher]);
+
+  useEffect(() => {
+    if (selectedNode) {
+      loadQuestions();
+    }
+  }, [loadQuestions, selectedNode]);
 
   const handleAddToBasket = async (basketId: string, q: Question) => {
     await basketService.addQuestion(basketId, q.id);
