@@ -1,28 +1,26 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import path from 'path';
+import { fileURLToPath, URL } from "node:url";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   build: {
-    sourcemap: 'hidden',
+    sourcemap: "hidden",
   },
   server: {
-    host: '0.0.0.0',
+    host: "0.0.0.0",
     port: 5173,
     strictPort: true,
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   plugins: [
     react({
-      babel: {
-        plugins: [
-          'react-dev-locator',
-        ],
-      },
+      babel: mode === "development"
+        ? { plugins: ["babel-plugin-react-dev-locator"] }
+        : undefined,
     }),
   ],
-})
+}));

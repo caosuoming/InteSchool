@@ -145,7 +145,7 @@ export default function LoginPage() {
           </div>
 
           <div className="text-xs text-ink-400">
-            © 2025 智题云校 · 教学辅助 SaaS 平台
+            © 2025–2026 智题云校 · 教学辅助 SaaS 平台
           </div>
         </div>
       </div>
