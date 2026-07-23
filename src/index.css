@@ -1,0 +1,167 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    line-height: 1.6;
+    font-weight: 400;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color: #102A43;
+    background-color: #F5F7FA;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background-color: rgba(212, 162, 76, 0.25);
+    color: #0B2545;
+  }
+
+  /* 滚动条样式 */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(16, 42, 67, 0.15);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(16, 42, 67, 0.25);
+  }
+}
+
+@layer components {
+  /* 卡片基础样式 */
+  .card-base {
+    @apply bg-paper rounded-xl shadow-card border border-ink-100/60 transition-all duration-200;
+  }
+  .card-base:hover {
+    @apply shadow-cardHover;
+  }
+
+  /* 学术金按钮 */
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-gold-400 text-ink-900 font-medium text-sm shadow-sm transition-all duration-200 hover:bg-gold-300 hover:shadow-gold active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ink {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-ink-900 text-white font-medium text-sm shadow-sm transition-all duration-200 hover:bg-ink-800 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-transparent text-ink-700 font-medium text-sm border border-ink-200 transition-all duration-200 hover:bg-mist hover:border-ink-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md bg-transparent text-ink-600 font-medium text-sm transition-all duration-200 hover:bg-mist hover:text-ink-900 active:scale-[0.98];
+  }
+
+  /* 标签 */
+  .tag-base {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium;
+  }
+  .tag-gold {
+    @apply tag-base bg-gold-50 text-gold-700 border border-gold-200;
+  }
+  .tag-ink {
+    @apply tag-base bg-ink-50 text-ink-700 border border-ink-200;
+  }
+  .tag-teal {
+    @apply tag-base bg-teal-50 text-teal-700 border border-teal-200;
+  }
+  .tag-red {
+    @apply tag-base bg-red-50 text-red-700 border border-red-200;
+  }
+  .tag-green {
+    @apply tag-base bg-emerald-50 text-emerald-700 border border-emerald-200;
+  }
+
+  /* 输入框 */
+  .input-base {
+    @apply w-full px-3 py-2 rounded-md bg-white border border-ink-200 text-sm text-ink-900 placeholder:text-ink-400 transition-all duration-150 focus:outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-400/20;
+  }
+
+  /* 骨架屏 */
+  .skeleton {
+    @apply bg-gradient-to-r from-ink-100 via-ink-50 to-ink-100 bg-[length:1000px_100%] animate-shimmer rounded;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  /* 学术金渐变文字 */
+  .text-gradient-gold {
+    background: linear-gradient(135deg, #D4A24C 0%, #E8BD66 50%, #B8842F 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-ink {
+    background: linear-gradient(135deg, #0B2545 0%, #243B53 50%, #486581 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* ===== 纸张版面 ===== */
+.paper-sheet {
+  background: white;
+  margin: 0 auto;
+  box-shadow: 0 4px 24px rgba(16, 42, 67, 0.08);
+  transition: width 0.2s;
+}
+.paper-a4 { width: 210mm; min-height: 297mm; }
+.paper-8k { width: 260mm; min-height: 370mm; }
+/* 8K 默认两栏 */
+.paper-8k .paper-content {
+  column-count: 2;
+  column-gap: 8mm;
+}
+.paper-a4 .paper-content {
+  column-count: 1;
+}
+/* 栏内不拆分 */
+.paper-content > * {
+  break-inside: avoid;
+}
+
+/* ===== 打印样式 ===== */
+@media print {
+  .no-print { display: none !important; }
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+  .paper-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    min-height: auto !important;
+  }
+  body { background: white !important; }
+  @page { margin: 12mm; }
+}
