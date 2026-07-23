@@ -113,7 +113,12 @@ export function computeDuplicateHash(
   options?: string[],
 ): string {
   const normalize = (s: string) =>
-    s.replace(/\s+/g, "").replace(/[，。、；：！？""''（）()\[\]【】]/g, "").toLowerCase();
+    s
+      .replace(/\s+/g, "")
+      .replace(/[，。、；：！？“”"'（）()【】]/g, "")
+      .split("[").join("")
+      .split("]").join("")
+      .toLowerCase();
   const parts = [normalize(stem)];
   if (options && options.length > 0) {
     parts.push(options.map(normalize).join("|"));
@@ -227,11 +232,11 @@ function addDefaultFields(db: DBSchema): DBSchema {
   });
 
   // 为已有题目计算查重哈希（如未设置）
-  db.questions = db.questions.map((q) => {
-    if (q.duplicateHash) return q;
-    const hash = computeDuplicateHash(q.stem, q.answer, q.options);
-    return { ...q, duplicateHash: hash, hiddenByExamIds: [] };
-  });
+  db.questions = db.questions.map((q) => ({
+    ...q,
+    duplicateHash: q.duplicateHash || computeDuplicateHash(q.stem, q.answer, q.options),
+    hiddenByExamIds: q.hiddenByExamIds || [],
+  }));
 
   // 注入示例校本资源备份数据（若空）
   if (!db.schoolBackups || db.schoolBackups.length === 0) {
@@ -350,23 +355,15 @@ function generateSeedSchoolBackups(): SchoolResourceBackup[] {
 export const db = {
   init(): void {
     if (inMemoryDB) return;
-    const version = storage.get<string>(DB_VERSION_KEY, "");
-    if (version !== CURRENT_DB_VERSION) {
-      const seed = addDefaultFields(getSeedData());
-      storage.set(DB_KEY, seed);
-      storage.set(DB_VERSION_KEY, CURRENT_DB_VERSION);
-    }
-    inMemoryDB = storage.get<DBSchema>(DB_KEY, null);
-    if (!inMemoryDB) {
+    const stored = storage.get<DBSchema | null>(DB_KEY, null);
+    if (!stored) {
       inMemoryDB = addDefaultFields(getSeedData());
-      storage.set(DB_KEY, inMemoryDB);
-      storage.set(DB_VERSION_KEY, CURRENT_DB_VERSION);
     } else {
-      // 兼容已有数据库：补齐新增字段
-      inMemoryDB = addDefaultFields(inMemoryDB);
-      storage.set(DB_KEY, inMemoryDB);
-      storage.set(DB_VERSION_KEY, CURRENT_DB_VERSION);
+      // 无论版本号是否变化，都在已有数据上补齐字段，避免升级时覆盖用户数据。
+      inMemoryDB = addDefaultFields(stored);
     }
+    storage.set(DB_KEY, inMemoryDB);
+    storage.set(DB_VERSION_KEY, CURRENT_DB_VERSION);
   },
 
   read<T extends keyof DBSchema>(key: T): DBSchema[T] {
@@ -388,7 +385,7 @@ export const db = {
   },
 
   reset(): void {
-    inMemoryDB = getSeedData();
+    inMemoryDB = addDefaultFields(getSeedData());
     storage.set(DB_KEY, inMemoryDB);
     storage.set(DB_VERSION_KEY, CURRENT_DB_VERSION);
   },

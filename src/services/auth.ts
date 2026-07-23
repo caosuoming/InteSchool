@@ -2,6 +2,50 @@ import type { Teacher, SchoolApplication, TeacherAffiliation } from "@/types";
 import { db } from "./db";
 import { delay, genId, maybeThrowError } from "./_shared";
 
+function activateSchoolAffiliation(
+  teacher: Teacher,
+  schoolId: string,
+  employeeNo: string,
+  subject: string,
+): Teacher {
+  const schoolName = db.read("schools").find((school) => school.id === schoolId)?.name || null;
+  const existing = teacher.affiliations?.find((affiliation) => affiliation.schoolId === schoolId);
+  const affiliationId = existing?.id || genId("aff");
+  const joinedAt = existing?.joinedAt || new Date().toISOString();
+  const activeAffiliation: TeacherAffiliation = {
+    id: affiliationId,
+    teacherId: teacher.id,
+    schoolId,
+    schoolName,
+    subject,
+    employeeNo,
+    status: "active",
+    role: existing?.role || "teacher",
+    roles: existing?.roles || ["teacher"],
+    subjectGroupIds: existing?.subjectGroupIds || [],
+    prepGroupIds: existing?.prepGroupIds || [],
+    isCurrent: true,
+    joinedAt,
+  };
+  const affiliations = (teacher.affiliations || [])
+    .filter((affiliation) => affiliation.id !== affiliationId)
+    .map((affiliation) => ({ ...affiliation, isCurrent: false }));
+
+  return {
+    ...teacher,
+    schoolId,
+    employeeNo,
+    subject,
+    status: "active",
+    role: activeAffiliation.role,
+    roles: activeAffiliation.roles,
+    subjectGroupIds: activeAffiliation.subjectGroupIds,
+    prepGroupIds: activeAffiliation.prepGroupIds,
+    affiliations: [...affiliations, activeAffiliation],
+    currentAffiliationId: affiliationId,
+  };
+}
+
 export const authService = {
   async register(email: string, password: string, name: string): Promise<Teacher> {
     await delay(500);
@@ -44,6 +88,7 @@ export const authService = {
     teacher.affiliations[0].teacherId = teacher.id;
     teacher.currentAffiliationId = teacher.affiliations[0].id;
     db.update("teachers", (list) => [...list, teacher]);
+    db.write("currentTeacherId", teacher.id);
     return teacher;
   },
 
@@ -246,7 +291,6 @@ export const authService = {
   ): Promise<SchoolApplication> {
     await delay(600);
     maybeThrowError();
-    const applications = db.read("applications");
     const application: SchoolApplication = {
       id: genId("app"),
       teacherId,
@@ -267,11 +311,11 @@ export const authService = {
     db.update("teachers", (list) =>
       list.map((t) =>
         t.id === teacherId
-          ? { ...t, schoolId, employeeNo, subject, status: "active" as const }
+          ? activateSchoolAffiliation(t, schoolId, employeeNo, subject)
           : t,
       ),
     );
-    return application;
+    return { ...application, status: "approved" };
   },
 
   async getApplicationsByTeacher(teacherId: string): Promise<SchoolApplication[]> {
@@ -302,13 +346,7 @@ export const authService = {
       db.update("teachers", (list) =>
         list.map((t) =>
           t.id === app.teacherId
-            ? {
-                ...t,
-                schoolId: app.schoolId,
-                employeeNo: app.employeeNo,
-                subject: app.subject,
-                status: "active" as const,
-              }
+            ? activateSchoolAffiliation(t, app.schoolId, app.employeeNo, app.subject)
             : t,
         ),
       );

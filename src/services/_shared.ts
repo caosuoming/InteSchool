@@ -6,8 +6,8 @@ export function genId(prefix: string = "id"): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// 模拟网络抖动错误率
-export function maybeThrowError(errorRate: number = 0.005): void {
+// 按需模拟网络抖动。默认关闭，避免正常操作和自动化测试随机失败。
+export function maybeThrowError(errorRate: number = 0): void {
   if (Math.random() < errorRate) {
     throw new Error("网络异常，请稍后重试");
   }

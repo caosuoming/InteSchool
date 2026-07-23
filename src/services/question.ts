@@ -164,6 +164,17 @@ export const questionService = {
               q.schoolId,
             );
           }
+          if (
+            finalPatch.stem !== undefined
+            || finalPatch.answer !== undefined
+            || finalPatch.options !== undefined
+          ) {
+            finalPatch.duplicateHash = computeDuplicateHash(
+              finalPatch.stem ?? q.stem,
+              finalPatch.answer ?? q.answer,
+              finalPatch.options ?? q.options,
+            );
+          }
           updated = { ...q, ...finalPatch, updatedAt: new Date().toISOString() };
           return updated;
         }
@@ -217,7 +228,12 @@ export const questionService = {
             }
             return r;
           });
-          return { ...q, remarks, updatedAt: now };
+          return {
+            ...q,
+            remarks,
+            remark: remarks[remarks.length - 1]?.content || "",
+            updatedAt: now,
+          };
         }
         return q;
       }),
@@ -269,6 +285,8 @@ export const questionService = {
       usageCount: 0,
       remark: input.remark || "",
       isShared: input.isShared ?? false,
+      duplicateHash: computeDuplicateHash(input.stem, input.answer, input.options),
+      hiddenByExamIds: [],
       createdAt: now,
       updatedAt: now,
     }));

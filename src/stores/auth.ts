@@ -25,7 +25,8 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   teacher: null,
-  loading: false,
+  // 启动时先恢复持久化会话；完成前不能把 teacher=null 当成未登录。
+  loading: true,
   error: null,
 
   init: () => {
