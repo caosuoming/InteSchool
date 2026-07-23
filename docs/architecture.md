@@ -1,3 +1,7 @@
+# 智题云校技术架构文档
+
+> 文档状态：前端原型架构。具体依赖版本、脚本与质量门禁以 `package.json`、`README.md` 和 CI 配置为准。
+
 ## 1. 架构设计
 
 ```mermaid
@@ -5,7 +9,7 @@ flowchart TB
     subgraph "前端层 (React 18 + Vite + TailwindCSS)"
         UI["页面与组件"]
         State["状态管理 (Zustand)"]
-        Router["路由 (React Router v6)"]
+        Router["路由 (React Router v7)"]
     end
     subgraph "数据 Mock 层"
         MockAPI["Mock API Service"]
@@ -30,7 +34,7 @@ flowchart TB
 - **前端**：React@18 + tailwindcss@3 + vite
 - **初始化工具**：vite-init (react-ts 模板)
 - **状态管理**：Zustand (轻量、TypeScript 友好)
-- **路由**：React Router v6
+- **路由**：React Router v7
 - **图标**：lucide-react
 - **拖拽排序**：@dnd-kit/core + @dnd-kit/sortable (讲义大纲拖拽)
 - **富文本/Markdown**：react-markdown + remark-gfm
@@ -130,7 +134,7 @@ interface KnowledgeTreeAPI {
 
 ## 5. 服务端架构
 
-本项目为前端纯展示实现，无服务端。Mock Service 层封装于 `src/services/` 目录，模拟异步 API 行为（统一 200-500ms 延迟、模拟错误率 < 1%）。
+本项目为前端纯展示实现，无服务端。Mock Service 层封装于 `src/services/` 目录，模拟异步 API 行为。常规操作默认不会注入随机错误；测试特定异常路径时可显式传入错误率。
 
 ## 6. 数据模型
 
