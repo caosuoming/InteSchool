@@ -23,7 +23,11 @@ const rpcSchema = z.object({
 function statusForError(error: Error): number {
   if (error instanceof ZodError) return 400;
   if (error instanceof DuplicateAccountError) return 409;
-  if (error.message.includes("请先登录") || error.message.includes("未登录")) return 401;
+  if (
+    error.message.includes("请先登录")
+    || error.message.includes("未登录")
+    || error.message.includes("邮箱或密码错误")
+  ) return 401;
   if (error.message.includes("无权") || error.message.includes("管理员权限")) return 403;
   if (error.message.includes("不存在")) return 404;
   return 400;

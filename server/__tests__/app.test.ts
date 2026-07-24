@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -151,6 +151,63 @@ describe("production backend", () => {
     expect(invalid.json()).toEqual({ error: "请求参数不合法" });
   });
 
+  it("serves readiness, static assets, SPA fallback, and API 404 responses", async () => {
+    await built.app.close();
+    const distDir = join(workDir, "dist");
+    await mkdir(distDir, { recursive: true });
+    await writeFile(join(distDir, "index.html"), "<!doctype html><title>InteSchool Test</title>");
+    await writeFile(join(distDir, "asset.txt"), "static asset");
+    built = await buildApp({
+      databasePath: join(workDir, "static.sqlite"),
+      uploadsDir: join(workDir, "static-uploads"),
+      seedStatePath: resolve("server/seed-state.json"),
+      distDir,
+      serveStatic: true,
+      logger: false,
+      enableDemoAccount: true,
+      demoPassword: "demo123456",
+      cookieSecure: false,
+    });
+    await built.app.ready();
+
+    const ready = await built.app.inject({ method: "GET", url: "/api/ready" });
+    expect(ready.statusCode).toBe(200);
+    expect(ready.json()).toEqual({ status: "ready" });
+
+    const asset = await built.app.inject({ method: "GET", url: "/asset.txt" });
+    expect(asset.statusCode).toBe(200);
+    expect(asset.body).toBe("static asset");
+
+    const fallback = await built.app.inject({ method: "GET", url: "/dashboard/deep-link" });
+    expect(fallback.statusCode).toBe(200);
+    expect(fallback.headers["content-type"]).toContain("text/html");
+    expect(fallback.headers["cache-control"]).toBe("no-store");
+    expect(fallback.body).toContain("InteSchool Test");
+
+    const missingApi = await built.app.inject({ method: "GET", url: "/api/missing" });
+    expect(missingApi.statusCode).toBe(404);
+    expect(missingApi.json()).toEqual({ error: "接口不存在" });
+  });
+
+  it("maps duplicate accounts to 409 and invalid credentials to 401", async () => {
+    await register(built.app, "duplicate@example.com");
+    const duplicate = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: { email: "DUPLICATE@example.com", password: "StrongPass123", name: "重复教师" },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toEqual({ error: "该邮箱已注册" });
+
+    const invalidLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "duplicate@example.com", password: "wrong" },
+    });
+    expect(invalidLogin.statusCode).toBe(401);
+    expect(invalidLogin.json()).toEqual({ error: "邮箱或密码错误" });
+  });
+
   it("hashes passwords, creates an HttpOnly session, and never returns credentials", async () => {
     const password = "StrongPass123";
     const session = await register(built.app, "new-teacher@example.com", password);
@@ -179,6 +236,61 @@ describe("production backend", () => {
     });
     expect(current.statusCode).toBe(200);
     expect(JSON.stringify(current.json())).not.toContain(password);
+  });
+
+  it("changes passwords, lists teachers, and invalidates the session on logout", async () => {
+    const session = await login(built.app);
+    const wrongPassword = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/password",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+      },
+      payload: { currentPassword: "incorrect", newPassword: "NewDemoPass123" },
+    });
+    expect(wrongPassword.statusCode).toBe(400);
+    expect(wrongPassword.json()).toEqual({ error: "当前密码错误" });
+
+    const changed = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/password",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+      },
+      payload: { currentPassword: "demo123456", newPassword: "NewDemoPass123" },
+    });
+    expect(changed.statusCode).toBe(200);
+
+    const teachers = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/teachers",
+      headers: { cookie: session.cookie },
+    });
+    expect(teachers.statusCode).toBe(200);
+    expect(teachers.json<Array<{ schoolId: string }>>()
+      .every((teacher) => teacher.schoolId === "sch-1")).toBe(true);
+
+    const logout = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/logout",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+      },
+    });
+    expect(logout.statusCode).toBe(200);
+    expect(String(logout.headers["set-cookie"])).toContain("inteschool_session=;");
+
+    const current = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/current",
+      headers: { cookie: session.cookie },
+    });
+    expect(current.json()).toEqual({ teacher: null, csrfToken: null });
+    await expect(login(built.app, "li.zhang@bj04.edu.cn", "NewDemoPass123"))
+      .resolves.toMatchObject({ teacher: expect.objectContaining({ id: "tch-1" }) });
   });
 
   it("requires CSRF and prevents teacher identity spoofing", async () => {
@@ -292,6 +404,16 @@ describe("production backend", () => {
     const stored = await readFile(join(built.config.uploadsDir, file.storageName), "utf8");
     expect(stored).toContain("集合是确定对象的总体");
 
+    const download = await built.app.inject({
+      method: "GET",
+      url: file.url,
+      headers: { cookie: session.cookie },
+    });
+    expect(download.statusCode).toBe(200);
+    expect(download.body).toContain("集合是确定对象的总体");
+    expect(download.headers["content-disposition"]).toContain("lesson.txt");
+    expect(download.headers["x-content-type-options"]).toBe("nosniff");
+
     const extract = await built.app.inject({
       method: "GET",
       url: `${file.url}/content`,
@@ -311,6 +433,75 @@ describe("production backend", () => {
     expect(imported.statusCode).toBe(200);
     const document = imported.json<{ sections: Array<{ content: string }> }>();
     expect(document.sections.some((section) => section.content.includes("集合是确定对象的总体"))).toBe(true);
+  });
+
+  it("returns file 404s and prevents another teacher from importing private uploads", async () => {
+    const owner = await login(built.app);
+    const multipart = multipartPayload("private.txt", "private teacher material");
+    const upload = await built.app.inject({
+      method: "POST",
+      url: "/api/files",
+      headers: {
+        cookie: owner.cookie,
+        "x-inteschool-csrf": owner.csrfToken,
+        "content-type": multipart.contentType,
+      },
+      payload: multipart.body,
+    });
+    const file = upload.json<{ id: string; url: string }>();
+
+    const missing = await built.app.inject({
+      method: "GET",
+      url: "/api/files/missing/content",
+      headers: { cookie: owner.cookie },
+    });
+    expect(missing.statusCode).toBe(404);
+
+    built.store.createUser("tch-2", "file-reader@example.com", "OtherTeacher123");
+    const other = await login(built.app, "file-reader@example.com", "OtherTeacher123");
+    const forbiddenImport = await built.app.inject({
+      method: "POST",
+      url: `${file.url}/import`,
+      headers: {
+        cookie: other.cookie,
+        "x-inteschool-csrf": other.csrfToken,
+      },
+    });
+    expect(forbiddenImport.statusCode).toBe(403);
+    expect(forbiddenImport.json()).toEqual({ error: "只能导入自己上传的文件" });
+
+    const missingDownload = await built.app.inject({
+      method: "GET",
+      url: "/api/files/missing",
+      headers: { cookie: owner.cookie },
+    });
+    expect(missingDownload.statusCode).toBe(404);
+  });
+
+  it("supports public school RPC calls and rejects unknown RPC targets", async () => {
+    const publicSchools = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      payload: { service: "school", method: "listSchools", args: [] },
+    });
+    expect(publicSchools.statusCode).toBe(200);
+    expect(publicSchools.json<{ result: unknown[] }>().result.length).toBeGreaterThan(0);
+
+    const unknownService = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      payload: { service: "missing", method: "list", args: [] },
+    });
+    expect(unknownService.statusCode).toBe(400);
+    expect(unknownService.json()).toEqual({ error: "未知服务" });
+
+    const unknownMethod = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      payload: { service: "school", method: "missingMethod", args: [] },
+    });
+    expect(unknownMethod.statusCode).toBe(400);
+    expect(unknownMethod.json()).toEqual({ error: "未知服务方法" });
   });
 
   it("recognizes only source-backed answers and protects recognition ownership", async () => {
