@@ -7,6 +7,7 @@ import {
   ArrowUpDown, TrendingUp, Sparkles, Star, Share2, Trash2,
   FileText, ExternalLink,
   Download, RefreshCw, ShoppingBasket,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
@@ -156,6 +157,7 @@ export default function QuestionBankPage() {
   const { teacher } = useAuthStore();
   const tagPrefs = useTagPrefsStore((state) => state.prefs);
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
+  const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -798,68 +800,95 @@ export default function QuestionBankPage() {
 
       <div className="grid grid-cols-12 gap-4">
         {/* 左侧：章节/知识点目录 Tab 切换 */}
-        <div className="col-span-12 lg:col-span-4">
-          <Card className="p-0 overflow-hidden">
-            {/* Tab 头 */}
-            <div className="flex border-b border-ink-100">
-              <button
-                onClick={() => setLeftTab("chapter")}
-                className={cn(
-                  "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
-                  leftTab === "chapter"
-                    ? "bg-gold-50 text-gold-800 border-b-2 border-gold-500"
-                    : "text-ink-500 hover:text-ink-700",
-                )}
-              >
-                <span className="flex items-center justify-center gap-1.5">
-                  <BookOpen className="w-3.5 h-3.5" />
-                  章节目录
-                </span>
-              </button>
-              <button
-                onClick={() => setLeftTab("knowledge")}
-                className={cn(
-                  "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
-                  leftTab === "knowledge"
-                    ? "bg-teal-50 text-teal-800 border-b-2 border-teal-500"
-                    : "text-ink-500 hover:text-ink-700",
-                )}
-              >
-                <span className="flex items-center justify-center gap-1.5">
-                  <Lightbulb className="w-3.5 h-3.5" />
-                  知识点目录
-                </span>
-              </button>
-            </div>
+        {!directoryCollapsed && (
+          <div className="col-span-12 lg:col-span-4">
+            <Card className="p-0 overflow-hidden">
+              {/* Tab 头 */}
+              <div className="flex border-b border-ink-100">
+                <div className="flex flex-1 min-w-0">
+                  <button
+                    onClick={() => setLeftTab("chapter")}
+                    className={cn(
+                      "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                      leftTab === "chapter"
+                        ? "bg-gold-50 text-gold-800 border-b-2 border-gold-500"
+                        : "text-ink-500 hover:text-ink-700",
+                    )}
+                  >
+                    <span className="flex items-center justify-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5" />
+                      章节课目录
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setLeftTab("knowledge")}
+                    className={cn(
+                      "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                      leftTab === "knowledge"
+                        ? "bg-teal-50 text-teal-800 border-b-2 border-teal-500"
+                        : "text-ink-500 hover:text-ink-700",
+                    )}
+                  >
+                    <span className="flex items-center justify-center gap-1.5">
+                      <Lightbulb className="w-3.5 h-3.5" />
+                      知识点目录
+                    </span>
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDirectoryCollapsed(true)}
+                  className="px-3 text-ink-400 hover:text-gold-700 hover:bg-gold-50 transition-colors border-l border-ink-100"
+                  title="向左折叠目录"
+                  aria-label="向左折叠章节课与知识点目录"
+                >
+                  <PanelLeftClose className="w-4 h-4" />
+                </button>
+              </div>
 
-            {/* 搜索 + 树 */}
-            <div className="p-3">
-              <SearchableTree
-                title=""
-                accent={leftTab === "chapter" ? "gold" : "teal"}
-                data={displayTree ?? { id: "root", name: "", type: "chapter", count: 0, children: [] }}
-                checkable
-                checkedIds={displayCheckedIds}
-                onCheck={setDisplayCheckedIds}
-                showDoneCount={selectedStudentIds.length > 0}
-                expandLevel={1}
-                searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : "搜索知识点..."}
-                showLogicSelector
-                logic={leftTab === "chapter" ? chapterLogic : knowledgeLogic}
-                onLogicChange={(logic) => {
-                  if (leftTab === "chapter") {
-                    setChapterLogic(logic);
-                  } else {
-                    setKnowledgeLogic(logic);
-                  }
-                }}
-              />
-            </div>
-          </Card>
-        </div>
+              {/* 搜索 + 树 */}
+              <div className="p-3">
+                <SearchableTree
+                  title=""
+                  accent={leftTab === "chapter" ? "gold" : "teal"}
+                  data={displayTree ?? { id: "root", name: "", type: "chapter", count: 0, children: [] }}
+                  checkable
+                  checkedIds={displayCheckedIds}
+                  onCheck={setDisplayCheckedIds}
+                  showDoneCount={selectedStudentIds.length > 0}
+                  expandLevel={1}
+                  searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : "搜索知识点..."}
+                  showLogicSelector
+                  logic={leftTab === "chapter" ? chapterLogic : knowledgeLogic}
+                  onLogicChange={(logic) => {
+                    if (leftTab === "chapter") {
+                      setChapterLogic(logic);
+                    } else {
+                      setKnowledgeLogic(logic);
+                    }
+                  }}
+                />
+              </div>
+            </Card>
+          </div>
+        )}
 
         {/* 右侧：筛选 + 题目列表 */}
-        <div className="col-span-12 lg:col-span-8">
+        <div className={cn("col-span-12", directoryCollapsed ? "lg:col-span-12" : "lg:col-span-8")}>
+          {directoryCollapsed && (
+            <div className="mb-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDirectoryCollapsed(false)}
+                title="展开目录"
+              >
+                <PanelLeftOpen className="w-3.5 h-3.5" />
+                展开章节课与知识点目录
+              </Button>
+            </div>
+          )}
+
           {/* 顶部筛选栏 */}
           <Card className="mb-4 p-4">
             <div className="flex flex-wrap items-center gap-3">
@@ -1049,6 +1078,7 @@ export default function QuestionBankPage() {
                   onReplace={mode === "manage" ? setReplaceQuestion : undefined}
                   tagOrder={tagPrefs.order}
                   hiddenTags={tagPrefs.hidden}
+                  wideLayout={directoryCollapsed}
                 />
               ))}
             </div>
@@ -1744,6 +1774,7 @@ function QuestionRow({
   onDownload, onReplace, onUpdateStudentAnswer,
   tagOrder,
   hiddenTags,
+  wideLayout,
 }: {
   question: Question;
   mode: Mode;
@@ -1777,6 +1808,7 @@ function QuestionRow({
   onUpdateStudentAnswer?: (studentId: string, questionId: string, score: AnswerScore | null) => void;
   tagOrder: string[];
   hiddenTags: string[];
+  wideLayout?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingAnswers, setEditingAnswers] = useState(false);
@@ -1816,7 +1848,8 @@ function QuestionRow({
   return (
     <div
       className={cn(
-        "card-base p-4 hover:shadow-cardHover transition-all group",
+        "card-base hover:shadow-cardHover transition-all group",
+        wideLayout ? "p-5" : "p-4",
         expanded && "ring-2 ring-gold-300/60",
       )}
       onClick={handleCardClick}
@@ -2000,7 +2033,8 @@ function QuestionRow({
           >
             {/* 题干 */}
             <div className={cn(
-              "text-sm text-ink-900 leading-relaxed mb-2",
+              "text-ink-900 leading-relaxed mb-2",
+              wideLayout ? "text-base" : "text-sm",
               !expanded && "line-clamp-2",
             )}>
               <MathText>{question.stem}</MathText>
@@ -2012,7 +2046,11 @@ function QuestionRow({
               const maxOptLen = Math.max(...question.options.map(o => o.length));
               const gridCols = maxOptLen > 60 ? 'grid-cols-1' : maxOptLen > 30 ? 'grid-cols-2' : 'grid-cols-4';
               return (
-                <div className={cn("mb-2 grid gap-x-4 gap-y-1.5 text-xs text-ink-700", gridCols)}>
+                <div className={cn(
+                  "mb-2 grid gap-x-4 gap-y-1.5 text-ink-700",
+                  wideLayout ? "text-sm" : "text-xs",
+                  gridCols,
+                )}>
                   {question.options.map((opt, i) => (
                     <div
                       key={i}
@@ -2038,7 +2076,10 @@ function QuestionRow({
               {/* 答案 */}
               <div>
                 <div className="text-xs font-medium text-ink-500 mb-1">答案</div>
-                <div className="p-2.5 rounded-md bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900 font-medium whitespace-pre-wrap">
+                <div className={cn(
+                  "p-2.5 rounded-md bg-emerald-50/40 border border-emerald-200 text-emerald-900 font-medium whitespace-pre-wrap",
+                  wideLayout ? "text-base" : "text-sm",
+                )}>
                   <MathText>{question.answer}</MathText>
                 </div>
               </div>
@@ -2046,7 +2087,10 @@ function QuestionRow({
               {/* 解析 */}
               <div>
                 <div className="text-xs font-medium text-ink-500 mb-1">解析</div>
-                <div className="p-2.5 rounded-md bg-gold-50/30 border border-gold-200 text-sm text-ink-900 leading-relaxed whitespace-pre-wrap">
+                <div className={cn(
+                  "p-2.5 rounded-md bg-gold-50/30 border border-gold-200 text-ink-900 leading-relaxed whitespace-pre-wrap",
+                  wideLayout ? "text-base" : "text-sm",
+                )}>
                   <MathText>{question.analysis}</MathText>
                 </div>
               </div>
