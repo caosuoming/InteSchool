@@ -1,399 +1,192 @@
-# 智题云校技术架构文档
+# InteSchool 技术架构
 
-> 文档状态：前端原型架构。具体依赖版本、脚本与质量门禁以 `package.json`、`README.md` 和 CI 配置为准。
-
-## 1. 架构设计
+## 1. 总体架构
 
 ```mermaid
 flowchart TB
-    subgraph "前端层 (React 18 + Vite + TailwindCSS)"
-        UI["页面与组件"]
-        State["状态管理 (Zustand)"]
-        Router["路由 (React Router v7)"]
-    end
-    subgraph "数据 Mock 层"
-        MockAPI["Mock API Service"]
-        MockDB["内存数据存储 (localStorage 持久化)"]
-    end
-    subgraph "AI 模拟层"
-        MockAI["AI 识别模拟服务"]
-        MockSearch["联网分析模拟服务"]
-    end
-    UI --> State
-    State --> Router
-    UI --> MockAPI
-    MockAPI --> MockDB
-    UI --> MockAI
-    MockAI --> MockSearch
+    Browser[浏览器]
+    Frontend[React + TypeScript + Vite]
+    API[Fastify API]
+    Auth[认证与授权]
+    Domain[业务服务]
+    SQLite[(SQLite WAL)]
+    Files[(受控文件目录)]
+    AI[OpenAI-compatible AI Provider]
+
+    Browser --> Frontend
+    Frontend -->|同源 /api| API
+    API --> Auth
+    Auth --> Domain
+    Domain --> SQLite
+    API --> Files
+    Domain -.可选.-> AI
 ```
 
-> 说明：本项目为前端演示实现，所有 AI 识别、联网分析、数据库均通过 Mock 服务模拟。架构预留后端接入位置，后续可替换为真实 API。
+应用采用单体全栈部署。Fastify 同时提供 API 和生产前端静态文件，避免跨域 Cookie 与 CSRF 配置复杂化。
 
-## 2. 技术说明
+## 2. 前端职责
 
-- **前端**：React@18 + tailwindcss@3 + vite
-- **初始化工具**：vite-init (react-ts 模板)
-- **状态管理**：Zustand (轻量、TypeScript 友好)
-- **路由**：React Router v7
-- **图标**：lucide-react
-- **拖拽排序**：@dnd-kit/core + @dnd-kit/sortable (讲义大纲拖拽)
-- **富文本/Markdown**：react-markdown + remark-gfm
-- **后端**：无 (Mock 数据，localStorage 持久化)
-- **数据库**：浏览器 localStorage 模拟，提供 seed 数据初始化
+前端位于 `src/`，职责限定为：
 
-## 3. 路由定义
+- 页面渲染、表单交互和路由
+- Zustand 会话视图状态与界面偏好
+- 调用同源 API
+- 显示服务端返回的授权结果
 
-| 路由 | 用途 |
-|------|------|
-| /login | 登录注册页 |
-| /school-auth | 学校认证加入页 |
-| /dashboard | 工作台首页 |
-| /question-bank | 题库管理列表 |
-| /question-bank/:id | 题目详情 |
-| /import | 文档导入与 AI 识别 |
-| /lectures | 讲义库管理列表 |
-| /lectures/new | 讲义编辑器(新建) |
-| /lectures/:id/edit | 讲义编辑器(编辑) |
-| /knowledge-tree | 知识树浏览器 |
-| /classes | 班级与学生管理 |
-| /classes/:id | 班级详情与学生列表 |
-| /baskets | 试题篮列表 |
-| /baskets/:id | 试题篮详情 |
-| /analytics | 学生使用分析 |
+前端不负责：
 
-## 4. API 定义 (Mock Service)
+- 密码校验和存储
+- 业务数据库持久化
+- 学校/教师/资源权限判定
+- 原始文件落盘与二进制解析
+- AI 密钥保存
 
-```typescript
-// 认证相关
-interface AuthAPI {
-  register(email: string, password: string, name: string): Promise<Teacher>
-  login(email: string, password: string): Promise<Teacher>
-  applySchool(teacherId: string, schoolId: string, proof: ProofFile): Promise<Application>
-}
+`src/services/` 是类型兼容的 API 客户端，不再包含业务数据库实现。
 
-// 学校相关
-interface SchoolAPI {
-  searchSchools(keyword: string): Promise<School[]>
-  getSchool(schoolId: string): Promise<School>
-}
+## 3. 后端职责
 
-// 题库相关
-interface QuestionBankAPI {
-  listQuestions(filter: QuestionFilter): Promise<Question[]>
-  getQuestion(id: string): Promise<Question>
-  createQuestion(input: QuestionInput): Promise<Question>
-  updateQuestion(id: string, patch: Partial<Question>): Promise<Question>
-  deleteQuestion(id: string): Promise<void>
-  batchImport(questions: QuestionInput[]): Promise<Question[]>
-}
+后端位于 `server/`：
 
-// 文档导入与 AI
-interface ImportAPI {
-  uploadDocument(file: File): Promise<DocumentRecord>
-  getDocumentStructure(docId: string): Promise<DocumentSection[]>
-  aiRecognize(docId: string): Promise<RecognitionResult[]>
-  webAnalyze(questionText: string): Promise<WebAnnotationStats>
-  confirmRecognition(recognitionId: string, confirmed: boolean): Promise<void>
-}
-
-// 讲义相关
-interface LectureAPI {
-  listLectures(filter: LectureFilter): Promise<Lecture[]>
-  getLecture(id: string): Promise<Lecture>
-  createLecture(input: LectureInput): Promise<Lecture>
-  updateLecture(id: string, patch: Partial<Lecture>): Promise<Lecture>
-  addQuestionToLecture(lectureId: string, questionId: string, position: number): Promise<void>
-  generateKnowledgePoint(topic: string, context?: string): Promise<string>
-}
-
-// 试题篮
-interface BasketAPI {
-  listBaskets(): Promise<Basket[]>
-  createBasket(name: string): Promise<Basket>
-  addQuestion(basketId: string, questionId: string): Promise<void>
-  removeQuestion(basketId: string, questionId: string): Promise<void>
-  generateLectureFromBasket(basketId: string): Promise<Lecture>
-}
-
-// 班级学生
-interface ClassAPI {
-  listSchoolClasses(schoolId: string): Promise<SchoolClass[]>
-  listPersonalClasses(teacherId: string): Promise<PersonalClass[]>
-  createClass(input: ClassInput): Promise<SchoolClass | PersonalClass>
-  addStudent(classId: string, student: StudentInput): Promise<Student>
-  batchImportStudents(classId: string, students: StudentInput[]): Promise<void>
-}
-
-// 知识树
-interface KnowledgeTreeAPI {
-  getChapterTree(schoolId: string): Promise<TreeNode>
-  getKnowledgeTree(schoolId: string): Promise<TreeNode>
-  addNode(parentId: string, node: TreeNodeInput): Promise<TreeNode>
-}
+```text
+server/
+├── app.ts                 # Fastify 组装、安全中间件、静态站点
+├── config.ts              # 环境变量配置
+├── database.ts            # SQLite schema、迁移、会话和文件元数据
+├── rpc.ts                 # 显式服务注册、会话/学校/资源授权
+├── domain/                # 题库、试卷、讲义、班级等业务服务
+├── routes/
+│   ├── auth.ts            # 注册、登录、学校审核、身份切换
+│   └── files.ts           # 上传、下载、文本提取、文档导入
+├── lib/
+│   ├── password.ts        # scrypt 密码哈希
+│   ├── document-extractor.ts
+│   └── ai-provider.ts
+└── seed-state.json        # 开发演示种子，生产默认不加载
 ```
 
-## 5. 服务端架构
+业务服务通过请求级 `AsyncLocalStorage` 获取状态快照。每次业务写操作在服务端串行执行，比较操作前后集合并以事务写回 SQLite，避免浏览器直接提交整库快照。
 
-本项目为前端纯展示实现，无服务端。Mock Service 层封装于 `src/services/` 目录，模拟异步 API 行为。常规操作默认不会注入随机错误；测试特定异常路径时可显式传入错误率。
+## 4. 数据库
 
-## 6. 数据模型
+SQLite 启用：
 
-### 6.1 数据模型定义
+- WAL 日志模式
+- 外键约束
+- 5 秒 busy timeout
+- 按集合、学校和所有者建立索引
+
+主要表：
+
+| 表 | 用途 |
+| --- | --- |
+| `app_records` | 业务实体，包含 collection、学校、所有者和 JSON 数据 |
+| `users` | 登录账号、教师关联和密码哈希 |
+| `sessions` | 会话令牌哈希、CSRF 令牌和过期时间 |
+| `files` | 文件所有者、学校、MIME、大小和随机存储名 |
+| `metadata` | schema 版本等元数据 |
+
+账号凭据与教师业务资料分表。业务 API 返回教师对象时会剥离密码、第三方标识和其他敏感字段。
+
+SQLite 适合单实例部署。当前架构不支持多个容器共享同一 SQLite 数据卷。
+
+## 5. 认证与授权
+
+### 5.1 密码
+
+- 注册和改密要求至少 10 位。
+- bootstrap 管理员密码要求至少 12 位。
+- 使用 `scrypt`、随机 16 字节盐和恒定时间比较。
+- 数据库不保存明文密码。
+
+### 5.2 会话
+
+- 浏览器接收随机 256 位会话令牌。
+- Cookie 使用 `HttpOnly`、`SameSite=Lax`；HTTPS 部署增加 `Secure`。
+- 数据库仅保存 SHA-256 会话令牌哈希。
+- 修改请求需携带独立 CSRF 令牌。
+- 登录接口有独立速率限制。
+
+### 5.3 权限
+
+RPC 只允许 `service-registry.ts` 显式注册的方法。每次请求会校验：
+
+1. 是否允许匿名调用；
+2. 会话对应教师是否存在；
+3. 当前所属学校是否匹配；
+4. 参数中的教师 ID 是否为当前教师；
+5. 目标资源是否属于当前教师、当前学校或允许共享；
+6. 管理操作是否具有学校管理员或平台管理员角色。
+
+管理员可以维护校级设置和组织成员，但不能冒充其他教师创建个人资源。
+
+## 6. 文件处理
+
+上传流程：
 
 ```mermaid
-erDiagram
-    School ||--o{ Teacher : "认证加入"
-    School ||--o{ SchoolClass : "拥有"
-    School ||--o{ Chapter : "拥有"
-    School ||--o{ KnowledgePoint : "拥有"
-    Teacher ||--o{ Question : "创建"
-    Teacher ||--o{ Lecture : "创建"
-    Teacher ||--o{ Basket : "拥有"
-    Teacher ||--o{ PersonalClass : "拥有"
-    Teacher ||--o{ DocumentRecord : "上传"
-    Question }o--|| Chapter : "归属"
-    Question }o--o{ KnowledgePoint : "关联"
-    SchoolClass ||--o{ Student : "包含"
-    PersonalClass }o--o{ Student : "聚合"
-    Lecture }o--o{ Question : "包含"
-    Lecture }o--o{ SchoolClass : "适用"
-    Lecture }o--o{ Student : "适用"
-    Basket }o--o{ Question : "暂存"
-    DocumentRecord ||--o{ RecognitionResult : "识别"
-    RecognitionResult ||--|| Question : "生成"
-    Student ||--o{ AnswerRecord : "答题"
-    Question ||--o{ AnswerRecord : "被答"
+sequenceDiagram
+    participant B as Browser
+    participant A as Fastify
+    participant F as File Storage
+    participant D as SQLite
+
+    B->>A: multipart 文件 + Session + CSRF
+    A->>A: 扩展名、大小、权限检查
+    A->>F: 随机文件名写入临时文件
+    A->>F: 原子 rename
+    A->>D: 保存文件元数据
+    A-->>B: 文件 ID 和受控 URL
 ```
 
-### 6.2 数据定义 (TypeScript 类型)
+支持服务端文本提取：
 
-```typescript
-// 核心实体
-interface Teacher {
-  id: string
-  email: string
-  name: string
-  schoolId: string | null
-  subject: string
-  status: 'pending' | 'active' | 'rejected'
-  createdAt: string
-}
+- DOCX：Mammoth
+- PDF：pdf-parse
+- Markdown / TXT：UTF-8 读取
 
-interface School {
-  id: string
-  name: string
-  code: string
-  logo: string
-  description: string
-  teacherCount: number
-  studentCount: number
-}
+DOCX HTML 经过白名单净化。文件下载、预览和提取均需登录且满足所有者或同校权限。
 
-interface SchoolClass {
-  id: string
-  schoolId: string
-  name: string
-  grade: string
-  studentCount: number
-  createdAt: string
-}
+## 7. 文档导入与识别
 
-interface PersonalClass {
-  id: string
-  teacherId: string
-  name: string
-  description: string
-  studentIds: string[]
-  createdAt: string
-}
+文档导入不再生成固定示例：
 
-interface Student {
-  id: string
-  name: string
-  studentNo: string
-  classId: string
-  schoolId: string
-  grade: string
-}
+1. 原始文件上传到服务端；
+2. 服务端提取实际文本；
+3. 根据标题和段落生成 `DocumentRecord.sections`；
+4. 识别服务从真实 section 内容提取题干、选项和题型；
+5. 教师确认后由后端写入题库。
 
-interface Chapter {
-  id: string
-  schoolId: string
-  parentId: string | null
-  name: string
-  order: number
-  level: number
-}
+内建识别提供可离线工作的规则提取。AI 内容生成使用可选的 OpenAI-compatible 服务，密钥仅存在于后端环境变量。
 
-interface KnowledgePoint {
-  id: string
-  schoolId: string
-  parentId: string | null
-  chapterId: string
-  name: string
-  order: number
-  level: number
-}
+## 8. 生产部署
 
-interface Question {
-  id: string
-  teacherId: string
-  schoolId: string
-  type: 'single' | 'multiple' | 'judge' | 'short' | 'essay'
-  stem: string
-  options?: string[]
-  answer: string
-  analysis: string
-  chapterIds: string[]
-  knowledgePointIds: string[]
-  difficulty: 1 | 2 | 3 | 4 | 5
-  recommendation: 1 | 2 | 3 | 4 | 5
-  usageCount: number
-  remark: string
-  sourceDocId?: string
-  isShared: boolean
-  createdAt: string
-  updatedAt: string
-}
+Docker 镜像采用：
 
-interface Lecture {
-  id: string
-  teacherId: string
-  schoolId: string
-  title: string
-  chapterIds: string[]
-  knowledgePointIds: string[]
-  grade: string
-  schoolYear: string
-  classIds: string[]
-  studentIds: string[]
-  sections: LectureSection[]
-  version: number
-  status: 'draft' | 'published'
-  createdAt: string
-  updatedAt: string
-}
+- Node.js 22 Debian slim
+- 多阶段构建
+- `npm prune --omit=dev`
+- 非 root `node` 用户
+- `dumb-init` 处理信号
+- `/api/health` 健康检查
+- `/app/data` 持久化卷
 
-interface LectureSection {
-  id: string
-  title: string
-  type: 'chapter' | 'knowledge' | 'question' | 'text'
-  content: string
-  questionId?: string
-  children: LectureSection[]
-}
+生产默认空库。首次启动由 bootstrap 环境变量创建首个学校和平台管理员。开发模式可显式加载 `seed-state.json`。
 
-interface Basket {
-  id: string
-  teacherId: string
-  name: string
-  questionIds: string[]
-  createdAt: string
-  updatedAt: string
-}
+## 9. CI 与发布
 
-interface DocumentRecord {
-  id: string
-  teacherId: string
-  fileName: string
-  fileType: 'word' | 'pdf' | 'markdown'
-  fileSize: number
-  sections: DocumentSection[]
-  status: 'uploaded' | 'recognizing' | 'recognized' | 'confirmed'
-  createdAt: string
-}
+CI 执行：
 
-interface DocumentSection {
-  id: string
-  title: string
-  content: string
-  level: number
-  children: DocumentSection[]
-}
+1. `npm ci`
+2. ESLint
+3. 前后端 TypeScript 检查
+4. Vitest 与覆盖率门禁
+5. 前后端生产构建
+6. Docker 镜像构建
 
-interface RecognitionResult {
-  id: string
-  documentId: string
-  question: Omit<Question, 'id' | 'teacherId' | 'schoolId' | 'createdAt' | 'updatedAt'>
-  confidence: number
-  webAnnotations: WebAnnotationStats
-  status: 'pending' | 'confirmed' | 'rejected'
-}
+Release workflow 在 `v*` tag 上：
 
-interface WebAnnotationStats {
-  totalSources: number
-  topChapters: { chapter: string; count: number }[]
-  topKnowledgePoints: { point: string; count: number }[]
-}
-
-interface AnswerRecord {
-  id: string
-  studentId: string
-  questionId: string
-  lectureId: string
-  isCorrect: boolean
-  answeredAt: string
-}
-
-interface TreeNode {
-  id: string
-  name: string
-  type: 'chapter' | 'knowledge'
-  count: number
-  children: TreeNode[]
-}
-```
-
-### 6.3 初始化种子数据
-
-系统启动时通过 `src/services/seed.ts` 注入以下种子数据：
-
-- 2 所示例学校（北京四中、上海实验中学）
-- 每校 3-4 个示例教师与 5-8 个班级
-- 高中数学/物理完整章节树（人教版）
-- 50 道示例题目覆盖各难度与知识点
-- 5 份示例讲义（草稿与已发布各若干）
-- 3 个示例试题篮
-- 1 份已上传文档与对应识别结果
-
-## 7. 目录结构
-
-```
-src/
-├── components/         # 通用组件
-│   ├── layout/         # 布局组件 (侧栏、顶栏)
-│   ├── ui/             # 基础 UI 组件 (Button, Card, Modal 等)
-│   ├── tree/           # 知识树组件
-│   └── question/       # 题目卡片组件
-├── pages/              # 页面组件
-│   ├── auth/
-│   ├── dashboard/
-│   ├── question-bank/
-│   ├── import/
-│   ├── lectures/
-│   ├── knowledge-tree/
-│   ├── classes/
-│   ├── baskets/
-│   └── analytics/
-├── services/           # Mock API 服务
-│   ├── auth.ts
-│   ├── school.ts
-│   ├── question.ts
-│   ├── lecture.ts
-│   ├── basket.ts
-│   ├── class.ts
-│   ├── knowledge.ts
-│   ├── import.ts
-│   ├── ai.ts
-│   └── seed.ts
-├── stores/             # Zustand 状态
-│   ├── auth.ts
-│   ├── school.ts
-│   └── ui.ts
-├── types/              # TypeScript 类型
-│   └── index.ts
-├── utils/              # 工具函数
-├── App.tsx
-├── main.tsx
-└── index.css
-```
+- 再次运行完整质量门禁
+- 构建 `linux/amd64` 和 `linux/arm64`
+- 生成 provenance 和 SBOM
+- 推送 GHCR
+- 创建 GitHub Release

@@ -705,7 +705,7 @@ export default function ExamPaperEditorPage() {
                     <div className="text-sm">
                       <div className="flex items-center gap-2">
                         <Badge variant="green">发布中</Badge>
-                        {pub.isFormalExam && pub.viewPassword && (
+                        {pub.isFormalExam && pub.hasViewPassword && (
                           <Lock className="w-3 h-3 text-ink-400" />
                         )}
                       </div>

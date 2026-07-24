@@ -60,7 +60,7 @@ export default function KnowledgeTreePage() {
       filter = { schoolId: teacher.schoolId!, chapterIds: [selectedNode.id] };
     } else {
       // 扩展为所有同名知识点的ID（分身）
-      const aliasIds = knowledgeService.getAliasIds(selectedNode.id, teacher.schoolId!);
+      const aliasIds = await knowledgeService.getAliasIds(selectedNode.id, teacher.schoolId!);
       filter = { schoolId: teacher.schoolId!, knowledgePointIds: aliasIds };
     }
     const qs = await questionService.listQuestions(filter);

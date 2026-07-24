@@ -18,7 +18,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { SchoolClass, PersonalClass, Student, AnyClass, ClassTypeCategory } from "@/types";
-import { formatDate } from "@/services/_shared";
+import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 type Tab = "school" | "personal";

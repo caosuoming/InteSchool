@@ -1,6 +1,6 @@
+import { rpcCall } from "./api";
+
 import type { StudentInteraction, InteractionType } from "@/types";
-import { db } from "./db";
-import { delay, genId, maybeThrowError } from "./_shared";
 
 export interface InteractionInput {
   studentId: string;
@@ -12,46 +12,18 @@ export interface InteractionInput {
 
 export const studentInteractionService = {
   async listByStudent(studentId: string): Promise<StudentInteraction[]> {
-    await delay(200);
-    return db
-      .read("studentInteractions")
-      .filter((i) => i.studentId === studentId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return rpcCall("studentInteraction", "listByStudent", [studentId]) as any;
   },
 
   async listByTeacher(teacherId: string): Promise<StudentInteraction[]> {
-    await delay(200);
-    return db
-      .read("studentInteractions")
-      .filter((i) => i.teacherId === teacherId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return rpcCall("studentInteraction", "listByTeacher", [teacherId]) as any;
   },
 
-  async createInteraction(
-    teacherId: string,
-    schoolId: string,
-    input: InteractionInput,
-  ): Promise<StudentInteraction> {
-    await delay(300);
-    maybeThrowError();
-    const now = new Date().toISOString();
-    const interaction: StudentInteraction = {
-      id: genId("si"),
-      teacherId,
-      schoolId,
-      studentId: input.studentId,
-      type: input.type,
-      content: input.content,
-      attitude: input.attitude,
-      statusTag: input.statusTag,
-      createdAt: now,
-    };
-    db.update("studentInteractions", (list) => [interaction, ...list]);
-    return interaction;
+  async createInteraction(teacherId: string, schoolId: string, input: InteractionInput): Promise<StudentInteraction> {
+    return rpcCall("studentInteraction", "createInteraction", [teacherId, schoolId, input]) as any;
   },
 
   async deleteInteraction(id: string): Promise<void> {
-    await delay(200);
-    db.update("studentInteractions", (list) => list.filter((i) => i.id !== id));
-  },
+    return rpcCall("studentInteraction", "deleteInteraction", [id]) as any;
+  }
 };

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { Toast, ToastType } from "@/types";
-import { genId } from "@/services/_shared";
+import { genId } from "@/lib/service-utils";
 
 interface UIState {
   toasts: Toast[];

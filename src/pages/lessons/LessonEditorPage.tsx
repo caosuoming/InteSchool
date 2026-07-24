@@ -11,13 +11,14 @@ import { toast } from "@/stores/ui";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { questionService } from "@/services/question";
 import { reflectionService } from "@/services/reflection";
-import type { LessonCourseware, LessonSlide, Question, Reflection } from "@/types";
+import { classService } from "@/services/class";
+import type { LessonCourseware, LessonSlide, Question, Reflection, Student } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
-import { genId } from "@/services/_shared";
+import { genId } from "@/lib/service-utils";
 import { PresentationMode } from "./PresentationMode";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 
@@ -60,17 +61,7 @@ export function LessonEditorPage() {
     value: string;
   } | null>(null);
 
-  // 学生列表（模拟）
-  const [students] = useState([
-    { id: "stu-1", name: "张三" },
-    { id: "stu-2", name: "李四" },
-    { id: "stu-3", name: "王五" },
-    { id: "stu-4", name: "赵六" },
-    { id: "stu-5", name: "钱七" },
-    { id: "stu-6", name: "孙八" },
-    { id: "stu-7", name: "周九" },
-    { id: "stu-8", name: "吴十" },
-  ]);
+  const [students, setStudents] = useState<Student[]>([]);
 
   const loadCourseware = useCallback(async () => {
     if (!id) return;
@@ -116,6 +107,13 @@ export function LessonEditorPage() {
     if (!id || !teacher) return;
     loadCourseware();
   }, [id, loadCourseware, teacher]);
+
+  useEffect(() => {
+    if (!teacher?.schoolId) return;
+    classService.listMyStudents(teacher.schoolId, teacher.id)
+      .then(setStudents)
+      .catch((error) => toast.error("学生列表加载失败", error instanceof Error ? error.message : undefined));
+  }, [teacher]);
 
   const currentSlide = slides[currentIndex];
 

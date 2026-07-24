@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Textarea } from "@/components/ui/Input";
 import { Edit3, Save, BookOpen, Lightbulb, BarChart3, Users, Plus, Trash2, Clock } from "lucide-react";
 import type { Question, Chapter, KnowledgePoint, QuestionRemark } from "@/types";
-import { formatDate } from "@/services/_shared";
+import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { MathText } from "@/components/ui/MathText";
 

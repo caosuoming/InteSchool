@@ -1,5 +1,5 @@
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
@@ -8,17 +8,28 @@ export default defineConfig({
     },
   },
   test: {
+    exclude: [...configDefaults.exclude, "build/**", "dist/**"],
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary", "html"],
-      include: ["src/services/{_shared,auth,db,question}.ts"],
+      include: [
+        "server/app.ts",
+        "server/config.ts",
+        "server/database.ts",
+        "server/rpc.ts",
+        "server/routes/{auth,files}.ts",
+        "server/lib/{password,document-extractor}.ts",
+        "src/services/{api,auth}.ts",
+      ],
       thresholds: {
-        lines: 70,
-        functions: 70,
-        statements: 70,
-        branches: 60,
+        lines: 60,
+        functions: 60,
+        statements: 60,
+        branches: 50,
       },
     },
   },

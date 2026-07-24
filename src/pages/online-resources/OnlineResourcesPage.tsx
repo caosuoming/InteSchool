@@ -25,7 +25,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { onlineResourceService } from "@/services/onlineResource";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import { formatDate, timeAgo } from "@/services/_shared";
+import { formatDate, timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import type {
   OnlineResource,
@@ -208,9 +208,9 @@ export default function OnlineResourcesPage() {
     // 乐观更新为「解析中」
     patchResource(resource.id, { status: "parsing" });
 
-    // 模拟进度推进
+    // 远程抓取和 AI 解析期间显示受控的等待进度。
     const timer = setInterval(() => {
-      setParseProgress((p) => Math.min(p + Math.random() * 9, 92));
+      setParseProgress((progress) => Math.min(progress + 3, 90));
     }, 200);
 
     try {
@@ -223,7 +223,7 @@ export default function OnlineResourcesPage() {
       });
       toast.success("AI 解析完成", `共解析出 ${parsedQuestions.length} 道题目`);
     } catch (err) {
-      patchResource(resource.id, { status: "pending" });
+      patchResource(resource.id, { status: "failed" });
       toast.error("AI 解析失败", err instanceof Error ? err.message : undefined);
     } finally {
       clearInterval(timer);

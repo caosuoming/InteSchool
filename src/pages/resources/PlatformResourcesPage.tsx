@@ -26,7 +26,7 @@ import type {
   Teacher,
   CoursewareType, MaterialType, QuestionType,
 } from "@/types";
-import { timeAgo } from "@/services/_shared";
+import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 type ResourceTypeFilter = "all" | ShareableResourceType;
@@ -208,6 +208,7 @@ export default function PlatformResourcesPage() {
   const [sortKey, setSortKey] = useState<SortKey>("updated");
   const [items, setItems] = useState<PlatformResourceItem[]>([]);
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
+  const [schoolTeachers, setSchoolTeachers] = useState<Teacher[]>([]);
 
   // 使用登录教师所在学校作为章节目录来源；若无则回退默认学校
   const schoolId = teacher?.schoolId || "sch-1";
@@ -263,18 +264,21 @@ export default function PlatformResourcesPage() {
     return () => clearTimeout(timer);
   }, [loadAll]);
 
+  useEffect(() => {
+    authService.listTeachers().then(setSchoolTeachers).catch(() => setSchoolTeachers([]));
+  }, [schoolId]);
+
   // 教师名称映射（学校名称通过异步加载到 schoolNameMap）
   const teacherMap = useMemo(() => {
     const map = new Map<string, Teacher>();
-    const allTeachers = authService.listTeachers();
     for (const item of items) {
       if (!map.has(item.fromTeacherId)) {
-        const t = allTeachers.find((tt) => tt.id === item.fromTeacherId);
+        const t = schoolTeachers.find((tt) => tt.id === item.fromTeacherId);
         if (t) map.set(item.fromTeacherId, t);
       }
     }
     return map;
-  }, [items]);
+  }, [items, schoolTeachers]);
 
   // 异步加载学校名称
   const [schoolNameMap, setSchoolNameMap] = useState<Map<string, string>>(new Map());
@@ -285,7 +289,7 @@ export default function PlatformResourcesPage() {
         schoolService.getSchool(id).then((s): [string, string] => [id, s?.name || "未知学校"]),
       ),
     ).then((entries: [string, string][]) => setSchoolNameMap(new Map(entries)));
-  }, [items]);
+  }, [items, schoolTeachers]);
 
   // 筛选与排序
   const displayedItems = useMemo(() => {

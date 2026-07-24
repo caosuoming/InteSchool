@@ -2,151 +2,240 @@
 
 [![CI](https://github.com/caosuoming/InteSchool/actions/workflows/ci.yml/badge.svg)](https://github.com/caosuoming/InteSchool/actions/workflows/ci.yml)
 
-InteSchool 是一个面向教师的题库、讲义、试卷和教学资源管理平台前端原型。项目以“智题云校”为产品名称，提供学校身份、题库管理、资源导入、讲义编辑、班级学生、集体备课和教学分析等演示流程。
+InteSchool 是面向教师和学校的题库、试卷、讲义、课件、班级学生、集体备课与教学分析服务。当前版本已从浏览器端演示原型改造为可部署的全栈应用：前端只负责交互，认证、授权、业务规则、文件处理和持久化均由后端执行。
 
-> 当前版本是**纯前端演示项目**。数据、认证、AI 分析和网络请求均由浏览器端 Mock 服务模拟，不应直接用于生产环境。
+## 主要能力
 
-## 功能概览
+- 邮箱密码注册、登录、退出和修改密码
+- 学校认证申请、管理员审核和多身份切换
+- 题库、试题篮、试卷、讲义、课件和素材管理
+- 班级、学生、组织、备课任务和教学互动管理
+- DOCX、PDF、Markdown、文本文件的服务端存储与文本提取
+- 资源分享、校本资源、平台资源和使用分析
+- 可选的 OpenAI-compatible AI 题目与知识块生成
+- Docker Compose 部署、健康检查、持久化数据卷
+- tag 驱动的多架构 GHCR 镜像和 GitHub Release
 
-- 教师邮箱注册、登录、学校认证与多身份切换
-- 题库筛选、查重、编辑、批量导入和试题篮管理
-- 试卷、讲义、课件、素材的统一资源管理
-- Word 文档解析、公式展示和模拟 AI 提取流程
-- 班级、学生、集体备课、教学互动和统计分析
-- 浏览器本地持久化的完整演示数据
-- 路由级代码分割，重型编辑器按需加载
+## 架构
 
-## 技术栈
-
-- React 18 + TypeScript 5
-- Vite 6 + Tailwind CSS 3
-- React Router 7
-- Zustand 5
-- Vitest + Testing Library + jsdom
-- ESLint 9 + GitHub Actions
-
-## 快速开始
-
-### 环境要求
-
-- Node.js `>= 20.19.0`，推荐 Node.js 22
-- npm 10 或更高版本
-
-仓库提供 `.nvmrc`：
-
-```bash
-nvm use
+```text
+Browser
+  └─ React + TypeScript + Vite
+       └─ same-origin /api
+            └─ Fastify
+                 ├─ HttpOnly session + CSRF + rate limit
+                 ├─ authorization + business services
+                 ├─ SQLite (WAL)
+                 └─ protected file storage
 ```
 
-### 安装与运行
+关键安全边界：
+
+- 账号密码只进入服务端，使用带随机盐的 `scrypt` 哈希保存。
+- 会话令牌仅存在于 `HttpOnly`、`SameSite=Lax` Cookie；数据库只保存令牌哈希。
+- 修改请求必须同时携带内存中的 CSRF 令牌。
+- 服务端校验教师身份、学校范围、资源所有者和管理员权限。
+- 业务数据不写入 `localStorage`。浏览器本地存储只用于界面偏好。
+- 原始文件存入服务端数据目录，文件名随机化，下载和解析均需登录授权。
+
+详细设计见 [技术架构](docs/architecture.md)，部署安全要求见 [安全说明](SECURITY.md)。
+
+## Docker 生产部署
+
+### 1. 准备配置
 
 ```bash
 git clone https://github.com/caosuoming/InteSchool.git
 cd InteSchool
+cp .env.example .env
+```
+
+首次生产部署至少修改以下配置：
+
+```dotenv
+INTESCHOOL_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+INTESCHOOL_BOOTSTRAP_ADMIN_PASSWORD=replace-with-a-strong-password
+INTESCHOOL_BOOTSTRAP_ADMIN_NAME=平台管理员
+INTESCHOOL_BOOTSTRAP_SCHOOL_ID=school-1
+INTESCHOOL_BOOTSTRAP_SCHOOL_NAME=示例中学
+INTESCHOOL_BOOTSTRAP_SCHOOL_CODE=EXAMPLE
+INTESCHOOL_BOOTSTRAP_SCHOOL_CITY=南京
+```
+
+`INTESCHOOL_BOOTSTRAP_ADMIN_PASSWORD` 至少 12 位。管理员账号创建成功后，应从 `.env` 删除该密码并重新创建容器；数据库中的账号不会被删除或重置。
+
+### 2. 启动
+
+```bash
+docker compose up -d --build
+```
+
+默认访问地址为 `http://localhost:3000`。状态检查：
+
+```bash
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/ready
+```
+
+### 3. 配置 HTTPS
+
+生产环境应由 Nginx、Caddy、Traefik 等反向代理提供 HTTPS，并设置：
+
+```dotenv
+INTESCHOOL_COOKIE_SECURE=true
+```
+
+反向代理需要保留 `Host`、`X-Forwarded-Proto` 和客户端地址信息。应用默认信任代理头，但不提供 TLS 终止能力。
+
+### 4. 数据持久化
+
+Compose 使用命名卷 `inteschool-data`，容器内路径为 `/app/data`：
+
+```text
+/app/data/inteschool.sqlite
+/app/data/inteschool.sqlite-wal
+/app/data/inteschool.sqlite-shm
+/app/data/uploads/
+```
+
+SQLite 使用 WAL 模式。进行文件级备份时应先停止应用，确保数据库和上传目录处于一致状态：
+
+```bash
+docker compose stop inteschool
+# 备份 Docker volume 中的 /app/data
+# 完成后：
+docker compose start inteschool
+```
+
+恢复时应同时恢复 SQLite 文件和 `uploads/`，且应用版本不得低于备份时版本。
+
+### 5. 升级
+
+使用 GHCR 发布镜像时：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+从源码构建时：
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+升级前先备份数据卷。数据库迁移在服务启动时自动执行。
+
+## 初始化与演示数据
+
+生产容器默认：
+
+```dotenv
+INTESCHOOL_SEED_DEMO_DATA=false
+INTESCHOOL_ENABLE_DEMO=false
+```
+
+因此不会导入虚构教师、题目和资源，也不存在默认登录凭据。
+
+本地开发可启用演示数据：
+
+```dotenv
+INTESCHOOL_SEED_DEMO_DATA=true
+INTESCHOOL_ENABLE_DEMO=true
+INTESCHOOL_DEMO_EMAIL=li.zhang@bj04.edu.cn
+INTESCHOOL_DEMO_PASSWORD=demo123456
+```
+
+不要在公开生产环境启用演示账号。
+
+## AI 服务
+
+AI 生成功能使用服务端配置的 OpenAI-compatible `chat/completions` 接口：
+
+```dotenv
+INTESCHOOL_AI_BASE_URL=https://your-provider.example/v1
+INTESCHOOL_AI_API_KEY=your-secret
+INTESCHOOL_AI_MODEL=your-model
+```
+
+密钥不会返回浏览器。未配置时，AI 生成接口会明确报错，其他教学资源功能不受影响。提供商必须支持 JSON object 响应格式；返回内容还会经过服务端结构校验。
+
+## 其他环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `INTESCHOOL_PORT` | `3000` | Compose 对外端口 |
+| `INTESCHOOL_COOKIE_SECURE` | `false` | HTTPS 部署必须设为 `true` |
+| `INTESCHOOL_SESSION_DAYS` | `30` | 会话有效天数 |
+| `INTESCHOOL_MAX_UPLOAD_BYTES` | `52428800` | 单文件上限，默认 50 MiB |
+| `INTESCHOOL_AUTO_APPROVE_APPLICATIONS` | `false` | 是否自动通过学校认证；生产不建议启用 |
+| `INTESCHOOL_SEED_DEMO_DATA` | 生产 `false` | 是否导入开发演示业务数据 |
+| `INTESCHOOL_ENABLE_DEMO` | 生产 `false` | 是否创建演示登录账号 |
+
+完整示例见 [.env.example](.env.example)。
+
+## 本地开发
+
+环境要求：Node.js `>= 22.13.0`，推荐 Node.js 22 LTS。
+
+```bash
 npm ci
 npm run dev
 ```
 
-开发服务器默认运行在 `http://localhost:5173`。
+- 前端：`http://localhost:5173`
+- 后端：`http://localhost:3000`
+- Vite 将 `/api` 代理到本地后端。
 
-### 演示账号
+单独启动：
 
-```text
-邮箱：li.zhang@bj04.edu.cn
-密码：demo1234
+```bash
+npm run dev:server
+npm run dev:web
 ```
 
-也可以在登录页点击演示账号自动填充。
-
-## 常用命令
+常用命令：
 
 | 命令 | 作用 |
 | --- | --- |
-| `npm run dev` | 启动开发服务器 |
-| `npm run lint` | 执行 ESLint 检查 |
-| `npm run check` | 执行 TypeScript 类型检查 |
-| `npm test` | 运行一次单元测试与组件测试 |
-| `npm run test:watch` | 以监听模式运行测试 |
-| `npm run test:coverage` | 运行测试并生成覆盖率报告 |
-| `npm run build` | 类型检查并生成生产构建 |
-| `npm run preview` | 本地预览生产构建 |
-| `npm run validate` | 依次执行 lint、类型检查、覆盖率测试和构建 |
-
-提交代码前建议执行：
-
-```bash
-npm run validate
-```
+| `npm run check` | 前后端 TypeScript 检查 |
+| `npm run lint` | ESLint 检查 |
+| `npm test` | 单元与后端集成测试 |
+| `npm run test:coverage` | 覆盖率测试 |
+| `npm run build` | 构建前端和服务端 |
+| `npm run validate` | 运行完整质量门禁 |
+| `npm start` | 运行已构建的生产服务 |
 
 ## 测试与 CI
 
-测试目前重点覆盖容易造成数据错乱的核心路径：
+集成测试使用真实 Fastify 实例、临时 SQLite 数据库和临时上传目录，覆盖：
 
-- Mock 数据库初始化、迁移、重置和快照隔离
-- 注册登录态持久化、登录登出和学校身份同步
-- 题目查重哈希、批量导入、筛选、备注和使用次数
-- 通用表单控件的标签与错误信息可访问性
-- 本地存储容错、日期格式化和可控故障模拟
+- 密码哈希、凭据不回传和 HttpOnly 会话
+- CSRF 校验与教师身份冒充拦截
+- 业务记录重启持久化
+- 文件落盘、文本提取和文档导入
+- 学校认证待审核与管理员审批
+- 生产空库 bootstrap 管理员
 
-覆盖率门槛由 `vitest.config.ts` 强制执行：语句、函数和行覆盖率不低于 70%，分支覆盖率不低于 60%。GitHub Actions 会在每次 push、Pull Request 和手动触发时运行完整 `npm run validate`。
+CI 对每次 push 和 Pull Request 执行 `npm run validate`，并实际构建生产 Docker 镜像。推送 `v*` tag 后，Release workflow 会发布 `linux/amd64` 和 `linux/arm64` GHCR 镜像并创建 GitHub Release。
+
+## 数据库说明
+
+内建数据库为 SQLite，适合单实例或单写节点部署。不要同时运行多个共享同一数据卷的应用副本。需要水平扩展、跨节点高可用或外部事务数据库时，应先实现独立数据库适配层和分布式文件存储，不应直接将 SQLite 卷挂载给多个容器。
 
 ## 项目结构
 
 ```text
 .
-├── .github/workflows/ci.yml    # 持续集成
-├── docs/                       # 产品与架构文档
-├── public/                     # 静态资源
-├── src/
-│   ├── components/             # 通用 UI 与业务组件
-│   ├── hooks/                  # 可复用 React Hooks
-│   ├── lib/                    # DOCX、公式和通用解析逻辑
-│   ├── pages/                  # 路由页面
-│   ├── services/               # 浏览器端 Mock 服务与数据库
-│   ├── stores/                 # Zustand 状态
-│   ├── test/                   # 测试初始化
-│   └── types/                  # TypeScript 数据模型
-├── vitest.config.ts            # 测试与覆盖率配置
-└── vite.config.ts              # 开发与构建配置
+├── server/                     # Fastify、认证、业务域、SQLite、文件处理
+├── src/                        # React 前端与 API 客户端
+├── .github/workflows/          # CI 与 Release
+├── Dockerfile                  # 多阶段、非 root 生产镜像
+├── docker-compose.yml          # 单实例部署与持久化卷
+├── server/seed-state.json      # 仅用于开发演示种子
+└── docs/                       # 产品与架构文档
 ```
-
-## 数据与本地存储
-
-核心演示数据库使用 `localStorage` 持久化，键名前缀为 `zhiti:`。首次访问会注入种子数据；数据库版本升级时会执行兼容字段补齐。
-
-需要恢复初始数据时，可在浏览器开发者工具中删除以 `zhiti:` 开头的本地存储项后刷新页面。此操作会删除当前浏览器中的所有演示修改。
-
-## 构建与部署
-
-```bash
-npm ci
-npm run build
-```
-
-输出位于 `dist/`。应用使用浏览器端路由，部署到 Nginx、静态托管平台或对象存储时，需要将未知路径回退到 `index.html`。
-
-示例 Nginx 规则：
-
-```nginx
-location / {
-    try_files $uri $uri/ /index.html;
-}
-```
-
-## 当前限制
-
-- 没有真实后端、数据库、权限校验或文件存储
-- 演示账号密码以明文存在种子数据和浏览器本地存储中
-- 微信、企业微信、AI 识别和联网分析均为模拟流程
-- 上传文件主要在浏览器内解析，刷新后不保证保留二进制文件
-
-安全边界详见 [SECURITY.md](SECURITY.md)。
-
-## 文档
-
-- [产品需求文档](docs/product-requirements.md)
-- [技术架构文档](docs/architecture.md)
-- [贡献指南](CONTRIBUTING.md)
 
 ## 许可证
 

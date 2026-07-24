@@ -16,7 +16,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type { Lecture, TreeNode, Chapter, KnowledgePoint, FilterLogic } from "@/types";
-import { timeAgo } from "@/services/_shared";
+import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 type LeftTab = "chapter" | "knowledge";

@@ -4,8 +4,15 @@ node_modules/
 # Build and test output
 dist/
 dist-ssr/
+build/
 coverage/
 *.tsbuildinfo
+
+# Runtime data
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
 # Environment files
 .env

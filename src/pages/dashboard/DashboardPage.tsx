@@ -18,7 +18,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
-import { timeAgo } from "@/services/_shared";
+import { timeAgo } from "@/lib/service-utils";
 import type { Question, Lecture, Basket, DocumentRecord, PrepTask, PrepTaskType } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -147,6 +147,23 @@ export default function DashboardPage() {
 
   if (!teacher) return null;
 
+  const activeAffiliation = teacher.affiliations.find(
+    (item) => item.id === teacher.currentAffiliationId,
+  ) || teacher.affiliations.find((item) => item.isCurrent);
+  const schoolName = activeAffiliation?.schoolName || "未认证学校";
+  const weekStart = new Date();
+  const daysSinceMonday = (weekStart.getDay() + 6) % 7;
+  weekStart.setDate(weekStart.getDate() - daysSinceMonday);
+  weekStart.setHours(0, 0, 0, 0);
+  const changedThisWeek = (timestamp?: string) =>
+    Boolean(timestamp && new Date(timestamp).getTime() >= weekStart.getTime());
+  const weeklyActivity = {
+    questions: stats?.questions.filter((item) => changedThisWeek(item.createdAt)).length ?? 0,
+    lectures: stats?.lectures.filter((item) => changedThisWeek(item.updatedAt)).length ?? 0,
+    documents: stats?.documents.filter((item) => changedThisWeek(item.createdAt)).length ?? 0,
+    baskets: stats?.baskets.filter((item) => changedThisWeek(item.updatedAt || item.createdAt)).length ?? 0,
+  };
+
   const cards = [
     {
       label: "题库总量",
@@ -193,7 +210,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title={`欢迎回来，${teacher.name}老师`}
-        description={`${teacher.subject}学科 · ${teacher.schoolId === "sch-1" ? "北京第四中学" : "上海实验中学"} · 工号 ${teacher.employeeNo || "未填写"}`}
+        description={`${teacher.subject}学科 · ${schoolName} · 工号 ${teacher.employeeNo || "未填写"}`}
         icon={<BookOpen className="w-5 h-5" />}
         action={
           <Link to="/import">
@@ -459,19 +476,19 @@ export default function DashboardPage() {
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between items-center">
                     <span className="text-ink-600">新增题目</span>
-                    <span className="font-mono font-semibold text-ink-900">+3</span>
+                    <span className="font-mono font-semibold text-ink-900">+{weeklyActivity.questions}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-ink-600">讲义更新</span>
-                    <span className="font-mono font-semibold text-ink-900">+2</span>
+                    <span className="font-mono font-semibold text-ink-900">+{weeklyActivity.lectures}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-ink-600">学生答题</span>
-                    <span className="font-mono font-semibold text-ink-900">+47</span>
+                    <span className="text-ink-600">导入文档</span>
+                    <span className="font-mono font-semibold text-ink-900">+{weeklyActivity.documents}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-ink-600">试题篮活动</span>
-                    <span className="font-mono font-semibold text-ink-900">+1</span>
+                    <span className="font-mono font-semibold text-ink-900">+{weeklyActivity.baskets}</span>
                   </div>
                 </div>
               </Card>

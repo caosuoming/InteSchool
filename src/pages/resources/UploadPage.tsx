@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   FileSpreadsheet, FileText, Presentation, FileBox,
   Upload, CheckCircle2, AlertCircle, FileUp, Loader2, X,
-  Download, Wand2, Share2, Image as ImageIcon,
+  Download, Wand2, Share2,
   FileQuestion, Blocks, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -12,6 +12,9 @@ import { coursewareService } from "@/services/courseware";
 import { materialService } from "@/services/material";
 import { lectureService } from "@/services/lecture";
 import { knowledgeService } from "@/services/knowledge";
+import { aiService } from "@/services/ai";
+import { uploadFile as uploadStoredFile } from "@/services/api";
+import { shareService } from "@/services/share";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -21,8 +24,9 @@ import { Input, Textarea, Select } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type {
   TreeNode, FilterLogic, CoursewareType, MaterialType,
-  QuestionType,
+  QuestionType, ShareRecord,
 } from "@/types";
+import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 type TabKey = "upload" | "share" | "ai";
@@ -109,7 +113,6 @@ const questionTypeLabel: Record<QuestionType, string> = {
 const aiGenTypes = [
   { key: "question", label: "题目", icon: FileQuestion, desc: "生成选择题、填空题、解答题等" },
   { key: "knowledge", label: "知识块", icon: Blocks, desc: "生成知识点总结、概念解析" },
-  { key: "image", label: "图片素材", icon: ImageIcon, desc: "生成教学配图、示意图" },
 ];
 
 // ============ 辅助函数 ============
@@ -120,17 +123,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const uploadFile = async (file: File): Promise<string> => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      resolve(base64);
-    };
-    reader.readAsDataURL(file);
-  });
-};
-
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 function detectOriginalFileType(fileName: string): "word" | "pdf" | undefined {
@@ -139,75 +131,19 @@ function detectOriginalFileType(fileName: string): "word" | "pdf" | undefined {
   return undefined;
 }
 
-function generateMockQuestions(): Array<{
-  type: QuestionType;
-  stem: string;
-  options?: string[];
-  answer: string;
-  analysis: string;
-}> {
-  return [
-    {
-      type: "single",
-      stem: "已知集合 A = {1, 2, 3}，B = {2, 3, 4}，则 A ∩ B =",
-      options: ["{1}", "{2, 3}", "{2, 3, 4}", "{1, 2, 3, 4}"],
-      answer: "B",
-      analysis: "集合 A 与 B 的交集为两个集合的共同元素，即 {2, 3}。",
-    },
-    {
-      type: "multiple",
-      stem: "下列函数中，在定义域内单调递增的是（多选）",
-      options: ["y = 2x + 1", "y = -x²", "y = log₂x", "y = (1/2)ˣ"],
-      answer: "AC",
-      analysis: "y=2x+1 斜率为正单调递增；y=log₂x 在定义域内单调递增。",
-    },
-    {
-      type: "judge",
-      stem: "函数 y = √(x-1) 的定义域为 [1, +∞)。",
-      answer: "正确",
-      analysis: "要使根号内非负，需 x-1 ≥ 0，即 x ≥ 1，故定义域为 [1, +∞)。",
-    },
-    {
-      type: "short",
-      stem: "设集合 A = {x | 0 < x < 2}，B = {x | 1 ≤ x ≤ 3}，则 A ∩ B = ___",
-      answer: "[1, 2)",
-      analysis: "A ∩ B 即两集合的交集，x 同时满足 0<x<2 和 1≤x≤3，得 1≤x<2。",
-    },
-    {
-      type: "essay",
-      stem: "已知集合 A = {x | x² - 3x + 2 = 0}，B = {x | x² - mx + 1 = 0}，若 B ⊆ A，求 m 的取值范围。",
-      answer: "m ∈ [-2, 2]",
-      analysis: "A = {1, 2}。B ⊆ A 分情况讨论：B=∅、B={1}、B={2}、B={1,2}，分别求解后取并集。",
-    },
-  ];
-}
+const shareTypeLabels: Record<ShareRecord["resourceType"], string> = {
+  question: "题目",
+  examPaper: "试卷",
+  lecture: "讲义",
+  courseware: "课件",
+  material: "素材",
+};
 
-const mockSharedResources = [
-  {
-    id: "s1",
-    title: "高一数学期末复习试卷",
-    type: "试卷",
-    from: "张老师（北京四中）",
-    time: "2小时前",
-    scope: "好友",
-  },
-  {
-    id: "s2",
-    title: "三角函数知识点总结",
-    type: "讲义",
-    from: "李老师（实验中学）",
-    time: "昨天",
-    scope: "本校",
-  },
-  {
-    id: "s3",
-    title: "立体几何几何画板课件",
-    type: "课件",
-    from: "王老师（人大附中）",
-    time: "3天前",
-    scope: "平台公开",
-  },
-];
+const shareScopeLabels: Record<ShareRecord["scope"], string> = {
+  friends: "指定教师",
+  school: "本校",
+  public: "平台公开",
+};
 
 let batchFileIdCounter = 0;
 function genBatchFileId(): string {
@@ -253,12 +189,20 @@ export function UploadPage() {
 
   // 接受分享相关状态
   const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
+  const [incomingShares, setIncomingShares] = useState<ShareRecord[]>([]);
 
   useEffect(() => {
     if (teacher?.schoolId) {
       knowledgeService.getChapterTree(teacher.schoolId).then(setChapterTree);
       knowledgeService.getKnowledgeTree(teacher.schoolId).then(setKnowledgeTree);
     }
+  }, [teacher]);
+
+  useEffect(() => {
+    if (!teacher) return;
+    shareService.listIncomingShares(teacher.id)
+      .then(setIncomingShares)
+      .catch((error) => toast.error("分享列表加载失败", error instanceof Error ? error.message : undefined));
   }, [teacher]);
 
   const addFiles = useCallback((fileList: FileList | File[]) => {
@@ -371,9 +315,9 @@ export function UploadPage() {
         };
 
         let resourceId: string | null = null;
+        const uploaded = await uploadStoredFile(item.file);
 
         if (currentType === "examPaper") {
-          const originalFileUrl = await uploadFile(item.file);
           const originalFileType = detectOriginalFileType(item.file.name);
           const paper = await examPaperService.createPaper(
             teacher.id, teacher.schoolId, {
@@ -382,7 +326,7 @@ export function UploadPage() {
               totalScore: 100,
               questions: [],
               status: "draft",
-              originalFileUrl,
+              originalFileUrl: uploaded.url,
               originalFileName: item.file.name,
               originalFileType,
               originalFileSize: item.file.size,
@@ -390,7 +334,6 @@ export function UploadPage() {
           );
           resourceId = paper.id;
         } else if (currentType === "lecture") {
-          const originalFileUrl = await uploadFile(item.file);
           const originalFileType = detectOriginalFileType(item.file.name);
           const lecture = await lectureService.createLecture(
             teacher.id, teacher.schoolId, {
@@ -404,7 +347,7 @@ export function UploadPage() {
                 content: item.description.trim() || "上传讲义内容",
                 children: [],
               }],
-              originalFileUrl,
+              originalFileUrl: uploaded.url,
               originalFileName: item.file.name,
               originalFileType,
               originalFileSize: item.file.size,
@@ -412,26 +355,24 @@ export function UploadPage() {
           );
           resourceId = lecture.id;
         } else if (currentType === "courseware") {
-          const fileUrl = await uploadFile(item.file);
           const cw = await coursewareService.createCourseware(
             teacher.id, teacher.schoolId, {
               ...baseInput,
               type: (item.coursewareType || coursewareType) as CoursewareType,
               content: item.description.trim() || item.file.name,
-              fileUrl,
+              fileUrl: uploaded.url,
               fileSize: item.file.size,
               tags: [],
             },
           );
           resourceId = cw.id;
         } else if (currentType === "material") {
-          const fileUrl = await uploadFile(item.file);
           const mat = await materialService.createMaterial(
             teacher.id, teacher.schoolId, {
               ...baseInput,
               type: (item.materialType || materialType) as MaterialType,
               content: item.description.trim() || item.file.name,
-              fileUrl,
+              fileUrl: uploaded.url,
               fileSize: item.file.size,
               tags: [],
             },
@@ -471,42 +412,39 @@ export function UploadPage() {
     }
     setAiGenerating(true);
     setAiResult(null);
-    await new Promise((r) => setTimeout(r, 2000));
-
-    if (aiGenType === "question") {
-      const questions = generateMockQuestions().slice(0, parseInt(aiCount) || 5);
+    try {
+      const result = await aiService.generateTeachingResources(
+        aiGenType as "question" | "knowledge",
+        aiKeyword.trim(),
+        Number(aiDifficulty),
+        Number(aiCount),
+      );
       setAiResult({
-        type: "question",
-        items: questions.map((q, i) => ({ ...q, id: `ai-${i}`, accepted: false })),
+        ...result,
+        items: result.items.map((item, index) => ({
+          ...item,
+          id: `ai-${index}`,
+          accepted: false,
+        })),
       });
-      toast.success("AI生成完成", `共生成 ${questions.length} 道题`);
-    } else if (aiGenType === "knowledge") {
-      setAiResult({
-        type: "knowledge",
-        items: [
-          { id: "k1", title: "集合的基本概念", content: "集合是由确定的对象组成的整体。集合中的对象称为元素..." },
-          { id: "k2", title: "交集与并集", content: "交集：A ∩ B = {x | x ∈ A 且 x ∈ B}。并集：A ∪ B = {x | x ∈ A 或 x ∈ B}..." },
-          { id: "k3", title: "子集与真子集", content: "若集合A的所有元素都属于B，则称A是B的子集，记作A⊆B..." },
-        ],
-      });
-      toast.success("AI生成完成", "共生成 3 个知识块");
-    } else if (aiGenType === "image") {
-      setAiResult({
-        type: "image",
-        items: [
-          { id: "img1", url: "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=math%20geometry%20diagram%20triangle&image_size=square_hd", title: "几何示意图1" },
-          { id: "img2", url: "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=mathematical%20function%20graph%20curve&image_size=square_hd", title: "函数图像1" },
-          { id: "img3", url: "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=math%20set%20venn%20diagram&image_size=square_hd", title: "集合韦恩图" },
-        ],
-      });
-      toast.success("AI生成完成", "共生成 3 张图片素材");
+      toast.success("AI生成完成", `共生成 ${result.items.length} 项内容`);
+    } catch (error) {
+      toast.error("AI生成失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setAiGenerating(false);
     }
-    setAiGenerating(false);
   };
 
-  const handleAcceptShare = (id: string) => {
-    setAcceptedIds((prev) => new Set(prev).add(id));
-    toast.success("已保存到我的资源");
+  const handleAcceptShare = async (id: string) => {
+    if (!teacher?.schoolId) return;
+    try {
+      await shareService.acceptShare(id, teacher.id, teacher.schoolId);
+      setAcceptedIds((prev) => new Set(prev).add(id));
+      setIncomingShares((prev) => prev.filter((item) => item.id !== id));
+      toast.success("已保存到我的资源");
+    } catch (error) {
+      toast.error("保存失败", error instanceof Error ? error.message : undefined);
+    }
   };
 
   const tabs: { key: TabKey; label: string; icon: any }[] = [
@@ -1049,18 +987,21 @@ export function UploadPage() {
             </div>
           </Card>
 
-          {mockSharedResources.map((item) => {
+          {incomingShares.length === 0 && (
+            <Card className="p-8 text-center text-sm text-ink-400">暂无待接收的分享</Card>
+          )}
+          {incomingShares.map((item) => {
             const accepted = acceptedIds.has(item.id);
             return (
               <Card key={item.id} className="p-4 hover:shadow-cardHover transition-all">
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-ink-900 mb-1">{item.title}</div>
+                    <div className="font-medium text-ink-900 mb-1">{item.resourceTitle}</div>
                     <div className="flex items-center gap-3 flex-wrap text-xs text-ink-400">
-                      <Badge variant="ink">{item.type}</Badge>
-                      <span>来自：{item.from}</span>
-                      <span>分享范围：{item.scope}</span>
-                      <span>{item.time}</span>
+                      <Badge variant="ink">{shareTypeLabels[item.resourceType]}</Badge>
+                      <span>来自教师：{item.fromTeacherId}</span>
+                      <span>分享范围：{shareScopeLabels[item.scope]}</span>
+                      <span>{timeAgo(item.createdAt)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1073,7 +1014,7 @@ export function UploadPage() {
                       <Button
                         variant="gold"
                         size="sm"
-                        onClick={() => handleAcceptShare(item.id)}
+                        onClick={() => void handleAcceptShare(item.id)}
                       >
                         <Download className="w-3.5 h-3.5" />
                         保存到我的资源
@@ -1312,30 +1253,6 @@ export function UploadPage() {
                     </div>
                   )}
 
-                  {aiResult.type === "image" && (
-                    <div className="grid grid-cols-3 gap-3">
-                      {aiResult.items.map((img: any) => (
-                        <div
-                          key={img.id}
-                          className="rounded-lg border border-ink-100 overflow-hidden hover:border-gold-300 transition-colors"
-                        >
-                          <div className="aspect-square bg-mist">
-                            <img
-                              src={img.url}
-                              alt={img.title}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div className="p-2">
-                            <div className="text-xs font-medium text-ink-700 truncate">{img.title}</div>
-                            <div className="flex justify-end mt-1">
-                              <Button variant="outline" size="sm">保存</Button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </Card>
               </div>
             ) : (

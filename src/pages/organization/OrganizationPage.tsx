@@ -11,7 +11,7 @@ import {
   canManage,
 } from "@/services/organization";
 import { toast } from "@/stores/ui";
-import { formatDate } from "@/services/_shared";
+import { formatDate } from "@/lib/service-utils";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";

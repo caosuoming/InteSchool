@@ -14,7 +14,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
-import { parseDocxFromBase64, renderDocxItems } from "@/lib/docx-parser";
+import { extractStoredFile } from "@/services/api";
 import "katex/dist/katex.min.css";
 import type { Lecture, ExamPaper } from "@/types";
 
@@ -78,42 +78,19 @@ export default function ResourcePreviewPage() {
   }, [id, resourceType, navigate]);
 
   const loadDocxPreview = useCallback(async () => {
-    if (
-      !resource?.originalFileUrl
-      || !resource.originalFileName
-      || (!resource.originalFileName.endsWith(".docx") && !resource.originalFileName.endsWith(".doc"))
-    ) {
-      return;
-    }
+    if (!resource?.originalFileUrl || !resource.originalFileName) return;
+    const supported = /\.(docx|pdf|txt|md)$/i.test(resource.originalFileName);
+    if (!supported) return;
     setDocPreview({ loading: true, html: "", error: "" });
     try {
-      const fileUrl = resource.originalFileUrl;
-      
-      let base64: string;
-      if (fileUrl.startsWith("data:")) {
-        base64 = fileUrl;
-      } else {
-        const response = await fetch(fileUrl);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        const blob = await response.blob();
-        if (blob.size === 0) {
-          throw new Error("文件为空");
-        }
-        base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error("文件读取失败"));
-          reader.readAsDataURL(blob);
-        });
-      }
-      
-      const parseResult = await parseDocxFromBase64(base64);
-      const html = renderDocxItems(parseResult.items);
-      setDocPreview({ loading: false, html, error: "" });
+      const extracted = await extractStoredFile(resource.originalFileUrl);
+      setDocPreview({ loading: false, html: extracted.html, error: "" });
     } catch (error) {
-      setDocPreview({ loading: false, html: "", error: `加载失败: ${error instanceof Error ? error.message : "未知错误"}` });
+      setDocPreview({
+        loading: false,
+        html: "",
+        error: `加载失败: ${error instanceof Error ? error.message : "未知错误"}`,
+      });
     }
   }, [resource]);
 

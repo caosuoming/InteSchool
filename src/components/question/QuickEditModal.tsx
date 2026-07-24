@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/Input";
 import { TreeView } from "@/components/tree/TreeView";
 import type { Question, TreeNode, QuestionRemark } from "@/types";
 import { cn } from "@/lib/utils";
-import { genId } from "@/services/_shared";
+import { genId } from "@/lib/service-utils";
 
 interface QuickEditModalProps {
   open: boolean;

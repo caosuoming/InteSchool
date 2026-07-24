@@ -1,0 +1,121 @@
+import { access, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import Fastify, { type FastifyInstance } from "fastify";
+import cookie from "@fastify/cookie";
+import compress from "@fastify/compress";
+import helmet from "@fastify/helmet";
+import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
+import { ZodError, z } from "zod";
+import { loadConfig, type ServerConfig } from "./config.js";
+import { DatabaseStore, DuplicateAccountError } from "./database.js";
+import { invokeRpc } from "./rpc.js";
+import { getSession, registerAuthRoutes, requireCsrf } from "./routes/auth.js";
+import { registerFileRoutes } from "./routes/files.js";
+
+const rpcSchema = z.object({
+  service: z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/).max(50),
+  method: z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/).max(80),
+  args: z.array(z.unknown()).max(20).default([]),
+});
+
+function statusForError(error: Error): number {
+  if (error instanceof ZodError) return 400;
+  if (error instanceof DuplicateAccountError) return 409;
+  if (error.message.includes("请先登录") || error.message.includes("未登录")) return 401;
+  if (error.message.includes("无权") || error.message.includes("管理员权限")) return 403;
+  if (error.message.includes("不存在")) return 404;
+  return 400;
+}
+
+export interface BuiltApp {
+  app: FastifyInstance;
+  store: DatabaseStore;
+  config: ServerConfig;
+}
+
+export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<BuiltApp> {
+  const config = loadConfig(overrides);
+  const app = Fastify({
+    logger: config.logger,
+    bodyLimit: 5 * 1024 * 1024,
+    trustProxy: true,
+  });
+  const store = new DatabaseStore(config);
+
+  await app.register(cookie);
+  await app.register(compress);
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        fontSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
+  });
+  await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+  await app.register(multipart, {
+    limits: { files: 1, fileSize: config.maxUploadBytes, fields: 10 },
+  });
+
+  app.setErrorHandler((unknownError, request, reply) => {
+    const error = unknownError instanceof Error ? unknownError : new Error("未知服务器错误");
+    request.log.warn({ err: error }, "request failed");
+    const status = statusForError(error);
+    const message = error instanceof ZodError
+      ? "请求参数不合法"
+      : status >= 500
+        ? "服务器内部错误"
+        : error.message;
+    reply.code(status).send({ error: message });
+  });
+
+  app.get("/api/health", async () => ({ status: "ok" }));
+  app.get("/api/ready", async () => {
+    store.sqlite.prepare("SELECT 1").get();
+    return { status: "ready" };
+  });
+
+  await registerAuthRoutes(app, store, config);
+  await registerFileRoutes(app, store, config);
+
+  app.post("/api/rpc", async (request) => {
+    const input = rpcSchema.parse(request.body);
+    const session = getSession(request, store);
+    if (session) requireCsrf(request, session);
+    return { result: await invokeRpc(store, session, input.service, input.method, input.args) };
+  });
+
+  if (config.serveStatic) {
+    await access(config.distDir, constants.R_OK);
+    await app.register(fastifyStatic, {
+      root: config.distDir,
+      prefix: "/",
+      wildcard: false,
+      decorateReply: true,
+      maxAge: "1h",
+      immutable: false,
+    });
+    app.setNotFoundHandler(async (request, reply) => {
+      if (request.url.startsWith("/api/")) return reply.code(404).send({ error: "接口不存在" });
+      const html = await readFile(`${config.distDir}/index.html`, "utf8");
+      reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store");
+      return reply.send(html);
+    });
+  }
+
+
+
+  app.addHook("onClose", async () => store.close());
+  store.cleanupSessions();
+  return { app, store, config };
+}

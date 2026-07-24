@@ -31,7 +31,8 @@ import { useExtractConfigStore } from "@/stores/extractConfig";
 import { extractService } from "@/services/extract";
 import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
-import { parseDocxFromBase64, renderInlineMath } from "@/lib/docx-parser";
+import { renderInlineMath } from "@/lib/docx-parser";
+import { extractStoredFile } from "@/services/api";
 import type { QuestionType, Question, Material, Lecture, ExamPaper } from "@/types";
 
 type BlockType = "question" | "knowledge" | "heading" | "unused";
@@ -85,103 +86,7 @@ const blockTypeLabel: Record<BlockType, string> = {
 const optionLetter = (idx: number) => String.fromCharCode(65 + idx);
 
 function genBlockId() {
-  return `doc-block-${Math.random().toString(36).slice(2, 11)}`;
-}
-
-function generateMockDocBlocks(): DocBlock[] {
-  return [
-    {
-      id: genBlockId(),
-      type: "heading",
-      content: "第一章 集合与函数",
-      order: 0,
-      status: "new",
-    },
-    {
-      id: genBlockId(),
-      type: "knowledge",
-      content:
-        "集合是由确定的对象组成的整体。集合中的对象称为元素。集合具有确定性、互异性、无序性三个特征。\n\n常用的集合表示方法有：列举法、描述法、图示法。",
-      order: 1,
-      knowledgeTitle: "集合的基本概念",
-      status: "new",
-    },
-    {
-      id: genBlockId(),
-      type: "question",
-      content: "已知集合 A = {1, 2, 3}，B = {2, 3, 4}，则 A ∩ B =",
-      order: 2,
-      questionType: "single",
-      options: ["{1}", "{2, 3}", "{2, 3, 4}", "{1, 2, 3, 4}"],
-      answer: "B",
-      analysis: "集合 A 与 B 的交集为两个集合的共同元素，即 {2, 3}。",
-      difficulty: 2,
-      status: "new",
-    },
-    {
-      id: genBlockId(),
-      type: "question",
-      content: "下列函数中，在定义域内单调递增的是（多选）",
-      order: 3,
-      questionType: "multiple",
-      options: ["y = 2x + 1", "y = -x²", "y = log₂x", "y = (1/2)ˣ"],
-      answer: "AC",
-      analysis: "y=2x+1 斜率为正单调递增；y=log₂x 在定义域内单调递增。",
-      difficulty: 3,
-      status: "new",
-    },
-    {
-      id: genBlockId(),
-      type: "knowledge",
-      content:
-        "交集：A ∩ B = {x | x ∈ A 且 x ∈ B}。\n并集：A ∪ B = {x | x ∈ A 或 x ∈ B}。\n\n交集取共同元素，并集取所有元素。",
-      order: 4,
-      knowledgeTitle: "交集与并集",
-      status: "new",
-    },
-    {
-      id: genBlockId(),
-      type: "question",
-      content: "函数 y = √(x-1) 的定义域为 [1, +∞)。",
-      order: 5,
-      questionType: "judge",
-      answer: "正确",
-      analysis: "要使根号内非负，需 x-1 ≥ 0，即 x ≥ 1，故定义域为 [1, +∞)。",
-      difficulty: 2,
-      status: "new",
-    },
-    {
-      id: genBlockId(),
-      type: "question",
-      content: "设集合 A = {x | 0 < x < 2}，B = {x | 1 ≤ x ≤ 3}，则 A ∩ B = ___",
-      order: 6,
-      questionType: "short",
-      answer: "[1, 2)",
-      analysis: "A ∩ B 即两集合的交集，x 同时满足 0<x<2 和 1≤x≤3，得 1≤x<2。",
-      difficulty: 3,
-      status: "new",
-    },
-    {
-      id: genBlockId(),
-      type: "question",
-      content:
-        "已知集合 A = {x | x² - 3x + 2 = 0}，B = {x | x² - mx + 1 = 0}，若 B ⊆ A，求 m 的取值范围。",
-      order: 7,
-      questionType: "essay",
-      answer: "m ∈ [-2, 2]",
-      analysis:
-        "A = {1, 2}。B ⊆ A 分情况讨论：B=∅、B={1}、B={2}、B={1,2}，分别求解后取并集。",
-      difficulty: 4,
-      status: "new",
-    },
-    {
-      id: genBlockId(),
-      type: "unused",
-      content: "第一章结束，下一章将学习函数的性质与图像。",
-      order: 8,
-      status: "new",
-    },
-  ];
+  return `doc-block-${crypto.randomUUID()}`;
 }
 
 function parseDocContent(
@@ -714,49 +619,17 @@ export function ExtractReviewModal({
       }
 
       setProgress(20);
-      setProgressMsg("正在下载文档...");
-
-      let base64: string;
-      if (resource.originalFileUrl.startsWith("data:")) {
-        base64 = resource.originalFileUrl;
-      } else {
-        const response = await fetch(resource.originalFileUrl);
-        const blob = await response.blob();
-        base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error("文件读取失败"));
-          reader.readAsDataURL(blob);
-        });
-      }
-
-      setProgress(40);
-      setProgressMsg("正在解析文档结构...");
+      setProgressMsg("正在由服务端解析文档...");
 
       const fileName = resource.originalFileName || "";
-      let blocks: DocBlock[] = [];
-
-      if (fileName.endsWith(".docx") || fileName.endsWith(".doc")) {
-        const parseResult = await parseDocxFromBase64(base64);
-        
-        // 提取所有内容，包括图片和文本（公式已经在text字段中用$...$包裹）
-        const allContentParts: string[] = [];
-        for (const item of parseResult.items) {
-          if (item.type === "formula") {
-            // 公式已经在text字段中，跳过单独的formula item
-            continue;
-          }
-          if (item.type === "image" && item.src) {
-            // 将图片转换为markdown格式
-            allContentParts.push(`![图片](${item.src})`);
-          } else if (item.text) {
-            allContentParts.push(item.text);
-          }
-        }
-        blocks = parseDocContent(allContentParts.join("\n\n"), extractConfig);
-      } else {
+      if (!/\.(docx|pdf|txt|md)$/i.test(fileName)) {
         throw new Error("暂不支持该格式文档的文档拆解");
       }
+
+      const extracted = await extractStoredFile(resource.originalFileUrl);
+      setProgress(60);
+      setProgressMsg("正在分析文档结构...");
+      let blocks: DocBlock[] = parseDocContent(extracted.text, extractConfig);
 
       if (blocks.length === 0) {
         blocks = parseDocContent("文档内容为空，请检查文档是否包含题目或知识块内容。", extractConfig);

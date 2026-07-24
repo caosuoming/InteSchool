@@ -27,7 +27,7 @@ import type {
   TreeNode, FilterLogic,
   CoursewareType, MaterialType,
 } from "@/types";
-import { timeAgo } from "@/services/_shared";
+import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 type ResourceTab = "lecture" | "examPaper" | "courseware" | "material";

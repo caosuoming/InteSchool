@@ -23,7 +23,7 @@ import type {
   Teacher, TreeNode, FilterLogic,
   SchoolBackupResourceType, SchoolResourceBackup,
 } from "@/types";
-import { timeAgo } from "@/services/_shared";
+import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 type ResourceTypeFilter = "all" | SchoolBackupResourceType;
@@ -88,6 +88,7 @@ export default function SchoolResourcesPage() {
   // 另存为状态：记录已"另存为"过的备份ID，避免重复操作
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [schoolTeachers, setSchoolTeachers] = useState<Teacher[]>([]);
 
   const schoolId = teacher?.schoolId || "sch-1";
   const canEdit = canEditSchoolBackup(teacher);
@@ -115,18 +116,21 @@ export default function SchoolResourcesPage() {
     return () => clearTimeout(timer);
   }, [loadAll]);
 
+  useEffect(() => {
+    authService.listTeachers().then(setSchoolTeachers).catch(() => setSchoolTeachers([]));
+  }, [schoolId]);
+
   // 教师名称映射
   const teacherMap = useMemo(() => {
     const map = new Map<string, Teacher>();
-    const allTeachers = authService.listTeachers();
     for (const item of backups) {
       if (!map.has(item.fromTeacherId)) {
-        const t = allTeachers.find((tt) => tt.id === item.fromTeacherId);
+        const t = schoolTeachers.find((tt) => tt.id === item.fromTeacherId);
         if (t) map.set(item.fromTeacherId, t);
       }
     }
     return map;
-  }, [backups]);
+  }, [backups, schoolTeachers]);
 
   // 筛选与排序
   const displayedItems = useMemo(() => {

@@ -6,17 +6,11 @@ interface AuthState {
   teacher: Teacher | null;
   loading: boolean;
   error: string | null;
-  init: () => void;
+  init: () => Promise<void>;
   login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, password: string, name: string) => Promise<boolean>;
-  loginWithWechat: (openId: string, unionId?: string) => Promise<boolean>;
-  loginWithWecom: (userId: string, corpId: string) => Promise<boolean>;
-  bindWechat: (openId: string, unionId?: string) => Promise<void>;
-  unbindWechat: () => Promise<void>;
-  bindWecom: (userId: string, corpId: string) => Promise<void>;
-  unbindWecom: () => Promise<void>;
   logout: () => Promise<void>;
-  refresh: () => void;
+  refresh: () => Promise<void>;
   clearError: () => void;
   switchAffiliation: (affiliationId: string) => Promise<boolean>;
   getCurrentAffiliation: () => TeacherAffiliation | null;
@@ -25,14 +19,21 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   teacher: null,
-  // 启动时先恢复持久化会话；完成前不能把 teacher=null 当成未登录。
   loading: true,
   error: null,
 
-  init: () => {
-    set({ loading: true });
-    const teacher = authService.getCurrentTeacher();
-    set({ teacher, loading: false });
+  init: async () => {
+    set({ loading: true, error: null });
+    try {
+      const teacher = await authService.init();
+      set({ teacher, loading: false });
+    } catch (error) {
+      set({
+        teacher: null,
+        loading: false,
+        error: error instanceof Error ? error.message : "服务暂时不可用",
+      });
+    }
   },
 
   login: async (email, password) => {
@@ -41,9 +42,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const teacher = await authService.login(email, password);
       set({ teacher, loading: false });
       return true;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "登录失败";
-      set({ error: msg, loading: false });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : "登录失败", loading: false });
       return false;
     }
   },
@@ -54,81 +54,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const teacher = await authService.register(email, password, name);
       set({ teacher, loading: false });
       return true;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "注册失败";
-      set({ error: msg, loading: false });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : "注册失败", loading: false });
       return false;
     }
-  },
-
-  loginWithWechat: async (openId, unionId) => {
-    set({ loading: true, error: null });
-    try {
-      const teacher = await authService.loginWithWechat(openId, unionId);
-      set({ teacher, loading: false });
-      return true;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "微信登录失败";
-      set({ error: msg, loading: false });
-      return false;
-    }
-  },
-
-  loginWithWecom: async (userId, corpId) => {
-    set({ loading: true, error: null });
-    try {
-      const teacher = await authService.loginWithWecom(userId, corpId);
-      set({ teacher, loading: false });
-      return true;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "企业微信登录失败";
-      set({ error: msg, loading: false });
-      return false;
-    }
-  },
-
-  bindWechat: async (openId, unionId) => {
-    const { teacher } = get();
-    if (!teacher) throw new Error("请先登录");
-    try {
-      await authService.bindWechat(teacher.id, openId, unionId);
-      const updatedTeacher = authService.getCurrentTeacher();
-      set({ teacher: updatedTeacher });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "绑定失败";
-      set({ error: msg });
-      throw e;
-    }
-  },
-
-  unbindWechat: async () => {
-    const { teacher } = get();
-    if (!teacher) throw new Error("请先登录");
-    await authService.unbindWechat(teacher.id);
-    const updatedTeacher = authService.getCurrentTeacher();
-    set({ teacher: updatedTeacher });
-  },
-
-  bindWecom: async (userId, corpId) => {
-    const { teacher } = get();
-    if (!teacher) throw new Error("请先登录");
-    try {
-      await authService.bindWecom(teacher.id, userId, corpId);
-      const updatedTeacher = authService.getCurrentTeacher();
-      set({ teacher: updatedTeacher });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "绑定失败";
-      set({ error: msg });
-      throw e;
-    }
-  },
-
-  unbindWecom: async () => {
-    const { teacher } = get();
-    if (!teacher) throw new Error("请先登录");
-    await authService.unbindWecom(teacher.id);
-    const updatedTeacher = authService.getCurrentTeacher();
-    set({ teacher: updatedTeacher });
   },
 
   logout: async () => {
@@ -136,37 +65,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ teacher: null });
   },
 
-  refresh: () => {
-    const teacher = authService.getCurrentTeacher();
+  refresh: async () => {
+    const teacher = await authService.refreshCurrentTeacher();
     set({ teacher });
   },
 
   clearError: () => set({ error: null }),
 
-  switchAffiliation: async (affiliationId: string) => {
+  switchAffiliation: async (affiliationId) => {
     const { teacher } = get();
     if (!teacher) return false;
     try {
       await authService.switchAffiliation(teacher.id, affiliationId);
-      const updatedTeacher = authService.getCurrentTeacher();
-      set({ teacher: updatedTeacher });
+      const updated = authService.getCurrentTeacher();
+      set({ teacher: updated });
       return true;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "切换身份失败";
-      set({ error: msg });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : "切换身份失败" });
       return false;
     }
   },
 
   getCurrentAffiliation: () => {
     const { teacher } = get();
-    if (!teacher) return null;
-    return authService.getCurrentAffiliation(teacher.id);
+    return teacher ? authService.getCurrentAffiliation(teacher.id) : null;
   },
 
   getAffiliations: () => {
     const { teacher } = get();
-    if (!teacher) return [];
-    return authService.getAffiliations(teacher.id);
+    return teacher ? authService.getAffiliations(teacher.id) : [];
   },
 }));

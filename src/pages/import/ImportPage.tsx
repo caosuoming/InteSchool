@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { DocumentRecord, RecognitionResult, Chapter, KnowledgePoint } from "@/types";
-import { formatDate } from "@/services/_shared";
+import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 const typeLabel: Record<string, string> = {
@@ -66,15 +66,7 @@ export default function ImportPage() {
 
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      const fileType = ext === "pdf" ? "pdf" : ext === "md" ? "markdown" : "word";
-      const doc = await aiService.uploadDocument(
-        teacher.id,
-        teacher.schoolId!,
-        file.name,
-        file.size,
-        fileType as any,
-      );
+      const doc = await aiService.importDocument(file);
       toast.success("文档上传成功", "原文已结构化存入讲义库");
       await loadDocuments();
       setSelectedDoc(doc);
@@ -91,9 +83,9 @@ export default function ImportPage() {
     setRecognizing(true);
     setRecognizingProgress(0);
 
-    // 模拟进度更新
+    // 服务端接口暂不推送细粒度进度，显示受控的等待进度。
     const progressTimer = setInterval(() => {
-      setRecognizingProgress((p) => Math.min(p + Math.random() * 8, 95));
+      setRecognizingProgress((progress) => Math.min(progress + 4, 92));
     }, 200);
 
     try {

@@ -4,6 +4,7 @@ import { Search, School as SchoolIcon, Upload, ArrowRight, CheckCircle2, Loader2
 import { useAuthStore } from "@/stores/auth";
 import { schoolService } from "@/services/school";
 import { authService } from "@/services/auth";
+import { uploadFile } from "@/services/api";
 import { toast } from "@/stores/ui";
 import { Button, Input, Select } from "@/components/ui";
 import type { School } from "@/types";
@@ -17,7 +18,7 @@ export default function SchoolAuthPage() {
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [employeeNo, setEmployeeNo] = useState("");
   const [subject, setSubject] = useState("数学");
-  const [proofFileName, setProofFileName] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -47,7 +48,7 @@ export default function SchoolAuthPage() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setProofFileName(file.name);
+    if (file) setProofFile(file);
   };
 
   const handleSubmit = async () => {
@@ -56,22 +57,27 @@ export default function SchoolAuthPage() {
       toast.error("请填写工号");
       return;
     }
-    if (!proofFileName) {
+    if (!proofFile) {
       toast.error("请上传教师证明");
       return;
     }
     setSubmitting(true);
     try {
-      await authService.applySchool(
+      const uploaded = await uploadFile(proofFile);
+      const application = await authService.applySchool(
         teacher.id,
         selectedSchool.id,
         employeeNo,
         subject,
-        proofFileName,
+        uploaded.id,
       );
-      toast.success("认证已通过", `欢迎加入 ${selectedSchool.name}`);
-      refresh();
-      setTimeout(() => navigate("/dashboard"), 500);
+      if (application.status === "approved") {
+        toast.success("认证已通过", `欢迎加入 ${selectedSchool.name}`);
+        await refresh();
+        navigate("/dashboard");
+      } else {
+        toast.success("申请已提交", "学校管理员审核通过后即可进入学校工作台");
+      }
     } catch (e) {
       toast.error("认证失败", e instanceof Error ? e.message : undefined);
     } finally {
@@ -234,7 +240,7 @@ export default function SchoolAuthPage() {
                     <label className="flex flex-col items-center justify-center px-4 py-6 rounded-md border border-dashed border-ink-200 hover:border-gold-400 hover:bg-gold-50/30 cursor-pointer transition-colors">
                       <Upload className="w-5 h-5 text-ink-400 mb-2" />
                       <span className="text-xs text-ink-500">
-                        {proofFileName || "点击上传工作证、聘书等证明文件"}
+                        {proofFile?.name || "点击上传工作证、聘书等证明文件"}
                       </span>
                       <input
                         type="file"
@@ -257,7 +263,7 @@ export default function SchoolAuthPage() {
                   </Button>
 
                   <p className="text-xs text-ink-400 text-center">
-                    提交后将由学校管理员审核（演示环境自动通过）
+                    提交后将由学校管理员审核
                   </p>
                 </div>
               )}

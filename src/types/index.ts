@@ -37,7 +37,6 @@ export interface TeacherAffiliation {
 export interface Teacher {
   id: string;
   email: string;
-  password: string;
   name: string;
   avatar: string;
   wechatOpenId?: string;
@@ -484,6 +483,8 @@ export interface ExamPublication {
   isFormalExam: boolean;
   /** 查看密码（正规考试可设置） */
   viewPassword?: string;
+  /** 服务端返回值：正式考试是否已设置查看密码。 */
+  hasViewPassword?: boolean;
   /** 到期日期（此日期前其他老师无法查看试卷内容和题目） */
   unlockAt?: string;
   /** 关联的题目ID列表（发布时这些题目会被隐藏） */
@@ -639,6 +640,8 @@ export interface DocumentRecord {
   id: string;
   teacherId: string;
   schoolId: string;
+  fileId?: string;
+  fileUrl?: string;
   fileName: string;
   fileType: DocumentFileType;
   fileSize: number;

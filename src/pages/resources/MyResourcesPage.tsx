@@ -35,8 +35,8 @@ import type {
   CoursewareType, MaterialType, QuestionType, ShareableResourceType,
   Reflection, Basket,
 } from "@/types";
-import { timeAgo } from "@/services/_shared";
-import { genId } from "@/services/_shared";
+import { timeAgo } from "@/lib/service-utils";
+import { genId } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";

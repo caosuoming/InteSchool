@@ -20,7 +20,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { Basket, Question } from "@/types";
-import { timeAgo } from "@/services/_shared";
+import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 const typeLabel: Record<Question["type"], string> = {

@@ -1,0 +1,16 @@
+.git
+.github
+node_modules
+dist
+build
+coverage
+data
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+!.env.example
+npm-debug.log*
+.DS_Store
+.vscode
+.idea

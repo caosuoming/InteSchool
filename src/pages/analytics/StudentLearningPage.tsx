@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory } from "@/types";
-import { formatDate } from "@/services/_shared";
+import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 const questionTypeLabel: Record<string, string> = {
