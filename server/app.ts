@@ -44,7 +44,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
   const app = Fastify({
     logger: config.logger,
     bodyLimit: 5 * 1024 * 1024,
-    trustProxy: true,
+    trustProxy: config.trustProxy,
   });
   const store = new DatabaseStore(config);
 

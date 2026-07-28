@@ -85,7 +85,7 @@ curl http://localhost:3000/api/ready
 INTESCHOOL_COOKIE_SECURE=true
 ```
 
-反向代理需要保留 `Host`、`X-Forwarded-Proto` 和客户端地址信息。应用默认信任代理头，但不提供 TLS 终止能力。
+反向代理需要保留 `Host`、`X-Forwarded-Proto` 和客户端地址信息。应用默认不信任代理头；应将 `INTESCHOOL_TRUST_PROXY` 设置为可信代理的 IP/CIDR，或在拓扑固定时设置可信跳数。不要将原始应用端口同时暴露到公网。
 
 ### 4. 数据持久化
 
@@ -167,6 +167,7 @@ INTESCHOOL_AI_MODEL=your-model
 | --- | --- | --- |
 | `INTESCHOOL_PORT` | `3000` | Compose 对外端口 |
 | `INTESCHOOL_COOKIE_SECURE` | `false` | HTTPS 部署必须设为 `true` |
+| `INTESCHOOL_TRUST_PROXY` | `false` | 可信代理 IP/CIDR 或跳数；未配置时忽略转发客户端地址 |
 | `INTESCHOOL_SESSION_DAYS` | `30` | 会话有效天数 |
 | `INTESCHOOL_MAX_UPLOAD_BYTES` | `52428800` | 单文件上限，默认 50 MiB |
 | `INTESCHOOL_AUTO_APPROVE_APPLICATIONS` | `false` | 是否自动通过学校认证；生产不建议启用 |

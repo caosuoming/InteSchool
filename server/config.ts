@@ -10,6 +10,13 @@ function integerEnv(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function trustProxyEnv(value: string | undefined): boolean | number | string {
+  const normalized = value?.trim();
+  if (!normalized || ["0", "false", "no", "off"].includes(normalized.toLowerCase())) return false;
+  if (/^[1-9]\d*$/.test(normalized)) return Number.parseInt(normalized, 10);
+  return normalized;
+}
+
 export interface ServerConfig {
   host: string;
   port: number;
@@ -31,6 +38,7 @@ export interface ServerConfig {
   bootstrapSchoolCode: string;
   bootstrapSchoolCity: string;
   autoApproveApplications: boolean;
+  trustProxy: boolean | number | string;
   logger: boolean;
   serveStatic: boolean;
   maxUploadBytes: number;
@@ -65,6 +73,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     bootstrapSchoolCode: process.env.INTESCHOOL_BOOTSTRAP_SCHOOL_CODE || "INITIAL",
     bootstrapSchoolCity: process.env.INTESCHOOL_BOOTSTRAP_SCHOOL_CITY || "",
     autoApproveApplications: booleanEnv(process.env.INTESCHOOL_AUTO_APPROVE_APPLICATIONS, false),
+    trustProxy: trustProxyEnv(process.env.INTESCHOOL_TRUST_PROXY),
     logger: booleanEnv(process.env.INTESCHOOL_LOGGER, true),
     serveStatic: booleanEnv(process.env.INTESCHOOL_SERVE_STATIC, true),
     maxUploadBytes: integerEnv(process.env.INTESCHOOL_MAX_UPLOAD_BYTES, 50 * 1024 * 1024),

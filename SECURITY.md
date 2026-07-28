@@ -63,6 +63,8 @@
 - 保留 `Host`
 - 设置正确的 `X-Forwarded-Proto`
 - 传递可信客户端地址
+- 将 `INTESCHOOL_TRUST_PROXY` 设置为代理的明确 IP/CIDR 或可信跳数
+- 覆盖客户端传入的 `X-Forwarded-*`，不要直接追加不可信值
 - 限制请求体大小不低于应用配置且不应无限制
 - 对登录接口配置额外的边缘速率限制
 

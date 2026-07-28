@@ -212,6 +212,21 @@ describe("production backend", () => {
     expect(invalidLogin.json()).toEqual({ error: "邮箱或密码错误" });
   });
 
+  it("does not trust forwarded client IPs unless a proxy is configured", async () => {
+    const statuses: number[] = [];
+    for (let index = 0; index < 11; index += 1) {
+      const response = await built.app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        headers: { "x-forwarded-for": `198.51.100.${index + 1}` },
+        payload: { email: "missing@example.com", password: "incorrect" },
+      });
+      statuses.push(response.statusCode);
+    }
+    expect(statuses.slice(0, 10)).toEqual(Array(10).fill(401));
+    expect(statuses[10]).toBe(400);
+  });
+
   it("hashes passwords, creates an HttpOnly session, and never returns credentials", async () => {
     const password = "StrongPass123";
     const session = await register(built.app, "new-teacher@example.com", password);
