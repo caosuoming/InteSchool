@@ -75,12 +75,16 @@ async function register(
   };
 }
 
-function multipartPayload(fileName: string, content: string): { body: Buffer; contentType: string } {
+function multipartPayload(
+  fileName: string,
+  content: string,
+  mimeType = "text/plain",
+): { body: Buffer; contentType: string } {
   const boundary = `----inteschool-${Date.now()}`;
   const body = Buffer.from([
     `--${boundary}\r\n`,
     `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`,
-    "Content-Type: text/plain\r\n\r\n",
+    `Content-Type: ${mimeType}\r\n\r\n`,
     content,
     `\r\n--${boundary}--\r\n`,
   ].join(""));
@@ -623,6 +627,39 @@ describe("production backend", () => {
     expect(imported.statusCode).toBe(200);
     const document = imported.json<{ sections: Array<{ content: string }> }>();
     expect(document.sections.some((section) => section.content.includes("集合是确定对象的总体"))).toBe(true);
+  });
+
+  it("does not serve uploaded text as client-declared executable content", async () => {
+    const session = await login(built.app);
+    const multipart = multipartPayload(
+      "malicious.txt",
+      "<script>window.__INTESCHOOL_XSS__ = true</script>",
+      "text/html",
+    );
+    const upload = await built.app.inject({
+      method: "POST",
+      url: "/api/files",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+        "content-type": multipart.contentType,
+      },
+      payload: multipart.body,
+    });
+    expect(upload.statusCode).toBe(200);
+    const file = upload.json<{ url: string; mimeType: string }>();
+    expect(file.mimeType).toBe("text/plain; charset=utf-8");
+
+    const download = await built.app.inject({
+      method: "GET",
+      url: file.url,
+      headers: { cookie: session.cookie },
+    });
+    expect(download.statusCode).toBe(200);
+    expect(download.headers["content-type"]).toContain("text/plain");
+    expect(download.headers["content-disposition"]).toContain("attachment;");
+    expect(download.headers["x-content-type-options"]).toBe("nosniff");
+    expect(download.headers["content-security-policy"]).toBe("sandbox; default-src 'none'");
   });
 
   it("returns file 404s and prevents another teacher from importing private uploads", async () => {

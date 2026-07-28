@@ -49,6 +49,36 @@ const ALLOWED_EXTENSIONS = new Set([
   ".mp3", ".mp4", ".wav", ".webm",
 ]);
 
+const MIME_TYPES: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".md": "text/plain; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".mp3": "audio/mpeg",
+  ".mp4": "video/mp4",
+  ".wav": "audio/wav",
+  ".webm": "video/webm",
+};
+
+const INLINE_EXTENSIONS = new Set([
+  ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+  ".mp3", ".mp4", ".wav", ".webm",
+]);
+
+function safeMimeType(name: string): string {
+  return MIME_TYPES[extname(name).toLowerCase()] || "application/octet-stream";
+}
+
 function safeOriginalName(name: string): string {
   const sanitized = [...basename(name)]
     .filter((character) => {
@@ -98,7 +128,7 @@ export async function registerFileRoutes(
       ownerId: session.teacherId,
       schoolId: teacher.schoolId,
       originalName,
-      mimeType: part.mimetype || "application/octet-stream",
+      mimeType: safeMimeType(originalName),
       size: fileStat.size,
       storageName,
       createdAt: new Date().toISOString(),
@@ -159,10 +189,13 @@ export async function registerFileRoutes(
     if (!teacher || (file.ownerId !== teacher.id && file.schoolId !== teacher.schoolId)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
-    reply.type(file.mimeType);
+    const extension = extname(file.originalName).toLowerCase();
+    reply.type(safeMimeType(file.originalName));
     reply.header("Content-Length", file.size);
-    reply.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);
+    const disposition = INLINE_EXTENSIONS.has(extension) ? "inline" : "attachment";
+    reply.header("Content-Disposition", `${disposition}; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);
     reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Content-Security-Policy", "sandbox; default-src 'none'");
     return reply.send(createReadStream(join(config.uploadsDir, file.storageName)));
   });
 }
