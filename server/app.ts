@@ -23,6 +23,13 @@ const rpcSchema = z.object({
 function statusForError(error: Error): number {
   if (error instanceof ZodError) return 400;
   if (error instanceof DuplicateAccountError) return 409;
+  const declaredStatus = (error as Error & { statusCode?: unknown }).statusCode;
+  if (
+    typeof declaredStatus === "number"
+    && Number.isInteger(declaredStatus)
+    && declaredStatus >= 400
+    && declaredStatus <= 599
+  ) return declaredStatus;
   if (
     error.message.includes("请先登录")
     || error.message.includes("未登录")
@@ -30,6 +37,19 @@ function statusForError(error: Error): number {
   ) return 401;
   if (error.message.includes("无权") || error.message.includes("管理员权限")) return 403;
   if (error.message.includes("不存在")) return 404;
+  if (error.message.includes("AI 服务请求超时") || error.message.includes("在线资源请求超时")) return 504;
+  if (
+    error.message.startsWith("AI 服务")
+    || error.message.startsWith("在线资源请求失败")
+    || error.message.startsWith("在线资源返回 HTTP")
+  ) return 502;
+  const systemCode = (error as NodeJS.ErrnoException).code;
+  if (typeof systemCode === "string") return 500;
+  if ([
+    "业务数据库上下文未初始化",
+    "生产环境不支持通过业务服务重置数据库",
+    "账号创建失败",
+  ].includes(error.message)) return 500;
   return 400;
 }
 

@@ -224,7 +224,7 @@ describe("production backend", () => {
       statuses.push(response.statusCode);
     }
     expect(statuses.slice(0, 10)).toEqual(Array(10).fill(401));
-    expect(statuses[10]).toBe(400);
+    expect(statuses[10]).toBe(429);
   });
 
   it("hashes passwords, creates an HttpOnly session, and never returns credentials", async () => {
@@ -675,6 +675,32 @@ describe("production backend", () => {
     expect(download.headers["content-disposition"]).toContain("attachment;");
     expect(download.headers["x-content-type-options"]).toBe("nosniff");
     expect(download.headers["content-security-policy"]).toBe("sandbox; default-src 'none'");
+  });
+
+  it("returns a generic server error when stored file content is missing", async () => {
+    const session = await login(built.app);
+    const multipart = multipartPayload("missing.txt", "temporary content");
+    const upload = await built.app.inject({
+      method: "POST",
+      url: "/api/files",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+        "content-type": multipart.contentType,
+      },
+      payload: multipart.body,
+    });
+    const file = upload.json<{ url: string; storageName: string }>();
+    await rm(join(built.config.uploadsDir, file.storageName));
+
+    const response = await built.app.inject({
+      method: "GET",
+      url: `${file.url}/content`,
+      headers: { cookie: session.cookie },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({ error: "服务器内部错误" });
+    expect(response.body).not.toContain(built.config.uploadsDir);
   });
 
   it("returns file 404s and prevents another teacher from importing private uploads", async () => {
