@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import {
   ShoppingBasket, Plus, Trash2, ArrowRight, FileText,
   ShoppingCart, Clock, FileQuestion, Star, CheckCircle2, BookOpen, Lightbulb, Tag, GraduationCap,

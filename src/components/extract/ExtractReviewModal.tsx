@@ -1009,7 +1009,9 @@ export function ExtractReviewModal({
     return (
       <div
         key={block.id}
-        ref={(el) => (blockRefs.current[block.id] = el)}
+        ref={(el) => {
+          blockRefs.current[block.id] = el;
+        }}
         onClick={() => handleSelectBlock(block.id)}
         className={cn(
           "rounded-lg border p-4 cursor-pointer transition-all",

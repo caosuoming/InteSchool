@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import {
   Library, FileText, GraduationCap, ShoppingBasket, FileUp, Plus,
   Clock, ArrowRight, TrendingUp, BookOpen, CheckCircle2, FileQuestion,

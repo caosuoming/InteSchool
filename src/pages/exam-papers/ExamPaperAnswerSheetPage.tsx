@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate } from "react-router";
 import { FileSpreadsheet, Printer } from "lucide-react";
 import { examPaperService } from "@/services/examPaper";
 import { toast } from "@/stores/ui";

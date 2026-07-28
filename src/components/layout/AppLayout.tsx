@@ -1,5 +1,5 @@
 import { type ReactNode, useState, useRef, useEffect } from "react";
-import { Link, useLocation, useNavigate, Navigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, Navigate } from "react-router";
 import {
   LayoutDashboard, LogOut,
   ChevronLeft, School, User, Settings, Users,

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import {
   Search, X, FileQuestion, BookOpen, Lightbulb,
   Users, ChevronDown, GraduationCap, Calendar, Clock,

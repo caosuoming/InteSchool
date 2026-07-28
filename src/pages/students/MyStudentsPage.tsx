@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessagesSquare, LineChart, Users } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { StudentInteractionPage } from "./StudentInteractionPage";

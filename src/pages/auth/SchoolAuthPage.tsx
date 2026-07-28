@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { Search, School as SchoolIcon, Upload, ArrowRight, CheckCircle2, Loader2, Building2, MapPin, Users } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { schoolService } from "@/services/school";

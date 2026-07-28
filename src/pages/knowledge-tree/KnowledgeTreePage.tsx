@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import {
   GitBranch, Search, Plus, Folder, FolderOpen, FileText,
   BookOpen, ArrowRight, ShoppingBasket,

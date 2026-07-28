@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router";
 import { Mail, Lock, User as UserIcon, Sparkles, Shield, GraduationCap } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { Button, Input } from "@/components/ui";

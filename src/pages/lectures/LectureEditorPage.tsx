@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Send, Plus, Sparkles, FileText, BookOpen,
   Trash2, GripVertical, ShoppingBasket, Library, Files,

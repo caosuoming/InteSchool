@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, applyUiScale } from "@/stores/settings";
 import { AppLayout } from "@/components/layout/AppLayout";

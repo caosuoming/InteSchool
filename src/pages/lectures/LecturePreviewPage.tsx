@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import {
   FileText, GraduationCap, BookOpen, Type, ListOrdered, Sparkles,
   ChevronRight, Edit3, Printer,

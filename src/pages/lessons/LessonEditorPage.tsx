@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Send, Save,
   FileQuestion, Blocks, SplitSquareHorizontal,
