@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import type { DatabaseStore } from "../database.js";
 import type { ServerConfig } from "../config.js";
-import type { StoredFile } from "../types.js";
+import type { StoredFile, TeacherRecord } from "../types.js";
 import { requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
 import { withSerializedState } from "../rpc.js";
@@ -89,6 +89,32 @@ function safeOriginalName(name: string): string {
   return sanitized.slice(0, 200) || "upload";
 }
 
+function activeRole(teacher: TeacherRecord): string {
+  const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent);
+  return typeof affiliation?.role === "string" ? affiliation.role : teacher.role;
+}
+
+function canReviewApplicationProof(
+  store: DatabaseStore,
+  teacher: TeacherRecord,
+  fileId: string,
+): boolean {
+  if (!["school_admin", "platform_admin"].includes(activeRole(teacher))) return false;
+  return (store.loadState().applications as Array<Record<string, unknown>>).some((application) =>
+    application.proofFileId === fileId && application.schoolId === teacher.schoolId);
+}
+
+function canReadFile(
+  store: DatabaseStore,
+  teacher: TeacherRecord | null,
+  file: StoredFile,
+): boolean {
+  if (!teacher) return false;
+  if (file.ownerId === teacher.id || (file.schoolId && file.schoolId === teacher.schoolId)) return true;
+  return canReviewApplicationProof(store, teacher, file.id);
+}
+
 export async function registerFileRoutes(
   app: FastifyInstance,
   store: DatabaseStore,
@@ -143,7 +169,7 @@ export async function registerFileRoutes(
     const file = store.getFile(id);
     if (!file) return reply.code(404).send({ error: "文件不存在" });
     const teacher = store.getTeacherById(session.teacherId);
-    if (!teacher || (file.ownerId !== teacher.id && file.schoolId !== teacher.schoolId)) {
+    if (!canReadFile(store, teacher, file)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
     return extractDocument(join(config.uploadsDir, file.storageName));
@@ -186,7 +212,7 @@ export async function registerFileRoutes(
     const file = store.getFile(id);
     if (!file) return reply.code(404).send({ error: "文件不存在" });
     const teacher = store.getTeacherById(session.teacherId);
-    if (!teacher || (file.ownerId !== teacher.id && file.schoolId !== teacher.schoolId)) {
+    if (!canReadFile(store, teacher, file)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
     const extension = extname(file.originalName).toLowerCase();

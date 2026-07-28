@@ -843,7 +843,24 @@ describe("production backend", () => {
     const application = apply.json<{ id: string; status: string }>();
     expect(application.status).toBe("pending");
 
+    built.store.createUser("tch-2", "ordinary-reviewer@example.com", "OrdinaryPass123");
+    const ordinary = await login(built.app, "ordinary-reviewer@example.com", "OrdinaryPass123");
+    const forbiddenProof = await built.app.inject({
+      method: "GET",
+      url: `/api/files/${file.id}`,
+      headers: { cookie: ordinary.cookie },
+    });
+    expect(forbiddenProof.statusCode).toBe(403);
+
     const admin = await login(built.app);
+    const proof = await built.app.inject({
+      method: "GET",
+      url: `/api/files/${file.id}`,
+      headers: { cookie: admin.cookie },
+    });
+    expect(proof.statusCode).toBe(200);
+    expect(proof.body).toContain("teacher proof");
+
     const review = await built.app.inject({
       method: "POST",
       url: `/api/auth/applications/${application.id}/review`,
