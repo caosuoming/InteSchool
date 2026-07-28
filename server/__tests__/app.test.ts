@@ -341,6 +341,74 @@ describe("production backend", () => {
     expect(spoof.json()).toEqual({ error: "无权以其他教师身份执行操作" });
   });
 
+  it("does not expose private questions owned by other teachers", async () => {
+    const before = built.store.loadState();
+    const state = structuredClone(before);
+    const questions = state.questions as Array<Record<string, unknown>>;
+    const template = questions[0];
+    questions.unshift(
+      {
+        ...template,
+        id: "q-private-same-school",
+        teacherId: "tch-2",
+        schoolId: "sch-1",
+        stem: "同校其他教师私有题目",
+        isShared: false,
+      },
+      {
+        ...template,
+        id: "q-private-other-school",
+        teacherId: "tch-3",
+        schoolId: "sch-2",
+        stem: "其他学校私有题目",
+        isShared: false,
+      },
+      {
+        ...template,
+        id: "q-shared-other-school",
+        teacherId: "tch-3",
+        schoolId: "sch-2",
+        stem: "其他学校共享题目",
+        isShared: true,
+      },
+    );
+    built.store.saveState(before, state);
+
+    const session = await login(built.app);
+    const headers = {
+      cookie: session.cookie,
+      "x-inteschool-csrf": session.csrfToken,
+    };
+    const list = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: { service: "question", method: "listQuestions", args: [{}] },
+    });
+    expect(list.statusCode).toBe(200);
+    const ids = list.json<{ result: Array<{ id: string }> }>().result.map((item) => item.id);
+    expect(ids).not.toContain("q-private-same-school");
+    expect(ids).not.toContain("q-private-other-school");
+    expect(ids).toContain("q-shared-other-school");
+
+    const privateRead = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: { service: "question", method: "getQuestion", args: ["q-private-same-school"] },
+    });
+    expect(privateRead.statusCode).toBe(403);
+    expect(privateRead.json()).toEqual({ error: "无权访问该资源" });
+
+    const sharedRead = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: { service: "question", method: "getQuestion", args: ["q-shared-other-school"] },
+    });
+    expect(sharedRead.statusCode).toBe(200);
+  });
+
   it("persists business records across a full server restart", async () => {
     const databasePath = built.config.databasePath;
     const session = await login(built.app);

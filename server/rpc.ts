@@ -121,6 +121,30 @@ function recordSchool(record: Record<string, unknown>): string | null {
   return null;
 }
 
+function canReadQuestion(record: Record<string, unknown>, teacher: TeacherRecord): boolean {
+  return recordOwner(record) === teacher.id || record.isShared === true;
+}
+
+function filterAuthorizedResult(
+  service: ServiceName,
+  method: string,
+  result: unknown,
+  teacher: TeacherRecord | null,
+): unknown {
+  if (
+    teacher
+    && service === "question"
+    && ["listQuestions", "checkDuplicate"].includes(method)
+    && Array.isArray(result)
+  ) {
+    return result.filter((item) =>
+      Boolean(item)
+      && typeof item === "object"
+      && canReadQuestion(item as Record<string, unknown>, teacher));
+  }
+  return result;
+}
+
 function validateEmbeddedIdentity(
   value: unknown,
   teacher: TeacherRecord,
@@ -221,12 +245,16 @@ function authorize(
   const targetCollection = TARGET_COLLECTION[service];
   const firstArg = normalizedArgs[0];
   if (targetCollection && typeof firstArg === "string") {
-    const record = ((state[targetCollection] || []) as Array<Record<string, unknown>>)
-      .find((item) => item.id === firstArg) || findRecord(state, firstArg);
+    const targetRecord = ((state[targetCollection] || []) as Array<Record<string, unknown>>)
+      .find((item) => item.id === firstArg);
+    const record = targetRecord || findRecord(state, firstArg);
     if (record) {
       const owner = recordOwner(record);
       const school = recordSchool(record);
       const shared = record.isShared === true || record.scope === "platform" || record.scope === "school";
+      if (service === "question" && targetRecord && !canReadQuestion(record, teacher)) {
+        throw new Error("无权访问该资源");
+      }
       if (school && school !== teacher.schoolId && owner !== teacher.id && !shared) {
         throw new Error("无权访问该资源");
       }
@@ -276,6 +304,11 @@ export async function invokeRpc(
   return withSerializedState(store, async (state) => {
     const authorized = authorize(state, session, serviceName as ServiceName, methodName, args);
     const result = await runWithState(state, () => (method as (...values: unknown[]) => unknown)(...authorized.args));
-    return sanitize(result);
+    return sanitize(filterAuthorizedResult(
+      serviceName as ServiceName,
+      methodName,
+      result,
+      authorized.teacher,
+    ));
   });
 }
