@@ -409,6 +409,71 @@ describe("production backend", () => {
     expect(sharedRead.statusCode).toBe(200);
   });
 
+  it("only allows teachers to share resources they own", async () => {
+    const before = built.store.loadState();
+    const state = structuredClone(before);
+    const questions = state.questions as Array<Record<string, unknown>>;
+    questions.unshift({
+      ...questions[0],
+      id: "q-forged-share-source",
+      teacherId: "tch-3",
+      schoolId: "sch-2",
+      stem: "不可被其他学校教师分享的私有题目",
+      isShared: false,
+    });
+    built.store.saveState(before, state);
+
+    const session = await login(built.app);
+    const headers = {
+      cookie: session.cookie,
+      "x-inteschool-csrf": session.csrfToken,
+    };
+    const forged = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "share",
+        method: "createShare",
+        args: [{
+          fromTeacherId: "tch-1",
+          fromSchoolId: "sch-1",
+          toTeacherId: "tch-1",
+          toSchoolId: "sch-1",
+          scope: "friends",
+          resourceType: "question",
+          resourceId: "q-forged-share-source",
+          resourceTitle: "伪造分享",
+        }],
+      },
+    });
+    expect(forged.statusCode).toBe(403);
+    expect(forged.json()).toEqual({ error: "无权分享不属于自己的资源" });
+
+    const legitimate = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "share",
+        method: "createShare",
+        args: [{
+          fromTeacherId: "tch-1",
+          fromSchoolId: "sch-1",
+          toTeacherId: "tch-2",
+          toSchoolId: "sch-1",
+          scope: "friends",
+          resourceType: "question",
+          resourceId: "q-4",
+          resourceTitle: "合法分享",
+        }],
+      },
+    });
+    expect(legitimate.statusCode).toBe(200);
+    expect(legitimate.json<{ result: { fromTeacherId: string; fromSchoolId: string } }>().result)
+      .toMatchObject({ fromTeacherId: "tch-1", fromSchoolId: "sch-1" });
+  });
+
   it("persists business records across a full server restart", async () => {
     const databasePath = built.config.databasePath;
     const session = await login(built.app);

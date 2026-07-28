@@ -38,6 +38,14 @@ const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   studentInteraction: "studentInteractions",
 };
 
+const SHARE_RESOURCE_COLLECTIONS: Record<string, string> = {
+  question: "questions",
+  examPaper: "examPapers",
+  lecture: "lectures",
+  courseware: "coursewares",
+  material: "materials",
+};
+
 const OWNER_KEYS = ["teacherId", "ownerId", "createdBy", "fromTeacherId", "publisherId"];
 const SCHOOL_KEYS = ["schoolId", "publisherSchoolId", "fromSchoolId"];
 const SENSITIVE_KEYS = new Set([
@@ -215,6 +223,30 @@ function authorize(
 
   if (service !== "school" && !teacher.schoolId) {
     throw new Error("请先完成学校认证");
+  }
+
+  if (service === "share" && method === "createShare") {
+    const input = normalizedArgs[0];
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error("分享参数不合法");
+    }
+    const params = input as Record<string, unknown>;
+    const collection = typeof params.resourceType === "string"
+      ? SHARE_RESOURCE_COLLECTIONS[params.resourceType]
+      : undefined;
+    const resource = collection && typeof params.resourceId === "string"
+      ? ((state[collection] || []) as Array<Record<string, unknown>>)
+        .find((item) => item.id === params.resourceId)
+      : undefined;
+    if (!resource) throw new Error("分享资源不存在");
+    if (recordOwner(resource) !== teacher.id || recordSchool(resource) !== teacher.schoolId) {
+      throw new Error("无权分享不属于自己的资源");
+    }
+    normalizedArgs[0] = {
+      ...params,
+      fromTeacherId: teacher.id,
+      fromSchoolId: teacher.schoolId,
+    };
   }
 
   if (ADMIN_SERVICE_MUTATIONS.has(service) && !isReadOnly(method) && !admin) {
