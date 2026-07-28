@@ -474,6 +474,63 @@ describe("production backend", () => {
       .toMatchObject({ fromTeacherId: "tch-1", fromSchoolId: "sch-1" });
   });
 
+  it("allows only the intended recipient to accept a share", async () => {
+    built.store.createUser("tch-2", "share-recipient@example.com", "RecipientPass123");
+    const sender = await login(built.app);
+    const created = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers: {
+        cookie: sender.cookie,
+        "x-inteschool-csrf": sender.csrfToken,
+      },
+      payload: {
+        service: "share",
+        method: "createShare",
+        args: [{
+          fromTeacherId: "tch-1",
+          fromSchoolId: "sch-1",
+          toTeacherId: "tch-2",
+          toSchoolId: "sch-1",
+          scope: "friends",
+          resourceType: "question",
+          resourceId: "q-4",
+          resourceTitle: "定向分享",
+        }],
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const shareId = created.json<{ result: { id: string } }>().result.id;
+
+    const senderAccept = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers: {
+        cookie: sender.cookie,
+        "x-inteschool-csrf": sender.csrfToken,
+      },
+      payload: { service: "share", method: "acceptShare", args: [shareId, "tch-1", "sch-1"] },
+    });
+    expect(senderAccept.statusCode).toBe(403);
+    expect(senderAccept.json()).toEqual({ error: "无权处理该分享" });
+
+    const recipient = await login(built.app, "share-recipient@example.com", "RecipientPass123");
+    const accepted = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers: {
+        cookie: recipient.cookie,
+        "x-inteschool-csrf": recipient.csrfToken,
+      },
+      payload: { service: "share", method: "acceptShare", args: [shareId, "tch-1", "sch-2"] },
+    });
+    expect(accepted.statusCode).toBe(200);
+    const newResourceId = accepted.json<{ result: { newResourceId: string } }>().result.newResourceId;
+    const copied = (built.store.loadState().questions as Array<Record<string, unknown>>)
+      .find((item) => item.id === newResourceId);
+    expect(copied).toMatchObject({ teacherId: "tch-2", schoolId: "sch-1", isShared: false });
+  });
+
   it("persists business records across a full server restart", async () => {
     const databasePath = built.config.databasePath;
     const session = await login(built.app);

@@ -133,6 +133,18 @@ function canReadQuestion(record: Record<string, unknown>, teacher: TeacherRecord
   return recordOwner(record) === teacher.id || record.isShared === true;
 }
 
+function isShareRecipient(record: Record<string, unknown>, teacher: TeacherRecord): boolean {
+  if (typeof record.toTeacherId === "string") return record.toTeacherId === teacher.id;
+  if (record.scope === "public") return true;
+  if (record.scope === "school") {
+    const targetSchoolId = typeof record.toSchoolId === "string"
+      ? record.toSchoolId
+      : record.fromSchoolId;
+    return targetSchoolId === teacher.schoolId;
+  }
+  return false;
+}
+
 function filterAuthorizedResult(
   service: ServiceName,
   method: string,
@@ -255,11 +267,6 @@ function authorize(
   if (service === "class" && ["createSchoolClass", "updateSchoolClass"].includes(method) && !admin) {
     throw new Error("该操作需要学校管理员权限");
   }
-  if (service === "share" && method === "acceptShare") {
-    const toTeacherId = normalizedArgs[1];
-    if (toTeacherId !== teacher.id) throw new Error("只能接收发送给自己的资源");
-  }
-
   if (service === "ai" && typeof normalizedArgs[0] === "string") {
     const firstId = normalizedArgs[0];
     const recognition = (state.recognitions as Array<Record<string, unknown>>)
@@ -281,16 +288,33 @@ function authorize(
       .find((item) => item.id === firstArg);
     const record = targetRecord || findRecord(state, firstArg);
     if (record) {
+      let authorizedShareMutation = false;
+      if (service === "share" && ["acceptShare", "rejectShare", "revokeShare"].includes(method)) {
+        if (record.status !== "pending") throw new Error("该分享已处理");
+        if (typeof record.expiresAt === "string" && new Date(record.expiresAt) <= new Date()) {
+          throw new Error("该分享已过期");
+        }
+        if (method === "revokeShare") {
+          if (record.fromTeacherId !== teacher.id) throw new Error("无权撤回该分享");
+        } else if (!isShareRecipient(record, teacher)) {
+          throw new Error("无权处理该分享");
+        }
+        if (method === "acceptShare") {
+          normalizedArgs[1] = teacher.id;
+          normalizedArgs[2] = teacher.schoolId;
+        }
+        authorizedShareMutation = true;
+      }
       const owner = recordOwner(record);
       const school = recordSchool(record);
       const shared = record.isShared === true || record.scope === "platform" || record.scope === "school";
       if (service === "question" && targetRecord && !canReadQuestion(record, teacher)) {
         throw new Error("无权访问该资源");
       }
-      if (school && school !== teacher.schoolId && owner !== teacher.id && !shared) {
+      if (!authorizedShareMutation && school && school !== teacher.schoolId && owner !== teacher.id && !shared) {
         throw new Error("无权访问该资源");
       }
-      if (!isReadOnly(method) && owner && owner !== teacher.id && !admin) {
+      if (!authorizedShareMutation && !isReadOnly(method) && owner && owner !== teacher.id && !admin) {
         const allowedSharedMutation = service === "question" && method === "incrementUsage";
         if (!allowedSharedMutation) throw new Error("无权修改其他教师的资源");
       }

@@ -97,6 +97,12 @@ export const shareService = {
     const share = db.read("shareRecords").find((s) => s.id === shareId);
     if (!share) throw new Error("分享记录不存在");
     if (share.status !== "pending") throw new Error("该分享已处理");
+    if (share.expiresAt && new Date(share.expiresAt) <= new Date()) throw new Error("该分享已过期");
+    if (share.toTeacherId && share.toTeacherId !== toTeacherId) throw new Error("无权处理该分享");
+    if (share.toSchoolId && share.toSchoolId !== toSchoolId) throw new Error("无权处理该分享");
+    if (!share.toTeacherId && share.scope !== "public" && share.scope !== "school") {
+      throw new Error("无权处理该分享");
+    }
 
     const now = new Date().toISOString();
     let newResourceId = "";
@@ -190,6 +196,8 @@ export const shareService = {
         break;
       }
     }
+
+    if (!newResourceId) throw new Error("分享资源不存在");
 
     // 更新分享记录状态
     db.update("shareRecords", (list) =>
