@@ -51,6 +51,20 @@ describe("DOCX structure-aware text extraction", () => {
     await expect(extractDocxStructuredText(data)).resolves.toBe("A. 甲\tB. 乙");
   });
 
+  it("normalizes decomposed not-equal signs before converting Word equations", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>若 </w:t></w:r>
+        <m:oMath><m:r><m:t>x≠y</m:t></m:r></m:oMath>
+        <w:r><w:t>，则两数不同。</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "若 $x\\neq y$，则两数不同。",
+    );
+  });
+
   it("returns an empty string when document.xml is absent", async () => {
     const data = await new JSZip().generateAsync({ type: "nodebuffer" });
     await expect(extractDocxStructuredText(data)).resolves.toBe("");

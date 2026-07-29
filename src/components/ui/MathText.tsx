@@ -71,7 +71,7 @@ function parseMathText(text: string): Segment[] {
   if (!text) return [{ type: "text", text: "" }];
 
   const segments: Segment[] = [];
-  let remaining = text;
+  let remaining = text.normalize("NFC");
 
   // 先把转义的 \$ 替换为占位符，避免干扰公式解析
   const ESCAPED_DOLLAR = "\u0000DOLLAR\u0000";

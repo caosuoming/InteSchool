@@ -1201,7 +1201,10 @@ function escapeLatex(text: string): string {
   };
 
   let result = "";
-  for (const char of text) {
+  // Word and rich-text editors may encode symbols such as "≠" as a
+  // decomposed sequence ("=" + U+0338). Normalize before symbol mapping so
+  // the preview consistently emits the corresponding LaTeX command.
+  for (const char of text.normalize("NFC")) {
     if (symbolMap[char]) {
       result += symbolMap[char];
     } else if ("#$%&~_^\\{}".includes(char)) {

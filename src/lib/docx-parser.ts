@@ -714,7 +714,7 @@ function guessQuestionType(text: string): string {
 }
 
 export function renderInlineMath(text: string): string {
-  const cleanText = text.replace(/\[公式\]/g, "");
+  const cleanText = text.normalize("NFC").replace(/\[公式\]/g, "");
   
   const parts: string[] = [];
   let lastIndex = 0;

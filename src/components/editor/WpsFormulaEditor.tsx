@@ -127,7 +127,7 @@ export function WpsFormulaEditor({ initialHtml = "", onSave, onCancel }: WpsForm
 
   const handleSave = () => {
     if (editorRef.current) {
-      onSave(editorRef.current.innerHTML);
+      onSave(editorRef.current.innerHTML.normalize("NFC"));
     }
   };
 

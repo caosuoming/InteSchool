@@ -13,6 +13,7 @@ function elementChildren(node: Node): Element[] {
 
 function normalizeText(value: string): string {
   return value
+    .normalize("NFC")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n");
