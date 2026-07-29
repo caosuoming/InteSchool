@@ -8,6 +8,7 @@ import {
   FileText, ExternalLink,
   Download, RefreshCw, ShoppingBasket,
   PanelLeftClose, PanelLeftOpen,
+  CheckSquare, Square,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
@@ -154,7 +155,17 @@ function getDateRange(key: TimeRangeKey): DateRange | undefined {
   return { start: start.toISOString(), end: now.toISOString() };
 }
 
-export default function QuestionBankPage() {
+interface QuestionBankPageProps {
+  donationSelectedIds?: Set<string>;
+  donatedQuestionIds?: Set<string>;
+  onToggleDonation?: (question: Question) => void;
+}
+
+export default function QuestionBankPage({
+  donationSelectedIds,
+  donatedQuestionIds,
+  onToggleDonation,
+}: QuestionBankPageProps = {}) {
   const { teacher } = useAuthStore();
   const tagPrefs = useTagPrefsStore((state) => state.prefs);
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
@@ -1080,6 +1091,9 @@ export default function QuestionBankPage() {
                   tagOrder={tagPrefs.order}
                   hiddenTags={tagPrefs.hidden}
                   wideLayout={directoryCollapsed}
+                  donationSelected={donationSelectedIds?.has(q.id) || false}
+                  donated={donatedQuestionIds?.has(q.id) || false}
+                  onToggleDonation={onToggleDonation}
                 />
               ))}
             </div>
@@ -1776,6 +1790,9 @@ function QuestionRow({
   tagOrder,
   hiddenTags,
   wideLayout,
+  donationSelected,
+  donated,
+  onToggleDonation,
 }: {
   question: Question;
   mode: Mode;
@@ -1810,6 +1827,9 @@ function QuestionRow({
   tagOrder: string[];
   hiddenTags: string[];
   wideLayout?: boolean;
+  donationSelected?: boolean;
+  donated?: boolean;
+  onToggleDonation?: (q: Question) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingAnswers, setEditingAnswers] = useState(false);
@@ -1856,6 +1876,28 @@ function QuestionRow({
       onClick={handleCardClick}
     >
       <div className="flex items-start gap-4 cursor-pointer">
+        {onToggleDonation && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              if (!donated) onToggleDonation(question);
+            }}
+            className={cn(
+              "mt-0.5 flex-shrink-0 rounded p-0.5 transition-colors",
+              donated
+                ? "text-ink-300 cursor-not-allowed"
+                : donationSelected
+                  ? "text-gold-600"
+                  : "text-ink-300 hover:text-gold-600",
+            )}
+            title={donated ? "该题目已捐赠" : donationSelected ? "取消选择" : "选择捐赠"}
+            disabled={donated}
+          >
+            {donationSelected || donated
+              ? <CheckSquare className="w-4 h-4" />
+              : <Square className="w-4 h-4" />}
+          </button>
+        )}
         <div className="flex-1 min-w-0">
           {/* 选中学生的答题情况（显示在题目上方，可折叠，支持编辑） */}
           {questionStudentAnswers.length > 0 && showStudentAnswers !== false && (
@@ -1954,6 +1996,7 @@ function QuestionRow({
 
           {/* 标签行 */}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
+            {donated && <Badge variant="teal">已捐赠</Badge>}
             {isUsedBySelectedStudents && (
               <Badge variant="gold">
                 <CheckCircle2 className="w-3 h-3 mr-0.5" />

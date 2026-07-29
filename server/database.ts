@@ -23,7 +23,7 @@ export const COLLECTIONS = [
   "recognitions", "answerRecords", "subjectGroups", "prepGroups", "onlineResources",
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
   "shareRecords", "examPublications", "lessonCoursewares", "reflections",
-  "studentInteractions", "schoolBackups",
+  "studentInteractions", "schoolBackups", "platformResourceSettings",
 ] as const;
 
 type CollectionName = (typeof COLLECTIONS)[number];

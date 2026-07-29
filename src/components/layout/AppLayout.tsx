@@ -5,10 +5,11 @@ import {
   ChevronLeft, School, User, Settings, Users,
   FolderOpen, Download,
   ChevronDown, ChevronRight, Building2, Cloud,
-  BookOpen, Check,
+  BookOpen, Check, Crown,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
+import { shareService } from "@/services/share";
 import { cn } from "@/lib/utils";
 import { ToastContainer } from "@/components/ui/Toast";
 
@@ -47,6 +48,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const [affiliationDropdownOpen, setAffiliationDropdownOpen] = useState(false);
+  const [donationRank, setDonationRank] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const affiliations = teacher ? getAffiliations() : [];
@@ -69,6 +71,24 @@ export function AppLayout({ children }: { children: ReactNode }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!teacher) {
+      setDonationRank(null);
+      return;
+    }
+    let active = true;
+    shareService.getDonationPrivileges(teacher.id)
+      .then((privileges) => {
+        if (active) setDonationRank(privileges.isTopContributor ? privileges.rank : null);
+      })
+      .catch(() => {
+        if (active) setDonationRank(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [teacher]);
 
   const handleSwitchAffiliation = async (affId: string) => {
     await switchAffiliation(affId);
@@ -322,7 +342,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </div>
             {!sidebarCollapsed && (
               <div className="flex-1 min-w-0">
-                <div className="text-sm text-paper truncate">{teacher.name}</div>
+                <div className="text-sm text-paper truncate flex items-center gap-1.5">
+                  <span className="truncate">{teacher.name}</span>
+                  {donationRank !== null && (
+                    <Crown
+                      className="w-3.5 h-3.5 text-gold-400 flex-shrink-0"
+                      aria-label={`平台资源贡献榜第 ${donationRank} 名`}
+                    />
+                  )}
+                </div>
+                {donationRank !== null && (
+                  <div className="text-[10px] text-gold-400 truncate">
+                    平台资源贡献榜第 {donationRank} 名
+                  </div>
+                )}
                 <div className="text-[10px] text-ink-400 truncate">
                   {teacher.roles && teacher.roles.length > 0
                     ? teacher.roles

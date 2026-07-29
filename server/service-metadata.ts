@@ -1,4 +1,41 @@
 export const serviceParameters = {
+  "donation": {
+    "listDonations": [],
+    "listTeacherDonations": [
+      "teacherId"
+    ],
+    "getDonorStatus": [
+      "teacherId"
+    ],
+    "getCatalogTrees": [],
+    "checkDonation": [
+      "teacherId",
+      "schoolId",
+      "items"
+    ],
+    "donateResources": [
+      "teacherId",
+      "schoolId",
+      "items",
+      "decisions"
+    ],
+    "saveAsOwnResource": [
+      "donationId",
+      "teacherId",
+      "schoolId"
+    ],
+    "updateDonation": [
+      "donationId",
+      "teacherId",
+      "patch"
+    ],
+    "listAttributeOptions": [],
+    "updateAttributeOptions": [
+      "teacherId",
+      "type",
+      "values"
+    ]
+  },
   "ai": {
     "generateTeachingResources": [
       "kind",
@@ -884,6 +921,36 @@ export const serviceParameters = {
   "share": {
     "createShare": [
       "params"
+    ],
+    "checkDonationCandidates": [
+      "teacherId",
+      "requests"
+    ],
+    "donateResources": [
+      "teacherId",
+      "schoolId",
+      "requests"
+    ],
+    "listPublicDonations": [],
+    "listDonationStatus": [
+      "teacherId"
+    ],
+    "listDonationContributors": [],
+    "getDonationPrivileges": [
+      "teacherId"
+    ],
+    "getPlatformDirectoryTree": [
+      "type"
+    ],
+    "updateDonationResource": [
+      "teacherId",
+      "donationId",
+      "patch"
+    ],
+    "listPlatformResourceSettings": [],
+    "updatePlatformResourceSettings": [
+      "teacherId",
+      "settings"
     ],
     "listIncomingShares": [
       "teacherId"

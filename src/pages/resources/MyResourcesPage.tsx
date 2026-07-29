@@ -8,6 +8,7 @@ import {
   PlayCircle, Copy, MessageSquareText, Star,
   ShoppingCart, CheckSquare, Square, Plus, X,
   Archive, Layout,
+  Gift,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -18,6 +19,7 @@ import { coursewareService } from "@/services/courseware";
 import { materialService } from "@/services/material";
 import { lectureService } from "@/services/lecture";
 import { shareService } from "@/services/share";
+import { donationService } from "@/services/donation";
 import { knowledgeService } from "@/services/knowledge";
 import { reflectionService } from "@/services/reflection";
 import { basketService } from "@/services/basket";
@@ -34,6 +36,7 @@ import type {
   TreeNode, FilterLogic, ShareScope,
   CoursewareType, MaterialType, QuestionType, ShareableResourceType,
   Reflection, Basket,
+  DonationCheckResult, DonationDecision, DonationItem, PlatformDonation,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { genId } from "@/lib/service-utils";
@@ -151,6 +154,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [shareMessage, setShareMessage] = useState("");
   const [sharing, setSharing] = useState(false);
 
+  // 平台资源捐赠：选择可跨资源类型和 Tab 保留。
+  const [donationSelections, setDonationSelections] = useState<Set<string>>(new Set());
+  const [teacherDonations, setTeacherDonations] = useState<PlatformDonation[]>([]);
+  const [pendingDonationItems, setPendingDonationItems] = useState<DonationItem[]>([]);
+  const [donationCheck, setDonationCheck] = useState<DonationCheckResult | null>(null);
+  const [donationDecisions, setDonationDecisions] = useState<Record<string, DonationDecision>>({});
+  const [donating, setDonating] = useState(false);
+
   // 课后反思相关：targetId -> 反思列表
   const [reflectionsMap, setReflectionsMap] = useState<Record<string, Reflection[]>>({});
   const [viewingReflections, setViewingReflections] = useState<{
@@ -209,6 +220,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [newBasketName, setNewBasketName] = useState("");
 
   const schoolId = teacher?.schoolId || "sch-1";
+
+  const loadTeacherDonations = useCallback(async () => {
+    if (!teacher) return;
+    const records = await donationService.listTeacherDonations(teacher.id);
+    setTeacherDonations(records);
+  }, [teacher]);
+
+  useEffect(() => {
+    loadTeacherDonations().catch(() => setTeacherDonations([]));
+  }, [loadTeacherDonations]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -657,6 +678,121 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
+  const donationKey = (resourceType: ShareableResourceType, resourceId: string) =>
+    `${resourceType}:${resourceId}`;
+
+  const isDonated = (resourceType: ShareableResourceType, resourceId: string) =>
+    teacherDonations.some((record) =>
+      record.resourceType === resourceType && record.sourceResourceId === resourceId,
+    );
+
+  const toggleDonationSelection = (resourceType: ShareableResourceType, resourceId: string) => {
+    if (isDonated(resourceType, resourceId)) return;
+    const key = donationKey(resourceType, resourceId);
+    setDonationSelections((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const donationCardProps = (resourceType: ShareableResourceType, resourceId: string) => ({
+    donationSelected: donationSelections.has(donationKey(resourceType, resourceId)),
+    donated: isDonated(resourceType, resourceId),
+    onToggleDonation: () => toggleDonationSelection(resourceType, resourceId),
+  });
+
+  const selectedDonationItems = (): DonationItem[] => [...donationSelections].map((key) => {
+    const separator = key.indexOf(":");
+    return {
+      resourceType: key.slice(0, separator) as ShareableResourceType,
+      resourceId: key.slice(separator + 1),
+    };
+  });
+
+  const completeDonation = async (items: DonationItem[], decisions: DonationDecision[] = []) => {
+    if (!teacher || items.length === 0) return;
+    setDonating(true);
+    try {
+      const result = await donationService.donateResources(
+        teacher.id,
+        schoolId,
+        items,
+        decisions,
+      );
+      toast.success("捐赠完成", `已处理 ${result.created.length} 个资源`);
+      setDonationSelections(new Set());
+      setDonationCheck(null);
+      setPendingDonationItems([]);
+      setDonationDecisions({});
+      await loadTeacherDonations();
+    } catch (error) {
+      toast.error("捐赠失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDonating(false);
+    }
+  };
+
+  const handlePrepareDonation = async () => {
+    if (!teacher) return;
+    const items = selectedDonationItems();
+    if (items.length === 0) {
+      toast.warning("请先选择要捐赠的资源");
+      return;
+    }
+    setDonating(true);
+    try {
+      const check = await donationService.checkDonation(teacher.id, schoolId, items);
+      const already = new Set(check.alreadyDonated.map((item) => donationKey(item.resourceType, item.resourceId)));
+      const pending = items.filter((item) => !already.has(donationKey(item.resourceType, item.resourceId)));
+      if (check.alreadyDonated.length > 0) {
+        toast.warning("已跳过重复捐赠", `${check.alreadyDonated.length} 个资源已经捐赠过`);
+      }
+      if (pending.length === 0) {
+        setDonationSelections(new Set());
+        await loadTeacherDonations();
+        return;
+      }
+      if (check.conflicts.length === 0) {
+        setDonating(false);
+        await completeDonation(pending);
+        return;
+      }
+      const defaults: Record<string, DonationDecision> = {};
+      for (const conflict of check.conflicts) {
+        defaults[conflict.item.resourceId] = {
+          sourceResourceId: conflict.item.resourceId,
+          action: "new",
+          targetDonationId: conflict.targetDonationId,
+          fields: {
+            stem: "target",
+            answer: "target",
+            analysis: "target",
+            summary: "target",
+          },
+        };
+      }
+      setPendingDonationItems(pending);
+      setDonationCheck(check);
+      setDonationDecisions(defaults);
+    } catch (error) {
+      toast.error("查重失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDonating(false);
+    }
+  };
+
+  const updateDonationDecision = (
+    resourceId: string,
+    updater: (decision: DonationDecision) => DonationDecision,
+  ) => {
+    setDonationDecisions((previous) => ({
+      ...previous,
+      [resourceId]: updater(previous[resourceId]),
+    }));
+  };
+
   return (
     <div>
       <PageHeader
@@ -664,10 +800,21 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         description="统一管理我的题库、试卷库、讲义库、课件库、素材库"
         icon={<Library className="w-5 h-5" />}
         action={
-          <Button variant="gold" onClick={() => navigate("/upload")}>
-            <Upload className="w-4 h-4" />
-            上传资源
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handlePrepareDonation}
+              disabled={donationSelections.size === 0}
+              loading={donating}
+            >
+              <Gift className="w-4 h-4" />
+              捐赠到平台{donationSelections.size > 0 ? `（${donationSelections.size}）` : ""}
+            </Button>
+            <Button variant="gold" onClick={() => navigate("/upload")}>
+              <Upload className="w-4 h-4" />
+              上传资源
+            </Button>
+          </div>
         }
       />
 
@@ -725,7 +872,19 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
       {/* 题库 Tab：渲染完整的题库管理/使用页面 */}
       {activeTab === "question" ? (
-        <QuestionBankPage />
+        <QuestionBankPage
+          donationSelectedIds={new Set(
+            [...donationSelections]
+              .filter((key) => key.startsWith("question:"))
+              .map((key) => key.slice("question:".length)),
+          )}
+          donatedQuestionIds={new Set(
+            teacherDonations
+              .filter((record) => record.resourceType === "question")
+              .map((record) => record.sourceResourceId),
+          )}
+          onToggleDonation={(question) => toggleDonationSelection("question", question.id)}
+        />
       ) : activeTab === "basket" ? (
         <div className="grid grid-cols-12 gap-4">
           {/* 左侧：资源篮列表 */}
@@ -1137,6 +1296,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   <div key={item.id} className="space-y-2">
                     <ResourceCard
                       key={mainLecture.id}
+                      {...donationCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
                       description={mainLecture.description || (hasExtractCopy ? "文档拆解生成的正稿，可编辑替换其中的题目和知识块" : undefined)}
                       meta={[
@@ -1211,6 +1371,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           原稿备份
                         </div>
                         <ResourceCard
+                          {...donationCardProps("lecture", item.id)}
                           title={item.title}
                           description={item.description}
                           meta={[
@@ -1276,6 +1437,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     {hasExtractCopy && extractCopies.map((copy) => (
                       <ResourceCard
                         key={copy.id}
+                        {...donationCardProps("examPaper", copy.id)}
                         title={copy.title}
                         description={copy.description || "文档拆解生成的副本，可编辑替换其中的题目和知识块"}
                         meta={[
@@ -1313,6 +1475,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     {!hasExtractCopy && (
                       <>
                         <ResourceCard
+                          {...donationCardProps("examPaper", item.id)}
                           title={item.title}
                           description={item.description}
                           meta={[
@@ -1418,6 +1581,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           原稿备份
                         </div>
                         <ResourceCard
+                          {...donationCardProps("examPaper", item.id)}
                           title={item.title}
                           description={item.description}
                           meta={[
@@ -1457,6 +1621,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               {activeTab === "courseware" && (displayedData as Courseware[]).map((item) => (
                 <ResourceCard
                   key={item.id}
+                  {...donationCardProps("courseware", item.id)}
                   title={item.title}
                   description={item.description}
                   meta={[
@@ -1484,6 +1649,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               {activeTab === "material" && (displayedData as Material[]).map((item) => (
                 <ResourceCard
                   key={item.id}
+                  {...donationCardProps("material", item.id)}
                   title={item.title}
                   description={item.description}
                   meta={[
@@ -1558,6 +1724,130 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             onChange={(e) => setShareMessage(e.target.value)}
             rows={3}
           />
+        </div>
+      </Modal>
+
+      {/* 捐赠题目查重与合并 */}
+      <Modal
+        open={!!donationCheck && donationCheck.conflicts.length > 0}
+        onClose={() => {
+          setDonationCheck(null);
+          setPendingDonationItems([]);
+          setDonationDecisions({});
+        }}
+        title="题目查重"
+        description="以下题目与平台现有题目的相似度超过 80%，请选择新增或逐字段合并。"
+        size="full"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDonationCheck(null);
+                setPendingDonationItems([]);
+                setDonationDecisions({});
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              variant="gold"
+              loading={donating}
+              onClick={() => completeDonation(pendingDonationItems, Object.values(donationDecisions))}
+            >
+              <Gift className="w-4 h-4" />
+              确认捐赠
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-5 max-h-[68vh] overflow-y-auto pr-1">
+          {donationCheck?.conflicts.map((conflict) => {
+            const decision = donationDecisions[conflict.item.resourceId];
+            if (!decision) return null;
+            const fieldRows = [
+              { key: "stem", label: "题干", source: conflict.sourceQuestion.stem, target: conflict.targetQuestion.stem },
+              { key: "answer", label: "答案", source: conflict.sourceQuestion.answer, target: conflict.targetQuestion.answer },
+              { key: "analysis", label: "解析", source: conflict.sourceQuestion.analysis, target: conflict.targetQuestion.analysis },
+              { key: "summary", label: "总结", source: conflict.sourceQuestion.summary || "（无）", target: conflict.targetQuestion.summary || "（无）" },
+            ] as const;
+            return (
+              <Card key={conflict.item.resourceId} className="p-4">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <div className="font-medium text-ink-900">相似题目比较</div>
+                    <div className="text-xs text-ink-500 mt-1">
+                      相似度 {(conflict.similarity * 100).toFixed(1)}% · 平台贡献者：{conflict.targetDonorName}
+                    </div>
+                  </div>
+                  <div className="flex rounded-md border border-ink-200 overflow-hidden">
+                    {([
+                      { value: "new", label: "作为新题新增" },
+                      { value: "merge", label: "合并到现有题" },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => updateDonationDecision(conflict.item.resourceId, (current) => ({
+                          ...current,
+                          action: option.value,
+                        }))}
+                        className={cn(
+                          "px-3 py-1.5 text-xs transition-colors",
+                          decision.action === option.value
+                            ? "bg-gold-400 text-ink-900"
+                            : "bg-paper text-ink-600 hover:bg-mist",
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-[88px_1fr_1fr] gap-2 text-xs">
+                  <div />
+                  <div className="font-medium text-ink-600 px-2">本次捐赠</div>
+                  <div className="font-medium text-ink-600 px-2">平台现有</div>
+                  {fieldRows.map((field) => (
+                    <div key={field.key} className="contents">
+                      <div className="font-medium text-ink-700 py-2">{field.label}</div>
+                      <button
+                        disabled={decision.action !== "merge"}
+                        onClick={() => updateDonationDecision(conflict.item.resourceId, (current) => ({
+                          ...current,
+                          fields: { ...current.fields, [field.key]: "source" },
+                        }))}
+                        className={cn(
+                          "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
+                          decision.action === "merge" && decision.fields[field.key] === "source"
+                            ? "border-gold-400 bg-gold-50"
+                            : "border-ink-100 bg-mist/40",
+                          decision.action !== "merge" && "opacity-60 cursor-default",
+                        )}
+                      >
+                        {field.source}
+                      </button>
+                      <button
+                        disabled={decision.action !== "merge"}
+                        onClick={() => updateDonationDecision(conflict.item.resourceId, (current) => ({
+                          ...current,
+                          fields: { ...current.fields, [field.key]: "target" },
+                        }))}
+                        className={cn(
+                          "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
+                          decision.action === "merge" && decision.fields[field.key] === "target"
+                            ? "border-gold-400 bg-gold-50"
+                            : "border-ink-100 bg-mist/40",
+                          decision.action !== "merge" && "opacity-60 cursor-default",
+                        )}
+                      >
+                        {field.target}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            );
+          })}
         </div>
       </Modal>
 
@@ -1827,17 +2117,43 @@ interface ResourceCardProps {
   onBasketChanged?: () => void;
   className?: string;
   titleBadge?: { text: string; variant: "gold" | "teal" | "ink" | "red" | "green" | "amber" | "default" };
+  donationSelected?: boolean;
+  donated?: boolean;
+  onToggleDonation?: () => void;
 }
 
-function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge }: ResourceCardProps) {
+function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, donationSelected, donated, onToggleDonation }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const isImage = (type === "image");
   const reflectionCount = reflections?.length || 0;
   const latestReflection = reflections?.[0];
   return (
     <>
-      <div className={cn("card-base p-4 hover:shadow-cardHover transition-all group", className)}>
+      <div className={cn(
+        "card-base p-4 hover:shadow-cardHover transition-all group",
+        donationSelected && "ring-2 ring-gold-300/60 bg-gold-50/20",
+        className,
+      )}>
         <div className="flex items-start gap-3">
+          {onToggleDonation && (
+            <button
+              onClick={onToggleDonation}
+              disabled={donated}
+              className={cn(
+                "mt-0.5 rounded p-0.5 flex-shrink-0 transition-colors",
+                donated
+                  ? "text-ink-300 cursor-not-allowed"
+                  : donationSelected
+                    ? "text-gold-600"
+                    : "text-ink-300 hover:text-gold-600",
+              )}
+              title={donated ? "该资源已捐赠" : donationSelected ? "取消选择" : "选择捐赠"}
+            >
+              {donationSelected || donated
+                ? <CheckSquare className="w-4 h-4" />
+                : <Square className="w-4 h-4" />}
+            </button>
+          )}
           {isImage && fileUrl && (
             <div
               onClick={() => setPreviewOpen(true)}
@@ -1905,7 +2221,9 @@ function ResourceCard({ title, description, meta, content, updatedAt, onClick, o
               </div>
             )}
           </div>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-start gap-2 flex-shrink-0">
+            {donated && <Badge variant="teal">已捐赠</Badge>}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {onClick && (
               <button
                 onClick={onClick}
@@ -1960,6 +2278,7 @@ function ResourceCard({ title, description, meta, content, updatedAt, onClick, o
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
+            </div>
           </div>
         </div>
       </div>

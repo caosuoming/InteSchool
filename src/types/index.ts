@@ -452,6 +452,77 @@ export type ShareScope = "school" | "friends" | "public";
 /** 分享状态 */
 export type ShareStatus = "pending" | "accepted" | "rejected" | "expired";
 
+export type DonationMergeField = "stem" | "answer" | "analysis" | "summary";
+export type DonationMergeChoice = "source" | "existing";
+
+export interface DonationDirectoryEntry {
+  id: string;
+  name: string;
+  path: string;
+  parentId: string | null;
+  selected: boolean;
+  chapterId?: string;
+  chapterPath?: string;
+}
+
+export interface DonationDirectorySnapshot {
+  chapters: DonationDirectoryEntry[];
+  knowledgePoints: DonationDirectoryEntry[];
+}
+
+export interface DonationRequest {
+  resourceType: ShareableResourceType;
+  resourceId: string;
+  duplicateAction?: "add" | "merge";
+  duplicateTargetDonationId?: string;
+  mergeFields?: Partial<Record<DonationMergeField, DonationMergeChoice>>;
+}
+
+export interface DonationDuplicateCandidate {
+  donationId: string;
+  similarity: number;
+  question: Question;
+  contributorName: string;
+}
+
+export interface DonationPreview {
+  resourceType: ShareableResourceType;
+  resourceId: string;
+  resourceTitle: string;
+  alreadyDonated: boolean;
+  duplicates: DonationDuplicateCandidate[];
+}
+
+export interface DonationContributor {
+  teacherId: string;
+  teacherName: string;
+  donationCount: number;
+  rank: number;
+  isTopContributor: boolean;
+}
+
+export interface DonationPrivileges {
+  donationCount: number;
+  rank: number | null;
+  isTopContributor: boolean;
+  canManagePlatformSettings: boolean;
+}
+
+export type PlatformResourceSettingType =
+  | "grade"
+  | "schoolYear"
+  | "source"
+  | "questionType"
+  | "category";
+
+export interface PlatformResourceSetting {
+  id: string;
+  type: PlatformResourceSettingType;
+  values: string[];
+  updatedAt: string;
+  updatedByTeacherId?: string;
+}
+
 /** 资源分享记录 */
 export interface ShareRecord {
   id: string;
@@ -462,10 +533,20 @@ export interface ShareRecord {
   /** 接收者学校ID（校际分享时指定） */
   toSchoolId?: string;
   scope: ShareScope;
+  /** 普通分享或面向平台的资源捐赠 */
+  kind?: "share" | "donation";
   resourceType: ShareableResourceType;
   resourceId: string;
+  /** 捐赠时原始私人资源 ID；平台资源使用独立快照，不反向修改原件 */
+  sourceResourceId?: string;
   /** 资源快照（分享时的标题等元数据） */
   resourceTitle: string;
+  /** 捐赠资源快照 */
+  resourceSnapshot?: Question | ExamPaper | Lecture | Courseware | Material;
+  /** 捐赠时同步的章节与知识点路径 */
+  directorySnapshot?: DonationDirectorySnapshot;
+  /** 合并贡献指向的主捐赠记录；该记录只计贡献，不重复展示资源 */
+  mergedIntoDonationId?: string;
   /** 分享附言 */
   message?: string;
   status: ShareStatus;
@@ -475,6 +556,81 @@ export interface ShareRecord {
   acceptedAt?: string;
   /** 过期时间（可选） */
   expiresAt?: string;
+}
+
+// ============ 平台资源捐赠 ============
+
+/** 可被捐赠到平台资源库的完整资源快照。 */
+export type PlatformResourceSnapshot = Question | ExamPaper | Lecture | Courseware | Material;
+
+export interface DonationItem {
+  resourceType: ShareableResourceType;
+  resourceId: string;
+}
+
+export type DonationMergeFieldSource = "source" | "target";
+
+export interface DonationDecision {
+  sourceResourceId: string;
+  action: "new" | "merge";
+  targetDonationId?: string;
+  fields: {
+    stem: DonationMergeFieldSource;
+    answer: DonationMergeFieldSource;
+    analysis: DonationMergeFieldSource;
+    summary: DonationMergeFieldSource;
+  };
+}
+
+export interface PlatformDonation {
+  id: string;
+  donorTeacherId: string;
+  donorSchoolId: string;
+  donorName: string;
+  resourceType: ShareableResourceType;
+  sourceResourceId: string;
+  status: "active" | "merged";
+  mergedIntoDonationId?: string;
+  snapshot: PlatformResourceSnapshot;
+  contributorTeacherIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DonationConflict {
+  item: DonationItem;
+  similarity: number;
+  sourceQuestion: Question;
+  targetDonationId: string;
+  targetQuestion: Question;
+  targetDonorName: string;
+}
+
+export interface DonationCheckResult {
+  alreadyDonated: DonationItem[];
+  conflicts: DonationConflict[];
+}
+
+export interface DonorStatus {
+  donationCount: number;
+  rank: number | null;
+  isTopTen: boolean;
+}
+
+export type PlatformAttributeOptionType =
+  | "grade"
+  | "schoolYear"
+  | "questionType"
+  | "coursewareType"
+  | "materialType";
+
+export interface PlatformAttributeOption {
+  id: string;
+  type: PlatformAttributeOptionType;
+  values: string[];
+  updatedByTeacherId: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ============ 试卷发布（校际统一考试） ============

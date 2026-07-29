@@ -1,7 +1,16 @@
 import { rpcCall } from "./api";
 
 import type {
-  ShareRecord, ShareableResourceType, ShareScope,
+  DonationContributor,
+  DonationPreview,
+  DonationPrivileges,
+  DonationRequest,
+  PlatformResourceSetting,
+  PlatformResourceSettingType,
+  ShareRecord,
+  ShareableResourceType,
+  ShareScope,
+  TreeNode,
 } from "@/types";
 
 export const shareService = {
@@ -20,6 +29,68 @@ export const shareService = {
     return rpcCall("share", "createShare", [params]) as any;
   },
 
+  async checkDonationCandidates(
+    teacherId: string,
+    requests: DonationRequest[],
+  ): Promise<DonationPreview[]> {
+    return rpcCall("share", "checkDonationCandidates", [teacherId, requests]) as any;
+  },
+
+  async donateResources(
+    teacherId: string,
+    schoolId: string,
+    requests: DonationRequest[],
+  ): Promise<ShareRecord[]> {
+    return rpcCall("share", "donateResources", [teacherId, schoolId, requests]) as any;
+  },
+
+  async listPublicDonations(): Promise<ShareRecord[]> {
+    return rpcCall("share", "listPublicDonations", []) as any;
+  },
+
+  async listDonationStatus(teacherId: string): Promise<ShareRecord[]> {
+    return rpcCall("share", "listDonationStatus", [teacherId]) as any;
+  },
+
+  async listDonationContributors(): Promise<DonationContributor[]> {
+    return rpcCall("share", "listDonationContributors", []) as any;
+  },
+
+  async getDonationPrivileges(teacherId: string): Promise<DonationPrivileges> {
+    return rpcCall("share", "getDonationPrivileges", [teacherId]) as any;
+  },
+
+  async getPlatformDirectoryTree(type: "chapter" | "knowledge"): Promise<TreeNode> {
+    return rpcCall("share", "getPlatformDirectoryTree", [type]) as any;
+  },
+
+  async updateDonationResource(
+    teacherId: string,
+    donationId: string,
+    patch: Partial<{
+      title: string;
+      description: string;
+      grade: string;
+      schoolYear: string;
+      originalFileName: string;
+      difficulty: 1 | 2 | 3 | 4 | 5;
+      recommendation: 1 | 2 | 3 | 4 | 5;
+    }>,
+  ): Promise<ShareRecord> {
+    return rpcCall("share", "updateDonationResource", [teacherId, donationId, patch]) as any;
+  },
+
+  async listPlatformResourceSettings(): Promise<PlatformResourceSetting[]> {
+    return rpcCall("share", "listPlatformResourceSettings", []) as any;
+  },
+
+  async updatePlatformResourceSettings(
+    teacherId: string,
+    settings: Array<{ type: PlatformResourceSettingType; values: string[] }>,
+  ): Promise<PlatformResourceSetting[]> {
+    return rpcCall("share", "updatePlatformResourceSettings", [teacherId, settings]) as any;
+  },
+
   async listIncomingShares(teacherId: string): Promise<ShareRecord[]> {
     return rpcCall("share", "listIncomingShares", [teacherId]) as any;
   },
@@ -28,7 +99,11 @@ export const shareService = {
     return rpcCall("share", "listOutgoingShares", [teacherId]) as any;
   },
 
-  async acceptShare(shareId: string, toTeacherId: string, toSchoolId: string): Promise<{ newResourceId: string; resourceType: ShareableResourceType }> {
+  async acceptShare(
+    shareId: string,
+    toTeacherId: string,
+    toSchoolId: string,
+  ): Promise<{ newResourceId: string; resourceType: ShareableResourceType }> {
     return rpcCall("share", "acceptShare", [shareId, toTeacherId, toSchoolId]) as any;
   },
 
@@ -38,5 +113,5 @@ export const shareService = {
 
   async revokeShare(shareId: string): Promise<void> {
     return rpcCall("share", "revokeShare", [shareId]) as any;
-  }
+  },
 };
