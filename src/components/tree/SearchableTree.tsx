@@ -24,13 +24,10 @@ interface SearchableTreeProps {
   onLogicChange?: (logic: FilterLogic) => void;
 }
 
-/**
- * 树形节点扁平化（用于搜索匹配并展开命中节点的祖先）
- */
-function flattenNodes(node: TreeNode, path: string[] = []): { node: TreeNode; path: string[] }[] {
-  const current = { node, path };
-  const childPath = [...path, node.id];
-  return [current, ...node.children.flatMap((c) => flattenNodes(c, childPath))];
+function findMatchingNodeIds(node: TreeNode, keyword: string): string[] {
+  const normalizedKeyword = keyword.toLowerCase();
+  const matches = node.name.toLowerCase().includes(normalizedKeyword) ? [node.id] : [];
+  return [...matches, ...node.children.flatMap((child) => findMatchingNodeIds(child, keyword))];
 }
 
 /**
@@ -65,13 +62,20 @@ export function SearchableTree({
   onLogicChange,
 }: SearchableTreeProps) {
   const [keyword, setKeyword] = useState("");
+  const normalizedKeyword = keyword.trim();
 
   const filteredData = useMemo(() => {
-    if (!keyword.trim()) return data;
-    return filterTree(data, keyword.trim()) ?? data;
-  }, [data, keyword]);
+    if (!normalizedKeyword) return data;
+    return filterTree(data, normalizedKeyword) ?? data;
+  }, [data, normalizedKeyword]);
 
-  const isSearching = keyword.trim().length > 0;
+  const matchingIds = useMemo(
+    () => normalizedKeyword ? findMatchingNodeIds(data, normalizedKeyword) : [],
+    [data, normalizedKeyword],
+  );
+
+  const isSearching = normalizedKeyword.length > 0;
+  const hasSearchResults = matchingIds.length > 0;
 
   const handleReset = () => {
     setKeyword("");
@@ -147,6 +151,7 @@ export function SearchableTree({
             <button
               onClick={() => setKeyword("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-mist text-ink-400"
+              aria-label="清除搜索"
             >
               <X className="w-3 h-3" />
             </button>
@@ -154,15 +159,19 @@ export function SearchableTree({
         </div>
 
         <div className="max-h-[500px] overflow-auto -mx-1 px-1">
-          {isSearching && filteredData.children.length === 0 ? (
+          {isSearching && !hasSearchResults ? (
             <div className="py-6 text-center text-xs text-ink-400">未匹配到节点</div>
           ) : (
             <TreeView
+              key={isSearching ? `search:${normalizedKeyword}` : "default"}
               data={filteredData}
               checkable={checkable}
               checkedIds={checkedIds}
               onCheck={onCheck}
-              expandLevel={isSearching ? 99 : expandLevel}
+              defaultExpandAll={isSearching}
+              expandLevel={expandLevel}
+              highlightedIds={matchingIds}
+              highlightAccent={accent}
               showDoneCount={showDoneCount}
               className="text-xs"
             />

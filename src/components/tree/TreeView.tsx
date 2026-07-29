@@ -15,6 +15,8 @@ interface TreeViewProps {
   className?: string;
   defaultExpandAll?: boolean;
   expandLevel?: number;
+  highlightedIds?: string[];
+  highlightAccent?: "gold" | "teal";
 }
 
 export function TreeView({
@@ -29,6 +31,8 @@ export function TreeView({
   className,
   defaultExpandAll = false,
   expandLevel = 1,
+  highlightedIds = [],
+  highlightAccent = "gold",
 }: TreeViewProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     if (defaultExpandAll) {
@@ -102,15 +106,22 @@ export function TreeView({
     const isChecked = isFullyChecked(node);
     const isPartial = isPartiallyChecked(node);
     const isRoot = node.id === "root";
+    const isHighlighted = highlightedIds.includes(node.id);
 
     return (
       <div key={node.id}>
         <div
+          data-search-match={isHighlighted ? "true" : undefined}
           className={cn(
             "flex items-center gap-1.5 py-1.5 px-2 rounded-md transition-colors group",
             !isRoot && "hover:bg-mist cursor-pointer",
             isSelected && "bg-gold-50 border border-gold-200",
             isRoot && "font-serif font-semibold text-ink-900",
+            isHighlighted && (
+              highlightAccent === "gold"
+                ? "bg-gold-100/80 ring-1 ring-inset ring-gold-300"
+                : "bg-teal-100/80 ring-1 ring-inset ring-teal-300"
+            ),
           )}
           style={{ paddingLeft: `${depth * 16 + (isRoot ? 8 : 8)}px` }}
           onClick={() => !isRoot && onSelect?.(node)}
@@ -183,6 +194,11 @@ export function TreeView({
             className={cn(
               "flex-1 whitespace-nowrap text-sm",
               isRoot ? "font-medium text-ink-900" : "text-ink-700",
+              isHighlighted && (
+                highlightAccent === "gold"
+                  ? "font-semibold text-gold-800"
+                  : "font-semibold text-teal-800"
+              ),
             )}
             title={node.name}
           >
