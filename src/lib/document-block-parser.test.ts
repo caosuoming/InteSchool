@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseDocumentBlocks, type DocumentParseConfig } from "./document-block-parser";
 
 const config: DocumentParseConfig = {
-  headingKeywords: ["一", "二", "三"],
+  headingKeywords: ["一", "二", "三", "四"],
   questionKeywords: ["例", "例题", "练习", "习题", "第"],
   answerKeywords: ["答案", "【答案】", "答案：", "答："],
   analysisKeywords: ["解析", "【解析】", "解析："],
@@ -91,6 +91,106 @@ describe("document block parser", () => {
     expect(blocks[0]).toMatchObject({
       type: "knowledge",
       content: "集合是由确定对象组成的整体。\n集合中的对象称为元素。",
+    });
+  });
+
+  it("keeps unlabelled essay solution steps out of the question stem", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "四、例题精讲",
+        "例1 已知椭圆 E，(1) 求切点坐标；(2) 证明存在常数 λ，并求 λ 的值。",
+        "由 T(2,1) 知直线斜率，可设辅助直线方程。",
+        "联立两条直线可得交点 P 的坐标。",
+        "故存在常数 λ，使等式成立。",
+        "【答案】(1) T(2,1)；(2) λ=4/5。",
+        "【解析】代入椭圆方程并利用判别式求解。",
+        "【总结】利用直线与圆锥曲线的位置关系。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      questionType: "essay",
+      content: "例1 已知椭圆 E，(1) 求切点坐标；(2) 证明存在常数 λ，并求 λ 的值。",
+      answer: "(1) T(2,1)；(2) λ=4/5。",
+      summary: "利用直线与圆锥曲线的位置关系。",
+    });
+    expect(blocks[1].analysis).toBe([
+      "由 T(2,1) 知直线斜率，可设辅助直线方程。",
+      "联立两条直线可得交点 P 的坐标。",
+      "故存在常数 λ，使等式成立。",
+      "代入椭圆方程并利用判别式求解。",
+    ].join("\n"));
+  });
+
+  it("treats legacy 解： markers and their continuation as analysis", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 计算 $x^2=4$ 的所有实数解。",
+        "解：两边开平方，得到 $x=\\pm 2$。",
+        "所以原方程有两个实数解。",
+        "答案：$x=\\pm 2$。",
+      ].join("\n"),
+      { ...config, answerKeywords: [...config.answerKeywords, "解："] },
+    );
+
+    expect(blocks[0]).toMatchObject({
+      content: "1. 计算 $x^2=4$ 的所有实数解。",
+      answer: "$x=\\pm 2$。",
+      analysis: "两边开平方，得到 $x=\\pm 2$。\n所以原方程有两个实数解。",
+    });
+  });
+
+  it("keeps answer continuation paragraphs in the answer field", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 写出方程的解。",
+        "答案：第一种情形为 x=1。",
+        "第二种情形为 x=-1。",
+        "解析：分别代入验证。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      answer: "第一种情形为 x=1。\n第二种情形为 x=-1。",
+      analysis: "分别代入验证。",
+    });
+  });
+
+  it("keeps a standalone proof requirement in the question stem", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 已知函数 f(x) 在定义域内连续。",
+        "证明：函数 f(x) 在该区间上存在零点。",
+        "答案：命题成立。",
+        "解析：使用零点存在定理。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      content: "1. 已知函数 f(x) 在定义域内连续。\n证明：函数 f(x) 在该区间上存在零点。",
+      answer: "命题成立。",
+      analysis: "使用零点存在定理。",
+    });
+  });
+
+  it("recognizes a labelled proof after an existing proof request", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 求证函数 f(x) 在该区间上存在零点。",
+        "证明：由连续性和端点异号可得结论。",
+        "答案：命题成立。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      content: "1. 求证函数 f(x) 在该区间上存在零点。",
+      answer: "命题成立。",
+      analysis: "由连续性和端点异号可得结论。",
     });
   });
 });

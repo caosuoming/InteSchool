@@ -64,7 +64,6 @@ const defaultAnswerKeywords = [
   "【答案】",
   "答案：",
   "答：",
-  "解：",
 ];
 
 const defaultAnalysisKeywords = [
@@ -74,6 +73,8 @@ const defaultAnalysisKeywords = [
   "分析",
   "【分析】",
   "分析：",
+  "解：",
+  "【解】",
   "解题思路",
   "【解题思路】",
 ];

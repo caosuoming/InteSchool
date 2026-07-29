@@ -31,7 +31,7 @@ import { useExtractConfigStore } from "@/stores/extractConfig";
 import { extractService } from "@/services/extract";
 import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
-import { renderInlineMath } from "@/lib/docx-parser";
+import { renderExtractText } from "@/lib/extract-text-renderer";
 import {
   parseDocumentBlocks,
   type DocumentBlock as DocBlock,
@@ -136,142 +136,6 @@ function getOptionColor(index: number): string {
     "bg-teal-500",
   ];
   return colors[index % colors.length];
-}
-
-/**
- * 渲染包含 LaTeX 公式的文本，使用 KaTeX 渲染公式部分，并高亮关键字
- */
-/**
- * 渲染包含 LaTeX 公式的文本，使用和讲义预览相同的 renderInlineMath 函数
- */
-function renderTextWithFormula(text: string, keywords: string[] = [], highlightEnabled: boolean = true): string {
-  if (!text) return "";
-  
-  // 先处理 HTML 转义字符，确保 $ 符号正确
-  const processedText = text
-    .replace(/&dollar;/g, "$")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
-  
-  // 处理 markdown 格式的图片，转换为 HTML img 标签
-  const withImages = processedText.replace(
-    /!\[([^\]]*)\]\(([^)]+)\)/g,
-    '<img src="$2" alt="$1" class="max-w-full h-auto rounded-lg border border-ink-200" />'
-  );
-  
-  // 先使用 renderInlineMath 渲染公式（和讲义预览使用相同的逻辑）
-  const formulaHtml = renderInlineMath(withImages);
-  
-  // 如果需要高亮关键字
-  if (highlightEnabled && keywords.length > 0) {
-    // 将公式HTML拆分为普通文本和公式部分
-    // 公式部分已经被渲染为HTML，我们需要保留它们
-    // 只对普通文本部分进行关键字高亮
-    
-    // 使用临时div来解析HTML
-    const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = formulaHtml;
-    
-    const parts: string[] = [];
-    
-    // 遍历所有子节点
-    const processNode = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const textContent = node.textContent || "";
-        if (textContent.trim()) {
-          processTextWithKeywords(textContent, keywords, parts);
-        }
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as Element;
-        // 如果是公式元素，直接保留其HTML
-        if (el.classList.contains("formula-inline")) {
-          parts.push(el.outerHTML);
-        } else {
-          // 对于其他元素，递归处理其子节点
-          parts.push(`<${el.tagName.toLowerCase()}`);
-          for (let i = 0; i < el.attributes.length; i++) {
-            const attr = el.attributes[i];
-            parts.push(` ${attr.name}="${attr.value}"`);
-          }
-          parts.push(">");
-          Array.from(el.childNodes).forEach(processNode);
-          parts.push(`</${el.tagName.toLowerCase()}>`);
-        }
-      }
-    };
-    
-    Array.from(tempDiv.childNodes).forEach(processNode);
-    return parts.join("");
-  }
-  
-  return formulaHtml;
-}
-
-/**
- * 处理文本中的关键字高亮（只在行首识别关键字）
- */
-function processTextWithKeywords(text: string, keywords: string[], parts: string[]) {
-  if (!text || keywords.length === 0) {
-    parts.push(escapeHtml(text));
-    return;
-  }
-  
-  // 将文本按换行符分割，逐行处理
-  const lines = text.split(/(\r?\n)/);
-  
-  lines.forEach((line, idx) => {
-    // 如果是换行符本身，直接添加
-    if (line === "\n" || line === "\r\n") {
-      parts.push(line);
-      return;
-    }
-    
-    // 构建行首关键字正则表达式（只匹配行首的关键字）
-    const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    const lineStartPattern = new RegExp(
-      `^([\\s]*)(?:(${escapedKeywords.join("|")})([\\s]*[\\d一二三四五六七八九十]+[、．.．）)]?)?)`,
-      "g"
-    );
-    
-    const match = lineStartPattern.exec(line);
-    if (match) {
-      const leadingSpaces = match[1]; // 行首空格
-      const keyword = match[2]; // 关键字
-      const numbering = match[3] || ""; // 编号部分
-      
-      // 添加行首空格
-      if (leadingSpaces) {
-        parts.push(escapeHtml(leadingSpaces));
-      }
-      
-      // 高亮关键字和编号
-      if (keyword) {
-        parts.push(`<span class="bg-ink-700 text-white px-0.5 py-0 rounded text-xs">${escapeHtml(keyword + numbering)}</span>`);
-      }
-      
-      // 添加剩余文本
-      const remaining = line.substring(match.index + match[0].length);
-      if (remaining) {
-        parts.push(escapeHtml(remaining));
-      }
-    } else {
-      // 没有匹配到行首关键字，整行作为普通文本
-      parts.push(escapeHtml(line));
-    }
-  });
-}
-
-/**
- * HTML 转义
- */
-function escapeHtml(text: string): string {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 /**
@@ -797,34 +661,34 @@ export function ExtractReviewModal({
                 {block.knowledgeTitle}
               </div>
             )}
-            <div className="text-sm text-ink-700 whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={{ __html: renderTextWithFormula(block.content, allKeywords, true) }} />
+            <div className="text-sm text-ink-700 whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }} />
           </div>
         )}
 
         {block.type === "question" && (
           <div className="space-y-2">
-            <div className="text-sm text-ink-800 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: renderTextWithFormula(block.content, allKeywords, true) }} />
+            <div className="text-sm text-ink-800 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }} />
             {block.options && block.options.length > 0 && (
               <div className="grid grid-cols-2 gap-1.5 pl-1">
                 {block.options.map((opt, idx) => (
-                  <div key={idx} className="flex items-start gap-1.5 text-sm" dangerouslySetInnerHTML={{ __html: `<span class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-xs font-medium text-white ${getOptionColor(idx)}">${optionLetter(idx)}</span><span class="text-ink-700 flex-1">${renderTextWithFormula(opt, allKeywords, true)}</span>` }} />
+                  <div key={idx} className="flex items-start gap-1.5 text-sm" dangerouslySetInnerHTML={{ __html: `<span class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-xs font-medium text-white ${getOptionColor(idx)}">${optionLetter(idx)}</span><span class="text-ink-700 flex-1">${renderExtractText(opt, allKeywords, true)}</span>` }} />
                 ))}
               </div>
             )}
             {block.answer && (
-              <div className="text-xs bg-emerald-50/60 border border-emerald-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-emerald-700 font-medium">答案：</span>${renderTextWithFormula(block.answer, allKeywords, true)}` }} />
+              <div className="text-xs bg-emerald-50/60 border border-emerald-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-emerald-700 font-medium">答案：</span>${renderExtractText(block.answer, allKeywords, true)}` }} />
             )}
             {block.analysis && (
-              <div className="text-xs bg-blue-50/60 border border-blue-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-blue-700 font-medium">解析：</span>${renderTextWithFormula(block.analysis, allKeywords, true)}` }} />
+              <div className="text-xs bg-blue-50/60 border border-blue-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-blue-700 font-medium">解析：</span>${renderExtractText(block.analysis, allKeywords, true)}` }} />
             )}
             {block.summary && (
-              <div className="text-xs bg-amber-50/60 border border-amber-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-amber-700 font-medium">总结：</span>${renderTextWithFormula(block.summary, allKeywords, true)}` }} />
+              <div className="text-xs bg-amber-50/60 border border-amber-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-amber-700 font-medium">总结：</span>${renderExtractText(block.summary, allKeywords, true)}` }} />
             )}
           </div>
         )}
 
         {block.type === "unused" && (
-          <div className="text-sm text-ink-500 whitespace-pre-wrap italic" dangerouslySetInnerHTML={{ __html: renderTextWithFormula(block.content, allKeywords, true) }} />
+          <div className="text-sm text-ink-500 whitespace-pre-wrap italic" dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }} />
         )}
       </div>
     );
@@ -881,7 +745,7 @@ export function ExtractReviewModal({
               </Button>
             </div>
           </div>
-          <div className="text-sm text-ink-700 line-clamp-2 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: renderTextWithFormula(block.type === "knowledge" && block.knowledgeTitle ? `${block.knowledgeTitle}：${block.content}` : block.content, [], false) }} />
+          <div className="text-sm text-ink-700 line-clamp-2 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: renderExtractText(block.type === "knowledge" && block.knowledgeTitle ? `${block.knowledgeTitle}：${block.content}` : block.content, [], false) }} />
         </div>
 
         {isEditing && (

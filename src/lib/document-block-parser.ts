@@ -178,12 +178,66 @@ function stripPrefix(text: string, pattern: RegExp | null): string {
   return pattern ? text.replace(pattern, "").trim() : text.trim();
 }
 
+type QuestionField = "content" | "answer" | "analysis" | "summary";
+
+const solutionMarkerPattern = /^(?:【\s*)?(解答|解|证明)(?:\s*】)?\s*[:：]\s*/;
+const implicitSolutionLeadPattern = /^(?:由|因为|由于|根据|联立|解得|可得|所以|故|从而|于是|设|令|作|易知|显然|不妨|将|把|代入|整理|消去|同理|又由|证明如下)/;
+
+function appendQuestionField(
+  block: Partial<DocumentBlock>,
+  field: QuestionField,
+  value: string,
+): void {
+  const normalized = value.trim();
+  if (!normalized) return;
+  const existing = block[field]?.trim();
+  block[field] = existing ? `${existing}\n${normalized}` : normalized;
+}
+
+function shouldStartImplicitAnalysis(
+  line: string,
+  block: Partial<DocumentBlock>,
+  sectionType: QuestionType | undefined,
+  config: DocumentParseConfig,
+  hasFutureStructuredField: boolean,
+): boolean {
+  if (!hasFutureStructuredField || !implicitSolutionLeadPattern.test(line)) return false;
+  if ((block.options?.length || 0) > 0) return false;
+
+  const questionText = block.content?.trim() || "";
+  const essayLike = sectionType === "essay"
+    || config.essayKeywords.some((keyword) => keyword && questionText.includes(keyword))
+    || /(?:求|证明|说明|计算|解答|求证|判断是否)/.test(questionText);
+  const promptComplete = /[。！？?]$/.test(questionText)
+    || /(?:求|证明|说明|计算|解答|求证|判断是否)/.test(questionText);
+  return essayLike && promptComplete;
+}
+
+function extractExplicitSolution(
+  line: string,
+  block: Partial<DocumentBlock>,
+  hasFutureStructuredField: boolean,
+): string | undefined {
+  const match = solutionMarkerPattern.exec(line);
+  if (!match) return undefined;
+
+  if (match[1] === "证明") {
+    const questionText = block.content || "";
+    if (!hasFutureStructuredField || !/(?:证明|求证|请证)/.test(questionText)) {
+      return undefined;
+    }
+  }
+
+  return line.slice(match[0].length).trim();
+}
+
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const blocks: DocumentBlock[] = [];
   const answerPattern = keywordPattern(config.answerKeywords);
   const analysisPattern = keywordPattern(config.analysisKeywords);
   const summaryPattern = keywordPattern(config.summaryKeywords);
   let currentBlock: Partial<DocumentBlock> = {};
+  let currentQuestionField: QuestionField = "content";
   let sectionQuestionType: QuestionType | undefined;
   let order = 0;
 
@@ -210,9 +264,24 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     }
     blocks.push(block);
     currentBlock = {};
+    currentQuestionField = "content";
   };
 
-  for (const originalLine of content.replace(/\r\n?/g, "\n").split("\n")) {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const hasFutureStructuredField = (index: number): boolean => lines
+    .slice(index + 1)
+    .some((futureLine) => {
+      const trimmed = futureLine.trim();
+      return Boolean(
+        trimmed
+        && (answerPattern?.test(trimmed)
+          || analysisPattern?.test(trimmed)
+          || summaryPattern?.test(trimmed)),
+      );
+    });
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const originalLine = lines[lineIndex];
     const line = originalLine.trim();
     if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
 
@@ -239,38 +308,63 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
         questionType: detectSectionQuestionType(line),
         difficulty: 3,
       };
-      continue;
-    }
-
-    if (currentBlock.type === "question" && answerPattern?.test(line)) {
-      currentBlock.answer = stripPrefix(line, answerPattern);
-      continue;
-    }
-    if (currentBlock.type === "question" && analysisPattern?.test(line)) {
-      currentBlock.analysis = stripPrefix(line, analysisPattern);
-      continue;
-    }
-    if (currentBlock.type === "question" && summaryPattern?.test(line)) {
-      currentBlock.summary = stripPrefix(line, summaryPattern);
+      currentQuestionField = "content";
       continue;
     }
 
     if (currentBlock.type === "question") {
-      const options = extractOptionLine(line, currentBlock.options?.length || 0);
-      if (options) {
-        currentBlock.options = [...(currentBlock.options || []), ...options];
+      const explicitSolution = extractExplicitSolution(
+        line,
+        currentBlock,
+        hasFutureStructuredField(lineIndex),
+      );
+      if (explicitSolution !== undefined) {
+        appendQuestionField(currentBlock, "analysis", explicitSolution);
+        currentQuestionField = "analysis";
         continue;
       }
-      if ((currentBlock.options?.length || 0) > 0 && !currentBlock.answer) {
-        const lastIndex = currentBlock.options!.length - 1;
-        currentBlock.options![lastIndex] = `${currentBlock.options![lastIndex]} ${line}`.trim();
-        continue;
+    }
+    if (currentBlock.type === "question" && answerPattern?.test(line)) {
+      appendQuestionField(currentBlock, "answer", stripPrefix(line, answerPattern));
+      currentQuestionField = "answer";
+      continue;
+    }
+    if (currentBlock.type === "question" && analysisPattern?.test(line)) {
+      appendQuestionField(currentBlock, "analysis", stripPrefix(line, analysisPattern));
+      currentQuestionField = "analysis";
+      continue;
+    }
+    if (currentBlock.type === "question" && summaryPattern?.test(line)) {
+      appendQuestionField(currentBlock, "summary", stripPrefix(line, summaryPattern));
+      currentQuestionField = "summary";
+      continue;
+    }
+
+    if (currentBlock.type === "question") {
+      if (currentQuestionField === "content") {
+        const options = extractOptionLine(line, currentBlock.options?.length || 0);
+        if (options) {
+          currentBlock.options = [...(currentBlock.options || []), ...options];
+          continue;
+        }
+        if ((currentBlock.options?.length || 0) > 0) {
+          const lastIndex = currentBlock.options!.length - 1;
+          currentBlock.options![lastIndex] = `${currentBlock.options![lastIndex]} ${line}`.trim();
+          continue;
+        }
+        if (shouldStartImplicitAnalysis(
+          line,
+          currentBlock,
+          sectionQuestionType,
+          config,
+          hasFutureStructuredField(lineIndex),
+        )) {
+          appendQuestionField(currentBlock, "analysis", line);
+          currentQuestionField = "analysis";
+          continue;
+        }
       }
-      if (currentBlock.analysis) {
-        currentBlock.analysis += `\n${line}`;
-      } else {
-        currentBlock.content = `${currentBlock.content}\n${line}`;
-      }
+      appendQuestionField(currentBlock, currentQuestionField, line);
       continue;
     }
 
