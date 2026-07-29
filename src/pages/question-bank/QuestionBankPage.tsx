@@ -27,6 +27,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDetail } from "@/components/question/QuestionDetail";
+import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
 import { RelatedQuestionsModal } from "@/components/question/RelatedQuestionsModal";
 import { QuickEditModal } from "@/components/question/QuickEditModal";
@@ -2070,31 +2071,9 @@ function QuestionRow({
             })()}
           </div>
 
-          {/* 展开时显示完整内容（仅答案与解析，选项已在上方常驻显示） */}
+          {/* 展开时显示答案、解析与总结，选项已在上方常驻显示 */}
           {expanded && (
-            <div className="space-y-3 mb-3 animate-fade-in">
-              {/* 答案 */}
-              <div>
-                <div className="text-xs font-medium text-ink-500 mb-1">答案</div>
-                <div className={cn(
-                  "p-2.5 rounded-md bg-emerald-50/40 border border-emerald-200 text-emerald-900 font-medium whitespace-pre-wrap",
-                  wideLayout ? "text-base" : "text-sm",
-                )}>
-                  <MathText>{question.answer}</MathText>
-                </div>
-              </div>
-
-              {/* 解析 */}
-              <div>
-                <div className="text-xs font-medium text-ink-500 mb-1">解析</div>
-                <div className={cn(
-                  "p-2.5 rounded-md bg-gold-50/30 border border-gold-200 text-ink-900 leading-relaxed whitespace-pre-wrap",
-                  wideLayout ? "text-base" : "text-sm",
-                )}>
-                  <MathText>{question.analysis}</MathText>
-                </div>
-              </div>
-            </div>
+            <QuestionExpandedDetails question={question} wideLayout={wideLayout} />
           )}
 
           {/* 章节与知识点（可点击，使用模式下可隐藏） */}
