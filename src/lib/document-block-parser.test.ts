@@ -3,7 +3,7 @@ import { parseDocumentBlocks, type DocumentParseConfig } from "./document-block-
 
 const config: DocumentParseConfig = {
   headingKeywords: ["一", "二", "三", "四"],
-  questionKeywords: ["例", "例题", "练习", "习题", "第"],
+  questionKeywords: ["例", "例题", "练习", "习题", "变式", "拓展", "第"],
   answerKeywords: ["答案", "【答案】", "答案：", "答："],
   analysisKeywords: ["解析", "【解析】", "解析："],
   summaryKeywords: ["总结", "【总结】", "总结："],
@@ -79,6 +79,46 @@ describe("document block parser", () => {
 
     expect(blocks[0].options).toEqual(["甲", "乙", "丙", "丁"]);
     expect(blocks[1].options).toEqual(["甲", "乙", "丙", "丁"]);
+  });
+
+  it("splits keyword-labelled questions without requiring a separator", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1已知函数 f(x)=x+1，求 f(1)。",
+        "练习1计算 2+2 的值。",
+        "变式1若 x+1=3，求 x。",
+        "拓展1证明两个奇数之和为偶数。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(4);
+    expect(blocks.map((block) => block.type)).toEqual([
+      "question",
+      "question",
+      "question",
+      "question",
+    ]);
+    expect(blocks.map((block) => block.content)).toEqual([
+      "例1已知函数 f(x)=x+1，求 f(1)。",
+      "练习1计算 2+2 的值。",
+      "变式1若 x+1=3，求 x。",
+      "拓展1证明两个奇数之和为偶数。",
+    ]);
+  });
+
+  it("recognizes decorated and full-width keyword labels", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "【例１】已知 x=1，求 x+1。",
+        "变式（2）求方程 x=2 的解。",
+        "拓展三证明命题成立。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(3);
+    expect(blocks.every((block) => block.type === "question")).toBe(true);
   });
 
   it("keeps prose as a knowledge block instead of inventing a question", () => {

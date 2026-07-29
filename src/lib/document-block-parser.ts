@@ -171,7 +171,10 @@ function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
     .sort((left, right) => right.length - left.length)
     .map(escapeRegex);
   if (!prefixes.length) return false;
-  return new RegExp(`^(?:${prefixes.join("|")}|巩固题)\\s*(?:第?\\s*)?[\\d一二三四五六七八九十]+(?:\\s*题)?(?:[、.．:：)）]|\\s)`).test(text);
+  const index = "[\\d０-９零〇一二三四五六七八九十百两]+";
+  return new RegExp(
+    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")}|巩固题)\\s*(?:第\\s*)?[（(]?\\s*${index}\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?`,
+  ).test(text);
 }
 
 function stripPrefix(text: string, pattern: RegExp | null): string {
