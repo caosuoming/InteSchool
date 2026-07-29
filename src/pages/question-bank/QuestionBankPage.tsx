@@ -1996,7 +1996,6 @@ function QuestionRow({
 
           {/* 标签行 */}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
-            {donated && <Badge variant="teal">已捐赠</Badge>}
             {isUsedBySelectedStudents && (
               <Badge variant="gold">
                 <CheckCircle2 className="w-3 h-3 mr-0.5" />
@@ -2346,6 +2345,11 @@ function QuestionRow({
             </div>
           </div>
         </div>
+        {donated && (
+          <div className="flex-shrink-0">
+            <Badge variant="teal">已捐赠</Badge>
+          </div>
+        )}
       </div>
     </div>
   );
