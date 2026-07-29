@@ -360,6 +360,45 @@ describe("production backend", () => {
     expect(spoof.json()).toEqual({ error: "无权以其他教师身份执行操作" });
   });
 
+  it("returns an empty student list without losing the service method receiver", async () => {
+    const before = built.store.loadState();
+    const state = structuredClone(before);
+    state.students = [];
+    state.studentInteractions = [];
+    built.store.saveState(before, state);
+
+    const session = await login(built.app);
+    const schoolId = String(session.teacher.schoolId);
+    const teacherId = String(session.teacher.id);
+    const headers = {
+      cookie: session.cookie,
+      "x-inteschool-csrf": session.csrfToken,
+    };
+
+    const students = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: { service: "class", method: "listStudentsBySchool", args: [schoolId] },
+    });
+    expect(students.statusCode).toBe(200);
+    expect(students.json()).toEqual({ result: [] });
+
+    const classIds = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: { service: "class", method: "listMyClassIds", args: [schoolId, teacherId] },
+    });
+    expect(classIds.statusCode).toBe(200);
+    expect(classIds.json()).toEqual({
+      result: {
+        __rpcType: "Set",
+        values: expect.any(Array),
+      },
+    });
+  });
+
   it("does not expose private questions owned by other teachers", async () => {
     const before = built.store.loadState();
     const state = structuredClone(before);

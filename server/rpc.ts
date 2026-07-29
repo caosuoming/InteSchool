@@ -359,7 +359,11 @@ export async function invokeRpc(
 
   return withSerializedState(store, async (state) => {
     const authorized = authorize(state, session, serviceName as ServiceName, methodName, args);
-    const result = await runWithState(state, () => (method as (...values: unknown[]) => unknown)(...authorized.args));
+    const result = await runWithState(state, () => Reflect.apply(
+      method as (...values: unknown[]) => unknown,
+      service,
+      authorized.args,
+    ));
     return sanitize(filterAuthorizedResult(
       serviceName as ServiceName,
       methodName,
