@@ -107,6 +107,11 @@ export function TreeView({
     const isPartial = isPartiallyChecked(node);
     const isRoot = node.id === "root";
     const isHighlighted = highlightedIds.includes(node.id);
+    const indentDepth = isRoot
+      ? 0
+      : node.level !== undefined
+        ? node.level + 1
+        : depth;
 
     return (
       <div key={node.id}>
@@ -123,7 +128,7 @@ export function TreeView({
                 : "bg-teal-100/80 ring-1 ring-inset ring-teal-300"
             ),
           )}
-          style={{ paddingLeft: `${depth * 16 + (isRoot ? 8 : 8)}px` }}
+          style={{ paddingLeft: `${indentDepth * 16 + 8}px` }}
           onClick={() => !isRoot && onSelect?.(node)}
         >
           {hasChildren ? (
@@ -132,7 +137,7 @@ export function TreeView({
                 e.stopPropagation();
                 toggle(node.id);
               }}
-              className="p-0.5 rounded hover:bg-ink-100 text-ink-400"
+              className="inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded hover:bg-ink-100 text-ink-400"
             >
               {expanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -141,7 +146,7 @@ export function TreeView({
               )}
             </button>
           ) : (
-            <span className="w-4 inline-block" />
+            <span className="inline-block h-[18px] w-[18px] flex-shrink-0" />
           )}
 
           {checkable && !isRoot && (
