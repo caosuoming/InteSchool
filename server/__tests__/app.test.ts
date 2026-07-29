@@ -566,6 +566,62 @@ describe("production backend", () => {
     });
   });
 
+  it("includes personal-class members in the current teacher's student list", async () => {
+    const session = await login(built.app);
+    const schoolId = String(session.teacher.schoolId);
+    const teacherId = String(session.teacher.id);
+    const headers = {
+      cookie: session.cookie,
+      "x-inteschool-csrf": session.csrfToken,
+    };
+
+    const personalClassResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "createPersonalClass",
+        args: [teacherId, "Issue 14 教学班", "用于验证个人班学生选择"],
+      },
+    });
+    expect(personalClassResponse.statusCode).toBe(200);
+    const personalClass = personalClassResponse.json<{ result: { id: string } }>().result;
+
+    const studentResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "addExternalStudentToPersonalClass",
+        args: [personalClass.id, {
+          name: "个人班学生",
+          studentNo: "P001",
+          grade: "高一",
+          externalSchool: "校外学校",
+        }],
+      },
+    });
+    expect(studentResponse.statusCode).toBe(200);
+    const student = studentResponse.json<{ result: { id: string } }>().result;
+
+    const studentsResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "listMyStudents",
+        args: [schoolId, teacherId],
+      },
+    });
+    expect(studentsResponse.statusCode).toBe(200);
+    expect(studentsResponse.json<{ result: Array<{ id: string }> }>().result).toContainEqual(
+      expect.objectContaining({ id: student.id }),
+    );
+  });
+
   it("does not expose private questions owned by other teachers", async () => {
     const before = built.store.loadState();
     const state = structuredClone(before);

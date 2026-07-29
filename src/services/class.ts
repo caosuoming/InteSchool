@@ -52,15 +52,15 @@ export const classService = {
     return rpcCall("class", "listStudentsBySchool", [schoolId]) as any;
   },
 
-  async listMyClasses(schoolId: string, teacherId: string): Promise<AnyClass[]> {
+  async listMyClasses(schoolId: string | null, teacherId: string): Promise<AnyClass[]> {
     return rpcCall("class", "listMyClasses", [schoolId, teacherId]) as any;
   },
 
-  async listMyStudents(schoolId: string, teacherId: string): Promise<Student[]> {
+  async listMyStudents(schoolId: string | null, teacherId: string): Promise<Student[]> {
     return rpcCall("class", "listMyStudents", [schoolId, teacherId]) as any;
   },
 
-  async listMyClassIds(schoolId: string, teacherId: string): Promise<Set<string>> {
+  async listMyClassIds(schoolId: string | null, teacherId: string): Promise<Set<string>> {
     return rpcCall("class", "listMyClassIds", [schoolId, teacherId]) as any;
   },
 

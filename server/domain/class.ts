@@ -172,7 +172,7 @@ export const classService = {
   /**
    * 列出当前教师所教班级（含校本班级中 createdBy 是该教师的，以及该教师的个人班级）
    */
-  async listMyClasses(schoolId: string, teacherId: string): Promise<AnyClass[]> {
+  async listMyClasses(schoolId: string | null, teacherId: string): Promise<AnyClass[]> {
     await delay(200);
     const school = db
       .read("schoolClasses")
@@ -186,18 +186,29 @@ export const classService = {
   /**
    * 列出当前教师所教班级的学生
    */
-  async listMyStudents(schoolId: string, teacherId: string): Promise<Student[]> {
+  async listMyStudents(schoolId: string | null, teacherId: string): Promise<Student[]> {
     await delay(250);
     const myClasses = await this.listMyClasses(schoolId, teacherId);
     const allStudents = db.read("students");
-    const myClassIds = new Set(myClasses.map((c) => c.id));
-    return allStudents.filter((s) => myClassIds.has(s.classId));
+    const schoolClassIds = new Set(
+      myClasses.filter((c) => c.type === "school").map((c) => c.id),
+    );
+    const personalStudentIds = new Set(
+      myClasses
+        .filter((c): c is PersonalClass => c.type === "personal")
+        .flatMap((c) => c.studentIds),
+    );
+    return allStudents.filter(
+      (s) =>
+        s.status === "active"
+        && (schoolClassIds.has(s.classId) || personalStudentIds.has(s.id)),
+    );
   },
 
   /**
    * 列出当前教师所教班级ID集合
    */
-  async listMyClassIds(schoolId: string, teacherId: string): Promise<Set<string>> {
+  async listMyClassIds(schoolId: string | null, teacherId: string): Promise<Set<string>> {
     const myClasses = await this.listMyClasses(schoolId, teacherId);
     return new Set(myClasses.map((c) => c.id));
   },

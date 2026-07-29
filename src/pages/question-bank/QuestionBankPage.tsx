@@ -358,7 +358,7 @@ export default function QuestionBankPage() {
         basketService.listBaskets(teacher.id),
         classService.listSchoolClasses(teacher.schoolId!),
         classService.listPersonalClasses(teacher.id),
-        classService.listStudentsBySchool(teacher.schoolId!),
+        classService.listMyStudents(teacher.schoolId, teacher.id),
         knowledgeService.listChapters(teacher.schoolId!),
         knowledgeService.listKnowledgePoints(teacher.schoolId!),
       ]);
