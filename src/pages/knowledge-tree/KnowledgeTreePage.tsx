@@ -41,6 +41,22 @@ export default function KnowledgeTreePage() {
   const [parentNode, setParentNode] = useState<TreeNode | null>(null);
   const [moveToOpen, setMoveToOpen] = useState(false);
 
+  const handleKindChange = (nextKind: TreeKind) => {
+    if (nextKind === kind) return;
+
+    setKind(nextKind);
+    setTree(null);
+    setLoading(true);
+    setSelectedNode(null);
+    setQuestions([]);
+    setQuestionsLoading(false);
+    setSearch("");
+    setAddNodeOpen(false);
+    setNewNodeName("");
+    setParentNode(null);
+    setMoveToOpen(false);
+  };
+
   const loadTree = useCallback(async () => {
     if (!teacher) return;
     setLoading(true);
@@ -266,6 +282,7 @@ export default function KnowledgeTreePage() {
   };
 
   const displayedTree = tree && search ? filterTree(tree, search) : tree;
+  const activeAddParent = selectedNode ?? tree;
 
   return (
     <div>
@@ -276,7 +293,7 @@ export default function KnowledgeTreePage() {
         action={
           <div className="flex items-center gap-1.5 p-1 rounded-md bg-ink-100">
             <button
-              onClick={() => setKind("chapter")}
+              onClick={() => handleKindChange("chapter")}
               className={cn(
                 "px-3 py-1 rounded text-xs font-medium transition-all",
                 kind === "chapter" ? "bg-paper text-ink-900 shadow-sm" : "text-ink-600",
@@ -285,7 +302,7 @@ export default function KnowledgeTreePage() {
               章节目录
             </button>
             <button
-              onClick={() => setKind("knowledge")}
+              onClick={() => handleKindChange("knowledge")}
               className={cn(
                 "px-3 py-1 rounded text-xs font-medium transition-all",
                 kind === "knowledge" ? "bg-paper text-ink-900 shadow-sm" : "text-ink-600",
@@ -337,14 +354,15 @@ export default function KnowledgeTreePage() {
                 variant="outline"
                 size="sm"
                 className="w-full"
+                disabled={!activeAddParent}
                 onClick={() => {
-                  setParentNode(selectedNode || tree);
+                  setParentNode(activeAddParent);
                   setAddNodeOpen(true);
                 }}
               >
                 <Plus className="w-3.5 h-3.5" />
                 添加节点
-                {selectedNode && selectedNode.id !== "root" ? `到「${selectedNode.name}」` : ""}
+                {activeAddParent ? `到「${activeAddParent.name}」` : ""}
               </Button>
             </div>
           </Card>
