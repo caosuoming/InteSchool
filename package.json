@@ -29,6 +29,7 @@
     "@fastify/rate-limit": "^11.1.0",
     "@fastify/static": "^10.1.2",
     "@types/katex": "^0.16.8",
+    "@xmldom/xmldom": "^0.8.13",
     "better-sqlite3": "^13.0.1",
     "cheerio": "^1.2.0",
     "clsx": "^2.1.1",

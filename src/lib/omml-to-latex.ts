@@ -22,6 +22,8 @@
  */
 
 const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+const ELEMENT_NODE = 1;
+const TEXT_NODE = 3;
 
 /**
  * 将 OMML 元素或 XML 字符串（m:oMath 或 m:oMathPara）转换为 LaTeX 字符串
@@ -48,11 +50,12 @@ export function ommlToLatex(mathEl: Element | string): string {
  * 递归转换 OMML 节点
  */
 function convertNode(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) {
-    return node.textContent || "";
+  if (node.nodeType === TEXT_NODE) {
+    const text = node.textContent || "";
+    return text.trim() ? text : "";
   }
 
-  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  if (node.nodeType !== ELEMENT_NODE) return "";
 
   const el = node as Element;
   const tag = el.localName;
@@ -62,9 +65,6 @@ function convertNode(node: Node): string {
     return "";
   }
 
-  // 添加调试日志
-  console.log("[OMML转换] 处理元素:", tag, el.textContent?.substring(0, 50));
-  
   switch (tag) {
     case "oMath":
     case "oMathPara":
@@ -191,7 +191,7 @@ function convertChildren(el: Element): string {
 function convertRun(el: Element): string {
   let result = "";
   for (const child of Array.from(el.childNodes)) {
-    if (child.nodeType === Node.ELEMENT_NODE) {
+    if (child.nodeType === ELEMENT_NODE) {
       const childEl = child as Element;
       if (childEl.localName === "t") {
         result += escapeLatex(childEl.textContent || "");
@@ -210,21 +210,11 @@ function convertRun(el: Element): string {
 function convertFrac(el: Element): string {
   const numEl = el.getElementsByTagNameNS(MATH_NS, "num")[0];
   const denEl = el.getElementsByTagNameNS(MATH_NS, "den")[0];
-  
-  console.log("[OMML转换] frac元素结构:", {
-    hasNum: !!numEl,
-    hasDen: !!denEl,
-    numContent: numEl ? numEl.innerHTML.substring(0, 100) : "无",
-    denContent: denEl ? denEl.innerHTML.substring(0, 100) : "无",
-  });
-  
+
   const num = numEl ? convertChildren(numEl) : "";
   const den = denEl ? convertChildren(denEl) : "";
-  
-  const result = `\\frac{${num}}{${den}}`;
-  console.log("[OMML转换] frac结果:", result);
-  
-  return result;
+
+  return `\\frac{${num}}{${den}}`;
 }
 
 /**
@@ -253,24 +243,15 @@ function convertRad(el: Element): string {
 function convertSup(el: Element): string {
   const eEl = el.getElementsByTagNameNS(MATH_NS, "e")[0];
   const supEl = el.getElementsByTagNameNS(MATH_NS, "sup")[0];
-  
-  console.log("[OMML转换] sSup元素结构:", {
-    hasE: !!eEl,
-    hasSup: !!supEl,
-    eContent: eEl ? eEl.innerHTML.substring(0, 50) : "无",
-    supContent: supEl ? supEl.textContent : "无",
-  });
-  
+
   const e = eEl ? convertChildren(eEl) : "";
   const sup = supEl ? supEl.textContent || "" : "";
-  
+
   if (!sup || sup.trim() === "") {
     return e;
   }
-  
-  const result = `{${e}}^{${sup}}`;
-  console.log("[OMML转换] sSup结果:", result);
-  return result;
+
+  return `{${e}}^{${sup}}`;
 }
 
 /**
@@ -491,15 +472,10 @@ function mapFunction(name: string): string | null {
 function convertEqArr(el: Element): string {
   const rows: string[] = [];
   const rowEls = el.getElementsByTagNameNS(MATH_NS, "e");
-  
-  console.log("[OMML转换] eqArr元素结构:", {
-    rowCount: rowEls.length,
-  });
-  
+
   for (let i = 0; i < rowEls.length; i++) {
     const rowContent = convertChildren(rowEls[i]);
     rows.push(rowContent);
-    console.log("[OMML转换] eqArr行", i + 1, ":", rowContent);
   }
   
   // 检查是否是分段函数（通常有多个行）
@@ -517,14 +493,10 @@ function convertEqArr(el: Element): string {
       return row;
     });
     
-    const casesResult = `\\begin{cases}\n${casesRows.join(" \\\\\n")}\n\\end{cases}`;
-    console.log("[OMML转换] eqArr结果(cases):", casesResult);
-    return casesResult;
+    return `\\begin{cases}\n${casesRows.join(" \\\\\n")}\n\\end{cases}`;
   }
   
-  const alignedResult = `\\begin{aligned} ${rows.join(" \\\\ ")} \\end{aligned}`;
-  console.log("[OMML转换] eqArr结果(aligned):", alignedResult);
-  return alignedResult;
+  return `\\begin{aligned} ${rows.join(" \\\\ ")} \\end{aligned}`;
 }
 
 /**

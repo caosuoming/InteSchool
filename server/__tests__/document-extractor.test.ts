@@ -12,6 +12,14 @@ const mammothMocks = vi.hoisted(() => ({
   imageHandler: undefined as undefined | ((image: unknown) => Promise<{ src: string; alt: string }>),
 }));
 
+const structuredTextMocks = vi.hoisted(() => ({
+  extractDocxStructuredText: vi.fn(),
+}));
+
+vi.mock("../lib/docx-structured-text.js", () => ({
+  extractDocxStructuredText: structuredTextMocks.extractDocxStructuredText,
+}));
+
 vi.mock("mammoth", () => ({
   default: {
     extractRawText: mammothMocks.extractRawText,
@@ -57,6 +65,8 @@ beforeEach(async () => {
   mammothMocks.convertToHtml.mockReset();
   mammothMocks.imgElement.mockClear();
   mammothMocks.imageHandler = undefined;
+  structuredTextMocks.extractDocxStructuredText.mockReset();
+  structuredTextMocks.extractDocxStructuredText.mockResolvedValue("");
   pdfMocks.getText.mockReset();
   pdfMocks.destroy.mockReset();
   pdfMocks.destroy.mockResolvedValue(undefined);
@@ -101,6 +111,23 @@ describe("document extractor", () => {
       src: "",
       alt: "文档图片未在文本预览中内联",
     });
+  });
+
+  it("uses structure-aware DOCX text and renders preserved formulas", async () => {
+    const filePath = join(workDir, "math.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({ value: "公式丢失", messages: [] });
+    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>公式丢失</p>", messages: [] });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      "1. 已知 $\\frac{x}{2}=1$，求 x。\nA. 1 B. 2 C. 3 D. 4",
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.text).toContain("$\\frac{x}{2}=1$");
+    expect(result.html).toContain("class=\"katex\"");
+    expect(result.html).toContain("A. 1 B. 2 C. 3 D. 4");
+    expect(result.html).not.toContain("$\\frac{x}{2}=1$");
   });
 
   it("extracts PDF text, escapes preview HTML, and always destroys the parser", async () => {
