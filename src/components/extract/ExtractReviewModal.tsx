@@ -32,26 +32,13 @@ import { extractService } from "@/services/extract";
 import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
 import { renderInlineMath } from "@/lib/docx-parser";
+import {
+  parseDocumentBlocks,
+  type DocumentBlock as DocBlock,
+  type DocumentBlockType as BlockType,
+} from "@/lib/document-block-parser";
 import { extractStoredFile } from "@/services/api";
 import type { QuestionType, Question, Material, Lecture, ExamPaper } from "@/types";
-
-type BlockType = "question" | "knowledge" | "heading" | "unused";
-
-interface DocBlock {
-  id: string;
-  type: BlockType;
-  content: string;
-  order: number;
-  questionType?: QuestionType;
-  options?: string[];
-  answer?: string;
-  analysis?: string;
-  summary?: string;
-  difficulty?: number;
-  knowledgeTitle?: string;
-  status: "new" | "duplicate" | "edited";
-  duplicateOf?: Question | Material;
-}
 
 interface ExtractReviewModalProps {
   open: boolean;
@@ -87,235 +74,6 @@ const optionLetter = (idx: number) => String.fromCharCode(65 + idx);
 
 function genBlockId() {
   return `doc-block-${crypto.randomUUID()}`;
-}
-
-function parseDocContent(
-  content: string,
-  config: {
-    headingKeywords: string[];
-    questionKeywords: string[];
-    answerKeywords: string[];
-    analysisKeywords: string[];
-    summaryKeywords: string[];
-    singleChoiceKeywords: string[];
-    multipleChoiceKeywords: string[];
-    fillBlankKeywords: string[];
-    essayKeywords: string[];
-  },
-): DocBlock[] {
-  const blocks: DocBlock[] = [];
-  const lines = content.split("\n");
-  let currentBlock: Partial<DocBlock> = {};
-  let order = 0;
-
-  const headingPattern = new RegExp(
-    `^(${config.headingKeywords.join("|")})[、．.．）)]`,
-  );
-  // 添加数字编号和"巩固题"识别
-  const questionPattern = new RegExp(
-    `^(?:(${config.questionKeywords.join("|")})|巩固题)[\\d\\s]*(?:题|\\.|\\）|\\))?[\\s\\d]*|^[\\d一二三四五六七八九十]+[、．.．）)]`,
-  );
-  
-  // 使用配置中的题型识别关键字
-  const multiChoiceKeywords = config.multipleChoiceKeywords || ["多选", "多项选择", "至少选", "多个正确", "不止一个"];
-  const fillBlankKeywords = config.fillBlankKeywords || ["填空", "填空题", "请填", "___", "____", "______", "（ ）", "()"];
-  const essayKeywords = config.essayKeywords || ["解答", "解答题", "计算", "计算题", "证明", "证明题", "求解", "分析", "论述", "说明"];
-  const answerPattern = new RegExp(
-    `^(${config.answerKeywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
-  );
-  const analysisPattern = new RegExp(
-    `^(${config.analysisKeywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
-  );
-  const summaryPattern = new RegExp(
-    `^(${config.summaryKeywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
-  );
-
-  const ignorePatterns = [
-    /^[\s\t]*$/,
-    /^[-—–]{3,}$/,
-    /^=+$/,
-    /^\*+$/,
-  ];
-
-  lines.forEach((line) => {
-    const trimmedLine = line.trim();
-
-    if (ignorePatterns.some((p) => p.test(trimmedLine))) {
-      return;
-    }
-
-    if (headingPattern.test(trimmedLine)) {
-      if (currentBlock.content) {
-        blocks.push({
-          ...currentBlock,
-          id: genBlockId(),
-          order: order++,
-          status: "new",
-        } as DocBlock);
-        currentBlock = {};
-      }
-      currentBlock.type = "heading";
-      currentBlock.content = trimmedLine;
-      return;
-    }
-
-    if (questionPattern.test(trimmedLine)) {
-      if (currentBlock.content) {
-        blocks.push({
-          ...currentBlock,
-          id: genBlockId(),
-          order: order++,
-          status: "new",
-        } as DocBlock);
-        currentBlock = {};
-      }
-      currentBlock.type = "question";
-      currentBlock.content = trimmedLine;
-      
-      // 根据题目内容识别题型
-      let questionType: QuestionType = "single";
-      if (multiChoiceKeywords.some(kw => trimmedLine.includes(kw))) {
-        questionType = "multiple";
-      } else if (fillBlankKeywords.some(kw => trimmedLine.includes(kw))) {
-        questionType = "short";
-      } else if (essayKeywords.some(kw => trimmedLine.includes(kw))) {
-        questionType = "essay";
-      }
-      currentBlock.questionType = questionType;
-      currentBlock.options = [];
-      return;
-    }
-
-    if (answerPattern.test(trimmedLine)) {
-      currentBlock.answer = trimmedLine.replace(/^【答案】\s*/, "");
-      return;
-    }
-
-    if (analysisPattern.test(trimmedLine)) {
-      currentBlock.analysis = trimmedLine.replace(/^【解析】|^【分析】|^【解题思路】\s*/, "");
-      return;
-    }
-
-    if (summaryPattern.test(trimmedLine)) {
-      currentBlock.summary = trimmedLine.replace(/^【总结】|^【点评】|^【归纳】\s*/, "");
-      return;
-    }
-
-    if (currentBlock.type === "question") {
-      // 识别选项：支持多种格式
-      // 格式1: A. xxx 或 A、xxx 或 A) xxx
-      const singleOptionMatch = trimmedLine.match(/^([A-Da-d])[、．.）)\s]+(.+)$/);
-      if (singleOptionMatch) {
-        const content = singleOptionMatch[2].trim();
-        if (content) {
-          if (currentBlock.options) {
-            currentBlock.options.push(content);
-          } else {
-            currentBlock.options = [content];
-          }
-          return;
-        }
-      }
-      
-      // 格式2: 同一行有多个选项（如：A. xxx B. xxx C. xxx）
-      const multiOptionPattern = /([A-Da-d])[、．.）)\s]+([^A-Da-d①②③④⑤⑥⑦⑧⑨⑩]+?)(?=[A-Da-d][、．.）)\s]+|$)/g;
-      let match;
-      const foundOptions: string[] = [];
-      
-      while ((match = multiOptionPattern.exec(trimmedLine)) !== null) {
-        const content = match[2].trim();
-        if (content) {
-          foundOptions.push(content);
-        }
-      }
-      
-      if (foundOptions.length > 0) {
-        if (currentBlock.options) {
-          currentBlock.options.push(...foundOptions);
-        } else {
-          currentBlock.options = foundOptions;
-        }
-        return;
-      }
-      
-      // 格式3: 带括号的选项 如：(A) xxx
-      const parenOptionMatch = trimmedLine.match(/^\(([A-Da-d])\)\s+(.+)$/);
-      if (parenOptionMatch) {
-        const content = parenOptionMatch[2].trim();
-        if (content) {
-          if (currentBlock.options) {
-            currentBlock.options.push(content);
-          } else {
-            currentBlock.options = [content];
-          }
-          return;
-        }
-      }
-      
-      // 格式4: 带圆圈的选项 如：① xxx ② xxx
-      const circleOptionMatch = trimmedLine.match(/^([①②③④⑤⑥⑦⑧⑨⑩]+)\s+(.+)$/);
-      if (circleOptionMatch) {
-        const content = circleOptionMatch[2].trim();
-        if (content) {
-          if (currentBlock.options) {
-            currentBlock.options.push(content);
-          } else {
-            currentBlock.options = [content];
-          }
-          return;
-        }
-      }
-      
-      // 格式5: 带数字编号的选项（如：1. xxx）- 仅当已有选项时才添加
-      if (currentBlock.options && currentBlock.options.length > 0) {
-        const numOptionMatch = trimmedLine.match(/^[\d一二三四五六七八九十]+[、．.）)]\s+(.+)$/);
-        if (numOptionMatch) {
-          const content = numOptionMatch[1].trim();
-          if (content) {
-            currentBlock.options.push(content);
-          }
-          return;
-        }
-      }
-    }
-
-    if (currentBlock.content) {
-      currentBlock.content += "\n" + line;
-    } else {
-      currentBlock.type = "knowledge";
-      currentBlock.content = line;
-      currentBlock.knowledgeTitle = trimmedLine.slice(0, 20);
-    }
-  });
-
-  if (currentBlock.content) {
-    blocks.push({
-      ...currentBlock,
-      id: genBlockId(),
-      order: order++,
-      status: "new",
-    } as DocBlock);
-  }
-
-  blocks.forEach((block) => {
-    if (block.type === "question") {
-      if (!block.questionType) {
-        block.questionType = "single";
-      }
-      if (!block.options) {
-        block.options = [];
-      }
-      if (!block.difficulty) {
-        block.difficulty = 3;
-      }
-    }
-    if (block.type === "knowledge" && !block.knowledgeTitle) {
-      const trimmed = block.content.trim();
-      block.knowledgeTitle = trimmed.length > 20 ? trimmed.slice(0, 20) + "..." : trimmed;
-    }
-  });
-
-  return blocks;
 }
 
 function blockTypeBadgeVariant(type: BlockType): "green" | "teal" | "ink" | "default" {
@@ -629,10 +387,10 @@ export function ExtractReviewModal({
       const extracted = await extractStoredFile(resource.originalFileUrl);
       setProgress(60);
       setProgressMsg("正在分析文档结构...");
-      let blocks: DocBlock[] = parseDocContent(extracted.text, extractConfig);
+      let blocks: DocBlock[] = parseDocumentBlocks(extracted.text, extractConfig);
 
       if (blocks.length === 0) {
-        blocks = parseDocContent("文档内容为空，请检查文档是否包含题目或知识块内容。", extractConfig);
+        blocks = parseDocumentBlocks("文档内容为空，请检查文档是否包含题目或知识块内容。", extractConfig);
       }
 
       setProgress(80);

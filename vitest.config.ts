@@ -22,7 +22,8 @@ export default defineConfig({
         "server/database.ts",
         "server/rpc.ts",
         "server/routes/{auth,files}.ts",
-        "server/lib/{password,document-extractor}.ts",
+        "server/lib/{password,document-extractor,docx-structured-text}.ts",
+        "src/lib/document-block-parser.ts",
         "src/services/{api,auth}.ts",
       ],
       thresholds: {
