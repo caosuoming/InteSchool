@@ -34,6 +34,22 @@ export interface TeacherAffiliation {
   joinedAt: string;
 }
 
+export type RegistrationAuthorizationKind = "admin" | "guarantee";
+
+export interface RegistrationAuthorization {
+  id: string;
+  phone: string;
+  kind: RegistrationAuthorizationKind;
+  schoolId: string;
+  createdByTeacherId: string;
+  createdByName?: string;
+  createdAt: string;
+  consumedByTeacherId: string | null;
+  consumedByName?: string | null;
+  consumedAt: string | null;
+  revokedAt: string | null;
+}
+
 export interface Teacher {
   id: string;
   email: string;

@@ -2,7 +2,17 @@ import { Link } from "react-router";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Settings, GitBranch, GraduationCap, Network, ArrowRight, SlidersHorizontal, User, Type } from "lucide-react";
+import {
+  Settings,
+  GitBranch,
+  GraduationCap,
+  Network,
+  ArrowRight,
+  SlidersHorizontal,
+  User,
+  Type,
+  UserPlus,
+} from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, uiScaleConfig, type UiScale } from "@/stores/settings";
 import { cn } from "@/lib/utils";
@@ -35,6 +45,13 @@ const allAdminItems: AdminItem[] = [
     title: "组织架构管理",
     description: "管理学校部门结构、教师团队和人员权限配置",
     href: "/organization",
+    schoolOnly: true,
+  },
+  {
+    icon: UserPlus,
+    title: "教师注册管理",
+    description: "管理员预授权教师手机号，或将待注册教师加入“我来担保”名单",
+    href: "/admin/registration-access",
     schoolOnly: true,
   },
   {

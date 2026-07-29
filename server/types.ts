@@ -30,6 +30,22 @@ export interface SessionUser {
   expiresAt: string;
 }
 
+export type RegistrationAuthorizationKind = "admin" | "guarantee";
+
+export interface RegistrationAuthorizationRecord {
+  id: string;
+  phone: string;
+  kind: RegistrationAuthorizationKind;
+  schoolId: string;
+  createdByTeacherId: string;
+  createdAt: string;
+  consumedByTeacherId: string | null;
+  consumedAt: string | null;
+  revokedAt: string | null;
+  createdByName?: string;
+  consumedByName?: string | null;
+}
+
 export interface StoredFile {
   id: string;
   ownerId: string;

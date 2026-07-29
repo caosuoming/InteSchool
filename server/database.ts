@@ -6,7 +6,13 @@ import {
   randomUUID,
 } from "node:crypto";
 import Database from "better-sqlite3";
-import type { AppState, SessionUser, StoredFile, TeacherRecord } from "./types.js";
+import type {
+  AppState,
+  RegistrationAuthorizationRecord,
+  SessionUser,
+  StoredFile,
+  TeacherRecord,
+} from "./types.js";
 import type { ServerConfig } from "./config.js";
 import { hashPassword, verifyPassword } from "./lib/password.js";
 
@@ -27,6 +33,7 @@ interface UserRow {
   id: string;
   teacher_id: string;
   email: string;
+  phone: string | null;
   password_hash: string;
 }
 
@@ -111,6 +118,7 @@ export class DatabaseStore {
         id TEXT PRIMARY KEY,
         teacher_id TEXT NOT NULL UNIQUE,
         email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        phone TEXT UNIQUE,
         password_hash TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -139,11 +147,36 @@ export class DatabaseStore {
       );
       CREATE INDEX IF NOT EXISTS idx_files_owner ON files(owner_id);
 
+      CREATE TABLE IF NOT EXISTS registration_authorizations (
+        id TEXT PRIMARY KEY,
+        phone TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('admin', 'guarantee')),
+        school_id TEXT NOT NULL,
+        created_by_teacher_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        consumed_by_teacher_id TEXT,
+        consumed_at TEXT,
+        revoked_at TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_registration_authorizations_active_phone
+        ON registration_authorizations(phone)
+        WHERE consumed_at IS NULL AND revoked_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_registration_authorizations_school
+        ON registration_authorizations(school_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_registration_authorizations_creator
+        ON registration_authorizations(created_by_teacher_id, created_at DESC);
+
       CREATE TABLE IF NOT EXISTS metadata (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
     `);
+
+    const userColumns = this.sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    if (!userColumns.some((column) => column.name === "phone")) {
+      this.sqlite.exec("ALTER TABLE users ADD COLUMN phone TEXT");
+      this.sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) WHERE phone IS NOT NULL");
+    }
   }
 
   private seed(): void {
@@ -343,18 +376,20 @@ export class DatabaseStore {
     return (this.sqlite.prepare("SELECT * FROM users WHERE email = ? COLLATE NOCASE").get(normalizeEmail(email)) as UserRow | undefined) || null;
   }
 
-  createUser(teacherId: string, email: string, password: string): string {
+  createUser(teacherId: string, email: string, password: string, phone: string | null = null): string {
     const normalized = normalizeEmail(email);
     if (this.getUserByEmail(normalized)) throw new DuplicateAccountError("该邮箱已注册");
+    if (phone && this.getUserByPhone(phone)) throw new DuplicateAccountError("该手机号已注册");
     const id = randomUUID();
     const now = new Date().toISOString();
     try {
       this.sqlite.prepare(`
-        INSERT INTO users(id, teacher_id, email, password_hash, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, teacherId, normalized, hashPassword(password), now, now);
+        INSERT INTO users(id, teacher_id, email, phone, password_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, teacherId, normalized, phone, hashPassword(password), now, now);
     } catch (error) {
       if (error instanceof Error && error.message.includes("UNIQUE")) {
+        if (phone && this.getUserByPhone(phone)) throw new DuplicateAccountError("该手机号已注册");
         throw new DuplicateAccountError("该邮箱已注册");
       }
       throw error;
@@ -369,10 +404,146 @@ export class DatabaseStore {
     })();
   }
 
+  createAuthorizedAccount(teacher: TeacherRecord, password: string, phone: string): string {
+    return this.sqlite.transaction(() => {
+      if (this.getUserByPhone(phone)) throw new DuplicateAccountError("该手机号已注册");
+      const authorization = this.sqlite.prepare(`
+        SELECT id FROM registration_authorizations
+        WHERE phone = ? AND consumed_at IS NULL AND revoked_at IS NULL
+        LIMIT 1
+      `).get(phone) as { id: string } | undefined;
+      if (!authorization) {
+        const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
+        error.statusCode = 403;
+        throw error;
+      }
+      this.insertTeacher(teacher);
+      const userId = this.createUser(teacher.id, teacher.email, password, phone);
+      const now = new Date().toISOString();
+      const result = this.sqlite.prepare(`
+        UPDATE registration_authorizations
+        SET consumed_by_teacher_id = ?, consumed_at = ?
+        WHERE id = ? AND consumed_at IS NULL AND revoked_at IS NULL
+      `).run(teacher.id, now, authorization.id);
+      if (result.changes !== 1) {
+        const error = new Error("注册授权已被使用，请联系学校管理员重新添加") as Error & { statusCode: number };
+        error.statusCode = 409;
+        throw error;
+      }
+      return userId;
+    })();
+  }
+
   authenticate(email: string, password: string): UserRow | null {
     const user = this.getUserByEmail(email);
     if (!user || !verifyPassword(password, user.password_hash)) return null;
     return user;
+  }
+
+  getUserByPhone(phone: string): UserRow | null {
+    return (this.sqlite.prepare("SELECT * FROM users WHERE phone = ?").get(phone) as UserRow | undefined) || null;
+  }
+
+  createRegistrationAuthorization(input: Omit<RegistrationAuthorizationRecord, "createdByName" | "consumedByName">): RegistrationAuthorizationRecord {
+    if (this.getUserByPhone(input.phone)) throw new DuplicateAccountError("该手机号已注册");
+    try {
+      this.sqlite.prepare(`
+        INSERT INTO registration_authorizations(
+          id, phone, kind, school_id, created_by_teacher_id, created_at,
+          consumed_by_teacher_id, consumed_at, revoked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+      `).run(
+        input.id,
+        input.phone,
+        input.kind,
+        input.schoolId,
+        input.createdByTeacherId,
+        input.createdAt,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("UNIQUE")) {
+        const conflict = new Error("该手机号已在注册授权名单中") as Error & { statusCode: number };
+        conflict.statusCode = 409;
+        throw conflict;
+      }
+      throw error;
+    }
+    return this.getRegistrationAuthorization(input.id)!;
+  }
+
+  private getRegistrationAuthorization(id: string): RegistrationAuthorizationRecord | null {
+    const row = this.sqlite.prepare(`
+      SELECT
+        authorization.id,
+        authorization.phone,
+        authorization.kind,
+        authorization.school_id AS schoolId,
+        authorization.created_by_teacher_id AS createdByTeacherId,
+        authorization.created_at AS createdAt,
+        authorization.consumed_by_teacher_id AS consumedByTeacherId,
+        authorization.consumed_at AS consumedAt,
+        authorization.revoked_at AS revokedAt,
+        json_extract(creator.data_json, '$.name') AS createdByName,
+        json_extract(consumer.data_json, '$.name') AS consumedByName
+      FROM registration_authorizations authorization
+      LEFT JOIN app_records creator
+        ON creator.collection = 'teachers' AND creator.id = authorization.created_by_teacher_id
+      LEFT JOIN app_records consumer
+        ON consumer.collection = 'teachers' AND consumer.id = authorization.consumed_by_teacher_id
+      WHERE authorization.id = ?
+    `).get(id) as RegistrationAuthorizationRecord | undefined;
+    return row || null;
+  }
+
+  listRegistrationAuthorizations(input: {
+    schoolId: string;
+    requesterTeacherId: string;
+    canManageSchool: boolean;
+  }): RegistrationAuthorizationRecord[] {
+    const where = input.canManageSchool
+      ? "authorization.school_id = ?"
+      : "authorization.created_by_teacher_id = ?";
+    const parameter = input.canManageSchool ? input.schoolId : input.requesterTeacherId;
+    return this.sqlite.prepare(`
+      SELECT
+        authorization.id,
+        authorization.phone,
+        authorization.kind,
+        authorization.school_id AS schoolId,
+        authorization.created_by_teacher_id AS createdByTeacherId,
+        authorization.created_at AS createdAt,
+        authorization.consumed_by_teacher_id AS consumedByTeacherId,
+        authorization.consumed_at AS consumedAt,
+        authorization.revoked_at AS revokedAt,
+        json_extract(creator.data_json, '$.name') AS createdByName,
+        json_extract(consumer.data_json, '$.name') AS consumedByName
+      FROM registration_authorizations authorization
+      LEFT JOIN app_records creator
+        ON creator.collection = 'teachers' AND creator.id = authorization.created_by_teacher_id
+      LEFT JOIN app_records consumer
+        ON consumer.collection = 'teachers' AND consumer.id = authorization.consumed_by_teacher_id
+      WHERE ${where} AND authorization.revoked_at IS NULL
+      ORDER BY authorization.created_at DESC
+    `).all(parameter) as RegistrationAuthorizationRecord[];
+  }
+
+  revokeRegistrationAuthorization(input: {
+    id: string;
+    schoolId: string;
+    requesterTeacherId: string;
+    canManageSchool: boolean;
+  }): void {
+    const authorization = this.getRegistrationAuthorization(input.id);
+    if (!authorization || authorization.revokedAt) throw new Error("注册授权不存在");
+    const canRevoke = input.canManageSchool
+      ? authorization.schoolId === input.schoolId
+      : authorization.createdByTeacherId === input.requesterTeacherId;
+    if (!canRevoke) throw new Error("无权撤销该注册授权");
+    if (authorization.consumedAt) throw new Error("已使用的注册授权不能撤销");
+    this.sqlite.prepare(`
+      UPDATE registration_authorizations SET revoked_at = ?
+      WHERE id = ? AND consumed_at IS NULL AND revoked_at IS NULL
+    `).run(new Date().toISOString(), input.id);
   }
 
   changePassword(userId: string, currentPassword: string, newPassword: string): void {

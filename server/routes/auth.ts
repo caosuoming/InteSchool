@@ -13,9 +13,24 @@ const loginSchema = z.object({
   password: z.string().min(1).max(128),
 });
 
+function normalizePhone(value: string): string {
+  return value.trim().replace(/[\s()-]/g, "").replace(/^\+86/, "");
+}
+
+const phoneSchema = z.string().transform(normalizePhone).refine(
+  (value) => /^1[3-9]\d{9}$/.test(value),
+  "请输入有效的中国大陆手机号",
+);
+
 const registerSchema = loginSchema.extend({
   password: z.string().min(10).max(128),
   name: z.string().trim().min(2).max(50),
+  phone: phoneSchema,
+});
+
+const registrationAuthorizationSchema = z.object({
+  phone: phoneSchema,
+  kind: z.enum(["admin", "guarantee"]),
 });
 
 const applicationSchema = z.object({
@@ -164,7 +179,7 @@ export async function registerAuthRoutes(
       currentAffiliationId: affiliationId,
       createdAt: now,
     };
-    store.createAccount(teacher, input.password);
+    store.createAuthorizedAccount(teacher, input.password, input.phone);
     const user = store.authenticate(input.email, input.password);
     if (!user) throw new Error("账号创建失败");
     const { token, session } = store.createSession(user);
@@ -198,6 +213,55 @@ export async function registerAuthRoutes(
     requireCsrf(request, session);
     store.deleteSession(request.cookies[SESSION_COOKIE]);
     reply.clearCookie(SESSION_COOKIE, { path: "/" });
+    return { ok: true };
+  });
+
+  app.get("/api/auth/registration-authorizations", async (request) => {
+    const session = requireSession(request, store);
+    const teacher = sessionTeacher(store, session);
+    if (!teacher.schoolId || teacher.status !== "active") throw new Error("仅已加入学校的教师可以管理注册授权");
+    const canManageSchool = ["school_admin", "platform_admin"].includes(activeRole(teacher));
+    return store.listRegistrationAuthorizations({
+      schoolId: teacher.schoolId,
+      requesterTeacherId: teacher.id,
+      canManageSchool,
+    });
+  });
+
+  app.post("/api/auth/registration-authorizations", async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const teacher = sessionTeacher(store, session);
+    if (!teacher.schoolId || teacher.status !== "active") throw new Error("仅已加入学校的教师可以添加注册授权");
+    const input = registrationAuthorizationSchema.parse(request.body);
+    const canManageSchool = ["school_admin", "platform_admin"].includes(activeRole(teacher));
+    if (input.kind === "admin" && !canManageSchool) throw new Error("管理员预授权需要学校管理员权限");
+    return store.createRegistrationAuthorization({
+      id: randomUUID(),
+      phone: input.phone,
+      kind: input.kind,
+      schoolId: teacher.schoolId,
+      createdByTeacherId: teacher.id,
+      createdAt: new Date().toISOString(),
+      consumedByTeacherId: null,
+      consumedAt: null,
+      revokedAt: null,
+    });
+  });
+
+  app.delete("/api/auth/registration-authorizations/:id", async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const teacher = sessionTeacher(store, session);
+    if (!teacher.schoolId || teacher.status !== "active") throw new Error("仅已加入学校的教师可以撤销注册授权");
+    const id = z.string().uuid().parse((request.params as { id?: string }).id);
+    const canManageSchool = ["school_admin", "platform_admin"].includes(activeRole(teacher));
+    store.revokeRegistrationAuthorization({
+      id,
+      schoolId: teacher.schoolId,
+      requesterTeacherId: teacher.id,
+      canManageSchool,
+    });
     return { ok: true };
   });
 

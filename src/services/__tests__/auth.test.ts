@@ -79,7 +79,7 @@ describe("auth service", () => {
     await expect(authService.init()).resolves.toEqual(first);
     expect(authService.getCurrentTeacher()).toEqual(first);
     await expect(authService.refreshCurrentTeacher()).resolves.toEqual(refreshed);
-    await expect(authService.register("registered@example.com", "StrongPass123", "注册教师"))
+    await expect(authService.register("registered@example.com", "StrongPass123", "注册教师", "13800138000"))
       .resolves.toEqual(registered);
     await expect(authService.login("login@example.com", "StrongPass123"))
       .resolves.toEqual(loggedIn);
@@ -87,13 +87,47 @@ describe("auth service", () => {
 
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(3, "/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email: "registered@example.com", password: "StrongPass123", name: "注册教师" }),
+      body: JSON.stringify({
+        email: "registered@example.com",
+        password: "StrongPass123",
+        name: "注册教师",
+        phone: "13800138000",
+      }),
     });
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email: "login@example.com", password: "StrongPass123" }),
     });
     expect(apiMocks.setCsrfToken).toHaveBeenLastCalledWith("csrf-login");
+  });
+
+  it("manages registration authorizations through protected endpoints", async () => {
+    const authorization = {
+      id: "authorization-1",
+      phone: "13800138000",
+      kind: "guarantee",
+    };
+    apiMocks.apiRequest
+      .mockResolvedValueOnce([authorization])
+      .mockResolvedValueOnce(authorization)
+      .mockResolvedValueOnce({ ok: true });
+
+    await expect(authService.listRegistrationAuthorizations()).resolves.toEqual([authorization]);
+    await expect(authService.createRegistrationAuthorization("13800138000", "guarantee"))
+      .resolves.toEqual(authorization);
+    await authService.revokeRegistrationAuthorization("authorization / 1");
+
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(1, "/api/auth/registration-authorizations");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/registration-authorizations", {
+      method: "POST",
+      body: JSON.stringify({ phone: "13800138000", kind: "guarantee" }),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(
+      3,
+      "/api/auth/registration-authorizations/authorization%20%2F%201",
+      { method: "DELETE" },
+      true,
+    );
   });
 
   it("changes password and clears all cached state on logout", async () => {

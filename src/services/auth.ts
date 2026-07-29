@@ -1,4 +1,10 @@
-import type { SchoolApplication, Teacher, TeacherAffiliation } from "@/types";
+import type {
+  RegistrationAuthorization,
+  RegistrationAuthorizationKind,
+  SchoolApplication,
+  Teacher,
+  TeacherAffiliation,
+} from "@/types";
 import { apiRequest, setCsrfToken } from "./api";
 
 interface AuthPayload {
@@ -26,10 +32,10 @@ export const authService = {
     return storeAuth({ teacher: payload.teacher, csrfToken: payload.csrfToken });
   },
 
-  async register(email: string, password: string, name: string): Promise<Teacher> {
+  async register(email: string, password: string, name: string, phone: string): Promise<Teacher> {
     return storeAuth(await apiRequest<AuthPayload>("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ email, password, name, phone }),
     }));
   },
 
@@ -45,6 +51,26 @@ export const authService = {
     currentTeacher = null;
     teacherCache = [];
     setCsrfToken(null);
+  },
+
+  async listRegistrationAuthorizations(): Promise<RegistrationAuthorization[]> {
+    return apiRequest<RegistrationAuthorization[]>("/api/auth/registration-authorizations");
+  },
+
+  async createRegistrationAuthorization(
+    phone: string,
+    kind: RegistrationAuthorizationKind,
+  ): Promise<RegistrationAuthorization> {
+    return apiRequest<RegistrationAuthorization>("/api/auth/registration-authorizations", {
+      method: "POST",
+      body: JSON.stringify({ phone, kind }),
+    }, true);
+  },
+
+  async revokeRegistrationAuthorization(id: string): Promise<void> {
+    await apiRequest(`/api/auth/registration-authorizations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }, true);
   },
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

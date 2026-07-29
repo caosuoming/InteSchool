@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router";
-import { Mail, Lock, User as UserIcon, Sparkles, Shield, GraduationCap } from "lucide-react";
+import { Mail, Lock, User as UserIcon, Sparkles, Shield, GraduationCap, Smartphone } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { Button, Input } from "@/components/ui";
 
@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
 
   useEffect(() => {
     if (teacher) {
@@ -26,7 +27,7 @@ export default function LoginPage() {
     const ok =
       mode === "login"
         ? await login(email, password)
-        : await register(email, password, name);
+        : await register(email, password, name, phone);
     if (ok) {
       // 登录/注册成功后由 useEffect 跳转
     }
@@ -116,7 +117,7 @@ export default function LoginPage() {
             <p className="text-sm text-ink-500 mt-1">
               {mode === "login"
                 ? "登录账号继续您的教学工作"
-                : "注册后即可申请加入学校"}
+                : "使用已获授权或担保的手机号创建账号"}
             </p>
           </div>
 
@@ -132,6 +133,26 @@ export default function LoginPage() {
                   required
                   className="pl-10"
                 />
+              </div>
+            )}
+            {mode === "register" && (
+              <div className="relative">
+                <Smartphone className="absolute left-3 top-9 w-4 h-4 text-ink-400" />
+                <Input
+                  label="手机号"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  placeholder="请输入已获授权的手机号"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                  pattern="(?:\+?86)?1[3-9]\d{9}"
+                  className="pl-10"
+                />
+                <p className="mt-1.5 text-xs text-ink-400">
+                  仅管理员预授权或现有教师担保名单中的手机号可以注册
+                </p>
               </div>
             )}
             <div className="relative">

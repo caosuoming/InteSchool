@@ -3,6 +3,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp, type BuiltApp } from "../app.js";
@@ -16,6 +17,30 @@ interface SessionContext {
 
 let built: BuiltApp;
 let workDir: string;
+let phoneCounter = 0;
+
+function nextPhone(): string {
+  const suffix = String(phoneCounter).padStart(8, "0");
+  phoneCounter += 1;
+  return `138${suffix}`;
+}
+
+function authorizeRegistration(
+  phone: string,
+  options: { creatorId?: string; schoolId?: string; kind?: "admin" | "guarantee" } = {},
+): void {
+  built.store.createRegistrationAuthorization({
+    id: randomUUID(),
+    phone,
+    kind: options.kind || "guarantee",
+    schoolId: options.schoolId || "sch-1",
+    createdByTeacherId: options.creatorId || "tch-1",
+    createdAt: new Date().toISOString(),
+    consumedByTeacherId: null,
+    consumedAt: null,
+    revokedAt: null,
+  });
+}
 
 async function createTestApp(databasePath?: string): Promise<BuiltApp> {
   return buildApp({
@@ -60,11 +85,13 @@ async function register(
   email: string,
   password = "StrongPass123",
   name = "测试教师",
+  phone = nextPhone(),
 ): Promise<SessionContext> {
+  authorizeRegistration(phone);
   const response = await app.inject({
     method: "POST",
     url: "/api/auth/register",
-    payload: { email, password, name },
+    payload: { email, password, name, phone },
   });
   expect(response.statusCode).toBe(200);
   const body = response.json<{ teacher: Record<string, unknown>; csrfToken: string }>();
@@ -92,6 +119,7 @@ function multipartPayload(
 }
 
 beforeEach(async () => {
+  phoneCounter = 0;
   workDir = await mkdtemp(join(tmpdir(), "inteschool-test-"));
   built = await createTestApp();
   await built.app.ready();
@@ -195,10 +223,17 @@ describe("production backend", () => {
 
   it("maps duplicate accounts to 409 and invalid credentials to 401", async () => {
     await register(built.app, "duplicate@example.com");
+    const duplicatePhone = nextPhone();
+    authorizeRegistration(duplicatePhone);
     const duplicate = await built.app.inject({
       method: "POST",
       url: "/api/auth/register",
-      payload: { email: "DUPLICATE@example.com", password: "StrongPass123", name: "重复教师" },
+      payload: {
+        email: "DUPLICATE@example.com",
+        password: "StrongPass123",
+        name: "重复教师",
+        phone: duplicatePhone,
+      },
     });
     expect(duplicate.statusCode).toBe(409);
     expect(duplicate.json()).toEqual({ error: "该邮箱已注册" });
@@ -225,6 +260,138 @@ describe("production backend", () => {
     }
     expect(statuses.slice(0, 10)).toEqual(Array(10).fill(401));
     expect(statuses[10]).toBe(429);
+  });
+
+  it("requires a one-time phone authorization and lets administrators manage school access", async () => {
+    const unauthorizedPhone = nextPhone();
+    const unauthorized = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        email: "blocked@example.com",
+        password: "StrongPass123",
+        name: "未授权教师",
+        phone: unauthorizedPhone,
+      },
+    });
+    expect(unauthorized.statusCode).toBe(403);
+    expect(unauthorized.json()).toEqual({
+      error: "该手机号尚未获得注册授权，请联系学校管理员或现有教师担保",
+    });
+
+    const admin = await login(built.app);
+    const authorizedPhone = nextPhone();
+    const created = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/registration-authorizations",
+      headers: {
+        cookie: admin.cookie,
+        "x-inteschool-csrf": admin.csrfToken,
+      },
+      payload: { phone: `+86 ${authorizedPhone.slice(0, 3)}-${authorizedPhone.slice(3)}`, kind: "admin" },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json()).toMatchObject({ phone: authorizedPhone, kind: "admin", createdByTeacherId: "tch-1" });
+
+    const registered = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        email: "authorized@example.com",
+        password: "StrongPass123",
+        name: "授权教师",
+        phone: authorizedPhone,
+      },
+    });
+    expect(registered.statusCode).toBe(200);
+
+    const records = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/registration-authorizations",
+      headers: { cookie: admin.cookie },
+    });
+    expect(records.statusCode).toBe(200);
+    expect(records.json<Array<Record<string, unknown>>>()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        phone: authorizedPhone,
+        kind: "admin",
+        consumedAt: expect.any(String),
+        consumedByName: "授权教师",
+      }),
+    ]));
+
+    const reused = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        email: "reused@example.com",
+        password: "StrongPass123",
+        name: "重复手机",
+        phone: authorizedPhone,
+      },
+    });
+    expect(reused.statusCode).toBe(409);
+    expect(reused.json()).toEqual({ error: "该手机号已注册" });
+  });
+
+  it("lets teachers guarantee registrations but reserves administrator preauthorization for admins", async () => {
+    built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
+    const teacher = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
+
+    const denied = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/registration-authorizations",
+      headers: {
+        cookie: teacher.cookie,
+        "x-inteschool-csrf": teacher.csrfToken,
+      },
+      payload: { phone: nextPhone(), kind: "admin" },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const guaranteedPhone = nextPhone();
+    const guaranteed = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/registration-authorizations",
+      headers: {
+        cookie: teacher.cookie,
+        "x-inteschool-csrf": teacher.csrfToken,
+      },
+      payload: { phone: guaranteedPhone, kind: "guarantee" },
+    });
+    expect(guaranteed.statusCode).toBe(200);
+    const authorization = guaranteed.json<{ id: string }>();
+
+    const mine = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/registration-authorizations",
+      headers: { cookie: teacher.cookie },
+    });
+    expect(mine.json<Array<Record<string, unknown>>>()).toEqual([
+      expect.objectContaining({ phone: guaranteedPhone, createdByTeacherId: "tch-2" }),
+    ]);
+
+    const revoked = await built.app.inject({
+      method: "DELETE",
+      url: `/api/auth/registration-authorizations/${authorization.id}`,
+      headers: {
+        cookie: teacher.cookie,
+        "x-inteschool-csrf": teacher.csrfToken,
+      },
+    });
+    expect(revoked.statusCode).toBe(200);
+
+    const blockedAfterRevoke = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        email: "revoked@example.com",
+        password: "StrongPass123",
+        name: "撤销授权",
+        phone: guaranteedPhone,
+      },
+    });
+    expect(blockedAfterRevoke.statusCode).toBe(403);
   });
 
   it("hashes passwords, creates an HttpOnly session, and never returns credentials", async () => {

@@ -8,7 +8,7 @@ interface AuthState {
   error: string | null;
   init: () => Promise<void>;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string, name: string) => Promise<boolean>;
+  register: (email: string, password: string, name: string, phone: string) => Promise<boolean>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   clearError: () => void;
@@ -48,10 +48,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  register: async (email, password, name) => {
+  register: async (email, password, name, phone) => {
     set({ loading: true, error: null });
     try {
-      const teacher = await authService.register(email, password, name);
+      const teacher = await authService.register(email, password, name, phone);
       set({ teacher, loading: false });
       return true;
     } catch (error) {
