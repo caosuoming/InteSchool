@@ -622,6 +622,73 @@ describe("production backend", () => {
     );
   });
 
+  it("excludes suspended school-class members from the current teacher's student list", async () => {
+    const session = await login(built.app);
+    const schoolId = String(session.teacher.schoolId);
+    const teacherId = String(session.teacher.id);
+    const headers = {
+      cookie: session.cookie,
+      "x-inteschool-csrf": session.csrfToken,
+    };
+
+    const schoolClassResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "createSchoolClass",
+        args: [schoolId, teacherId, "Issue 15 行政班", "高一"],
+      },
+    });
+    expect(schoolClassResponse.statusCode).toBe(200);
+    const schoolClass = schoolClassResponse.json<{ result: { id: string } }>().result;
+
+    const studentResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "addStudent",
+        args: [schoolClass.id, schoolId, {
+          name: "挂起学生",
+          studentNo: "SUSPENDED-001",
+          grade: "高一",
+        }],
+      },
+    });
+    expect(studentResponse.statusCode).toBe(200);
+    const student = studentResponse.json<{ result: { id: string } }>().result;
+
+    const suspendResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "suspendStudent",
+        args: [student.id],
+      },
+    });
+    expect(suspendResponse.statusCode).toBe(200);
+
+    const studentsResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "listMyStudents",
+        args: [schoolId, teacherId],
+      },
+    });
+    expect(studentsResponse.statusCode).toBe(200);
+    expect(studentsResponse.json<{ result: Array<{ id: string }> }>().result).not.toContainEqual(
+      expect.objectContaining({ id: student.id }),
+    );
+  });
+
   it("does not expose private questions owned by other teachers", async () => {
     const before = built.store.loadState();
     const state = structuredClone(before);
