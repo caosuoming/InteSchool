@@ -2,18 +2,466 @@ import { db } from "../runtime-db.js";
 import { genId, delay } from "../domain-shared.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import type {
-  ShareRecord, ShareableResourceType, ShareScope, ShareStatus,
-  Question, ExamPaper, Lecture, Courseware, Material,
+  Chapter,
+  Courseware,
+  DonationContributor,
+  DonationDirectoryEntry,
+  DonationDirectorySnapshot,
+  DonationPreview,
+  DonationPrivileges,
+  DonationRequest,
+  ExamPaper,
+  KnowledgePoint,
+  Lecture,
+  Material,
+  PlatformResourceSetting,
+  PlatformResourceSettingType,
+  Question,
+  ShareRecord,
+  ShareableResourceType,
+  ShareScope,
+  ShareStatus,
+  TreeNode,
 } from "../../src/types/index.js";
 
-/**
- * 资源分享服务
- * 支持将资源分享给同校老师、好友或不确定对象
- * 不确定对象如果也使用本平台，可通过"接受分享"添加到自己的资源库
- * 当分享范围包含学校或公开时，自动备份到校本资源库
- */
+type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
+type DonationPatch = Partial<{
+  title: string;
+  description: string;
+  grade: string;
+  schoolYear: string;
+  originalFileName: string;
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  recommendation: 1 | 2 | 3 | 4 | 5;
+}>;
+
+const RESOURCE_COLLECTIONS: Record<ShareableResourceType, string> = {
+  question: "questions",
+  examPaper: "examPapers",
+  lecture: "lectures",
+  courseware: "coursewares",
+  material: "materials",
+};
+
+const DEFAULT_PLATFORM_SETTINGS: Record<PlatformResourceSettingType, string[]> = {
+  grade: ["初一", "初二", "初三", "高一", "高二", "高三"],
+  schoolYear: ["2025-2026", "2024-2025", "2023-2024"],
+  source: ["手动", "导入", "共享", "平台捐赠"],
+  questionType: ["单选", "多选", "判断", "填空", "解答"],
+  category: ["练习", "考试", "作业", "复习"],
+};
+
+function resourceTitle(type: ShareableResourceType, resource: ShareableResource): string {
+  return type === "question" ? (resource as Question).stem : (resource as Exclude<ShareableResource, Question>).title;
+}
+
+function findOwnedResource(
+  type: ShareableResourceType,
+  id: string,
+  teacherId: string,
+  schoolId: string,
+): ShareableResource {
+  const collection = RESOURCE_COLLECTIONS[type];
+  const resource = (db.read(collection) as ShareableResource[]).find((item) => item.id === id);
+  if (!resource) throw new Error("捐赠资源不存在");
+  if (resource.teacherId !== teacherId || resource.schoolId !== schoolId) {
+    throw new Error("无权捐赠不属于自己的资源");
+  }
+  return resource;
+}
+
+function normalizeForSimilarity(value: string): string {
+  return value
+    .replace(/<[^>]+>/g, "")
+    .replace(/&[a-zA-Z#0-9]+;/g, "")
+    .replace(/\s+/g, "")
+    .replace(/[，。、；：！？“”"'（）()【】[\]{}<>《》·…—_+\-=]/g, "")
+    .toLowerCase();
+}
+
+function levenshteinSimilarity(left: string, right: string): number {
+  const a = normalizeForSimilarity(left);
+  const b = normalizeForSimilarity(right);
+  if (a === b) return 1;
+  if (!a.length || !b.length) return 0;
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  const current = new Array<number>(b.length + 1);
+  for (let i = 1; i <= a.length; i += 1) {
+    current[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitution = previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, substitution);
+    }
+    for (let j = 0; j <= b.length; j += 1) previous[j] = current[j];
+  }
+  return 1 - previous[b.length] / Math.max(a.length, b.length);
+}
+
+function questionSimilarity(source: Question, existing: Question): number {
+  const sourceText = [source.stem, ...(source.options || []), source.answer].join("\n");
+  const existingText = [existing.stem, ...(existing.options || []), existing.answer].join("\n");
+  return levenshteinSimilarity(sourceText, existingText);
+}
+
+function pathHash(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash + value.charCodeAt(index)) & 0xffffffff;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function chapterPath(chapterId: string, chapters: Chapter[]): string {
+  const names: string[] = [];
+  let current = chapters.find((item) => item.id === chapterId);
+  const visited = new Set<string>();
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    names.unshift(current.name);
+    current = current.parentId ? chapters.find((item) => item.id === current!.parentId) : undefined;
+  }
+  return names.join(" / ");
+}
+
+function knowledgePath(knowledgeId: string, points: KnowledgePoint[]): string {
+  const names: string[] = [];
+  let current = points.find((item) => item.id === knowledgeId);
+  const visited = new Set<string>();
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    names.unshift(current.name);
+    current = current.parentId ? points.find((item) => item.id === current!.parentId) : undefined;
+  }
+  return names.join(" / ");
+}
+
+function collectDirectorySnapshot(resource: ShareableResource): DonationDirectorySnapshot {
+  const chapters = (db.read("chapters") as Chapter[]).filter((item) => item.schoolId === resource.schoolId);
+  const points = (db.read("knowledgePoints") as KnowledgePoint[]).filter((item) => item.schoolId === resource.schoolId);
+  const selectedChapterIds = new Set(resource.chapterIds || []);
+  const selectedKnowledgeIds = new Set(resource.knowledgePointIds || []);
+  const chapterIds = new Set<string>();
+  const knowledgeIds = new Set<string>();
+
+  for (const selectedId of selectedChapterIds) {
+    let current = chapters.find((item) => item.id === selectedId);
+    while (current && !chapterIds.has(current.id)) {
+      chapterIds.add(current.id);
+      current = current.parentId ? chapters.find((item) => item.id === current!.parentId) : undefined;
+    }
+  }
+
+  for (const selectedId of selectedKnowledgeIds) {
+    let current = points.find((item) => item.id === selectedId);
+    while (current && !knowledgeIds.has(current.id)) {
+      knowledgeIds.add(current.id);
+      current = current.parentId ? points.find((item) => item.id === current!.parentId) : undefined;
+    }
+    const selected = points.find((item) => item.id === selectedId);
+    if (selected) {
+      let chapter = chapters.find((item) => item.id === selected.chapterId);
+      while (chapter && !chapterIds.has(chapter.id)) {
+        chapterIds.add(chapter.id);
+        chapter = chapter.parentId ? chapters.find((item) => item.id === chapter!.parentId) : undefined;
+      }
+    }
+  }
+
+  const chapterEntries = [...chapterIds]
+    .map((id): DonationDirectoryEntry | null => {
+      const chapter = chapters.find((item) => item.id === id);
+      if (!chapter) return null;
+      const path = chapterPath(id, chapters);
+      const parentPath = chapter.parentId ? chapterPath(chapter.parentId, chapters) : "";
+      return {
+        id: `platform-chapter-${pathHash(path)}`,
+        name: chapter.name,
+        path,
+        parentId: parentPath ? `platform-chapter-${pathHash(parentPath)}` : null,
+        selected: selectedChapterIds.has(id),
+      };
+    })
+    .filter((item): item is DonationDirectoryEntry => Boolean(item))
+    .sort((a, b) => a.path.split(" / ").length - b.path.split(" / ").length);
+
+  const knowledgeEntries = [...knowledgeIds]
+    .map((id): DonationDirectoryEntry | null => {
+      const point = points.find((item) => item.id === id);
+      if (!point) return null;
+      const path = knowledgePath(id, points);
+      const chapterFullPath = chapterPath(point.chapterId, chapters);
+      const parentPath = point.parentId ? knowledgePath(point.parentId, points) : "";
+      const identity = `${chapterFullPath}::${path}`;
+      const parentIdentity = parentPath ? `${chapterFullPath}::${parentPath}` : "";
+      return {
+        id: `platform-knowledge-${pathHash(identity)}`,
+        name: point.name,
+        path,
+        parentId: parentIdentity ? `platform-knowledge-${pathHash(parentIdentity)}` : null,
+        selected: selectedKnowledgeIds.has(id),
+        chapterId: `platform-chapter-${pathHash(chapterFullPath)}`,
+        chapterPath: chapterFullPath,
+      };
+    })
+    .filter((item): item is DonationDirectoryEntry => Boolean(item))
+    .sort((a, b) => a.path.split(" / ").length - b.path.split(" / ").length);
+
+  return { chapters: chapterEntries, knowledgePoints: knowledgeEntries };
+}
+
+function mergeDirectorySnapshots(
+  current: DonationDirectorySnapshot | undefined,
+  incoming: DonationDirectorySnapshot,
+): DonationDirectorySnapshot {
+  const merge = (left: DonationDirectoryEntry[], right: DonationDirectoryEntry[]) => {
+    const map = new Map<string, DonationDirectoryEntry>();
+    for (const entry of [...left, ...right]) {
+      const existing = map.get(entry.id);
+      map.set(entry.id, existing ? { ...existing, selected: existing.selected || entry.selected } : entry);
+    }
+    return [...map.values()];
+  };
+  return {
+    chapters: merge(current?.chapters || [], incoming.chapters),
+    knowledgePoints: merge(current?.knowledgePoints || [], incoming.knowledgePoints),
+  };
+}
+
+function primaryDonations(): ShareRecord[] {
+  return (db.read("shareRecords") as ShareRecord[])
+    .filter((item) => item.kind === "donation" && !item.mergedIntoDonationId && item.status === "pending");
+}
+
+function contributionDonations(): ShareRecord[] {
+  return (db.read("shareRecords") as ShareRecord[])
+    .filter((item) => item.kind === "donation");
+}
+
+function contributorRanking(): DonationContributor[] {
+  const teachers = db.read("teachers") as Array<{ id: string; name: string }>;
+  const counts = new Map<string, { count: number; firstAt: string }>();
+  for (const donation of contributionDonations()) {
+    const current = counts.get(donation.fromTeacherId);
+    counts.set(donation.fromTeacherId, {
+      count: (current?.count || 0) + 1,
+      firstAt: current && current.firstAt < donation.createdAt ? current.firstAt : donation.createdAt,
+    });
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1].count - a[1].count || a[1].firstAt.localeCompare(b[1].firstAt) || a[0].localeCompare(b[0]))
+    .map(([teacherId, value], index) => ({
+      teacherId,
+      teacherName: teachers.find((teacher) => teacher.id === teacherId)?.name || "未知教师",
+      donationCount: value.count,
+      rank: index + 1,
+      isTopContributor: index < 10,
+    }));
+}
+
+function privilegesFor(teacherId: string): DonationPrivileges {
+  const contributor = contributorRanking().find((item) => item.teacherId === teacherId);
+  return {
+    donationCount: contributor?.donationCount || 0,
+    rank: contributor?.rank || null,
+    isTopContributor: contributor?.isTopContributor || false,
+    canManagePlatformSettings: contributor?.isTopContributor || false,
+  };
+}
+
+function buildPlatformTree(type: "chapter" | "knowledge"): TreeNode {
+  const entries = new Map<string, DonationDirectoryEntry>();
+  for (const donation of primaryDonations()) {
+    const source = type === "chapter"
+      ? donation.directorySnapshot?.chapters || []
+      : donation.directorySnapshot?.knowledgePoints || [];
+    for (const entry of source) {
+      const current = entries.get(entry.id);
+      entries.set(entry.id, current ? { ...current, selected: current.selected || entry.selected } : entry);
+    }
+  }
+  const resourceCounts = new Map<string, number>();
+  for (const donation of primaryDonations()) {
+    const source = type === "chapter"
+      ? donation.directorySnapshot?.chapters || []
+      : donation.directorySnapshot?.knowledgePoints || [];
+    for (const entry of source.filter((item) => item.selected)) {
+      resourceCounts.set(entry.id, (resourceCounts.get(entry.id) || 0) + 1);
+    }
+  }
+  const makeChildren = (parentId: string | null): TreeNode[] => [...entries.values()]
+    .filter((entry) => entry.parentId === parentId)
+    .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      type,
+      count: resourceCounts.get(entry.id) || 0,
+      parentId: entry.parentId,
+      children: makeChildren(entry.id),
+    }));
+  return {
+    id: "root",
+    name: type === "chapter" ? "全部章节" : "全部知识点",
+    type,
+    count: primaryDonations().length,
+    children: makeChildren(null),
+  };
+}
+
+function ensureDirectorySnapshot(
+  snapshot: DonationDirectorySnapshot | undefined,
+  schoolId: string,
+): { chapterIds: string[]; knowledgePointIds: string[] } {
+  if (!snapshot) return { chapterIds: [], knowledgePointIds: [] };
+  const chapters = db.read("chapters") as Chapter[];
+  const points = db.read("knowledgePoints") as KnowledgePoint[];
+  const chapterMap = new Map<string, string>();
+  const knowledgeMap = new Map<string, string>();
+
+  for (const entry of [...snapshot.chapters].sort((a, b) => a.path.split(" / ").length - b.path.split(" / ").length)) {
+    const parentId = entry.parentId ? chapterMap.get(entry.parentId) || null : null;
+    let existing = chapters.find((item) => item.schoolId === schoolId && item.parentId === parentId && item.name === entry.name);
+    if (!existing) {
+      existing = {
+        id: genId("ch"),
+        schoolId,
+        parentId,
+        name: entry.name,
+        order: chapters.filter((item) => item.schoolId === schoolId && item.parentId === parentId).length + 1,
+        level: parentId ? (chapters.find((item) => item.id === parentId)?.level || 0) + 1 : 0,
+        questionCount: 0,
+      };
+      chapters.push(existing);
+    }
+    chapterMap.set(entry.id, existing.id);
+  }
+
+  for (const entry of [...snapshot.knowledgePoints].sort((a, b) => a.path.split(" / ").length - b.path.split(" / ").length)) {
+    const parentId = entry.parentId ? knowledgeMap.get(entry.parentId) || null : null;
+    const chapterId = entry.chapterId ? chapterMap.get(entry.chapterId) : undefined;
+    if (!chapterId) continue;
+    let existing = points.find((item) =>
+      item.schoolId === schoolId
+      && item.parentId === parentId
+      && item.chapterId === chapterId
+      && item.name === entry.name,
+    );
+    if (!existing) {
+      existing = {
+        id: genId("kp"),
+        schoolId,
+        parentId,
+        chapterId,
+        name: entry.name,
+        order: points.filter((item) => item.schoolId === schoolId && item.parentId === parentId).length + 1,
+        level: parentId ? (points.find((item) => item.id === parentId)?.level || 0) + 1 : 0,
+        questionCount: 0,
+      };
+      points.push(existing);
+    }
+    knowledgeMap.set(entry.id, existing.id);
+  }
+
+  db.write("chapters", chapters);
+  db.write("knowledgePoints", points);
+  return {
+    chapterIds: snapshot.chapters.filter((item) => item.selected).map((item) => chapterMap.get(item.id)).filter((id): id is string => Boolean(id)),
+    knowledgePointIds: snapshot.knowledgePoints.filter((item) => item.selected).map((item) => knowledgeMap.get(item.id)).filter((id): id is string => Boolean(id)),
+  };
+}
+
+function copySnapshotToTeacher(
+  share: ShareRecord,
+  toTeacherId: string,
+  toSchoolId: string,
+): { newResourceId: string; resourceType: ShareableResourceType } {
+  if (!share.resourceSnapshot) throw new Error("捐赠资源快照不存在");
+  const now = new Date().toISOString();
+  const directory = ensureDirectorySnapshot(share.directorySnapshot, toSchoolId);
+  const original = share.resourceSnapshot;
+  let copy: ShareableResource;
+  let newResourceId: string;
+
+  switch (share.resourceType) {
+    case "question":
+      newResourceId = genId("q");
+      copy = {
+        ...(original as Question),
+        id: newResourceId,
+        teacherId: toTeacherId,
+        schoolId: toSchoolId,
+        chapterIds: directory.chapterIds,
+        knowledgePointIds: directory.knowledgePointIds,
+        usageCount: 0,
+        isShared: false,
+        sourceType: "shared",
+        createdAt: now,
+        updatedAt: now,
+      };
+      break;
+    case "examPaper":
+      newResourceId = genId("exam");
+      copy = {
+        ...(original as ExamPaper),
+        id: newResourceId,
+        teacherId: toTeacherId,
+        schoolId: toSchoolId,
+        chapterIds: directory.chapterIds,
+        knowledgePointIds: directory.knowledgePointIds,
+        status: "draft",
+        createdAt: now,
+        updatedAt: now,
+      };
+      break;
+    case "lecture":
+      newResourceId = genId("lec");
+      copy = {
+        ...(original as Lecture),
+        id: newResourceId,
+        teacherId: toTeacherId,
+        schoolId: toSchoolId,
+        chapterIds: directory.chapterIds,
+        knowledgePointIds: directory.knowledgePointIds,
+        status: "draft",
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      break;
+    case "courseware":
+      newResourceId = genId("cw");
+      copy = {
+        ...(original as Courseware),
+        id: newResourceId,
+        teacherId: toTeacherId,
+        schoolId: toSchoolId,
+        chapterIds: directory.chapterIds,
+        knowledgePointIds: directory.knowledgePointIds,
+        createdAt: now,
+        updatedAt: now,
+      };
+      break;
+    case "material":
+      newResourceId = genId("mat");
+      copy = {
+        ...(original as Material),
+        id: newResourceId,
+        teacherId: toTeacherId,
+        schoolId: toSchoolId,
+        chapterIds: directory.chapterIds,
+        knowledgePointIds: directory.knowledgePointIds,
+        createdAt: now,
+        updatedAt: now,
+      };
+      break;
+  }
+
+  db.update(RESOURCE_COLLECTIONS[share.resourceType], (list) => [copy, ...list]);
+  return { newResourceId, resourceType: share.resourceType };
+}
+
+/** 资源分享与平台捐赠服务。 */
 export const shareService = {
-  /** 发起分享 */
   async createShare(params: {
     fromTeacherId: string;
     fromSchoolId: string;
@@ -30,6 +478,7 @@ export const shareService = {
     const now = new Date().toISOString();
     const record: ShareRecord = {
       id: genId("share"),
+      kind: "share",
       fromTeacherId: params.fromTeacherId,
       fromSchoolId: params.fromSchoolId,
       toTeacherId: params.toTeacherId,
@@ -45,7 +494,6 @@ export const shareService = {
     };
     db.update("shareRecords", (list) => [...list, record]);
 
-    // 当分享范围为"学校"或"公开"时，自动备份到校本资源库
     if (params.scope === "school" || params.scope === "public") {
       try {
         const scopeLabel = params.scope === "school" ? "校内分享" : "公开分享";
@@ -54,47 +502,277 @@ export const shareService = {
           params.fromTeacherId,
           params.resourceType,
           params.resourceId,
-          [], // 分享场景不针对特定班级
+          [],
           `${scopeLabel}：${params.resourceTitle}`,
         );
-      } catch (e) {
-        console.error("校本备份失败（不影响分享）", e);
+      } catch (error) {
+        console.error("校本备份失败（不影响分享）", error);
       }
     }
-
     return record;
   },
 
-  /** 查询收到的分享（待接受） */
+  async checkDonationCandidates(teacherId: string, requests: DonationRequest[]): Promise<DonationPreview[]> {
+    await delay(100);
+    const teacher = (db.read("teachers") as Array<{ id: string; schoolId: string | null }>).find((item) => item.id === teacherId);
+    if (!teacher?.schoolId) throw new Error("请先完成学校认证");
+    const records = contributionDonations();
+    const contributors = new Map(contributorRanking().map((item) => [item.teacherId, item.teacherName]));
+    return requests.map((request) => {
+      const resource = findOwnedResource(request.resourceType, request.resourceId, teacherId, teacher.schoolId!);
+      const alreadyDonated = records.some((item) =>
+        item.fromTeacherId === teacherId
+        && item.resourceType === request.resourceType
+        && item.sourceResourceId === request.resourceId,
+      );
+      const duplicates = request.resourceType === "question"
+        ? primaryDonations()
+          .filter((item) => item.resourceType === "question" && item.resourceSnapshot)
+          .map((item) => ({
+            donationId: item.id,
+            similarity: questionSimilarity(resource as Question, item.resourceSnapshot as Question),
+            question: item.resourceSnapshot as Question,
+            contributorName: contributors.get(item.fromTeacherId) || "未知教师",
+          }))
+          .filter((candidate) => candidate.similarity > 0.8)
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, 5)
+        : [];
+      return {
+        resourceType: request.resourceType,
+        resourceId: request.resourceId,
+        resourceTitle: resourceTitle(request.resourceType, resource),
+        alreadyDonated,
+        duplicates,
+      };
+    });
+  },
+
+  async donateResources(
+    teacherId: string,
+    schoolId: string,
+    requests: DonationRequest[],
+  ): Promise<ShareRecord[]> {
+    await delay(200);
+    if (!requests.length) throw new Error("请至少选择一项资源");
+    const now = new Date().toISOString();
+    const existingRecords = contributionDonations();
+    const created: ShareRecord[] = [];
+
+    for (const request of requests) {
+      const resource = findOwnedResource(request.resourceType, request.resourceId, teacherId, schoolId);
+      const duplicateDonation = existingRecords.find((item) =>
+        item.fromTeacherId === teacherId
+        && item.resourceType === request.resourceType
+        && item.sourceResourceId === request.resourceId,
+      );
+      if (duplicateDonation) continue;
+
+      const directorySnapshot = collectDirectorySnapshot(resource);
+      if (request.resourceType === "question" && request.duplicateAction === "merge") {
+        const target = primaryDonations().find((item) =>
+          item.id === request.duplicateTargetDonationId
+          && item.resourceType === "question"
+          && item.resourceSnapshot,
+        );
+        if (!target) throw new Error("要合并的平台题目不存在");
+        const source = resource as Question;
+        const existing = target.resourceSnapshot as Question;
+        if (questionSimilarity(source, existing) <= 0.8) {
+          throw new Error("仅相似度超过 80% 的题目可以合并");
+        }
+        const choices = request.mergeFields || {};
+        const merged: Question = {
+          ...existing,
+          stem: choices.stem === "source" ? source.stem : existing.stem,
+          answer: choices.answer === "source" ? source.answer : existing.answer,
+          analysis: choices.analysis === "source" ? source.analysis : existing.analysis,
+          summary: choices.summary === "source" ? source.summary : existing.summary,
+          options: choices.stem === "source" ? source.options : existing.options,
+          updatedAt: now,
+        };
+        db.update("shareRecords", (list: ShareRecord[]) => list.map((item) =>
+          item.id === target.id
+            ? {
+              ...item,
+              resourceTitle: merged.stem,
+              resourceSnapshot: merged,
+              directorySnapshot: mergeDirectorySnapshots(item.directorySnapshot, directorySnapshot),
+            }
+            : item,
+        ));
+        const contribution: ShareRecord = {
+          id: genId("donation"),
+          kind: "donation",
+          fromTeacherId: teacherId,
+          fromSchoolId: schoolId,
+          scope: "public",
+          resourceType: "question",
+          resourceId: target.resourceId,
+          sourceResourceId: request.resourceId,
+          resourceTitle: merged.stem,
+          mergedIntoDonationId: target.id,
+          directorySnapshot,
+          status: "pending",
+          createdAt: now,
+        };
+        db.update("shareRecords", (list) => [...list, contribution]);
+        created.push(contribution);
+        continue;
+      }
+
+      const snapshot = structuredClone(resource);
+      const record: ShareRecord = {
+        id: genId("donation"),
+        kind: "donation",
+        fromTeacherId: teacherId,
+        fromSchoolId: schoolId,
+        scope: "public",
+        resourceType: request.resourceType,
+        resourceId: request.resourceId,
+        sourceResourceId: request.resourceId,
+        resourceTitle: resourceTitle(request.resourceType, resource),
+        resourceSnapshot: snapshot,
+        directorySnapshot,
+        status: "pending",
+        createdAt: now,
+      };
+      db.update("shareRecords", (list) => [...list, record]);
+      created.push(record);
+      existingRecords.push(record);
+    }
+    return created;
+  },
+
+  async listPublicDonations(): Promise<ShareRecord[]> {
+    await delay(50);
+    return primaryDonations().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async listDonationStatus(teacherId: string): Promise<ShareRecord[]> {
+    await delay(50);
+    return contributionDonations()
+      .filter((item) => item.fromTeacherId === teacherId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async listDonationContributors(): Promise<DonationContributor[]> {
+    await delay(50);
+    return contributorRanking();
+  },
+
+  async getDonationPrivileges(teacherId: string): Promise<DonationPrivileges> {
+    await delay(50);
+    return privilegesFor(teacherId);
+  },
+
+  async getPlatformDirectoryTree(type: "chapter" | "knowledge"): Promise<TreeNode> {
+    await delay(50);
+    return buildPlatformTree(type);
+  },
+
+  async updateDonationResource(
+    teacherId: string,
+    donationId: string,
+    patch: DonationPatch,
+  ): Promise<ShareRecord> {
+    await delay(100);
+    const donation = primaryDonations().find((item) => item.id === donationId);
+    if (!donation || !donation.resourceSnapshot) throw new Error("平台资源不存在");
+    const privileges = privilegesFor(teacherId);
+    if (donation.fromTeacherId !== teacherId && !privileges.isTopContributor) {
+      throw new Error("仅捐赠者本人或贡献榜前十名可以修改该平台资源");
+    }
+    const snapshot = structuredClone(donation.resourceSnapshot) as ShareableResource & Record<string, unknown>;
+    if (donation.resourceType === "question") {
+      if (typeof patch.title === "string") (snapshot as Question).stem = patch.title.trim();
+      if (typeof patch.difficulty === "number") (snapshot as Question).difficulty = patch.difficulty;
+      if (typeof patch.recommendation === "number") (snapshot as Question).recommendation = patch.recommendation;
+    } else {
+      if (typeof patch.title === "string") (snapshot as Exclude<ShareableResource, Question>).title = patch.title.trim();
+      if (typeof patch.description === "string") snapshot.description = patch.description;
+      if (typeof patch.grade === "string") snapshot.grade = patch.grade;
+      if (typeof patch.schoolYear === "string") snapshot.schoolYear = patch.schoolYear;
+      if (typeof patch.originalFileName === "string" && "originalFileName" in snapshot) {
+        snapshot.originalFileName = patch.originalFileName.trim();
+      }
+    }
+    snapshot.updatedAt = new Date().toISOString();
+    let updated: ShareRecord | null = null;
+    db.update("shareRecords", (list: ShareRecord[]) => list.map((item) => {
+      if (item.id !== donationId) return item;
+      updated = {
+        ...item,
+        resourceTitle: resourceTitle(item.resourceType, snapshot as ShareableResource),
+        resourceSnapshot: snapshot as ShareableResource,
+      };
+      return updated;
+    }));
+    if (!updated) throw new Error("平台资源不存在");
+    return updated;
+  },
+
+  async listPlatformResourceSettings(): Promise<PlatformResourceSetting[]> {
+    await delay(50);
+    const stored = (db.read("platformResourceSettings") || []) as PlatformResourceSetting[];
+    const now = new Date(0).toISOString();
+    return (Object.keys(DEFAULT_PLATFORM_SETTINGS) as PlatformResourceSettingType[]).map((type) =>
+      stored.find((item) => item.type === type) || {
+        id: `platform-setting-${type}`,
+        type,
+        values: DEFAULT_PLATFORM_SETTINGS[type],
+        updatedAt: now,
+      },
+    );
+  },
+
+  async updatePlatformResourceSettings(
+    teacherId: string,
+    settings: Array<{ type: PlatformResourceSettingType; values: string[] }>,
+  ): Promise<PlatformResourceSetting[]> {
+    await delay(100);
+    if (!privilegesFor(teacherId).canManagePlatformSettings) {
+      throw new Error("仅贡献榜前十名可以修改平台资源属性选项");
+    }
+    const now = new Date().toISOString();
+    const normalized = settings.map((item) => ({
+      id: `platform-setting-${item.type}`,
+      type: item.type,
+      values: [...new Set(item.values.map((value) => value.trim()).filter(Boolean))],
+      updatedAt: now,
+      updatedByTeacherId: teacherId,
+    }));
+    db.write("platformResourceSettings", normalized);
+    return normalized;
+  },
+
   async listIncomingShares(teacherId: string): Promise<ShareRecord[]> {
     await delay(100);
-    return db
-      .read("shareRecords")
-      .filter(
-        (s) =>
-          (s.toTeacherId === teacherId || s.scope === "public") &&
-          s.status === "pending",
+    return (db.read("shareRecords") as ShareRecord[])
+      .filter((item) =>
+        item.kind !== "donation"
+        &&
+        !item.mergedIntoDonationId
+        && (item.toTeacherId === teacherId || item.scope === "public")
+        && item.status === "pending",
       )
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
-  /** 查询发出的分享 */
   async listOutgoingShares(teacherId: string): Promise<ShareRecord[]> {
     await delay(100);
-    return db
-      .read("shareRecords")
-      .filter((s) => s.fromTeacherId === teacherId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return (db.read("shareRecords") as ShareRecord[])
+      .filter((item) => item.kind !== "donation" && item.fromTeacherId === teacherId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
-  /** 接受分享：将资源复制到自己的资源库 */
   async acceptShare(
     shareId: string,
     toTeacherId: string,
     toSchoolId: string,
   ): Promise<{ newResourceId: string; resourceType: ShareableResourceType }> {
     await delay(300);
-    const share = db.read("shareRecords").find((s) => s.id === shareId);
+    const share = (db.read("shareRecords") as ShareRecord[]).find((item) => item.id === shareId);
     if (!share) throw new Error("分享记录不存在");
     if (share.status !== "pending") throw new Error("该分享已处理");
     if (share.expiresAt && new Date(share.expiresAt) <= new Date()) throw new Error("该分享已过期");
@@ -104,124 +782,48 @@ export const shareService = {
       throw new Error("无权处理该分享");
     }
 
-    const now = new Date().toISOString();
-    let newResourceId = "";
-
-    // 根据资源类型复制资源到接收者的资源库
-    switch (share.resourceType) {
-      case "question": {
-        const original = db.read("questions").find((q) => q.id === share.resourceId);
-        if (original) {
-          newResourceId = genId("q");
-          const copy: Question = {
-            ...original,
-            id: newResourceId,
-            teacherId: toTeacherId,
-            schoolId: toSchoolId,
-            usageCount: 0,
-            isShared: false,
-            sourceType: "shared",
-            createdAt: now,
-            updatedAt: now,
-          };
-          db.update("questions", (list) => [...list, copy]);
-        }
-        break;
-      }
-      case "examPaper": {
-        const original = db.read("examPapers").find((p) => p.id === share.resourceId);
-        if (original) {
-          newResourceId = genId("exam");
-          const copy: ExamPaper = {
-            ...original,
-            id: newResourceId,
-            teacherId: toTeacherId,
-            schoolId: toSchoolId,
-            status: "draft",
-            createdAt: now,
-            updatedAt: now,
-          };
-          db.update("examPapers", (list) => [...list, copy]);
-        }
-        break;
-      }
-      case "lecture": {
-        const original = db.read("lectures").find((l) => l.id === share.resourceId);
-        if (original) {
-          newResourceId = genId("lec");
-          const copy: Lecture = {
-            ...original,
-            id: newResourceId,
-            teacherId: toTeacherId,
-            schoolId: toSchoolId,
-            status: "draft",
-            version: 1,
-            createdAt: now,
-            updatedAt: now,
-          };
-          db.update("lectures", (list) => [...list, copy]);
-        }
-        break;
-      }
-      case "courseware": {
-        const original = db.read("coursewares").find((c) => c.id === share.resourceId);
-        if (original) {
-          newResourceId = genId("cw");
-          const copy: Courseware = {
-            ...original,
-            id: newResourceId,
-            teacherId: toTeacherId,
-            schoolId: toSchoolId,
-            createdAt: now,
-            updatedAt: now,
-          };
-          db.update("coursewares", (list) => [...list, copy]);
-        }
-        break;
-      }
-      case "material": {
-        const original = db.read("materials").find((m) => m.id === share.resourceId);
-        if (original) {
-          newResourceId = genId("mat");
-          const copy: Material = {
-            ...original,
-            id: newResourceId,
-            teacherId: toTeacherId,
-            schoolId: toSchoolId,
-            createdAt: now,
-            updatedAt: now,
-          };
-          db.update("materials", (list) => [...list, copy]);
-        }
-        break;
-      }
+    let result: { newResourceId: string; resourceType: ShareableResourceType };
+    if (share.kind === "donation") {
+      result = copySnapshotToTeacher(share, toTeacherId, toSchoolId);
+    } else {
+      const original = (db.read(RESOURCE_COLLECTIONS[share.resourceType]) as ShareableResource[])
+        .find((item) => item.id === share.resourceId);
+      if (!original) throw new Error("分享资源不存在");
+      const temporary: ShareRecord = {
+        ...share,
+        resourceSnapshot: structuredClone(original),
+        directorySnapshot: collectDirectorySnapshot(original),
+      };
+      result = copySnapshotToTeacher(temporary, toTeacherId, toSchoolId);
     }
 
-    if (!newResourceId) throw new Error("分享资源不存在");
-
-    // 更新分享记录状态
-    db.update("shareRecords", (list) =>
-      list.map((s) =>
-        s.id === shareId
-          ? { ...s, status: "accepted" as ShareStatus, acceptedAt: now, acceptedResourceId: newResourceId }
-          : s,
-      ),
-    );
-
-    return { newResourceId, resourceType: share.resourceType };
+    const now = new Date().toISOString();
+    if (share.kind !== "donation") {
+      db.update("shareRecords", (list: ShareRecord[]) => list.map((item) =>
+        item.id === shareId
+          ? {
+            ...item,
+            status: "accepted" as ShareStatus,
+            acceptedAt: now,
+            acceptedResourceId: result.newResourceId,
+          }
+          : item,
+      ));
+    }
+    return result;
   },
 
-  /** 拒绝分享 */
   async rejectShare(shareId: string): Promise<void> {
     await delay(100);
-    db.update("shareRecords", (list) =>
-      list.map((s) => (s.id === shareId ? { ...s, status: "rejected" as ShareStatus } : s)),
-    );
+    db.update("shareRecords", (list: ShareRecord[]) => list.map((item) =>
+      item.id === shareId ? { ...item, status: "rejected" as ShareStatus } : item,
+    ));
   },
 
-  /** 撤回分享 */
   async revokeShare(shareId: string): Promise<void> {
     await delay(100);
-    db.update("shareRecords", (list) => list.filter((s) => s.id !== shareId));
+    const share = (db.read("shareRecords") as ShareRecord[]).find((item) => item.id === shareId);
+    if (share?.kind === "donation") throw new Error("已捐赠的平台资源不可删除");
+    db.update("shareRecords", (list: ShareRecord[]) => list.filter((item) => item.id !== shareId));
   },
 };
