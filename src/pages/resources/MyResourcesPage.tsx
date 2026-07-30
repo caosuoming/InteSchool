@@ -207,6 +207,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
   const [creatingBasket, setCreatingBasket] = useState(false);
+  const [isCreatingBasket, setIsCreatingBasket] = useState(false);
   const [newBasketName, setNewBasketName] = useState("");
 
   const schoolId = teacher?.schoolId || "sch-1";
@@ -322,16 +323,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const handleCreateBasket = async () => {
     if (!teacher || !newBasketName.trim()) return;
-    setCreatingBasket(true);
+    setIsCreatingBasket(true);
     try {
       await basketService.createBasket(teacher.id, newBasketName.trim());
       toast.success(`已创建资源篮「${newBasketName.trim()}」`);
       setNewBasketName("");
-      loadBaskets();
+      await loadBaskets();
+      setCreatingBasket(false);
     } catch (e: any) {
       toast.error("创建失败", e?.message);
     } finally {
-      setCreatingBasket(false);
+      setIsCreatingBasket(false);
     }
   };
 
@@ -1944,7 +1946,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => { setCreatingBasket(false); setNewBasketName(""); }}>取消</Button>
-            <Button variant="gold" onClick={handleCreateBasket} loading={creatingBasket} disabled={!newBasketName.trim()}>
+            <Button variant="gold" onClick={handleCreateBasket} loading={isCreatingBasket} disabled={!newBasketName.trim()}>
               创建
             </Button>
           </div>
