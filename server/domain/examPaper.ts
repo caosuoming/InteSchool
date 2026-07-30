@@ -1,6 +1,7 @@
 import type {
   ExamPaper,
   ExamPaperQuestion,
+  ExtractedDocumentBlock,
   ResourceFilter,
   ResourceSemester,
 } from "../../src/types/index.js";
@@ -223,21 +224,47 @@ export const examPaperService = {
   /**
    * 创建拆解副本：复制源试卷结构，标记为拆解副本，关联源资源ID
    */
-  async createExtractCopy(sourceId: string): Promise<ExamPaper> {
+  async createExtractCopy(
+    sourceId: string,
+    contentBlocks: ExtractedDocumentBlock[] = [],
+  ): Promise<ExamPaper> {
     await delay(400);
     maybeThrowError();
     const source = db.read("examPapers").find((p) => p.id === sourceId);
     if (!source) throw new Error("源试卷不存在");
     const now = new Date().toISOString();
-    const copiedQuestions: ExamPaperQuestion[] = source.questions.map((q) => ({
-      ...q,
-      id: genId("epq"),
+    const normalizedBlocks = contentBlocks.map((block) => ({
+      ...block,
+      id: genId("doc-block"),
     }));
+    const copiedQuestions: ExamPaperQuestion[] = normalizedBlocks.length > 0
+      ? normalizedBlocks
+        .filter((block) => block.type === "question")
+        .map((block) => {
+          const id = genId("epq");
+          block.examPaperQuestionId = id;
+          const type = block.questionType || "short";
+          return {
+            id,
+            questionId: block.questionId,
+            stem: block.content,
+            answer: "",
+            analysis: "",
+            score: type === "essay" ? 15 : type === "short" ? 5 : type === "multiple" ? 3 : 2,
+            type,
+          };
+        })
+      : source.questions.map((q) => ({
+        ...q,
+        id: genId("epq"),
+      }));
     const copy: ExamPaper = {
       ...source,
       id: genId("exam"),
       title: `${source.title}（拆解版）`,
       questions: copiedQuestions,
+      totalScore: copiedQuestions.reduce((sum, question) => sum + question.score, 0),
+      contentBlocks: normalizedBlocks.length > 0 ? normalizedBlocks : source.contentBlocks,
       isExtractCopy: true,
       sourceResourceId: sourceId,
       extractStatus: "done",

@@ -398,6 +398,18 @@ export interface ExamPaperQuestion {
   type: QuestionType;
 }
 
+/** 拆解正稿中的有序文档块，用于保留原文标题、知识块和题目位置。 */
+export interface ExtractedDocumentBlock {
+  id: string;
+  type: "question" | "knowledge" | "heading" | "text";
+  content: string;
+  title?: string;
+  questionType?: QuestionType;
+  questionId?: string;
+  materialId?: string;
+  examPaperQuestionId?: string;
+}
+
 /** 试卷 */
 export interface ExamPaper {
   id: string;
@@ -413,6 +425,8 @@ export interface ExamPaper {
   duration: number; // 考试时长（分钟）
   totalScore: number;
   questions: ExamPaperQuestion[];
+  /** 文档拆解生成的有序正文结构。普通组卷可不设置。 */
+  contentBlocks?: ExtractedDocumentBlock[];
   status: ExamPaperStatus;
   /** 试卷类型ID */
   typeId?: string;
@@ -821,6 +835,8 @@ export interface LectureSection {
   children: LectureSection[];
   /** 个性化编号标签（如"例1""变式2"），为空时使用默认序号 */
   customLabel?: string;
+  /** 拆解正稿只展示题干，答案、解析和选项仍保留在题库中。 */
+  displayMode?: "stem-only";
 }
 
 export type LectureStatus = "draft" | "published";

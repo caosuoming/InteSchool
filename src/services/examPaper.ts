@@ -3,6 +3,7 @@ import { rpcCall } from "./api";
 import type {
   ExamPaper,
   ExamPaperQuestion,
+  ExtractedDocumentBlock,
   ResourceFilter,
   ResourceSemester,
 } from "@/types";
@@ -56,8 +57,11 @@ export const examPaperService = {
     return rpcCall("examPaper", "extractToQuestionBank", [paperId]) as any;
   },
 
-  async createExtractCopy(sourceId: string): Promise<ExamPaper> {
-    return rpcCall("examPaper", "createExtractCopy", [sourceId]) as any;
+  async createExtractCopy(
+    sourceId: string,
+    contentBlocks: ExtractedDocumentBlock[] = [],
+  ): Promise<ExamPaper> {
+    return rpcCall("examPaper", "createExtractCopy", [sourceId, contentBlocks]) as any;
   },
 
   async getExtractCopy(sourceId: string): Promise<ExamPaper | null> {

@@ -1,4 +1,10 @@
-import type { Lecture, LectureFilter, LectureSection, ResourceSemester } from "../../src/types/index.js";
+import type {
+  ExtractedDocumentBlock,
+  Lecture,
+  LectureFilter,
+  LectureSection,
+  ResourceSemester,
+} from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService } from "./question.js";
@@ -296,7 +302,10 @@ export const lectureService = {
   /**
    * 创建拆解副本：复制源讲义结构，标记为拆解副本，关联源资源ID
    */
-  async createExtractCopy(sourceId: string): Promise<Lecture> {
+  async createExtractCopy(
+    sourceId: string,
+    contentBlocks: ExtractedDocumentBlock[] = [],
+  ): Promise<Lecture> {
     await delay(400);
     maybeThrowError();
     const source = db.read("lectures").find((l) => l.id === sourceId);
@@ -308,11 +317,49 @@ export const lectureService = {
         id: genId("sec"),
         children: copySections(s.children || []),
       }));
+    const extractedSections: LectureSection[] = contentBlocks.map((block, index) => {
+      if (block.type === "heading") {
+        return {
+          id: genId("sec"),
+          title: block.content,
+          type: "chapter",
+          content: "",
+          children: [],
+        };
+      }
+      if (block.type === "knowledge") {
+        return {
+          id: genId("sec"),
+          title: block.title || `知识块 ${index + 1}`,
+          type: "knowledge",
+          content: block.content,
+          children: [],
+        };
+      }
+      if (block.type === "question") {
+        return {
+          id: genId("sec"),
+          title: `题目·${block.content.slice(0, 18)}${block.content.length > 18 ? "..." : ""}`,
+          type: "question",
+          content: block.content,
+          questionId: block.questionId,
+          children: [],
+          displayMode: "stem-only",
+        };
+      }
+      return {
+        id: genId("sec"),
+        title: block.title || `正文 ${index + 1}`,
+        type: "text",
+        content: block.content,
+        children: [],
+      };
+    });
     const copy: Lecture = {
       ...source,
       id: genId("lec"),
       title: `${source.title}（拆解版）`,
-      sections: copySections(source.sections),
+      sections: extractedSections.length > 0 ? extractedSections : copySections(source.sections),
       isExtractCopy: true,
       sourceResourceId: sourceId,
       extractStatus: "done",
@@ -321,6 +368,8 @@ export const lectureService = {
       originalFileType: undefined,
       originalFileSize: undefined,
       version: 1,
+      versionType: "extract",
+      hasOrigin: true,
       status: "draft",
       createdAt: now,
       updatedAt: now,

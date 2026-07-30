@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtractReviewModal } from "../ExtractReviewModal";
@@ -8,14 +8,15 @@ const mocks = vi.hoisted(() => ({
   extractStoredFile: vi.fn(),
   parseDocumentBlocks: vi.fn(),
   confirmExtract: vi.fn(),
-  createExtractCopy: vi.fn(),
+  createLectureExtractCopy: vi.fn(),
+  createExamExtractCopy: vi.fn(),
   authState: {
     teacher: { id: "teacher-1", schoolId: "school-1" },
   },
   extractConfig: {
-    questionKeywords: [],
-    answerKeywords: [],
-    analysisKeywords: [],
+    questionKeywords: ["题目"],
+    answerKeywords: ["答案"],
+    analysisKeywords: ["解析"],
     summaryKeywords: [],
     singleChoiceKeywords: [],
     multipleChoiceKeywords: [],
@@ -60,14 +61,14 @@ vi.mock("@/stores/extractConfig", () => ({
 vi.mock("@/services/lecture", () => ({
   lectureService: {
     getLecture: mocks.getLecture,
-    createExtractCopy: mocks.createExtractCopy,
+    createExtractCopy: mocks.createLectureExtractCopy,
   },
 }));
 
 vi.mock("@/services/examPaper", () => ({
   examPaperService: {
     getPaper: vi.fn(),
-    createExtractCopy: vi.fn(),
+    createExtractCopy: mocks.createExamExtractCopy,
   },
 }));
 
@@ -87,14 +88,21 @@ vi.mock("@/lib/document-block-parser", () => ({
 
 describe("ExtractReviewModal", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mocks.getLecture.mockResolvedValue({
       id: "lecture-1",
       originalFileUrl: "/uploads/lecture.docx",
       originalFileName: "lecture.docx",
     });
     mocks.extractStoredFile.mockResolvedValue({ text: "mock document" });
-    mocks.confirmExtract.mockResolvedValue({ createdQuestions: [], createdMaterials: [] });
-    mocks.createExtractCopy.mockResolvedValue({ id: "lecture-copy" });
+    mocks.confirmExtract.mockResolvedValue({
+      createdQuestions: [{ id: "question-created" }],
+      createdMaterials: [{ id: "material-created" }],
+      questionIdByItemId: { "block-question": "question-created" },
+      materialIdByItemId: { "block-knowledge": "material-created" },
+    });
+    mocks.createLectureExtractCopy.mockResolvedValue({ id: "lecture-copy" });
+    mocks.createExamExtractCopy.mockResolvedValue({ id: "paper-copy" });
     mocks.parseDocumentBlocks.mockReturnValue([
       {
         id: "block-question",
@@ -232,5 +240,90 @@ describe("ExtractReviewModal", () => {
     await user.click(screen.getByRole("button", { name: "确认入库" }));
     await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
     expect(mocks.confirmExtract.mock.calls[0][2].questions[0].stem).toBe("（本小题12分）示例题目");
+  });
+
+  it("creates the lecture manuscript from all reviewed blocks in their original order", async () => {
+    mocks.parseDocumentBlocks.mockReturnValue([
+      {
+        id: "block-heading",
+        type: "heading",
+        content: "一、选择题",
+        order: 0,
+        status: "new",
+      },
+      {
+        id: "block-question",
+        type: "question",
+        content: "题目：示例题目",
+        order: 1,
+        status: "new",
+        questionType: "single",
+        options: ["选项 A", "选项 B"],
+        answer: "答案：A",
+        analysis: "解析：示例解析",
+        difficulty: 3,
+      },
+      {
+        id: "block-knowledge",
+        type: "knowledge",
+        content: "示例知识内容",
+        knowledgeTitle: "示例知识",
+        order: 2,
+        status: "new",
+      },
+      {
+        id: "block-unused",
+        type: "unused",
+        content: "请认真作答",
+        order: 3,
+        status: "new",
+      },
+    ]);
+
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+      />,
+    );
+
+    await screen.findByText("标题 1");
+    fireEvent.click(screen.getByRole("button", { name: /确认入库/ }));
+
+    await waitFor(() => expect(mocks.createLectureExtractCopy).toHaveBeenCalledTimes(1));
+    expect(mocks.createLectureExtractCopy).toHaveBeenCalledWith("lecture-1", [
+      {
+        id: "block-heading",
+        type: "heading",
+        content: "一、选择题",
+      },
+      {
+        id: "block-question",
+        type: "question",
+        content: "示例题目",
+        questionType: "single",
+        questionId: "question-created",
+      },
+      {
+        id: "block-knowledge",
+        type: "knowledge",
+        title: "示例知识",
+        content: "示例知识内容",
+        materialId: "material-created",
+      },
+      {
+        id: "block-unused",
+        type: "text",
+        content: "请认真作答",
+      },
+    ]);
   });
 });

@@ -1,6 +1,12 @@
 import { rpcCall } from "./api";
 
-import type { Lecture, LectureFilter, LectureSection, ResourceSemester } from "@/types";
+import type {
+  ExtractedDocumentBlock,
+  Lecture,
+  LectureFilter,
+  LectureSection,
+  ResourceSemester,
+} from "@/types";
 
 export interface LectureInput {
   title: string;
@@ -65,8 +71,11 @@ export const lectureService = {
     return rpcCall("lecture", "publish", [lectureId]) as any;
   },
 
-  async createExtractCopy(sourceId: string): Promise<Lecture> {
-    return rpcCall("lecture", "createExtractCopy", [sourceId]) as any;
+  async createExtractCopy(
+    sourceId: string,
+    contentBlocks: ExtractedDocumentBlock[] = [],
+  ): Promise<Lecture> {
+    return rpcCall("lecture", "createExtractCopy", [sourceId, contentBlocks]) as any;
   },
 
   async getExtractCopy(sourceId: string): Promise<Lecture | null> {

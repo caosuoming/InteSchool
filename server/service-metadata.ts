@@ -360,7 +360,8 @@ export const serviceParameters = {
       "paperId"
     ],
     "createExtractCopy": [
-      "sourceId"
+      "sourceId",
+      "contentBlocks"
     ],
     "getExtractCopy": [
       "sourceId"
@@ -397,6 +398,7 @@ export const serviceParameters = {
       "knowledgePointIds",
       "grade",
       "schoolYear",
+      "semester",
       "sourceResourceId"
     ]
   },
@@ -498,7 +500,8 @@ export const serviceParameters = {
       "lectureId"
     ],
     "createExtractCopy": [
-      "sourceId"
+      "sourceId",
+      "contentBlocks"
     ],
     "getExtractCopy": [
       "sourceId"

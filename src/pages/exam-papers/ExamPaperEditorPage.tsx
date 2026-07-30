@@ -31,7 +31,22 @@ import { QuestionCard } from "@/components/question/QuestionCard";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
-import type { ExamPaper, ExamPaperQuestion, Question, Basket, AnyClass, Lecture, ExamPublication, TreeNode, Student, SchoolClass, PersonalClass, ExamPaperType, ResourceSemester } from "@/types";
+import type {
+  AnyClass,
+  Basket,
+  ExamPaper,
+  ExamPaperQuestion,
+  ExamPaperType,
+  ExamPublication,
+  ExtractedDocumentBlock,
+  Lecture,
+  PersonalClass,
+  Question,
+  ResourceSemester,
+  SchoolClass,
+  Student,
+  TreeNode,
+} from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
@@ -141,6 +156,7 @@ export default function ExamPaperEditorPage() {
   const [examPaperTypes, setExamPaperTypes] = useState<ExamPaperType[]>([]);
   const [duration, setDuration] = useState(90);
   const [paperQuestions, setPaperQuestions] = useState<ExamPaperQuestion[]>([]);
+  const [contentBlocks, setContentBlocks] = useState<ExtractedDocumentBlock[]>([]);
   const [layoutMode, setLayoutMode] = useState<"grouped" | "flat">("grouped");
   const [markingAllDone, setMarkingAllDone] = useState(false);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
@@ -220,6 +236,7 @@ export default function ExamPaperEditorPage() {
     setTypeId(p.typeId || "");
     setDuration(p.duration);
     setPaperQuestions(p.questions);
+    setContentBlocks(p.contentBlocks || []);
     setLayoutMode(p.layoutMode || "grouped");
     setSelectedStudentIds(p.studentIds || []);
     // 加载关联题目
@@ -396,6 +413,45 @@ export default function ExamPaperEditorPage() {
   const totalScore = useMemo(() =>
     paperQuestions.reduce((sum, q) => sum + q.score, 0), [paperQuestions]);
 
+  const isStructuredExtract = Boolean(paper?.isExtractCopy && contentBlocks.length > 0);
+
+  const updateContentBlock = (
+    blockId: string,
+    patch: Partial<ExtractedDocumentBlock>,
+  ) => {
+    const current = contentBlocks.find((block) => block.id === blockId);
+    setContentBlocks((previous) => previous.map((block) =>
+      block.id === blockId ? { ...block, ...patch } : block,
+    ));
+    if (current?.type === "question" && current.examPaperQuestionId && patch.content !== undefined) {
+      setPaperQuestions((previous) => previous.map((question) =>
+        question.id === current.examPaperQuestionId
+          ? { ...question, stem: patch.content! }
+          : question,
+      ));
+    }
+  };
+
+  const moveContentBlock = (index: number, direction: "up" | "down") => {
+    setContentBlocks((previous) => {
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= previous.length) return previous;
+      const next = [...previous];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  const removeContentBlock = (blockId: string) => {
+    const block = contentBlocks.find((item) => item.id === blockId);
+    setContentBlocks((previous) => previous.filter((item) => item.id !== blockId));
+    if (block?.examPaperQuestionId) {
+      setPaperQuestions((previous) => previous.filter(
+        (question) => question.id !== block.examPaperQuestionId,
+      ));
+    }
+  };
+
   const paperQuestionList = useMemo(
     () => paperQuestions
       .map((item) => {
@@ -473,6 +529,7 @@ export default function ExamPaperEditorPage() {
   // 编辑模式：删除题目
   const handleRemoveQuestion = (pqId: string) => {
     setPaperQuestions((prev) => prev.filter((q) => q.id !== pqId));
+    setContentBlocks((prev) => prev.filter((block) => block.examPaperQuestionId !== pqId));
   };
 
   // 编辑模式：换题（替换某题的题库关联）
@@ -518,6 +575,7 @@ export default function ExamPaperEditorPage() {
       // 换题模式：替换指定位置
       if (toAdd.length === 0) { toast.error("未找到有效题目"); return; }
       const newQ = toAdd[0];
+      const replacedQuestion = paperQuestions[replaceIdx];
       setPaperQuestions((prev) => prev.map((pq, i) => {
         if (i !== replaceIdx) return pq;
         return {
@@ -531,6 +589,18 @@ export default function ExamPaperEditorPage() {
         };
       }));
       setQuestions((prev) => ({ ...prev, [newQ.id]: newQ }));
+      if (replacedQuestion) {
+        setContentBlocks((prev) => prev.map((block) =>
+          block.examPaperQuestionId === replacedQuestion.id
+            ? {
+              ...block,
+              content: newQ.stem,
+              questionId: newQ.id,
+              questionType: newQ.type,
+            }
+            : block,
+        ));
+      }
       toast.success("题目已替换");
       setReplaceIdx(null);
     } else {
@@ -546,6 +616,19 @@ export default function ExamPaperEditorPage() {
         type: q.type,
       }));
       setPaperQuestions((prev) => [...prev, ...newPqs]);
+      if (contentBlocks.length > 0) {
+        setContentBlocks((prev) => [
+          ...prev,
+          ...newPqs.map((paperQuestion) => ({
+            id: `doc-block-${crypto.randomUUID()}`,
+            type: "question" as const,
+            content: paperQuestion.stem,
+            questionType: paperQuestion.type,
+            questionId: paperQuestion.questionId,
+            examPaperQuestionId: paperQuestion.id,
+          })),
+        ]);
+      }
       const newQMap = { ...questions };
       toAdd.forEach((q) => { newQMap[q.id] = q; });
       setQuestions(newQMap);
@@ -568,6 +651,7 @@ export default function ExamPaperEditorPage() {
         title, description, grade, schoolYear, semester, duration,
         totalScore: totalScore,
         questions: paperQuestions,
+        contentBlocks,
         studentIds: selectedStudentIds,
         typeId: typeId || undefined,
         layoutMode,
@@ -864,8 +948,54 @@ export default function ExamPaperEditorPage() {
               </div>
             </div>
 
-            {/* 题目列表 */}
-            {paperQuestions.length === 0 ? (
+            {/* 正文 */}
+            {isStructuredExtract ? (
+              <div className="space-y-4">
+                {contentBlocks.map((block, blockIndex) => {
+                  if (block.type === "heading") {
+                    return (
+                      <h2 key={block.id} className="font-serif text-lg font-bold text-ink-900 pt-3 pb-2 border-b border-ink-200">
+                        {block.content}
+                      </h2>
+                    );
+                  }
+                  if (block.type === "knowledge") {
+                    return (
+                      <section key={block.id} className="rounded-md border border-gold-200 bg-gold-50/20 p-4">
+                        {block.title && (
+                          <h3 className="mb-2 font-serif font-semibold text-ink-900">{block.title}</h3>
+                        )}
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-ink-800">{block.content}</div>
+                      </section>
+                    );
+                  }
+                  if (block.type === "question") {
+                    const questionNumber = contentBlocks
+                      .slice(0, blockIndex + 1)
+                      .filter((item) => item.type === "question").length;
+                    const paperQuestion = paperQuestions.find(
+                      (item) => item.id === block.examPaperQuestionId,
+                    );
+                    return (
+                      <section key={block.id} className="flex items-start gap-2 rounded-md border border-ink-100 p-4">
+                        <span className="font-mono font-bold text-ink-400">{questionNumber}.</span>
+                        <div className="flex-1 whitespace-pre-wrap text-sm leading-relaxed text-ink-900">
+                          {block.content}
+                        </div>
+                        {paperQuestion && (
+                          <span className="flex-shrink-0 text-xs font-medium text-gold-700">{paperQuestion.score} 分</span>
+                        )}
+                      </section>
+                    );
+                  }
+                  return (
+                    <div key={block.id} className="whitespace-pre-wrap text-sm leading-relaxed text-ink-700">
+                      {block.content}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : paperQuestions.length === 0 ? (
               <EmptyState
                 icon={<FileText className="w-10 h-10 text-ink-200" />}
                 title="试卷暂无题目"
@@ -1037,30 +1167,34 @@ export default function ExamPaperEditorPage() {
                 <Badge variant="ink">{paperQuestions.length} 题</Badge>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center rounded-md border border-ink-200 p-0.5 bg-ink-50">
-                  <button
-                    onClick={() => setLayoutMode("grouped")}
-                    className={cn(
-                      "px-2.5 py-1 text-xs rounded transition-colors",
-                      layoutMode === "grouped" ? "bg-white text-gold-700 shadow-sm font-medium" : "text-ink-500 hover:text-ink-800",
-                    )}
-                  >
-                    按题型
-                  </button>
-                  <button
-                    onClick={() => setLayoutMode("flat")}
-                    className={cn(
-                      "px-2.5 py-1 text-xs rounded transition-colors",
-                      layoutMode === "flat" ? "bg-white text-gold-700 shadow-sm font-medium" : "text-ink-500 hover:text-ink-800",
-                    )}
-                  >
-                    无题型
-                  </button>
-                </div>
-                <Button variant="outline" size="sm" onClick={handleSortByDifficulty} disabled={paperQuestions.length < 2}>
-                  <ArrowUpDown className="w-3.5 h-3.5" />
-                  按难度排序
-                </Button>
+                {!isStructuredExtract && (
+                  <>
+                    <div className="flex items-center rounded-md border border-ink-200 p-0.5 bg-ink-50">
+                      <button
+                        onClick={() => setLayoutMode("grouped")}
+                        className={cn(
+                          "px-2.5 py-1 text-xs rounded transition-colors",
+                          layoutMode === "grouped" ? "bg-white text-gold-700 shadow-sm font-medium" : "text-ink-500 hover:text-ink-800",
+                        )}
+                      >
+                        按题型
+                      </button>
+                      <button
+                        onClick={() => setLayoutMode("flat")}
+                        className={cn(
+                          "px-2.5 py-1 text-xs rounded transition-colors",
+                          layoutMode === "flat" ? "bg-white text-gold-700 shadow-sm font-medium" : "text-ink-500 hover:text-ink-800",
+                        )}
+                      >
+                        无题型
+                      </button>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={handleSortByDifficulty} disabled={paperQuestions.length < 2}>
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                      按难度排序
+                    </Button>
+                  </>
+                )}
                 <Button variant="gold" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
                   <Plus className="w-3.5 h-3.5" />
                   添加题目
@@ -1068,7 +1202,104 @@ export default function ExamPaperEditorPage() {
               </div>
             </div>
 
-            {paperQuestions.length === 0 ? (
+            {isStructuredExtract ? (
+              <div className="space-y-3">
+                {contentBlocks.map((block, blockIndex) => {
+                  const paperQuestion = block.examPaperQuestionId
+                    ? paperQuestions.find((question) => question.id === block.examPaperQuestionId)
+                    : undefined;
+                  const paperQuestionIndex = paperQuestion
+                    ? paperQuestions.findIndex((question) => question.id === paperQuestion.id)
+                    : -1;
+                  const label = block.type === "heading"
+                    ? "标题"
+                    : block.type === "knowledge"
+                      ? "知识块"
+                      : block.type === "question"
+                        ? "题目"
+                        : "正文";
+                  return (
+                    <section key={block.id} className="rounded-md border border-ink-100 bg-paper p-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Badge variant={block.type === "question" ? "teal" : block.type === "knowledge" ? "gold" : "ink"}>
+                          {label}
+                        </Badge>
+                        {block.type === "question" && paperQuestion && (
+                          <>
+                            <Badge variant="default">{typeLabel[paperQuestion.type]}</Badge>
+                            <div className="ml-auto flex items-center gap-1">
+                              <Input
+                                aria-label="题目分值"
+                                type="number"
+                                value={String(paperQuestion.score)}
+                                onChange={(event) => handleUpdateScore(paperQuestion.id, Number(event.target.value))}
+                                className="w-16 text-xs"
+                              />
+                              <span className="text-xs text-ink-500">分</span>
+                            </div>
+                          </>
+                        )}
+                        <div className={cn("flex items-center gap-0.5", block.type !== "question" && "ml-auto")}>
+                          <button
+                            onClick={() => moveContentBlock(blockIndex, "up")}
+                            disabled={blockIndex === 0}
+                            className="p-1 text-ink-400 hover:text-gold-600 disabled:opacity-25"
+                            title="上移"
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => moveContentBlock(blockIndex, "down")}
+                            disabled={blockIndex === contentBlocks.length - 1}
+                            className="p-1 text-ink-400 hover:text-gold-600 disabled:opacity-25"
+                            title="下移"
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </button>
+                          {block.type === "question" && paperQuestionIndex >= 0 && (
+                            <button
+                              onClick={() => handleReplaceQuestion(paperQuestionIndex)}
+                              className="px-2 py-1 text-xs text-teal-600 hover:text-teal-700"
+                            >
+                              换题
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeContentBlock(block.id)}
+                            className="p-1 text-ink-400 hover:text-red-600"
+                            title="删除"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      {block.type === "knowledge" && (
+                        <Input
+                          label="知识块标题"
+                          value={block.title || ""}
+                          onChange={(event) => updateContentBlock(block.id, { title: event.target.value })}
+                          className="mb-2"
+                        />
+                      )}
+                      {block.type === "heading" ? (
+                        <Input
+                          label="标题内容"
+                          value={block.content}
+                          onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
+                        />
+                      ) : (
+                        <Textarea
+                          label={block.type === "question" ? "题干" : "内容"}
+                          value={block.content}
+                          onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
+                          rows={block.type === "question" ? 3 : 4}
+                        />
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            ) : paperQuestions.length === 0 ? (
               <EmptyState
                 icon={<FileText className="w-10 h-10 text-ink-200" />}
                 title="试卷暂无题目"
