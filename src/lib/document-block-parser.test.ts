@@ -85,6 +85,35 @@ describe("document block parser", () => {
     });
   });
 
+  it("extracts options that share a line with the first question image in a multiple-choice section", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "二、多项选择题：本大题共4小题，共24分。",
+        "9. 已知全集为 U，则下图阴影部分表示正确的为（　）",
+        "![文档图片](/api/files/file-1/assets/rId5) A. $C_A(A \\cap B)$ B. $(C_U A) \\cap (C_U B)$ C. $(C_U B) \\cap A$ D. $C_U(A \\cap B)$",
+        "答案：AC",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      questionType: "multiple",
+      content: [
+        "9. 已知全集为 U，则下图阴影部分表示正确的为（　）",
+        "![文档图片](/api/files/file-1/assets/rId5)",
+      ].join("\n"),
+      options: [
+        "$C_A(A \\cap B)$",
+        "$(C_U A) \\cap (C_U B)$",
+        "$(C_U B) \\cap A$",
+        "$C_U(A \\cap B)$",
+      ],
+      answer: "AC",
+    });
+  });
+
   it("recognizes parenthesized option labels and keeps circled numbering in the stem", () => {
     const blocks = parseDocumentBlocks(
       [

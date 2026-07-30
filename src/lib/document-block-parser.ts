@@ -36,6 +36,11 @@ interface OptionMarker {
   index: number;
 }
 
+interface TextRange {
+  start: number;
+  end: number;
+}
+
 interface TrailingSolution {
   number: string;
   order: number;
@@ -73,16 +78,35 @@ function optionIndex(label: string): number {
   return label.toUpperCase().charCodeAt(0) - 65;
 }
 
+function scanInlineMathRanges(text: string): TextRange[] {
+  const ranges: TextRange[] = [];
+  let start = -1;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "$" || text[index - 1] === "\\") continue;
+    if (start < 0) {
+      start = index;
+    } else {
+      ranges.push({ start, end: index + 1 });
+      start = -1;
+    }
+  }
+  if (start >= 0) ranges.push({ start, end: text.length });
+  return ranges;
+}
+
 function scanOptionMarkers(text: string): OptionMarker[] {
   const pattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）])\s*/g;
+  const inlineMathRanges = scanInlineMathRanges(text);
   const markers: OptionMarker[] = [];
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
     const label = match[2] || match[3];
     if (!label) continue;
     const leading = match[1] || "";
+    const start = match.index + leading.length;
+    if (inlineMathRanges.some((range) => start > range.start && start < range.end)) continue;
     markers.push({
-      start: match.index + leading.length,
+      start,
       contentStart: pattern.lastIndex,
       index: optionIndex(label),
     });
@@ -562,6 +586,12 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
         continue;
       }
       if (currentQuestionField === "content") {
+        const inline = splitQuestionAndInlineOptions(line);
+        if (inline) {
+          appendQuestionField(currentBlock, "content", inline.stem);
+          currentBlock.options = inline.options;
+          continue;
+        }
         const options = extractOptionLine(line, currentBlock.options?.length || 0);
         if (options) {
           currentBlock.options = [...(currentBlock.options || []), ...options];
