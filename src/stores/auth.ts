@@ -8,10 +8,10 @@ interface AuthState {
   error: string | null;
   init: () => Promise<void>;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string, name: string, phone: string) => Promise<boolean>;
+  register: (input: Parameters<typeof authService.register>[0]) => Promise<boolean>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  updateNickname: (nickname: string) => Promise<boolean>;
+  updateProfile: (patch: Parameters<typeof authService.updateProfile>[0]) => Promise<boolean>;
   clearError: () => void;
   switchAffiliation: (affiliationId: string) => Promise<boolean>;
   getCurrentAffiliation: () => TeacherAffiliation | null;
@@ -49,10 +49,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  register: async (email, password, name, phone) => {
+  register: async (input) => {
     set({ loading: true, error: null });
     try {
-      const teacher = await authService.register(email, password, name, phone);
+      const teacher = await authService.register(input);
       set({ teacher, loading: false });
       return true;
     } catch (error) {
@@ -71,13 +71,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ teacher });
   },
 
-  updateNickname: async (nickname) => {
+  updateProfile: async (patch) => {
     try {
-      const teacher = await authService.updateNickname(nickname);
+      const teacher = await authService.updateProfile(patch);
       set({ teacher, error: null });
       return true;
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : "昵称保存失败" });
+      set({ error: error instanceof Error ? error.message : "资料保存失败" });
       return false;
     }
   },

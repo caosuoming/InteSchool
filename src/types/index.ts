@@ -20,6 +20,10 @@ export interface TeacherAffiliation {
   /** 学校名称（冗余，用于快速展示） */
   schoolName: string | null;
   subject: string;
+  /** 当前单位任教年级 */
+  teachingGrades?: string[];
+  /** 当前单位任教班级 ID */
+  teachingClassIds?: string[];
   employeeNo?: string;
   status: TeacherStatus;
   role: "teacher" | "school_admin" | "platform_admin";
@@ -65,6 +69,10 @@ export interface Teacher {
   schoolId: string | null;
   /** @deprecated 使用 affiliations 代替 */
   subject: string;
+  /** @deprecated 使用 affiliations 代替 */
+  teachingGrades?: string[];
+  /** @deprecated 使用 affiliations 代替 */
+  teachingClassIds?: string[];
   /** @deprecated 使用 affiliations 代替 */
   employeeNo?: string;
   /** @deprecated 使用 affiliations 代替 */
@@ -118,6 +126,29 @@ export interface PrepGroup {
   memberIds: string[];
   description?: string;
   createdAt: string;
+}
+
+
+export interface RegistrationContext {
+  authorization: {
+    kind: RegistrationAuthorizationKind;
+    schoolId: string;
+    schoolName: string;
+  };
+  schools: School[];
+}
+
+export interface SchoolAdminApplication {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  schoolId: string;
+  schoolName: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
 }
 
 export interface SchoolApplication {

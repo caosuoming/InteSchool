@@ -12,6 +12,8 @@ import {
   User,
   Type,
   UserPlus,
+  ShieldCheck,
+  UsersRound,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, uiScaleConfig, type UiScale } from "@/stores/settings";
@@ -24,6 +26,8 @@ interface AdminItem {
   href: string;
   /** 是否仅学校身份可见 */
   schoolOnly?: boolean;
+  adminOnly?: boolean;
+  platformOnly?: boolean;
 }
 
 const allAdminItems: AdminItem[] = [
@@ -55,6 +59,21 @@ const allAdminItems: AdminItem[] = [
     schoolOnly: true,
   },
   {
+    icon: UsersRound,
+    title: "教师教学资料",
+    description: "维护本校教师的任教学科、年级和班级",
+    href: "/admin/teacher-profiles",
+    schoolOnly: true,
+    adminOnly: true,
+  },
+  {
+    icon: ShieldCheck,
+    title: "学校管理员审核",
+    description: "审核各学校教师提交的学校管理员权限申请",
+    href: "/admin/school-admin-applications",
+    platformOnly: true,
+  },
+  {
     icon: SlidersHorizontal,
     title: "系统设置",
     description: "管理年级、学年、题源、题类、分类等基础数据配置",
@@ -68,9 +87,14 @@ export function AdminPage() {
   const currentAffiliation = getCurrentAffiliation();
   const isPersonal = !currentAffiliation?.schoolId;
   const { uiScale, setUiScale } = useSettingsStore();
+  const activeRole = currentAffiliation?.role;
+  const isAdmin = ["school_admin", "platform_admin"].includes(String(activeRole));
+  const isPlatformAdmin = activeRole === "platform_admin";
 
   const adminItems = allAdminItems.filter((item) => {
     if (item.schoolOnly && isPersonal) return false;
+    if (item.adminOnly && !isAdmin) return false;
+    if (item.platformOnly && !isPlatformAdmin) return false;
     return true;
   });
 
