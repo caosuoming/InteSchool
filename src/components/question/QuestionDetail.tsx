@@ -11,15 +11,8 @@ import { Edit3, Save, BookOpen, Lightbulb, BarChart3, Users, Plus, Trash2, Clock
 import type { Question, Chapter, KnowledgePoint, QuestionRemark } from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
-import { MathText } from "@/components/ui/MathText";
-
-const typeLabel: Record<Question["type"], string> = {
-  single: "单选题",
-  multiple: "多选题",
-  judge: "判断题",
-  short: "填空题",
-  essay: "解答题",
-};
+import { MathHtml } from "@/components/ui/MathHtml";
+import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -30,6 +23,7 @@ interface QuestionDetailProps {
 
 export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
   const { teacher } = useAuthStore();
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [points, setPoints] = useState<KnowledgePoint[]>([]);
   const [remarks, setRemarks] = useState<QuestionRemark[]>([]);
@@ -120,7 +114,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
     <div className="space-y-5">
       {/* 题型与属性 */}
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="ink">{typeLabel[question.type]}</Badge>
+        <Badge variant="ink">{getQuestionTypeLabel(question.type)}</Badge>
         <Badge variant={question.difficulty <= 2 ? "green" : question.difficulty <= 3 ? "amber" : "red"}>
           {difficultyLabel[question.difficulty]}
         </Badge>
@@ -137,7 +131,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1.5">题干</div>
         <div className="p-3 rounded-md bg-mist border border-ink-100 text-sm text-ink-900 leading-relaxed whitespace-pre-wrap">
-          <MathText>{question.stem}</MathText>
+          <MathHtml>{question.stem}</MathHtml>
         </div>
       </div>
 
@@ -159,7 +153,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
                 <span className="font-mono font-semibold text-ink-700 flex-shrink-0">
                   {String.fromCharCode(65 + i)}.
                 </span>
-                <span className="text-ink-900"><MathText>{opt}</MathText></span>
+                <MathHtml className="min-w-0 text-ink-900">{opt}</MathHtml>
               </div>
             ))}
           </div>
@@ -170,7 +164,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1.5">答案</div>
         <div className="p-3 rounded-md bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900 font-medium whitespace-pre-wrap">
-          <MathText>{question.answer}</MathText>
+          <MathHtml>{question.answer}</MathHtml>
         </div>
       </div>
 
@@ -178,7 +172,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1.5">解析</div>
         <div className="p-3 rounded-md bg-gold-50/30 border border-gold-200 text-sm text-ink-900 leading-relaxed whitespace-pre-wrap">
-          <MathText>{question.analysis}</MathText>
+          <MathHtml>{question.analysis}</MathHtml>
         </div>
       </div>
 
@@ -187,7 +181,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
         <div>
           <div className="text-xs font-medium text-ink-500 mb-1.5">总结</div>
           <div className="p-3 rounded-md bg-amber-50/40 border border-amber-200 text-sm text-amber-900 leading-relaxed whitespace-pre-wrap">
-            <MathText>{question.summary}</MathText>
+            <MathHtml>{question.summary}</MathHtml>
           </div>
         </div>
       )}

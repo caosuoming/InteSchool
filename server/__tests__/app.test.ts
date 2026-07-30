@@ -1770,6 +1770,27 @@ describe("production backend", () => {
       now,
     );
     built.store.sqlite.prepare(
+      "DELETE FROM app_records WHERE collection = 'schoolSettings' AND json_extract(data_json, '$.type') = 'questionType' AND json_extract(data_json, '$.value') = 'conceptFill'",
+    ).run();
+    const shortType = built.store.sqlite.prepare(
+      "SELECT id, data_json FROM app_records WHERE collection = 'schoolSettings' AND json_extract(data_json, '$.type') = 'questionType' AND json_extract(data_json, '$.value') = 'short' LIMIT 1",
+    ).get() as { id: string; data_json: string };
+    const shortTypeData = JSON.parse(shortType.data_json) as Record<string, unknown>;
+    shortTypeData.name = "简答题";
+    shortTypeData.sortOrder = 99;
+    built.store.sqlite.prepare(
+      "UPDATE app_records SET data_json = ? WHERE collection = 'schoolSettings' AND id = ?",
+    ).run(JSON.stringify(shortTypeData), shortType.id);
+    const customizedType = built.store.sqlite.prepare(
+      "SELECT id, data_json FROM app_records WHERE collection = 'schoolSettings' AND school_id = 'sch-2' AND json_extract(data_json, '$.value') = 'single' LIMIT 1",
+    ).get() as { id: string; data_json: string };
+    const customizedTypeData = JSON.parse(customizedType.data_json) as Record<string, unknown>;
+    customizedTypeData.name = "自定义选择题";
+    customizedTypeData.sortOrder = 42;
+    built.store.sqlite.prepare(
+      "UPDATE app_records SET data_json = ? WHERE collection = 'schoolSettings' AND id = ?",
+    ).run(JSON.stringify(customizedTypeData), customizedType.id);
+    built.store.sqlite.prepare(
       "INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '1')",
     ).run();
 
@@ -1788,9 +1809,34 @@ describe("production backend", () => {
     expect(JSON.parse(migratedShare.data_json)).toMatchObject({
       resourceSnapshot: { semester: "上学期" },
     });
+    const migratedQuestionTypes = built.store.sqlite.prepare(
+      "SELECT data_json FROM app_records WHERE collection = 'schoolSettings' AND school_id = 'sch-1'",
+    ).all()
+      .map((record: { data_json: string }) => JSON.parse(record.data_json) as Record<string, unknown>)
+      .filter((setting: Record<string, unknown>) => setting.type === "questionType")
+      .sort((a: Record<string, unknown>, b: Record<string, unknown>) => Number(a.sortOrder) - Number(b.sortOrder));
+    expect(migratedQuestionTypes.map((setting: Record<string, unknown>) => ({
+      name: setting.name,
+      value: setting.value,
+      sortOrder: setting.sortOrder,
+    }))).toEqual([
+      { name: "单选题", value: "single", sortOrder: 1 },
+      { name: "多选题", value: "multiple", sortOrder: 2 },
+      { name: "填空题", value: "short", sortOrder: 3 },
+      { name: "解答题", value: "essay", sortOrder: 4 },
+      { name: "判断题", value: "judge", sortOrder: 5 },
+      { name: "概念填空", value: "conceptFill", sortOrder: 6 },
+    ]);
+    const preservedCustomType = built.store.sqlite.prepare(
+      "SELECT data_json FROM app_records WHERE collection = 'schoolSettings' AND id = ?",
+    ).get(customizedType.id) as { data_json: string };
+    expect(JSON.parse(preservedCustomType.data_json)).toMatchObject({
+      name: "自定义选择题",
+      sortOrder: 42,
+    });
     expect(built.store.sqlite.prepare(
       "SELECT value FROM metadata WHERE key = 'schema_version'",
-    ).get()).toEqual({ value: "2" });
+    ).get()).toEqual({ value: "3" });
   });
 
 });

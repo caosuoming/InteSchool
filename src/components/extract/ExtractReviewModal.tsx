@@ -38,6 +38,7 @@ import {
 } from "@/lib/document-block-parser";
 import { extractStoredFile } from "@/services/api";
 import type { QuestionType, Question, Material, Lecture, ExamPaper, ResourceSemester } from "@/types";
+import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 
 interface ExtractReviewModalProps {
   open: boolean;
@@ -180,6 +181,7 @@ export function ExtractReviewModal({
   onConfirmed,
 }: ExtractReviewModalProps) {
   const { teacher } = useAuthStore();
+  const { options: questionTypeOptions, defaultType: defaultQuestionType } = useQuestionTypeOptions(teacher?.schoolId);
   const extractConfig = useExtractConfigStore();
   const [phase, setPhase] = useState<Phase>("extracting");
   const [progress, setProgress] = useState(0);
@@ -515,7 +517,7 @@ export function ExtractReviewModal({
 
       const extractedQuestions = questionBlocks.map((b) => ({
         id: b.id,
-        type: b.questionType || "single",
+        type: b.questionType || defaultQuestionType,
         stem: removeKeywords(b.content, questionKeywords),
         options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
         answer: removeKeywords(b.answer || "", answerKeywords),
@@ -706,15 +708,9 @@ export function ExtractReviewModal({
               {block.type === "question" && (
                 <Select
                   label="题型选择"
-                  value={block.questionType || "single"}
+                  value={block.questionType || defaultQuestionType}
                   className="h-9 py-0 text-sm"
-                  options={[
-                    { value: "single", label: "单选题" },
-                    { value: "multiple", label: "多选题" },
-                    { value: "judge", label: "判断题" },
-                    { value: "short", label: "填空题" },
-                    { value: "essay", label: "解答题" },
-                  ]}
+                  options={includeCurrentQuestionType(questionTypeOptions, block.questionType)}
                   onChange={(e) =>
                     updateBlockField(block.id, {
                       questionType: e.target.value as QuestionType,

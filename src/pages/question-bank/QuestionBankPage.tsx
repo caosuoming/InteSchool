@@ -18,7 +18,7 @@ import { classService } from "@/services/class";
 import { analyticsService, type DateRange } from "@/services/analytics";
 import { prepService } from "@/services/prep";
 import { lectureService } from "@/services/lecture";
-import { MathText } from "@/components/ui/MathText";
+import { MathHtml } from "@/components/ui/MathHtml";
 import { toast } from "@/stores/ui";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -37,6 +37,7 @@ import { QuestionActionsBar } from "@/components/question/QuestionActionsBar";
 import { TagSettings } from "@/components/question/TagSettings";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester, QuestionSearchField } from "@/types";
 import { cn } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
@@ -52,14 +53,6 @@ const difficultyOptions = [
   { value: 3, label: "中等" },
   { value: 4, label: "较难" },
   { value: 5, label: "困难" },
-];
-
-const typeOptions = [
-  { value: "single", label: "单选" },
-  { value: "multiple", label: "多选" },
-  { value: "judge", label: "判断" },
-  { value: "short", label: "填空" },
-  { value: "essay", label: "解答" },
 ];
 
 const sourceOptions = [
@@ -81,14 +74,6 @@ const searchFieldOptions: { value: QuestionSearchField; label: string }[] = [
   { value: "summary", label: "总结" },
   { value: "remark", label: "备注" },
 ];
-
-const typeLabel: Record<Question["type"], string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
 
 const sourceLabel: Record<string, string> = {
   imported: "导入",
@@ -167,6 +152,7 @@ export default function QuestionBankPage({
 }: QuestionBankPageProps = {}) {
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
+  const { options: questionTypeOptions, getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
   const tagPrefs = useTagPrefsStore((state) => state.prefs);
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
   const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
@@ -956,7 +942,7 @@ export default function QuestionBankPage({
               <SelectFilter label="年级" value={selectedGrade} options={gradeOptions} onChange={setSelectedGrade} icon={<GraduationCap className="w-3.5 h-3.5" />} />
               <SelectFilter label="学年" value={selectedYear} options={schoolYearOptions} onChange={setSelectedYear} icon={<Calendar className="w-3.5 h-3.5" />} />
               <SelectFilter label="学期" value={selectedSemester} options={semesterOptions} onChange={setSelectedSemester} icon={<Calendar className="w-3.5 h-3.5" />} />
-              <MultiFilter label="题型" values={selectedTypes} options={typeOptions} onToggle={toggleType} icon={<FileQuestion className="w-3.5 h-3.5" />} />
+              <MultiFilter label="题型" values={selectedTypes} options={questionTypeOptions} onToggle={toggleType} icon={<FileQuestion className="w-3.5 h-3.5" />} />
               <MultiFilter label="难度" values={selectedDifficulties.map(String)} options={difficultyOptions.map((d) => ({ value: String(d.value), label: d.label }))} onToggle={(v) => toggleDifficulty(Number(v))} icon={<Layers className="w-3.5 h-3.5" />} />
               <MultiFilter label="来源" values={selectedSources} options={sourceOptions} onToggle={toggleSource} icon={<ListFilter className="w-3.5 h-3.5" />} />
               <MultiFilter label="题类" values={selectedCategories} options={categoryOptions} onToggle={toggleCategory} icon={<Tag className="w-3.5 h-3.5" />} />
@@ -1132,6 +1118,7 @@ export default function QuestionBankPage({
                   donated={donatedQuestionIds?.has(q.id) || false}
                   donationLocked={donationLockedQuestionIds?.has(q.id) || false}
                   onToggleDonation={onToggleDonation}
+                  getQuestionTypeLabel={getQuestionTypeLabel}
                 />
               ))}
             </div>
@@ -1832,6 +1819,7 @@ function QuestionRow({
   donated,
   donationLocked,
   onToggleDonation,
+  getQuestionTypeLabel,
 }: {
   question: Question;
   mode: Mode;
@@ -1870,6 +1858,7 @@ function QuestionRow({
   donated?: boolean;
   donationLocked?: boolean;
   onToggleDonation?: (q: Question) => void;
+  getQuestionTypeLabel: (type: Question["type"]) => string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingAnswers, setEditingAnswers] = useState(false);
@@ -1877,6 +1866,7 @@ function QuestionRow({
   const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
   const hasChapter = chapterNames.length > 0;
   const hasPoint = pointNames.length > 0;
+  const hasStemImage = /<img\b/i.test(question.stem);
 
   // 选中学生的答题情况：取该题对应的答题记录，按学生维度展示
   const questionStudentAnswers = useMemo(() => {
@@ -2047,7 +2037,7 @@ function QuestionRow({
             {tagOrder.filter((key) => !hiddenTags.includes(key)).map((key) => {
               switch (key) {
                 case "type":
-                  return <Badge key="type" variant="ink">{typeLabel[question.type]}</Badge>;
+                  return <Badge key="type" variant="ink">{getQuestionTypeLabel(question.type)}</Badge>;
                 case "difficulty":
                   return (
                     <Badge
@@ -2120,9 +2110,9 @@ function QuestionRow({
             <div className={cn(
               "text-ink-900 leading-relaxed mb-2",
               wideLayout ? "text-base" : "text-sm",
-              !expanded && "line-clamp-2",
+              !expanded && !hasStemImage && "line-clamp-2",
             )}>
-              <MathText>{question.stem}</MathText>
+              <MathHtml>{question.stem}</MathHtml>
             </div>
 
             {/* 选项（网格布局，根据选项长度动态调整列数；答案高亮仅在展开时显示） */}
@@ -2147,7 +2137,7 @@ function QuestionRow({
                       <span className="font-mono font-semibold flex-shrink-0">
                         {String.fromCharCode(65 + i)}.
                       </span>
-                      <span className="break-all"><MathText>{opt}</MathText></span>
+                      <MathHtml className="min-w-0 break-all">{opt}</MathHtml>
                     </div>
                   ))}
                 </div>

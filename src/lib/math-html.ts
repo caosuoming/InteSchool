@@ -1,8 +1,40 @@
 import katex from "katex";
+import sanitizeHtml from "sanitize-html";
 import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
 
 const ESCAPED_DOLLAR = "\uE000INTESCHOOL_DOLLAR\uE001";
 const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea";
+
+const SAFE_RICH_TEXT_TAGS = sanitizeHtml.defaults.allowedTags.concat([
+  "img",
+  "math", "semantics", "annotation",
+  "mrow", "mi", "mo", "mn", "ms", "mtext", "mspace",
+  "msup", "msub", "msubsup", "mfrac", "msqrt", "mroot",
+  "mover", "munder", "munderover", "mtable", "mtr", "mtd",
+  "menclose", "mpadded", "mphantom",
+]);
+
+function sanitizeRichText(content: string): string {
+  return sanitizeHtml(content, {
+    allowedTags: SAFE_RICH_TEXT_TAGS,
+    allowedAttributes: {
+      "*": ["class", "title", "role", "aria-hidden", "data-latex"],
+      a: ["href", "title", "target", "rel"],
+      img: ["src", "alt", "title", "width", "height", "loading"],
+      math: ["xmlns", "display"],
+      annotation: ["encoding"],
+    },
+    allowedSchemes: ["http", "https", "data"],
+    allowedSchemesByTag: {
+      img: ["http", "https", "data"],
+    },
+    allowProtocolRelative: false,
+    transformTags: {
+      a: sanitizeHtml.simpleTransform("a", { rel: "noopener noreferrer" }),
+      img: sanitizeHtml.simpleTransform("img", { loading: "lazy" }),
+    },
+  });
+}
 
 interface MathSegment {
   type: "text" | "inline" | "block";
@@ -19,7 +51,7 @@ export function renderMathHtml(content: string): string {
   const template = document.createElement("template");
   const normalizedContent = content.normalize("NFC");
   if (containsHtmlTag(normalizedContent)) {
-    template.innerHTML = normalizedContent;
+    template.innerHTML = sanitizeRichText(normalizedContent);
   } else {
     template.content.append(document.createTextNode(normalizedContent));
   }

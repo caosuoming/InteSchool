@@ -49,6 +49,33 @@ describe("renderMathHtml", () => {
     expect(container.textContent).toContain("当 a < b 时");
     expect(container.querySelector(".katex-formula")).toHaveAttribute("data-latex", "a-b<0");
   });
+
+  it("preserves safe question images", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '<p>观察下图：</p><img src="/api/files/file-1/assets/figure.png" alt="函数图像">',
+    );
+
+    expect(container.querySelector("img")).toHaveAttribute(
+      "src",
+      "/api/files/file-1/assets/figure.png",
+    );
+    expect(container.querySelector("img")).toHaveAttribute("alt", "函数图像");
+    expect(container.querySelector("img")).toHaveAttribute("loading", "lazy");
+  });
+
+  it("removes executable rich-text content", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '<img src="javascript:alert(1)" onerror="alert(2)"><script>alert(3)</script><p onclick="alert(4)">安全文本</p>',
+    );
+
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("img")).not.toHaveAttribute("src");
+    expect(container.querySelector("img")).not.toHaveAttribute("onerror");
+    expect(container.querySelector("p")).not.toHaveAttribute("onclick");
+    expect(container).toHaveTextContent("安全文本");
+  });
 });
 
 describe("containsMathDelimiter", () => {

@@ -28,12 +28,13 @@ import { toast } from "@/stores/ui";
 import { formatDate, timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { MathHtml } from "@/components/ui/MathHtml";
+import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 import type {
   OnlineResource,
   OnlineResourceType,
   OnlineResourceSearchParams,
   OnlineParsedQuestion,
-  QuestionType,
 } from "@/types";
 
 // ============ 筛选选项 ============
@@ -77,14 +78,6 @@ const resourceTypeLabel: Record<OnlineResourceType, string> = {
   paper: "试卷",
   lecture: "讲义",
   exercise: "练习",
-};
-
-const questionTypeLabel: Record<QuestionType, string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
 };
 
 const difficultyLabel: Record<number, string> = {
@@ -748,7 +741,7 @@ function ParsedQuestionItem({ question: q, index, onToggle }: ParsedQuestionItem
             <span className="w-6 h-6 rounded-md bg-ink-900 text-gold-400 flex items-center justify-center font-mono text-xs font-bold flex-shrink-0">
               {index + 1}
             </span>
-            <Badge variant="ink">{questionTypeLabel[q.type]}</Badge>
+            <Badge variant="ink">{getDefaultQuestionTypeLabel(q.type)}</Badge>
             <Badge variant={difficultyVariant(q.difficulty)}>
               {difficultyLabel[q.difficulty]} · {q.difficulty}星
             </Badge>
@@ -761,9 +754,9 @@ function ParsedQuestionItem({ question: q, index, onToggle }: ParsedQuestionItem
           </div>
 
           {/* 题干 */}
-          <div className="text-sm text-ink-900 leading-relaxed mb-2 whitespace-pre-wrap">
+          <MathHtml className="text-sm text-ink-900 leading-relaxed mb-2 whitespace-pre-wrap">
             {q.stem}
-          </div>
+          </MathHtml>
 
           {/* 选项 */}
           {q.options && q.options.length > 0 && (
@@ -783,7 +776,7 @@ function ParsedQuestionItem({ question: q, index, onToggle }: ParsedQuestionItem
                     <span className="font-mono font-semibold text-ink-700">
                       {String.fromCharCode(65 + i)}.
                     </span>
-                    <span className="text-ink-800">{opt}</span>
+                    <MathHtml className="min-w-0 text-ink-800">{opt}</MathHtml>
                   </div>
                 );
               })}
@@ -794,11 +787,11 @@ function ParsedQuestionItem({ question: q, index, onToggle }: ParsedQuestionItem
           <div className="grid sm:grid-cols-2 gap-2 mb-2">
             <div className="p-2 rounded bg-emerald-50/40 border border-emerald-200">
               <div className="text-emerald-700 font-medium mb-0.5 text-xs">答案</div>
-              <div className="text-ink-900 whitespace-pre-wrap text-xs">{q.answer}</div>
+              <MathHtml className="text-ink-900 whitespace-pre-wrap text-xs">{q.answer}</MathHtml>
             </div>
             <div className="p-2 rounded bg-gold-50/30 border border-gold-200">
               <div className="text-gold-700 font-medium mb-0.5 text-xs">解析</div>
-              <div className="text-ink-900 whitespace-pre-wrap text-xs">{q.analysis}</div>
+              <MathHtml className="text-ink-900 whitespace-pre-wrap text-xs">{q.analysis}</MathHtml>
             </div>
           </div>
 

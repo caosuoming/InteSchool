@@ -1,4 +1,4 @@
-import { MathText } from "@/components/ui/MathText";
+import { MathHtml } from "@/components/ui/MathHtml";
 import { cn } from "@/lib/utils";
 import type { Question } from "@/types";
 
@@ -23,7 +23,7 @@ export function QuestionExpandedDetails({
             contentClassName,
           )}
         >
-          <MathText>{question.answer}</MathText>
+          <MathHtml>{question.answer}</MathHtml>
         </div>
       </div>
 
@@ -35,7 +35,7 @@ export function QuestionExpandedDetails({
             contentClassName,
           )}
         >
-          <MathText>{question.analysis}</MathText>
+          <MathHtml>{question.analysis}</MathHtml>
         </div>
       </div>
 
@@ -48,7 +48,7 @@ export function QuestionExpandedDetails({
               contentClassName,
             )}
           >
-            <MathText>{question.summary}</MathText>
+            <MathHtml>{question.summary}</MathHtml>
           </div>
         </div>
       )}

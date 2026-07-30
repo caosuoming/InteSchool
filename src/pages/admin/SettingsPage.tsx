@@ -44,7 +44,7 @@ const tabConfig: { key: SettingTab; label: string; description: string }[] = [
   { key: "grade", label: "年级", description: "管理学校的年级设置，拖拽可调整排序" },
   { key: "schoolYear", label: "学年", description: "管理学年设置，拖拽可调整排序" },
   { key: "source", label: "来源", description: "管理题目来源类型，拖拽可调整排序" },
-  { key: "questionType", label: "题类", description: "管理题目类型，拖拽可调整排序" },
+  { key: "questionType", label: "题型", description: "管理题目类型，拖拽可调整排序" },
   { key: "category", label: "分类", description: "管理题目分类（练习/考试/作业/复习），拖拽可调整排序" },
   { key: "classType", label: "班型", description: "管理班级类型（如强基班、实验班、普通班等），拖拽可调整排序" },
   { key: "examPaperType", label: "试卷类型", description: "管理试卷类型（如午间练、晚间作业、考试等），拖拽可调整排序" },

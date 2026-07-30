@@ -15,6 +15,7 @@ import type {
 } from "./types.js";
 import type { ServerConfig } from "./config.js";
 import { hashPassword, verifyPassword } from "./lib/password.js";
+import { DEFAULT_QUESTION_TYPES } from "../src/types/index.js";
 
 export const COLLECTIONS = [
   "schools", "teachers", "applications", "schoolClasses", "personalClasses",
@@ -220,50 +221,133 @@ export class DatabaseStore {
     }
   }
 
+  private ensureDefaultQuestionTypes(schoolId: string, now: string): void {
+    const rows = this.sqlite.prepare(
+      "SELECT id, data_json FROM app_records WHERE collection = 'schoolSettings' AND school_id = ?",
+    ).all(schoolId) as Array<{ id: string; data_json: string }>;
+    const questionTypeSettings = rows
+      .map((row) => JSON.parse(row.data_json) as JsonRecord)
+      .filter((setting) => setting.type === "questionType" && typeof setting.value === "string");
+    const existing = new Map(
+      questionTypeSettings.map((setting) => [setting.value as string, setting]),
+    );
+    const legacyNames: Record<string, string[]> = {
+      single: ["单选", "单选题"],
+      multiple: ["多选", "多选题"],
+      short: ["填空", "填空题", "简答题"],
+      essay: ["解答", "解答题", "论述题"],
+      judge: ["判断", "判断题"],
+    };
+    const isUntouchedLegacySet = questionTypeSettings.length === 5
+      && questionTypeSettings.every((setting) => {
+        const value = setting.value as string;
+        return legacyNames[value]?.includes(String(setting.name));
+      });
+    let nextSortOrder = questionTypeSettings.reduce(
+      (maximum, setting) => Math.max(maximum, Number(setting.sortOrder) || 0),
+      0,
+    );
+    const update = this.sqlite.prepare(`
+      UPDATE app_records
+      SET school_id = ?, data_json = ?, updated_at = ?
+      WHERE collection = 'schoolSettings' AND id = ?
+    `);
+    const insert = this.sqlite.prepare(`
+      INSERT INTO app_records(collection, id, school_id, owner_id, data_json, created_at, updated_at)
+      VALUES ('schoolSettings', ?, ?, NULL, ?, ?, ?)
+    `);
+
+    DEFAULT_QUESTION_TYPES.forEach((option, index) => {
+      const current = existing.get(option.value);
+      if (current) {
+        const normalized = {
+          ...current,
+          schoolId,
+          ...(isUntouchedLegacySet ? {
+            name: option.label,
+            sortOrder: index + 1,
+          } : {}),
+          updatedAt: now,
+        };
+        update.run(schoolId, JSON.stringify(normalized), now, current.id);
+        return;
+      }
+
+      nextSortOrder += 1;
+      const setting = {
+        id: `setting-${randomUUID()}`,
+        schoolId,
+        type: "questionType",
+        name: option.label,
+        value: option.value,
+        sortOrder: isUntouchedLegacySet ? index + 1 : nextSortOrder,
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      insert.run(setting.id, schoolId, JSON.stringify(setting), now, now);
+    });
+  }
+
   private migrateAppData(): void {
     const row = this.sqlite.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get() as { value?: string } | undefined;
-    const version = Number.parseInt(row?.value || "1", 10);
-    if (version >= 2) return;
+    let version = Number.parseInt(row?.value || "1", 10);
 
-    const resourceCollections = [
-      "questions",
-      "examPapers",
-      "lectures",
-      "coursewares",
-      "materials",
-      "lessonCoursewares",
-      "schoolBackups",
-    ];
-    const select = this.sqlite.prepare(
-      `SELECT collection, id, data_json FROM app_records WHERE collection IN (${resourceCollections.map(() => "?").join(",")})`,
-    );
-    const update = this.sqlite.prepare(
-      "UPDATE app_records SET data_json = ?, updated_at = ? WHERE collection = ? AND id = ?",
-    );
-    const rows = select.all(...resourceCollections) as Array<{ collection: string; id: string; data_json: string }>;
-    const now = new Date().toISOString();
+    if (version < 2) {
+      const resourceCollections = [
+        "questions",
+        "examPapers",
+        "lectures",
+        "coursewares",
+        "materials",
+        "lessonCoursewares",
+        "schoolBackups",
+      ];
+      const select = this.sqlite.prepare(
+        `SELECT collection, id, data_json FROM app_records WHERE collection IN (${resourceCollections.map(() => "?").join(",")})`,
+      );
+      const update = this.sqlite.prepare(
+        "UPDATE app_records SET data_json = ?, updated_at = ? WHERE collection = ? AND id = ?",
+      );
+      const rows = select.all(...resourceCollections) as Array<{ collection: string; id: string; data_json: string }>;
+      const now = new Date().toISOString();
 
-    this.sqlite.transaction(() => {
-      for (const record of rows) {
-        const data = JSON.parse(record.data_json) as JsonRecord;
-        if (data.semester === undefined) {
-          data.semester = "上学期";
-          update.run(JSON.stringify(data), now, record.collection, record.id);
+      this.sqlite.transaction(() => {
+        for (const record of rows) {
+          const data = JSON.parse(record.data_json) as JsonRecord;
+          if (data.semester === undefined) {
+            data.semester = "上学期";
+            update.run(JSON.stringify(data), now, record.collection, record.id);
+          }
         }
-      }
-      const shareRows = this.sqlite.prepare(
-        "SELECT collection, id, data_json FROM app_records WHERE collection = 'shareRecords'",
-      ).all() as Array<{ collection: string; id: string; data_json: string }>;
-      for (const record of shareRows) {
-        const data = JSON.parse(record.data_json) as JsonRecord;
-        const snapshot = data.resourceSnapshot as JsonRecord | undefined;
-        if (snapshot && snapshot.semester === undefined) {
-          snapshot.semester = "上学期";
-          update.run(JSON.stringify(data), now, record.collection, record.id);
+        const shareRows = this.sqlite.prepare(
+          "SELECT collection, id, data_json FROM app_records WHERE collection = 'shareRecords'",
+        ).all() as Array<{ collection: string; id: string; data_json: string }>;
+        for (const record of shareRows) {
+          const data = JSON.parse(record.data_json) as JsonRecord;
+          const snapshot = data.resourceSnapshot as JsonRecord | undefined;
+          if (snapshot && snapshot.semester === undefined) {
+            snapshot.semester = "上学期";
+            update.run(JSON.stringify(data), now, record.collection, record.id);
+          }
         }
-      }
-      this.sqlite.prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '2')").run();
-    })();
+        this.sqlite.prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '2')").run();
+      })();
+      version = 2;
+    }
+
+    if (version < 3) {
+      const schoolRows = this.sqlite.prepare(
+        "SELECT id FROM app_records WHERE collection = 'schools'",
+      ).all() as Array<{ id: string }>;
+      const now = new Date().toISOString();
+      this.sqlite.transaction(() => {
+        for (const school of schoolRows) {
+          this.ensureDefaultQuestionTypes(school.id, now);
+        }
+        this.sqlite.prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '3')").run();
+      })();
+    }
   }
 
   private ensureBootstrapAdmin(): void {
@@ -303,6 +387,7 @@ export class DatabaseStore {
         INSERT INTO app_records(collection, id, school_id, owner_id, data_json, created_at, updated_at)
         VALUES ('schools', ?, ?, NULL, ?, ?, ?)
       `).run(school.id, school.id, JSON.stringify(school), now, now);
+      this.ensureDefaultQuestionTypes(school.id, now);
       schoolRow = { data_json: JSON.stringify(school) };
     }
     const school = JSON.parse(schoolRow.data_json) as { id: string; name: string };
