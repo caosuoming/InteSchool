@@ -80,6 +80,15 @@ export const authService = {
     }, true);
   },
 
+  async updateNickname(nickname: string): Promise<Teacher> {
+    const teacher = await apiRequest<Teacher>("/api/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify({ nickname }),
+    }, true);
+    currentTeacher = teacher;
+    return teacher;
+  },
+
   getCurrentTeacher(): Teacher | null {
     return currentTeacher;
   },

@@ -31,8 +31,10 @@ function sourceSnapshot(record: ShareRecord): PlatformResourceSnapshot {
   return structuredClone(source) as PlatformResourceSnapshot;
 }
 
-function teacherName(teacherId: string): string {
-  return (db.read("teachers") || []).find((item: { id: string }) => item.id === teacherId)?.name || "未知教师";
+function teacherNickname(teacherId: string): string {
+  return (db.read("teachers") || [])
+    .find((item: { id: string; nickname?: string }) => item.id === teacherId)
+    ?.nickname?.trim() || "匿名用户";
 }
 
 function toPlatformDonation(record: ShareRecord): PlatformDonation {
@@ -41,7 +43,7 @@ function toPlatformDonation(record: ShareRecord): PlatformDonation {
     id: record.id,
     donorTeacherId: record.fromTeacherId,
     donorSchoolId: record.fromSchoolId,
-    donorName: teacherName(record.fromTeacherId),
+    donorNickname: teacherNickname(record.fromTeacherId),
     resourceType: record.resourceType,
     sourceResourceId: record.sourceResourceId || record.resourceId,
     status: record.mergedIntoDonationId ? "merged" : "active",
@@ -111,7 +113,7 @@ export const donationService = {
         sourceQuestion: structuredClone(ownedQuestion(teacherId, preview.resourceId)),
         targetDonationId: duplicate.donationId,
         targetQuestion: structuredClone(duplicate.question),
-        targetDonorName: duplicate.contributorName,
+        targetDonorNickname: duplicate.contributorNickname,
       }];
     });
     return { alreadyDonated, conflicts };

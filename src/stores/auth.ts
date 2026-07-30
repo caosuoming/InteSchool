@@ -11,6 +11,7 @@ interface AuthState {
   register: (email: string, password: string, name: string, phone: string) => Promise<boolean>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  updateNickname: (nickname: string) => Promise<boolean>;
   clearError: () => void;
   switchAffiliation: (affiliationId: string) => Promise<boolean>;
   getCurrentAffiliation: () => TeacherAffiliation | null;
@@ -68,6 +69,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refresh: async () => {
     const teacher = await authService.refreshCurrentTeacher();
     set({ teacher });
+  },
+
+  updateNickname: async (nickname) => {
+    try {
+      const teacher = await authService.updateNickname(nickname);
+      set({ teacher, error: null });
+      return true;
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : "昵称保存失败" });
+      return false;
+    }
   },
 
   clearError: () => set({ error: null }),
