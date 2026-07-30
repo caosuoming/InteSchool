@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { KeyRound, Mail, School, ShieldCheck, User } from "lucide-react";
 import { Button, Card, Input } from "@/components/ui";
 import { useAuthStore } from "@/stores/auth";
@@ -7,10 +7,17 @@ import { toast } from "@/stores/ui";
 
 export default function ProfilePage() {
   const teacher = useAuthStore((state) => state.teacher);
+  const updateNickname = useAuthStore((state) => state.updateNickname);
+  const [nickname, setNickname] = useState(teacher?.nickname || "");
+  const [savingNickname, setSavingNickname] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setNickname(teacher?.nickname || "");
+  }, [teacher?.nickname]);
 
   if (!teacher) return null;
 
@@ -41,11 +48,27 @@ export default function ProfilePage() {
     }
   };
 
+  const handleNicknameChange = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = nickname.trim();
+    if (!value) {
+      toast.error("昵称不能为空");
+      return;
+    }
+    setSavingNickname(true);
+    try {
+      if (await updateNickname(value)) toast.success("昵称已更新");
+      else toast.error("昵称保存失败");
+    } finally {
+      setSavingNickname(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="font-serif text-2xl font-bold text-ink-900">个人中心</h1>
-        <p className="text-sm text-ink-500 mt-1">查看当前账号、所属单位和安全设置。</p>
+        <p className="text-sm text-ink-500 mt-1">查看当前账号、设置公开昵称和管理安全选项。</p>
       </div>
 
       <Card className="p-6">
@@ -76,6 +99,25 @@ export default function ProfilePage() {
             <div><div className="text-ink-500">角色</div><div className="font-medium text-ink-900">{String(affiliation?.role || teacher.role)}</div></div>
           </div>
         </div>
+      </Card>
+
+      <Card className="p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <User className="w-5 h-5 text-gold-600" />
+          <h2 className="font-serif text-lg font-semibold text-ink-900">公开昵称</h2>
+        </div>
+        <form onSubmit={handleNicknameChange} className="max-w-md space-y-3">
+          <Input
+            label="昵称"
+            hint="捐赠到平台资源库后，仅公开显示该昵称，不显示学校和真实姓名。"
+            maxLength={20}
+            value={nickname}
+            onChange={(event) => setNickname(event.target.value)}
+            placeholder="请输入 1-20 个字符"
+            required
+          />
+          <Button type="submit" variant="gold" loading={savingNickname}>保存昵称</Button>
+        </form>
       </Card>
 
       <Card className="p-6">

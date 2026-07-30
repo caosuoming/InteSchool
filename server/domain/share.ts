@@ -238,7 +238,7 @@ function contributionDonations(): ShareRecord[] {
 }
 
 function contributorRanking(): DonationContributor[] {
-  const teachers = db.read("teachers") as Array<{ id: string; name: string }>;
+  const teachers = db.read("teachers") as Array<{ id: string; nickname?: string }>;
   const counts = new Map<string, { count: number; firstAt: string }>();
   for (const donation of contributionDonations()) {
     const current = counts.get(donation.fromTeacherId);
@@ -251,7 +251,7 @@ function contributorRanking(): DonationContributor[] {
     .sort((a, b) => b[1].count - a[1].count || a[1].firstAt.localeCompare(b[1].firstAt) || a[0].localeCompare(b[0]))
     .map(([teacherId, value], index) => ({
       teacherId,
-      teacherName: teachers.find((teacher) => teacher.id === teacherId)?.name || "未知教师",
+      nickname: teachers.find((teacher) => teacher.id === teacherId)?.nickname?.trim() || "匿名用户",
       donationCount: value.count,
       rank: index + 1,
       isTopContributor: index < 10,
@@ -517,7 +517,7 @@ export const shareService = {
     const teacher = (db.read("teachers") as Array<{ id: string; schoolId: string | null }>).find((item) => item.id === teacherId);
     if (!teacher?.schoolId) throw new Error("请先完成学校认证");
     const records = contributionDonations();
-    const contributors = new Map(contributorRanking().map((item) => [item.teacherId, item.teacherName]));
+    const contributors = new Map(contributorRanking().map((item) => [item.teacherId, item.nickname]));
     return requests.map((request) => {
       const resource = findOwnedResource(request.resourceType, request.resourceId, teacherId, teacher.schoolId!);
       const alreadyDonated = records.some((item) =>
@@ -532,7 +532,7 @@ export const shareService = {
             donationId: item.id,
             similarity: questionSimilarity(resource as Question, item.resourceSnapshot as Question),
             question: item.resourceSnapshot as Question,
-            contributorName: contributors.get(item.fromTeacherId) || "未知教师",
+            contributorNickname: contributors.get(item.fromTeacherId) || "匿名用户",
           }))
           .filter((candidate) => candidate.similarity > 0.8)
           .sort((a, b) => b.similarity - a.similarity)

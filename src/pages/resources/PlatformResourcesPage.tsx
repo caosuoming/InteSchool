@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
-import { schoolService } from "@/services/school";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -226,7 +225,6 @@ export default function PlatformResourcesPage() {
   const [contributors, setContributors] = useState<DonationContributor[]>([]);
   const [privileges, setPrivileges] = useState<DonationPrivileges | null>(null);
   const [settings, setSettings] = useState<PlatformResourceSetting[]>([]);
-  const [schoolNameMap, setSchoolNameMap] = useState<Map<string, string>>(new Map());
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
   const [editItem, setEditItem] = useState<PlatformResourceItem | null>(null);
   const [editForm, setEditForm] = useState({
@@ -261,12 +259,6 @@ export default function PlatformResourcesPage() {
       setChapterTree(chapterData);
       setKnowledgeTree(knowledgeData);
       setSettings(settingList);
-      const schoolIds = [...new Set(nextItems.map((item) => item.fromSchoolId))];
-      const names = await Promise.all(schoolIds.map(async (id) => {
-        const school = await schoolService.getSchool(id);
-        return [id, school?.name || "未知学校"] as const;
-      }));
-      setSchoolNameMap(new Map(names));
     } catch (error) {
       console.error("加载平台资源失败", error);
       toast.error("加载平台资源失败");
@@ -544,9 +536,8 @@ export default function PlatformResourcesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="tag-gold">{resourceTypeLabel[item.resourceType]}</span>
-                          <span className="text-xs text-ink-400">来源学校：{schoolNameMap.get(item.fromSchoolId) || "未知学校"}</span>
                           <span className="text-xs text-ink-500 flex items-center gap-1">
-                            提供者：{contributor?.teacherName || "未知教师"}
+                            捐赠者：{contributor?.nickname || "匿名用户"}
                             {contributor?.isTopContributor && <Crown className="w-3.5 h-3.5 text-gold-500" aria-label="贡献榜前十" />}
                           </span>
                         </div>

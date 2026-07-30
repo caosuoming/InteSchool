@@ -40,6 +40,10 @@ const applicationSchema = z.object({
   proofFileId: z.string().uuid(),
 });
 
+const profileSchema = z.object({
+  nickname: z.string().trim().min(1).max(20),
+});
+
 function publicTeacher(teacher: TeacherRecord): TeacherRecord {
   const copy = structuredClone(teacher);
   delete copy.password;
@@ -154,6 +158,7 @@ export async function registerAuthRoutes(
       id: teacherId,
       email: input.email.toLowerCase(),
       name: input.name,
+      nickname: "",
       avatar: input.name.charAt(0),
       schoolId: null,
       subject: "",
@@ -274,6 +279,21 @@ export async function registerAuthRoutes(
     }).parse(request.body);
     store.changePassword(session.userId, input.currentPassword, input.newPassword);
     return { ok: true };
+  });
+
+  app.patch("/api/auth/profile", async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const input = profileSchema.parse(request.body);
+    return withSerializedState(store, (state) => {
+      const index = state.teachers.findIndex((teacher) => teacher.id === session.teacherId);
+      if (index < 0) throw new Error("教师不存在");
+      state.teachers[index] = {
+        ...state.teachers[index],
+        nickname: input.nickname,
+      };
+      return publicTeacher(state.teachers[index]);
+    });
   });
 
   app.post("/api/auth/applications", async (request) => {

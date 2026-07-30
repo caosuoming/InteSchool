@@ -2,6 +2,7 @@ export interface TeacherRecord {
   id: string;
   email: string;
   name: string;
+  nickname?: string;
   avatar: string;
   schoolId: string | null;
   subject: string;

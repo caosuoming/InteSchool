@@ -1777,7 +1777,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   <div>
                     <div className="font-medium text-ink-900">相似题目比较</div>
                     <div className="text-xs text-ink-500 mt-1">
-                      相似度 {(conflict.similarity * 100).toFixed(1)}% · 平台贡献者：{conflict.targetDonorName}
+                      相似度 {(conflict.similarity * 100).toFixed(1)}% · 平台贡献者：{conflict.targetDonorNickname}
                     </div>
                   </div>
                   <div className="flex rounded-md border border-ink-200 overflow-hidden">

@@ -267,6 +267,7 @@ export class DatabaseStore {
       id: teacherId,
       email,
       name: this.config.bootstrapAdminName,
+      nickname: existing?.nickname || "",
       avatar: this.config.bootstrapAdminName.charAt(0) || "管",
       schoolId: school.id,
       subject: existing?.subject || "管理",

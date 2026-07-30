@@ -479,6 +479,53 @@ describe("production backend", () => {
       .resolves.toMatchObject({ teacher: expect.objectContaining({ id: "tch-1" }) });
   });
 
+  it("lets users update a validated public nickname and persists it", async () => {
+    const session = await login(built.app);
+
+    const withoutCsrf = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/profile",
+      headers: { cookie: session.cookie },
+      payload: { nickname: "公开昵称" },
+    });
+    expect(withoutCsrf.statusCode).toBe(400);
+
+    const invalid = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/profile",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+      },
+      payload: { nickname: "   " },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const updated = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/profile",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+      },
+      payload: { nickname: "  立方课堂新版  " },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({
+      id: "tch-1",
+      name: "张立",
+      nickname: "立方课堂新版",
+    });
+
+    const current = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/current",
+      headers: { cookie: session.cookie },
+    });
+    expect(current.json<{ teacher: { nickname: string } }>().teacher.nickname).toBe("立方课堂新版");
+    expect(built.store.getTeacherById("tch-1")?.nickname).toBe("立方课堂新版");
+  });
+
   it("requires CSRF and prevents teacher identity spoofing", async () => {
     const session = await login(built.app);
     const withoutCsrf = await built.app.inject({

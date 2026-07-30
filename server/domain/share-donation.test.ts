@@ -11,6 +11,7 @@ function teacher(id: string, name: string, schoolId: string) {
     id,
     email: `${id}@example.com`,
     name,
+    nickname: `${name}昵称`,
     avatar: "",
     schoolId,
     subject: "数学",
@@ -110,7 +111,7 @@ describe("platform resource donations", () => {
       expect(previews[0].alreadyDonated).toBe(false);
       expect(previews[0].duplicates[0]).toMatchObject({
         donationId: first[0].id,
-        contributorName: "乙老师",
+        contributorNickname: "乙老师昵称",
       });
       expect(previews[0].duplicates[0].similarity).toBeGreaterThan(0.8);
 
@@ -225,6 +226,26 @@ describe("platform resource donations", () => {
       expect(await shareService.listIncomingShares("teacher-a")).toEqual([]);
       expect(await shareService.listOutgoingShares("teacher-b")).toEqual([]);
       expect((appState.shareRecords as ShareRecord[]).filter((item) => item.kind === "donation")).toHaveLength(1);
+    });
+  });
+
+  it("uses an anonymous label instead of a donor's real name when no nickname is set", async () => {
+    const appState = state();
+    const donor = appState.teachers.find((item) => item.id === "teacher-b")!;
+    delete donor.nickname;
+    await runWithState(appState, async () => {
+      await shareService.donateResources("teacher-b", "school-b", [
+        { resourceType: "question", resourceId: "q-b" },
+      ]);
+      expect(await shareService.listDonationContributors()).toContainEqual(expect.objectContaining({
+        teacherId: "teacher-b",
+        nickname: "匿名用户",
+      }));
+      const previews = await shareService.checkDonationCandidates("teacher-a", [
+        { resourceType: "question", resourceId: "q-a" },
+      ]);
+      expect(previews[0].duplicates[0].contributorNickname).toBe("匿名用户");
+      expect(JSON.stringify(previews)).not.toContain("乙老师");
     });
   });
 });

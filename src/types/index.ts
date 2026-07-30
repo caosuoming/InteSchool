@@ -54,6 +54,8 @@ export interface Teacher {
   id: string;
   email: string;
   name: string;
+  /** 平台公开展示昵称；未设置时对外显示为匿名用户。 */
+  nickname?: string;
   avatar: string;
   wechatOpenId?: string;
   wechatUnionId?: string;
@@ -482,7 +484,7 @@ export interface DonationDuplicateCandidate {
   donationId: string;
   similarity: number;
   question: Question;
-  contributorName: string;
+  contributorNickname: string;
 }
 
 export interface DonationPreview {
@@ -495,7 +497,7 @@ export interface DonationPreview {
 
 export interface DonationContributor {
   teacherId: string;
-  teacherName: string;
+  nickname: string;
   donationCount: number;
   rank: number;
   isTopContributor: boolean;
@@ -586,7 +588,7 @@ export interface PlatformDonation {
   id: string;
   donorTeacherId: string;
   donorSchoolId: string;
-  donorName: string;
+  donorNickname: string;
   resourceType: ShareableResourceType;
   sourceResourceId: string;
   status: "active" | "merged";
@@ -603,7 +605,7 @@ export interface DonationConflict {
   sourceQuestion: Question;
   targetDonationId: string;
   targetQuestion: Question;
-  targetDonorName: string;
+  targetDonorNickname: string;
 }
 
 export interface DonationCheckResult {
