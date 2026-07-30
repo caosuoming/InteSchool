@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   getLecture: vi.fn(),
   extractStoredFile: vi.fn(),
   parseDocumentBlocks: vi.fn(),
+  confirmExtract: vi.fn(),
+  createExtractCopy: vi.fn(),
   authState: {
     teacher: { id: "teacher-1", schoolId: "school-1" },
   },
@@ -58,7 +60,7 @@ vi.mock("@/stores/extractConfig", () => ({
 vi.mock("@/services/lecture", () => ({
   lectureService: {
     getLecture: mocks.getLecture,
-    createExtractCopy: vi.fn(),
+    createExtractCopy: mocks.createExtractCopy,
   },
 }));
 
@@ -71,7 +73,7 @@ vi.mock("@/services/examPaper", () => ({
 
 vi.mock("@/services/extract", () => ({
   extractService: {
-    confirmExtract: vi.fn(),
+    confirmExtract: mocks.confirmExtract,
   },
 }));
 
@@ -91,6 +93,8 @@ describe("ExtractReviewModal", () => {
       originalFileName: "lecture.docx",
     });
     mocks.extractStoredFile.mockResolvedValue({ text: "mock document" });
+    mocks.confirmExtract.mockResolvedValue({ createdQuestions: [], createdMaterials: [] });
+    mocks.createExtractCopy.mockResolvedValue({ id: "lecture-copy" });
     mocks.parseDocumentBlocks.mockReturnValue([
       {
         id: "block-question",
@@ -182,5 +186,51 @@ describe("ExtractReviewModal", () => {
     const swappedSummarySelect = screen.getByLabelText("将总结内容转换为");
     expect(answerSelect.closest("div.rounded")).toHaveTextContent("示例解析");
     expect(swappedSummarySelect.closest("div.rounded")).toHaveTextContent("A");
+  });
+
+  it("filters a detected score label by default and lets the user keep it", async () => {
+    const user = userEvent.setup();
+    mocks.parseDocumentBlocks.mockReturnValue([
+      {
+        id: "block-question",
+        type: "question",
+        content: "（本小题12分）示例题目",
+        order: 0,
+        status: "new",
+        questionType: "single",
+        options: ["选项 A", "选项 B"],
+        answer: "A",
+        analysis: "示例解析",
+        difficulty: 3,
+      },
+    ]);
+
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+      />,
+    );
+
+    const cleanupToggle = await screen.findByRole("checkbox", { name: /入库时过滤分值说明/ });
+    expect(cleanupToggle).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].stem).toBe("示例题目");
+
+    mocks.confirmExtract.mockClear();
+    await user.click(cleanupToggle);
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].stem).toBe("（本小题12分）示例题目");
   });
 });
