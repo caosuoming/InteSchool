@@ -3,6 +3,8 @@ import {
   ArrowUpDown,
   BookOpen,
   Calendar,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Cloud,
   Crown,
@@ -53,6 +55,8 @@ import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
+import { MathHtml } from "@/components/ui/MathHtml";
+import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
 
 type ResourceTypeFilter = "all" | ShareableResourceType;
 type LeftTab = "chapter" | "knowledge";
@@ -76,6 +80,7 @@ interface PlatformResourceItem {
   createdAt: string;
   updatedAt: string;
   meta: { label: string; value: string }[];
+  question?: Question;
 }
 
 const typeFilterConfig: { key: ResourceTypeFilter; label: string; icon: typeof FileText }[] = [
@@ -142,6 +147,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
         ...base,
         title: question.stem,
         description: question.analysis,
+        question,
         meta: [
           { label: "题型", value: getDefaultQuestionTypeLabel(question.type) },
           { label: "难度", value: difficultyLabelText[question.difficulty] },
@@ -206,6 +212,63 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
   }
 }
 
+interface PlatformQuestionContentProps {
+  question: Question;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+export function PlatformQuestionContent({
+  question,
+  expanded,
+  onToggle,
+}: PlatformQuestionContentProps) {
+  return (
+    <div className="mb-2">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onToggle}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+        aria-expanded={expanded}
+        aria-label={expanded ? "收起题目详情" : "展开题目详情"}
+        className="group/stem flex w-full cursor-pointer items-start gap-1.5 rounded-md text-left text-sm text-ink-900 leading-relaxed hover:bg-mist/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/50"
+      >
+        <span className="mt-0.5 flex-shrink-0 text-ink-400 group-hover/stem:text-ink-600">
+          {expanded
+            ? <ChevronDown className="h-4 w-4" />
+            : <ChevronRight className="h-4 w-4" />}
+        </span>
+        <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{question.stem}</MathHtml>
+      </div>
+
+      {question.options && question.options.length > 0 && (
+        <div className="ml-5 mt-2 space-y-1 rounded-md bg-mist/40 p-2 text-xs text-ink-700">
+          {question.options.map((option, index) => (
+            <div key={index} className="flex items-start gap-1.5">
+              <span className="flex-shrink-0 font-mono font-semibold">
+                {String.fromCharCode(65 + index)}.
+              </span>
+              <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{option}</MathHtml>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {expanded && (
+        <div className="ml-5 mt-3">
+          <QuestionExpandedDetails question={question} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function resolveNames(tree: TreeNode | null, ids: string[]): string {
   if (!tree || ids.length === 0) return "";
   const names: string[] = [];
@@ -237,6 +300,7 @@ export default function PlatformResourcesPage() {
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [ownContributionIds, setOwnContributionIds] = useState<Set<string>>(new Set());
+  const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
   const [saveConflict, setSaveConflict] = useState<{
     item: PlatformResourceItem;
     check: PlatformSaveCheckResult;
@@ -464,6 +528,15 @@ export default function PlatformResourcesPage() {
 
   const saveQuestionConflict = saveConflict?.check.conflict;
 
+  const toggleQuestionDetails = (shareId: string) => {
+    setExpandedQuestionIds((current) => {
+      const next = new Set(current);
+      if (next.has(shareId)) next.delete(shareId);
+      else next.add(shareId);
+      return next;
+    });
+  };
+
   return (
     <div>
       <PageHeader
@@ -614,12 +687,22 @@ export default function PlatformResourcesPage() {
                             {contributor?.isTopContributor && <Crown className="w-3.5 h-3.5 text-gold-500" aria-label="贡献榜前十" />}
                           </span>
                         </div>
-                        <div className="font-medium text-ink-900 mb-1 line-clamp-2">{item.title}</div>
-                        {item.description && <div className="text-xs text-ink-500 mb-2 line-clamp-2">{item.description}</div>}
-                        {item.content && (
-                          <div className="text-xs text-ink-600 mb-2 line-clamp-2 leading-relaxed bg-mist/40 p-2 rounded">
-                            {item.content}
-                          </div>
+                        {item.question ? (
+                          <PlatformQuestionContent
+                            question={item.question}
+                            expanded={expandedQuestionIds.has(item.shareId)}
+                            onToggle={() => toggleQuestionDetails(item.shareId)}
+                          />
+                        ) : (
+                          <>
+                            <div className="font-medium text-ink-900 mb-1 line-clamp-2">{item.title}</div>
+                            {item.description && <div className="text-xs text-ink-500 mb-2 line-clamp-2">{item.description}</div>}
+                            {item.content && (
+                              <div className="text-xs text-ink-600 mb-2 line-clamp-2 leading-relaxed bg-mist/40 p-2 rounded">
+                                {item.content}
+                              </div>
+                            )}
+                          </>
                         )}
                         <div className="flex items-center gap-3 flex-wrap text-xs text-ink-400">
                           {item.meta.map((meta) => (
