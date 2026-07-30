@@ -17,12 +17,14 @@ export interface BackupInput {
   fromTeacherId: string;
   backupReason: string;
   targetClassIds: string[];
+  targetStudentIds?: string[];
   chapterIds: string[];
   knowledgePointIds: string[];
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
   meta?: Record<string, string>;
+  duplicateHash?: string;
 }
 
 export function canEditSchoolBackup(teacher: Teacher | null | undefined): boolean {
@@ -50,6 +52,14 @@ export const schoolBackupService = {
     return rpcCall("schoolBackup", "getBackup", [id]) as any;
   },
 
+  async getChapterTree(schoolId: string) {
+    return rpcCall("schoolBackup", "getChapterTree", [schoolId]) as any;
+  },
+
+  async getKnowledgeTree(schoolId: string) {
+    return rpcCall("schoolBackup", "getKnowledgeTree", [schoolId]) as any;
+  },
+
   async updateBackupProperties(id: string, patch: Partial<Pick<SchoolResourceBackup,
       "title" | "description" | "chapterIds" | "knowledgePointIds" | "grade" | "schoolYear" | "semester">>, teacher: Teacher): Promise<SchoolResourceBackup> {
     return rpcCall("schoolBackup", "updateBackupProperties", [id, patch, teacher]) as any;
@@ -59,8 +69,8 @@ export const schoolBackupService = {
     return rpcCall("schoolBackup", "deleteBackup", [id, teacher]) as any;
   },
 
-  async autoBackupForResource(schoolId: string, fromTeacherId: string, resourceType: SchoolBackupResourceType, resourceId: string, targetClassIds: string[], backupReason: string): Promise<SchoolResourceBackup | null> {
-    return rpcCall("schoolBackup", "autoBackupForResource", [schoolId, fromTeacherId, resourceType, resourceId, targetClassIds, backupReason]) as any;
+  async autoBackupForResource(schoolId: string, fromTeacherId: string, resourceType: SchoolBackupResourceType, resourceId: string, targetClassIds: string[], backupReason: string, targetStudentIds: string[] = []): Promise<SchoolResourceBackup | null> {
+    return rpcCall("schoolBackup", "autoBackupForResource", [schoolId, fromTeacherId, resourceType, resourceId, targetClassIds, backupReason, targetStudentIds]) as any;
   },
 
   async saveAsOwnResource(backupId: string, teacher: Teacher): Promise<{ newResourceId: string; resourceType: SchoolBackupResourceType }> {

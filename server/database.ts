@@ -18,7 +18,8 @@ import { hashPassword, verifyPassword } from "./lib/password.js";
 
 export const COLLECTIONS = [
   "schools", "teachers", "applications", "schoolClasses", "personalClasses",
-  "classTypeCategories", "students", "chapters", "knowledgePoints", "questions",
+  "classTypeCategories", "students", "chapters", "knowledgePoints",
+  "schoolChapters", "schoolKnowledgePoints", "questions",
   "lectures", "examPapers", "coursewares", "materials", "baskets", "documents",
   "recognitions", "answerRecords", "subjectGroups", "prepGroups", "onlineResources",
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",

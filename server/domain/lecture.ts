@@ -3,6 +3,17 @@ import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService } from "./question.js";
 import { reflectionService } from "./reflection.js";
+import { schoolBackupService } from "./schoolBackup.js";
+import { classService } from "./class.js";
+
+function collectQuestionIds(sections: LectureSection[]): string[] {
+  const ids: string[] = [];
+  for (const section of sections) {
+    if (section.questionId) ids.push(section.questionId);
+    if (section.children.length > 0) ids.push(...collectQuestionIds(section.children));
+  }
+  return ids;
+}
 
 function matchFilter(l: Lecture, filter: LectureFilter): boolean {
   if (filter.keyword) {
@@ -236,7 +247,50 @@ export const lectureService = {
 
   async publish(lectureId: string): Promise<void> {
     await delay(300);
+    const lecture = db.read("lectures").find((item) => item.id === lectureId) as Lecture | undefined;
+    if (!lecture) throw new Error("讲义不存在");
     await this.updateLecture(lectureId, { status: "published" });
+
+    try {
+      const [myClassIds, myStudents] = await Promise.all([
+        classService.listMyClassIds(lecture.schoolId, lecture.teacherId),
+        classService.listMyStudents(lecture.schoolId, lecture.teacherId),
+      ]);
+      const myStudentIds = new Set(myStudents.map((student) => student.id));
+      const targetClassIds = lecture.classIds || [];
+      const targetStudentIds = lecture.studentIds || [];
+      const nonMyClassIds = targetClassIds.filter((id) => !myClassIds.has(id));
+      const nonMyStudentIds = targetStudentIds.filter((id) => !myStudentIds.has(id));
+      if (nonMyClassIds.length === 0 && nonMyStudentIds.length === 0) return;
+
+      const reasonParts = [];
+      if (nonMyClassIds.length > 0) reasonParts.push(`${nonMyClassIds.length} 个非所教班级`);
+      if (nonMyStudentIds.length > 0) reasonParts.push(`${nonMyStudentIds.length} 名非所教学生`);
+      const backupReason = `讲义发布到${reasonParts.join("、")}`;
+      await schoolBackupService.autoBackupForResource(
+        lecture.schoolId,
+        lecture.teacherId,
+        "lecture",
+        lecture.id,
+        nonMyClassIds,
+        backupReason,
+        nonMyStudentIds,
+      );
+
+      for (const questionId of [...new Set(collectQuestionIds(lecture.sections))]) {
+        await schoolBackupService.autoBackupForResource(
+          lecture.schoolId,
+          lecture.teacherId,
+          "question",
+          questionId,
+          nonMyClassIds,
+          `随讲义「${lecture.title}」发布`,
+          nonMyStudentIds,
+        );
+      }
+    } catch (error) {
+      console.error("校本备份失败（不影响讲义发布）", error);
+    }
   },
 
   /**

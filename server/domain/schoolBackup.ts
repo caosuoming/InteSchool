@@ -11,6 +11,12 @@ import type {
 } from "../../src/types/index.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import {
+  getSchoolResourceChapterTree,
+  getSchoolResourceKnowledgeTree,
+  syncPersonalResourceDirectories,
+  syncSchoolResourceDirectories,
+} from "./school-resource-catalog.js";
 
 export interface BackupInput {
   schoolId: string;
@@ -22,12 +28,14 @@ export interface BackupInput {
   fromTeacherId: string;
   backupReason: string;
   targetClassIds: string[];
+  targetStudentIds?: string[];
   chapterIds: string[];
   knowledgePointIds: string[];
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
   meta?: Record<string, string>;
+  duplicateHash?: string;
 }
 
 /**
@@ -36,9 +44,12 @@ export interface BackupInput {
  * 教务主任/dean、校长/principal、学校管理员/school_admin、平台管理员/platform_admin
  * 均视为有修改校本资源属性的权限
  */
-export function canEditSchoolBackup(teacher: Teacher | null | undefined): boolean {
+export function canEditSchoolBackup(
+  teacher: Teacher | null | undefined,
+): boolean {
   if (!teacher) return false;
-  if (teacher.role === "school_admin" || teacher.role === "platform_admin") return true;
+  if (teacher.role === "school_admin" || teacher.role === "platform_admin")
+    return true;
   const privilegedRoles = [
     "prepLeader",
     "subjectLeader",
@@ -49,12 +60,122 @@ export function canEditSchoolBackup(teacher: Teacher | null | undefined): boolea
   return teacher.roles.some((r) => privilegedRoles.includes(r));
 }
 
+function parseSnapshot<T>(backup: SchoolResourceBackup): T | null {
+  try {
+    return JSON.parse(backup.contentSnapshot) as T;
+  } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
+function questionBackupHash(backup: SchoolResourceBackup): string | undefined {
+  if (backup.resourceType !== "question") return undefined;
+  if (backup.duplicateHash) return backup.duplicateHash;
+  const snapshot = parseSnapshot<Partial<Question>>(backup);
+  if (snapshot?.stem && snapshot.answer !== undefined) {
+    return computeDuplicateHash(snapshot.stem, snapshot.answer, snapshot.options);
+  }
+  return undefined;
+}
+
+function sameIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function normalizeSchoolBackups(schoolId: string): SchoolResourceBackup[] {
+  const current = db.read("schoolBackups") as SchoolResourceBackup[];
+  let changed = false;
+  const normalized = current.map((backup) => {
+    if (backup.schoolId !== schoolId) return backup;
+    const directory = syncSchoolResourceDirectories(
+      schoolId,
+      backup.chapterIds || [],
+      backup.knowledgePointIds || [],
+    );
+    const targetStudentIds = backup.targetStudentIds || [];
+    const duplicateHash = questionBackupHash(backup);
+    if (
+      backup.targetStudentIds === undefined ||
+      !sameIds(backup.chapterIds, directory.chapterIds) ||
+      !sameIds(backup.knowledgePointIds, directory.knowledgePointIds) ||
+      backup.duplicateHash !== duplicateHash
+    ) {
+      changed = true;
+      return {
+        ...backup,
+        targetStudentIds,
+        chapterIds: directory.chapterIds,
+        knowledgePointIds: directory.knowledgePointIds,
+        duplicateHash,
+      };
+    }
+    return backup;
+  });
+  if (changed) db.write("schoolBackups", normalized);
+  return normalized.filter((backup) => backup.schoolId === schoolId);
+}
+
 export const schoolBackupService = {
   /** 创建一份备份 */
   async createBackup(input: BackupInput): Promise<SchoolResourceBackup> {
     await delay(200);
     maybeThrowError();
     const now = new Date().toISOString();
+    const directory = syncSchoolResourceDirectories(
+      input.schoolId,
+      input.chapterIds,
+      input.knowledgePointIds,
+    );
+    if (input.resourceType === "question") {
+      const existing = (
+        db.read("schoolBackups") as SchoolResourceBackup[]
+      ).find(
+        (item) =>
+          item.schoolId === input.schoolId &&
+          item.resourceType === "question" &&
+          (item.sourceResourceId === input.sourceResourceId ||
+            (input.duplicateHash &&
+              questionBackupHash(item) === input.duplicateHash)),
+      );
+      if (existing) {
+        const merged: SchoolResourceBackup = {
+          ...existing,
+          title: input.title,
+          description: input.description,
+          contentSnapshot: input.contentSnapshot,
+          backupReason: input.backupReason,
+          targetClassIds: [
+            ...new Set([...existing.targetClassIds, ...input.targetClassIds]),
+          ],
+          targetStudentIds: [
+            ...new Set([
+              ...(existing.targetStudentIds || []),
+              ...(input.targetStudentIds || []),
+            ]),
+          ],
+          chapterIds: [
+            ...new Set([...existing.chapterIds, ...directory.chapterIds]),
+          ],
+          knowledgePointIds: [
+            ...new Set([
+              ...existing.knowledgePointIds,
+              ...directory.knowledgePointIds,
+            ]),
+          ],
+          grade: input.grade,
+          schoolYear: input.schoolYear,
+          semester: input.semester || "上学期",
+          meta: input.meta || {},
+          duplicateHash: input.duplicateHash || existing.duplicateHash,
+          updatedAt: now,
+        };
+        db.update("schoolBackups", (list) =>
+          list.map((item) => (item.id === existing.id ? merged : item)),
+        );
+        return merged;
+      }
+    }
     const backup: SchoolResourceBackup = {
       id: genId("sbk"),
       schoolId: input.schoolId,
@@ -66,12 +187,14 @@ export const schoolBackupService = {
       fromTeacherId: input.fromTeacherId,
       backupReason: input.backupReason,
       targetClassIds: input.targetClassIds,
-      chapterIds: input.chapterIds,
-      knowledgePointIds: input.knowledgePointIds,
+      targetStudentIds: input.targetStudentIds || [],
+      chapterIds: directory.chapterIds,
+      knowledgePointIds: directory.knowledgePointIds,
       grade: input.grade,
       schoolYear: input.schoolYear,
       semester: input.semester || "上学期",
       meta: input.meta || {},
+      duplicateHash: input.duplicateHash,
       createdAt: now,
       updatedAt: now,
     };
@@ -82,10 +205,11 @@ export const schoolBackupService = {
   /** 列出本校所有备份 */
   async listBackups(schoolId: string): Promise<SchoolResourceBackup[]> {
     await delay(200);
-    return db
-      .read("schoolBackups")
-      .filter((b) => b.schoolId === schoolId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return normalizeSchoolBackups(schoolId)
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
   },
 
   /** 按 ID 获取备份 */
@@ -94,14 +218,36 @@ export const schoolBackupService = {
     return db.read("schoolBackups").find((b) => b.id === id) || null;
   },
 
+  async getChapterTree(schoolId: string) {
+    await delay(100);
+    normalizeSchoolBackups(schoolId);
+    return getSchoolResourceChapterTree(schoolId);
+  },
+
+  async getKnowledgeTree(schoolId: string) {
+    await delay(100);
+    normalizeSchoolBackups(schoolId);
+    return getSchoolResourceKnowledgeTree(schoolId);
+  },
+
   /**
    * 修改备份的属性（仅备课组长及以上）
    * 仅允许修改：章节、知识点、年级、学年、标题、描述
    */
   async updateBackupProperties(
     id: string,
-    patch: Partial<Pick<SchoolResourceBackup,
-      "title" | "description" | "chapterIds" | "knowledgePointIds" | "grade" | "schoolYear" | "semester">>,
+    patch: Partial<
+      Pick<
+        SchoolResourceBackup,
+        | "title"
+        | "description"
+        | "chapterIds"
+        | "knowledgePointIds"
+        | "grade"
+        | "schoolYear"
+        | "semester"
+      >
+    >,
     teacher: Teacher,
   ): Promise<SchoolResourceBackup> {
     await delay(200);
@@ -147,21 +293,28 @@ export const schoolBackupService = {
     resourceId: string,
     targetClassIds: string[],
     backupReason: string,
+    targetStudentIds: string[] = [],
   ): Promise<SchoolResourceBackup | null> {
     await delay(150);
     // 加载源资源
-    let snapshot: Omit<BackupInput, "schoolId" | "fromTeacherId" | "resourceType" | "sourceResourceId" | "targetClassIds" | "backupReason"> | null = null;
+    let snapshot: Omit<
+      BackupInput,
+      | "schoolId"
+      | "fromTeacherId"
+      | "resourceType"
+      | "sourceResourceId"
+      | "targetClassIds"
+      | "targetStudentIds"
+      | "backupReason"
+    > | null = null;
     if (resourceType === "examPaper") {
-      const p = db.read("examPapers").find((x) => x.id === resourceId) as ExamPaper | undefined;
+      const p = db.read("examPapers").find((x) => x.id === resourceId) as
+        ExamPaper | undefined;
       if (p) {
         snapshot = {
           title: p.title,
           description: p.description,
-          contentSnapshot: JSON.stringify({
-            questions: p.questions,
-            totalScore: p.totalScore,
-            duration: p.duration,
-          }),
+          contentSnapshot: JSON.stringify(p),
           chapterIds: p.chapterIds,
           knowledgePointIds: p.knowledgePointIds,
           grade: p.grade,
@@ -176,12 +329,13 @@ export const schoolBackupService = {
         };
       }
     } else if (resourceType === "lecture") {
-      const l = db.read("lectures").find((x) => x.id === resourceId) as Lecture | undefined;
+      const l = db.read("lectures").find((x) => x.id === resourceId) as
+        Lecture | undefined;
       if (l) {
         snapshot = {
           title: l.title,
           description: l.description,
-          contentSnapshot: JSON.stringify({ sections: l.sections }),
+          contentSnapshot: JSON.stringify(l),
           chapterIds: l.chapterIds,
           knowledgePointIds: l.knowledgePointIds,
           grade: l.grade,
@@ -194,12 +348,13 @@ export const schoolBackupService = {
         };
       }
     } else if (resourceType === "courseware") {
-      const c = db.read("coursewares").find((x) => x.id === resourceId) as Courseware | undefined;
+      const c = db.read("coursewares").find((x) => x.id === resourceId) as
+        Courseware | undefined;
       if (c) {
         snapshot = {
           title: c.title,
           description: c.description,
-          contentSnapshot: c.content,
+          contentSnapshot: JSON.stringify(c),
           chapterIds: c.chapterIds,
           knowledgePointIds: c.knowledgePointIds,
           grade: c.grade,
@@ -212,12 +367,13 @@ export const schoolBackupService = {
         };
       }
     } else if (resourceType === "material") {
-      const m = db.read("materials").find((x) => x.id === resourceId) as Material | undefined;
+      const m = db.read("materials").find((x) => x.id === resourceId) as
+        Material | undefined;
       if (m) {
         snapshot = {
           title: m.title,
           description: m.description,
-          contentSnapshot: m.content,
+          contentSnapshot: JSON.stringify(m),
           chapterIds: m.chapterIds,
           knowledgePointIds: m.knowledgePointIds,
           grade: m.grade,
@@ -230,18 +386,12 @@ export const schoolBackupService = {
         };
       }
     } else if (resourceType === "question") {
-      const q = db.read("questions").find((x) => x.id === resourceId) as Question | undefined;
+      const q = db.read("questions").find((x) => x.id === resourceId) as
+        Question | undefined;
       if (q) {
         snapshot = {
           title: q.stem.slice(0, 60),
-          contentSnapshot: JSON.stringify({
-            stem: q.stem,
-            options: q.options,
-            answer: q.answer,
-            analysis: q.analysis,
-            type: q.type,
-            difficulty: q.difficulty,
-          }),
+          contentSnapshot: JSON.stringify(q),
           chapterIds: q.chapterIds,
           knowledgePointIds: q.knowledgePointIds,
           grade: q.grade,
@@ -252,6 +402,9 @@ export const schoolBackupService = {
             难度: String(q.difficulty),
             推荐度: String(q.recommendation),
           },
+          duplicateHash:
+            q.duplicateHash ||
+            computeDuplicateHash(q.stem, q.answer, q.options),
         };
       }
     }
@@ -262,6 +415,7 @@ export const schoolBackupService = {
       resourceType,
       sourceResourceId: resourceId,
       targetClassIds,
+      targetStudentIds,
       backupReason,
       ...snapshot,
     });
@@ -276,7 +430,10 @@ export const schoolBackupService = {
   async saveAsOwnResource(
     backupId: string,
     teacher: Teacher,
-  ): Promise<{ newResourceId: string; resourceType: SchoolBackupResourceType }> {
+  ): Promise<{
+    newResourceId: string;
+    resourceType: SchoolBackupResourceType;
+  }> {
     await delay(300);
     maybeThrowError();
     const backup = db.read("schoolBackups").find((b) => b.id === backupId);
@@ -285,42 +442,49 @@ export const schoolBackupService = {
     const now = new Date().toISOString();
     const teacherId = teacher.id;
     const schoolId = teacher.schoolId || backup.schoolId;
+    const directory = syncPersonalResourceDirectories(
+      schoolId,
+      backup.chapterIds || [],
+      backup.knowledgePointIds || [],
+    );
     let newResourceId = "";
 
     switch (backup.resourceType) {
       case "question": {
-        // 优先从源题库读取，找不到时从快照还原
-        let original = db.read("questions").find((q) => q.id === backup.sourceResourceId);
-        let snapshotData: any = null;
-        if (!original) {
-          try { snapshotData = JSON.parse(backup.contentSnapshot); } catch { /* ignore */ }
-        }
+        let original = db.read("questions").find(
+          (q) => q.id === backup.sourceResourceId,
+        ) as Question | undefined;
+        const snapshotData = original
+          ? null
+          : parseSnapshot<Partial<Question>>(backup);
         if (!original && snapshotData) {
           original = {
-            id: backup.sourceResourceId,
-            teacherId: backup.fromTeacherId,
-            schoolId: backup.schoolId,
-            type: snapshotData.type,
+            ...(snapshotData as Question),
+            id: snapshotData.id || backup.sourceResourceId,
+            teacherId: snapshotData.teacherId || backup.fromTeacherId,
+            schoolId: snapshotData.schoolId || backup.schoolId,
+            type: snapshotData.type || "short",
             stem: snapshotData.stem || backup.title,
             options: snapshotData.options,
             answer: snapshotData.answer || "",
             analysis: snapshotData.analysis || "",
-            chapterIds: backup.chapterIds,
-            knowledgePointIds: backup.knowledgePointIds,
+            chapterIds: directory.chapterIds,
+            knowledgePointIds: directory.knowledgePointIds,
             difficulty: snapshotData.difficulty || 3,
-            recommendation: 3,
-            usageCount: 0,
-            remark: "",
-            remarks: [],
-            grade: backup.grade,
-            schoolYear: backup.schoolYear,
-            semester: backup.semester || "上学期",
+            recommendation: snapshotData.recommendation || 3,
+            usageCount: snapshotData.usageCount || 0,
+            remark: snapshotData.remark || "",
+            remarks: snapshotData.remarks || [],
+            grade: snapshotData.grade || backup.grade,
+            schoolYear: snapshotData.schoolYear || backup.schoolYear,
+            semester: snapshotData.semester || backup.semester || "上学期",
             isShared: false,
-            createdAt: backup.createdAt,
-            updatedAt: backup.createdAt,
-          } as Question;
+            createdAt: snapshotData.createdAt || backup.createdAt,
+            updatedAt: snapshotData.updatedAt || backup.createdAt,
+          };
         }
-        if (!original) throw new Error("无法还原题目，源资源已删除且快照不完整");
+        if (!original)
+          throw new Error("无法还原题目，源资源已删除且快照不完整");
 
         newResourceId = genId("q");
         const copy: Question = {
@@ -328,10 +492,16 @@ export const schoolBackupService = {
           id: newResourceId,
           teacherId,
           schoolId,
+          chapterIds: directory.chapterIds,
+          knowledgePointIds: directory.knowledgePointIds,
           usageCount: 0,
           isShared: false,
           sourceType: "shared",
-          duplicateHash: computeDuplicateHash(original.stem, original.answer, original.options),
+          duplicateHash: computeDuplicateHash(
+            original.stem,
+            original.answer,
+            original.options,
+          ),
           hiddenByExamIds: [],
           lastUsedAt: undefined,
           createdAt: now,
@@ -341,7 +511,31 @@ export const schoolBackupService = {
         break;
       }
       case "examPaper": {
-        const original = db.read("examPapers").find((p) => p.id === backup.sourceResourceId);
+        const source = db.read("examPapers").find(
+          (p) => p.id === backup.sourceResourceId,
+        ) as ExamPaper | undefined;
+        const snapshot = source
+          ? null
+          : parseSnapshot<Partial<ExamPaper>>(backup);
+        const original = source || (snapshot ? {
+          ...(snapshot as ExamPaper),
+          id: snapshot.id || backup.sourceResourceId,
+          teacherId: snapshot.teacherId || backup.fromTeacherId,
+          schoolId: snapshot.schoolId || backup.schoolId,
+          title: snapshot.title || backup.title,
+          description: snapshot.description || backup.description,
+          chapterIds: directory.chapterIds,
+          knowledgePointIds: directory.knowledgePointIds,
+          grade: snapshot.grade || backup.grade || "",
+          schoolYear: snapshot.schoolYear || backup.schoolYear || "",
+          semester: snapshot.semester || backup.semester || "上学期",
+          duration: snapshot.duration || 0,
+          totalScore: snapshot.totalScore || 0,
+          questions: snapshot.questions || [],
+          status: snapshot.status || "draft",
+          createdAt: snapshot.createdAt || backup.createdAt,
+          updatedAt: snapshot.updatedAt || backup.createdAt,
+        } satisfies ExamPaper : null);
         if (!original) throw new Error("无法还原试卷，源资源已删除");
         newResourceId = genId("exam");
         const copy: ExamPaper = {
@@ -349,6 +543,8 @@ export const schoolBackupService = {
           id: newResourceId,
           teacherId,
           schoolId,
+          chapterIds: directory.chapterIds,
+          knowledgePointIds: directory.knowledgePointIds,
           status: "draft",
           createdAt: now,
           updatedAt: now,
@@ -357,7 +553,32 @@ export const schoolBackupService = {
         break;
       }
       case "lecture": {
-        const original = db.read("lectures").find((l) => l.id === backup.sourceResourceId);
+        const source = db.read("lectures").find(
+          (l) => l.id === backup.sourceResourceId,
+        ) as Lecture | undefined;
+        const snapshot = source
+          ? null
+          : parseSnapshot<Partial<Lecture>>(backup);
+        const original = source || (snapshot ? {
+          ...(snapshot as Lecture),
+          id: snapshot.id || backup.sourceResourceId,
+          teacherId: snapshot.teacherId || backup.fromTeacherId,
+          schoolId: snapshot.schoolId || backup.schoolId,
+          title: snapshot.title || backup.title,
+          description: snapshot.description || backup.description,
+          chapterIds: directory.chapterIds,
+          knowledgePointIds: directory.knowledgePointIds,
+          grade: snapshot.grade || backup.grade || "",
+          schoolYear: snapshot.schoolYear || backup.schoolYear || "",
+          semester: snapshot.semester || backup.semester || "上学期",
+          classIds: snapshot.classIds || [],
+          studentIds: snapshot.studentIds || [],
+          sections: snapshot.sections || [],
+          version: snapshot.version || 1,
+          status: snapshot.status || "draft",
+          createdAt: snapshot.createdAt || backup.createdAt,
+          updatedAt: snapshot.updatedAt || backup.createdAt,
+        } satisfies Lecture : null);
         if (!original) throw new Error("无法还原讲义，源资源已删除");
         newResourceId = genId("lec");
         const copy: Lecture = {
@@ -365,6 +586,8 @@ export const schoolBackupService = {
           id: newResourceId,
           teacherId,
           schoolId,
+          chapterIds: directory.chapterIds,
+          knowledgePointIds: directory.knowledgePointIds,
           status: "draft",
           version: 1,
           createdAt: now,
@@ -374,7 +597,9 @@ export const schoolBackupService = {
         break;
       }
       case "courseware": {
-        const original = db.read("coursewares").find((c) => c.id === backup.sourceResourceId);
+        const original = (db.read("coursewares").find(
+          (c) => c.id === backup.sourceResourceId,
+        ) as Courseware | undefined) || parseSnapshot<Courseware>(backup);
         if (!original) throw new Error("无法还原课件，源资源已删除");
         newResourceId = genId("cw");
         const copy: Courseware = {
@@ -382,6 +607,8 @@ export const schoolBackupService = {
           id: newResourceId,
           teacherId,
           schoolId,
+          chapterIds: directory.chapterIds,
+          knowledgePointIds: directory.knowledgePointIds,
           createdAt: now,
           updatedAt: now,
         };
@@ -389,7 +616,9 @@ export const schoolBackupService = {
         break;
       }
       case "material": {
-        const original = db.read("materials").find((m) => m.id === backup.sourceResourceId);
+        const original = (db.read("materials").find(
+          (m) => m.id === backup.sourceResourceId,
+        ) as Material | undefined) || parseSnapshot<Material>(backup);
         if (!original) throw new Error("无法还原素材，源资源已删除");
         newResourceId = genId("mat");
         const copy: Material = {
@@ -397,6 +626,8 @@ export const schoolBackupService = {
           id: newResourceId,
           teacherId,
           schoolId,
+          chapterIds: directory.chapterIds,
+          knowledgePointIds: directory.knowledgePointIds,
           createdAt: now,
           updatedAt: now,
         };
