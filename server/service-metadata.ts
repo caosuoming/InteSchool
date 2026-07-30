@@ -181,7 +181,8 @@ export const serviceParameters = {
       "teacherId",
       "name",
       "description",
-      "isDefault"
+      "isDefault",
+      "audience"
     ],
     "updateBasket": [
       "id",

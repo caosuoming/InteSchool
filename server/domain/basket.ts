@@ -2,6 +2,11 @@ import type { Basket } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
+interface BasketAudience {
+  classIds?: string[];
+  studentIds?: string[];
+}
+
 export const basketService = {
   async listBaskets(teacherId: string): Promise<Basket[]> {
     await delay(200);
@@ -36,7 +41,13 @@ export const basketService = {
     );
   },
 
-  async createBasket(teacherId: string, name: string, description?: string, isDefault = false): Promise<Basket> {
+  async createBasket(
+    teacherId: string,
+    name: string,
+    description?: string,
+    isDefault = false,
+    audience: BasketAudience = {},
+  ): Promise<Basket> {
     await delay(300);
     maybeThrowError();
     const now = new Date().toISOString();
@@ -47,6 +58,8 @@ export const basketService = {
       description,
       questionIds: [],
       materialIds: [],
+      classIds: Array.from(new Set(audience.classIds || [])),
+      studentIds: Array.from(new Set(audience.studentIds || [])),
       isDefault,
       createdAt: now,
       updatedAt: now,
@@ -62,9 +75,14 @@ export const basketService = {
 
   async updateBasket(id: string, patch: Partial<Basket>): Promise<Basket> {
     await delay(200);
+    const normalizedPatch: Partial<Basket> = {
+      ...patch,
+      ...(patch.classIds ? { classIds: Array.from(new Set(patch.classIds)) } : {}),
+      ...(patch.studentIds ? { studentIds: Array.from(new Set(patch.studentIds)) } : {}),
+    };
     let updated: Basket | null = null;
     db.update("baskets", (list) => {
-      if (patch.isDefault) {
+      if (normalizedPatch.isDefault) {
         const target = list.find((b) => b.id === id);
         if (target) {
           list = list.map((b) =>
@@ -74,7 +92,7 @@ export const basketService = {
       }
       return list.map((b) => {
         if (b.id === id) {
-          updated = { ...b, ...patch, updatedAt: new Date().toISOString() };
+          updated = { ...b, ...normalizedPatch, updatedAt: new Date().toISOString() };
           return updated;
         }
         return b;

@@ -902,6 +902,10 @@ export interface Basket {
   questionIds: string[];
   /** 素材ID列表 */
   materialIds: string[];
+  /** 整班使用对象 */
+  classIds?: string[];
+  /** 额外指定的学生使用对象 */
+  studentIds?: string[];
   /** 是否为默认试题篮 */
   isDefault?: boolean;
   createdAt: string;
