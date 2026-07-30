@@ -116,6 +116,10 @@ function splitQuestionAndInlineOptions(text: string): { stem: string; options: s
   return stem ? { stem, options } : null;
 }
 
+function isImageLine(text: string): boolean {
+  return /^!\[[^\]]*\]\([^)]+\)$/.test(text.trim());
+}
+
 function answerLetters(answer: string): string[] {
   const normalized = answer
     .replace(/答案|答|正确选项|选项/gi, "")
@@ -344,6 +348,10 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     }
 
     if (currentBlock.type === "question") {
+      if (isImageLine(line)) {
+        appendQuestionField(currentBlock, currentQuestionField, line);
+        continue;
+      }
       if (currentQuestionField === "content") {
         const options = extractOptionLine(line, currentBlock.options?.length || 0);
         if (options) {

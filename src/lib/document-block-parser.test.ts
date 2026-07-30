@@ -37,6 +37,27 @@ describe("document block parser", () => {
     });
   });
 
+  it("keeps document images in the question stem after option lines", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 如图，判断下列结论。",
+        "A. 甲 B. 乙 C. 丙 D. 丁",
+        "![文档图片](/api/files/file-1/assets/rId5)",
+        "答案：A",
+        "解析：由图可知。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "1. 如图，判断下列结论。\n![文档图片](/api/files/file-1/assets/rId5)",
+      options: ["甲", "乙", "丙", "丁"],
+      answer: "A",
+      analysis: "由图可知。",
+    });
+  });
+
   it("uses section context and multi-letter answers to distinguish multiple choice", () => {
     const blocks = parseDocumentBlocks(
       [

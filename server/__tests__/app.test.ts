@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
+import JSZip from "jszip";
 import { buildApp, type BuiltApp } from "../app.js";
 import { fetchPublicText } from "../lib/safe-fetch.js";
 
@@ -116,6 +117,16 @@ function multipartPayload(
     `\r\n--${boundary}--\r\n`,
   ].join(""));
   return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+async function docxWithImage(imageData: Buffer): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/diagram.png"/>
+    </Relationships>`);
+  zip.file("word/media/diagram.png", imageData);
+  return zip.generateAsync({ type: "nodebuffer" });
 }
 
 beforeEach(async () => {
@@ -1018,6 +1029,49 @@ describe("production backend", () => {
     expect(imported.statusCode).toBe(200);
     const document = imported.json<{ sections: Array<{ content: string }> }>();
     expect(document.sections.some((section) => section.content.includes("集合是确定对象的总体"))).toBe(true);
+  });
+
+  it("serves embedded DOCX images through authenticated asset URLs", async () => {
+    const session = await login(built.app);
+    const fileId = randomUUID();
+    const storageName = `${fileId}.docx`;
+    const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const documentData = await docxWithImage(imageData);
+    await writeFile(join(built.config.uploadsDir, storageName), documentData);
+    built.store.saveFile({
+      id: fileId,
+      ownerId: "tch-1",
+      schoolId: "sch-1",
+      originalName: "illustrated.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: documentData.length,
+      storageName,
+      createdAt: new Date().toISOString(),
+    });
+
+    const image = await built.app.inject({
+      method: "GET",
+      url: `/api/files/${fileId}/assets/rId5`,
+      headers: { cookie: session.cookie },
+    });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers["content-type"]).toContain("image/png");
+    expect(image.headers["content-disposition"]).toContain("inline;");
+    expect(image.headers["cache-control"]).toContain("immutable");
+    expect(image.rawPayload).toEqual(imageData);
+
+    const invalidRelationship = await built.app.inject({
+      method: "GET",
+      url: `/api/files/${fileId}/assets/rId999`,
+      headers: { cookie: session.cookie },
+    });
+    expect(invalidRelationship.statusCode).toBe(404);
+
+    const anonymous = await built.app.inject({
+      method: "GET",
+      url: `/api/files/${fileId}/assets/rId5`,
+    });
+    expect(anonymous.statusCode).toBe(401);
   });
 
   it("does not serve uploaded text as client-declared executable content", async () => {
