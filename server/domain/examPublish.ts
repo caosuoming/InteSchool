@@ -21,6 +21,7 @@ export const examPublishService = {
     title: string;
     targetType: ExamPublishTarget;
     targetClassIds?: string[];
+    targetStudentIds?: string[];
     targetSchoolIds?: string[];
     isFormalExam?: boolean;
     viewPassword?: string;
@@ -37,6 +38,7 @@ export const examPublishService = {
       title: params.title,
       targetType: params.targetType,
       targetClassIds: params.targetClassIds || [],
+      targetStudentIds: params.targetStudentIds || [],
       targetSchoolIds: params.targetSchoolIds || [],
       isFormalExam: params.isFormalExam || false,
       viewPassword: params.viewPassword ? hashPassword(params.viewPassword) : undefined,
@@ -76,15 +78,20 @@ export const examPublishService = {
       );
     }
 
-    // 校本资源自动备份：当目标班级中包含非自己所教班级时，自动备份试卷和关联题目
-    if (params.targetType === "schoolClass" && params.targetClassIds && params.targetClassIds.length > 0) {
+    // 校本资源自动备份：发布到非自己所教的班级或学生时，备份试卷和关联题目
+    if (params.targetType === "schoolClass") {
       try {
-        const myClassIds = await classService.listMyClassIds(
-          params.publisherSchoolId,
-          params.publisherId,
-        );
-        const nonMyClassIds = params.targetClassIds.filter((id) => !myClassIds.has(id));
-        if (nonMyClassIds.length > 0) {
+        const [myClassIds, myStudents] = await Promise.all([
+          classService.listMyClassIds(params.publisherSchoolId, params.publisherId),
+          classService.listMyStudents(params.publisherSchoolId, params.publisherId),
+        ]);
+        const myStudentIds = new Set(myStudents.map((student) => student.id));
+        const nonMyClassIds = (params.targetClassIds || []).filter((id) => !myClassIds.has(id));
+        const nonMyStudentIds = (params.targetStudentIds || []).filter((id) => !myStudentIds.has(id));
+        if (nonMyClassIds.length > 0 || nonMyStudentIds.length > 0) {
+          const reasonParts = [];
+          if (nonMyClassIds.length > 0) reasonParts.push(`${nonMyClassIds.length} 个非所教班级`);
+          if (nonMyStudentIds.length > 0) reasonParts.push(`${nonMyStudentIds.length} 名非所教学生`);
           // 备份试卷
           await schoolBackupService.autoBackupForResource(
             params.publisherSchoolId,
@@ -92,7 +99,8 @@ export const examPublishService = {
             "examPaper",
             params.examPaperId,
             nonMyClassIds,
-            `试卷发布到非所教班级（${nonMyClassIds.length} 个班级）`,
+            `试卷发布到${reasonParts.join("、")}`,
+            nonMyStudentIds,
           );
           // 备份关联题目（去重）
           const uniqueQuestionIds = Array.from(new Set(params.questionIds));
@@ -103,7 +111,8 @@ export const examPublishService = {
               "question",
               qid,
               nonMyClassIds,
-              `随试卷「${params.title}」发布到非所教班级`,
+              `随试卷「${params.title}」发布`,
+              nonMyStudentIds,
             );
           }
         }

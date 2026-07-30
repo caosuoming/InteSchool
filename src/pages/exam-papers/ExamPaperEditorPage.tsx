@@ -544,7 +544,7 @@ export default function ExamPaperEditorPage() {
   // 发布
   const handlePublish = async () => {
     if (!paper || !teacher) return;
-    if (publishTargetClassIds.length === 0) {
+    if (publishTargetClassIds.length === 0 && selectedStudentIds.length === 0) {
       toast.error("请选择发布对象");
       return;
     }
@@ -558,6 +558,7 @@ export default function ExamPaperEditorPage() {
         title: paper.title,
         targetType: "schoolClass",
         targetClassIds: publishTargetClassIds,
+        targetStudentIds: selectedStudentIds,
         isFormalExam: !!publishPassword || !!publishUnlockAt,
         viewPassword: publishPassword || undefined,
         unlockAt: publishUnlockAt || undefined,
@@ -714,7 +715,12 @@ export default function ExamPaperEditorPage() {
                         )}
                       </div>
                       <div className="text-xs text-ink-500 mt-1">
-                        发布给：{pub.targetClassIds.map((cid) => classes.find((c) => c.id === cid)?.name).filter(Boolean).join(", ") || "未知"}
+                        发布给：{
+                          [
+                            ...pub.targetClassIds.map((cid) => classes.find((c) => c.id === cid)?.name).filter(Boolean),
+                            ...(pub.targetStudentIds || []).map((sid) => students.find((student) => student.id === sid)?.name).filter(Boolean),
+                          ].join(", ") || "未知"
+                        }
                       </div>
                     </div>
                     <Button

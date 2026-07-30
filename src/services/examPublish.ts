@@ -10,6 +10,7 @@ export const examPublishService = {
     title: string;
     targetType: ExamPublishTarget;
     targetClassIds?: string[];
+    targetStudentIds?: string[];
     targetSchoolIds?: string[];
     isFormalExam?: boolean;
     viewPassword?: string;

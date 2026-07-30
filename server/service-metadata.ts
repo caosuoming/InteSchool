@@ -813,6 +813,12 @@ export const serviceParameters = {
     "getBackup": [
       "id"
     ],
+    "getChapterTree": [
+      "schoolId"
+    ],
+    "getKnowledgeTree": [
+      "schoolId"
+    ],
     "updateBackupProperties": [
       "id",
       "patch",
@@ -828,7 +834,8 @@ export const serviceParameters = {
       "resourceType",
       "resourceId",
       "targetClassIds",
-      "backupReason"
+      "backupReason",
+      "targetStudentIds"
     ],
     "saveAsOwnResource": [
       "backupId",

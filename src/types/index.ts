@@ -657,6 +657,8 @@ export interface ExamPublication {
   targetType: ExamPublishTarget;
   /** 目标班级ID列表（targetType=schoolClass时） */
   targetClassIds: string[];
+  /** 直接发布到的学生 ID 列表 */
+  targetStudentIds?: string[];
   /** 目标学校ID列表（targetType=otherSchool时） */
   targetSchoolIds: string[];
   /** 是否为正规考试（正规考试支持密码保护和到期日期） */
@@ -1206,6 +1208,8 @@ export interface SchoolResourceBackup {
   backupReason: string;
   /** 发布到的班级ID列表（用于追溯） */
   targetClassIds: string[];
+  /** 发布到的学生ID列表（用于追溯） */
+  targetStudentIds?: string[];
   /** 关联的章节ID */
   chapterIds: string[];
   /** 关联的知识点ID */
@@ -1218,6 +1222,8 @@ export interface SchoolResourceBackup {
   semester?: ResourceSemester;
   /** 元数据（题型/总分/时长等） */
   meta: Record<string, string>;
+  /** 题目查重哈希（仅题目备份使用） */
+  duplicateHash?: string;
   /** 备份时间 */
   createdAt: string;
   /** 最后更新时间（备课组长修改属性时更新） */

@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { authService } from "@/services/auth";
-import { knowledgeService } from "@/services/knowledge";
 import { schoolBackupService, canEditSchoolBackup } from "@/services/schoolBackup";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -110,8 +109,8 @@ export default function SchoolResourcesPage() {
   }, [schoolId]);
 
   useEffect(() => {
-    knowledgeService.getChapterTree(schoolId).then(setChapterTree);
-    knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
+    schoolBackupService.getChapterTree(schoolId).then(setChapterTree);
+    schoolBackupService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
   }, [schoolId]);
 
   useEffect(() => {
@@ -309,7 +308,7 @@ export default function SchoolResourcesPage() {
     <div>
       <PageHeader
         title="校本资源"
-        description="本校资源备份库 · 教师发布给非所教班级的资源自动备份至此"
+        description="独立校本目录 · 发布给非所教班级或学生的资源自动同步至此"
         icon={<Building2 className="w-5 h-5" />}
         action={
           canEdit ? (
@@ -331,7 +330,8 @@ export default function SchoolResourcesPage() {
         <History className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
         <div>
           <div className="font-medium mb-0.5">校本资源备份说明</div>
-          当您将试卷、讲义、课件等资源发布或分享给<b>非自己所教班级</b>时，系统会自动将资源及其相关题目、素材<b>同步备份</b>到此处。
+          当您将试卷、讲义等资源发布给<b>非自己所教班级或学生</b>时，系统会自动将资源及其相关题目<b>同步备份</b>到此处。
+          校本资源使用独立的章节课与知识点目录，同名目录自动合并，不同名目录自动新增。
           备份的目的是保留学校层面的资源沉淀与共享追溯。普通教师仅可查看，<b>备课组长及以上权限</b>可修改资源的属性（章节、知识点、年级等）。
         </div>
       </div>
@@ -349,7 +349,7 @@ export default function SchoolResourcesPage() {
                 )}
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                章节目录
+                章节课目录
               </button>
               <button
                 onClick={() => setLeftTab("knowledge")}
@@ -366,12 +366,12 @@ export default function SchoolResourcesPage() {
               chapterTree ? (
                 <SearchableTree
                   data={chapterTree}
-                  title="章节目录"
+                  title="章节课目录"
                   accent="gold"
                   checkable
                   checkedIds={checkedChapters}
                   onCheck={setCheckedChapters}
-                  searchPlaceholder="搜索章节..."
+                  searchPlaceholder="搜索章节课..."
                   showLogicSelector
                   logic={chapterLogic}
                   onLogicChange={setChapterLogic}
@@ -609,6 +609,12 @@ export default function SchoolResourcesPage() {
                               <span className="text-ink-600">{item.targetClassIds.length} 个班级</span>
                             </span>
                           )}
+                          {(item.targetStudentIds?.length || 0) > 0 && (
+                            <span>
+                              <span className="text-ink-300">发布给：</span>
+                              <span className="text-ink-600">{item.targetStudentIds!.length} 名学生</span>
+                            </span>
+                          )}
                         </div>
                         {/* 备份原因 */}
                         <div className="mt-1 text-[11px] text-ink-400 italic">
@@ -791,7 +797,7 @@ export default function SchoolResourcesPage() {
             <div className="border border-gold-200 rounded-lg overflow-hidden bg-gold-50/20">
               <div className="px-3 py-2 bg-gold-50 border-b border-gold-200 flex items-center gap-1.5">
                 <BookOpen className="w-3.5 h-3.5 text-gold-700" />
-                <span className="font-serif font-semibold text-sm text-gold-800">章节目录</span>
+                <span className="font-serif font-semibold text-sm text-gold-800">章节课目录</span>
                 <span className="ml-auto text-xs text-gold-700">已选 {editForm.chapterIds.length}</span>
               </div>
               <div className="p-2 max-h-[200px] overflow-y-auto">
