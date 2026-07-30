@@ -7,6 +7,7 @@ import type {
   Material,
   Question,
   Teacher,
+  ResourceSemester,
 } from "../../src/types/index.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
@@ -25,6 +26,7 @@ export interface BackupInput {
   knowledgePointIds: string[];
   grade?: string;
   schoolYear?: string;
+  semester?: ResourceSemester;
   meta?: Record<string, string>;
 }
 
@@ -68,6 +70,7 @@ export const schoolBackupService = {
       knowledgePointIds: input.knowledgePointIds,
       grade: input.grade,
       schoolYear: input.schoolYear,
+      semester: input.semester || "上学期",
       meta: input.meta || {},
       createdAt: now,
       updatedAt: now,
@@ -98,7 +101,7 @@ export const schoolBackupService = {
   async updateBackupProperties(
     id: string,
     patch: Partial<Pick<SchoolResourceBackup,
-      "title" | "description" | "chapterIds" | "knowledgePointIds" | "grade" | "schoolYear">>,
+      "title" | "description" | "chapterIds" | "knowledgePointIds" | "grade" | "schoolYear" | "semester">>,
     teacher: Teacher,
   ): Promise<SchoolResourceBackup> {
     await delay(200);
@@ -163,6 +166,7 @@ export const schoolBackupService = {
           knowledgePointIds: p.knowledgePointIds,
           grade: p.grade,
           schoolYear: p.schoolYear,
+          semester: p.semester || "上学期",
           meta: {
             题目数: String(p.questions.length),
             总分: String(p.totalScore),
@@ -182,6 +186,7 @@ export const schoolBackupService = {
           knowledgePointIds: l.knowledgePointIds,
           grade: l.grade,
           schoolYear: l.schoolYear,
+          semester: l.semester || "上学期",
           meta: {
             节数: String(l.sections.length),
             状态: l.status === "published" ? "已发布" : "草稿",
@@ -199,6 +204,7 @@ export const schoolBackupService = {
           knowledgePointIds: c.knowledgePointIds,
           grade: c.grade,
           schoolYear: c.schoolYear,
+          semester: c.semester || "上学期",
           meta: {
             类型: c.type,
             标签: c.tags.join("、"),
@@ -216,6 +222,7 @@ export const schoolBackupService = {
           knowledgePointIds: m.knowledgePointIds,
           grade: m.grade,
           schoolYear: m.schoolYear,
+          semester: m.semester || "上学期",
           meta: {
             类型: m.type,
             标签: m.tags.join("、"),
@@ -239,6 +246,7 @@ export const schoolBackupService = {
           knowledgePointIds: q.knowledgePointIds,
           grade: q.grade,
           schoolYear: q.schoolYear,
+          semester: q.semester || "上学期",
           meta: {
             题型: q.type,
             难度: String(q.difficulty),
@@ -306,6 +314,7 @@ export const schoolBackupService = {
             remarks: [],
             grade: backup.grade,
             schoolYear: backup.schoolYear,
+            semester: backup.semester || "上学期",
             isShared: false,
             createdAt: backup.createdAt,
             updatedAt: backup.createdAt,

@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type {
   Courseware,
@@ -45,9 +46,11 @@ import type {
   ShareRecord,
   ShareableResourceType,
   TreeNode,
+  ResourceSemester,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
 type ResourceTypeFilter = "all" | ShareableResourceType;
 type LeftTab = "chapter" | "knowledge";
@@ -61,6 +64,9 @@ interface PlatformResourceItem {
   description?: string;
   content?: string;
   originalFileName?: string;
+  grade?: string;
+  schoolYear?: string;
+  semester?: ResourceSemester;
   fromTeacherId: string;
   fromSchoolId: string;
   chapterIds: string[];
@@ -125,6 +131,9 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
     fromSchoolId: share.fromSchoolId,
     createdAt: share.createdAt,
     updatedAt: snapshot.updatedAt || share.createdAt,
+    grade: snapshot.grade,
+    schoolYear: snapshot.schoolYear,
+    semester: snapshot.semester || "上学期",
     chapterIds: share.directorySnapshot?.chapters.filter((item) => item.selected).map((item) => item.id) || [],
     knowledgePointIds: share.directorySnapshot?.knowledgePoints.filter((item) => item.selected).map((item) => item.id) || [],
   };
@@ -139,6 +148,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
           { label: "题型", value: questionTypeLabel[question.type] },
           { label: "难度", value: difficultyLabelText[question.difficulty] },
           { label: "推荐", value: `${question.recommendation} 星` },
+          { label: "年级", value: `${question.grade || "未指定"} · ${question.schoolYear || "未指定"} · ${question.semester || "上学期"}` },
         ],
       };
     }
@@ -150,7 +160,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
         description: paper.description,
         originalFileName: paper.originalFileName,
         meta: [
-          { label: "年级", value: `${paper.grade} · ${paper.schoolYear}` },
+          { label: "年级", value: `${paper.grade} · ${paper.schoolYear} · ${paper.semester || "上学期"}` },
           { label: "题目", value: `${paper.questions.length} 题` },
           { label: "总分", value: `${paper.totalScore} 分` },
         ],
@@ -164,7 +174,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
         description: lecture.description,
         originalFileName: lecture.originalFileName,
         meta: [
-          { label: "年级", value: `${lecture.grade} · ${lecture.schoolYear}` },
+          { label: "年级", value: `${lecture.grade} · ${lecture.schoolYear} · ${lecture.semester || "上学期"}` },
           { label: "内容", value: `${lecture.sections.length} 节` },
         ],
       };
@@ -178,7 +188,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
         content: courseware.content,
         meta: [
           { label: "类型", value: coursewareTypeLabel[courseware.type] },
-          { label: "年级", value: `${courseware.grade} · ${courseware.schoolYear}` },
+          { label: "年级", value: `${courseware.grade} · ${courseware.schoolYear} · ${courseware.semester || "上学期"}` },
         ],
       };
     }
@@ -191,7 +201,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
         content: material.content,
         meta: [
           { label: "类型", value: materialTypeLabel[material.type] },
-          { label: "年级", value: `${material.grade} · ${material.schoolYear}` },
+          { label: "年级", value: `${material.grade} · ${material.schoolYear} · ${material.semester || "上学期"}` },
         ],
       };
     }
@@ -230,7 +240,7 @@ export default function PlatformResourcesPage() {
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
   const [editItem, setEditItem] = useState<PlatformResourceItem | null>(null);
   const [editForm, setEditForm] = useState({
-    title: "", description: "", grade: "", schoolYear: "", originalFileName: "", difficulty: "", recommendation: "",
+    title: "", description: "", grade: "", schoolYear: "", semester: "上学期" as ResourceSemester, originalFileName: "", difficulty: "", recommendation: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -238,6 +248,7 @@ export default function PlatformResourcesPage() {
   const [savingSettings, setSavingSettings] = useState(false);
 
   const schoolId = teacher?.schoolId || "sch-1";
+  const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
 
   const loadAll = useCallback(async () => {
     if (!teacher) {
@@ -330,8 +341,6 @@ export default function PlatformResourcesPage() {
   };
 
   const openEdit = (item: PlatformResourceItem) => {
-    const gradeMeta = item.meta.find((meta) => meta.label === "年级")?.value || "";
-    const [grade = "", schoolYear = ""] = gradeMeta.split(" · ");
     const difficulty = item.resourceType === "question"
       ? String(difficultyLabelText.indexOf(item.meta.find((meta) => meta.label === "难度")?.value || ""))
       : "";
@@ -341,8 +350,9 @@ export default function PlatformResourcesPage() {
     setEditForm({
       title: item.title,
       description: item.description || "",
-      grade,
-      schoolYear,
+      grade: item.grade || "",
+      schoolYear: item.schoolYear || "",
+      semester: item.semester || "上学期",
       originalFileName: item.originalFileName || "",
       difficulty,
       recommendation,
@@ -359,6 +369,7 @@ export default function PlatformResourcesPage() {
         description: editForm.description,
         grade: editForm.grade,
         schoolYear: editForm.schoolYear,
+        semester: editForm.semester,
         originalFileName: editForm.originalFileName,
         difficulty: editForm.difficulty ? Number(editForm.difficulty) as 1 | 2 | 3 | 4 | 5 : undefined,
         recommendation: editForm.recommendation ? Number(editForm.recommendation) as 1 | 2 | 3 | 4 | 5 : undefined,
@@ -625,16 +636,6 @@ export default function PlatformResourcesPage() {
                   className="input-base min-h-20"
                 />
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-sm text-ink-700">
-                  <span className="block mb-1">年级</span>
-                  <input value={editForm.grade} onChange={(event) => setEditForm((form) => ({ ...form, grade: event.target.value }))} className="input-base" />
-                </label>
-                <label className="block text-sm text-ink-700">
-                  <span className="block mb-1">学年</span>
-                  <input value={editForm.schoolYear} onChange={(event) => setEditForm((form) => ({ ...form, schoolYear: event.target.value }))} className="input-base" />
-                </label>
-              </div>
               {editItem?.originalFileName !== undefined && (
                 <label className="block text-sm text-ink-700">
                   <span className="block mb-1">文件名</span>
@@ -643,6 +644,26 @@ export default function PlatformResourcesPage() {
               )}
             </>
           )}
+          <div className="grid grid-cols-3 gap-3">
+            <Select
+              label="年级"
+              value={editForm.grade}
+              options={includeCurrentOption(gradeOptions, editForm.grade)}
+              onChange={(event) => setEditForm((form) => ({ ...form, grade: event.target.value }))}
+            />
+            <Select
+              label="学年"
+              value={editForm.schoolYear}
+              options={includeCurrentOption(schoolYearOptions, editForm.schoolYear)}
+              onChange={(event) => setEditForm((form) => ({ ...form, schoolYear: event.target.value }))}
+            />
+            <Select
+              label="学期"
+              value={editForm.semester}
+              options={semesterOptions}
+              onChange={(event) => setEditForm((form) => ({ ...form, semester: event.target.value as ResourceSemester }))}
+            />
+          </div>
           {editItem?.resourceType === "question" && (
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-sm text-ink-700">

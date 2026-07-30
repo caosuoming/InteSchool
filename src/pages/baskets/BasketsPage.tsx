@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type { Basket, Question } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 export default function BasketsPage() {
   const navigate = useNavigate();
   const { teacher } = useAuthStore();
+  const { defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(teacher?.schoolId);
   const [baskets, setBaskets] = useState<Basket[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBasket, setSelectedBasket] = useState<Basket | null>(null);
@@ -161,8 +163,9 @@ export default function BasketsPage() {
         description: `由试题篮「${selectedBasket.name}」生成`,
         chapterIds: Array.from(new Set(questions.flatMap((q) => q.chapterIds))),
         knowledgePointIds: Array.from(new Set(questions.flatMap((q) => q.knowledgePointIds))),
-        grade: "高一",
-        schoolYear: "2025-2026",
+        grade: questions[0]?.grade || defaultGrade,
+        schoolYear: questions[0]?.schoolYear || defaultSchoolYear,
+        semester: questions[0]?.semester || defaultSemester,
         classIds: [],
         studentIds: [],
         sections,

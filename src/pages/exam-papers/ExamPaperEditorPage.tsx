@@ -28,7 +28,8 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { SearchableTree } from "@/components/tree/SearchableTree";
-import type { ExamPaper, ExamPaperQuestion, Question, Basket, AnyClass, Lecture, ExamPublication, TreeNode, Student, SchoolClass, PersonalClass, ExamPaperType } from "@/types";
+import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import type { ExamPaper, ExamPaperQuestion, Question, Basket, AnyClass, Lecture, ExamPublication, TreeNode, Student, SchoolClass, PersonalClass, ExamPaperType, ResourceSemester } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
@@ -117,6 +118,7 @@ export default function ExamPaperEditorPage() {
   const [isPreview, setIsPreview] = useState(initialPreview);
   const [paperSize, setPaperSize] = useState<"A4" | "8K">("A4");
   const { teacher } = useAuthStore();
+  const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [paper, setPaper] = useState<ExamPaper | null>(null);
   const [questions, setQuestions] = useState<Record<string, Question>>({});
@@ -127,8 +129,9 @@ export default function ExamPaperEditorPage() {
   // 编辑状态
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [grade, setGrade] = useState("高一");
-  const [schoolYear, setSchoolYear] = useState("2025-2026");
+  const [grade, setGrade] = useState("");
+  const [schoolYear, setSchoolYear] = useState("");
+  const [semester, setSemester] = useState<ResourceSemester>("上学期");
   const [typeId, setTypeId] = useState<string>("");
   const [examPaperTypes, setExamPaperTypes] = useState<ExamPaperType[]>([]);
   const [duration, setDuration] = useState(90);
@@ -205,6 +208,7 @@ export default function ExamPaperEditorPage() {
     setDescription(p.description || "");
     setGrade(p.grade);
     setSchoolYear(p.schoolYear);
+    setSemester(p.semester || "上学期");
     setTypeId(p.typeId || "");
     setDuration(p.duration);
     setPaperQuestions(p.questions);
@@ -522,7 +526,7 @@ export default function ExamPaperEditorPage() {
     setSaving(true);
     try {
       const updated = await examPaperService.updatePaper(paper.id, {
-        title, description, grade, schoolYear, duration,
+        title, description, grade, schoolYear, semester, duration,
         totalScore: totalScore,
         questions: paperQuestions,
         studentIds: selectedStudentIds,
@@ -612,7 +616,7 @@ export default function ExamPaperEditorPage() {
       <div className="max-w-5xl mx-auto">
         <PageHeader
           title={paper?.title || title}
-          description={`${grade} · ${schoolYear} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
+          description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
           icon={<FileSpreadsheet className="w-5 h-5" />}
           action={
             <div className="no-print flex items-center gap-2">
@@ -738,6 +742,7 @@ export default function ExamPaperEditorPage() {
               <div className="flex items-center justify-center gap-4 text-xs text-ink-500">
                 <span>年级：{grade}</span>
                 <span>学年：{schoolYear}</span>
+                <span>学期：{semester}</span>
                 <span>时间：{duration}分钟</span>
                 <span>满分：{totalScore}分</span>
               </div>
@@ -865,13 +870,21 @@ export default function ExamPaperEditorPage() {
                 label="年级"
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
-                options={[
-                  { value: "高一", label: "高一" }, { value: "高二", label: "高二" }, { value: "高三", label: "高三" },
-                  { value: "初一", label: "初一" }, { value: "初二", label: "初二" }, { value: "初三", label: "初三" },
-                ]}
+                options={includeCurrentOption(gradeOptions, grade)}
               />
-              <Input label="学年" value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)} />
+              <Select
+                label="学年"
+                value={schoolYear}
+                onChange={(e) => setSchoolYear(e.target.value)}
+                options={includeCurrentOption(schoolYearOptions, schoolYear)}
+              />
             </div>
+            <Select
+              label="学期"
+              value={semester}
+              onChange={(e) => setSemester(e.target.value as ResourceSemester)}
+              options={semesterOptions}
+            />
             <Select
               label="试卷类型"
               value={typeId}

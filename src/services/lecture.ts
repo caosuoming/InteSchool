@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { Lecture, LectureFilter, LectureSection } from "@/types";
+import type { Lecture, LectureFilter, LectureSection, ResourceSemester } from "@/types";
 
 export interface LectureInput {
   title: string;
@@ -9,6 +9,7 @@ export interface LectureInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   classIds: string[];
   studentIds: string[];
   sections: LectureSection[];

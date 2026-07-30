@@ -4,6 +4,7 @@ import type {
   ExtractedKnowledgeItem,
   Question,
   Material,
+  ResourceSemester,
 } from "@/types";
 
 export const extractService = {
@@ -18,6 +19,7 @@ export const extractService = {
     knowledgePointIds: string[],
     grade: string,
     schoolYear: string,
+    semester: ResourceSemester,
     sourceResourceId: string,
   ): Promise<{ createdQuestions: Question[]; createdMaterials: Material[] }> {
     return rpcCall("extract", "confirmExtract", [
@@ -28,6 +30,7 @@ export const extractService = {
       knowledgePointIds,
       grade,
       schoolYear,
+      semester,
       sourceResourceId,
     ]);
   },

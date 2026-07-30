@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
 import { extractStoredFile } from "@/services/api";
 import "katex/dist/katex.min.css";
-import type { Lecture, ExamPaper } from "@/types";
+import type { Lecture, ExamPaper, ResourceSemester } from "@/types";
 
 
 
@@ -39,6 +39,7 @@ export default function ResourcePreviewPage() {
     knowledgePointIds: string[];
     grade: string;
     schoolYear: string;
+    semester: ResourceSemester;
   } | null>(null);
 
   const [docPreview, setDocPreview] = useState<{
@@ -122,6 +123,7 @@ export default function ResourcePreviewPage() {
       knowledgePointIds: resource.knowledgePointIds,
       grade: resource.grade,
       schoolYear: resource.schoolYear,
+      semester: resource.semester || "上学期",
     });
   };
 
@@ -295,6 +297,7 @@ export default function ResourcePreviewPage() {
           knowledgePointIds={extractModal.knowledgePointIds}
           grade={extractModal.grade}
           schoolYear={extractModal.schoolYear}
+          semester={extractModal.semester}
           onConfirmed={handleExtractConfirmed}
         />
       )}

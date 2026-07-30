@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { Question, QuestionFilter, QuestionType, QuestionRemark } from "@/types";
+import type { Question, QuestionFilter, QuestionType, QuestionRemark, ResourceSemester } from "@/types";
 
 export interface QuestionInput {
   type: QuestionType;
@@ -11,6 +11,9 @@ export interface QuestionInput {
   summary?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
+  grade?: string;
+  schoolYear?: string;
+  semester?: ResourceSemester;
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
   remark?: string;

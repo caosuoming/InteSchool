@@ -38,7 +38,7 @@ import {
   type DocumentBlockType as BlockType,
 } from "@/lib/document-block-parser";
 import { extractStoredFile } from "@/services/api";
-import type { QuestionType, Question, Material, Lecture, ExamPaper } from "@/types";
+import type { QuestionType, Question, Material, Lecture, ExamPaper, ResourceSemester } from "@/types";
 
 interface ExtractReviewModalProps {
   open: boolean;
@@ -50,6 +50,7 @@ interface ExtractReviewModalProps {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester: ResourceSemester;
   onConfirmed?: () => void;
 }
 
@@ -185,6 +186,7 @@ export function ExtractReviewModal({
   knowledgePointIds,
   grade,
   schoolYear,
+  semester,
   onConfirmed,
 }: ExtractReviewModalProps) {
   const { teacher } = useAuthStore();
@@ -567,6 +569,7 @@ export function ExtractReviewModal({
         knowledgePointIds,
         grade,
         schoolYear,
+        semester,
         resourceId,
       );
 

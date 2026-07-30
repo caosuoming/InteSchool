@@ -21,6 +21,7 @@ import { Modal } from "@/components/ui/Modal";
 import { timeAgo } from "@/lib/service-utils";
 import type { Question, Lecture, Basket, DocumentRecord, PrepTask, PrepTaskType } from "@/types";
 import { cn } from "@/lib/utils";
+import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
 interface Stats {
   questions: Question[];
@@ -33,6 +34,7 @@ interface Stats {
 
 export default function DashboardPage() {
   const { teacher } = useAuthStore();
+  const { gradeOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [prepTasks, setPrepTasks] = useState<PrepTask[]>([]);
@@ -89,7 +91,6 @@ export default function DashboardPage() {
 
   const isGroupLeader = teacher?.roles.includes("prepLeader") || teacher?.roles.includes("subjectLeader");
 
-  const gradeOptions = ["高一", "高二", "高三", "初一", "初二", "初三"];
   const subjectOptions = ["语文", "数学", "英语", "物理", "化学", "生物", "历史", "地理", "政治"];
   const workflowTypeOptions: { type: PrepTaskType; label: string }[] = [
     { type: "paper", label: "出试卷" },
@@ -540,9 +541,9 @@ export default function DashboardPage() {
                 className="w-full px-3 py-2 rounded-lg border border-ink-200 bg-paper text-ink-900 focus:outline-none focus:border-gold-500 focus:ring-1 focus:ring-gold-500"
               >
                 <option value="">请选择年级</option>
-                {gradeOptions.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
+                {gradeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>

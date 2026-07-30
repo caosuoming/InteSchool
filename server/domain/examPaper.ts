@@ -2,6 +2,7 @@ import type {
   ExamPaper,
   ExamPaperQuestion,
   ResourceFilter,
+  ResourceSemester,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
@@ -32,6 +33,7 @@ function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
   }
   if (filter.grade && p.grade !== filter.grade) return false;
   if (filter.schoolYear && p.schoolYear !== filter.schoolYear) return false;
+  if (filter.semester && (p.semester || "上学期") !== filter.semester) return false;
   if (filter.teacherId && p.teacherId !== filter.teacherId) return false;
   if (filter.schoolId && p.schoolId !== filter.schoolId) return false;
   return true;
@@ -44,6 +46,7 @@ export interface ExamPaperInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   duration: number;
   totalScore: number;
   questions: ExamPaperQuestion[];
@@ -87,6 +90,7 @@ export const examPaperService = {
       knowledgePointIds: input.knowledgePointIds,
       grade: input.grade,
       schoolYear: input.schoolYear,
+      semester: input.semester || "上学期",
       duration: input.duration,
       totalScore: input.totalScore,
       questions: input.questions,
@@ -197,6 +201,9 @@ export const examPaperService = {
           analysis: eq.analysis,
           chapterIds: paper.chapterIds,
           knowledgePointIds: paper.knowledgePointIds,
+          grade: paper.grade,
+          schoolYear: paper.schoolYear,
+          semester: paper.semester || "上学期",
           difficulty: 3,
           recommendation: 3,
         },
@@ -288,6 +295,7 @@ export const examPaperService = {
       knowledgePointIds: paper.knowledgePointIds,
       grade: paper.grade,
       schoolYear: paper.schoolYear,
+      semester: paper.semester || "上学期",
       classIds: [],
       studentIds: [],
       sections,

@@ -4,6 +4,7 @@ import type {
   SchoolResourceBackup,
   SchoolBackupResourceType,
   Teacher,
+  ResourceSemester,
 } from "@/types";
 
 export interface BackupInput {
@@ -20,6 +21,7 @@ export interface BackupInput {
   knowledgePointIds: string[];
   grade?: string;
   schoolYear?: string;
+  semester?: ResourceSemester;
   meta?: Record<string, string>;
 }
 
@@ -49,7 +51,7 @@ export const schoolBackupService = {
   },
 
   async updateBackupProperties(id: string, patch: Partial<Pick<SchoolResourceBackup,
-      "title" | "description" | "chapterIds" | "knowledgePointIds" | "grade" | "schoolYear">>, teacher: Teacher): Promise<SchoolResourceBackup> {
+      "title" | "description" | "chapterIds" | "knowledgePointIds" | "grade" | "schoolYear" | "semester">>, teacher: Teacher): Promise<SchoolResourceBackup> {
     return rpcCall("schoolBackup", "updateBackupProperties", [id, patch, teacher]) as any;
   },
 

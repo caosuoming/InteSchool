@@ -21,10 +21,11 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import { TreeView } from "@/components/tree/TreeView";
 import type {
   Teacher, TreeNode, FilterLogic,
-  SchoolBackupResourceType, SchoolResourceBackup,
+  SchoolBackupResourceType, SchoolResourceBackup, ResourceSemester,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
 type ResourceTypeFilter = "all" | SchoolBackupResourceType;
 type LeftTab = "chapter" | "knowledge";
@@ -83,6 +84,7 @@ export default function SchoolResourcesPage() {
     knowledgePointIds: string[];
     grade: string;
     schoolYear: string;
+    semester: ResourceSemester;
   } | null>(null);
   const [saving, setSaving] = useState(false);
   // 另存为状态：记录已"另存为"过的备份ID，避免重复操作
@@ -91,6 +93,7 @@ export default function SchoolResourcesPage() {
   const [schoolTeachers, setSchoolTeachers] = useState<Teacher[]>([]);
 
   const schoolId = teacher?.schoolId || "sch-1";
+  const { gradeOptions: configuredGradeOptions, schoolYearOptions: configuredSchoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
   const canEdit = canEditSchoolBackup(teacher);
 
   const loadAll = useCallback(async () => {
@@ -230,6 +233,7 @@ export default function SchoolResourcesPage() {
       knowledgePointIds: [...item.knowledgePointIds],
       grade: item.grade || "",
       schoolYear: item.schoolYear || "",
+      semester: item.semester || "上学期",
     });
   };
 
@@ -246,6 +250,7 @@ export default function SchoolResourcesPage() {
           knowledgePointIds: editForm.knowledgePointIds,
           grade: editForm.grade,
           schoolYear: editForm.schoolYear,
+          semester: editForm.semester,
         },
         teacher,
       );
@@ -720,6 +725,7 @@ export default function SchoolResourcesPage() {
                 ))}
                 {viewing.grade && <span className="tag-teal">年级: {viewing.grade}</span>}
                 {viewing.schoolYear && <span className="tag-teal">学年: {viewing.schoolYear}</span>}
+                <span className="tag-teal">学期: {viewing.semester || "上学期"}</span>
               </div>
             </div>
           </div>
@@ -766,25 +772,22 @@ export default function SchoolResourcesPage() {
               <Select
                 label="年级"
                 value={editForm.grade}
-                options={[
-                  { value: "", label: "未指定" },
-                  { value: "高一", label: "高一" },
-                  { value: "高二", label: "高二" },
-                  { value: "高三", label: "高三" },
-                ]}
+                options={[{ value: "", label: "未指定" }, ...includeCurrentOption(configuredGradeOptions, editForm.grade)]}
                 onChange={(e) => setEditForm({ ...editForm, grade: e.target.value })}
               />
               <Select
                 label="学年"
                 value={editForm.schoolYear}
-                options={[
-                  { value: "", label: "未指定" },
-                  { value: "2025-2026", label: "2025-2026" },
-                  { value: "2024-2025", label: "2024-2025" },
-                ]}
+                options={[{ value: "", label: "未指定" }, ...includeCurrentOption(configuredSchoolYearOptions, editForm.schoolYear)]}
                 onChange={(e) => setEditForm({ ...editForm, schoolYear: e.target.value })}
               />
             </div>
+            <Select
+              label="学期"
+              value={editForm.semester}
+              options={semesterOptions}
+              onChange={(e) => setEditForm({ ...editForm, semester: e.target.value as ResourceSemester })}
+            />
             <div className="border border-gold-200 rounded-lg overflow-hidden bg-gold-50/20">
               <div className="px-3 py-2 bg-gold-50 border-b border-gold-200 flex items-center gap-1.5">
                 <BookOpen className="w-3.5 h-3.5 text-gold-700" />

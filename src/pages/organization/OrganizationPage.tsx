@@ -21,12 +21,12 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { cn } from "@/lib/utils";
+import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type { SubjectGroup, PrepGroup, Teacher, TeacherRole } from "@/types";
 
 // ============ 常量 ============
 
 const SUBJECTS = ["数学", "语文", "英语", "物理", "化学", "生物", "政治", "历史", "地理", "信息技术"];
-const GRADES = ["高一", "高二", "高三"];
 
 // 权限矩阵：资源层级
 const PERMISSION_LEVELS: { key: "personal" | "prep" | "subject" | "grade" | "school"; label: string }[] = [
@@ -116,6 +116,7 @@ function PermissionMatrix() {
 // ============ 主页面 ============
 export default function OrganizationPage() {
   const { teacher } = useAuthStore();
+  const { gradeOptions, defaultGrade } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [subjectGroups, setSubjectGroups] = useState<SubjectGroup[]>([]);
   const [prepGroups, setPrepGroups] = useState<PrepGroup[]>([]);
@@ -138,7 +139,7 @@ export default function OrganizationPage() {
   const [createPrepOpen, setCreatePrepOpen] = useState(false);
   const [prepSubjectGroupId, setPrepSubjectGroupId] = useState("");
   const [pgName, setPgName] = useState("");
-  const [pgGrade, setPgGrade] = useState("高一");
+  const [pgGrade, setPgGrade] = useState("");
   const [pgDesc, setPgDesc] = useState("");
   const [pgLeaderId, setPgLeaderId] = useState("");
 
@@ -257,7 +258,7 @@ export default function OrganizationPage() {
   const openCreatePrep = (subjectGroupId: string) => {
     setPrepSubjectGroupId(subjectGroupId);
     setPgName("");
-    setPgGrade("高一");
+    setPgGrade(defaultGrade);
     setPgDesc("");
     setPgLeaderId("");
     setCreatePrepOpen(true);
@@ -681,7 +682,7 @@ export default function OrganizationPage() {
             label="年级"
             value={pgGrade}
             onChange={(e) => setPgGrade(e.target.value)}
-            options={GRADES.map((g) => ({ value: g, label: g }))}
+            options={gradeOptions}
           />
           <Textarea
             label="描述（可选）"

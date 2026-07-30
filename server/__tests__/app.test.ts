@@ -1249,4 +1249,146 @@ describe("production backend", () => {
     });
     expect(refreshed.json<{ teacher: { schoolId: string } }>().teacher.schoolId).toBe("sch-1");
   });
+
+  it("persists and filters resource semesters", async () => {
+    const session = await login(built.app);
+    const teacherId = String(session.teacher.id);
+    const schoolId = String(session.teacher.schoolId);
+    const headers = {
+      cookie: session.cookie,
+      "x-inteschool-csrf": session.csrfToken,
+    };
+
+    const createLecture = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "lecture",
+        method: "createLecture",
+        args: [teacherId, schoolId, {
+          title: "暑假专题讲义",
+          description: "issue 30 regression",
+          chapterIds: [],
+          knowledgePointIds: [],
+          grade: "高二",
+          schoolYear: "2026-2027",
+          semester: "暑假",
+          classIds: [],
+          studentIds: [],
+          sections: [],
+        }],
+      },
+    });
+    expect(createLecture.statusCode).toBe(200);
+    const lecture = createLecture.json<{ result: { id: string; semester: string } }>().result;
+    expect(lecture.semester).toBe("暑假");
+
+    const summerLectures = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "lecture",
+        method: "listLectures",
+        args: [{ teacherId, semester: "暑假" }],
+      },
+    });
+    expect(summerLectures.statusCode).toBe(200);
+    expect(summerLectures.json<{ result: Array<{ id: string }> }>().result)
+      .toContainEqual(expect.objectContaining({ id: lecture.id }));
+
+    const winterLectures = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "lecture",
+        method: "listLectures",
+        args: [{ teacherId, semester: "寒假" }],
+      },
+    });
+    expect(winterLectures.statusCode).toBe(200);
+    expect(winterLectures.json<{ result: Array<{ id: string }> }>().result)
+      .not.toContainEqual(expect.objectContaining({ id: lecture.id }));
+
+    const createQuestion = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "question",
+        method: "createQuestion",
+        args: [teacherId, schoolId, {
+          type: "short",
+          stem: "默认学期测试",
+          answer: "上学期",
+          analysis: "未显式传入学期时使用兼容默认值",
+          chapterIds: [],
+          knowledgePointIds: [],
+          grade: "高二",
+          schoolYear: "2026-2027",
+          difficulty: 1,
+          recommendation: 1,
+        }],
+      },
+    });
+    expect(createQuestion.statusCode).toBe(200);
+    expect(createQuestion.json<{ result: { semester: string } }>().result.semester).toBe("上学期");
+  });
+
+  it("backfills semester for existing resources and shared snapshots", async () => {
+    const databasePath = join(workDir, "inteschool.sqlite");
+    const lectureRow = built.store.sqlite.prepare(
+      "SELECT id, data_json FROM app_records WHERE collection = 'lectures' LIMIT 1",
+    ).get() as { id: string; data_json: string };
+    const lectureData = JSON.parse(lectureRow.data_json) as Record<string, unknown>;
+    delete lectureData.semester;
+    built.store.sqlite.prepare(
+      "UPDATE app_records SET data_json = ? WHERE collection = 'lectures' AND id = ?",
+    ).run(JSON.stringify(lectureData), lectureRow.id);
+
+    const now = new Date().toISOString();
+    built.store.sqlite.prepare(
+      "INSERT OR REPLACE INTO app_records(collection, id, school_id, owner_id, data_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "shareRecords",
+      "share-semester-migration",
+      "sch-1",
+      "tch-1",
+      JSON.stringify({
+        id: "share-semester-migration",
+        resourceSnapshot: {
+          id: "lecture-old-snapshot",
+          title: "旧共享讲义",
+          schoolYear: "2025-2026",
+        },
+      }),
+      now,
+      now,
+    );
+    built.store.sqlite.prepare(
+      "INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '1')",
+    ).run();
+
+    await built.app.close();
+    built = await createTestApp(databasePath);
+    await built.app.ready();
+
+    const migratedLecture = built.store.sqlite.prepare(
+      "SELECT data_json FROM app_records WHERE collection = 'lectures' AND id = ?",
+    ).get(lectureRow.id) as { data_json: string };
+    expect(JSON.parse(migratedLecture.data_json)).toMatchObject({ semester: "上学期" });
+
+    const migratedShare = built.store.sqlite.prepare(
+      "SELECT data_json FROM app_records WHERE collection = 'shareRecords' AND id = ?",
+    ).get("share-semester-migration") as { data_json: string };
+    expect(JSON.parse(migratedShare.data_json)).toMatchObject({
+      resourceSnapshot: { semester: "上学期" },
+    });
+    expect(built.store.sqlite.prepare(
+      "SELECT value FROM metadata WHERE key = 'schema_version'",
+    ).get()).toEqual({ value: "2" });
+  });
+
 });

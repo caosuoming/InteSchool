@@ -1,4 +1,4 @@
-import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture } from "../../src/types/index.js";
+import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture, ResourceSemester } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
@@ -10,6 +10,7 @@ function matchFilter(c: LessonCourseware, filter: LessonCoursewareFilter): boole
   }
   if (filter.grade && c.grade !== filter.grade) return false;
   if (filter.schoolYear && c.schoolYear !== filter.schoolYear) return false;
+  if (filter.semester && (c.semester || "上学期") !== filter.semester) return false;
   if (filter.status && c.status !== filter.status) return false;
   if (filter.teacherId && c.teacherId !== filter.teacherId) return false;
   if (filter.schoolId && c.schoolId !== filter.schoolId) return false;
@@ -29,6 +30,7 @@ export interface LessonCoursewareInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   sourceType: "examPaper" | "lecture" | "manual";
   sourceId?: string;
   sourceTitle?: string;
@@ -68,6 +70,7 @@ export const lessonCoursewareService = {
       knowledgePointIds: input.knowledgePointIds,
       grade: input.grade,
       schoolYear: input.schoolYear,
+      semester: input.semester || "上学期",
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       sourceTitle: input.sourceTitle,
@@ -149,10 +152,11 @@ export const lessonCoursewareService = {
 
     return this.createCourseware(teacherId, schoolId, {
       title: `${examPaper.title}（上课课件）`,
-      chapterIds: [],
-      knowledgePointIds: [],
-      grade: "高一",
-      schoolYear: "2025-2026",
+      chapterIds: examPaper.chapterIds,
+      knowledgePointIds: examPaper.knowledgePointIds,
+      grade: examPaper.grade,
+      schoolYear: examPaper.schoolYear,
+      semester: examPaper.semester || "上学期",
       sourceType: "examPaper",
       sourceId: examPaper.id,
       sourceTitle: examPaper.title,
@@ -193,10 +197,11 @@ export const lessonCoursewareService = {
 
     return this.createCourseware(teacherId, schoolId, {
       title: `${lecture.title}（上课课件）`,
-      chapterIds: [],
-      knowledgePointIds: [],
-      grade: "高一",
-      schoolYear: "2025-2026",
+      chapterIds: lecture.chapterIds,
+      knowledgePointIds: lecture.knowledgePointIds,
+      grade: lecture.grade,
+      schoolYear: lecture.schoolYear,
+      semester: lecture.semester || "上学期",
       sourceType: "lecture",
       sourceId: lecture.id,
       sourceTitle: lecture.title,

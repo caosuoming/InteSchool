@@ -1,4 +1,4 @@
-import type { Material, MaterialType, ResourceFilter } from "../../src/types/index.js";
+import type { Material, MaterialType, ResourceFilter, ResourceSemester } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
@@ -27,6 +27,7 @@ function matchFilter(m: Material, filter: ResourceFilter): boolean {
   }
   if (filter.grade && m.grade !== filter.grade) return false;
   if (filter.schoolYear && m.schoolYear !== filter.schoolYear) return false;
+  if (filter.semester && (m.semester || "上学期") !== filter.semester) return false;
   if (filter.teacherId && m.teacherId !== filter.teacherId) return false;
   if (filter.schoolId && m.schoolId !== filter.schoolId) return false;
   return true;
@@ -39,6 +40,7 @@ export interface MaterialInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   type: MaterialType;
   content: string;
   fileUrl?: string;
@@ -78,6 +80,7 @@ export const materialService = {
       knowledgePointIds: input.knowledgePointIds,
       grade: input.grade,
       schoolYear: input.schoolYear,
+      semester: input.semester || "上学期",
       type: input.type,
       content: input.content,
       fileUrl: input.fileUrl,

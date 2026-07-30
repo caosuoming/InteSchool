@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { Courseware, CoursewareType, ResourceFilter } from "@/types";
+import type { Courseware, CoursewareType, ResourceFilter, ResourceSemester } from "@/types";
 
 export interface CoursewareInput {
   title: string;
@@ -9,6 +9,7 @@ export interface CoursewareInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   type: CoursewareType;
   content: string;
   fileUrl?: string;

@@ -36,7 +36,8 @@ import { ShareModal } from "@/components/question/ShareModal";
 import { QuestionActionsBar } from "@/components/question/QuestionActionsBar";
 import { TagSettings } from "@/components/question/TagSettings";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
-import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection } from "@/types";
+import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester } from "@/types";
 import { cn } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
 import { generateQuestionDocx } from "@/lib/docx";
@@ -59,17 +60,6 @@ const typeOptions = [
   { value: "judge", label: "判断" },
   { value: "short", label: "填空" },
   { value: "essay", label: "解答" },
-];
-
-const gradeOptions = [
-  { value: "高一", label: "高一" },
-  { value: "高二", label: "高二" },
-  { value: "高三", label: "高三" },
-];
-
-const yearOptions = [
-  { value: "2025-2026", label: "2025-2026 学年" },
-  { value: "2024-2025", label: "2024-2025 学年" },
 ];
 
 const sourceOptions = [
@@ -167,6 +157,7 @@ export default function QuestionBankPage({
   onToggleDonation,
 }: QuestionBankPageProps = {}) {
   const { teacher } = useAuthStore();
+  const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const tagPrefs = useTagPrefsStore((state) => state.prefs);
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
   const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
@@ -188,6 +179,7 @@ export default function QuestionBankPage({
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedGrade, setSelectedGrade] = useState<string>("");
   const [selectedYear, setSelectedYear] = useState<string>("");
+  const [selectedSemester, setSelectedSemester] = useState<string>("");
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("newest");
@@ -282,6 +274,7 @@ export default function QuestionBankPage({
     selectedTypes.length > 0 ||
     selectedGrade ||
     selectedYear ||
+    selectedSemester ||
     selectedSources.length > 0 ||
     selectedCategories.length > 0 ||
     keyword ||
@@ -309,6 +302,7 @@ export default function QuestionBankPage({
       type: selectedTypes as any,
       grade: selectedGrade || undefined,
       schoolYear: selectedYear || undefined,
+      semester: (selectedSemester || undefined) as ResourceSemester | undefined,
       sourceType: selectedSources,
       category: selectedCategories,
       excludeQuestionIds: excludeIds,
@@ -356,7 +350,7 @@ export default function QuestionBankPage({
   }, [
     teacher, keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic,
     noChapter, noKnowledge,
-    selectedDifficulties, selectedTypes, selectedGrade, selectedYear,
+    selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, mode, selectedStudentIds, excludeDone, sortKey, dateRange,
   ]);
 
@@ -537,6 +531,7 @@ export default function QuestionBankPage({
     setSelectedTypes([]);
     setSelectedGrade("");
     setSelectedYear("");
+    setSelectedSemester("");
     setSelectedSources([]);
     setSelectedCategories([]);
     setSelectedStudentIds([]);
@@ -918,7 +913,8 @@ export default function QuestionBankPage({
               </div>
 
               <SelectFilter label="年级" value={selectedGrade} options={gradeOptions} onChange={setSelectedGrade} icon={<GraduationCap className="w-3.5 h-3.5" />} />
-              <SelectFilter label="年份" value={selectedYear} options={yearOptions} onChange={setSelectedYear} icon={<Calendar className="w-3.5 h-3.5" />} />
+              <SelectFilter label="学年" value={selectedYear} options={schoolYearOptions} onChange={setSelectedYear} icon={<Calendar className="w-3.5 h-3.5" />} />
+              <SelectFilter label="学期" value={selectedSemester} options={semesterOptions} onChange={setSelectedSemester} icon={<Calendar className="w-3.5 h-3.5" />} />
               <MultiFilter label="题型" values={selectedTypes} options={typeOptions} onToggle={toggleType} icon={<FileQuestion className="w-3.5 h-3.5" />} />
               <MultiFilter label="难度" values={selectedDifficulties.map(String)} options={difficultyOptions.map((d) => ({ value: String(d.value), label: d.label }))} onToggle={(v) => toggleDifficulty(Number(v))} icon={<Layers className="w-3.5 h-3.5" />} />
               <MultiFilter label="来源" values={selectedSources} options={sourceOptions} onToggle={toggleSource} icon={<ListFilter className="w-3.5 h-3.5" />} />

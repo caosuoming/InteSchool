@@ -11,6 +11,7 @@ import type {
   ShareableResourceType,
   ShareScope,
   TreeNode,
+  ResourceSemester,
 } from "@/types";
 
 export const shareService = {
@@ -72,6 +73,7 @@ export const shareService = {
       description: string;
       grade: string;
       schoolYear: string;
+      semester: ResourceSemester;
       originalFileName: string;
       difficulty: 1 | 2 | 3 | 4 | 5;
       recommendation: 1 | 2 | 3 | 4 | 5;

@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import type { SchoolClass, PersonalClass, Student, AnyClass, ClassTypeCategory } from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
 type Tab = "school" | "personal";
 
@@ -28,6 +29,7 @@ export default function ClassesPage() {
   const currentAffiliation = getCurrentAffiliation();
   const isPersonal = !currentAffiliation?.schoolId;
   const schoolId = currentAffiliation?.schoolId || null;
+  const { gradeOptions, defaultGrade } = useSchoolResourceOptions(schoolId);
   const [tab, setTab] = useState<Tab>(isPersonal ? "personal" : "school");
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
@@ -46,7 +48,7 @@ export default function ClassesPage() {
   // 创建班级
   const [createClassOpen, setCreateClassOpen] = useState(false);
   const [newClassName, setNewClassName] = useState("");
-  const [newClassGrade, setNewClassGrade] = useState("高一");
+  const [newClassGrade, setNewClassGrade] = useState("");
   const [newClassDesc, setNewClassDesc] = useState("");
   const [newClassType, setNewClassType] = useState("");
   const [newClassGradeYear, setNewClassGradeYear] = useState(String(new Date().getFullYear()));
@@ -57,7 +59,7 @@ export default function ClassesPage() {
   const [editClassOpen, setEditClassOpen] = useState(false);
   const [editingClass, setEditingClass] = useState<SchoolClass | null>(null);
   const [editClassName, setEditClassName] = useState("");
-  const [editClassGrade, setEditClassGrade] = useState("高一");
+  const [editClassGrade, setEditClassGrade] = useState("");
   const [editClassType, setEditClassType] = useState("");
   const [editClassGradeYear, setEditClassGradeYear] = useState("");
 
@@ -65,7 +67,7 @@ export default function ClassesPage() {
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [newStudentName, setNewStudentName] = useState("");
   const [newStudentNo, setNewStudentNo] = useState("");
-  const [newStudentGrade, setNewStudentGrade] = useState("高一");
+  const [newStudentGrade, setNewStudentGrade] = useState("");
   const [newStudentGender, setNewStudentGender] = useState<"male" | "female">("male");
 
   // 添加学生到个人班
@@ -74,7 +76,7 @@ export default function ClassesPage() {
   const [addStudentTab, setAddStudentTab] = useState<"school" | "external">("school");
   const [extStudentName, setExtStudentName] = useState("");
   const [extStudentNo, setExtStudentNo] = useState("");
-  const [extStudentGrade, setExtStudentGrade] = useState("高一");
+  const [extStudentGrade, setExtStudentGrade] = useState("");
   const [extStudentGender, setExtStudentGender] = useState<"male" | "female">("male");
   const [extStudentSchool, setExtStudentSchool] = useState("");
 
@@ -83,7 +85,7 @@ export default function ClassesPage() {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editStudentName, setEditStudentName] = useState("");
   const [editStudentNo, setEditStudentNo] = useState("");
-  const [editStudentGrade, setEditStudentGrade] = useState("高一");
+  const [editStudentGrade, setEditStudentGrade] = useState("");
   const [editStudentGender, setEditStudentGender] = useState<"male" | "female">("male");
   const [editStudentSchool, setEditStudentSchool] = useState("");
 
@@ -95,6 +97,13 @@ export default function ClassesPage() {
 
   // 学生操作菜单
   const [actionMenuStudentId, setActionMenuStudentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!defaultGrade) return;
+    setNewClassGrade((value) => value || defaultGrade);
+    setNewStudentGrade((value) => value || defaultGrade);
+    setExtStudentGrade((value) => value || defaultGrade);
+  }, [defaultGrade]);
 
   const load = useCallback(async () => {
     if (!teacher) return;
@@ -261,7 +270,7 @@ export default function ClassesPage() {
     setEditingStudent(s);
     setEditStudentName(s.name);
     setEditStudentNo(s.studentNo || "");
-    setEditStudentGrade(s.grade || "高一");
+    setEditStudentGrade(s.grade || defaultGrade);
     setEditStudentGender(s.gender || "male");
     setEditStudentSchool(s.externalSchool || "");
     setEditStudentOpen(true);
@@ -839,14 +848,7 @@ export default function ClassesPage() {
                 label="年级"
                 value={newClassGrade}
                 onChange={(e) => setNewClassGrade(e.target.value)}
-                options={[
-                  { value: "高一", label: "高一" },
-                  { value: "高二", label: "高二" },
-                  { value: "高三", label: "高三" },
-                  { value: "初一", label: "初一" },
-                  { value: "初二", label: "初二" },
-                  { value: "初三", label: "初三" },
-                ]}
+                options={includeCurrentOption(gradeOptions, newClassGrade)}
               />
               <Select
                 label="班型"
@@ -904,14 +906,7 @@ export default function ClassesPage() {
             label="年级"
             value={editClassGrade}
             onChange={(e) => setEditClassGrade(e.target.value)}
-            options={[
-              { value: "高一", label: "高一" },
-              { value: "高二", label: "高二" },
-              { value: "高三", label: "高三" },
-              { value: "初一", label: "初一" },
-              { value: "初二", label: "初二" },
-              { value: "初三", label: "初三" },
-            ]}
+                options={includeCurrentOption(gradeOptions, editClassGrade)}
           />
           <Select
             label="班型"
@@ -966,14 +961,7 @@ export default function ClassesPage() {
               label="年级"
               value={newStudentGrade}
               onChange={(e) => setNewStudentGrade(e.target.value)}
-              options={[
-                { value: "高一", label: "高一" },
-                { value: "高二", label: "高二" },
-                { value: "高三", label: "高三" },
-                { value: "初一", label: "初一" },
-                { value: "初二", label: "初二" },
-                { value: "初三", label: "初三" },
-              ]}
+                options={includeCurrentOption(gradeOptions, newStudentGrade)}
             />
             <Select
               label="性别"
@@ -1088,14 +1076,7 @@ export default function ClassesPage() {
                 label="年级"
                 value={extStudentGrade}
                 onChange={(e) => setExtStudentGrade(e.target.value)}
-                options={[
-                  { value: "高一", label: "高一" },
-                  { value: "高二", label: "高二" },
-                  { value: "高三", label: "高三" },
-                  { value: "初一", label: "初一" },
-                  { value: "初二", label: "初二" },
-                  { value: "初三", label: "初三" },
-                ]}
+                options={includeCurrentOption(gradeOptions, extStudentGrade)}
               />
               <Select
                 label="性别"
@@ -1146,14 +1127,7 @@ export default function ClassesPage() {
             label="年级"
             value={editStudentGrade}
             onChange={(e) => setEditStudentGrade(e.target.value)}
-            options={[
-              { value: "高一", label: "高一" },
-              { value: "高二", label: "高二" },
-              { value: "高三", label: "高三" },
-              { value: "初一", label: "初一" },
-              { value: "初二", label: "初二" },
-              { value: "初三", label: "初三" },
-            ]}
+                options={includeCurrentOption(gradeOptions, editStudentGrade)}
           />
           <Select
             label="性别"

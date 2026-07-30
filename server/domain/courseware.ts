@@ -1,4 +1,4 @@
-import type { Courseware, CoursewareType, ResourceFilter } from "../../src/types/index.js";
+import type { Courseware, CoursewareType, ResourceFilter, ResourceSemester } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { reflectionService } from "./reflection.js";
@@ -27,6 +27,7 @@ function matchFilter(c: Courseware, filter: ResourceFilter): boolean {
   }
   if (filter.grade && c.grade !== filter.grade) return false;
   if (filter.schoolYear && c.schoolYear !== filter.schoolYear) return false;
+  if (filter.semester && (c.semester || "上学期") !== filter.semester) return false;
   if (filter.teacherId && c.teacherId !== filter.teacherId) return false;
   if (filter.schoolId && c.schoolId !== filter.schoolId) return false;
   return true;
@@ -39,6 +40,7 @@ export interface CoursewareInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   type: CoursewareType;
   content: string;
   fileUrl?: string;
@@ -78,6 +80,7 @@ export const coursewareService = {
       knowledgePointIds: input.knowledgePointIds,
       grade: input.grade,
       schoolYear: input.schoolYear,
+      semester: input.semester || "上学期",
       type: input.type,
       content: input.content,
       fileUrl: input.fileUrl,

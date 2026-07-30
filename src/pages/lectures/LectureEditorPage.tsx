@@ -31,10 +31,11 @@ import { TreeView } from "@/components/tree/TreeView";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
+import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
   Lecture, LectureSection, Question, Basket, AnyClass, TreeNode,
   Student, AnswerRecord, AnswerScore, Courseware, Material, SchoolClass, PersonalClass,
-  LectureType,
+  LectureType, ResourceSemester,
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
@@ -90,6 +91,7 @@ export default function LectureEditorPage() {
   const [searchParams] = useSearchParams();
   const isPreview = searchParams.get("preview") === "1";
   const { teacher } = useAuthStore();
+  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester, ready: resourceOptionsReady } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [lecture, setLecture] = useState<Lecture | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,8 +99,9 @@ export default function LectureEditorPage() {
   const [publishing, setPublishing] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [grade, setGrade] = useState("高一");
-  const [schoolYear, setSchoolYear] = useState("2025-2026");
+  const [grade, setGrade] = useState("");
+  const [schoolYear, setSchoolYear] = useState("");
+  const [semester, setSemester] = useState<ResourceSemester>("上学期");
   const [typeId, setTypeId] = useState<string>("");
   const [lectureTypes, setLectureTypes] = useState<LectureType[]>([]);
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
@@ -191,7 +194,7 @@ export default function LectureEditorPage() {
 
   useEffect(() => {
     const load = async () => {
-      if (!teacher) return;
+      if (!teacher || (id === "new" && !resourceOptionsReady)) return;
       const [chs, kps, lecTypes] = await Promise.all([
         knowledgeService.getChapterTree(teacher.schoolId!),
         knowledgeService.getKnowledgeTree(teacher.schoolId!),
@@ -221,6 +224,7 @@ export default function LectureEditorPage() {
         setDescription(lec.description || "");
         setGrade(lec.grade);
         setSchoolYear(lec.schoolYear);
+        setSemester(lec.semester || "上学期");
         setTypeId(lec.typeId || "");
         setSelectedChapterIds(lec.chapterIds);
         setSelectedPointIds(lec.knowledgePointIds);
@@ -233,12 +237,15 @@ export default function LectureEditorPage() {
         setAnswerRecords(records);
       } else {
         setTitle("未命名讲义");
+        setGrade(defaultGrade);
+        setSchoolYear(defaultSchoolYear);
+        setSemester(defaultSemester);
         setSections([]);
       }
       setLoading(false);
     };
     load();
-  }, [id, teacher, navigate]);
+  }, [id, teacher, navigate, defaultGrade, defaultSchoolYear, defaultSemester, resourceOptionsReady]);
 
   // 当学生或时间周期变化时，加载学生在该时间段内做过的题目 ID 集合
   useEffect(() => {
@@ -361,6 +368,7 @@ export default function LectureEditorPage() {
         knowledgePointIds: selectedPointIds,
         grade,
         schoolYear,
+        semester,
         classIds: selectedClassIds,
         studentIds: selectedStudentIds,
         sections,
@@ -982,14 +990,7 @@ export default function LectureEditorPage() {
     );
   }
 
-  const gradeOptions = [
-    { value: "高一", label: "高一" },
-    { value: "高二", label: "高二" },
-    { value: "高三", label: "高三" },
-    { value: "初一", label: "初一" },
-    { value: "初二", label: "初二" },
-    { value: "初三", label: "初三" },
-  ];
+
 
   // ===== 预览模式 =====
   if (isPreview) {
@@ -1013,7 +1014,7 @@ export default function LectureEditorPage() {
             <div className="flex items-center gap-2">
               <GraduationCap className="w-4 h-4 text-gold-500" />
               <span className="text-ink-500">年级：</span>
-              <span className="font-medium text-ink-900">{grade} · {schoolYear}</span>
+              <span className="font-medium text-ink-900">{grade} · {schoolYear} · {semester}</span>
             </div>
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-teal-500" />
@@ -1731,14 +1732,21 @@ export default function LectureEditorPage() {
                   label="适用年级"
                   value={grade}
                   onChange={(e) => setGrade(e.target.value)}
-                  options={gradeOptions}
+                  options={includeCurrentOption(gradeOptions, grade)}
                 />
-                <Input
+                <Select
                   label="学年"
                   value={schoolYear}
                   onChange={(e) => setSchoolYear(e.target.value)}
+                  options={includeCurrentOption(schoolYearOptions, schoolYear)}
                 />
               </div>
+              <Select
+                label="学期"
+                value={semester}
+                onChange={(e) => setSemester(e.target.value as ResourceSemester)}
+                options={semesterOptions}
+              />
               <Select
                 label="讲义类型"
                 value={typeId}

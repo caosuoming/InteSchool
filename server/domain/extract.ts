@@ -3,6 +3,7 @@ import type {
   ExtractedKnowledgeItem,
   Question,
   Material,
+  ResourceSemester,
 } from "../../src/types/index.js";
 import { questionService } from "./question.js";
 import { materialService } from "./material.js";
@@ -19,6 +20,7 @@ export const extractService = {
     knowledgePointIds: string[],
     grade: string,
     schoolYear: string,
+    semester: ResourceSemester,
     sourceResourceId: string,
   ): Promise<{ createdQuestions: Question[]; createdMaterials: Material[] }> {
     const createdQuestions: Question[] = [];
@@ -38,6 +40,9 @@ export const extractService = {
         summary: item.summary || "",
         chapterIds,
         knowledgePointIds,
+        grade,
+        schoolYear,
+        semester,
         difficulty: item.difficulty as 1 | 2 | 3 | 4 | 5,
         recommendation: 3,
       }));
@@ -52,6 +57,7 @@ export const extractService = {
         knowledgePointIds,
         grade,
         schoolYear,
+        semester,
         type: "knowledgeBlock",
         content: item.content,
         tags: [],

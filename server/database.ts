@@ -90,6 +90,7 @@ export class DatabaseStore {
     this.sqlite.pragma("busy_timeout = 5000");
     this.migrate();
     this.seed();
+    this.migrateAppData();
     this.ensureBootstrapAdmin();
   }
 
@@ -216,6 +217,52 @@ export class DatabaseStore {
         this.createUser(teacher.id, this.config.demoEmail, this.config.demoPassword);
       }
     }
+  }
+
+  private migrateAppData(): void {
+    const row = this.sqlite.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get() as { value?: string } | undefined;
+    const version = Number.parseInt(row?.value || "1", 10);
+    if (version >= 2) return;
+
+    const resourceCollections = [
+      "questions",
+      "examPapers",
+      "lectures",
+      "coursewares",
+      "materials",
+      "lessonCoursewares",
+      "schoolBackups",
+    ];
+    const select = this.sqlite.prepare(
+      `SELECT collection, id, data_json FROM app_records WHERE collection IN (${resourceCollections.map(() => "?").join(",")})`,
+    );
+    const update = this.sqlite.prepare(
+      "UPDATE app_records SET data_json = ?, updated_at = ? WHERE collection = ? AND id = ?",
+    );
+    const rows = select.all(...resourceCollections) as Array<{ collection: string; id: string; data_json: string }>;
+    const now = new Date().toISOString();
+
+    this.sqlite.transaction(() => {
+      for (const record of rows) {
+        const data = JSON.parse(record.data_json) as JsonRecord;
+        if (data.semester === undefined) {
+          data.semester = "上学期";
+          update.run(JSON.stringify(data), now, record.collection, record.id);
+        }
+      }
+      const shareRows = this.sqlite.prepare(
+        "SELECT collection, id, data_json FROM app_records WHERE collection = 'shareRecords'",
+      ).all() as Array<{ collection: string; id: string; data_json: string }>;
+      for (const record of shareRows) {
+        const data = JSON.parse(record.data_json) as JsonRecord;
+        const snapshot = data.resourceSnapshot as JsonRecord | undefined;
+        if (snapshot && snapshot.semester === undefined) {
+          snapshot.semester = "上学期";
+          update.run(JSON.stringify(data), now, record.collection, record.id);
+        }
+      }
+      this.sqlite.prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '2')").run();
+    })();
   }
 
   private ensureBootstrapAdmin(): void {
