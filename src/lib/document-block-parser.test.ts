@@ -85,21 +85,83 @@ describe("document block parser", () => {
     });
   });
 
-  it("recognizes parenthesized and circled option labels", () => {
+  it("recognizes parenthesized option labels and keeps circled numbering in the stem", () => {
     const blocks = parseDocumentBlocks(
       [
         "1. 请选择正确答案",
         "(A) 甲 (B) 乙 (C) 丙 (D) 丁",
         "答案：D",
-        "2. 请选择正确答案",
-        "① 甲 ② 乙 ③ 丙 ④ 丁",
-        "答案：B",
+        "2. 比较下列各组结论：",
+        "① 甲成立；② 乙不成立；③ 丙成立。",
+        "答案：①③",
       ].join("\n"),
       config,
     );
 
     expect(blocks[0].options).toEqual(["甲", "乙", "丙", "丁"]);
-    expect(blocks[1].options).toEqual(["甲", "乙", "丙", "丁"]);
+    expect(blocks[1]).toMatchObject({
+      content: "2. 比较下列各组结论：\n① 甲成立；② 乙不成立；③ 丙成立。",
+      options: [],
+      answer: "①③",
+    });
+  });
+
+  it("maps a trailing 答案与解析 section back to numbered questions", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、单项选择题",
+        "1. 计算 1+1 的值 A. 1 B. 2 C. 3 D. 4",
+        "2. 判断下列说法：① 甲正确；② 乙错误。 A. 仅① B. 仅② C. ①② D. 都不正确",
+        "答案与解析",
+        "1. 【答案】B",
+        "【解析】直接计算可得 1+1=2。",
+        "【总结】注意基本运算。",
+        "2. 答案：C 解析：两项判断均成立。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(3);
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "1. 计算 1+1 的值",
+      options: ["1", "2", "3", "4"],
+      answer: "B",
+      analysis: "直接计算可得 1+1=2。",
+      summary: "注意基本运算。",
+    });
+    expect(blocks[2]).toMatchObject({
+      type: "question",
+      content: "2. 判断下列说法：① 甲正确；② 乙错误。",
+      options: ["仅①", "仅②", "①②", "都不正确"],
+      answer: "C",
+      analysis: "两项判断均成立。",
+    });
+  });
+
+  it("supports 答案和解析, full-width numbers, and continuation paragraphs", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "１．写出方程 x=1 的解。",
+        "２．证明两个偶数之和仍为偶数。",
+        "答案和解析：",
+        "１．答案：x=1。",
+        "解析：代入原方程即可。",
+        "２．【答案】命题成立。【解析】设两个偶数分别为 2m 和 2n。",
+        "其和为 2(m+n)，所以仍为偶数。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      answer: "x=1。",
+      analysis: "代入原方程即可。",
+    });
+    expect(blocks[1]).toMatchObject({
+      answer: "命题成立。",
+      analysis: "设两个偶数分别为 2m 和 2n。\n其和为 2(m+n)，所以仍为偶数。",
+    });
   });
 
   it("splits keyword-labelled questions without requiring a separator", () => {

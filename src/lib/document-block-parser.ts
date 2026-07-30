@@ -36,6 +36,14 @@ interface OptionMarker {
   index: number;
 }
 
+interface TrailingSolution {
+  number: string;
+  order: number;
+  answer?: string;
+  analysis?: string;
+  summary?: string;
+}
+
 function createBlockId(): string {
   return `doc-block-${crypto.randomUUID()}`;
 }
@@ -62,18 +70,15 @@ function detectSectionQuestionType(text: string): QuestionType | undefined {
 }
 
 function optionIndex(label: string): number {
-  const circleLabels = "①②③④⑤⑥⑦⑧⑨⑩";
-  const circleIndex = circleLabels.indexOf(label);
-  if (circleIndex >= 0) return circleIndex;
   return label.toUpperCase().charCodeAt(0) - 65;
 }
 
 function scanOptionMarkers(text: string): OptionMarker[] {
-  const pattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）]|([①②③④⑤⑥⑦⑧⑨⑩]))\s*/g;
+  const pattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）])\s*/g;
   const markers: OptionMarker[] = [];
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    const label = match[2] || match[3] || match[4];
+    const label = match[2] || match[3];
     if (!label) continue;
     const leading = match[1] || "";
     markers.push({
@@ -166,8 +171,8 @@ function isHeading(text: string, config: DocumentParseConfig): boolean {
 }
 
 function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
-  if (/^第\s*\d+\s*题(?:\s|[、.．:：)）]|$)/.test(text)) return true;
-  if (/^\d{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)\s*\S/.test(text)) return true;
+  if (/^第\s*[\d０-９]+\s*题(?:\s|[、.．:：)）]|$)/.test(text)) return true;
+  if (/^[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)\s*\S/.test(text)) return true;
 
   const prefixes = [...new Set(config.questionKeywords
     .map((keyword) => keyword.trim())
@@ -187,6 +192,12 @@ function stripPrefix(text: string, pattern: RegExp | null): string {
 
 type QuestionField = "content" | "answer" | "analysis" | "summary";
 
+interface QuestionFieldMarker {
+  field: Exclude<QuestionField, "content">;
+  start: number;
+  end: number;
+}
+
 const solutionMarkerPattern = /^(?:【\s*)?(解答|解|证明)(?:\s*】)?\s*[:：]\s*/;
 const implicitSolutionLeadPattern = /^(?:由|因为|由于|根据|联立|解得|可得|所以|故|从而|于是|设|令|作|易知|显然|不妨|将|把|代入|整理|消去|同理|又由|证明如下)/;
 
@@ -199,6 +210,204 @@ function appendQuestionField(
   if (!normalized) return;
   const existing = block[field]?.trim();
   block[field] = existing ? `${existing}\n${normalized}` : normalized;
+}
+
+function normalizeQuestionNumber(value: string): string {
+  return value.replace(/[０-９]/g, (digit) => String(digit.charCodeAt(0) - 0xfee0));
+}
+
+function extractLeadingQuestionNumber(text: string): { number: string; rest: string } | null {
+  const patterns = [
+    /^第\s*([\d０-９]{1,4})\s*题(?:\s*[、.．:：)）])?\s*/,
+    /^([\d０-９]{1,4})\s*(?:[、.．:：)）]|题[、.．:：)）]?)\s*/,
+    /^[（(]\s*([\d０-９]{1,4})\s*[）)]\s*/,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+    return {
+      number: normalizeQuestionNumber(match[1]),
+      rest: text.slice(match[0].length).trim(),
+    };
+  }
+  return null;
+}
+
+function extractQuestionNumber(text: string, config: DocumentParseConfig): string | undefined {
+  const direct = extractLeadingQuestionNumber(text);
+  if (direct) return direct.number;
+
+  const prefixes = [...new Set(config.questionKeywords
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword && keyword !== "第"))]
+    .sort((left, right) => right.length - left.length)
+    .map(escapeRegex);
+  if (!prefixes.length) return undefined;
+  const match = new RegExp(
+    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")}|巩固题)\\s*(?:第\\s*)?[（(]?\\s*([\\d０-９]{1,4})\\s*[）)]?`,
+  ).exec(text);
+  return match ? normalizeQuestionNumber(match[1]) : undefined;
+}
+
+function isTrailingSolutionHeading(text: string): boolean {
+  const normalized = text
+    .replace(/\s+/g, "")
+    .replace(/^[【［[(（]+/, "")
+    .replace(/[】］\])）:：]+$/, "");
+  return /^(?:参考)?答案(?:与|和|及)?解析$/.test(normalized);
+}
+
+function fieldSearchPattern(keywords: string[]): RegExp | null {
+  const alternatives = [...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean))]
+    .sort((left, right) => right.length - left.length)
+    .map(escapeRegex);
+  return alternatives.length ? new RegExp(`(?:${alternatives.join("|")})\\s*[:：]?\\s*`, "g") : null;
+}
+
+function scanQuestionFieldMarkers(
+  text: string,
+  patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]>,
+): QuestionFieldMarker[] {
+  const candidates: QuestionFieldMarker[] = [];
+  for (const [field, pattern] of patterns) {
+    if (!pattern) continue;
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      const previous = text[match.index - 1];
+      const bracketed = /^[【［[(（]/.test(match[0]);
+      if (match.index > 0 && !/[\s\u3000；;]/.test(previous) && !bracketed) continue;
+      candidates.push({ field, start: match.index, end: pattern.lastIndex });
+    }
+  }
+
+  candidates.sort((left, right) => left.start - right.start || right.end - left.end);
+  const markers: QuestionFieldMarker[] = [];
+  for (const candidate of candidates) {
+    const previous = markers.at(-1);
+    if (previous && candidate.start < previous.end) continue;
+    markers.push(candidate);
+  }
+  return markers;
+}
+
+function appendTrailingSolutionLine(
+  solution: TrailingSolution,
+  line: string,
+  currentField: Exclude<QuestionField, "content"> | undefined,
+  patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]>,
+): Exclude<QuestionField, "content"> | undefined {
+  const markers = scanQuestionFieldMarkers(line, patterns);
+  if (markers.length === 0) {
+    if (currentField) appendQuestionField(solution, currentField, line);
+    return currentField;
+  }
+
+  const leading = line.slice(0, markers[0].start).trim();
+  if (leading && currentField) appendQuestionField(solution, currentField, leading);
+  for (let index = 0; index < markers.length; index += 1) {
+    const marker = markers[index];
+    const value = line.slice(marker.end, markers[index + 1]?.start ?? line.length).trim();
+    appendQuestionField(solution, marker.field, value);
+  }
+  return markers.at(-1)?.field;
+}
+
+function parseTrailingSolutions(
+  lines: string[],
+  config: DocumentParseConfig,
+): TrailingSolution[] {
+  const patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]> = [
+    ["answer", fieldSearchPattern(config.answerKeywords)],
+    ["analysis", fieldSearchPattern(config.analysisKeywords)],
+    ["summary", fieldSearchPattern(config.summaryKeywords)],
+  ];
+  const anchoredPatterns = [
+    keywordPattern(config.answerKeywords),
+    keywordPattern(config.analysisKeywords),
+    keywordPattern(config.summaryKeywords),
+  ];
+  const solutions: TrailingSolution[] = [];
+  let current: TrailingSolution | undefined;
+  let currentField: Exclude<QuestionField, "content"> | undefined;
+
+  const submitCurrent = () => {
+    if (current && (current.answer || current.analysis || current.summary)) solutions.push(current);
+    current = undefined;
+    currentField = undefined;
+  };
+
+  for (const originalLine of lines) {
+    const line = originalLine.trim();
+    if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
+
+    let entry = extractLeadingQuestionNumber(line);
+    if (!entry) {
+      const bareNumber = /^([\d０-９]{1,4})\s+(.+)$/.exec(line);
+      if (bareNumber && anchoredPatterns.some((pattern) => pattern?.test(bareNumber[2]))) {
+        entry = {
+          number: normalizeQuestionNumber(bareNumber[1]),
+          rest: bareNumber[2].trim(),
+        };
+      }
+    }
+    if (entry) {
+      submitCurrent();
+      current = {
+        number: entry.number,
+        order: solutions.length,
+      };
+      currentField = entry.rest
+        ? appendTrailingSolutionLine(current, entry.rest, undefined, patterns)
+        : undefined;
+      continue;
+    }
+
+    if (!current) continue;
+    currentField = appendTrailingSolutionLine(current, line, currentField, patterns);
+  }
+  submitCurrent();
+  return solutions;
+}
+
+function mergeTrailingSolutions(
+  blocks: DocumentBlock[],
+  solutions: TrailingSolution[],
+  config: DocumentParseConfig,
+): number {
+  const questions = blocks.filter((block) => block.type === "question");
+  const questionsByNumber = new Map<string, DocumentBlock[]>();
+  for (const question of questions) {
+    const number = extractQuestionNumber(question.content, config);
+    if (!number) continue;
+    const matches = questionsByNumber.get(number) || [];
+    matches.push(question);
+    questionsByNumber.set(number, matches);
+  }
+
+  const used = new Set<DocumentBlock>();
+  let merged = 0;
+  for (const solution of solutions) {
+    let target = questionsByNumber.get(solution.number)?.find((question) => !used.has(question));
+    const ordinal = Number(solution.number) - 1;
+    if (!target && Number.isInteger(ordinal) && ordinal >= 0 && ordinal < questions.length) {
+      const ordinalTarget = questions[ordinal];
+      if (!used.has(ordinalTarget)) target = ordinalTarget;
+    }
+    if (!target && solutions.length === questions.length) {
+      const positionalTarget = questions[solution.order];
+      if (positionalTarget && !used.has(positionalTarget)) target = positionalTarget;
+    }
+    if (!target) continue;
+
+    appendQuestionField(target, "answer", solution.answer || "");
+    appendQuestionField(target, "analysis", solution.analysis || "");
+    appendQuestionField(target, "summary", solution.summary || "");
+    target.questionType = inferQuestionType(target, target.questionType, config);
+    used.add(target);
+    merged += 1;
+  }
+  return merged;
 }
 
 function shouldStartImplicitAnalysis(
@@ -238,7 +447,7 @@ function extractExplicitSolution(
   return line.slice(match[0].length).trim();
 }
 
-export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
+function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const blocks: DocumentBlock[] = [];
   const answerPattern = keywordPattern(config.answerKeywords);
   const analysisPattern = keywordPattern(config.analysisKeywords);
@@ -392,4 +601,23 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
 
   submitCurrent();
   return blocks;
+}
+
+export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const solutionHeadingIndexes = lines
+    .map((line, index) => (isTrailingSolutionHeading(line.trim()) ? index : -1))
+    .filter((index) => index >= 0)
+    .reverse();
+
+  for (const headingIndex of solutionHeadingIndexes) {
+    const solutions = parseTrailingSolutions(lines.slice(headingIndex + 1), config);
+    if (solutions.length === 0) continue;
+
+    const blocks = parseDocumentBlocksCore(lines.slice(0, headingIndex).join("\n"), config);
+    if (!blocks.some((block) => block.type === "question")) continue;
+    if (mergeTrailingSolutions(blocks, solutions, config) > 0) return blocks;
+  }
+
+  return parseDocumentBlocksCore(content, config);
 }
