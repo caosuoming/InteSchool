@@ -244,19 +244,24 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         coursewareService.listCoursewares({ ...baseFilter, teacherId: teacher?.id }),
         materialService.listMaterials({ ...baseFilter, teacherId: teacher?.id }),
       ]);
-      setQuestions(qData);
-      setLectures(lecData);
-      setExamPapers(examData);
-      setCoursewares(cwData);
-      setMaterials(matData);
+      const safeQuestions = qData || [];
+      const safeLectures = lecData || [];
+      const safeExamPapers = examData || [];
+      const safeCoursewares = cwData || [];
+      const safeMaterials = matData || [];
+      setQuestions(safeQuestions);
+      setLectures(safeLectures);
+      setExamPapers(safeExamPapers);
+      setCoursewares(safeCoursewares);
+      setMaterials(safeMaterials);
       // 保存完整列表（含拆解副本），用于查找源资源的拆解副本
-      setAllExamPapers(examData);
-      setAllLectures(lecData);
+      setAllExamPapers(safeExamPapers);
+      setAllLectures(safeLectures);
       // 加载试卷/讲义/课件的课后反思（仅按 targetId 关联）
       const reflectionTargets: string[] = [
-        ...examData.map((r) => r.id),
-        ...lecData.map((r) => r.id),
-        ...cwData.map((r) => r.id),
+        ...safeExamPapers.map((r) => r.id),
+        ...safeLectures.map((r) => r.id),
+        ...safeCoursewares.map((r) => r.id),
       ];
       if (reflectionTargets.length > 0 && teacher) {
         const teacherRefs = await reflectionService.listByTeacher(teacher.id);
