@@ -6,7 +6,7 @@ import {
   GraduationCap, Users, Wand2, Loader2, X, ChevronDown, ChevronRight,
   Type, ListOrdered, CheckCircle2, Edit3, Eye,
   UserCheck, Award, Clock, Presentation, FileBox,
-  Lightbulb, Printer, Layout,
+  Lightbulb, Printer, Layout, LayoutTemplate, FileStack,
   CheckSquare,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -19,6 +19,7 @@ import { aiService } from "@/services/ai";
 import { analyticsService, type DateRange } from "@/services/analytics";
 import { coursewareService } from "@/services/courseware";
 import { materialService } from "@/services/material";
+import { examPaperService } from "@/services/examPaper";
 import { settingsService } from "@/services/settings";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -38,7 +39,7 @@ import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoo
 import type {
   Lecture, LectureSection, Question, Basket, AnyClass, TreeNode,
   Student, AnswerRecord, AnswerScore, Courseware, Material, SchoolClass, PersonalClass,
-  LectureType, ResourceSemester,
+  LectureType, ResourceSemester, ExamPaper,
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
@@ -86,10 +87,15 @@ function getDateRange(key: TimeRangeKey): DateRange | undefined {
   return { start: start.toISOString(), end: now.toISOString() };
 }
 
-type AddSource = "basket" | "bank" | "lecture" | "courseware" | "material";
+type AddSource = "basket" | "bank" | "examPaper" | "lecture" | "courseware" | "material";
 
 function flattenLectureSections(sections: LectureSection[]): LectureSection[] {
   return sections.flatMap((section) => [section, ...flattenLectureSections(section.children)]);
+}
+
+function findTreeNodesByIds(root: TreeNode, ids: Set<string>): TreeNode[] {
+  const matches = root.id !== "root" && ids.has(root.id) ? [root] : [];
+  return [...matches, ...root.children.flatMap((child) => findTreeNodesByIds(child, ids))];
 }
 
 export default function LectureEditorPage() {
@@ -141,6 +147,8 @@ export default function LectureEditorPage() {
   const [bankKeyword, setBankKeyword] = useState("");
   const [otherLectures, setOtherLectures] = useState<Lecture[]>([]);
   const [selectedOtherLecture, setSelectedOtherLecture] = useState<Lecture | null>(null);
+  const [otherPapers, setOtherPapers] = useState<ExamPaper[]>([]);
+  const [selectedOtherPaper, setSelectedOtherPaper] = useState<ExamPaper | null>(null);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
 
   // 引用课件/素材
@@ -175,6 +183,8 @@ export default function LectureEditorPage() {
   const [sectionLabel, setSectionLabel] = useState("");
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [outlineExpanded, setOutlineExpanded] = useState<Record<string, boolean>>({});
+  const [columnTemplateOpen, setColumnTemplateOpen] = useState(false);
+  const [templateChapterIds, setTemplateChapterIds] = useState<string[]>([]);
 
   // 题目编辑（同步题库）
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
@@ -212,6 +222,30 @@ export default function LectureEditorPage() {
     () => lectureQuestionIds.map((questionId) => lectureQuestions[questionId]).filter(Boolean),
     [lectureQuestionIds, lectureQuestions],
   );
+  const selectedColumn = useMemo(
+    () => sections.find((section) => section.id === selectedChapterId && section.type === "chapter") || null,
+    [sections, selectedChapterId],
+  );
+  const activeColumnSections = useMemo(
+    () => selectedColumn
+      ? selectedColumn.children
+      : sections.filter((section) => section.type !== "chapter"),
+    [sections, selectedColumn],
+  );
+  const selectedLectureStudents = useMemo(
+    () => students.filter((student) => selectedStudentIds.includes(student.id)),
+    [students, selectedStudentIds],
+  );
+  const completionByStudentId = useMemo(() => {
+    const completed = new Map<string, Set<string>>();
+    for (const record of answerRecords) {
+      if (!record.questionId || !lectureQuestionIds.includes(record.questionId)) continue;
+      const questionIds = completed.get(record.studentId) || new Set<string>();
+      questionIds.add(record.questionId);
+      completed.set(record.studentId, questionIds);
+    }
+    return completed;
+  }, [answerRecords, lectureQuestionIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -267,6 +301,7 @@ export default function LectureEditorPage() {
         setSelectedPointIds(lec.knowledgePointIds);
         setSelectedClassIds(lec.classIds);
         setSections(lec.sections);
+        setSelectedChapterId(lec.sections.find((section) => section.type === "chapter")?.id || null);
         setSelectedStudentIds(lec.studentIds || []);
 
         // 加载答题记录
@@ -277,7 +312,15 @@ export default function LectureEditorPage() {
         setGrade(defaultGrade);
         setSchoolYear(defaultSchoolYear);
         setSemester(defaultSemester);
-        setSections([]);
+        const initialColumn: LectureSection = {
+          id: `sec-${Date.now()}`,
+          title: "新建栏目",
+          type: "chapter",
+          content: "",
+          children: [],
+        };
+        setSections([initialColumn]);
+        setSelectedChapterId(initialColumn.id);
       }
       setLoading(false);
     };
@@ -333,6 +376,9 @@ export default function LectureEditorPage() {
       lectureService.listLectures({ teacherId: teacher.id }).then((ls) =>
         setOtherLectures(ls.filter((l) => l.id !== id)),
       );
+    }
+    if (teacher && addSource === "examPaper") {
+      examPaperService.listPapers({ teacherId: teacher.id, schoolId: teacher.schoolId! }).then(setOtherPapers);
     }
     if (teacher && addSource === "courseware") {
       coursewareService.listCoursewares({ schoolId: teacher.schoolId! }).then(setCoursewareList);
@@ -431,20 +477,56 @@ export default function LectureEditorPage() {
     }
   };
 
-  // 添加章节
+  // 添加栏目
   const handleAddChapter = () => {
+    const columnCount = sections.filter((section) => section.type === "chapter").length;
     const newSec: LectureSection = {
       id: `sec-${Date.now()}`,
-      title: `第${sections.filter((s) => s.type === "chapter").length + 1}讲：新章节`,
+      title: columnCount === 0 ? "新建栏目" : `栏目 ${columnCount + 1}`,
       type: "chapter",
       content: "",
       children: [],
     };
     setSections((prev) => [...prev, newSec]);
+    setSelectedChapterId(newSec.id);
+    setOutlineExpanded((prev) => ({ ...prev, [newSec.id]: true }));
     setEditingSection(newSec);
     setSectionTitle(newSec.title);
     setSectionContent(newSec.content);
     setSectionLabel(newSec.customLabel || "");
+  };
+
+  const handleAddColumnsFromTemplate = () => {
+    if (!chapterTree || templateChapterIds.length === 0) {
+      toast.warning("请至少选择一个栏目模板");
+      return;
+    }
+    const nodes = findTreeNodesByIds(chapterTree, new Set(templateChapterIds));
+    const existingTitles = new Set(sections.filter((section) => section.type === "chapter").map((section) => section.title));
+    const now = Date.now();
+    const newColumns = nodes
+      .filter((node) => !existingTitles.has(node.name))
+      .map<LectureSection>((node, index) => ({
+        id: `sec-template-${now}-${index}`,
+        title: node.name,
+        type: "chapter",
+        content: node.description || "",
+        children: [],
+      }));
+    if (newColumns.length === 0) {
+      toast.warning("所选模板栏目已存在");
+      return;
+    }
+    setSections((previous) => [...previous, ...newColumns]);
+    setSelectedChapterIds((previous) => Array.from(new Set([...previous, ...templateChapterIds])));
+    setSelectedChapterId(newColumns[0].id);
+    setOutlineExpanded((previous) => ({
+      ...previous,
+      ...Object.fromEntries(newColumns.map((column) => [column.id, true])),
+    }));
+    setColumnTemplateOpen(false);
+    setTemplateChapterIds([]);
+    toast.success(`已从模板添加 ${newColumns.length} 个栏目`);
   };
 
   const handleAddTextSection = () => {
@@ -731,17 +813,21 @@ export default function LectureEditorPage() {
     }
     let questionsToAdd: Question[] = [];
     if (addSource === "basket" && selectedBasket) {
-      const all = await questionService.listQuestions({ schoolId: teacher!.schoolId! });
-      questionsToAdd = all.filter((q) => selectedBasket.questionIds.includes(q.id) && selectedQuestionIds.includes(q.id));
+      const candidateIds = selectedBasket.questionIds.filter((questionId) => selectedQuestionIds.includes(questionId));
+      questionsToAdd = await questionService.listQuestions({ schoolId: teacher!.schoolId!, ids: candidateIds });
     } else if (addSource === "bank") {
       questionsToAdd = bankQuestions.filter((q) => selectedQuestionIds.includes(q.id));
+    } else if (addSource === "examPaper" && selectedOtherPaper) {
+      const candidateIds = selectedOtherPaper.questions
+        .map((question) => question.questionId)
+        .filter((questionId): questionId is string => Boolean(questionId) && selectedQuestionIds.includes(questionId));
+      questionsToAdd = await questionService.listQuestions({ schoolId: teacher!.schoolId!, ids: candidateIds });
     } else if (addSource === "lecture" && selectedOtherLecture) {
-      const all = await questionService.listQuestions({ schoolId: teacher!.schoolId! });
-      const sectionQuestionIds = selectedOtherLecture.sections
-        .filter((s) => s.type === "question" && s.questionId)
-        .map((s) => s.questionId!)
-        .filter((qid) => selectedQuestionIds.includes(qid));
-      questionsToAdd = all.filter((q) => sectionQuestionIds.includes(q.id));
+      const sectionQuestionIds = flattenLectureSections(selectedOtherLecture.sections)
+        .filter((section) => section.type === "question" && section.questionId)
+        .map((section) => section.questionId!)
+        .filter((questionId) => selectedQuestionIds.includes(questionId));
+      questionsToAdd = await questionService.listQuestions({ schoolId: teacher!.schoolId!, ids: sectionQuestionIds });
     }
 
     const newSections: LectureSection[] = questionsToAdd.map((q) => ({
@@ -777,6 +863,7 @@ export default function LectureEditorPage() {
     setSelectedQuestionIds([]);
     setSelectedBasket(null);
     setSelectedOtherLecture(null);
+    setSelectedOtherPaper(null);
   };
 
   const handleRemoveSection = (secId: string, parentId?: string) => {
@@ -792,7 +879,10 @@ export default function LectureEditorPage() {
       setSections((prev) => prev.filter((s) => s.id !== secId));
     }
     if (lecture) lectureService.removeSection(lecture.id, secId);
-    if (selectedChapterId === secId) setSelectedChapterId(null);
+    if (!parentId && selectedChapterId === secId) {
+      const nextColumn = sections.find((section) => section.id !== secId && section.type === "chapter");
+      setSelectedChapterId(nextColumn?.id || null);
+    }
   };
 
   const handleMoveSection = (idx: number, direction: "up" | "down") => {
@@ -1067,7 +1157,7 @@ export default function LectureEditorPage() {
 
   // 获取讲义关联的所有学生
   const lectureStudents = useMemo(() => {
-    const studentIds = new Set<string>();
+    const studentIds = new Set<string>(selectedStudentIds);
     selectedClassIds.forEach((classId) => {
       const cls = classes.find((c) => c.id === classId);
       if (cls) {
@@ -1079,7 +1169,7 @@ export default function LectureEditorPage() {
       }
     });
     return students.filter((s) => studentIds.has(s.id));
-  }, [selectedClassIds, classes, students]);
+  }, [selectedClassIds, selectedStudentIds, classes, students]);
 
   const lectureFormat = useMemo(() => {
     const type = lectureTypes.find((t) => t.id === typeId);
@@ -1344,7 +1434,7 @@ export default function LectureEditorPage() {
     <div>
       <PageHeader
         title={lecture ? `编辑：${lecture.title}` : "新建讲义"}
-        description="组题、添加知识点、设置属性，生成完整讲义"
+        description="编排栏目、知识块与题目，并设置讲义使用学生"
         icon={<FileText className="w-5 h-5" />}
         action={
           <div className="flex items-center gap-2">
@@ -1369,13 +1459,13 @@ export default function LectureEditorPage() {
         {currentVersionType === "extract" && (
           <Button variant="ghost" size="sm" className="bg-white shadow-sm text-gold-700">
             <Edit3 className="w-3.5 h-3.5" />
-            正稿
+            {lecture?.isExtractCopy ? "拆解稿" : "正稿"}
           </Button>
         )}
         {currentVersionType !== "extract" && (
           <Button variant="ghost" size="sm" onClick={() => setCurrentVersionType("extract")}>
             <Edit3 className="w-3.5 h-3.5" />
-            正稿
+            {lecture?.isExtractCopy ? "拆解稿" : "正稿"}
           </Button>
         )}
       {currentVersionType === "preview" && (
@@ -1475,7 +1565,7 @@ export default function LectureEditorPage() {
                 <h3 className="font-serif font-semibold text-ink-900">讲义属性</h3>
               </div>
               <div className="text-xs text-ink-400">
-                {sections.filter((section) => section.type === "chapter").length} 章 · {lectureQuestionIds.length} 题
+                {sections.filter((section) => section.type === "chapter").length} 栏目 · {lectureQuestionIds.length} 题
               </div>
             </div>
             <div className="grid md:grid-cols-2 xl:grid-cols-6 gap-3">
@@ -1586,265 +1676,205 @@ export default function LectureEditorPage() {
             </div>
           </Card>
 
-          <div className="grid xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
-            {/* 左侧：整个讲义的可交互全貌 */}
-            <Card className="min-w-0">
-              <div className="flex items-center justify-between mb-4 pb-3 border-b border-ink-100">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-teal-500" />
-                  <h3 className="font-serif font-semibold text-ink-900">讲义全貌</h3>
-                  <Badge variant="ink">v{lecture?.version || 1}</Badge>
+          <div className="grid xl:grid-cols-[250px_minmax(0,1fr)_300px] gap-4 items-start">
+            {/* 左侧：栏目 */}
+            <Card className="p-3 xl:sticky xl:top-4">
+              <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-ink-100">
+                <div className="flex items-center gap-2 min-w-0">
+                  <ListOrdered className="w-4 h-4 text-teal-500 flex-shrink-0" />
+                  <h3 className="font-serif font-semibold text-ink-900 text-sm">栏目</h3>
+                  <Badge variant="ink">{sections.filter((section) => section.type === "chapter").length}</Badge>
                 </div>
-                <span className="text-xs text-ink-400">点击题干展开答案与解析</span>
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => setColumnTemplateOpen(true)} className="p-1.5 rounded text-ink-500 hover:text-gold-700 hover:bg-gold-50" title="从模板添加栏目">
+                    <LayoutTemplate className="w-3.5 h-3.5" />
+                  </button>
+                  <button type="button" onClick={handleAddChapter} className="p-1.5 rounded text-ink-500 hover:text-gold-700 hover:bg-gold-50" title="新建栏目">
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-              {sections.length === 0 ? (
+
+              <div className="space-y-1.5 max-h-[620px] overflow-y-auto pr-1">
+                {sections.filter((section) => section.type === "chapter").length === 0 && (
+                  <div className="py-8 text-center text-xs text-ink-400">暂无栏目</div>
+                )}
+                {sections.map((section, sectionIndex) => {
+                  if (section.type !== "chapter") return null;
+                  const selected = selectedChapterId === section.id;
+                  return (
+                    <div key={section.id} className={cn("rounded-md border transition-colors", selected ? "border-gold-300 bg-gold-50/40" : "border-ink-100 bg-paper hover:border-ink-200")}>
+                      <div className="flex items-center gap-1 px-2 py-2">
+                        <GripVertical className="w-3.5 h-3.5 text-ink-300 flex-shrink-0" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedChapterId(section.id);
+                            setEditingSection(null);
+                            setOutlineExpanded((previous) => ({ ...previous, [section.id]: true }));
+                          }}
+                          className="flex-1 min-w-0 text-left"
+                        >
+                          <div className={cn("text-xs truncate", selected ? "font-medium text-gold-800" : "text-ink-700")}>{section.title}</div>
+                          <div className="text-[10px] text-ink-400 mt-0.5">{section.children.length} 个内容块</div>
+                        </button>
+                        <button type="button" onClick={() => handleMoveSection(sectionIndex, "up")} disabled={sectionIndex === 0} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="栏目上移">↑</button>
+                        <button type="button" onClick={() => handleMoveSection(sectionIndex, "down")} disabled={sectionIndex === sections.length - 1} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="栏目下移">↓</button>
+                        <button type="button" onClick={() => handleRemoveSection(section.id)} className="text-ink-300 hover:text-red-600" title="删除栏目">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {sections.some((section) => section.type !== "chapter") && (
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedChapterId(null); setEditingSection(null); }}
+                    className={cn("w-full rounded-md border px-2 py-2 text-left text-xs", selectedChapterId === null ? "border-gold-300 bg-gold-50/40 text-gold-800 font-medium" : "border-ink-100 text-ink-600 hover:border-ink-200")}
+                  >
+                    未归入栏目内容
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5 pt-3 mt-3 border-t border-ink-100">
+                <Button variant="outline" size="sm" onClick={() => setColumnTemplateOpen(true)}><LayoutTemplate className="w-3.5 h-3.5" /> 模板</Button>
+                <Button variant="gold" size="sm" onClick={handleAddChapter}><Plus className="w-3.5 h-3.5" /> 新建</Button>
+              </div>
+            </Card>
+
+            {/* 中间：当前栏目内容 */}
+            <Card className="min-w-0 p-4">
+              <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-ink-100">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-teal-500 flex-shrink-0" />
+                    <h3 className="font-serif font-semibold text-ink-900 truncate">{selectedColumn?.title || "未归入栏目内容"}</h3>
+                    <Badge variant="ink">v{lecture?.version || 1}</Badge>
+                  </div>
+                  <div className="text-xs text-ink-400 mt-1">{selectedColumn ? `${activeColumnSections.length} 个内容块` : "选择左侧栏目后添加知识块或题目"}</div>
+                </div>
+                {selectedColumn && (
+                  <Button variant="ghost" size="sm" onClick={() => { setEditingSection(selectedColumn); setSectionTitle(selectedColumn.title); setSectionContent(selectedColumn.content); setSectionLabel(""); }}>
+                    <Edit3 className="w-3.5 h-3.5" /> 编辑栏目
+                  </Button>
+                )}
+              </div>
+
+              {editingSection && (
+                <div className="p-3 mb-4 rounded-lg border border-gold-200 bg-gold-50/20">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-medium text-ink-700">{editingSection.type === "chapter" ? "编辑栏目" : editingSection.type === "question" ? "编辑题目块" : "编辑内容块"}</span>
+                    <button type="button" onClick={() => setEditingSection(null)} className="text-ink-400 hover:text-ink-700"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    {editingSection.type !== "chapter" && <Input label="编号标签" value={sectionLabel} onChange={(event) => setSectionLabel(event.target.value)} placeholder="如：例1、变式2" />}
+                    <Input label={editingSection.type === "chapter" ? "栏目标题" : "标题"} value={sectionTitle} onChange={(event) => setSectionTitle(event.target.value)} />
+                    {editingSection.type !== "question" && <div className="md:col-span-2"><Textarea label="内容" value={sectionContent} onChange={(event) => setSectionContent(event.target.value)} rows={4} /></div>}
+                  </div>
+                  {editingSection.type === "question" && <div className="text-[11px] text-ink-500 mt-2">题目正文在题库中统一编辑。</div>}
+                  <div className="flex justify-end mt-3"><Button variant="gold" size="sm" onClick={handleSaveSection}><Save className="w-3.5 h-3.5" /> 保存</Button></div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5 flex-wrap p-2.5 mb-4 rounded-lg border border-ink-100 bg-ink-50/50">
+                <span className="text-xs font-medium text-ink-500 mr-1">添加到当前栏目</span>
+                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={handleAddKnowledgeSection}><Wand2 className="w-3.5 h-3.5" /> 知识块</Button>
+                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={handleAddTextSection}><Type className="w-3.5 h-3.5" /> 文本</Button>
+                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("bank")}><Library className="w-3.5 h-3.5" /> 题库</Button>
+                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("basket")}><ShoppingBasket className="w-3.5 h-3.5" /> 资源篮</Button>
+                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("examPaper")}><FileStack className="w-3.5 h-3.5" /> 其它试卷</Button>
+                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("lecture")}><Files className="w-3.5 h-3.5" /> 其它讲义</Button>
+                <Button variant="ghost" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("courseware")}><Presentation className="w-3.5 h-3.5" /> 课件</Button>
+                <Button variant="ghost" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("material")}><FileBox className="w-3.5 h-3.5" /> 素材</Button>
+                <Button variant="ghost" size="sm" onClick={() => setAutoGenOpen(true)}><Sparkles className="w-3.5 h-3.5" /> AI 编排</Button>
+              </div>
+
+              {activeColumnSections.length > 0 && selectedColumn && (
+                <div className="space-y-1.5 mb-4">
+                  {activeColumnSections.map((child, childIndex) => (
+                    <div key={child.id} className="flex items-center gap-2 rounded-md border border-ink-100 px-2.5 py-2 hover:bg-ink-50/50">
+                      {child.type === "question" ? <ListOrdered className="w-3.5 h-3.5 text-teal-500 flex-shrink-0" /> : child.type === "knowledge" ? <Sparkles className="w-3.5 h-3.5 text-gold-500 flex-shrink-0" /> : <Type className="w-3.5 h-3.5 text-ink-400 flex-shrink-0" />}
+                      <button type="button" onClick={() => { setEditingSection(child); setSectionTitle(child.title); setSectionContent(child.content); setSectionLabel(child.customLabel || ""); }} className="flex-1 min-w-0 text-left text-xs text-ink-700 truncate">
+                        {child.customLabel ? `${child.customLabel} ` : ""}{child.title}
+                      </button>
+                      <button type="button" onClick={() => handleMoveChildSection(selectedColumn.id, childIndex, "up")} disabled={childIndex === 0} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="上移">↑</button>
+                      <button type="button" onClick={() => handleMoveChildSection(selectedColumn.id, childIndex, "down")} disabled={childIndex === activeColumnSections.length - 1} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="下移">↓</button>
+                      <button type="button" onClick={() => handleRemoveSection(child.id, selectedColumn.id)} className="text-ink-300 hover:text-red-600" title="删除内容块"><Trash2 className="w-3 h-3" /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeColumnSections.length === 0 ? (
                 <div className="text-center py-16">
                   <FileText className="w-12 h-12 mx-auto mb-3 text-ink-200" />
-                  <div className="text-sm text-ink-500 mb-1">讲义还是空的</div>
-                  <div className="text-xs text-ink-400 mb-4">从右侧添加章节、题目、知识块或素材</div>
-                  <Button variant="gold" size="sm" onClick={handleAddChapter}>
-                    <Plus className="w-4 h-4" />
-                    创建第一个章节
-                  </Button>
+                  <div className="text-sm text-ink-500 mb-1">{selectedColumn ? "当前栏目还没有内容" : "请先从左侧选择或创建栏目"}</div>
+                  <div className="text-xs text-ink-400">可添加知识块、题库题目、资源篮内容或其它试卷/讲义中的题目</div>
                 </div>
               ) : (
-                <PreviewContent
-                  sections={sections}
-                  paperSize="A4"
-                  showSummary
-                  baseQuestionSpacing={1}
-                  baseKnowledgeSpacing={1}
-                  sectionSpacings={{}}
-                  answerRecords={answerRecords}
-                  students={students}
-                  lectureStudents={lectureStudents}
-                  baskets={baskets}
-                  answeredQuestionIds={answeredQuestionIds}
-                  onEditScore={openScoreEditor}
-                  onEditQuestion={handleEditQuestion}
-                  onAddToBasket={handleAddToBasketFromPreview}
-                  onRemoveFromBasket={handleRemoveFromBasketFromPreview}
-                  onUpdateStudentAnswer={handleUpdateStudentAnswerFromPreview}
-                />
+                <div className="border-t border-ink-100 pt-4">
+                  <PreviewContent
+                    sections={selectedColumn ? [selectedColumn] : activeColumnSections}
+                    paperSize="A4"
+                    showSummary
+                    baseQuestionSpacing={1}
+                    baseKnowledgeSpacing={1}
+                    sectionSpacings={{}}
+                    answerRecords={answerRecords}
+                    students={students}
+                    lectureStudents={lectureStudents}
+                    baskets={baskets}
+                    answeredQuestionIds={answeredQuestionIds}
+                    onEditScore={openScoreEditor}
+                    onEditQuestion={handleEditQuestion}
+                    onAddToBasket={handleAddToBasketFromPreview}
+                    onRemoveFromBasket={handleRemoveFromBasketFromPreview}
+                    onUpdateStudentAnswer={handleUpdateStudentAnswerFromPreview}
+                  />
+                </div>
               )}
             </Card>
 
-            {/* 右侧：编排、批量标注与分布 */}
+            {/* 右侧：使用学生 */}
             <div className="space-y-4 xl:sticky xl:top-4">
               <Card className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <ListOrdered className="w-4 h-4 text-teal-500" />
-                    <h3 className="font-serif font-semibold text-ink-900 text-sm">内容编排</h3>
-                  </div>
-                  <Badge variant="ink">{flattenLectureSections(sections).length} 块</Badge>
+                <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-ink-100">
+                  <div className="flex items-center gap-2"><UserCheck className="w-4 h-4 text-emerald-600" /><h3 className="font-serif font-semibold text-ink-900 text-sm">使用学生</h3><Badge variant="ink">{selectedLectureStudents.length}</Badge></div>
+                  <Button variant="ghost" size="sm" onClick={() => setShowStudentPicker(true)}><Plus className="w-3.5 h-3.5" /> 添加</Button>
                 </div>
 
-                {editingSection ? (
-                  <div className="space-y-3 mb-4 pb-4 border-b border-ink-100">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-ink-600">
-                        {editingSection.type === "chapter" ? "编辑章节" : editingSection.type === "question" ? "编辑题目块" : "编辑内容块"}
-                      </span>
-                      <button onClick={() => setEditingSection(null)} className="text-ink-400 hover:text-ink-700">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    {editingSection.type !== "chapter" && (
-                      <Input
-                        label="编号标签"
-                        value={sectionLabel}
-                        onChange={(e) => setSectionLabel(e.target.value)}
-                        placeholder="如：例1、变式2"
-                      />
-                    )}
-                    <Input
-                      label={editingSection.type === "chapter" ? "章节标题" : "标题"}
-                      value={sectionTitle}
-                      onChange={(e) => setSectionTitle(e.target.value)}
-                    />
-                    {editingSection.type !== "question" && (
-                      <Textarea
-                        label="内容"
-                        value={sectionContent}
-                        onChange={(e) => setSectionContent(e.target.value)}
-                        rows={5}
-                      />
-                    )}
-                    {editingSection.type === "question" && (
-                      <div className="text-[11px] text-ink-500">题目正文在题库中统一编辑。</div>
-                    )}
-                    <Button variant="gold" size="sm" className="w-full" onClick={handleSaveSection}>
-                      <Save className="w-3.5 h-3.5" />
-                      保存内容块
-                    </Button>
-                  </div>
-                ) : null}
-
-                <div className="space-y-1.5 max-h-[430px] overflow-y-auto pr-1">
-                  {sections.length === 0 ? (
-                    <div className="text-xs text-ink-400 text-center py-5">暂无内容块</div>
-                  ) : sections.map((section, sectionIndex) => {
-                    const expanded = outlineExpanded[section.id] ?? true;
-                    return (
-                      <div key={section.id} className="rounded-md border border-ink-100 overflow-hidden">
-                        <div className="flex items-center gap-1.5 p-2 bg-paper group">
-                          {section.type === "chapter" ? (
-                            <button
-                              onClick={() => setOutlineExpanded((previous) => ({ ...previous, [section.id]: !expanded }))}
-                              className="text-ink-400 hover:text-ink-700"
-                            >
-                              {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                            </button>
-                          ) : <GripVertical className="w-3.5 h-3.5 text-ink-300" />}
-                          <button
-                            onClick={() => {
-                              setSelectedChapterId(section.type === "chapter" ? section.id : null);
-                              setEditingSection(section);
-                              setSectionTitle(section.title);
-                              setSectionContent(section.content);
-                              setSectionLabel(section.customLabel || "");
-                            }}
-                            className="flex-1 min-w-0 text-left text-xs text-ink-700 truncate"
-                          >
-                            {section.title}
-                          </button>
-                          <button
-                            onClick={() => handleMoveSection(sectionIndex, "up")}
-                            disabled={sectionIndex === 0}
-                            className="text-ink-400 hover:text-gold-600 disabled:opacity-25"
-                            title="上移"
-                          >↑</button>
-                          <button
-                            onClick={() => handleMoveSection(sectionIndex, "down")}
-                            disabled={sectionIndex === sections.length - 1}
-                            className="text-ink-400 hover:text-gold-600 disabled:opacity-25"
-                            title="下移"
-                          >↓</button>
-                          <button
-                            onClick={() => handleRemoveSection(section.id)}
-                            className="text-ink-300 hover:text-red-600"
-                            title="删除"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                {selectedLectureStudents.length === 0 ? (
+                  <button type="button" onClick={() => setShowStudentPicker(true)} className="w-full py-8 rounded-lg border border-dashed border-ink-200 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700">添加该讲义使用学生</button>
+                ) : (
+                  <div className="space-y-1.5 max-h-[330px] overflow-y-auto pr-1">
+                    {selectedLectureStudents.map((student) => {
+                      const completedCount = completionByStudentId.get(student.id)?.size || 0;
+                      const allDone = lectureQuestionIds.length > 0 && completedCount >= lectureQuestionIds.length;
+                      return (
+                        <div key={student.id} className="flex items-center gap-2 rounded-md border border-ink-100 px-2.5 py-2">
+                          <div className="w-7 h-7 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center text-xs font-medium flex-shrink-0">{student.name.charAt(0)}</div>
+                          <div className="flex-1 min-w-0"><div className="text-xs font-medium text-ink-800 truncate">{student.name}</div><div className="text-[10px] text-ink-400 truncate">{lectureQuestionIds.length > 0 ? `${completedCount}/${lectureQuestionIds.length} 题已记录` : "讲义暂无题目"}</div></div>
+                          <Badge variant={allDone ? "green" : completedCount > 0 ? "gold" : "default"}>{allDone ? "已做" : completedCount > 0 ? "进行中" : "未做"}</Badge>
+                          <button type="button" onClick={() => setSelectedStudentIds((previous) => previous.filter((studentId) => studentId !== student.id))} className="text-ink-300 hover:text-red-600" title="移除学生"><X className="w-3 h-3" /></button>
                         </div>
-                        {section.type === "chapter" && expanded && section.children.length > 0 && (
-                          <div className="border-t border-ink-100 bg-ink-50/40 p-1.5 space-y-1">
-                            {section.children.map((child, childIndex) => (
-                              <div key={child.id} className="flex items-center gap-1.5 rounded px-1.5 py-1.5 hover:bg-paper group">
-                                {child.type === "question" ? (
-                                  <ListOrdered className="w-3 h-3 text-teal-500 flex-shrink-0" />
-                                ) : child.type === "knowledge" ? (
-                                  <Sparkles className="w-3 h-3 text-gold-500 flex-shrink-0" />
-                                ) : (
-                                  <Type className="w-3 h-3 text-ink-400 flex-shrink-0" />
-                                )}
-                                <button
-                                  onClick={() => {
-                                    setSelectedChapterId(section.id);
-                                    setEditingSection(child);
-                                    setSectionTitle(child.title);
-                                    setSectionContent(child.content);
-                                    setSectionLabel(child.customLabel || "");
-                                  }}
-                                  className="flex-1 min-w-0 text-left text-[11px] text-ink-600 truncate"
-                                >
-                                  {child.customLabel || `${childIndex + 1}.`} {child.title}
-                                </button>
-                                <button
-                                  onClick={() => handleMoveChildSection(section.id, childIndex, "up")}
-                                  disabled={childIndex === 0}
-                                  className="text-[10px] text-ink-400 hover:text-gold-600 disabled:opacity-25"
-                                >↑</button>
-                                <button
-                                  onClick={() => handleMoveChildSection(section.id, childIndex, "down")}
-                                  disabled={childIndex === section.children.length - 1}
-                                  className="text-[10px] text-ink-400 hover:text-gold-600 disabled:opacity-25"
-                                >↓</button>
-                                <button
-                                  onClick={() => handleRemoveSection(child.id, section.id)}
-                                  className="text-ink-300 hover:text-red-600"
-                                >
-                                  <Trash2 className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="pt-3 mt-3 border-t border-ink-100 space-y-1.5">
-                  <Button variant="gold" size="sm" className="w-full justify-start" onClick={() => setAutoGenOpen(true)}>
-                    <Sparkles className="w-3.5 h-3.5" /> AI 自动组讲义
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleAddChapter}>
-                    <BookOpen className="w-3.5 h-3.5" /> 添加章节
-                  </Button>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Button variant="outline" size="sm" onClick={() => setAddSource("bank")}>
-                      <Library className="w-3.5 h-3.5" /> 题目
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setAddSource("basket")}>
-                      <ShoppingBasket className="w-3.5 h-3.5" /> 试题篮
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setAddSource("courseware")}>
-                      <Presentation className="w-3.5 h-3.5" /> 课件
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setAddSource("material")}>
-                      <FileBox className="w-3.5 h-3.5" /> 素材
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleAddTextSection}>
-                      <Type className="w-3.5 h-3.5" /> 文本
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleAddKnowledgeSection}>
-                      <Wand2 className="w-3.5 h-3.5" /> 知识块
-                    </Button>
+                      );
+                    })}
                   </div>
-                  <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setAddSource("lecture")}>
-                    <Files className="w-3.5 h-3.5" /> 从其他讲义添加
-                  </Button>
-                </div>
-              </Card>
-
-              <Card className="p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-emerald-600" />
-                  <h3 className="font-serif font-semibold text-ink-900 text-sm">学生完成标注</h3>
-                </div>
-                <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => setShowStudentPicker(true)}>
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <Users className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="truncate">{selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择学生"}</span>
-                  </span>
-                  {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
-                </Button>
-                {selectedStudentIds.length > 0 && (
-                  <select
-                    value={timeRangeKey}
-                    onChange={(e) => setTimeRangeKey(e.target.value as TimeRangeKey)}
-                    className="w-full text-xs border border-ink-200 rounded px-2 py-1.5 bg-paper text-ink-700"
-                  >
-                    {timeRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
                 )}
-                <Button
-                  variant="gold"
-                  size="sm"
-                  className="w-full"
-                  onClick={handleMarkAllDone}
-                  loading={markingAllDone}
-                  disabled={!lecture || selectedStudentIds.length === 0 || lectureQuestionIds.length === 0}
-                >
-                  <CheckSquare className="w-3.5 h-3.5" />
-                  一键标注学生已做
-                </Button>
-                <div className="text-[11px] text-ink-400 leading-relaxed">
-                  将所选学生对讲义内全部题目标为“已做”，不计入正确率；之后仍可逐题录入全对、半对或做错。
-                </div>
+
+                {selectedLectureStudents.length > 0 && (
+                  <div className="space-y-2 pt-3 mt-3 border-t border-ink-100">
+                    <select value={timeRangeKey} onChange={(event) => setTimeRangeKey(event.target.value as TimeRangeKey)} className="w-full text-xs border border-ink-200 rounded px-2 py-1.5 bg-paper text-ink-700">
+                      {timeRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                    <Button variant="gold" size="sm" className="w-full" onClick={handleMarkAllDone} loading={markingAllDone} disabled={!lecture || lectureQuestionIds.length === 0}>
+                      <CheckSquare className="w-3.5 h-3.5" /> 一键标记所有学生已做
+                    </Button>
+                    {!lecture && <div className="text-[11px] text-ink-400">先保存讲义后即可标记学生使用情况。</div>}
+                  </div>
+                )}
               </Card>
 
               <QuestionDistributionPanel questions={lectureQuestionList} knowledgeTree={knowledgeTree} />
@@ -1951,7 +1981,7 @@ export default function LectureEditorPage() {
                 label="下载原稿"
                 className="gap-2 px-4 py-2 bg-gold-500 text-white rounded-lg hover:bg-gold-600 transition-colors"
               />
-              <p className="text-xs text-ink-400 mt-4">原稿为未拆解的原始上传文件，如需编辑请切换到正稿</p>
+              <p className="text-xs text-ink-400 mt-4">原稿为未拆解的原始上传文件，如需编辑请切换到{lecture?.isExtractCopy ? "拆解稿" : "正稿"}</p>
             </div>
           </Card>
         </div>
@@ -2250,14 +2280,62 @@ export default function LectureEditorPage() {
         )}
       </Modal>
 
+
+      {/* 栏目模板 */}
+      <Modal
+        open={columnTemplateOpen}
+        onClose={() => {
+          setColumnTemplateOpen(false);
+          setTemplateChapterIds([]);
+        }}
+        size="md"
+        title="从模板添加栏目"
+        description={`已选择 ${templateChapterIds.length} 个栏目`}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setColumnTemplateOpen(false);
+                setTemplateChapterIds([]);
+              }}
+            >
+              取消
+            </Button>
+            <Button variant="gold" onClick={handleAddColumnsFromTemplate} disabled={templateChapterIds.length === 0}>
+              <Plus className="w-3.5 h-3.5" />
+              添加所选栏目
+            </Button>
+          </>
+        }
+      >
+        {chapterTree ? (
+          <div className="h-[420px] overflow-y-auto rounded-lg border border-ink-100 p-2">
+            <SearchableTree
+              data={chapterTree}
+              title="栏目模板"
+              accent="gold"
+              checkable
+              checkedIds={templateChapterIds}
+              onCheck={(ids) => setTemplateChapterIds(ids.filter((id) => id !== "root"))}
+              expandLevel={2}
+              searchPlaceholder="搜索栏目模板..."
+            />
+          </div>
+        ) : (
+          <div className="py-10 text-center text-sm text-ink-400">暂无可用栏目模板</div>
+        )}
+      </Modal>
+
       {/* 添加题目弹窗 */}
       <Modal
         open={Boolean(addSource)}
         onClose={() => setAddSource(null)}
         size="lg"
         title={
-          addSource === "basket" ? "从试题篮添加题目" :
+          addSource === "basket" ? "从资源篮添加题目" :
           addSource === "bank" ? "从题库添加题目" :
+          addSource === "examPaper" ? "从其他试卷添加题目" :
           addSource === "lecture" ? "从其他讲义添加题目" :
           addSource === "courseware" ? "引用课件到讲义" :
           addSource === "material" ? "引用素材到讲义" : "添加内容"
@@ -2340,6 +2418,76 @@ export default function LectureEditorPage() {
           </div>
         )}
 
+
+        {addSource === "examPaper" && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {otherPapers.map((paper) => (
+                <button
+                  key={paper.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedOtherPaper(paper);
+                    setSelectedQuestionIds([]);
+                  }}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-sm border transition-all",
+                    selectedOtherPaper?.id === paper.id
+                      ? "bg-gold-400 border-gold-400 text-ink-900"
+                      : "border-ink-200 hover:border-ink-300",
+                  )}
+                >
+                  {paper.title} ({paper.questions.length})
+                </button>
+              ))}
+              {otherPapers.length === 0 && (
+                <div className="w-full py-8 text-center text-sm text-ink-400">暂无可引用的试卷</div>
+              )}
+            </div>
+            {selectedOtherPaper && (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {selectedOtherPaper.questions.map((paperQuestion, index) => {
+                  const questionId = paperQuestion.questionId;
+                  const checked = Boolean(questionId && selectedQuestionIds.includes(questionId));
+                  return (
+                    <label
+                      key={paperQuestion.id}
+                      className={cn(
+                        "flex items-start gap-2 p-3 rounded-md border transition-colors",
+                        questionId ? "cursor-pointer" : "cursor-not-allowed opacity-60",
+                        checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!questionId}
+                        onChange={(event) => {
+                          if (!questionId) return;
+                          setSelectedQuestionIds((previous) =>
+                            event.target.checked
+                              ? [...previous, questionId]
+                              : previous.filter((id) => id !== questionId),
+                          );
+                        }}
+                        className="mt-1 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-ink-900 line-clamp-2">
+                          {index + 1}. {paperQuestion.stem}
+                        </div>
+                        {!questionId && (
+                          <div className="text-[11px] text-ink-400 mt-1">该题尚未关联题库，无法直接引用</div>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {addSource === "lecture" && (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
@@ -2363,7 +2511,7 @@ export default function LectureEditorPage() {
             </div>
             {selectedOtherLecture && (
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {selectedOtherLecture.sections
+                {flattenLectureSections(selectedOtherLecture.sections)
                   .filter((s) => s.type === "question" && s.questionId)
                   .map((s) => {
                     const checked = selectedQuestionIds.includes(s.questionId!);

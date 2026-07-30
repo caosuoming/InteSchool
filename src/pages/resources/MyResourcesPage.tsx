@@ -1210,7 +1210,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 <>
                   <Button variant="gold" size="sm" onClick={handleCreateBlankLecture}>
                     <Plus className="w-3.5 h-3.5" />
-                    出讲义
+                    编讲义
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=lecture")}>
                     <Upload className="w-3.5 h-3.5" />
