@@ -31,6 +31,7 @@ import { extractService } from "@/services/extract";
 import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
 import { renderExtractText } from "@/lib/extract-text-renderer";
+import { stripLeadingScoreLabels } from "@/lib/question-text-cleanup";
 import {
   parseDocumentBlocks,
   type DocumentBlock as DocBlock,
@@ -217,6 +218,7 @@ export function ExtractReviewModal({
   const [progressMsg, setProgressMsg] = useState("正在初始化...");
   const [error, setError] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<DocBlock[]>([]);
+  const [preservedScoreLabelBlockIds, setPreservedScoreLabelBlockIds] = useState<Set<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [showKeywordConfig, setShowKeywordConfig] = useState(false);
   const [newKeywordValue, setNewKeywordValue] = useState("");
@@ -236,6 +238,7 @@ export function ExtractReviewModal({
     setProgressMsg("正在初始化...");
     setError(null);
     setBlocks([]);
+    setPreservedScoreLabelBlockIds(new Set());
     setEditingBlockId(null);
 
     if (!teacher) {
@@ -416,6 +419,18 @@ export function ExtractReviewModal({
     );
   };
 
+  const setScoreLabelCleanupEnabled = (id: string, enabled: boolean) => {
+    setPreservedScoreLabelBlockIds((current) => {
+      const next = new Set(current);
+      if (enabled) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   const updateOption = (blockId: string, idx: number, value: string) => {
     setBlocks((list) =>
       list.map((b) => {
@@ -568,18 +583,30 @@ export function ExtractReviewModal({
       const analysisKeywords = [...extractConfig.analysisKeywords];
       const summaryKeywords = [...extractConfig.summaryKeywords];
 
-      const extractedQuestions = questionBlocks.map((b) => ({
-        id: b.id,
-        type: b.questionType || defaultQuestionType,
-        stem: removeKeywords(b.content, questionKeywords),
-        options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
-        answer: removeKeywords(b.answer || "", answerKeywords),
-        analysis: removeKeywords(b.analysis || "", analysisKeywords),
-        summary: removeKeywords(b.summary || "", summaryKeywords),
-        difficulty: b.difficulty || 3,
-        status: b.status as "new" | "duplicate" | "confirmed" | "edited",
-        duplicateOf: b.duplicateOf as Question | undefined,
-      }));
+      const extractedQuestions = questionBlocks.map((b) => {
+        const keywordFilteredStem = removeKeywords(b.content, questionKeywords);
+        const stem = preservedScoreLabelBlockIds.has(b.id)
+          ? keywordFilteredStem
+          : stripLeadingScoreLabels(keywordFilteredStem).text;
+        return {
+          id: b.id,
+          type: b.questionType || defaultQuestionType,
+          stem,
+          options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
+          answer: removeKeywords(b.answer || "", answerKeywords),
+          analysis: removeKeywords(b.analysis || "", analysisKeywords),
+          summary: removeKeywords(b.summary || "", summaryKeywords),
+          difficulty: b.difficulty || 3,
+          status: b.status as "new" | "duplicate" | "confirmed" | "edited",
+          duplicateOf: b.duplicateOf as Question | undefined,
+        };
+      });
+
+      if (extractedQuestions.some((question) => !question.stem.trim())) {
+        toast.warning("过滤分值说明后存在题干为空的题目，请检查后重试");
+        setPhase("review");
+        return;
+      }
 
       const extractedKnowledge = knowledgeBlocks.map((b) => ({
         id: b.id,
@@ -659,6 +686,10 @@ export function ExtractReviewModal({
 
   const renderDocumentBlock = (block: DocBlock) => {
     const isEditing = editingBlockId === block.id;
+    const scoreLabelCleanup = block.type === "question"
+      ? stripLeadingScoreLabels(removeKeywords(block.content, extractConfig.questionKeywords))
+      : { text: block.content, labels: [] };
+    const scoreLabelCleanupEnabled = !preservedScoreLabelBlockIds.has(block.id);
 
     const renderSolutionField = (field: SolutionField) => {
       const value = block[field];
@@ -754,6 +785,20 @@ export function ExtractReviewModal({
                   {renderSolutionField("answer")}
                   {renderSolutionField("analysis")}
                   {renderSolutionField("summary")}
+                  {scoreLabelCleanup.labels.length > 0 && (
+                    <label className="flex cursor-pointer items-start gap-2 rounded border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-xs text-amber-900">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-3.5 w-3.5 rounded border-amber-300"
+                        checked={scoreLabelCleanupEnabled}
+                        onChange={(event) => setScoreLabelCleanupEnabled(block.id, event.target.checked)}
+                      />
+                      <span>
+                        入库时过滤分值说明
+                        <span className="ml-1 font-medium">{scoreLabelCleanup.labels.join("、")}</span>
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
 
