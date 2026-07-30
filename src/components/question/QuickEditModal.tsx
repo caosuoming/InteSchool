@@ -9,6 +9,7 @@ import { knowledgeService } from "@/services/knowledge";
 import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
+import { MathHtml } from "@/components/ui/MathHtml";
 import { TreeView } from "@/components/tree/TreeView";
 import type { Question, TreeNode, QuestionRemark } from "@/types";
 import { cn } from "@/lib/utils";
@@ -404,7 +405,9 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
           {/* 题干预览 */}
           <div className="p-3 rounded-lg bg-mist/50 border border-ink-100">
             <div className="text-xs font-medium text-ink-500 mb-1">当前题目</div>
-            <div className="text-sm text-ink-900 line-clamp-3">{question.stem}</div>
+            <MathHtml className="block text-sm text-ink-900 line-clamp-3 whitespace-pre-wrap">
+              {question.stem}
+            </MathHtml>
           </div>
 
           {/* 按用户自定义顺序渲染区块 */}

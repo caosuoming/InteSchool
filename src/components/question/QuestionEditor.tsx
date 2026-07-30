@@ -9,6 +9,8 @@ import { Textarea, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { TreeView } from "@/components/tree/TreeView";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
+import { MathHtml } from "@/components/ui/MathHtml";
+import { containsMathDelimiter } from "@/lib/math-html";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type { Question, Chapter, KnowledgePoint, TreeNode, ResourceSemester } from "@/types";
 
@@ -230,13 +232,12 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           rows={3}
           placeholder="请输入题干内容（也可使用在线编辑器插入公式）"
         />
-        {containsHtml(form.stem) && (
+        {needsRichPreview(form.stem) && (
           <div className="mt-2 p-2 rounded-md bg-mist/40 border border-ink-100">
             <div className="text-[11px] text-ink-500 mb-1">题干预览：</div>
-            <div
-              className="text-sm text-ink-900 prose-sm"
-              dangerouslySetInnerHTML={{ __html: form.stem }}
-            />
+            <MathHtml className="text-sm text-ink-900 prose-sm whitespace-pre-wrap">
+              {form.stem}
+            </MathHtml>
           </div>
         )}
       </div>
@@ -261,16 +262,23 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
                 <span className="font-mono font-semibold text-ink-500 w-6 flex-shrink-0">
                   {String.fromCharCode(65 + i)}.
                 </span>
-                <input
-                  type="text"
-                  value={opt}
-                  onChange={(e) => {
-                    const next = [...form.options];
-                    next[i] = e.target.value;
-                    update("options", next);
-                  }}
-                  className="input-base flex-1"
-                />
+                <div className="flex-1 min-w-0">
+                  <input
+                    type="text"
+                    value={opt}
+                    onChange={(e) => {
+                      const next = [...form.options];
+                      next[i] = e.target.value;
+                      update("options", next);
+                    }}
+                    className="input-base w-full"
+                  />
+                  {needsRichPreview(opt) && (
+                    <MathHtml className="block mt-1 px-2 text-xs text-ink-700 whitespace-pre-wrap">
+                      {opt}
+                    </MathHtml>
+                  )}
+                </div>
                 <button
                   onClick={() => {
                     const next = form.options.filter((_, idx) => idx !== i);
@@ -304,13 +312,12 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           rows={2}
           placeholder="请输入答案（选择题可填选项字母，如 A 或 ABC）"
         />
-        {containsHtml(form.answer) && (
+        {needsRichPreview(form.answer) && (
           <div className="mt-2 p-2 rounded-md bg-emerald-50/40 border border-emerald-100">
             <div className="text-[11px] text-emerald-700 mb-1">答案预览：</div>
-            <div
-              className="text-sm text-emerald-800 prose-sm"
-              dangerouslySetInnerHTML={{ __html: form.answer }}
-            />
+            <MathHtml className="text-sm text-emerald-800 prose-sm whitespace-pre-wrap">
+              {form.answer}
+            </MathHtml>
           </div>
         )}
       </div>
@@ -333,13 +340,12 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           rows={3}
           placeholder="请输入解析（也可使用在线编辑器插入公式）"
         />
-        {containsHtml(form.analysis) && (
+        {needsRichPreview(form.analysis) && (
           <div className="mt-2 p-2 rounded-md bg-mist/40 border border-ink-100">
             <div className="text-[11px] text-ink-500 mb-1">解析预览：</div>
-            <div
-              className="text-sm text-ink-800 prose-sm"
-              dangerouslySetInnerHTML={{ __html: form.analysis }}
-            />
+            <MathHtml className="text-sm text-ink-800 prose-sm whitespace-pre-wrap">
+              {form.analysis}
+            </MathHtml>
           </div>
         )}
       </div>
@@ -355,13 +361,12 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           rows={2}
           placeholder="请输入本题总结（如考点、易错点、解题方法等）"
         />
-        {containsHtml(form.summary) && (
+        {needsRichPreview(form.summary) && (
           <div className="mt-2 p-2 rounded-md bg-amber-50/40 border border-amber-100">
             <div className="text-[11px] text-amber-700 mb-1">总结预览：</div>
-            <div
-              className="text-sm text-amber-800 prose-sm"
-              dangerouslySetInnerHTML={{ __html: form.summary }}
-            />
+            <MathHtml className="text-sm text-amber-800 prose-sm whitespace-pre-wrap">
+              {form.summary}
+            </MathHtml>
           </div>
         )}
       </div>
@@ -508,9 +513,9 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   );
 }
 
-// 判断字符串是否包含 HTML 标签（用于决定是否显示预览）
-function containsHtml(s: string): boolean {
-  return /<[a-z][\s\S]*?>/i.test(s);
+// 富文本或 LaTeX 内容需要显示渲染后的预览。
+function needsRichPreview(s: string): boolean {
+  return /<[a-z][\s\S]*?>/i.test(s) || containsMathDelimiter(s);
 }
 
 export default QuestionEditor;
