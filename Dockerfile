@@ -14,8 +14,20 @@ RUN npm run build \
     && npm prune --omit=dev \
     && npm cache clean --force
 
+FROM node:22-bookworm-slim AS mathtype
+ENV GEM_HOME=/opt/mathtype-gems \
+    GEM_PATH=/opt/mathtype-gems
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      build-essential liblzma-dev patch pkg-config ruby ruby-dev xz-utils zlib1g-dev \
+    && gem install mathtype_to_mathml_plus --version 0.0.16 --no-document \
+    && rm -rf /var/lib/apt/lists/* /root/.gem
+
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
+    GEM_HOME=/opt/mathtype-gems \
+    GEM_PATH=/opt/mathtype-gems \
+    RUBYOPT=-W0 \
     HOST=0.0.0.0 \
     PORT=3000 \
     INTESCHOOL_DATA_DIR=/app/data \
@@ -23,10 +35,11 @@ ENV NODE_ENV=production \
     INTESCHOOL_LOGGER=true
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends dumb-init \
+    && apt-get install -y --no-install-recommends dumb-init ruby \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY --from=mathtype /opt/mathtype-gems /opt/mathtype-gems
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist

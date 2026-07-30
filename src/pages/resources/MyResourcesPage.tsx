@@ -4,7 +4,7 @@ import {
   Search, FileQuestion, BookOpen, Lightbulb,
   Calendar, Eye, Presentation, FileBox,
   ArrowUpDown, Clock, ChevronDown, ChevronRight,
-  FileSpreadsheet, Sparkles, Trash2, Share2, Upload, Filter, Library, FileText, Download,
+  FileSpreadsheet, Sparkles, Trash2, Share2, Upload, Filter, Library, FileText,
   PlayCircle, Copy, MessageSquareText, Star,
   ShoppingCart, CheckSquare, Square, Plus, X,
   Archive, Layout,
@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
+import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { Badge } from "@/components/ui/Badge";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
@@ -1343,14 +1344,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <div className="flex items-center gap-2">
                           <FileText className="w-3.5 h-3.5 text-ink-400" />
                           <span className="text-ink-500">原稿：{item.originalFileName}</span>
-                          <a
-                            href={item.originalFileUrl}
-                            download={item.originalFileName}
-                            className="text-gold-600 hover:text-gold-700 flex items-center gap-1"
-                          >
-                            <Download className="w-3 h-3" />
-                            下载
-                          </a>
+                          <DocumentDownloadButton
+                            fileUrl={item.originalFileUrl}
+                            fileName={item.originalFileName}
+                            className="text-gold-600 hover:text-gold-700"
+                            iconClassName="w-3 h-3"
+                          />
                         </div>
                         {!isExtracted && (
                           <Button
@@ -1393,14 +1392,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           <div className="flex items-center gap-2 text-xs mt-2 pl-1">
                             <FileText className="w-3.5 h-3.5 text-ink-400" />
                             <span className="text-ink-500">{item.originalFileName}</span>
-                            <a
-                              href={item.originalFileUrl}
-                              download={item.originalFileName}
-                              className="text-gold-600 hover:text-gold-700 flex items-center gap-1"
-                            >
-                              <Download className="w-3 h-3" />
-                              下载
-                            </a>
+                            <DocumentDownloadButton
+                              fileUrl={item.originalFileUrl}
+                              fileName={item.originalFileName}
+                              className="text-gold-600 hover:text-gold-700"
+                              iconClassName="w-3 h-3"
+                            />
                           </div>
                         )}
                       </div>
@@ -1524,14 +1521,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             <div className="flex items-center gap-2">
                               <FileSpreadsheet className="w-3.5 h-3.5 text-ink-400" />
                               <span className="text-ink-500">原稿：{item.originalFileName}</span>
-                              <a
-                                href={item.originalFileUrl}
-                                download={item.originalFileName}
-                                className="text-gold-600 hover:text-gold-700 flex items-center gap-1"
-                              >
-                                <Download className="w-3 h-3" />
-                                下载
-                              </a>
+                              <DocumentDownloadButton
+                                fileUrl={item.originalFileUrl}
+                                fileName={item.originalFileName}
+                                className="text-gold-600 hover:text-gold-700"
+                                iconClassName="w-3 h-3"
+                              />
                             </div>
                             {!isExtracted && (
                               <Button
@@ -1605,14 +1600,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           <div className="flex items-center gap-2 text-xs mt-2 pl-1">
                             <FileSpreadsheet className="w-3.5 h-3.5 text-ink-400" />
                             <span className="text-ink-500">{item.originalFileName}</span>
-                            <a
-                              href={item.originalFileUrl}
-                              download={item.originalFileName}
-                              className="text-gold-600 hover:text-gold-700 flex items-center gap-1"
-                            >
-                              <Download className="w-3 h-3" />
-                              下载
-                            </a>
+                            <DocumentDownloadButton
+                              fileUrl={item.originalFileUrl}
+                              fileName={item.originalFileName}
+                              className="text-gold-600 hover:text-gold-700"
+                              iconClassName="w-3 h-3"
+                            />
                           </div>
                         )}
                       </div>

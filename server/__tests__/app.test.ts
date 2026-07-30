@@ -129,6 +129,24 @@ async function docxWithImage(imageData: Buffer): Promise<Buffer> {
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
+function multipartBufferPayload(
+  fileName: string,
+  content: Buffer,
+  mimeType: string,
+): { body: Buffer; contentType: string } {
+  const boundary = `----inteschool-binary-${Date.now()}`;
+  const body = Buffer.concat([
+    Buffer.from([
+      `--${boundary}\r\n`,
+      `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`,
+      `Content-Type: ${mimeType}\r\n\r\n`,
+    ].join("")),
+    content,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
 beforeEach(async () => {
   phoneCounter = 0;
   workDir = await mkdtemp(join(tmpdir(), "inteschool-test-"));
@@ -1072,6 +1090,68 @@ describe("production backend", () => {
       url: `/api/files/${fileId}/assets/rId5`,
     });
     expect(anonymous.statusCode).toBe(401);
+  });
+
+  it("lets DOCX downloads preserve MathType or request new Microsoft formulas", async () => {
+    const session = await login(built.app);
+    const zip = new JSZip();
+    zip.file(
+      "word/document.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+       <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+         <w:body><w:p><w:r><w:t>公式测试</w:t></w:r></w:p></w:body>
+       </w:document>`,
+    );
+    zip.file(
+      "word/_rels/document.xml.rels",
+      `<?xml version="1.0" encoding="UTF-8"?>
+       <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`,
+    );
+    const document = await zip.generateAsync({ type: "nodebuffer" });
+    const multipart = multipartBufferPayload(
+      "formula.docx",
+      document,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    const upload = await built.app.inject({
+      method: "POST",
+      url: "/api/files",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+        "content-type": multipart.contentType,
+      },
+      payload: multipart.body,
+    });
+    expect(upload.statusCode).toBe(200);
+    const file = upload.json<{ url: string }>();
+
+    const mathTypeDownload = await built.app.inject({
+      method: "GET",
+      url: `${file.url}?formulaFormat=mathtype`,
+      headers: { cookie: session.cookie },
+    });
+    expect(mathTypeDownload.statusCode).toBe(200);
+    expect(mathTypeDownload.headers["x-formula-format"]).toBe("mathtype");
+    expect(mathTypeDownload.rawPayload.equals(document)).toBe(true);
+
+    const officeDownload = await built.app.inject({
+      method: "GET",
+      url: `${file.url}?formulaFormat=office`,
+      headers: { cookie: session.cookie },
+    });
+    expect(officeDownload.statusCode).toBe(200);
+    expect(officeDownload.headers["x-formula-format"]).toBe("office");
+    const officeZip = await JSZip.loadAsync(officeDownload.rawPayload);
+    expect(await officeZip.file("word/document.xml")?.async("string")).toContain("公式测试");
+
+    const invalid = await built.app.inject({
+      method: "GET",
+      url: `${file.url}?formulaFormat=legacy`,
+      headers: { cookie: session.cookie },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toEqual({ error: "不支持的公式格式" });
   });
 
   it("does not serve uploaded text as client-declared executable content", async () => {

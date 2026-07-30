@@ -5,6 +5,7 @@ import { PDFParse } from "pdf-parse";
 import katex from "katex";
 import sanitizeHtml from "sanitize-html";
 import { extractDocxStructuredText } from "./docx-structured-text.js";
+import { convertMathTypeDocxToOmml } from "./mathtype-docx.js";
 
 export interface ExtractedDocument {
   text: string;
@@ -26,6 +27,13 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
+function safePreviewImageSource(value: string): string | null {
+  const source = value.trim();
+  if (/^\/api\/files\/[A-Za-z0-9-]+\/assets\/[A-Za-z0-9_.%-]+$/.test(source)) return source;
+  if (/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(source)) return source;
+  return null;
+}
+
 function renderMathAwareHtml(text: string): string {
   const renderLine = (line: string) => {
     const parts: string[] = [];
@@ -42,10 +50,9 @@ function renderMathAwareHtml(text: string): string {
           output: "htmlAndMathml",
         }));
       } else {
-        const alt = match[2] || "";
-        const source = match[3]?.trim() || "";
-        if (/^\/api\/files\/[A-Za-z0-9-]+\/assets\/[A-Za-z0-9_.%-]+$/.test(source)) {
-          parts.push(`<img src="${escapeHtml(source)}" alt="${escapeHtml(alt)}">`);
+        const source = safePreviewImageSource(match[3] || "");
+        if (source) {
+          parts.push(`<img src="${escapeHtml(source)}" alt="${escapeHtml(match[2] || "文档图片")}">`);
         } else {
           parts.push(escapeHtml(match[0]));
         }
@@ -68,22 +75,24 @@ export async function extractDocument(
   const extension = extname(filePath).toLowerCase();
   if (extension === ".docx") {
     const data = await readFile(filePath);
+    const mathType = await convertMathTypeDocxToOmml(data);
+    const convertedData = mathType.buffer;
     const [raw, rendered, structuredText] = await Promise.all([
-      mammoth.extractRawText({ path: filePath }),
-      mammoth.convertToHtml({ path: filePath }, {
+      mammoth.extractRawText({ buffer: convertedData }),
+      mammoth.convertToHtml({ buffer: convertedData }, {
         includeDefaultStyleMap: true,
         convertImage: mammoth.images.imgElement(async (image) => ({
           src: `data:${image.contentType};base64,${await image.read("base64")}`,
           alt: "文档图片",
         })),
       }),
-      extractDocxStructuredText(data, options.docxImageUrl),
+      extractDocxStructuredText(convertedData, options.docxImageUrl),
     ]);
     const text = structuredText || raw.value.trim();
-    const hasMath = /\$[^$\n]+\$/.test(text);
+    const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)/.test(text);
     return {
       text,
-      html: hasMath
+      html: hasRichContent
         ? renderMathAwareHtml(text)
         : sanitizeHtml(rendered.value, {
             allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
@@ -91,7 +100,11 @@ export async function extractDocument(
             allowedSchemes: ["http", "https", "data"],
           }),
       format: "docx",
-      warnings: [...raw.messages, ...rendered.messages].map((message) => message.message),
+      warnings: [
+        ...raw.messages.map((message) => message.message),
+        ...rendered.messages.map((message) => message.message),
+        ...mathType.warnings,
+      ],
     };
   }
 
