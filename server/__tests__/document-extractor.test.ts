@@ -160,6 +160,25 @@ describe("document extractor", () => {
     expect(result.html).not.toContain("$\\frac{x}{2}=1$");
   });
 
+  it("normalizes decomposed not-equal signs in DOCX preview HTML", async () => {
+    const filePath = join(workDir, "not-equal.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({
+      value: "若 x≠y，则两数不同。",
+      messages: [],
+    });
+    mammothMocks.convertToHtml.mockResolvedValue({
+      value: "<p>若 x≠y，则两数不同。</p>",
+      messages: [],
+    });
+
+    const result = await extractDocument(filePath);
+
+    expect(result.text).toBe("若 x≠y，则两数不同。");
+    expect(result.html).toContain("若 x≠y，则两数不同。");
+    expect(result.html).not.toContain("\u0338");
+  });
+
   it("renders preserved image references alongside formulas", async () => {
     const filePath = join(workDir, "illustrated-math.docx");
     await writeFile(filePath, "fake docx");
