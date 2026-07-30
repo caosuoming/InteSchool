@@ -34,9 +34,21 @@ function expandKnowledgePointAliases(ids: string[], schoolId: string): string[] 
 
 function matchFilter(q: Question, filter: QuestionFilter): boolean {
   if (filter.keyword) {
-    const kw = filter.keyword.toLowerCase();
-    const haystack = `${q.stem} ${q.answer} ${q.remark || ""} ${q.analysis || ""}`.toLowerCase();
-    if (!haystack.includes(kw)) {
+    const kw = filter.keyword.trim().toLowerCase();
+    const searchFields = filter.searchFields?.length
+      ? filter.searchFields
+      : ["stem", "analysis", "summary", "remark"] as const;
+    const remarkText = [
+      q.remark,
+      ...(q.remarks?.map((remark) => remark.content) ?? []),
+    ].filter(Boolean).join(" ");
+    const fieldText = {
+      stem: q.stem,
+      analysis: q.analysis,
+      summary: q.summary ?? "",
+      remark: remarkText,
+    };
+    if (kw && !searchFields.some((field) => fieldText[field].toLowerCase().includes(kw))) {
       return false;
     }
   }

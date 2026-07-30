@@ -37,7 +37,7 @@ import { QuestionActionsBar } from "@/components/question/QuestionActionsBar";
 import { TagSettings } from "@/components/question/TagSettings";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
-import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester } from "@/types";
+import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester, QuestionSearchField } from "@/types";
 import { cn } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
 import { generateQuestionDocx } from "@/lib/docx";
@@ -73,6 +73,13 @@ const categoryOptions = [
   { value: "exam", label: "考试" },
   { value: "homework", label: "作业" },
   { value: "review", label: "复习" },
+];
+
+const searchFieldOptions: { value: QuestionSearchField; label: string }[] = [
+  { value: "stem", label: "题干" },
+  { value: "analysis", label: "解析" },
+  { value: "summary", label: "总结" },
+  { value: "remark", label: "备注" },
 ];
 
 const typeLabel: Record<Question["type"], string> = {
@@ -165,6 +172,7 @@ export default function QuestionBankPage({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
+  const [searchFields, setSearchFields] = useState<QuestionSearchField[]>([]);
 
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
@@ -278,6 +286,7 @@ export default function QuestionBankPage({
     selectedSources.length > 0 ||
     selectedCategories.length > 0 ||
     keyword ||
+    searchFields.length > 0 ||
     selectedStudentIds.length > 0;
 
   const loadQuestions = useCallback(async () => {
@@ -292,6 +301,7 @@ export default function QuestionBankPage({
     const data = await questionService.listQuestions({
       schoolId: teacher.schoolId!,
       keyword,
+      searchFields,
       chapterIds: checkedChapters,
       chapterLogic,
       knowledgePointIds: checkedKnowledge,
@@ -348,7 +358,7 @@ export default function QuestionBankPage({
     setQuestions(sorted);
     setLoading(false);
   }, [
-    teacher, keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic,
+    teacher, keyword, searchFields, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic,
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, mode, selectedStudentIds, excludeDone, sortKey, dateRange,
@@ -522,8 +532,15 @@ export default function QuestionBankPage({
     );
   };
 
+  const toggleSearchField = (field: QuestionSearchField) => {
+    setSearchFields((prev) =>
+      prev.includes(field) ? prev.filter((value) => value !== field) : [...prev, field],
+    );
+  };
+
   const clearAllFilters = () => {
     setKeyword("");
+    setSearchFields([]);
     setCheckedChapters([]);
     setCheckedKnowledge([]);
     setNoChapter(false);
@@ -900,17 +917,38 @@ export default function QuestionBankPage({
           {/* 顶部筛选栏 */}
           <Card className="mb-4 p-4">
             <div className="flex flex-wrap items-center gap-3">
-              {/* 搜索：支持题干、答案、备注 */}
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
-                <input
-                  type="text"
-                  placeholder="搜索题干、答案、备注、解析..."
-                  value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
-                  className="input-base pl-10"
-                  title="支持搜索题干、答案、备注、解析"
-                />
+              {/* 搜索：可限定题干、解析、总结和备注；未选择时搜索全部 */}
+              <div className="flex-1 min-w-[280px] space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
+                  <input
+                    type="text"
+                    placeholder="搜索题干、解析、总结、备注..."
+                    value={keyword}
+                    onChange={(e) => setKeyword(e.target.value)}
+                    className="input-base pl-10"
+                    title="未选择搜索范围时，将搜索题干、解析、总结和备注"
+                  />
+                </div>
+                <fieldset className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+                  <legend className="sr-only">搜索范围</legend>
+                  <span className="text-xs text-ink-500">搜索范围：</span>
+                  {searchFieldOptions.map((option) => (
+                    <label
+                      key={option.value}
+                      className="inline-flex items-center gap-1.5 text-xs text-ink-600 cursor-pointer select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={searchFields.includes(option.value)}
+                        onChange={() => toggleSearchField(option.value)}
+                        className="w-3.5 h-3.5 rounded border-ink-300 text-gold-500 focus:ring-gold-500"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                  <span className="text-[11px] text-ink-400">未选择则搜索全部</span>
+                </fieldset>
               </div>
 
               <SelectFilter label="年级" value={selectedGrade} options={gradeOptions} onChange={setSelectedGrade} icon={<GraduationCap className="w-3.5 h-3.5" />} />
