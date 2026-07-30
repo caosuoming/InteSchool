@@ -44,7 +44,6 @@ import type {
   PlatformSaveCheckResult,
   PlatformSaveDecision,
   Question,
-  QuestionType,
   ShareRecord,
   ShareableResourceType,
   TreeNode,
@@ -53,6 +52,7 @@ import type {
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 
 type ResourceTypeFilter = "all" | ShareableResourceType;
 type LeftTab = "chapter" | "knowledge";
@@ -109,10 +109,6 @@ const materialTypeLabel: Record<MaterialType, string> = {
   text: "文本", image: "图片", audio: "音频", video: "视频", link: "链接", file: "文件", knowledgeBlock: "知识块",
 };
 
-const questionTypeLabel: Record<QuestionType, string> = {
-  single: "单选", multiple: "多选", judge: "判断", short: "填空", essay: "解答",
-};
-
 const difficultyLabelText = ["", "简单", "较易", "中等", "较难", "困难"];
 
 const settingLabels: Record<PlatformResourceSettingType, string> = {
@@ -147,7 +143,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
         title: question.stem,
         description: question.analysis,
         meta: [
-          { label: "题型", value: questionTypeLabel[question.type] },
+          { label: "题型", value: getDefaultQuestionTypeLabel(question.type) },
           { label: "难度", value: difficultyLabelText[question.difficulty] },
           { label: "推荐", value: `${question.recommendation} 星` },
           { label: "年级", value: `${question.grade || "未指定"} · ${question.schoolYear || "未指定"} · ${question.semester || "上学期"}` },

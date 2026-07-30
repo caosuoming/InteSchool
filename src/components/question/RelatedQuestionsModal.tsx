@@ -4,14 +4,8 @@ import { questionService } from "@/services/question";
 import { Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import type { Question } from "@/types";
-
-const typeLabel: Record<Question["type"], string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
+import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import { MathHtml } from "@/components/ui/MathHtml";
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -38,6 +32,7 @@ export function RelatedQuestionsModal({
   onSelect,
   currentQuestionId,
 }: RelatedQuestionsModalProps) {
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(schoolId);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -95,13 +90,13 @@ export function RelatedQuestionsModal({
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                        <Badge variant="ink" className="text-xs">{typeLabel[q.type]}</Badge>
+                        <Badge variant="ink" className="text-xs">{getQuestionTypeLabel(q.type)}</Badge>
                         <Badge variant={q.difficulty <= 2 ? "green" : q.difficulty <= 3 ? "amber" : "red"} className="text-xs">
                           {difficultyLabel[q.difficulty]}
                         </Badge>
                         <span className="text-xs text-ink-400">使用 {q.usageCount} 次</span>
                       </div>
-                      <div className="text-sm text-ink-900 line-clamp-2">{q.stem}</div>
+                      <MathHtml className={/<img\b/i.test(q.stem) ? "text-sm text-ink-900" : "text-sm text-ink-900 line-clamp-2"}>{q.stem}</MathHtml>
                     </div>
                     <button
                       onClick={() => {

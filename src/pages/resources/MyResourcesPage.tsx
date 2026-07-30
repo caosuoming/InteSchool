@@ -34,7 +34,7 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import type {
   Lecture, ExamPaper, Courseware, Material, Question,
   TreeNode, FilterLogic, ShareScope,
-  CoursewareType, MaterialType, QuestionType, ShareableResourceType,
+  CoursewareType, MaterialType, ShareableResourceType,
   Reflection, Basket,
   DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
 } from "@/types";
@@ -47,6 +47,8 @@ import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { Badge } from "@/components/ui/Badge";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import { MathHtml } from "@/components/ui/MathHtml";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
@@ -70,14 +72,6 @@ const sortOptions: { value: SortKey; label: string; icon: React.ReactNode }[] = 
   { value: "created", label: "创建时间", icon: <Calendar className="w-3.5 h-3.5" /> },
   { value: "title", label: "标题排序", icon: <FileText className="w-3.5 h-3.5" /> },
 ];
-
-const questionTypeLabel: Record<QuestionType, string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -213,6 +207,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const schoolId = teacher?.schoolId || "sch-1";
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(schoolId);
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(schoolId);
 
   const loadTeacherDonations = useCallback(async () => {
     if (!teacher) return;
@@ -1051,10 +1046,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           </button>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="tag-gold">{questionTypeLabel[q.type]}</span>
+                              <span className="tag-gold">{getQuestionTypeLabel(q.type)}</span>
                               <span className="text-xs text-ink-400">难度：{difficultyLabel[q.difficulty]}</span>
                             </div>
-                            <div className="text-sm text-ink-800 line-clamp-2">{q.stem}</div>
+                            <MathHtml className="text-sm text-ink-800">{q.stem}</MathHtml>
                           </div>
                         </div>
                       ))}
@@ -2021,6 +2016,8 @@ interface QuestionListItemProps {
 }
 
 export function QuestionListItem({ question, expanded, onToggle, onShare, onDelete }: QuestionListItemProps) {
+  const { teacher } = useAuthStore();
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
   const difficultyVariant =
     question.difficulty <= 2
       ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
@@ -2042,7 +2039,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap gap-1.5 mb-2">
-            <span className="tag-ink">{questionTypeLabel[question.type]}</span>
+            <span className="tag-ink">{getQuestionTypeLabel(question.type)}</span>
             <span className={cn("tag-base", difficultyVariant)}>
               {difficultyLabel[question.difficulty]}
             </span>
@@ -2061,14 +2058,15 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
             onClick={onToggle}
             role="button"
           >
-            {question.stem}
+            <MathHtml>{question.stem}</MathHtml>
           </div>
 
           {question.options && question.options.length > 0 && expanded && (
             <div className="text-xs text-ink-600 space-y-0.5 mb-2 mt-2 bg-mist/40 p-2 rounded">
               {question.options.map((opt, i) => (
-                <div key={i}>
-                  {String.fromCharCode(65 + i)}. {opt}
+                <div key={i} className="flex items-start gap-1">
+                  <span className="font-mono font-semibold flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
+                  <MathHtml className="min-w-0">{opt}</MathHtml>
                 </div>
               ))}
             </div>
@@ -2078,12 +2076,12 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
             <div className="text-xs text-ink-600 space-y-1.5 mt-2 bg-mist/40 p-2 rounded">
               <div>
                 <span className="text-ink-400">答案：</span>
-                <span className="text-ink-800">{question.answer}</span>
+                <MathHtml className="text-ink-800">{question.answer}</MathHtml>
               </div>
               {question.analysis && (
                 <div>
                   <span className="text-ink-400">解析：</span>
-                  <span className="text-ink-700">{question.analysis}</span>
+                  <MathHtml className="text-ink-700">{question.analysis}</MathHtml>
                 </div>
               )}
               {question.remark && (

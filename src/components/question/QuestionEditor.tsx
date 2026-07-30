@@ -12,15 +12,8 @@ import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { containsMathDelimiter } from "@/lib/math-html";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import type { Question, Chapter, KnowledgePoint, TreeNode, ResourceSemester } from "@/types";
-
-const typeOptions = [
-  { value: "single", label: "单选题" },
-  { value: "multiple", label: "多选题" },
-  { value: "judge", label: "判断题" },
-  { value: "short", label: "填空题" },
-  { value: "essay", label: "解答题" },
-];
 
 const difficultyOptions = [
   { value: "1", label: "1 - 简单" },
@@ -60,6 +53,7 @@ interface QuestionEditorProps {
 export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorProps) {
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
+  const { options: questionTypeOptions } = useQuestionTypeOptions(teacher?.schoolId);
   const [form, setForm] = useState({
     type: question.type,
     stem: question.stem,
@@ -155,7 +149,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         <Select
           label="题型"
           value={form.type}
-          options={typeOptions}
+          options={includeCurrentQuestionType(questionTypeOptions, form.type)}
           onChange={(e) => update("type", e.target.value as any)}
         />
         <Select

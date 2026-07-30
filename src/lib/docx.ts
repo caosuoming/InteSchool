@@ -5,14 +5,7 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 import type { Question } from "@/types";
-
-const typeLabel: Record<Question["type"], string> = {
-  single: "单选题",
-  multiple: "多选题",
-  judge: "判断题",
-  short: "填空题",
-  essay: "解答题",
-};
+import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -184,7 +177,7 @@ export async function generateQuestionDocx(
   );
 
   const metaParts: string[] = [];
-  metaParts.push(`题型：${typeLabel[question.type]}`);
+  metaParts.push(`题型：${getDefaultQuestionTypeLabel(question.type)}`);
   metaParts.push(`难度：${difficultyLabel[question.difficulty]}`);
   if (question.grade) metaParts.push(`年级：${question.grade}`);
   if (question.schoolYear) metaParts.push(`学年：${question.schoolYear}`);
@@ -322,7 +315,7 @@ export async function generateQuestionsDocx(
             size: 24,
           }),
           new TextRun({
-            text: `[${typeLabel[question.type]}] [${difficultyLabel[question.difficulty]}]`,
+            text: `[${getDefaultQuestionTypeLabel(question.type)}] [${difficultyLabel[question.difficulty]}]`,
             color: "6B7280",
             size: 20,
             font: "宋体",

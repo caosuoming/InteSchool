@@ -23,9 +23,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Input, Textarea, Select } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import type {
   TreeNode, FilterLogic, CoursewareType, MaterialType,
-  QuestionType, ShareRecord, ResourceSemester,
+  ShareRecord, ResourceSemester,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
@@ -89,14 +90,6 @@ const materialTypeOptions = [
   { value: "file", label: "文件" },
 ];
 
-const questionTypeLabel: Record<QuestionType, string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
-
 const aiGenTypes = [
   { key: "question", label: "题目", icon: FileQuestion, desc: "生成选择题、填空题、解答题等" },
   { key: "knowledge", label: "知识块", icon: Blocks, desc: "生成知识点总结、概念解析" },
@@ -144,6 +137,7 @@ export function UploadPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { teacher } = useAuthStore();
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(teacher?.schoolId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("upload");
@@ -1212,7 +1206,7 @@ export function UploadPage() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="text-xs font-mono text-ink-500">#{i + 1}</span>
-                                <Badge variant="ink">{questionTypeLabel[q.type]}</Badge>
+                                <Badge variant="ink">{getQuestionTypeLabel(q.type)}</Badge>
                               </div>
                               <div className="text-sm text-ink-900 mb-2">{q.stem}</div>
                               {q.options && (

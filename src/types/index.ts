@@ -303,7 +303,26 @@ export interface TreeNode {
   level?: number;
 }
 
-export type QuestionType = "single" | "multiple" | "judge" | "short" | "essay";
+export type BuiltInQuestionType =
+  | "single"
+  | "multiple"
+  | "short"
+  | "essay"
+  | "judge"
+  | "conceptFill";
+
+/** 学校可在后台增加自定义题型；内置题型保留字面量提示。 */
+export type QuestionType = BuiltInQuestionType | (string & {});
+
+export const DEFAULT_QUESTION_TYPES = [
+  { value: "single", label: "单选题" },
+  { value: "multiple", label: "多选题" },
+  { value: "short", label: "填空题" },
+  { value: "essay", label: "解答题" },
+  { value: "judge", label: "判断题" },
+  { value: "conceptFill", label: "概念填空" },
+] as const satisfies ReadonlyArray<{ value: BuiltInQuestionType; label: string }>;
+
 export type ResourceSemester = "上学期" | "下学期" | "寒假" | "暑假";
 
 export interface QuestionRemark {

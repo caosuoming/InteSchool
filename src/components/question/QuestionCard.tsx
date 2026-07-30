@@ -1,6 +1,8 @@
 import { type Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { Eye, Plus, FileText, MessageSquare } from "lucide-react";
+import { MathHtml } from "@/components/ui/MathHtml";
+import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 
 interface QuestionCardProps {
   question: Question;
@@ -11,14 +13,6 @@ interface QuestionCardProps {
   className?: string;
   showActions?: boolean;
 }
-
-const typeLabel: Record<Question["type"], string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -31,7 +25,9 @@ export function QuestionCard({
   className,
   showActions = true,
 }: QuestionCardProps) {
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(question.schoolId);
   const hasRemarks = (question.remarks && question.remarks.length > 0) || !!question.remark;
+  const hasStemImage = /<img\b/i.test(question.stem);
   const remarkCount = question.remarks?.length || (question.remark ? 1 : 0);
 
   return (
@@ -45,7 +41,7 @@ export function QuestionCard({
     >
       <div className="flex items-start gap-2 mb-2">
         <div className="flex flex-wrap gap-1.5 flex-1">
-          <span className="tag-ink">{typeLabel[question.type]}</span>
+          <span className="tag-ink">{getQuestionTypeLabel(question.type)}</span>
           <span
             className={cn(
               "tag-base",
@@ -97,13 +93,17 @@ export function QuestionCard({
         )}
       </div>
 
-      <div className="text-sm text-ink-900 line-clamp-2 mb-2 leading-relaxed">{question.stem}</div>
+      <MathHtml className={cn(
+        "text-sm text-ink-900 mb-2 leading-relaxed",
+        !hasStemImage && "line-clamp-2",
+      )}>{question.stem}</MathHtml>
 
       {question.options && question.options.length > 0 && (
         <div className="text-xs text-ink-600 space-y-0.5 mb-2">
           {question.options.slice(0, 2).map((opt, i) => (
-            <div key={i} className="truncate">
-              {String.fromCharCode(65 + i)}. {opt}
+            <div key={i} className="flex items-start gap-1 min-w-0">
+              <span className="font-mono font-semibold flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
+              <MathHtml className="min-w-0 truncate">{opt}</MathHtml>
             </div>
           ))}
           {question.options.length > 2 && (

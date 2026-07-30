@@ -20,17 +20,11 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import { MathHtml } from "@/components/ui/MathHtml";
 import type { Basket, Question } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
-
-const typeLabel: Record<Question["type"], string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -418,6 +412,7 @@ function BasketQuestionCard({
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }) {
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(question.schoolId);
   const [expanded, setExpanded] = useState(false);
   const chapterNames = question.chapterIds.map((id) => chapterMap.get(id)).filter(Boolean) as string[];
   const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
@@ -428,7 +423,7 @@ function BasketQuestionCard({
       <div className="flex items-center justify-between px-3 py-2 bg-mist/50 border-b border-ink-50">
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs text-ink-400 w-5">#{index + 1}</span>
-          <Badge variant="ink">{typeLabel[question.type]}</Badge>
+          <Badge variant="ink">{getQuestionTypeLabel(question.type)}</Badge>
           <Badge variant={
             question.difficulty <= 2 ? "green" : question.difficulty <= 3 ? "amber" : "red"
           }>
@@ -459,18 +454,19 @@ function BasketQuestionCard({
           onClick={() => setExpanded(!expanded)}
           className={cn(
             "text-sm text-ink-900 leading-relaxed cursor-pointer hover:text-gold-700 transition-colors",
-            !expanded && "line-clamp-2"
+            !expanded && !/<img\b/i.test(question.stem) && "line-clamp-2"
           )}
         >
-          {question.stem}
+          <MathHtml>{question.stem}</MathHtml>
         </div>
 
         {/* 选项预览 */}
         {!expanded && question.options && question.options.length > 0 && (
           <div className="text-xs text-ink-500 grid grid-cols-2 gap-1 mt-2">
             {question.options.slice(0, 4).map((opt, i) => (
-              <div key={i} className="truncate">
-                {String.fromCharCode(65 + i)}. {opt}
+              <div key={i} className="flex items-start gap-1 min-w-0">
+                <span className="font-mono font-semibold flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
+                <MathHtml className="min-w-0 truncate">{opt}</MathHtml>
               </div>
             ))}
           </div>
@@ -495,7 +491,7 @@ function BasketQuestionCard({
                     <span className="font-mono font-semibold text-ink-700 flex-shrink-0">
                       {String.fromCharCode(65 + i)}.
                     </span>
-                    <span className="text-ink-900">{opt}</span>
+                    <MathHtml className="min-w-0 text-ink-900">{opt}</MathHtml>
                   </div>
                 ))}
               </div>
@@ -503,13 +499,13 @@ function BasketQuestionCard({
 
             {/* 答案 */}
             <div className="p-2 rounded-md bg-emerald-50/40 border border-emerald-200 text-xs text-emerald-900 font-medium">
-              答案：{question.answer}
+              <span>答案：</span><MathHtml>{question.answer}</MathHtml>
             </div>
 
             {/* 解析 */}
             <div className="p-2 rounded-md bg-gold-50/30 border border-gold-200 text-xs text-ink-700 leading-relaxed">
               <span className="font-bold text-gold-700">解析：</span>
-              {question.analysis}
+              <MathHtml>{question.analysis}</MathHtml>
             </div>
           </div>
         )}
