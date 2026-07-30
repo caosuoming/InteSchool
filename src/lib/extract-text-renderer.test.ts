@@ -53,4 +53,14 @@ describe("extract text renderer", () => {
     const html = renderExtractText("普通文本 $x+1", [], true);
     expect(asElement(html).textContent).toBe("普通文本 $x+1");
   });
+
+  it("repairs legacy curve labels in stored extraction text", () => {
+    const html = renderExtractText("椭圆 $\\mathbb{C}_1$ 与点 $\\mathbb{Q}$", [], false);
+    const container = asElement(html);
+
+    const formulas = Array.from(container.querySelectorAll(".katex-html"))
+      .map((element) => element.textContent?.replace(/\u200b/g, ""));
+    expect(formulas).toEqual(["C1", "Q"]);
+    expect(container.querySelector(".mathbb")).toBeNull();
+  });
 });

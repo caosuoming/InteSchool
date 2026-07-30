@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
+import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
 
 interface MathTextProps {
   /** 可能包含 $...$（行内公式）或 $$...$$（块级公式）的文本 */
@@ -16,7 +17,10 @@ interface MathTextProps {
  * 支持转义的 \$ 符号（不作为公式标记）
  */
 export function MathText({ children, className }: MathTextProps) {
-  const segments = useMemo(() => parseMathText(children), [children]);
+  const segments = useMemo(
+    () => parseMathText(normalizeLegacyOmmlMathText(children)),
+    [children],
+  );
 
   return (
     <span className={className}>

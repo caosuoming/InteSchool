@@ -1,4 +1,5 @@
 import katex from "katex";
+import { normalizeLegacyOmmlMathText } from "./legacy-omml-formulas";
 
 const TOKEN_PATTERN = /\$((?:[^$]|[\r\n])*?)\$|!\[([^\]]*)\]\(([^)]+)\)/g;
 const PLACEHOLDER_PATTERN = /\uE000(\d+)\uE001/g;
@@ -106,7 +107,7 @@ export function renderExtractText(
     return `\uE000${index}\uE001`;
   };
 
-  const decoded = decodeHtmlEntities(text);
+  const decoded = normalizeLegacyOmmlMathText(decodeHtmlEntities(text));
   const protectedText = decoded.replace(
     TOKEN_PATTERN,
     (_match, latex: string | undefined, alt: string | undefined, source: string | undefined) => {
