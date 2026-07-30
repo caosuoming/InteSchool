@@ -334,10 +334,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       toast.success(`已创建资源篮「${newBasketName.trim()}」`);
       setNewBasketName("");
       await loadBaskets();
+      setIsCreatingBasket(false);
       setCreatingBasket(false);
     } catch (e: any) {
       toast.error("创建失败", e?.message);
-    } finally {
       setIsCreatingBasket(false);
     }
   };
