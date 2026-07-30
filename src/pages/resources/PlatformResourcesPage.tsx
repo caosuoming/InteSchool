@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
+import { donationService } from "@/services/donation";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -40,6 +41,8 @@ import type {
   MaterialType,
   PlatformResourceSetting,
   PlatformResourceSettingType,
+  PlatformSaveCheckResult,
+  PlatformSaveDecision,
   Question,
   QuestionType,
   ShareRecord,
@@ -236,6 +239,13 @@ export default function PlatformResourcesPage() {
   const [privileges, setPrivileges] = useState<DonationPrivileges | null>(null);
   const [settings, setSettings] = useState<PlatformResourceSetting[]>([]);
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [ownContributionIds, setOwnContributionIds] = useState<Set<string>>(new Set());
+  const [saveConflict, setSaveConflict] = useState<{
+    item: PlatformResourceItem;
+    check: PlatformSaveCheckResult;
+    decision: PlatformSaveDecision;
+  } | null>(null);
   const [editItem, setEditItem] = useState<PlatformResourceItem | null>(null);
   const [editForm, setEditForm] = useState({
     title: "", description: "", grade: "", schoolYear: "", semester: "上学期" as ResourceSemester, originalFileName: "", difficulty: "", recommendation: "",
@@ -255,8 +265,9 @@ export default function PlatformResourcesPage() {
     }
     setLoading(true);
     try {
-      const [donations, contributorList, myPrivileges, chapterData, knowledgeData, settingList] = await Promise.all([
+      const [donations, myDonations, contributorList, myPrivileges, chapterData, knowledgeData, settingList] = await Promise.all([
         shareService.listPublicDonations(),
+        shareService.listDonationStatus(teacher.id),
         shareService.listDonationContributors(),
         shareService.getDonationPrivileges(teacher.id),
         shareService.getPlatformDirectoryTree("chapter"),
@@ -265,6 +276,7 @@ export default function PlatformResourcesPage() {
       ]);
       const nextItems = donations.map(snapshotToItem).filter((item): item is PlatformResourceItem => Boolean(item));
       setItems(nextItems);
+      setOwnContributionIds(new Set(myDonations.map((record) => record.mergedIntoDonationId || record.id)));
       setContributors(contributorList);
       setPrivileges(myPrivileges);
       setChapterTree(chapterData);
@@ -315,14 +327,62 @@ export default function PlatformResourcesPage() {
     return sorted;
   }, [items, typeFilter, keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, sortKey]);
 
-  const handleAddToMyResources = async (item: PlatformResourceItem) => {
+  const saveToMyResources = async (
+    item: PlatformResourceItem,
+    decision?: PlatformSaveDecision,
+  ) => {
     if (!teacher) return;
     setAddingIds((current) => new Set(current).add(item.shareId));
     try {
-      await shareService.acceptShare(item.shareId, teacher.id, schoolId);
-      toast.success("已添加到我的资源", item.title);
+      const result = await donationService.saveAsOwnResource(item.shareId, teacher.id, schoolId, decision);
+      setSavedIds((current) => new Set(current).add(item.shareId));
+      setSaveConflict(null);
+      toast.success(result.merged ? "已合并到我的题目" : "已添加到我的资源", item.title);
     } catch (error: any) {
       toast.error("添加失败", error?.message);
+    } finally {
+      setAddingIds((current) => {
+        const next = new Set(current);
+        next.delete(item.shareId);
+        return next;
+      });
+    }
+  };
+
+  const handleAddToMyResources = async (item: PlatformResourceItem) => {
+    if (!teacher) return;
+    if (ownContributionIds.has(item.shareId)) {
+      toast.warning("本人捐赠或参与合并的平台资源不能另存");
+      return;
+    }
+    setAddingIds((current) => new Set(current).add(item.shareId));
+    try {
+      const check = await donationService.checkSaveAsOwnResource(item.shareId, teacher.id, schoolId);
+      if (!check.canSave) {
+        if (check.alreadySaved) setSavedIds((current) => new Set(current).add(item.shareId));
+        toast.warning(check.reason || "该平台资源不能另存");
+        return;
+      }
+      if (!check.conflict) {
+        await saveToMyResources(item);
+        return;
+      }
+      setSaveConflict({
+        item,
+        check,
+        decision: {
+          action: "new",
+          targetResourceId: check.conflict.targetResourceId,
+          fields: {
+            stem: "target",
+            answer: "target",
+            analysis: "target",
+            summary: "target",
+          },
+        },
+      });
+    } catch (error: any) {
+      toast.error("查重失败", error?.message);
     } finally {
       setAddingIds((current) => {
         const next = new Set(current);
@@ -401,6 +461,12 @@ export default function PlatformResourcesPage() {
       setSavingSettings(false);
     }
   };
+
+  const updateSaveDecision = (updater: (decision: PlatformSaveDecision) => PlatformSaveDecision) => {
+    setSaveConflict((current) => current ? { ...current, decision: updater(current.decision) } : current);
+  };
+
+  const saveQuestionConflict = saveConflict?.check.conflict;
 
   return (
     <div>
@@ -580,10 +646,15 @@ export default function PlatformResourcesPage() {
                           variant="gold"
                           size="sm"
                           loading={addingIds.has(item.shareId)}
+                          disabled={ownContributionIds.has(item.shareId) || savedIds.has(item.shareId)}
                           onClick={() => handleAddToMyResources(item)}
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          添加到我的资源
+                          {ownContributionIds.has(item.shareId)
+                            ? "本人捐赠"
+                            : savedIds.has(item.shareId)
+                              ? "已添加"
+                              : "添加到我的资源"}
                         </Button>
                       </div>
                     </div>
@@ -594,6 +665,123 @@ export default function PlatformResourcesPage() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={Boolean(saveConflict && saveQuestionConflict)}
+        onClose={() => setSaveConflict(null)}
+        title="另存题目查重"
+        description="平台题目与我的题目相似度超过 80%。题干只能二选一，答案、解析、总结可复选并保留为第二项。"
+        size="full"
+        footer={saveConflict ? (
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setSaveConflict(null)}>取消</Button>
+            <Button
+              variant="gold"
+              loading={addingIds.has(saveConflict.item.shareId)}
+              onClick={() => saveToMyResources(saveConflict.item, saveConflict.decision)}
+            >
+              确认另存
+            </Button>
+          </div>
+        ) : null}
+      >
+        {saveConflict && saveQuestionConflict && (
+          <Card className="p-4">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <div className="font-medium text-ink-900">相似题目比较</div>
+                <div className="text-xs text-ink-500 mt-1">
+                  相似度 {(saveQuestionConflict.similarity * 100).toFixed(1)}%
+                </div>
+              </div>
+              <div className="flex rounded-md border border-ink-200 overflow-hidden">
+                {([
+                  { value: "new", label: "作为新题新增" },
+                  { value: "merge", label: "合并到我的题目" },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => updateSaveDecision((current) => ({ ...current, action: option.value }))}
+                    className={cn(
+                      "px-3 py-1.5 text-xs transition-colors",
+                      saveConflict.decision.action === option.value
+                        ? "bg-gold-400 text-ink-900"
+                        : "bg-paper text-ink-600 hover:bg-mist",
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-[88px_1fr_1fr] gap-2 text-xs">
+              <div />
+              <div className="font-medium text-ink-600 px-2">平台题目</div>
+              <div className="font-medium text-ink-600 px-2">我的题目</div>
+              {([
+                { key: "stem", label: "题干", source: saveQuestionConflict.sourceQuestion.stem, target: saveQuestionConflict.targetQuestion.stem },
+                { key: "answer", label: "答案", source: saveQuestionConflict.sourceQuestion.answer, target: saveQuestionConflict.targetQuestion.answer },
+                { key: "analysis", label: "解析", source: saveQuestionConflict.sourceQuestion.analysis, target: saveQuestionConflict.targetQuestion.analysis },
+                { key: "summary", label: "总结", source: saveQuestionConflict.sourceQuestion.summary || "（无）", target: saveQuestionConflict.targetQuestion.summary || "（无）" },
+              ] as const).map((field) => (
+                <div key={field.key} className="contents">
+                  <div className="font-medium text-ink-700 py-2">{field.label}</div>
+                  <button
+                    disabled={saveConflict.decision.action !== "merge"}
+                    onClick={() => updateSaveDecision((current) => ({
+                      ...current,
+                      fields: {
+                        ...current.fields,
+                        [field.key]: field.key === "stem"
+                          ? "source"
+                          : current.fields[field.key] === "both"
+                            ? "target"
+                            : current.fields[field.key] === "target"
+                              ? "both"
+                              : "source",
+                      },
+                    }))}
+                    className={cn(
+                      "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
+                      saveConflict.decision.action === "merge" && ["source", "both"].includes(saveConflict.decision.fields[field.key])
+                        ? "border-gold-400 bg-gold-50"
+                        : "border-ink-100 bg-mist/40",
+                      saveConflict.decision.action !== "merge" && "opacity-60 cursor-default",
+                    )}
+                  >
+                    {field.source}
+                  </button>
+                  <button
+                    disabled={saveConflict.decision.action !== "merge"}
+                    onClick={() => updateSaveDecision((current) => ({
+                      ...current,
+                      fields: {
+                        ...current.fields,
+                        [field.key]: field.key === "stem"
+                          ? "target"
+                          : current.fields[field.key] === "both"
+                            ? "source"
+                            : current.fields[field.key] === "source"
+                              ? "both"
+                              : "target",
+                      },
+                    }))}
+                    className={cn(
+                      "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
+                      saveConflict.decision.action === "merge" && ["target", "both"].includes(saveConflict.decision.fields[field.key])
+                        ? "border-gold-400 bg-gold-50"
+                        : "border-ink-100 bg-mist/40",
+                      saveConflict.decision.action !== "merge" && "opacity-60 cursor-default",
+                    )}
+                  >
+                    {field.target}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </Modal>
 
       <Modal
         open={Boolean(editItem)}

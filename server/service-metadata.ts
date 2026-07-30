@@ -19,10 +19,16 @@ export const serviceParameters = {
       "items",
       "decisions"
     ],
-    "saveAsOwnResource": [
+    "checkSaveAsOwnResource": [
       "donationId",
       "teacherId",
       "schoolId"
+    ],
+    "saveAsOwnResource": [
+      "donationId",
+      "teacherId",
+      "schoolId",
+      "decision"
     ],
     "updateDonation": [
       "donationId",

@@ -155,12 +155,14 @@ function getDateRange(key: TimeRangeKey): DateRange | undefined {
 interface QuestionBankPageProps {
   donationSelectedIds?: Set<string>;
   donatedQuestionIds?: Set<string>;
+  donationLockedQuestionIds?: Set<string>;
   onToggleDonation?: (question: Question) => void;
 }
 
 export default function QuestionBankPage({
   donationSelectedIds,
   donatedQuestionIds,
+  donationLockedQuestionIds,
   onToggleDonation,
 }: QuestionBankPageProps = {}) {
   const { teacher } = useAuthStore();
@@ -1128,6 +1130,7 @@ export default function QuestionBankPage({
                   wideLayout={directoryCollapsed}
                   donationSelected={donationSelectedIds?.has(q.id) || false}
                   donated={donatedQuestionIds?.has(q.id) || false}
+                  donationLocked={donationLockedQuestionIds?.has(q.id) || false}
                   onToggleDonation={onToggleDonation}
                 />
               ))}
@@ -1827,6 +1830,7 @@ function QuestionRow({
   wideLayout,
   donationSelected,
   donated,
+  donationLocked,
   onToggleDonation,
 }: {
   question: Question;
@@ -1864,6 +1868,7 @@ function QuestionRow({
   wideLayout?: boolean;
   donationSelected?: boolean;
   donated?: boolean;
+  donationLocked?: boolean;
   onToggleDonation?: (q: Question) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -1915,20 +1920,20 @@ function QuestionRow({
           <button
             onClick={(event) => {
               event.stopPropagation();
-              if (!donated) onToggleDonation(question);
+              if (!donated && !donationLocked) onToggleDonation(question);
             }}
             className={cn(
               "mt-0.5 flex-shrink-0 rounded p-0.5 transition-colors",
-              donated
+              donated || donationLocked
                 ? "text-ink-300 cursor-not-allowed"
                 : donationSelected
                   ? "text-gold-600"
                   : "text-ink-300 hover:text-gold-600",
             )}
-            title={donated ? "该题目已捐赠" : donationSelected ? "取消选择" : "选择捐赠"}
-            disabled={donated}
+            title={donated ? "该题目已捐赠" : donationLocked ? "平台资源副本不能再次捐赠" : donationSelected ? "取消选择" : "选择捐赠"}
+            disabled={donated || donationLocked}
           >
-            {donationSelected || donated
+            {donationSelected || donated || donationLocked
               ? <CheckSquare className="w-4 h-4" />
               : <Square className="w-4 h-4" />}
           </button>
@@ -2383,6 +2388,11 @@ function QuestionRow({
         {donated && (
           <div className="flex-shrink-0">
             <Badge variant="teal">已捐赠</Badge>
+          </div>
+        )}
+        {donationLocked && (
+          <div className="flex-shrink-0">
+            <Badge variant="ink">平台副本</Badge>
           </div>
         )}
       </div>
