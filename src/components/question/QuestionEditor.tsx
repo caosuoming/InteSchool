@@ -9,7 +9,8 @@ import { Textarea, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { TreeView } from "@/components/tree/TreeView";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
-import type { Question, Chapter, KnowledgePoint, TreeNode } from "@/types";
+import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import type { Question, Chapter, KnowledgePoint, TreeNode, ResourceSemester } from "@/types";
 
 const typeOptions = [
   { value: "single", label: "单选题" },
@@ -48,19 +49,6 @@ const sourceOptions = [
   { value: "shared", label: "共享" },
 ];
 
-const gradeOptions = [
-  { value: "", label: "未指定" },
-  { value: "高一", label: "高一" },
-  { value: "高二", label: "高二" },
-  { value: "高三", label: "高三" },
-];
-
-const yearOptions = [
-  { value: "", label: "未指定" },
-  { value: "2025-2026", label: "2025-2026" },
-  { value: "2024-2025", label: "2024-2025" },
-];
-
 interface QuestionEditorProps {
   question: Question;
   onSaved: (q: Question) => void;
@@ -69,6 +57,7 @@ interface QuestionEditorProps {
 
 export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorProps) {
   const { teacher } = useAuthStore();
+  const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const [form, setForm] = useState({
     type: question.type,
     stem: question.stem,
@@ -85,6 +74,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     category: question.category ?? "practice",
     grade: question.grade ?? "",
     schoolYear: question.schoolYear ?? "",
+    semester: question.semester ?? "上学期",
     isShared: question.isShared,
   });
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -144,6 +134,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         category: form.category as any,
         grade: form.grade,
         schoolYear: form.schoolYear,
+        semester: form.semester as ResourceSemester,
         isShared: form.isShared,
       });
       toast.success("题目已更新");
@@ -192,14 +183,20 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         <Select
           label="年级"
           value={form.grade}
-          options={gradeOptions}
+          options={[{ value: "", label: "未指定" }, ...includeCurrentOption(gradeOptions, form.grade)]}
           onChange={(e) => update("grade", e.target.value)}
         />
         <Select
           label="学年"
           value={form.schoolYear}
-          options={yearOptions}
+          options={[{ value: "", label: "未指定" }, ...includeCurrentOption(schoolYearOptions, form.schoolYear)]}
           onChange={(e) => update("schoolYear", e.target.value)}
+        />
+        <Select
+          label="学期"
+          value={form.semester}
+          options={semesterOptions}
+          onChange={(e) => update("semester", e.target.value as ResourceSemester)}
         />
         <div>
           <label className="block text-sm font-medium text-ink-700 mb-1.5">是否共享</label>

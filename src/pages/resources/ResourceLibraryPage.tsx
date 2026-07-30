@@ -25,10 +25,11 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import type {
   Lecture, ExamPaper, Courseware, Material,
   TreeNode, FilterLogic,
-  CoursewareType, MaterialType,
+  CoursewareType, MaterialType, ResourceSemester,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
 type ResourceTab = "lecture" | "examPaper" | "courseware" | "material";
 type LeftTab = "chapter" | "knowledge";
@@ -68,6 +69,7 @@ const materialTypeLabel: Record<MaterialType, string> = {
 export default function ResourceLibraryPage() {
   const navigate = useNavigate();
   const { teacher } = useAuthStore();
+  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(teacher?.schoolId);
   const [activeTab, setActiveTab] = useState<ResourceTab>("lecture");
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
@@ -94,8 +96,9 @@ export default function ResourceLibraryPage() {
     description: "",
     content: "",
     type: "" as string,
-    grade: "高一",
-    schoolYear: "2025-2026",
+    grade: "",
+    schoolYear: "",
+    semester: "上学期" as ResourceSemester,
   });
   const [creating, setCreating] = useState(false);
 
@@ -176,8 +179,9 @@ export default function ResourceLibraryPage() {
       description: "",
       content: "",
       type: activeTab === "courseware" ? "ppt" : activeTab === "material" ? "text" : "",
-      grade: "高一",
-      schoolYear: "2025-2026",
+      grade: defaultGrade,
+      schoolYear: defaultSchoolYear,
+      semester: defaultSemester,
     });
     setCreateModalOpen(true);
   };
@@ -197,6 +201,7 @@ export default function ResourceLibraryPage() {
         knowledgePointIds: checkedKnowledge,
         grade: createForm.grade,
         schoolYear: createForm.schoolYear,
+        semester: createForm.semester,
       };
       if (activeTab === "courseware") {
         await coursewareService.createCourseware(teacher.id, schoolId, {
@@ -586,16 +591,24 @@ export default function ResourceLibraryPage() {
               />
             </>
           )}
-          <div className="grid grid-cols-2 gap-4">
-            <Input
+          <div className="grid grid-cols-3 gap-4">
+            <Select
               label="年级"
               value={createForm.grade}
+              options={gradeOptions}
               onChange={(e) => setCreateForm({ ...createForm, grade: e.target.value })}
             />
-            <Input
+            <Select
               label="学年"
               value={createForm.schoolYear}
+              options={schoolYearOptions}
               onChange={(e) => setCreateForm({ ...createForm, schoolYear: e.target.value })}
+            />
+            <Select
+              label="学期"
+              value={createForm.semester}
+              options={semesterOptions}
+              onChange={(e) => setCreateForm({ ...createForm, semester: e.target.value as ResourceSemester })}
             />
           </div>
           {(checkedChapters.length > 0 || checkedKnowledge.length > 0) && (

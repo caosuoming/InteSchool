@@ -22,9 +22,10 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Textarea, Select } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
+import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
   TreeNode, FilterLogic, CoursewareType, MaterialType,
-  QuestionType, ShareRecord,
+  QuestionType, ShareRecord, ResourceSemester,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,7 @@ interface BatchFileItem {
   // 单独覆盖属性（为空时使用公共属性）
   grade?: string;
   schoolYear?: string;
+  semester?: ResourceSemester;
   chapterIds?: string[];
   knowledgePointIds?: string[];
   // 资源类型特定属性
@@ -85,21 +87,6 @@ const materialTypeOptions = [
   { value: "audio", label: "音频" },
   { value: "link", label: "链接" },
   { value: "file", label: "文件" },
-];
-
-const gradeOptions = [
-  { value: "高一", label: "高一" },
-  { value: "高二", label: "高二" },
-  { value: "高三", label: "高三" },
-  { value: "初一", label: "初一" },
-  { value: "初二", label: "初二" },
-  { value: "初三", label: "初三" },
-];
-
-const schoolYearOptions = [
-  { value: "2025-2026", label: "2025-2026" },
-  { value: "2024-2025", label: "2024-2025" },
-  { value: "2026-2027", label: "2026-2027" },
 ];
 
 const questionTypeLabel: Record<QuestionType, string> = {
@@ -157,6 +144,7 @@ export function UploadPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { teacher } = useAuthStore();
+  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(teacher?.schoolId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("upload");
 
@@ -166,8 +154,9 @@ export function UploadPage() {
   const [batchFiles, setBatchFiles] = useState<BatchFileItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   // 公共属性
-  const [grade, setGrade] = useState("高一");
-  const [schoolYear, setSchoolYear] = useState("2025-2026");
+  const [grade, setGrade] = useState("");
+  const [schoolYear, setSchoolYear] = useState("");
+  const [semester, setSemester] = useState<ResourceSemester>("上学期");
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [checkedChapters, setCheckedChapters] = useState<string[]>([]);
@@ -190,6 +179,12 @@ export function UploadPage() {
   // 接受分享相关状态
   const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
   const [incomingShares, setIncomingShares] = useState<ShareRecord[]>([]);
+
+  useEffect(() => {
+    if (!grade && defaultGrade) setGrade(defaultGrade);
+    if (!schoolYear && defaultSchoolYear) setSchoolYear(defaultSchoolYear);
+    if (!semester) setSemester(defaultSemester);
+  }, [grade, schoolYear, semester, defaultGrade, defaultSchoolYear, defaultSemester]);
 
   useEffect(() => {
     if (teacher?.schoolId) {
@@ -303,6 +298,7 @@ export function UploadPage() {
       try {
         const finalGrade = item.grade || grade;
         const finalSchoolYear = item.schoolYear || schoolYear;
+        const finalSemester = item.semester || semester;
         const finalChapterIds = item.chapterIds ?? checkedChapters;
         const finalKnowledgeIds = item.knowledgePointIds ?? checkedKnowledge;
         const baseInput = {
@@ -312,6 +308,7 @@ export function UploadPage() {
           knowledgePointIds: finalKnowledgeIds,
           grade: finalGrade,
           schoolYear: finalSchoolYear,
+          semester: finalSemester,
         };
 
         let resourceId: string | null = null;
@@ -540,18 +537,24 @@ export function UploadPage() {
                     </p>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <div className="grid md:grid-cols-3 gap-4">
                     <Select
                       label="年级"
                       value={grade}
                       onChange={(e) => setGrade(e.target.value)}
                       options={gradeOptions}
                     />
-                    <Input
+                    <Select
                       label="学年"
                       value={schoolYear}
                       onChange={(e) => setSchoolYear(e.target.value)}
-                      placeholder="如 2025-2026"
+                      options={schoolYearOptions}
+                    />
+                    <Select
+                      label="学期"
+                      value={semester}
+                      onChange={(e) => setSemester(e.target.value as ResourceSemester)}
+                      options={semesterOptions}
                     />
                   </div>
 
@@ -705,7 +708,7 @@ export function UploadPage() {
                       const itemChapterIds = item.chapterIds ?? [];
                       const itemKnowledgeIds = item.knowledgePointIds ?? [];
                       const hasOverride = Boolean(
-                        item.grade || item.schoolYear
+                        item.grade || item.schoolYear || item.semester
                           || item.chapterIds?.length
                           || item.knowledgePointIds?.length,
                       );
@@ -830,7 +833,7 @@ export function UploadPage() {
                             </button>
                             {expanded && (
                               <div className="mt-3 space-y-3 p-3 rounded-lg bg-mist/40 border border-ink-100">
-                                <div className="grid md:grid-cols-2 gap-3">
+                                <div className="grid md:grid-cols-3 gap-3">
                                   <Select
                                     label="年级（覆盖）"
                                     value={item.grade || ""}
@@ -840,13 +843,22 @@ export function UploadPage() {
                                     options={[{ value: "", label: "使用公共属性" }, ...gradeOptions]}
                                     disabled={item.status === "uploading"}
                                   />
-                                  <Input
+                                  <Select
                                     label="学年（覆盖）"
                                     value={item.schoolYear || ""}
                                     onChange={(e) => updateBatchItem(item.id, {
                                       schoolYear: e.target.value || undefined,
                                     })}
-                                    placeholder="使用公共属性"
+                                    options={[{ value: "", label: "使用公共属性" }, ...schoolYearOptions]}
+                                    disabled={item.status === "uploading"}
+                                  />
+                                  <Select
+                                    label="学期（覆盖）"
+                                    value={item.semester || ""}
+                                    onChange={(e) => updateBatchItem(item.id, {
+                                      semester: (e.target.value || undefined) as ResourceSemester | undefined,
+                                    })}
+                                    options={[{ value: "", label: "使用公共属性" }, ...semesterOptions]}
                                     disabled={item.status === "uploading"}
                                   />
                                 </div>
@@ -894,6 +906,7 @@ export function UploadPage() {
                                     onClick={() => updateBatchItem(item.id, {
                                       grade: undefined,
                                       schoolYear: undefined,
+                                      semester: undefined,
                                       chapterIds: undefined,
                                       knowledgePointIds: undefined,
                                     })}

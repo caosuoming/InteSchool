@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { Material, MaterialType, ResourceFilter } from "@/types";
+import type { Material, MaterialType, ResourceFilter, ResourceSemester } from "@/types";
 
 export interface MaterialInput {
   title: string;
@@ -9,6 +9,7 @@ export interface MaterialInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   type: MaterialType;
   content: string;
   fileUrl?: string;

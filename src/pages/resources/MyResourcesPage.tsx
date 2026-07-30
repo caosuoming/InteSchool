@@ -36,7 +36,7 @@ import type {
   TreeNode, FilterLogic, ShareScope,
   CoursewareType, MaterialType, QuestionType, ShareableResourceType,
   Reflection, Basket,
-  DonationCheckResult, DonationDecision, DonationItem, PlatformDonation,
+  DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { genId } from "@/lib/service-utils";
@@ -45,6 +45,7 @@ import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
 import { Badge } from "@/components/ui/Badge";
+import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
@@ -116,20 +117,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [onlyUncategorized, setOnlyUncategorized] = useState(false);
   const [selectedGrade, setSelectedGrade] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
-
-  const gradeOptions = [
-    { value: "高一", label: "高一" },
-    { value: "高二", label: "高二" },
-    { value: "高三", label: "高三" },
-    { value: "初一", label: "初一" },
-    { value: "初二", label: "初二" },
-    { value: "初三", label: "初三" },
-  ];
-  const yearOptions = [
-    { value: "2025-2026", label: "2025-2026" },
-    { value: "2024-2025", label: "2024-2025" },
-    { value: "2023-2024", label: "2023-2024" },
-  ];
+  const [selectedSemester, setSelectedSemester] = useState("");
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
@@ -188,6 +176,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     knowledgePointIds: string[];
     grade: string;
     schoolYear: string;
+    semester: ResourceSemester;
   } | null>(null);
 
   const handleOpenExtract = (resource: ExamPaper | Lecture, type: "examPaper" | "lecture") => {
@@ -200,6 +189,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       knowledgePointIds: resource.knowledgePointIds,
       grade: resource.grade,
       schoolYear: resource.schoolYear,
+      semester: resource.semester || "上学期",
     });
   };
 
@@ -220,6 +210,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [newBasketName, setNewBasketName] = useState("");
 
   const schoolId = teacher?.schoolId || "sch-1";
+  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(schoolId);
 
   const loadTeacherDonations = useCallback(async () => {
     if (!teacher) return;
@@ -242,6 +233,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       schoolId,
       grade: selectedGrade || undefined,
       schoolYear: selectedYear || undefined,
+      semester: (selectedSemester || undefined) as ResourceSemester | undefined,
     };
     try {
       const [qData, lecData, examData, cwData, matData] = await Promise.all([
@@ -283,7 +275,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     } finally {
       setLoading(false);
     }
-  }, [keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, schoolId, selectedGrade, selectedYear, teacher]);
+  }, [keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, schoolId, selectedGrade, selectedYear, selectedSemester, teacher]);
 
   useEffect(() => {
     knowledgeService.getChapterTree(schoolId).then(setChapterTree);
@@ -437,8 +429,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       description: `包含 ${selectedQs.length} 题、${selectedMs.length} 素材`,
       chapterIds: [],
       knowledgePointIds: [],
-      grade: selectedQs[0]?.grade || "高一",
-      schoolYear: selectedQs[0]?.schoolYear || "2025-2026",
+      grade: selectedQs[0]?.grade || defaultGrade,
+      schoolYear: selectedQs[0]?.schoolYear || defaultSchoolYear,
+      semester: selectedQs[0]?.semester || defaultSemester,
       classIds: [],
       studentIds: [],
       sections,
@@ -481,8 +474,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       description: `包含 ${questions.length} 题、总分 ${totalScore} 分`,
       chapterIds: [],
       knowledgePointIds: [],
-      grade: selectedQs[0]?.grade || "高一",
-      schoolYear: selectedQs[0]?.schoolYear || "2025-2026",
+      grade: selectedQs[0]?.grade || defaultGrade,
+      schoolYear: selectedQs[0]?.schoolYear || defaultSchoolYear,
+      semester: selectedQs[0]?.semester || defaultSemester,
       duration: Math.max(30, questions.length * 5),
       totalScore,
       questions,
@@ -508,8 +502,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         description: "",
         chapterIds: [],
         knowledgePointIds: [],
-        grade: "高一",
-        schoolYear: "2025-2026",
+        grade: defaultGrade,
+        schoolYear: defaultSchoolYear,
+        semester: defaultSemester,
         duration: 90,
         totalScore: 0,
         questions: [],
@@ -530,8 +525,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         description: "",
         chapterIds: [],
         knowledgePointIds: [],
-        grade: "高一",
-        schoolYear: "2025-2026",
+        grade: defaultGrade,
+        schoolYear: defaultSchoolYear,
+        semester: defaultSemester,
         classIds: [],
         studentIds: [],
         sections: [],
@@ -1226,10 +1222,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 onChange={setSelectedGrade}
               />
               <FilterSelect
-                label="年份"
+                label="学年"
                 value={selectedYear}
-                options={yearOptions}
+                options={schoolYearOptions}
                 onChange={setSelectedYear}
+              />
+              <FilterSelect
+                label="学期"
+                value={selectedSemester}
+                options={semesterOptions}
+                onChange={setSelectedSemester}
               />
               {noTreeSelection && (
                 <button
@@ -1300,7 +1302,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       title={mainLecture.title}
                       description={mainLecture.description || (hasExtractCopy ? "文档拆解生成的正稿，可编辑替换其中的题目和知识块" : undefined)}
                       meta={[
-                        { label: "年级", value: `${mainLecture.grade} · ${mainLecture.schoolYear}` },
+                        { label: "年级", value: `${mainLecture.grade} · ${mainLecture.schoolYear} · ${mainLecture.semester || "上学期"}` },
                         { label: "内容", value: `${mainLecture.sections.length} 节` },
                         { label: "状态", value: mainLecture.status === "published" ? "已发布" : "草稿" },
                       ]}
@@ -1375,7 +1377,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           title={item.title}
                           description={item.description}
                           meta={[
-                            { label: "年级", value: `${item.grade} · ${item.schoolYear}` },
+                            { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
                             { label: "内容", value: `${item.sections.length} 节` },
                             { label: "状态", value: item.status === "published" ? "已发布" : "草稿" },
                           ]}
@@ -1441,7 +1443,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         title={copy.title}
                         description={copy.description || "文档拆解生成的副本，可编辑替换其中的题目和知识块"}
                         meta={[
-                          { label: "年级", value: `${copy.grade} · ${copy.schoolYear}` },
+                          { label: "年级", value: `${copy.grade} · ${copy.schoolYear} · ${copy.semester || "上学期"}` },
                           { label: "题目", value: `${copy.questions.length} 题` },
                           { label: "总分", value: `${copy.totalScore} 分` },
                           { label: "时长", value: `${copy.duration} 分钟` },
@@ -1479,7 +1481,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           title={item.title}
                           description={item.description}
                           meta={[
-                            { label: "年级", value: `${item.grade} · ${item.schoolYear}` },
+                            { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
                             { label: "题目", value: `${item.questions.length} 题` },
                             { label: "总分", value: `${item.totalScore} 分` },
                             { label: "时长", value: `${item.duration} 分钟` },
@@ -1585,7 +1587,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           title={item.title}
                           description={item.description}
                           meta={[
-                            { label: "年级", value: `${item.grade} · ${item.schoolYear}` },
+                            { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
                             { label: "题目", value: `${item.questions.length} 题` },
                             { label: "总分", value: `${item.totalScore} 分` },
                             { label: "时长", value: `${item.duration} 分钟` },
@@ -1626,7 +1628,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   description={item.description}
                   meta={[
                     { label: "类型", value: coursewareTypeLabel[item.type] },
-                    { label: "年级", value: `${item.grade} · ${item.schoolYear}` },
+                    { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
                     { label: "标签", value: item.tags.join("、") || "无" },
                   ]}
                   content={item.content}
@@ -1654,7 +1656,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   description={item.description}
                   meta={[
                     { label: "类型", value: materialTypeLabel[item.type] },
-                    { label: "年级", value: `${item.grade} · ${item.schoolYear}` },
+                    { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
                     { label: "标签", value: item.tags.join("、") || "无" },
                   ]}
                   content={item.content}
@@ -1969,6 +1971,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           knowledgePointIds={extractModal.knowledgePointIds}
           grade={extractModal.grade}
           schoolYear={extractModal.schoolYear}
+          semester={extractModal.semester}
           onConfirmed={handleExtractConfirmed}
         />
       )}

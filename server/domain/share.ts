@@ -22,6 +22,7 @@ import type {
   ShareScope,
   ShareStatus,
   TreeNode,
+  ResourceSemester,
 } from "../../src/types/index.js";
 
 type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
@@ -30,6 +31,7 @@ type DonationPatch = Partial<{
   description: string;
   grade: string;
   schoolYear: string;
+  semester: ResourceSemester;
   originalFileName: string;
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
@@ -390,6 +392,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
         usageCount: 0,
@@ -406,6 +409,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
         status: "draft",
@@ -420,6 +424,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
         status: "draft",
@@ -435,6 +440,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
         createdAt: now,
@@ -448,6 +454,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
         createdAt: now,
@@ -684,6 +691,9 @@ export const shareService = {
       throw new Error("仅捐赠者本人或贡献榜前十名可以修改该平台资源");
     }
     const snapshot = structuredClone(donation.resourceSnapshot) as ShareableResource & Record<string, unknown>;
+    if (typeof patch.grade === "string") snapshot.grade = patch.grade;
+    if (typeof patch.schoolYear === "string") snapshot.schoolYear = patch.schoolYear;
+    if (typeof patch.semester === "string") snapshot.semester = patch.semester;
     if (donation.resourceType === "question") {
       if (typeof patch.title === "string") (snapshot as Question).stem = patch.title.trim();
       if (typeof patch.difficulty === "number") (snapshot as Question).difficulty = patch.difficulty;
@@ -691,8 +701,6 @@ export const shareService = {
     } else {
       if (typeof patch.title === "string") (snapshot as Exclude<ShareableResource, Question>).title = patch.title.trim();
       if (typeof patch.description === "string") snapshot.description = patch.description;
-      if (typeof patch.grade === "string") snapshot.grade = patch.grade;
-      if (typeof patch.schoolYear === "string") snapshot.schoolYear = patch.schoolYear;
       if (typeof patch.originalFileName === "string" && "originalFileName" in snapshot) {
         snapshot.originalFileName = patch.originalFileName.trim();
       }

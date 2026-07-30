@@ -271,6 +271,7 @@ export interface TreeNode {
 }
 
 export type QuestionType = "single" | "multiple" | "judge" | "short" | "essay";
+export type ResourceSemester = "上学期" | "下学期" | "寒假" | "暑假";
 
 export interface QuestionRemark {
   id: string;
@@ -303,6 +304,7 @@ export interface Question {
   sourceType?: "imported" | "manual" | "shared";
   grade?: string;
   schoolYear?: string;
+  semester?: ResourceSemester;
   category?: "practice" | "exam" | "homework" | "review";
   isShared: boolean;
   /** 查重哈希：基于题干+选项+答案计算，用于入库查重 */
@@ -353,6 +355,7 @@ export interface ExamPaper {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   duration: number; // 考试时长（分钟）
   totalScore: number;
   questions: ExamPaperQuestion[];
@@ -390,6 +393,7 @@ export interface Courseware {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   type: CoursewareType;
   content: string; // 课件内容摘要或文本内容
   fileUrl?: string; // 文件地址（如有上传）
@@ -413,6 +417,7 @@ export interface Material {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   type: MaterialType;
   content: string; // 素材内容
   fileUrl?: string;
@@ -435,6 +440,7 @@ export interface ResourceFilter {
   knowledgeLogic?: FilterLogic;
   grade?: string;
   schoolYear?: string;
+  semester?: ResourceSemester;
   teacherId?: string;
   schoolId?: string;
   /** 按ID列表筛选 */
@@ -696,6 +702,7 @@ export interface QuestionFilter {
   schoolId?: string;
   grade?: string;
   schoolYear?: string;
+  semester?: ResourceSemester;
   sourceType?: string[];
   category?: string[];
   excludeQuestionIds?: string[];
@@ -728,6 +735,7 @@ export interface Lecture {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   classIds: string[];
   studentIds: string[];
   sections: LectureSection[];
@@ -778,6 +786,7 @@ export interface LectureFilter {
   knowledgeLogic?: FilterLogic;
   grade?: string;
   schoolYear?: string;
+  semester?: ResourceSemester;
   status?: LectureStatus;
   teacherId?: string;
   schoolId?: string;
@@ -1079,6 +1088,7 @@ export interface LessonCourseware {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   /** 课件来源 */
   sourceType: LessonSourceType;
   /** 来源资源ID */
@@ -1102,6 +1112,7 @@ export interface LessonCoursewareFilter {
   keyword?: string;
   grade?: string;
   schoolYear?: string;
+  semester?: ResourceSemester;
   chapterIds?: string[];
   knowledgePointIds?: string[];
   status?: "draft" | "published";
@@ -1198,6 +1209,8 @@ export interface SchoolResourceBackup {
   grade?: string;
   /** 学年 */
   schoolYear?: string;
+  /** 学期 */
+  semester?: ResourceSemester;
   /** 元数据（题型/总分/时长等） */
   meta: Record<string, string>;
   /** 备份时间 */

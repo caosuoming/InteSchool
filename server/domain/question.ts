@@ -1,4 +1,4 @@
-import type { Question, QuestionFilter, QuestionType, QuestionRemark } from "../../src/types/index.js";
+import type { Question, QuestionFilter, QuestionType, QuestionRemark, ResourceSemester } from "../../src/types/index.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { knowledgeService } from "./knowledge.js";
@@ -12,6 +12,9 @@ export interface QuestionInput {
   summary?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
+  grade?: string;
+  schoolYear?: string;
+  semester?: ResourceSemester;
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
   remark?: string;
@@ -69,6 +72,7 @@ function matchFilter(q: Question, filter: QuestionFilter): boolean {
   if (filter.schoolId && q.schoolId !== filter.schoolId) return false;
   if (filter.grade && q.grade !== filter.grade) return false;
   if (filter.schoolYear && q.schoolYear !== filter.schoolYear) return false;
+  if (filter.semester && (q.semester || "上学期") !== filter.semester) return false;
   if (filter.sourceType?.length) {
     if (!q.sourceType || !filter.sourceType.includes(q.sourceType)) return false;
   }
@@ -137,6 +141,9 @@ export const questionService = {
       summary: input.summary || "",
       chapterIds: input.chapterIds,
       knowledgePointIds: expandedKpIds,
+      grade: input.grade,
+      schoolYear: input.schoolYear,
+      semester: input.semester || "上学期",
       difficulty: input.difficulty,
       recommendation: input.recommendation,
       usageCount: 0,
@@ -283,6 +290,9 @@ export const questionService = {
       summary: input.summary || "",
       chapterIds: input.chapterIds,
       knowledgePointIds: expandKnowledgePointAliases(input.knowledgePointIds, schoolId),
+      grade: input.grade,
+      schoolYear: input.schoolYear,
+      semester: input.semester || "上学期",
       difficulty: input.difficulty,
       recommendation: input.recommendation,
       usageCount: 0,

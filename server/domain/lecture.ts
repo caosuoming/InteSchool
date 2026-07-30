@@ -1,4 +1,4 @@
-import type { Lecture, LectureFilter, LectureSection } from "../../src/types/index.js";
+import type { Lecture, LectureFilter, LectureSection, ResourceSemester } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService } from "./question.js";
@@ -27,6 +27,7 @@ function matchFilter(l: Lecture, filter: LectureFilter): boolean {
   }
   if (filter.grade && l.grade !== filter.grade) return false;
   if (filter.schoolYear && l.schoolYear !== filter.schoolYear) return false;
+  if (filter.semester && (l.semester || "上学期") !== filter.semester) return false;
   if (filter.status && l.status !== filter.status) return false;
   if (filter.teacherId && l.teacherId !== filter.teacherId) return false;
   if (filter.schoolId && l.schoolId !== filter.schoolId) return false;
@@ -40,6 +41,7 @@ export interface LectureInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   classIds: string[];
   studentIds: string[];
   sections: LectureSection[];
@@ -82,6 +84,7 @@ export const lectureService = {
       knowledgePointIds: input.knowledgePointIds,
       grade: input.grade,
       schoolYear: input.schoolYear,
+      semester: input.semester || "上学期",
       classIds: input.classIds,
       studentIds: input.studentIds,
       sections: input.sections,
@@ -347,6 +350,7 @@ export const lectureService = {
       knowledgePointIds: lecture.knowledgePointIds,
       grade: lecture.grade,
       schoolYear: lecture.schoolYear,
+      semester: lecture.semester || "上学期",
       duration: 60,
       totalScore,
       questions,

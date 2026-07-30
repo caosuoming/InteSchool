@@ -27,6 +27,7 @@ import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { formatDate, timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
   OnlineResource,
   OnlineResourceType,
@@ -47,12 +48,6 @@ const SUBJECT_OPTIONS = [
   { value: "政治", label: "政治" },
   { value: "历史", label: "历史" },
   { value: "地理", label: "地理" },
-];
-
-const GRADE_OPTIONS = [
-  { value: "高一", label: "高一" },
-  { value: "高二", label: "高二" },
-  { value: "高三", label: "高三" },
 ];
 
 const YEAR_OPTIONS = [
@@ -118,6 +113,7 @@ function confidenceColor(c: number): string {
 
 export default function OnlineResourcesPage() {
   const { teacher } = useAuthStore();
+  const { gradeOptions } = useSchoolResourceOptions(teacher?.schoolId);
 
   // 筛选条件
   const [keyword, setKeyword] = useState("");
@@ -360,7 +356,7 @@ export default function OnlineResourcesPage() {
             onChange={(e) => setSubject(e.target.value)}
           />
           <Select
-            options={GRADE_OPTIONS}
+            options={gradeOptions}
             placeholder="年级"
             value={grade}
             onChange={(e) => setGrade(e.target.value)}

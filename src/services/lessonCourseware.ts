@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture } from "@/types";
+import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture, ResourceSemester } from "@/types";
 
 export interface LessonCoursewareInput {
   title: string;
@@ -9,6 +9,7 @@ export interface LessonCoursewareInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   sourceType: "examPaper" | "lecture" | "manual";
   sourceId?: string;
   sourceTitle?: string;

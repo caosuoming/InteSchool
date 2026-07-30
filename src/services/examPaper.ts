@@ -4,6 +4,7 @@ import type {
   ExamPaper,
   ExamPaperQuestion,
   ResourceFilter,
+  ResourceSemester,
 } from "@/types";
 
 export interface ExamPaperInput {
@@ -13,6 +14,7 @@ export interface ExamPaperInput {
   knowledgePointIds: string[];
   grade: string;
   schoolYear: string;
+  semester?: ResourceSemester;
   duration: number;
   totalScore: number;
   questions: ExamPaperQuestion[];
