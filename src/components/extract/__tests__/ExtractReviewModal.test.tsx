@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtractReviewModal } from "../ExtractReviewModal";
 
@@ -145,5 +146,41 @@ describe("ExtractReviewModal", () => {
 
     expect(screen.getAllByRole("button", { name: /关键字与重新拆解/ })).toHaveLength(3);
     expect(screen.getAllByRole("button", { name: /与上一块合并/ })).toHaveLength(2);
+  });
+
+  it("moves and swaps answer, analysis, and summary content without overwriting it", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("将解析内容转换为")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("将解析内容转换为"), "summary");
+
+    expect(screen.queryByLabelText("将解析内容转换为")).not.toBeInTheDocument();
+    const summarySelect = screen.getByLabelText("将总结内容转换为");
+    expect(summarySelect.closest("div.rounded")).toHaveTextContent("示例解析");
+
+    await user.selectOptions(screen.getByLabelText("将答案内容转换为"), "summary");
+
+    const answerSelect = screen.getByLabelText("将答案内容转换为");
+    const swappedSummarySelect = screen.getByLabelText("将总结内容转换为");
+    expect(answerSelect.closest("div.rounded")).toHaveTextContent("示例解析");
+    expect(swappedSummarySelect.closest("div.rounded")).toHaveTextContent("A");
   });
 });
