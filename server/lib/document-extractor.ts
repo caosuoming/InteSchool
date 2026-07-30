@@ -88,13 +88,13 @@ export async function extractDocument(
       }),
       extractDocxStructuredText(convertedData, options.docxImageUrl),
     ]);
-    const text = structuredText || raw.value.trim();
+    const text = (structuredText || raw.value.trim()).normalize("NFC");
     const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)/.test(text);
     return {
       text,
       html: hasRichContent
         ? renderMathAwareHtml(text)
-        : sanitizeHtml(rendered.value, {
+        : sanitizeHtml(rendered.value.normalize("NFC"), {
             allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
             allowedAttributes: { a: ["href", "title"], img: ["src", "alt"] },
             allowedSchemes: ["http", "https", "data"],
