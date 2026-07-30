@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { renderMathHtml } from "@/lib/math-html";
 
 interface WpsFormulaEditorProps {
   initialHtml?: string;
@@ -41,11 +42,8 @@ export function WpsFormulaEditor({ initialHtml = "", onSave, onCancel }: WpsForm
   const [showSymbolPalette, setShowSymbolPalette] = useState(false);
 
   useEffect(() => {
-    if (editorRef.current && initialHtml) {
-      editorRef.current.innerHTML = initialHtml;
-    } else if (editorRef.current) {
-      editorRef.current.innerHTML = "";
-    }
+    if (!editorRef.current) return;
+    editorRef.current.innerHTML = initialHtml ? renderMathHtml(initialHtml) : "";
   }, [initialHtml]);
 
   // 实时预览 LaTeX
