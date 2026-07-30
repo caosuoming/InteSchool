@@ -1988,7 +1988,7 @@ interface QuestionListItemProps {
   onDelete: () => void;
 }
 
-function QuestionListItem({ question, expanded, onToggle, onShare, onDelete }: QuestionListItemProps) {
+export function QuestionListItem({ question, expanded, onToggle, onShare, onDelete }: QuestionListItemProps) {
   const difficultyVariant =
     question.difficulty <= 2
       ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
@@ -2025,7 +2025,7 @@ function QuestionListItem({ question, expanded, onToggle, onShare, onDelete }: Q
           </div>
 
           <div
-            className={cn("text-sm text-ink-900 leading-relaxed mb-1", !expanded && "line-clamp-2")}
+            className="text-sm text-ink-900 leading-relaxed mb-1"
             onClick={onToggle}
             role="button"
           >
