@@ -22,10 +22,30 @@ const phoneSchema = z.string().transform(normalizePhone).refine(
   "请输入有效的中国大陆手机号",
 );
 
+const schoolDraftSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  code: z.string().trim().min(2).max(30).regex(/^[A-Za-z0-9_-]+$/),
+  city: z.string().trim().min(2).max(50),
+  description: z.string().trim().max(300).optional().default(""),
+});
+
+const teachingFieldsSchema = z.object({
+  subject: z.string().trim().min(1).max(50),
+  teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).default([]),
+  teachingClassIds: z.array(z.string().min(1).max(100)).max(100).default([]),
+});
+
 const registerSchema = loginSchema.extend({
   password: z.string().min(10).max(128),
   name: z.string().trim().min(2).max(50),
   phone: phoneSchema,
+  schoolId: z.string().min(1).max(100).optional(),
+  newSchool: schoolDraftSchema.optional(),
+  subject: teachingFieldsSchema.shape.subject,
+  teachingGrades: teachingFieldsSchema.shape.teachingGrades,
+  teachingClassIds: teachingFieldsSchema.shape.teachingClassIds,
+}).refine((input) => Boolean(input.schoolId) !== Boolean(input.newSchool), {
+  message: "请选择已有学校或创建新学校",
 });
 
 const registrationAuthorizationSchema = z.object({
@@ -37,11 +57,30 @@ const applicationSchema = z.object({
   schoolId: z.string().min(1).max(100),
   employeeNo: z.string().trim().min(1).max(100),
   subject: z.string().trim().min(1).max(50),
+  teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).default([]),
+  teachingClassIds: z.array(z.string().min(1).max(100)).max(100).default([]),
   proofFileId: z.string().uuid(),
 });
 
 const profileSchema = z.object({
-  nickname: z.string().trim().min(1).max(20),
+  nickname: z.string().trim().min(1).max(20).optional(),
+  subject: z.string().trim().min(1).max(50).optional(),
+  teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).optional(),
+  teachingClassIds: z.array(z.string().min(1).max(100)).max(100).optional(),
+}).refine((input) => Object.values(input).some((value) => value !== undefined), {
+  message: "至少需要修改一项资料",
+});
+
+const adminApplicationSchema = z.object({
+  reason: z.string().trim().min(5).max(300),
+});
+
+const managedTeachingProfileSchema = teachingFieldsSchema.partial({
+  subject: true,
+  teachingGrades: true,
+  teachingClassIds: true,
+}).refine((input) => Object.values(input).some((value) => value !== undefined), {
+  message: "至少需要修改一项教学资料",
 });
 
 function publicTeacher(teacher: TeacherRecord): TeacherRecord {
@@ -64,6 +103,50 @@ function requireAdmin(teacher: TeacherRecord): void {
   if (!["school_admin", "platform_admin"].includes(activeRole(teacher))) {
     throw new Error("该操作需要学校管理员权限");
   }
+}
+
+function requirePlatformAdmin(teacher: TeacherRecord): void {
+  if (activeRole(teacher) !== "platform_admin") {
+    throw new Error("该操作需要平台管理员权限");
+  }
+}
+
+function validateTeachingClassIds(
+  state: AppState,
+  schoolId: string | null,
+  classIds: string[],
+): void {
+  if (classIds.length === 0) return;
+  if (!schoolId) throw new Error("个人身份不能关联本校班级");
+  const classes = state.schoolClasses as Array<{ id: string; schoolId: string }>;
+  const validIds = new Set(classes.filter((item) => item.schoolId === schoolId).map((item) => item.id));
+  if (classIds.some((id) => !validIds.has(id))) throw new Error("任教班级不属于当前学校");
+}
+
+function updateTeacherTeachingProfile(
+  teacher: TeacherRecord,
+  schoolId: string | null,
+  patch: { subject?: string; teachingGrades?: string[]; teachingClassIds?: string[] },
+): TeacherRecord {
+  const affiliationIndex = teacher.affiliations.findIndex((item) => item.schoolId === schoolId);
+  if (affiliationIndex < 0) throw new Error("所属单位不存在");
+  const affiliations = teacher.affiliations.map((item, index) => index === affiliationIndex
+    ? {
+        ...item,
+        ...(patch.subject !== undefined ? { subject: patch.subject } : {}),
+        ...(patch.teachingGrades !== undefined ? { teachingGrades: patch.teachingGrades } : {}),
+        ...(patch.teachingClassIds !== undefined ? { teachingClassIds: patch.teachingClassIds } : {}),
+      }
+    : item);
+  const target = affiliations[affiliationIndex];
+  const isCurrent = target.id === teacher.currentAffiliationId || target.isCurrent === true;
+  return {
+    ...teacher,
+    ...(isCurrent && patch.subject !== undefined ? { subject: patch.subject } : {}),
+    ...(isCurrent && patch.teachingGrades !== undefined ? { teachingGrades: patch.teachingGrades } : {}),
+    ...(isCurrent && patch.teachingClassIds !== undefined ? { teachingClassIds: patch.teachingClassIds } : {}),
+    affiliations,
+  };
 }
 
 function sessionTeacher(store: DatabaseStore, session: SessionUser): TeacherRecord {
@@ -105,6 +188,8 @@ function activateAffiliation(
   schoolId: string,
   employeeNo: string,
   subject: string,
+  teachingGrades: string[] = [],
+  teachingClassIds: string[] = [],
 ): TeacherRecord {
   const schools = state.schools as Array<{ id: string; name: string }>;
   const schoolName = schools.find((school) => school.id === schoolId)?.name || null;
@@ -117,6 +202,8 @@ function activateAffiliation(
     schoolId,
     schoolName,
     subject,
+    teachingGrades,
+    teachingClassIds,
     employeeNo,
     status: "active",
     role: existing?.role || "teacher",
@@ -129,10 +216,16 @@ function activateAffiliation(
   const affiliations = teacher.affiliations
     .filter((item) => item.id !== affiliationId)
     .map((item) => ({ ...item, isCurrent: false }));
+  if (!existing) {
+    const school = schools.find((item) => item.id === schoolId) as ({ teacherCount?: number } & { id: string; name: string }) | undefined;
+    if (school) school.teacherCount = Number(school.teacherCount || 0) + 1;
+  }
   return {
     ...teacher,
     schoolId,
     subject,
+    teachingGrades,
+    teachingClassIds,
     employeeNo,
     status: "active",
     role: active.role as TeacherRecord["role"],
@@ -149,42 +242,139 @@ export async function registerAuthRoutes(
   store: DatabaseStore,
   config: ServerConfig,
 ): Promise<void> {
+  app.get("/api/auth/registration-context", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (request) => {
+    const phone = phoneSchema.parse((request.query as { phone?: string }).phone);
+    const authorization = store.getAvailableRegistrationAuthorization(phone);
+    if (!authorization) {
+      const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
+      error.statusCode = 403;
+      throw error;
+    }
+    const state = store.loadState();
+    const schools = state.schools as Array<Record<string, unknown>>;
+    const authorizedSchool = schools.find((school) => school.id === authorization.schoolId);
+    if (!authorizedSchool) throw new Error("注册授权关联的学校不存在");
+    return {
+      authorization: {
+        kind: authorization.kind,
+        schoolId: authorization.schoolId,
+        schoolName: String(authorizedSchool.name),
+      },
+      schools,
+    };
+  });
+
   app.post("/api/auth/register", { config: { rateLimit: { max: 8, timeWindow: "15 minutes" } } }, async (request, reply) => {
     const input = registerSchema.parse(request.body);
+    if (store.getUserByPhone(input.phone)) {
+      const error = new Error("该手机号已注册") as Error & { statusCode: number };
+      error.statusCode = 409;
+      throw error;
+    }
+    const authorization = store.getAvailableRegistrationAuthorization(input.phone);
+    if (!authorization) {
+      const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const state = store.loadState();
     const now = new Date().toISOString();
     const teacherId = randomUUID();
-    const affiliationId = randomUUID();
+    const schoolAffiliationId = randomUUID();
+    const personalAffiliationId = randomUUID();
+    let schoolId: string;
+    let schoolName: string;
+    let newSchool: {
+      id: string;
+      name: string;
+      code: string;
+      logo: string;
+      description: string;
+      teacherCount: number;
+      studentCount: number;
+      city: string;
+    } | undefined;
+
+    if (input.newSchool) {
+      schoolId = randomUUID();
+      schoolName = input.newSchool.name;
+      newSchool = {
+        id: schoolId,
+        name: schoolName,
+        code: input.newSchool.code.toUpperCase(),
+        logo: schoolName.charAt(0) || "校",
+        description: input.newSchool.description || "由教师注册时创建",
+        teacherCount: 1,
+        studentCount: 0,
+        city: input.newSchool.city,
+      };
+    } else {
+      schoolId = input.schoolId!;
+      if (schoolId !== authorization.schoolId) {
+        const error = new Error("该手机号的注册授权不属于所选学校") as Error & { statusCode: number };
+        error.statusCode = 403;
+        throw error;
+      }
+      const school = (state.schools as Array<{ id: string; name: string }>).find((item) => item.id === schoolId);
+      if (!school) throw new Error("学校不存在");
+      schoolName = school.name;
+    }
+    validateTeachingClassIds(state, schoolId, input.teachingClassIds);
+
     const teacher: TeacherRecord = {
       id: teacherId,
       email: input.email.toLowerCase(),
       name: input.name,
       nickname: "",
       avatar: input.name.charAt(0),
-      schoolId: null,
-      subject: "",
-      status: "pending",
+      schoolId,
+      subject: input.subject,
+      teachingGrades: input.teachingGrades,
+      teachingClassIds: input.teachingClassIds,
+      status: "active",
       role: "teacher",
       roles: ["teacher"],
       subjectGroupIds: [],
       prepGroupIds: [],
-      affiliations: [{
-        id: affiliationId,
-        teacherId,
-        schoolId: null,
-        schoolName: null,
-        subject: "",
-        status: "active",
-        role: "teacher",
-        roles: ["teacher"],
-        subjectGroupIds: [],
-        prepGroupIds: [],
-        isCurrent: true,
-        joinedAt: now,
-      }],
-      currentAffiliationId: affiliationId,
+      affiliations: [
+        {
+          id: schoolAffiliationId,
+          teacherId,
+          schoolId,
+          schoolName,
+          subject: input.subject,
+          teachingGrades: input.teachingGrades,
+          teachingClassIds: input.teachingClassIds,
+          status: "active",
+          role: "teacher",
+          roles: ["teacher"],
+          subjectGroupIds: [],
+          prepGroupIds: [],
+          isCurrent: true,
+          joinedAt: now,
+        },
+        {
+          id: personalAffiliationId,
+          teacherId,
+          schoolId: null,
+          schoolName: null,
+          subject: input.subject,
+          teachingGrades: [],
+          teachingClassIds: [],
+          status: "active",
+          role: "teacher",
+          roles: ["teacher"],
+          subjectGroupIds: [],
+          prepGroupIds: [],
+          isCurrent: false,
+          joinedAt: now,
+        },
+      ],
+      currentAffiliationId: schoolAffiliationId,
       createdAt: now,
     };
-    store.createAuthorizedAccount(teacher, input.password, input.phone);
+    store.createAuthorizedAccount(teacher, input.password, input.phone, { newSchool });
     const user = store.authenticate(input.email, input.password);
     if (!user) throw new Error("账号创建失败");
     const { token, session } = store.createSession(user);
@@ -288,10 +478,122 @@ export async function registerAuthRoutes(
     return withSerializedState(store, (state) => {
       const index = state.teachers.findIndex((teacher) => teacher.id === session.teacherId);
       if (index < 0) throw new Error("教师不存在");
-      state.teachers[index] = {
-        ...state.teachers[index],
-        nickname: input.nickname,
+      let teacher = state.teachers[index];
+      const current = teacher.affiliations.find((item) => item.id === teacher.currentAffiliationId)
+        || teacher.affiliations.find((item) => item.isCurrent);
+      const classIds = input.teachingClassIds ?? (current?.teachingClassIds as string[] | undefined) ?? [];
+      validateTeachingClassIds(state, (current?.schoolId as string | null | undefined) ?? null, classIds);
+      if (input.subject !== undefined || input.teachingGrades !== undefined || input.teachingClassIds !== undefined) {
+        teacher = updateTeacherTeachingProfile(
+          teacher,
+          (current?.schoolId as string | null | undefined) ?? null,
+          input,
+        );
+      }
+      if (input.nickname !== undefined) teacher = { ...teacher, nickname: input.nickname };
+      state.teachers[index] = teacher;
+      return publicTeacher(teacher);
+    });
+  });
+
+  app.post("/api/auth/admin-applications", async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const teacher = sessionTeacher(store, session);
+    const input = adminApplicationSchema.parse(request.body);
+    if (!teacher.schoolId || teacher.status !== "active") throw new Error("请先加入学校");
+    if (["school_admin", "platform_admin"].includes(activeRole(teacher))) throw new Error("当前账号已经是管理员");
+    return withSerializedState(store, (state) => {
+      const applications = state.schoolAdminApplications as Array<Record<string, unknown>>;
+      if (applications.some((item) => item.teacherId === teacher.id && item.schoolId === teacher.schoolId && item.status === "pending")) {
+        throw new Error("已有待审核的学校管理员申请");
+      }
+      const school = (state.schools as Array<{ id: string; name: string }>).find((item) => item.id === teacher.schoolId);
+      if (!school) throw new Error("学校不存在");
+      const application = {
+        id: randomUUID(),
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        schoolId: school.id,
+        schoolName: school.name,
+        reason: input.reason,
+        status: "pending",
+        createdAt: new Date().toISOString(),
       };
+      applications.push(application);
+      return application;
+    });
+  });
+
+  app.get("/api/auth/admin-applications/mine", async (request) => {
+    const session = requireSession(request, store);
+    const state = store.loadState();
+    return (state.schoolAdminApplications as Array<Record<string, unknown>>)
+      .filter((item) => item.teacherId === session.teacherId)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  });
+
+  app.get("/api/auth/admin-applications/pending", async (request) => {
+    const session = requireSession(request, store);
+    const reviewer = sessionTeacher(store, session);
+    requirePlatformAdmin(reviewer);
+    const state = store.loadState();
+    return (state.schoolAdminApplications as Array<Record<string, unknown>>)
+      .filter((item) => item.status === "pending")
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  });
+
+  app.post("/api/auth/admin-applications/:id/review", async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const reviewer = sessionTeacher(store, session);
+    requirePlatformAdmin(reviewer);
+    const id = z.string().uuid().parse((request.params as { id?: string }).id);
+    const approved = z.object({ approved: z.boolean() }).parse(request.body).approved;
+    return withSerializedState(store, (state) => {
+      const applications = state.schoolAdminApplications as Array<Record<string, unknown>>;
+      const application = applications.find((item) => item.id === id);
+      if (!application || application.status !== "pending") throw new Error("管理员申请不存在或已处理");
+      application.status = approved ? "approved" : "rejected";
+      application.reviewedAt = new Date().toISOString();
+      application.reviewedBy = reviewer.id;
+      if (approved) {
+        const teacherIndex = state.teachers.findIndex((item) => item.id === application.teacherId);
+        if (teacherIndex < 0) throw new Error("申请教师不存在");
+        const target = state.teachers[teacherIndex];
+        const affiliations = target.affiliations.map((item) => item.schoolId === application.schoolId
+          ? { ...item, role: "school_admin" }
+          : item);
+        const current = affiliations.find((item) => item.id === target.currentAffiliationId)
+          || affiliations.find((item) => item.isCurrent);
+        state.teachers[teacherIndex] = {
+          ...target,
+          affiliations,
+          role: (current?.role || target.role) as TeacherRecord["role"],
+        };
+      }
+      return { ok: true };
+    });
+  });
+
+  app.patch("/api/auth/teachers/:id/teaching-profile", async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const manager = sessionTeacher(store, session);
+    requireAdmin(manager);
+    if (!manager.schoolId) throw new Error("当前管理员没有学校身份");
+    const teacherId = z.string().min(1).max(100).parse((request.params as { id?: string }).id);
+    const input = managedTeachingProfileSchema.parse(request.body);
+    return withSerializedState(store, (state) => {
+      const index = state.teachers.findIndex((item) => item.id === teacherId);
+      if (index < 0) throw new Error("教师不存在");
+      const target = state.teachers[index];
+      if (!target.affiliations.some((item) => item.schoolId === manager.schoolId)) throw new Error("无权管理其他学校的教师");
+      const classIds = input.teachingClassIds
+        ?? (target.affiliations.find((item) => item.schoolId === manager.schoolId)?.teachingClassIds as string[] | undefined)
+        ?? [];
+      validateTeachingClassIds(state, manager.schoolId, classIds);
+      state.teachers[index] = updateTeacherTeachingProfile(target, manager.schoolId, input);
       return publicTeacher(state.teachers[index]);
     });
   });
@@ -307,6 +609,10 @@ export async function registerAuthRoutes(
       const schools = state.schools as Array<{ id: string; name: string }>;
       if (!schools.some((school) => school.id === input.schoolId)) throw new Error("学校不存在");
       const applications = state.applications as Array<Record<string, unknown>>;
+      const currentTeacher = state.teachers.find((teacher) => teacher.id === session.teacherId);
+      if (currentTeacher?.affiliations.some((affiliation) => affiliation.schoolId === input.schoolId && affiliation.status === "active")) {
+        throw new Error("已加入该学校，无需重复申请");
+      }
       if (applications.some((item) => item.teacherId === session.teacherId && item.schoolId === input.schoolId && item.status === "pending")) {
         throw new Error("已有待审核的认证申请");
       }
@@ -317,6 +623,8 @@ export async function registerAuthRoutes(
         schoolId: input.schoolId,
         employeeNo: input.employeeNo,
         subject: input.subject,
+        teachingGrades: input.teachingGrades,
+        teachingClassIds: input.teachingClassIds,
         proofFileId: input.proofFileId,
         proofFileName: file.originalName,
         status: config.autoApproveApplications ? "approved" : "pending",
@@ -326,7 +634,16 @@ export async function registerAuthRoutes(
       if (config.autoApproveApplications) {
         const teachers = state.teachers;
         const index = teachers.findIndex((teacher) => teacher.id === session.teacherId);
-        teachers[index] = activateAffiliation(state, teachers[index], input.schoolId, input.employeeNo, input.subject);
+        validateTeachingClassIds(state, input.schoolId, input.teachingClassIds);
+        teachers[index] = activateAffiliation(
+          state,
+          teachers[index],
+          input.schoolId,
+          input.employeeNo,
+          input.subject,
+          input.teachingGrades,
+          input.teachingClassIds,
+        );
       }
       return application;
     });
@@ -372,6 +689,8 @@ export async function registerAuthRoutes(
           String(application.schoolId),
           String(application.employeeNo),
           String(application.subject),
+          Array.isArray(application.teachingGrades) ? application.teachingGrades as string[] : [],
+          Array.isArray(application.teachingClassIds) ? application.teachingClassIds as string[] : [],
         );
       }
       return { ok: true };
@@ -393,6 +712,8 @@ export async function registerAuthRoutes(
         ...teacher,
         schoolId: (target.schoolId as string | null) || null,
         subject: String(target.subject || ""),
+        teachingGrades: Array.isArray(target.teachingGrades) ? target.teachingGrades as string[] : [],
+        teachingClassIds: Array.isArray(target.teachingClassIds) ? target.teachingClassIds as string[] : [],
         employeeNo: typeof target.employeeNo === "string" ? target.employeeNo : undefined,
         status: target.status as TeacherRecord["status"],
         role: target.role as TeacherRecord["role"],

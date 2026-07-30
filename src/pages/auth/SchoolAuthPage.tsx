@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { Search, School as SchoolIcon, Upload, ArrowRight, CheckCircle2, Loader2, Building2, MapPin, Users } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { schoolService } from "@/services/school";
@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 
 export default function SchoolAuthPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const addingSchool = searchParams.get("add") === "1";
   const { teacher, refresh } = useAuthStore();
   const [schools, setSchools] = useState<School[]>([]);
   const [keyword, setKeyword] = useState("");
@@ -25,10 +27,10 @@ export default function SchoolAuthPage() {
   useEffect(() => {
     if (!teacher) {
       navigate("/login");
-    } else if (teacher.schoolId) {
+    } else if (teacher.schoolId && !addingSchool) {
       navigate("/dashboard");
     }
-  }, [teacher, navigate]);
+  }, [teacher, navigate, addingSchool]);
 
   useEffect(() => {
     const load = async () => {
@@ -74,9 +76,10 @@ export default function SchoolAuthPage() {
       if (application.status === "approved") {
         toast.success("认证已通过", `欢迎加入 ${selectedSchool.name}`);
         await refresh();
-        navigate("/dashboard");
+        navigate(addingSchool ? "/profile" : "/dashboard");
       } else {
-        toast.success("申请已提交", "学校管理员审核通过后即可进入学校工作台");
+        toast.success("申请已提交", "学校管理员审核通过后即可切换到该学校");
+        if (addingSchool) navigate("/profile");
       }
     } catch (e) {
       toast.error("认证失败", e instanceof Error ? e.message : undefined);

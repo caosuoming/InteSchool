@@ -88,11 +88,20 @@ async function register(
   name = "测试教师",
   phone = nextPhone(),
 ): Promise<SessionContext> {
-  authorizeRegistration(phone);
+  authorizeRegistration(phone, { schoolId: "sch-2" });
   const response = await app.inject({
     method: "POST",
     url: "/api/auth/register",
-    payload: { email, password, name, phone },
+    payload: {
+      email,
+      password,
+      name,
+      phone,
+      schoolId: "sch-2",
+      subject: "数学",
+      teachingGrades: ["高一"],
+      teachingClassIds: [],
+    },
   });
   expect(response.statusCode).toBe(200);
   const body = response.json<{ teacher: Record<string, unknown>; csrfToken: string }>();
@@ -262,6 +271,8 @@ describe("production backend", () => {
         password: "StrongPass123",
         name: "重复教师",
         phone: duplicatePhone,
+        schoolId: "sch-1",
+        subject: "数学",
       },
     });
     expect(duplicate.statusCode).toBe(409);
@@ -301,6 +312,8 @@ describe("production backend", () => {
         password: "StrongPass123",
         name: "未授权教师",
         phone: unauthorizedPhone,
+        schoolId: "sch-1",
+        subject: "数学",
       },
     });
     expect(unauthorized.statusCode).toBe(403);
@@ -330,6 +343,9 @@ describe("production backend", () => {
         password: "StrongPass123",
         name: "授权教师",
         phone: authorizedPhone,
+        schoolId: "sch-1",
+        subject: "物理",
+        teachingGrades: ["高一"],
       },
     });
     expect(registered.statusCode).toBe(200);
@@ -357,6 +373,8 @@ describe("production backend", () => {
         password: "StrongPass123",
         name: "重复手机",
         phone: authorizedPhone,
+        schoolId: "sch-1",
+        subject: "物理",
       },
     });
     expect(reused.statusCode).toBe(409);
@@ -418,6 +436,8 @@ describe("production backend", () => {
         password: "StrongPass123",
         name: "撤销授权",
         phone: guaranteedPhone,
+        schoolId: "sch-1",
+        subject: "数学",
       },
     });
     expect(blockedAfterRevoke.statusCode).toBe(403);
@@ -451,6 +471,207 @@ describe("production backend", () => {
     });
     expect(current.statusCode).toBe(200);
     expect(JSON.stringify(current.json())).not.toContain(password);
+  });
+
+  it("registers directly into the authorized school and supports creating a missing school", async () => {
+    const phone = nextPhone();
+    authorizeRegistration(phone, { schoolId: "sch-1" });
+
+    const context = await built.app.inject({
+      method: "GET",
+      url: `/api/auth/registration-context?phone=${phone}`,
+    });
+    expect(context.statusCode).toBe(200);
+    expect(context.json()).toMatchObject({
+      authorization: { schoolId: "sch-1", schoolName: expect.any(String) },
+      schools: expect.arrayContaining([expect.objectContaining({ id: "sch-1" })]),
+    });
+
+    const wrongSchool = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        email: "wrong-school@example.com",
+        password: "StrongPass123",
+        name: "错误学校",
+        phone,
+        schoolId: "sch-2",
+        subject: "物理",
+      },
+    });
+    expect(wrongSchool.statusCode).toBe(403);
+    expect(wrongSchool.json()).toEqual({ error: "该手机号的注册授权不属于所选学校" });
+
+    const registered = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        email: "school-profile@example.com",
+        password: "StrongPass123",
+        name: "教学资料教师",
+        phone,
+        schoolId: "sch-1",
+        subject: "物理",
+        teachingGrades: ["高一", "高二"],
+        teachingClassIds: [],
+      },
+    });
+    expect(registered.statusCode).toBe(200);
+    const registeredBody = registered.json<{ teacher: Record<string, unknown>; csrfToken: string }>();
+    expect(registeredBody.teacher).toMatchObject({
+      schoolId: "sch-1",
+      subject: "物理",
+      teachingGrades: ["高一", "高二"],
+      status: "active",
+    });
+
+    const proofPayload = multipartPayload("same-school-proof.txt", "already joined");
+    const proofUpload = await built.app.inject({
+      method: "POST",
+      url: "/api/files",
+      headers: {
+        cookie: sessionCookie(registered),
+        "x-inteschool-csrf": registeredBody.csrfToken,
+        "content-type": proofPayload.contentType,
+      },
+      payload: proofPayload.body,
+    });
+    const duplicateApplication = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/applications",
+      headers: {
+        cookie: sessionCookie(registered),
+        "x-inteschool-csrf": registeredBody.csrfToken,
+      },
+      payload: {
+        schoolId: "sch-1",
+        employeeNo: "DUP-001",
+        subject: "物理",
+        proofFileId: proofUpload.json<{ id: string }>().id,
+      },
+    });
+    expect(duplicateApplication.statusCode).toBe(400);
+    expect(duplicateApplication.json()).toEqual({ error: "已加入该学校，无需重复申请" });
+
+    const newSchoolPhone = nextPhone();
+    authorizeRegistration(newSchoolPhone, { schoolId: "sch-1" });
+    const created = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        email: "new-school@example.com",
+        password: "StrongPass123",
+        name: "新校教师",
+        phone: newSchoolPhone,
+        newSchool: { name: "南京测试新校", code: "NJTST", city: "南京", description: "测试学校" },
+        subject: "化学",
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(built.store.loadState().schools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "南京测试新校", code: "NJTST", teacherCount: 1 }),
+    ]));
+  });
+
+  it("lets teachers edit their teaching profile and restricts school-wide edits to administrators", async () => {
+    const manager = await register(built.app, "manager-candidate@example.com");
+    const target = await register(built.app, "managed-teacher@example.com");
+
+    const selfUpdate = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/profile",
+      headers: { cookie: target.cookie, "x-inteschool-csrf": target.csrfToken },
+      payload: { subject: "英语", teachingGrades: ["高二"], teachingClassIds: [] },
+    });
+    expect(selfUpdate.statusCode).toBe(200);
+    expect(selfUpdate.json()).toMatchObject({ subject: "英语", teachingGrades: ["高二"] });
+
+    const invalidClass = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/profile",
+      headers: { cookie: target.cookie, "x-inteschool-csrf": target.csrfToken },
+      payload: { teachingClassIds: ["class-from-another-school"] },
+    });
+    expect(invalidClass.statusCode).toBe(400);
+    expect(invalidClass.json()).toEqual({ error: "任教班级不属于当前学校" });
+
+    const forbidden = await built.app.inject({
+      method: "PATCH",
+      url: `/api/auth/teachers/${String(target.teacher.id)}/teaching-profile`,
+      headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
+      payload: { subject: "语文" },
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    const application = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/admin-applications",
+      headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
+      payload: { reason: "负责维护本校教师教学资料" },
+    });
+    expect(application.statusCode).toBe(200);
+    const applicationId = application.json<{ id: string }>().id;
+
+    const duplicateAdminApplication = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/admin-applications",
+      headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
+      payload: { reason: "重复提交同一所学校的管理员申请" },
+    });
+    expect(duplicateAdminApplication.statusCode).toBe(400);
+    expect(duplicateAdminApplication.json()).toEqual({ error: "已有待审核的学校管理员申请" });
+
+    const ordinaryPendingReview = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/admin-applications/pending",
+      headers: { cookie: manager.cookie },
+    });
+    expect(ordinaryPendingReview.statusCode).toBe(403);
+
+    const beforePromotion = built.store.loadState();
+    const state = structuredClone(beforePromotion);
+    const platformTeacher = state.teachers.find((item) => item.id === "tch-1")!;
+    platformTeacher.role = "platform_admin";
+    platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === platformTeacher.currentAffiliationId
+      ? { ...item, role: "platform_admin" }
+      : item);
+    built.store.saveState(beforePromotion, state);
+    const platformAdmin = await login(built.app);
+    const pending = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/admin-applications/pending",
+      headers: { cookie: platformAdmin.cookie },
+    });
+    expect(pending.statusCode).toBe(200);
+    expect(pending.json<Array<Record<string, unknown>>>()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: applicationId, teacherId: manager.teacher.id, status: "pending" }),
+    ]));
+
+    const approved = await built.app.inject({
+      method: "POST",
+      url: `/api/auth/admin-applications/${applicationId}/review`,
+      headers: { cookie: platformAdmin.cookie, "x-inteschool-csrf": platformAdmin.csrfToken },
+      payload: { approved: true },
+    });
+    expect(approved.statusCode).toBe(200);
+
+    const managed = await built.app.inject({
+      method: "PATCH",
+      url: `/api/auth/teachers/${String(target.teacher.id)}/teaching-profile`,
+      headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
+      payload: { subject: "语文", teachingGrades: ["高三"], teachingClassIds: [] },
+    });
+    expect(managed.statusCode).toBe(200);
+    expect(managed.json()).toMatchObject({ subject: "语文", teachingGrades: ["高三"] });
+
+    const crossSchool = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/teachers/tch-1/teaching-profile",
+      headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
+      payload: { subject: "历史" },
+    });
+    expect(crossSchool.statusCode).toBe(403);
+    expect(crossSchool.json()).toEqual({ error: "无权管理其他学校的教师" });
   });
 
   it("changes passwords, lists teachers, and invalidates the session on logout", async () => {

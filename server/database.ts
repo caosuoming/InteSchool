@@ -23,7 +23,7 @@ export const COLLECTIONS = [
   "recognitions", "answerRecords", "subjectGroups", "prepGroups", "onlineResources",
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
   "shareRecords", "examPublications", "lessonCoursewares", "reflections",
-  "studentInteractions", "schoolBackups", "platformResourceSettings",
+  "studentInteractions", "schoolBackups", "platformResourceSettings", "schoolAdminApplications",
 ] as const;
 
 type CollectionName = (typeof COLLECTIONS)[number];
@@ -452,22 +452,76 @@ export class DatabaseStore {
     })();
   }
 
-  createAuthorizedAccount(teacher: TeacherRecord, password: string, phone: string): string {
+  getAvailableRegistrationAuthorization(phone: string): RegistrationAuthorizationRecord | null {
+    const row = this.sqlite.prepare(`
+      SELECT id FROM registration_authorizations
+      WHERE phone = ? AND consumed_at IS NULL AND revoked_at IS NULL
+      LIMIT 1
+    `).get(phone) as { id: string } | undefined;
+    return row ? this.getRegistrationAuthorization(row.id) : null;
+  }
+
+  createAuthorizedAccount(
+    teacher: TeacherRecord,
+    password: string,
+    phone: string,
+    options: {
+      newSchool?: {
+        id: string;
+        name: string;
+        code: string;
+        logo: string;
+        description: string;
+        teacherCount: number;
+        studentCount: number;
+        city: string;
+      };
+    } = {},
+  ): string {
     return this.sqlite.transaction(() => {
       if (this.getUserByPhone(phone)) throw new DuplicateAccountError("该手机号已注册");
-      const authorization = this.sqlite.prepare(`
-        SELECT id FROM registration_authorizations
-        WHERE phone = ? AND consumed_at IS NULL AND revoked_at IS NULL
-        LIMIT 1
-      `).get(phone) as { id: string } | undefined;
+      const authorization = this.getAvailableRegistrationAuthorization(phone);
       if (!authorization) {
         const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
         error.statusCode = 403;
         throw error;
       }
+
+      const now = new Date().toISOString();
+      if (options.newSchool) {
+        const duplicate = this.sqlite.prepare(`
+          SELECT 1 FROM app_records
+          WHERE collection = 'schools'
+            AND (lower(json_extract(data_json, '$.code')) = lower(?)
+              OR lower(json_extract(data_json, '$.name')) = lower(?))
+          LIMIT 1
+        `).get(options.newSchool.code, options.newSchool.name);
+        if (duplicate) throw new DuplicateAccountError("学校名称或代码已存在");
+        this.sqlite.prepare(`
+          INSERT INTO app_records(collection, id, school_id, owner_id, data_json, created_at, updated_at)
+          VALUES ('schools', ?, ?, NULL, ?, ?, ?)
+        `).run(
+          options.newSchool.id,
+          options.newSchool.id,
+          JSON.stringify(options.newSchool),
+          now,
+          now,
+        );
+      } else if (teacher.schoolId) {
+        const row = this.sqlite.prepare(`
+          SELECT data_json FROM app_records WHERE collection = 'schools' AND id = ?
+        `).get(teacher.schoolId) as { data_json: string } | undefined;
+        if (!row) throw new Error("学校不存在");
+        const school = JSON.parse(row.data_json) as Record<string, unknown>;
+        school.teacherCount = Number(school.teacherCount || 0) + 1;
+        this.sqlite.prepare(`
+          UPDATE app_records SET data_json = ?, updated_at = ?
+          WHERE collection = 'schools' AND id = ?
+        `).run(JSON.stringify(school), now, teacher.schoolId);
+      }
+
       this.insertTeacher(teacher);
       const userId = this.createUser(teacher.id, teacher.email, password, phone);
-      const now = new Date().toISOString();
       const result = this.sqlite.prepare(`
         UPDATE registration_authorizations
         SET consumed_by_teacher_id = ?, consumed_at = ?

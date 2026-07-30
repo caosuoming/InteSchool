@@ -1,6 +1,8 @@
 import type {
   RegistrationAuthorization,
   RegistrationAuthorizationKind,
+  RegistrationContext,
+  SchoolAdminApplication,
   SchoolApplication,
   Teacher,
   TeacherAffiliation,
@@ -32,10 +34,32 @@ export const authService = {
     return storeAuth({ teacher: payload.teacher, csrfToken: payload.csrfToken });
   },
 
-  async register(email: string, password: string, name: string, phone: string): Promise<Teacher> {
+  async getRegistrationContext(phone: string): Promise<RegistrationContext> {
+    return apiRequest<RegistrationContext>(`/api/auth/registration-context?phone=${encodeURIComponent(phone)}`);
+  },
+
+  async register(
+    input: {
+      email: string;
+      password: string;
+      name: string;
+      phone: string;
+      schoolId?: string;
+      newSchool?: { name: string; code: string; city: string; description?: string };
+      subject: string;
+      teachingGrades?: string[];
+      teachingClassIds?: string[];
+    } | string,
+    password?: string,
+    name?: string,
+    phone?: string,
+  ): Promise<Teacher> {
+    const payload = typeof input === "string"
+      ? { email: input, password: password || "", name: name || "", phone: phone || "" }
+      : input;
     return storeAuth(await apiRequest<AuthPayload>("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, password, name, phone }),
+      body: JSON.stringify(payload),
     }));
   },
 
@@ -80,10 +104,15 @@ export const authService = {
     }, true);
   },
 
-  async updateNickname(nickname: string): Promise<Teacher> {
+  async updateProfile(patch: {
+    nickname?: string;
+    subject?: string;
+    teachingGrades?: string[];
+    teachingClassIds?: string[];
+  }): Promise<Teacher> {
     const teacher = await apiRequest<Teacher>("/api/auth/profile", {
       method: "PATCH",
-      body: JSON.stringify({ nickname }),
+      body: JSON.stringify(patch),
     }, true);
     currentTeacher = teacher;
     return teacher;
@@ -113,10 +142,12 @@ export const authService = {
     employeeNo: string,
     subject: string,
     proofFileId: string,
+    teachingGrades: string[] = [],
+    teachingClassIds: string[] = [],
   ): Promise<SchoolApplication> {
     return apiRequest<SchoolApplication>("/api/auth/applications", {
       method: "POST",
-      body: JSON.stringify({ schoolId, employeeNo, subject, proofFileId }),
+      body: JSON.stringify({ schoolId, employeeNo, subject, proofFileId, teachingGrades, teachingClassIds }),
     }, true);
   },
 
@@ -132,6 +163,39 @@ export const authService = {
     await apiRequest(`/api/auth/applications/${encodeURIComponent(applicationId)}/review`, {
       method: "POST",
       body: JSON.stringify({ approved }),
+    }, true);
+  },
+
+
+  async applySchoolAdmin(reason: string): Promise<SchoolAdminApplication> {
+    return apiRequest<SchoolAdminApplication>("/api/auth/admin-applications", {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }, true);
+  },
+
+  async getMySchoolAdminApplications(): Promise<SchoolAdminApplication[]> {
+    return apiRequest<SchoolAdminApplication[]>("/api/auth/admin-applications/mine");
+  },
+
+  async getPendingSchoolAdminApplications(): Promise<SchoolAdminApplication[]> {
+    return apiRequest<SchoolAdminApplication[]>("/api/auth/admin-applications/pending");
+  },
+
+  async reviewSchoolAdminApplication(id: string, approved: boolean): Promise<void> {
+    await apiRequest(`/api/auth/admin-applications/${encodeURIComponent(id)}/review`, {
+      method: "POST",
+      body: JSON.stringify({ approved }),
+    }, true);
+  },
+
+  async updateTeacherTeachingProfile(
+    teacherId: string,
+    patch: { subject?: string; teachingGrades?: string[]; teachingClassIds?: string[] },
+  ): Promise<Teacher> {
+    return apiRequest<Teacher>(`/api/auth/teachers/${encodeURIComponent(teacherId)}/teaching-profile`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
     }, true);
   },
 

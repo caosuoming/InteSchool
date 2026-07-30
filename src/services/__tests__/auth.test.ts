@@ -191,7 +191,14 @@ describe("auth service", () => {
 
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(1, "/api/auth/applications", {
       method: "POST",
-      body: JSON.stringify({ schoolId: "school-1", employeeNo: "EMP-001", subject: "数学", proofFileId: "file-1" }),
+      body: JSON.stringify({
+        schoolId: "school-1",
+        employeeNo: "EMP-001",
+        subject: "数学",
+        proofFileId: "file-1",
+        teachingGrades: [],
+        teachingClassIds: [],
+      }),
     }, true);
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/applications/mine");
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(3, "/api/auth/applications/pending");
