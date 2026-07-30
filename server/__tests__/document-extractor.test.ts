@@ -9,7 +9,10 @@ const mammothMocks = vi.hoisted(() => ({
   extractRawText: vi.fn(),
   convertToHtml: vi.fn(),
   imgElement: vi.fn(),
-  imageHandler: undefined as undefined | ((image: unknown) => Promise<{ src: string; alt: string }>),
+  imageHandler: undefined as undefined | ((image: {
+    contentType: string;
+    read: (encoding: string) => Promise<string>;
+  }) => Promise<{ src: string; alt: string }>),
 }));
 
 const structuredTextMocks = vi.hoisted(() => ({
@@ -90,7 +93,9 @@ describe("document extractor", () => {
       messages: [{ message: "render warning" }],
     });
 
-    const result = await extractDocument(filePath);
+    const result = await extractDocument(filePath, {
+      docxImageUrl: (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
+    });
 
     expect(result).toEqual({
       text: "第一章 集合",
@@ -107,10 +112,19 @@ describe("document extractor", () => {
       expect.objectContaining({ includeDefaultStyleMap: true }),
     );
     expect(mammothMocks.imageHandler).toBeTypeOf("function");
-    await expect(mammothMocks.imageHandler!({})).resolves.toEqual({
-      src: "",
-      alt: "文档图片未在文本预览中内联",
+    await expect(mammothMocks.imageHandler!({
+      contentType: "image/png",
+      read: vi.fn().mockResolvedValue("aW1hZ2U="),
+    })).resolves.toEqual({
+      src: "data:image/png;base64,aW1hZ2U=",
+      alt: "文档图片",
     });
+    expect(structuredTextMocks.extractDocxStructuredText).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      expect.any(Function),
+    );
+    const imageUrl = structuredTextMocks.extractDocxStructuredText.mock.calls[0][1];
+    expect(imageUrl("rId5")).toBe("/api/files/file-1/assets/rId5");
   });
 
   it("uses structure-aware DOCX text and renders preserved formulas", async () => {
@@ -128,6 +142,21 @@ describe("document extractor", () => {
     expect(result.html).toContain("class=\"katex\"");
     expect(result.html).toContain("A. 1 B. 2 C. 3 D. 4");
     expect(result.html).not.toContain("$\\frac{x}{2}=1$");
+  });
+
+  it("renders preserved image references alongside formulas", async () => {
+    const filePath = join(workDir, "illustrated-math.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({ value: "图形题", messages: [] });
+    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>图形题</p>", messages: [] });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      "1. 已知 $x=1$，如图。![示意图](/api/files/file-1/assets/rId5)",
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.html).toContain("class=\"katex\"");
+    expect(result.html).toContain('<img src="/api/files/file-1/assets/rId5" alt="示意图">');
   });
 
   it("extracts PDF text, escapes preview HTML, and always destroys the parser", async () => {

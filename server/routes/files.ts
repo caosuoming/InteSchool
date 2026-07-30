@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream } from "node:fs";
-import { rename, rm, stat } from "node:fs/promises";
+import { readFile, rename, rm, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { pipeline } from "node:stream/promises";
@@ -9,6 +9,7 @@ import type { ServerConfig } from "../config.js";
 import type { StoredFile, TeacherRecord } from "../types.js";
 import { requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
+import { extractDocxImage } from "../lib/docx-structured-text.js";
 import { withSerializedState } from "../rpc.js";
 
 function buildSections(text: string): Array<{
@@ -120,6 +121,9 @@ export async function registerFileRoutes(
   store: DatabaseStore,
   config: ServerConfig,
 ): Promise<void> {
+  const imageUrlFor = (fileId: string) => (relationshipId: string) =>
+    `/api/files/${fileId}/assets/${encodeURIComponent(relationshipId)}`;
+
   app.post("/api/files", async (request) => {
     const session = requireSession(request, store);
     requireCsrf(request, session);
@@ -172,7 +176,9 @@ export async function registerFileRoutes(
     if (!canReadFile(store, teacher, file)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
-    return extractDocument(join(config.uploadsDir, file.storageName));
+    return extractDocument(join(config.uploadsDir, file.storageName), {
+      docxImageUrl: imageUrlFor(file.id),
+    });
   });
 
   app.post("/api/files/:id/import", async (request, reply) => {
@@ -184,7 +190,9 @@ export async function registerFileRoutes(
     if (file.ownerId !== session.teacherId) return reply.code(403).send({ error: "只能导入自己上传的文件" });
     const teacher = store.getTeacherById(session.teacherId);
     if (!teacher?.schoolId) throw new Error("请先完成学校认证");
-    const extracted = await extractDocument(join(config.uploadsDir, file.storageName));
+    const extracted = await extractDocument(join(config.uploadsDir, file.storageName), {
+      docxImageUrl: imageUrlFor(file.id),
+    });
     const extension = extname(file.originalName).toLowerCase();
     const fileType = extension === ".pdf" ? "pdf" : extension === ".md" || extension === ".txt" ? "markdown" : "word";
     return withSerializedState(store, (state) => {
@@ -204,6 +212,31 @@ export async function registerFileRoutes(
       (state.documents as Array<typeof document>).unshift(document);
       return document;
     });
+  });
+
+  app.get("/api/files/:id/assets/:relationshipId", async (request, reply) => {
+    const session = requireSession(request, store);
+    const { id, relationshipId } = request.params as { id: string; relationshipId: string };
+    const file = store.getFile(id);
+    if (!file) return reply.code(404).send({ error: "文件不存在" });
+    const teacher = store.getTeacherById(session.teacherId);
+    if (!canReadFile(store, teacher, file)) {
+      return reply.code(403).send({ error: "无权访问该文件" });
+    }
+    if (extname(file.originalName).toLowerCase() !== ".docx") {
+      return reply.code(404).send({ error: "图片不存在" });
+    }
+
+    const data = await readFile(join(config.uploadsDir, file.storageName));
+    const image = await extractDocxImage(data, relationshipId);
+    if (!image) return reply.code(404).send({ error: "图片不存在" });
+
+    reply.type(image.contentType);
+    reply.header("Content-Length", image.data.length);
+    reply.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(image.fileName)}`);
+    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    reply.header("X-Content-Type-Options", "nosniff");
+    return reply.send(image.data);
   });
 
   app.get("/api/files/:id", async (request, reply) => {
