@@ -397,6 +397,8 @@ export interface ExamPaper {
   status: ExamPaperStatus;
   /** 试卷类型ID */
   typeId?: string;
+  /** 题目编排方式：按题型分组或不分题型 */
+  layoutMode?: "grouped" | "flat";
   /** 适用学生 ID（空表示不限定） */
   studentIds?: string[];
   /** 原稿文件信息（Word/PDF上传的原件） */
@@ -929,7 +931,7 @@ export interface RecognitionResult {
   feedback?: string;
 }
 
-export type AnswerScore = "correct" | "partial" | "wrong";
+export type AnswerScore = "correct" | "partial" | "wrong" | "done";
 
 /** 答题记录来源：manual=手动录入，scanner=扫描仪识别（预留），import=批量导入 */
 export type AnswerSource = "manual" | "scanner" | "import";

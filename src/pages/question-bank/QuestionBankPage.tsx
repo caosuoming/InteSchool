@@ -1967,6 +1967,7 @@ function QuestionRow({
                   if (editingAnswers && onUpdateStudentAnswer && studentId) {
                     const options: Array<{ value: AnswerScore | null; label: string; cls: string }> = [
                       { value: null, label: "未做", cls: "bg-ink-100 text-ink-500 border-ink-200" },
+                      { value: "done", label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200" },
                       { value: "correct", label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
                       { value: "partial", label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200" },
                       { value: "wrong", label: "做错", cls: "bg-red-50 text-red-700 border-red-200" },
@@ -2011,6 +2012,7 @@ function QuestionRow({
                     );
                   }
                   const config = {
+                    done: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500", label: "已做" },
                     correct: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500", label: "全对" },
                     partial: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500", label: "半对" },
                     wrong: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", dot: "bg-red-500", label: "做错" },

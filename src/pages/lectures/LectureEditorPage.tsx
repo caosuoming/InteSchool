@@ -6,7 +6,8 @@ import {
   GraduationCap, Users, Wand2, Loader2, X, ChevronDown, ChevronRight,
   Type, ListOrdered, CheckCircle2, Edit3, Eye,
   UserCheck, Award, Clock, Presentation, FileBox,
-  Lightbulb, Minus, Printer, Layout,
+  Lightbulb, Printer, Layout,
+  CheckSquare,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
@@ -32,6 +33,7 @@ import { TreeView } from "@/components/tree/TreeView";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
+import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
   Lecture, LectureSection, Question, Basket, AnyClass, TreeNode,
@@ -86,6 +88,10 @@ function getDateRange(key: TimeRangeKey): DateRange | undefined {
 
 type AddSource = "basket" | "bank" | "lecture" | "courseware" | "material";
 
+function flattenLectureSections(sections: LectureSection[]): LectureSection[] {
+  return sections.flatMap((section) => [section, ...flattenLectureSections(section.children)]);
+}
+
 export default function LectureEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -112,6 +118,8 @@ export default function LectureEditorPage() {
   const [classes, setClasses] = useState<AnyClass[]>([]);
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   const [sections, setSections] = useState<LectureSection[]>([]);
+  const [lectureQuestions, setLectureQuestions] = useState<Record<string, Question>>({});
+  const [markingAllDone, setMarkingAllDone] = useState(false);
 
   /** 版本类型 */
   const [currentVersionType, setCurrentVersionType] = useState<"extract" | "preview" | "answer-sheet" | "origin">("extract");
@@ -192,6 +200,34 @@ export default function LectureEditorPage() {
   const [studentPickerClassId, setStudentPickerClassId] = useState<string>("");
 
   const dateRange = useMemo(() => getDateRange(timeRangeKey), [timeRangeKey]);
+  const lectureQuestionIds = useMemo(
+    () => Array.from(new Set(
+      flattenLectureSections(sections)
+        .filter((section) => section.type === "question" && section.questionId)
+        .map((section) => section.questionId!),
+    )),
+    [sections],
+  );
+  const lectureQuestionList = useMemo(
+    () => lectureQuestionIds.map((questionId) => lectureQuestions[questionId]).filter(Boolean),
+    [lectureQuestionIds, lectureQuestions],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (lectureQuestionIds.length === 0) {
+      setLectureQuestions({});
+      return () => { cancelled = true; };
+    }
+    Promise.all(lectureQuestionIds.map((questionId) => questionService.getQuestion(questionId)))
+      .then((loaded) => {
+        if (cancelled) return;
+        setLectureQuestions(Object.fromEntries(
+          loaded.filter((question): question is Question => Boolean(question)).map((question) => [question.id, question]),
+        ));
+      });
+    return () => { cancelled = true; };
+  }, [lectureQuestionIds]);
 
   useEffect(() => {
     const load = async () => {
@@ -769,6 +805,19 @@ export default function LectureEditorPage() {
     });
   };
 
+  const handleMoveChildSection = (parentId: string, idx: number, direction: "up" | "down") => {
+    setSections((prev) =>
+      prev.map((section) => {
+        if (section.id !== parentId) return section;
+        const target = direction === "up" ? idx - 1 : idx + 1;
+        if (target < 0 || target >= section.children.length) return section;
+        const children = [...section.children];
+        [children[idx], children[target]] = [children[target], children[idx]];
+        return { ...section, children };
+      }),
+    );
+  };
+
   const handleSaveSection = () => {
     if (!editingSection) return;
     const updated = {
@@ -962,6 +1011,60 @@ export default function LectureEditorPage() {
     }
   };
 
+  const handleMarkAllDone = async () => {
+    if (!lecture) {
+      toast.warning("请先保存讲义，再标注学生完成情况");
+      return;
+    }
+    if (selectedStudentIds.length === 0) {
+      toast.warning("请先选择学生");
+      return;
+    }
+    if (lectureQuestionIds.length === 0) {
+      toast.warning("讲义中暂无题目");
+      return;
+    }
+
+    setMarkingAllDone(true);
+    try {
+      const existingRecords = await analyticsService.listAnswerRecordsByStudents(selectedStudentIds);
+      const existingKeys = new Set(
+        existingRecords
+          .filter((record) => record.lectureId === lecture.id)
+          .map((record) => `${record.studentId}:${record.questionId}`),
+      );
+      const pendingRecords = selectedStudentIds.flatMap((studentId) =>
+        lectureQuestionIds
+          .filter((questionId) => !existingKeys.has(`${studentId}:${questionId}`))
+          .map((questionId) => ({
+            studentId,
+            questionId,
+            lectureId: lecture.id,
+            score: "done" as const,
+            source: "manual" as const,
+          })),
+      );
+      if (pendingRecords.length > 0) {
+        await analyticsService.batchSaveAnswerRecords(pendingRecords);
+      }
+      const [records, answeredIds] = await Promise.all([
+        analyticsService.listAnswerRecordsByLecture(lecture.id),
+        analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange),
+      ]);
+      setAnswerRecords(records);
+      setAnsweredQuestionIds(answeredIds);
+      toast.success(
+        pendingRecords.length > 0
+          ? `已补充 ${pendingRecords.length} 条完成记录，已有得分保持不变`
+          : "所选学生均已存在完成或得分记录",
+      );
+    } catch (error) {
+      toast.error("批量标注失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setMarkingAllDone(false);
+    }
+  };
+
   // 获取讲义关联的所有学生
   const lectureStudents = useMemo(() => {
     const studentIds = new Set<string>();
@@ -1102,6 +1205,7 @@ export default function LectureEditorPage() {
                     const sc = record ? inferScore(record) : null;
                     const scCfg = sc
                       ? {
+                          done: { label: "已做", cls: "text-teal-600 bg-teal-50" },
                           correct: { label: "全对", cls: "text-emerald-600 bg-emerald-50" },
                           partial: { label: "半对", cls: "text-amber-600 bg-amber-50" },
                           wrong: { label: "做错", cls: "text-red-600 bg-red-50" },
@@ -1204,6 +1308,7 @@ export default function LectureEditorPage() {
                       const stu = students.find((s) => s.id === r.studentId);
                       const sc = inferScore(r);
                       const cfg = {
+                        done: { label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200" },
                         correct: { label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
                         partial: { label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200" },
                         wrong: { label: "做错", cls: "bg-red-50 text-red-700 border-red-200" },
@@ -1273,7 +1378,7 @@ export default function LectureEditorPage() {
             正稿
           </Button>
         )}
-        {currentVersionType === "preview" && (
+      {currentVersionType === "preview" && (
           <Button variant="ghost" size="sm" className="bg-white shadow-sm text-gold-700">
             <Eye className="w-3.5 h-3.5" />
             预览稿
@@ -1312,6 +1417,7 @@ export default function LectureEditorPage() {
       </div>
 
       {/* 学生选择器 + 时间周期选择器 */}
+      {currentVersionType !== "extract" && (
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Button
           variant="outline"
@@ -1356,392 +1462,47 @@ export default function LectureEditorPage() {
           </span>
         )}
       </div>
+      )}
 
       {/* 根据版本类型显示不同内容 */}
       {currentVersionType === "extract" && (
-        <div className="grid lg:grid-cols-4 gap-5">
-          {/* 左：大纲 */}
-          <div className="lg:col-span-1">
-            <Card className="sticky top-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-serif font-semibold text-ink-900">讲义大纲</h3>
-                <Badge variant="ink">
-                  {sections.filter((s) => s.type === "chapter").length} 章 ·
-                  {sections.reduce((acc, s) => acc + (s.type === "chapter" ? s.children.length : 1), 0)} 节
-                </Badge>
+        <div className="space-y-4">
+          {/* 顶部：讲义属性 */}
+          <Card className="p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-gold-600" />
+                <h3 className="font-serif font-semibold text-ink-900">讲义属性</h3>
               </div>
-
-              <div className="space-y-1 mb-4 max-h-[380px] overflow-y-auto">
-                {sections.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-ink-400">
-                    暂无内容，从下方添加
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {sections.map((sec, idx) => {
-                      if (sec.type === "chapter") {
-                        const isExpanded = outlineExpanded[sec.id] ?? true;
-                        const isSelected = selectedChapterId === sec.id;
-                        return (
-                          <div key={sec.id}>
-                            <div
-                              className={cn(
-                                "flex items-center gap-1 p-2 rounded-md border transition-all group cursor-pointer",
-                                isSelected
-                                  ? "border-gold-300 bg-gold-50/30"
-                                  : "border-ink-100 hover:bg-mist",
-                              )}
-                              onClick={() => {
-                                setSelectedChapterId(sec.id);
-                                setEditingSection(null);
-                              }}
-                            >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOutlineExpanded((prev) => ({
-                                  ...prev,
-                                  [sec.id]: !isExpanded,
-                                }));
-                              }}
-                              className="p-0.5 text-ink-400 hover:text-ink-700"
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              ) : (
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                            <BookOpen className="w-3.5 h-3.5 text-gold-500 flex-shrink-0" />
-                            <span className="text-xs font-medium text-ink-800 truncate flex-1">
-                              {sec.title}
-                            </span>
-                            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingSection(sec);
-                                  setSectionTitle(sec.title);
-                                  setSectionContent(sec.content);
-                                  setSectionLabel(sec.customLabel || "");
-                                }}
-                                className="p-0.5 text-ink-400 hover:text-gold-600"
-                                title="编辑章节"
-                              >
-                                <Edit3 className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRemoveSection(sec.id);
-                                }}
-                                className="p-0.5 text-ink-400 hover:text-red-600"
-                                title="删除"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                          {isExpanded && sec.children.length > 0 && (
-                            <div className="ml-4 mt-0.5 space-y-0.5 border-l-2 border-ink-100 pl-2">
-                              {sec.children.map((child, cIdx) => (
-                                <div
-                                  key={child.id}
-                                  className={cn(
-                                    "flex items-center gap-1.5 p-1.5 rounded-md border border-transparent transition-all group cursor-pointer hover:bg-mist",
-                                    editingSection?.id === child.id && "bg-gold-50/50 border-gold-200",
-                                  )}
-                                  onClick={() => {
-                                    setEditingSection(child);
-                                    setSectionTitle(child.title);
-                                    setSectionContent(child.content);
-                                    setSectionLabel(child.customLabel || "");
-                                  }}
-                                >
-                                  <span className="text-[10px] font-mono text-ink-400 w-4 text-center">
-                                    {cIdx + 1}
-                                  </span>
-                                  {child.type === "question" ? (
-                                    <ListOrdered className="w-3 h-3 text-teal-500 flex-shrink-0" />
-                                  ) : child.type === "knowledge" ? (
-                                    <Sparkles className="w-3 h-3 text-gold-500 flex-shrink-0" />
-                                  ) : (
-                                    <Type className="w-3 h-3 text-ink-400 flex-shrink-0" />
-                                  )}
-                                  <span className="text-xs text-ink-700 truncate flex-1">
-                                    {child.title}
-                                  </span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRemoveSection(child.id, sec.id);
-                                    }}
-                                    className="p-0.5 text-ink-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
-                                  >
-                                    <Trash2 className="w-2.5 h-2.5" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div
-                        key={sec.id}
-                        className={cn(
-                          "flex items-center gap-1.5 p-2 rounded-md border transition-all group",
-                          editingSection?.id === sec.id
-                            ? "border-gold-300 bg-gold-50/30"
-                            : "border-ink-100 hover:bg-mist",
-                        )}
-                      >
-                        <GripVertical className="w-3 h-3 text-ink-300 flex-shrink-0" />
-                        <button
-                          onClick={() => {
-                            setEditingSection(sec);
-                            setSectionTitle(sec.title);
-                            setSectionContent(sec.content);
-                            setSectionLabel(sec.customLabel || "");
-                          }}
-                          className="flex-1 text-left min-w-0"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            {sec.type === "question" ? (
-                              <ListOrdered className="w-3 h-3 text-teal-500 flex-shrink-0" />
-                            ) : sec.type === "knowledge" ? (
-                              <Sparkles className="w-3 h-3 text-gold-500 flex-shrink-0" />
-                            ) : (
-                              <Type className="w-3 h-3 text-ink-400 flex-shrink-0" />
-                            )}
-                            <span className="text-xs text-ink-700 truncate">
-                              {sec.title}
-                            </span>
-                          </div>
-                        </button>
-                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleMoveSection(idx, "up")}
-                            disabled={idx === 0}
-                            className="p-0.5 text-ink-400 hover:text-ink-700 disabled:opacity-30"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            onClick={() => handleMoveSection(idx, "down")}
-                            disabled={idx === sections.length - 1}
-                            className="p-0.5 text-ink-400 hover:text-ink-700 disabled:opacity-30"
-                          >
-                            ↓
-                          </button>
-                          <button
-                            onClick={() => handleRemoveSection(sec.id)}
-                            className="p-0.5 text-ink-400 hover:text-red-600"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* AI 自动组讲义 */}
-            <div className="space-y-1.5 pt-3 border-t border-ink-100">
-              <div className="text-xs font-medium text-ink-600 mb-1">智能组讲义</div>
-              <Button variant="gold" size="sm" className="w-full justify-start bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-600 hover:to-teal-500" onClick={() => setAutoGenOpen(true)}>
-                <Sparkles className="w-3.5 h-3.5" /> AI 自动组讲义
-              </Button>
-            </div>
-
-            {/* 添加内容按钮 */}
-            <div className="space-y-1.5 pt-3 border-t border-ink-100">
-              <div className="text-xs font-medium text-ink-600 mb-1">手动添加内容</div>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleAddChapter}>
-                <BookOpen className="w-3.5 h-3.5" />
-                添加章节
-              </Button>
-              {selectedChapterId && (
-                <div className="text-[11px] text-ink-500 px-1 -mt-1">
-                  已选中章节，内容将添加到该章节下
-                </div>
-              )}
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setAddSource("basket")}>
-                <ShoppingBasket className="w-3.5 h-3.5" />
-                从试题篮添加
-              </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setAddSource("bank")}>
-                <Library className="w-3.5 h-3.5" />
-                从题库添加
-              </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setAddSource("lecture")}>
-                <Files className="w-3.5 h-3.5" />
-                从其他讲义添加
-              </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setAddSource("courseware")}>
-                <Presentation className="w-3.5 h-3.5" />
-                引用课件
-              </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setAddSource("material")}>
-                <FileBox className="w-3.5 h-3.5" />
-                引用素材
-              </Button>
-              <div className="grid grid-cols-3 gap-1.5 pt-1">
-                <Button variant="ghost" size="sm" onClick={handleAddTextSection}>
-                  <Type className="w-3.5 h-3.5" />
-                  文本
-                </Button>
-                <Button variant="ghost" size="sm" onClick={handleAddBlankLine}>
-                  <Minus className="w-3.5 h-3.5" />
-                  空白行
-                </Button>
-                <Button variant="ghost" size="sm" onClick={handleAddKnowledgeSection}>
-                  <Wand2 className="w-3.5 h-3.5" />
-                  AI 知识点
-                </Button>
+              <div className="text-xs text-ink-400">
+                {sections.filter((section) => section.type === "chapter").length} 章 · {lectureQuestionIds.length} 题
               </div>
             </div>
-          </Card>
-        </div>
-
-        {/* 中：内容预览/编辑 */}
-        <div className="lg:col-span-2 space-y-4">
-          {editingSection ? (
-            <Card>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-serif font-semibold text-ink-900">
-                  {editingSection.type === "chapter" ? "编辑章节" : editingSection.type === "question" ? "编辑题目" : "编辑内容"}
-                </h3>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => setEditingSection(null)}>
-                    <X className="w-3.5 h-3.5" />
-                    取消
-                  </Button>
-                  <Button variant="gold" size="sm" onClick={handleSaveSection}>
-                    <Save className="w-3.5 h-3.5" />
-                    保存
-                  </Button>
-                </div>
+            <div className="grid md:grid-cols-2 xl:grid-cols-6 gap-3">
+              <div className="xl:col-span-2">
+                <Input label="标题" value={title} onChange={(e) => setTitle(e.target.value)} />
               </div>
-              <div className="space-y-3">
-                {editingSection.type !== "chapter" && (
-                  <Input
-                    label="编号标签（可选）"
-                    placeholder={`默认为序号，可改为"例1""变式2"等`}
-                    value={sectionLabel}
-                    onChange={(e) => setSectionLabel(e.target.value)}
-                  />
-                )}
-                <Input
-                  label={editingSection.type === "chapter" ? "章节标题" : "标题"}
-                  value={sectionTitle}
-                  onChange={(e) => setSectionTitle(e.target.value)}
+              <div className="xl:col-span-2">
+                <Textarea
+                  label="描述"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={1}
+                  placeholder="讲义简介"
                 />
-                {editingSection.type !== "question" && (
-                  <Textarea
-                    label="内容（支持 Markdown）"
-                    value={sectionContent}
-                    onChange={(e) => setSectionContent(e.target.value)}
-                    rows={10}
-                  />
-                )}
-                {editingSection.type === "question" && (
-                  <div className="text-xs text-ink-500">
-                    题目内容请在题库中编辑，修改后将同步到所有使用该题的地方。
-                  </div>
-                )}
               </div>
-            </Card>
-          ) : selectedChapterId ? (
-            <ChapterContent
-              chapter={sections.find((s) => s.id === selectedChapterId)!}
-              answeredQuestionIds={answeredQuestionIds}
-              onEditSection={(sec) => {
-                setEditingSection(sec);
-                setSectionTitle(sec.title);
-                setSectionContent(sec.content);
-                setSectionLabel(sec.customLabel || "");
-              }}
-              onEditQuestion={handleEditQuestion}
-              onAddQuestion={() => setAddSource("bank")}
-              onAddKnowledge={handleAddKnowledgeSection}
-            />
-          ) : (
-            <Card>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-serif font-semibold text-ink-900">讲义内容</h3>
-                <Badge variant="ink">v{lecture?.version || 1}</Badge>
-              </div>
-              {sections.length === 0 ? (
-                <div className="text-center py-16">
-                  <FileText className="w-12 h-12 mx-auto mb-3 text-ink-200" />
-                  <div className="text-sm text-ink-500 mb-1">讲义还是空的</div>
-                  <div className="text-xs text-ink-400 mb-4">从左侧添加章节、题目或知识点开始编排</div>
-                  <Button variant="gold" size="sm" onClick={handleAddChapter}>
-                    <Plus className="w-4 h-4" />
-                    创建第一个章节
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {sections.map((sec, idx) => (
-                    <SectionPreview
-                      key={sec.id}
-                      section={sec}
-                      index={idx}
-                      answeredQuestionIds={answeredQuestionIds}
-                      onEdit={() => {
-                        setEditingSection(sec);
-                        setSectionTitle(sec.title);
-                        setSectionContent(sec.content);
-                        setSectionLabel(sec.customLabel || "");
-                      }}
-                      onEditQuestion={handleEditQuestion}
-                    />
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
-        </div>
-
-        {/* 右：属性面板 */}
-        <div className="lg:col-span-1 space-y-4">
-          <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <BookOpen className="w-4 h-4 text-gold-600" />
-              <h3 className="font-serif font-semibold text-ink-900">讲义属性</h3>
-            </div>
-            <div className="space-y-3">
-              <Input
-                label="标题"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
+              <Select
+                label="适用年级"
+                value={grade}
+                onChange={(e) => setGrade(e.target.value)}
+                options={includeCurrentOption(gradeOptions, grade)}
               />
-              <Textarea
-                label="描述"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                placeholder="讲义简介"
+              <Select
+                label="学年"
+                value={schoolYear}
+                onChange={(e) => setSchoolYear(e.target.value)}
+                options={includeCurrentOption(schoolYearOptions, schoolYear)}
               />
-              <div className="grid grid-cols-2 gap-2">
-                <Select
-                  label="适用年级"
-                  value={grade}
-                  onChange={(e) => setGrade(e.target.value)}
-                  options={includeCurrentOption(gradeOptions, grade)}
-                />
-                <Select
-                  label="学年"
-                  value={schoolYear}
-                  onChange={(e) => setSchoolYear(e.target.value)}
-                  options={includeCurrentOption(schoolYearOptions, schoolYear)}
-                />
-              </div>
               <Select
                 label="学期"
                 value={semester}
@@ -1754,84 +1515,343 @@ export default function LectureEditorPage() {
                 onChange={(e) => setTypeId(e.target.value)}
                 options={[
                   { value: "", label: "未设置" },
-                  ...lectureTypes.map((t) => ({ value: t.id, label: t.name })),
+                  ...lectureTypes.map((item) => ({ value: item.id, label: item.name })),
                 ]}
               />
-            </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <BookOpen className="w-4 h-4 text-teal-500" />
-              <h3 className="font-serif font-semibold text-ink-900">章节与知识点</h3>
-            </div>
-            <div className="mb-3">
-              <div className="text-xs font-medium text-ink-600 mb-1.5">章节目录</div>
-              {chapterTree && (
-                <TreeView
-                  data={chapterTree}
-                  checkable
-                  checkedIds={selectedChapterIds}
-                  onCheck={setSelectedChapterIds}
-                  expandLevel={1}
-                  className="text-xs max-h-64 overflow-auto"
-                />
-              )}
-            </div>
-            <div>
-              <div className="text-xs font-medium text-ink-600 mb-1.5">知识点</div>
-              {knowledgeTree && (
-                <TreeView
-                  data={knowledgeTree}
-                  checkable
-                  checkedIds={selectedPointIds}
-                  onCheck={setSelectedPointIds}
-                  expandLevel={1}
-                  className="text-xs max-h-64 overflow-auto"
-                />
-              )}
-            </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <Users className="w-4 h-4 text-emerald-500" />
-              <h3 className="font-serif font-semibold text-ink-900">适用班级</h3>
-            </div>
-            <div className="space-y-1.5 max-h-64 overflow-y-auto">
-              {classes.map((c) => {
-                const checked = selectedClassIds.includes(c.id);
-                return (
-                  <label
-                    key={c.id}
-                    className={cn(
-                      "flex items-center gap-2 p-2 rounded-md border cursor-pointer transition-colors",
-                      checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
+              <details className="md:col-span-2 xl:col-span-4 rounded-lg border border-ink-100 bg-ink-50/40">
+                <summary className="px-3 py-2 text-xs font-medium text-ink-600 cursor-pointer select-none">
+                  章节目录、知识点与适用班级
+                </summary>
+                <div className="grid lg:grid-cols-3 gap-4 p-3 border-t border-ink-100 bg-paper">
+                  <div>
+                    <div className="text-xs font-medium text-ink-600 mb-1.5">章节目录</div>
+                    {chapterTree && (
+                      <TreeView
+                        data={chapterTree}
+                        checkable
+                        checkedIds={selectedChapterIds}
+                        onCheck={setSelectedChapterIds}
+                        expandLevel={1}
+                        className="text-xs max-h-52 overflow-auto"
+                      />
                     )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedClassIds((prev) => [...prev, c.id]);
-                        } else {
-                          setSelectedClassIds((prev) => prev.filter((id) => id !== c.id));
-                        }
-                      }}
-                      className="rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                    />
-                    <GraduationCap className="w-3.5 h-3.5 text-ink-400" />
-                    <span className="text-sm text-ink-800 flex-1 truncate">{c.name}</span>
-                    {c.type === "personal" && <Badge variant="teal">个人</Badge>}
-                  </label>
-                );
-              })}
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-ink-600 mb-1.5">知识点</div>
+                    {knowledgeTree && (
+                      <TreeView
+                        data={knowledgeTree}
+                        checkable
+                        checkedIds={selectedPointIds}
+                        onCheck={setSelectedPointIds}
+                        expandLevel={1}
+                        className="text-xs max-h-52 overflow-auto"
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-ink-600 mb-1.5">适用班级</div>
+                    <div className="space-y-1 max-h-52 overflow-y-auto">
+                      {classes.map((item) => {
+                        const checked = selectedClassIds.includes(item.id);
+                        return (
+                          <label
+                            key={item.id}
+                            className={cn(
+                              "flex items-center gap-2 p-2 rounded-md border cursor-pointer transition-colors",
+                              checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(event) => {
+                                setSelectedClassIds((previous) =>
+                                  event.target.checked
+                                    ? [...previous, item.id]
+                                    : previous.filter((classId) => classId !== item.id),
+                                );
+                              }}
+                              className="rounded border-ink-300 text-gold-500 focus:ring-gold-400"
+                            />
+                            <span className="text-xs text-ink-800 flex-1 truncate">{item.name}</span>
+                            {item.type === "personal" && <Badge variant="teal">个人</Badge>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </details>
             </div>
           </Card>
+
+          <div className="grid xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
+            {/* 左侧：整个讲义的可交互全貌 */}
+            <Card className="min-w-0">
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-ink-100">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-teal-500" />
+                  <h3 className="font-serif font-semibold text-ink-900">讲义全貌</h3>
+                  <Badge variant="ink">v{lecture?.version || 1}</Badge>
+                </div>
+                <span className="text-xs text-ink-400">点击题干展开答案与解析</span>
+              </div>
+              {sections.length === 0 ? (
+                <div className="text-center py-16">
+                  <FileText className="w-12 h-12 mx-auto mb-3 text-ink-200" />
+                  <div className="text-sm text-ink-500 mb-1">讲义还是空的</div>
+                  <div className="text-xs text-ink-400 mb-4">从右侧添加章节、题目、知识块或素材</div>
+                  <Button variant="gold" size="sm" onClick={handleAddChapter}>
+                    <Plus className="w-4 h-4" />
+                    创建第一个章节
+                  </Button>
+                </div>
+              ) : (
+                <PreviewContent
+                  sections={sections}
+                  paperSize="A4"
+                  showSummary
+                  baseQuestionSpacing={1}
+                  baseKnowledgeSpacing={1}
+                  sectionSpacings={{}}
+                  answerRecords={answerRecords}
+                  students={students}
+                  lectureStudents={lectureStudents}
+                  baskets={baskets}
+                  answeredQuestionIds={answeredQuestionIds}
+                  onEditScore={openScoreEditor}
+                  onEditQuestion={handleEditQuestion}
+                  onAddToBasket={handleAddToBasketFromPreview}
+                  onRemoveFromBasket={handleRemoveFromBasketFromPreview}
+                  onUpdateStudentAnswer={handleUpdateStudentAnswerFromPreview}
+                />
+              )}
+            </Card>
+
+            {/* 右侧：编排、批量标注与分布 */}
+            <div className="space-y-4 xl:sticky xl:top-4">
+              <Card className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <ListOrdered className="w-4 h-4 text-teal-500" />
+                    <h3 className="font-serif font-semibold text-ink-900 text-sm">内容编排</h3>
+                  </div>
+                  <Badge variant="ink">{flattenLectureSections(sections).length} 块</Badge>
+                </div>
+
+                {editingSection ? (
+                  <div className="space-y-3 mb-4 pb-4 border-b border-ink-100">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-ink-600">
+                        {editingSection.type === "chapter" ? "编辑章节" : editingSection.type === "question" ? "编辑题目块" : "编辑内容块"}
+                      </span>
+                      <button onClick={() => setEditingSection(null)} className="text-ink-400 hover:text-ink-700">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {editingSection.type !== "chapter" && (
+                      <Input
+                        label="编号标签"
+                        value={sectionLabel}
+                        onChange={(e) => setSectionLabel(e.target.value)}
+                        placeholder="如：例1、变式2"
+                      />
+                    )}
+                    <Input
+                      label={editingSection.type === "chapter" ? "章节标题" : "标题"}
+                      value={sectionTitle}
+                      onChange={(e) => setSectionTitle(e.target.value)}
+                    />
+                    {editingSection.type !== "question" && (
+                      <Textarea
+                        label="内容"
+                        value={sectionContent}
+                        onChange={(e) => setSectionContent(e.target.value)}
+                        rows={5}
+                      />
+                    )}
+                    {editingSection.type === "question" && (
+                      <div className="text-[11px] text-ink-500">题目正文在题库中统一编辑。</div>
+                    )}
+                    <Button variant="gold" size="sm" className="w-full" onClick={handleSaveSection}>
+                      <Save className="w-3.5 h-3.5" />
+                      保存内容块
+                    </Button>
+                  </div>
+                ) : null}
+
+                <div className="space-y-1.5 max-h-[430px] overflow-y-auto pr-1">
+                  {sections.length === 0 ? (
+                    <div className="text-xs text-ink-400 text-center py-5">暂无内容块</div>
+                  ) : sections.map((section, sectionIndex) => {
+                    const expanded = outlineExpanded[section.id] ?? true;
+                    return (
+                      <div key={section.id} className="rounded-md border border-ink-100 overflow-hidden">
+                        <div className="flex items-center gap-1.5 p-2 bg-paper group">
+                          {section.type === "chapter" ? (
+                            <button
+                              onClick={() => setOutlineExpanded((previous) => ({ ...previous, [section.id]: !expanded }))}
+                              className="text-ink-400 hover:text-ink-700"
+                            >
+                              {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            </button>
+                          ) : <GripVertical className="w-3.5 h-3.5 text-ink-300" />}
+                          <button
+                            onClick={() => {
+                              setSelectedChapterId(section.type === "chapter" ? section.id : null);
+                              setEditingSection(section);
+                              setSectionTitle(section.title);
+                              setSectionContent(section.content);
+                              setSectionLabel(section.customLabel || "");
+                            }}
+                            className="flex-1 min-w-0 text-left text-xs text-ink-700 truncate"
+                          >
+                            {section.title}
+                          </button>
+                          <button
+                            onClick={() => handleMoveSection(sectionIndex, "up")}
+                            disabled={sectionIndex === 0}
+                            className="text-ink-400 hover:text-gold-600 disabled:opacity-25"
+                            title="上移"
+                          >↑</button>
+                          <button
+                            onClick={() => handleMoveSection(sectionIndex, "down")}
+                            disabled={sectionIndex === sections.length - 1}
+                            className="text-ink-400 hover:text-gold-600 disabled:opacity-25"
+                            title="下移"
+                          >↓</button>
+                          <button
+                            onClick={() => handleRemoveSection(section.id)}
+                            className="text-ink-300 hover:text-red-600"
+                            title="删除"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                        {section.type === "chapter" && expanded && section.children.length > 0 && (
+                          <div className="border-t border-ink-100 bg-ink-50/40 p-1.5 space-y-1">
+                            {section.children.map((child, childIndex) => (
+                              <div key={child.id} className="flex items-center gap-1.5 rounded px-1.5 py-1.5 hover:bg-paper group">
+                                {child.type === "question" ? (
+                                  <ListOrdered className="w-3 h-3 text-teal-500 flex-shrink-0" />
+                                ) : child.type === "knowledge" ? (
+                                  <Sparkles className="w-3 h-3 text-gold-500 flex-shrink-0" />
+                                ) : (
+                                  <Type className="w-3 h-3 text-ink-400 flex-shrink-0" />
+                                )}
+                                <button
+                                  onClick={() => {
+                                    setSelectedChapterId(section.id);
+                                    setEditingSection(child);
+                                    setSectionTitle(child.title);
+                                    setSectionContent(child.content);
+                                    setSectionLabel(child.customLabel || "");
+                                  }}
+                                  className="flex-1 min-w-0 text-left text-[11px] text-ink-600 truncate"
+                                >
+                                  {child.customLabel || `${childIndex + 1}.`} {child.title}
+                                </button>
+                                <button
+                                  onClick={() => handleMoveChildSection(section.id, childIndex, "up")}
+                                  disabled={childIndex === 0}
+                                  className="text-[10px] text-ink-400 hover:text-gold-600 disabled:opacity-25"
+                                >↑</button>
+                                <button
+                                  onClick={() => handleMoveChildSection(section.id, childIndex, "down")}
+                                  disabled={childIndex === section.children.length - 1}
+                                  className="text-[10px] text-ink-400 hover:text-gold-600 disabled:opacity-25"
+                                >↓</button>
+                                <button
+                                  onClick={() => handleRemoveSection(child.id, section.id)}
+                                  className="text-ink-300 hover:text-red-600"
+                                >
+                                  <Trash2 className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-3 mt-3 border-t border-ink-100 space-y-1.5">
+                  <Button variant="gold" size="sm" className="w-full justify-start" onClick={() => setAutoGenOpen(true)}>
+                    <Sparkles className="w-3.5 h-3.5" /> AI 自动组讲义
+                  </Button>
+                  <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleAddChapter}>
+                    <BookOpen className="w-3.5 h-3.5" /> 添加章节
+                  </Button>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Button variant="outline" size="sm" onClick={() => setAddSource("bank")}>
+                      <Library className="w-3.5 h-3.5" /> 题目
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setAddSource("basket")}>
+                      <ShoppingBasket className="w-3.5 h-3.5" /> 试题篮
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setAddSource("courseware")}>
+                      <Presentation className="w-3.5 h-3.5" /> 课件
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setAddSource("material")}>
+                      <FileBox className="w-3.5 h-3.5" /> 素材
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddTextSection}>
+                      <Type className="w-3.5 h-3.5" /> 文本
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleAddKnowledgeSection}>
+                      <Wand2 className="w-3.5 h-3.5" /> 知识块
+                    </Button>
+                  </div>
+                  <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setAddSource("lecture")}>
+                    <Files className="w-3.5 h-3.5" /> 从其他讲义添加
+                  </Button>
+                </div>
+              </Card>
+
+              <Card className="p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-emerald-600" />
+                  <h3 className="font-serif font-semibold text-ink-900 text-sm">学生完成标注</h3>
+                </div>
+                <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => setShowStudentPicker(true)}>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <Users className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择学生"}</span>
+                  </span>
+                  {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
+                </Button>
+                {selectedStudentIds.length > 0 && (
+                  <select
+                    value={timeRangeKey}
+                    onChange={(e) => setTimeRangeKey(e.target.value as TimeRangeKey)}
+                    className="w-full text-xs border border-ink-200 rounded px-2 py-1.5 bg-paper text-ink-700"
+                  >
+                    {timeRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                )}
+                <Button
+                  variant="gold"
+                  size="sm"
+                  className="w-full"
+                  onClick={handleMarkAllDone}
+                  loading={markingAllDone}
+                  disabled={!lecture || selectedStudentIds.length === 0 || lectureQuestionIds.length === 0}
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  一键标注学生已做
+                </Button>
+                <div className="text-[11px] text-ink-400 leading-relaxed">
+                  将所选学生对讲义内全部题目标为“已做”，不计入正确率；之后仍可逐题录入全对、半对或做错。
+                </div>
+              </Card>
+
+              <QuestionDistributionPanel questions={lectureQuestionList} knowledgeTree={knowledgeTree} />
+            </div>
+          </div>
         </div>
-      </div>
-    )}
+      )}
       {currentVersionType === "preview" && (
         <div className="max-w-4xl mx-auto">
           <Card className="mb-4">
@@ -2715,6 +2735,7 @@ interface PreviewContentProps {
   baskets: Basket[];
   answeredQuestionIds: Set<string>;
   onEditScore: (questionId: string) => void;
+  onEditQuestion?: (question: Question) => void;
   onAddToBasket?: (questionId: string, basketId: string) => void;
   onRemoveFromBasket?: (questionId: string, basketId: string) => void;
   onUpdateStudentAnswer?: (studentId: string, questionId: string, score: AnswerScore | null) => void;
@@ -2734,6 +2755,7 @@ function PreviewContent({
   baskets,
   answeredQuestionIds,
   onEditScore,
+  onEditQuestion,
   onAddToBasket,
   onRemoveFromBasket,
   onUpdateStudentAnswer,
@@ -2764,6 +2786,7 @@ function PreviewContent({
         baskets={baskets}
         answeredQuestionIds={answeredQuestionIds}
         onEditScore={onEditScore}
+        onEditQuestion={onEditQuestion}
         onAddToBasket={onAddToBasket}
         onRemoveFromBasket={onRemoveFromBasket}
         onUpdateStudentAnswer={onUpdateStudentAnswer}
@@ -2835,12 +2858,14 @@ function QuestionInfoPopover({
   correctCount,
   partialCount,
   wrongCount,
+  doneCount,
   defaultBasket,
   isInDefaultBasket,
   baskets,
   answerEditing,
   savingStudentId,
   onEditScore,
+  onEditQuestion,
   onAddToBasket,
   onRemoveFromBasket,
   onUpdateStudentAnswer,
@@ -2856,12 +2881,14 @@ function QuestionInfoPopover({
   correctCount: number;
   partialCount: number;
   wrongCount: number;
+  doneCount: number;
   defaultBasket?: Basket;
   isInDefaultBasket: boolean;
   baskets: Basket[];
   answerEditing: boolean;
   savingStudentId: string | null;
   onEditScore: (questionId: string) => void;
+  onEditQuestion?: (question: Question) => void;
   onAddToBasket?: (questionId: string, basketId: string) => void;
   onRemoveFromBasket?: (questionId: string, basketId: string) => void;
   onUpdateStudentAnswer?: (studentId: string, questionId: string, score: AnswerScore | null) => void;
@@ -2910,7 +2937,12 @@ function QuestionInfoPopover({
             {answeredCount}/{lectureStudents.length} 已答
           </span>
         </div>
-        <div className="flex items-center gap-4 text-[11px]">
+        <div className="flex items-center gap-4 text-[11px] flex-wrap">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-teal-500" />
+            <span className="text-teal-700 font-medium">{doneCount}</span>
+            <span className="text-ink-500">已做</span>
+          </span>
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
             <span className="text-emerald-700 font-medium">{correctCount}</span>
@@ -2952,6 +2984,7 @@ function QuestionInfoPopover({
                 );
               }
               const cfg = {
+                done: { label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200", dot: "bg-teal-500" },
                 correct: { label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
                 partial: { label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" },
                 wrong: { label: "做错", cls: "bg-red-50 text-red-700 border-red-200", dot: "bg-red-500" },
@@ -2985,6 +3018,7 @@ function QuestionInfoPopover({
               );
             }
             const cfg = {
+              done: { label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100", dot: "bg-teal-500" },
               correct: { label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100", dot: "bg-emerald-500" },
               partial: { label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100", dot: "bg-amber-500" },
               wrong: { label: "做错", cls: "bg-red-50 text-red-700 border-red-200 hover:bg-red-100", dot: "bg-red-500" },
@@ -3060,6 +3094,15 @@ function QuestionInfoPopover({
 
       {/* 操作按钮 */}
       <div className="flex items-center gap-2 pt-2 border-t border-ink-100">
+        {onEditQuestion && (
+          <button
+            onClick={() => onEditQuestion(question)}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-ink-50 text-ink-700 hover:bg-ink-100 transition-colors text-[11px]"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            编辑题目
+          </button>
+        )}
         <button
           onClick={() => onEditScore(question.id)}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-ink-50 text-ink-700 hover:bg-ink-100 transition-colors text-[11px]"
@@ -3135,6 +3178,7 @@ function PreviewSection({
   baskets,
   answeredQuestionIds,
   onEditScore,
+  onEditQuestion,
   onAddToBasket,
   onRemoveFromBasket,
   onUpdateStudentAnswer,
@@ -3149,6 +3193,7 @@ function PreviewSection({
   baskets: Basket[];
   answeredQuestionIds: Set<string>;
   onEditScore: (questionId: string) => void;
+  onEditQuestion?: (question: Question) => void;
   onAddToBasket?: (questionId: string, basketId: string) => void;
   onRemoveFromBasket?: (questionId: string, basketId: string) => void;
   onUpdateStudentAnswer?: (studentId: string, questionId: string, score: AnswerScore | null) => void;
@@ -3181,12 +3226,13 @@ function PreviewSection({
   const correctCount = questionAnswerSummary.filter((a) => a.score === "correct").length;
   const partialCount = questionAnswerSummary.filter((a) => a.score === "partial").length;
   const wrongCount = questionAnswerSummary.filter((a) => a.score === "wrong").length;
+  const doneCount = questionAnswerSummary.filter((a) => a.score === "done").length;
   const defaultBasket = baskets.find((b) => b.isDefault);
   const isInDefaultBasket = question && defaultBasket?.questionIds?.includes(question.id);
 
   const handleToggleStudentScore = async (studentId: string, currentScore: AnswerScore | null) => {
     if (!question || !onUpdateStudentAnswer) return;
-    const scoreOrder: (AnswerScore | null)[] = [null, "correct", "partial", "wrong"];
+    const scoreOrder: (AnswerScore | null)[] = [null, "done", "correct", "partial", "wrong"];
     const currentIndex = scoreOrder.indexOf(currentScore);
     const nextScore = scoreOrder[(currentIndex + 1) % scoreOrder.length];
     setSavingStudentId(studentId);
@@ -3226,6 +3272,7 @@ function PreviewSection({
                 baskets={baskets}
                 answeredQuestionIds={answeredQuestionIds}
                 onEditScore={onEditScore}
+                onEditQuestion={onEditQuestion}
                 onAddToBasket={onAddToBasket}
                 onRemoveFromBasket={onRemoveFromBasket}
                 onUpdateStudentAnswer={onUpdateStudentAnswer}
@@ -3279,12 +3326,14 @@ function PreviewSection({
                     correctCount={correctCount}
                     partialCount={partialCount}
                     wrongCount={wrongCount}
+                    doneCount={doneCount}
                     defaultBasket={defaultBasket}
                     isInDefaultBasket={!!isInDefaultBasket}
                     baskets={baskets}
                     answerEditing={answerEditing}
                     savingStudentId={savingStudentId}
                     onEditScore={onEditScore}
+                    onEditQuestion={onEditQuestion}
                     onAddToBasket={onAddToBasket}
                     onRemoveFromBasket={onRemoveFromBasket}
                     onUpdateStudentAnswer={onUpdateStudentAnswer}

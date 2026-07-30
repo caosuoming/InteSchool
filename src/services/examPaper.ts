@@ -19,6 +19,7 @@ export interface ExamPaperInput {
   totalScore: number;
   questions: ExamPaperQuestion[];
   typeId?: string;
+  layoutMode?: "grouped" | "flat";
   status?: "draft" | "published";
   originalFileUrl?: string;
   originalFileName?: string;
