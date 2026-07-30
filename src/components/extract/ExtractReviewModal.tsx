@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "katex/dist/katex.min.css";
 import {
   Sparkles,
@@ -12,7 +12,6 @@ import {
   Merge,
   Split,
   FileText,
-  BookOpen,
   Ban,
   Loader2,
   Plus,
@@ -56,19 +55,11 @@ interface ExtractReviewModalProps {
 
 type Phase = "extracting" | "review" | "confirming";
 
-const questionTypeLabel: Record<QuestionType, string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
-
 const blockTypeLabel: Record<BlockType, string> = {
   question: "题目",
-  knowledge: "知识块",
+  knowledge: "知识库",
   heading: "标题",
-  unused: "未使用",
+  unused: "未分类",
 };
 
 const optionLetter = (idx: number) => String.fromCharCode(65 + idx);
@@ -90,8 +81,7 @@ function blockTypeBadgeVariant(type: BlockType): "green" | "teal" | "ink" | "def
   }
 }
 
-function blockBorderClass(type: BlockType, selected: boolean): string {
-  if (selected) return "border-gold-400 ring-2 ring-gold-200";
+function blockBorderClass(type: BlockType): string {
   switch (type) {
     case "question":
       return "border-emerald-200 hover:border-emerald-300";
@@ -196,15 +186,12 @@ export function ExtractReviewModal({
   const [progressMsg, setProgressMsg] = useState("正在初始化...");
   const [error, setError] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<DocBlock[]>([]);
-  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [showKeywordConfig, setShowKeywordConfig] = useState(false);
   const [newKeywordValue, setNewKeywordValue] = useState("");
   const [activeKeywordTab, setActiveKeywordTab] = useState<"question" | "answerAnalysis" | "questionType">("question");
   const [selectedKeywordType, setSelectedKeywordType] = useState<"answer" | "analysis" | "summary">("answer");
   const [selectedQuestionType, setSelectedQuestionType] = useState<"single" | "multiple" | "fillblank" | "essay">("single");
-  const leftPanelRef = useRef<HTMLDivElement>(null);
-  const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // 拖动弹窗状态 - 初始位置居右，靠近切块列表
   const [dragPosition, setDragPosition] = useState({ x: window.innerWidth - 350, y: 120 });
   const [isDragging, setIsDragging] = useState(false);
@@ -218,7 +205,6 @@ export function ExtractReviewModal({
     setProgressMsg("正在初始化...");
     setError(null);
     setBlocks([]);
-    setSelectedBlockId(null);
     setEditingBlockId(null);
 
     if (!teacher) {
@@ -345,18 +331,6 @@ export function ExtractReviewModal({
     };
   })();
 
-  const handleSelectBlock = (id: string) => {
-    setSelectedBlockId(id);
-    const el = blockRefs.current[id];
-    if (el && leftPanelRef.current) {
-      const panelRect = leftPanelRef.current.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      if (elRect.top < panelRect.top || elRect.bottom > panelRect.bottom) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }
-  };
-
   const handleChangeBlockType = (id: string, type: BlockType) => {
     setBlocks((list) =>
       list.map((b) => {
@@ -467,7 +441,6 @@ export function ExtractReviewModal({
     newBlocks.splice(idx, 1);
     newBlocks.forEach((b, i) => (b.order = i));
     setBlocks(newBlocks);
-    if (selectedBlockId === id) setSelectedBlockId(prev.id);
     if (editingBlockId === id) setEditingBlockId(prev.id);
   };
 
@@ -629,135 +602,112 @@ export function ExtractReviewModal({
     ...extractConfig.summaryKeywords,
   ];
 
-  const renderLeftBlock = (block: DocBlock) => {
-    const isSelected = selectedBlockId === block.id;
+  const renderDocumentBlock = (block: DocBlock) => {
+    const isEditing = editingBlockId === block.id;
+
     return (
       <div
         key={block.id}
-        ref={(el) => {
-          blockRefs.current[block.id] = el;
-        }}
-        onClick={() => handleSelectBlock(block.id)}
         className={cn(
-          "rounded-lg border p-4 cursor-pointer transition-all",
-          blockBorderClass(block.type, isSelected),
+          "overflow-hidden rounded-xl border transition-colors",
+          blockBorderClass(block.type),
           blockBgClass(block.type),
         )}
       >
-        <div className="flex items-center gap-2 mb-2">
-          <Badge variant={blockTypeBadgeVariant(block.type)}>
-            {block.type === "question" && block.questionType
-              ? questionTypeLabel[block.questionType]
-              : blockTypeLabel[block.type]}
-          </Badge>
-          <span className="text-xs text-ink-400">#{block.order + 1}</span>
-        </div>
-
-        {block.type === "heading" && (
-          <div className="font-serif text-lg font-bold text-ink-900">{block.content}</div>
-        )}
-
-        {block.type === "knowledge" && (
-          <div className="space-y-1">
-            {block.knowledgeTitle && (
-              <div className="font-semibold text-ink-900 text-sm">
-                {block.knowledgeTitle}
+        <div className="p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+            <div className="min-w-0 flex-1">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <Badge variant={blockTypeBadgeVariant(block.type)}>
+                  {blockTypeLabel[block.type]}
+                </Badge>
+                <span className="text-xs text-ink-400">#{block.order + 1}</span>
+                {block.status === "edited" && <Badge variant="gold">已编辑</Badge>}
+                {block.status === "duplicate" && <Badge variant="amber">重复</Badge>}
               </div>
-            )}
-            <div className="text-sm text-ink-700 whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }} />
-          </div>
-        )}
 
-        {block.type === "question" && (
-          <div className="space-y-2">
-            <div className="text-sm text-ink-800 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }} />
-            {block.options && block.options.length > 0 && (
-              <div className="grid grid-cols-2 gap-1.5 pl-1">
-                {block.options.map((opt, idx) => (
-                  <div key={idx} className="flex items-start gap-1.5 text-sm" dangerouslySetInnerHTML={{ __html: `<span class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-xs font-medium text-white ${getOptionColor(idx)}">${optionLetter(idx)}</span><span class="text-ink-700 flex-1">${renderExtractText(opt, allKeywords, true)}</span>` }} />
-                ))}
-              </div>
-            )}
-            {block.answer && (
-              <div className="text-xs bg-emerald-50/60 border border-emerald-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-emerald-700 font-medium">答案：</span>${renderExtractText(block.answer, allKeywords, true)}` }} />
-            )}
-            {block.analysis && (
-              <div className="text-xs bg-blue-50/60 border border-blue-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-blue-700 font-medium">解析：</span>${renderExtractText(block.analysis, allKeywords, true)}` }} />
-            )}
-            {block.summary && (
-              <div className="text-xs bg-amber-50/60 border border-amber-100 rounded px-2 py-1" dangerouslySetInnerHTML={{ __html: `<span class="text-amber-700 font-medium">总结：</span>${renderExtractText(block.summary, allKeywords, true)}` }} />
-            )}
-          </div>
-        )}
+              {block.type === "heading" && (
+                <div className="font-serif text-lg font-bold text-ink-900">{block.content}</div>
+              )}
 
-        {block.type === "unused" && (
-          <div className="text-sm text-ink-500 whitespace-pre-wrap italic" dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }} />
-        )}
-      </div>
-    );
-  };
+              {block.type === "knowledge" && (
+                <div className="space-y-1">
+                  {block.knowledgeTitle && (
+                    <div className="text-sm font-semibold text-ink-900">
+                      {block.knowledgeTitle}
+                    </div>
+                  )}
+                  <div
+                    className="whitespace-pre-wrap text-sm leading-relaxed text-ink-700"
+                    dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
+                  />
+                </div>
+              )}
 
-  const renderRightBlock = (block: DocBlock) => {
-    const isEditing = editingBlockId === block.id;
-    const isSelected = selectedBlockId === block.id;
+              {block.type === "question" && (
+                <div className="space-y-2">
+                  <div
+                    className="whitespace-pre-wrap text-sm text-ink-800"
+                    dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
+                  />
+                  {block.options && block.options.length > 0 && (
+                    <div className="grid grid-cols-1 gap-1.5 pl-1 sm:grid-cols-2">
+                      {block.options.map((opt, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-start gap-1.5 text-sm"
+                          dangerouslySetInnerHTML={{ __html: `<span class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-xs font-medium text-white ${getOptionColor(idx)}">${optionLetter(idx)}</span><span class="text-ink-700 flex-1">${renderExtractText(opt, allKeywords, true)}</span>` }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {block.answer && (
+                    <div
+                      className="rounded border border-emerald-100 bg-emerald-50/60 px-2 py-1 text-xs"
+                      dangerouslySetInnerHTML={{ __html: `<span class="text-emerald-700 font-medium">答案：</span>${renderExtractText(block.answer, allKeywords, true)}` }}
+                    />
+                  )}
+                  {block.analysis && (
+                    <div
+                      className="rounded border border-blue-100 bg-blue-50/60 px-2 py-1 text-xs"
+                      dangerouslySetInnerHTML={{ __html: `<span class="text-blue-700 font-medium">解析：</span>${renderExtractText(block.analysis, allKeywords, true)}` }}
+                    />
+                  )}
+                  {block.summary && (
+                    <div
+                      className="rounded border border-amber-100 bg-amber-50/60 px-2 py-1 text-xs"
+                      dangerouslySetInnerHTML={{ __html: `<span class="text-amber-700 font-medium">总结：</span>${renderExtractText(block.summary, allKeywords, true)}` }}
+                    />
+                  )}
+                </div>
+              )}
 
-    return (
-      <div
-        key={block.id}
-        className={cn(
-          "rounded-lg border bg-paper transition-all",
-          isSelected ? "border-gold-300 ring-1 ring-gold-200" : "border-ink-100",
-        )}
-      >
-        <div
-          className="p-3 cursor-pointer"
-          onClick={() => handleSelectBlock(block.id)}
-        >
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              {block.type === "unused" && (
+                <div
+                  className="whitespace-pre-wrap text-sm italic text-ink-500"
+                  dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
+                />
+              )}
+            </div>
+
+            <div className="w-full flex-shrink-0 space-y-3 rounded-lg border border-ink-100 bg-paper/90 p-3 lg:w-56">
               <Select
+                label="调整区域属性"
                 value={block.type}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  handleChangeBlockType(block.id, e.target.value as BlockType);
-                }}
-                className="text-xs h-7 py-0 px-2 w-24"
+                onChange={(e) => handleChangeBlockType(block.id, e.target.value as BlockType)}
+                className="h-9 py-0 text-sm"
                 options={[
-                  { value: "question", label: "题目" },
-                  { value: "knowledge", label: "知识块" },
                   { value: "heading", label: "标题" },
-                  { value: "unused", label: "未使用" },
+                  { value: "question", label: "题目" },
+                  { value: "knowledge", label: "知识库" },
+                  { value: "unused", label: "未分类" },
                 ]}
               />
-              {block.type === "question" && block.questionType && (
-                <Badge variant="green">{questionTypeLabel[block.questionType]}</Badge>
-              )}
-              {block.status === "edited" && <Badge variant="gold">已编辑</Badge>}
-              {block.status === "duplicate" && <Badge variant="amber">重复</Badge>}
-            </div>
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditBlock(block.id);
-                }}
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-          </div>
-          <div className="text-sm text-ink-700 line-clamp-2 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: renderExtractText(block.type === "knowledge" && block.knowledgeTitle ? `${block.knowledgeTitle}：${block.content}` : block.content, [], false) }} />
-        </div>
-
-        {isEditing && (
-          <div className="border-t border-ink-100 p-3 space-y-3 bg-mist/30">
-            {block.type === "question" && (
-              <>
+              {block.type === "question" && (
                 <Select
-                  label="题型"
+                  label="题型选择"
                   value={block.questionType || "single"}
+                  className="h-9 py-0 text-sm"
                   options={[
                     { value: "single", label: "单选题" },
                     { value: "multiple", label: "多选题" },
@@ -771,6 +721,61 @@ export function ExtractReviewModal({
                     })
                   }
                 />
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-ink-100 pt-3">
+            <Button size="sm" variant={isEditing ? "gold" : "outline"} onClick={() => handleEditBlock(block.id)}>
+              <Edit3 className="h-3.5 w-3.5" />
+              {isEditing ? "收起编辑" : "编辑内容"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowKeywordConfig(true)}>
+              <Settings className="h-3.5 w-3.5" />
+              关键字与重新拆解
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => mergeWithPrevious(block.id)}
+              disabled={block.order === 0}
+            >
+              <Merge className="h-3.5 w-3.5" />
+              与上一块合并
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => moveBlockUp(block.id)}
+              disabled={block.order === 0}
+              title="上移"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+              上移
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => moveBlockDown(block.id)}
+              disabled={block.order === blocks.length - 1}
+              title="下移"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+              下移
+            </Button>
+            {block.type === "unused" && (
+              <Button size="sm" variant="outline" onClick={() => splitBlock(block.id)}>
+                <Split className="h-3.5 w-3.5" />
+                拆分
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {isEditing && (
+          <div className="space-y-3 border-t border-ink-100 bg-paper/80 p-4">
+            {block.type === "question" && (
+              <>
                 <Textarea
                   label="题干"
                   value={block.content}
@@ -779,7 +784,7 @@ export function ExtractReviewModal({
                 />
                 {(block.questionType === "single" || block.questionType === "multiple") && (
                   <div>
-                    <div className="flex items-center justify-between mb-1.5">
+                    <div className="mb-1.5 flex items-center justify-between">
                       <label className="block text-sm font-medium text-ink-700">选项</label>
                       <button
                         type="button"
@@ -789,10 +794,10 @@ export function ExtractReviewModal({
                         + 添加选项
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                       {(block.options || []).map((opt, idx) => (
                         <div key={idx} className="flex items-center gap-2">
-                          <span className={`flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-xs font-medium text-white ${getOptionColor(idx)}`}>
+                          <span className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-xs font-medium text-white ${getOptionColor(idx)}`}>
                             {optionLetter(idx)}
                           </span>
                           <Input
@@ -802,10 +807,10 @@ export function ExtractReviewModal({
                           <button
                             type="button"
                             onClick={() => removeOption(block.id, idx)}
-                            className="p-1 text-ink-400 hover:text-red-600 flex-shrink-0"
+                            className="flex-shrink-0 p-1 text-ink-400 hover:text-red-600"
                             title="删除选项"
                           >
-                            <X className="w-3.5 h-3.5" />
+                            <X className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       ))}
@@ -820,17 +825,13 @@ export function ExtractReviewModal({
                 <Textarea
                   label="解析"
                   value={block.analysis || ""}
-                  onChange={(e) =>
-                    updateBlockField(block.id, { analysis: e.target.value })
-                  }
+                  onChange={(e) => updateBlockField(block.id, { analysis: e.target.value })}
                   rows={2}
                 />
                 <Textarea
                   label="分析总结"
                   value={block.summary || ""}
-                  onChange={(e) =>
-                    updateBlockField(block.id, { summary: e.target.value })
-                  }
+                  onChange={(e) => updateBlockField(block.id, { summary: e.target.value })}
                   rows={2}
                 />
                 <Select
@@ -843,9 +844,7 @@ export function ExtractReviewModal({
                     { value: "4", label: "较难" },
                     { value: "5", label: "困难" },
                   ]}
-                  onChange={(e) =>
-                    updateBlockField(block.id, { difficulty: Number(e.target.value) })
-                  }
+                  onChange={(e) => updateBlockField(block.id, { difficulty: Number(e.target.value) })}
                 />
               </>
             )}
@@ -855,16 +854,12 @@ export function ExtractReviewModal({
                 <Input
                   label="标题"
                   value={block.knowledgeTitle || ""}
-                  onChange={(e) =>
-                    updateBlockField(block.id, { knowledgeTitle: e.target.value })
-                  }
+                  onChange={(e) => updateBlockField(block.id, { knowledgeTitle: e.target.value })}
                 />
                 <Textarea
                   label="内容"
                   value={block.content}
-                  onChange={(e) =>
-                    updateBlockField(block.id, { content: e.target.value })
-                  }
+                  onChange={(e) => updateBlockField(block.id, { content: e.target.value })}
                   rows={5}
                 />
               </>
@@ -880,46 +875,21 @@ export function ExtractReviewModal({
             )}
 
             {block.type === "unused" && (
-              <div className="text-sm text-ink-500">
-                未使用块不会入库，仅保留在文档原始结构中。
-              </div>
+              <>
+                <Textarea
+                  label="未分类内容"
+                  value={block.content}
+                  onChange={(e) => updateBlockField(block.id, { content: e.target.value })}
+                  rows={4}
+                />
+                <div className="text-sm text-ink-500">未分类块不会入库，仅保留在文档原始结构中。</div>
+              </>
             )}
-
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => moveBlockUp(block.id)}
-                disabled={block.order === 0}
-              >
-                <ChevronUp className="w-3.5 h-3.5" /> 上移
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => moveBlockDown(block.id)}
-                disabled={block.order === blocks.length - 1}
-              >
-                <ChevronDown className="w-3.5 h-3.5" /> 下移
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => mergeWithPrevious(block.id)}
-                disabled={block.order === 0}
-              >
-                <Merge className="w-3.5 h-3.5" /> 合并上一块
-              </Button>
-              {block.type === "unused" && (
-                <Button size="sm" variant="outline" onClick={() => splitBlock(block.id)}>
-                  <Split className="w-3.5 h-3.5" /> 拆分
-                </Button>
-              )}
-            </div>
 
             <div className="flex justify-end pt-1">
               <Button size="sm" variant="gold" onClick={() => handleEditBlock(block.id)}>
-                <Save className="w-3.5 h-3.5" /> 完成
+                <Save className="h-3.5 w-3.5" />
+                完成编辑
               </Button>
             </div>
           </div>
@@ -1295,77 +1265,49 @@ export function ExtractReviewModal({
 
   const renderReview = () => {
     return (
-      <>
-        <div className="flex gap-4 h-full">
-          <div
-            ref={leftPanelRef}
-            className="w-3/5 bg-mist/30 rounded-lg p-4 overflow-y-auto space-y-3"
-          >
-            <div className="sticky top-0 bg-mist/80 backdrop-blur-sm -mx-4 -mt-4 px-4 py-3 mb-2 border-b border-ink-100 z-10">
-              <div className="flex items-center gap-2 mb-1">
-                <FileText className="w-4 h-4 text-ink-500" />
-                <span className="font-serif font-semibold text-ink-900">
-                  {resourceTitle}
-                </span>
+      <div className="flex h-full flex-col overflow-hidden rounded-lg bg-mist/30">
+        <div className="flex-shrink-0 border-b border-ink-100 bg-mist/90 px-4 py-3 backdrop-blur-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <FileText className="h-4 w-4 text-ink-500" />
+                <span className="font-serif font-semibold text-ink-900">{resourceTitle}</span>
                 <Badge variant="default">{resourceType === "examPaper" ? "试卷" : "讲义"}</Badge>
               </div>
-              <div className="text-xs text-ink-500">
-                文档预览 · 共 {stats.total} 个切块
-              </div>
+              <div className="mt-1 text-xs text-ink-500">文档预览 · 共 {stats.total} 个切块</div>
             </div>
-
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {blocks.length === 0 ? (
-              <div className="text-center py-12 text-sm text-ink-400">
-                <FileText className="w-10 h-10 mx-auto mb-2 text-ink-200" />
-                暂无文档块
-              </div>
-            ) : (
-              blocks.map(renderLeftBlock)
-            )}
+            <Button size="sm" variant="outline" onClick={() => setShowKeywordConfig(true)}>
+              <Settings className="h-3.5 w-3.5" />
+              关键字与重新拆解
+            </Button>
           </div>
-
-          <div className="w-2/5 flex flex-col bg-paper rounded-lg border border-ink-100">
-            <div className="px-4 py-3 border-b border-ink-100 flex-shrink-0">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-sm font-medium text-ink-900">切块列表</div>
-                <button
-                  type="button"
-                  onClick={() => setShowKeywordConfig(true)}
-                  className="flex items-center gap-1 px-2 py-1 bg-mist/50 hover:bg-mist rounded text-xs text-ink-600 transition-colors"
-                >
-                  <Settings className="w-3 h-3" />
-                  <span>关键字</span>
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="default">共 {stats.total} 块</Badge>
-                <Badge variant="green">题目 {stats.question}</Badge>
-                <Badge variant="teal">知识块 {stats.knowledge}</Badge>
-                <Badge variant="ink">标题 {stats.heading}</Badge>
-                <Badge variant="default">未使用 {stats.unused}</Badge>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {blocks.length === 0 ? (
-                <div className="text-center py-12 text-sm text-ink-400">
-                  <BookOpen className="w-10 h-10 mx-auto mb-2 text-ink-200" />
-                  暂无切块
-                </div>
-              ) : (
-                blocks.map(renderRightBlock)
-              )}
-            </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <Badge variant="default">共 {stats.total} 块</Badge>
+            <Badge variant="green">题目 {stats.question}</Badge>
+            <Badge variant="teal">知识库 {stats.knowledge}</Badge>
+            <Badge variant="ink">标题 {stats.heading}</Badge>
+            <Badge variant="default">未分类 {stats.unused}</Badge>
           </div>
         </div>
-      </>
+
+        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {blocks.length === 0 ? (
+            <div className="py-12 text-center text-sm text-ink-400">
+              <FileText className="mx-auto mb-2 h-10 w-10 text-ink-200" />
+              暂无文档块
+            </div>
+          ) : (
+            blocks.map(renderDocumentBlock)
+          )}
+        </div>
+      </div>
     );
   };
 
@@ -1404,11 +1346,11 @@ export function ExtractReviewModal({
                 </span>
                 <span className="inline-flex items-center gap-1 text-ink-500">
                   <FileText className="w-3.5 h-3.5" />
-                  题目 {stats.question} + 知识块 {stats.knowledge}
+                  题目 {stats.question} + 知识库 {stats.knowledge}
                 </span>
                 <span className="inline-flex items-center gap-1 text-ink-400">
                   <Ban className="w-3.5 h-3.5" />
-                  忽略 {stats.unused + stats.heading}
+                  未入库 {stats.unused + stats.heading}
                 </span>
               </div>
               <div className="flex items-center gap-2">
