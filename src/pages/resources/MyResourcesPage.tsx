@@ -1685,7 +1685,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         ]}
                         updatedAt={copy.updatedAt}
                         reflections={reflectionsMap[copy.id]}
-                        onClick={() => navigate(`/exam-papers/${copy.id}/preview`)}
+                        onClick={() => navigate(`/exam-papers/${copy.id}`)}
                         onShare={() => handleOpenShare("examPaper", copy.id, copy.title)}
                         onDelete={() => handleDelete(copy.id)}
                         onViewReflections={() => setViewingReflections({ title: copy.title, list: reflectionsMap[copy.id] || [] })}

@@ -38,7 +38,15 @@ import {
   type DocumentBlockType as BlockType,
 } from "@/lib/document-block-parser";
 import { extractStoredFile } from "@/services/api";
-import type { QuestionType, Question, Material, Lecture, ExamPaper, ResourceSemester } from "@/types";
+import type {
+  ExamPaper,
+  ExtractedDocumentBlock,
+  Lecture,
+  Material,
+  Question,
+  QuestionType,
+  ResourceSemester,
+} from "@/types";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 
 interface ExtractReviewModalProps {
@@ -181,7 +189,7 @@ function removeKeywords(text: string, keywords: string[]): string {
     if (keywords.length > 0) {
       const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
       const lineStartKeywordPattern = new RegExp(
-        `^[\\s]*(${escapedKeywords.join("|")})([\\s]*[\\d一二三四五六七八九十]+[、．.．）)]?)?`,
+        `^[\\s]*(${escapedKeywords.join("|")})([\\s]*[\\d一二三四五六七八九十]+[、．.．）)]?)?[\\s]*[:：、.．-]?[\\s]*`,
         "g"
       );
       processedLine = processedLine.replace(lineStartKeywordPattern, "");
@@ -616,7 +624,12 @@ export function ExtractReviewModal({
         duplicateOf: b.duplicateOf as Material | undefined,
       }));
 
-      const { createdQuestions, createdMaterials } = await extractService.confirmExtract(
+      const {
+        createdQuestions,
+        createdMaterials,
+        questionIdByItemId,
+        materialIdByItemId,
+      } = await extractService.confirmExtract(
         teacher.id,
         teacher.schoolId!,
         { questions: extractedQuestions, knowledgeBlocks: extractedKnowledge },
@@ -628,10 +641,47 @@ export function ExtractReviewModal({
         resourceId,
       );
 
+      const extractedQuestionById = new Map(extractedQuestions.map((item) => [item.id, item]));
+      const extractedKnowledgeById = new Map(extractedKnowledge.map((item) => [item.id, item]));
+      const extractCopyBlocks: ExtractedDocumentBlock[] = blocks.map((block) => {
+        if (block.type === "question") {
+          const item = extractedQuestionById.get(block.id);
+          return {
+            id: block.id,
+            type: "question",
+            content: item?.stem || block.content,
+            questionType: item?.type || block.questionType || defaultQuestionType,
+            questionId: questionIdByItemId[block.id],
+          };
+        }
+        if (block.type === "knowledge") {
+          const item = extractedKnowledgeById.get(block.id);
+          return {
+            id: block.id,
+            type: "knowledge",
+            title: item?.title || block.knowledgeTitle,
+            content: item?.content || block.content,
+            materialId: materialIdByItemId[block.id],
+          };
+        }
+        if (block.type === "heading") {
+          return {
+            id: block.id,
+            type: "heading",
+            content: block.content,
+          };
+        }
+        return {
+          id: block.id,
+          type: "text",
+          content: block.content,
+        };
+      });
+
       if (resourceType === "examPaper") {
-        await examPaperService.createExtractCopy(resourceId);
+        await examPaperService.createExtractCopy(resourceId, extractCopyBlocks);
       } else {
-        await lectureService.createExtractCopy(resourceId);
+        await lectureService.createExtractCopy(resourceId, extractCopyBlocks);
       }
 
       toast.success(

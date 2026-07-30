@@ -3440,19 +3440,24 @@ function PreviewSection({
             <div className="space-y-3">
               {/* 题干 + 编号 */}
               <div className="flex items-start gap-1.5">
-                <button
-                  onClick={() => setInfoOpen(!infoOpen)}
-                  className={cn(
-                    "flex-shrink-0 mt-0.5 p-0.5 rounded hover:bg-ink-100 transition-colors",
-                    infoOpen ? "text-gold-600" : "text-ink-400"
-                  )}
-                  title={infoOpen ? "收起题目信息" : "展开题目信息"}
-                >
-                  {infoOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                </button>
+                {section.displayMode !== "stem-only" && (
+                  <button
+                    onClick={() => setInfoOpen(!infoOpen)}
+                    className={cn(
+                      "flex-shrink-0 mt-0.5 p-0.5 rounded hover:bg-ink-100 transition-colors",
+                      infoOpen ? "text-gold-600" : "text-ink-400"
+                    )}
+                    title={infoOpen ? "收起题目信息" : "展开题目信息"}
+                  >
+                    {infoOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                )}
                 <div
-                  onClick={() => setExpanded(!expanded)}
-                  className="text-sm text-ink-900 leading-relaxed whitespace-pre-wrap cursor-pointer hover:text-gold-700 transition-colors select-none flex-1"
+                  onClick={() => section.displayMode !== "stem-only" && setExpanded(!expanded)}
+                  className={cn(
+                    "text-sm text-ink-900 leading-relaxed whitespace-pre-wrap select-none flex-1",
+                    section.displayMode !== "stem-only" && "cursor-pointer hover:text-gold-700 transition-colors",
+                  )}
                 >
                   <span className="font-mono text-ink-400 mr-1.5">{section.customLabel || `${questionNumber}.`}</span>
                   {question.stem}
@@ -3463,7 +3468,7 @@ function PreviewSection({
               </div>
 
               {/* 题目信息弹窗 */}
-              {infoOpen && (
+              {section.displayMode !== "stem-only" && infoOpen && (
                 <div className="pl-6 animate-fade-in">
                   <QuestionInfoPopover
                     question={question}
@@ -3493,7 +3498,7 @@ function PreviewSection({
               )}
 
               {/* 选项（按数量自适应列数） */}
-              {question.options && question.options.length > 0 && (
+              {section.displayMode !== "stem-only" && question.options && question.options.length > 0 && (
                 <div className={cn(
                   "pl-6 gap-2 grid",
                   getOptionsGridCols(question.options.length),
@@ -3518,7 +3523,7 @@ function PreviewSection({
               )}
 
               {/* 答案与解析 */}
-              {expanded && (
+              {section.displayMode !== "stem-only" && expanded && (
                 <div className="space-y-2 animate-fade-in pl-6">
                   <div className="p-2.5 rounded-md bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900 font-medium whitespace-pre-wrap">
                     <span className="font-bold">答案：</span>
@@ -3942,7 +3947,7 @@ function SectionPreview({
                   <span className="tag-gold ml-2 text-[10px] py-0.5">已做过</span>
                 )}
               </div>
-              {question.options && (
+              {section.displayMode !== "stem-only" && question.options && (
                 <div className={cn(
                   "text-xs text-ink-600 mb-1 gap-2 grid",
                   getOptionsGridCols(question.options.length),
@@ -3955,13 +3960,15 @@ function SectionPreview({
                   ))}
                 </div>
               )}
-              <button
-                onClick={() => setExpanded(!expanded)}
-                className="text-xs text-teal-600 hover:text-teal-700 mt-1"
-              >
-                {expanded ? "收起答案与解析" : "查看答案与解析"}
-              </button>
-              {expanded && (
+              {section.displayMode !== "stem-only" && (
+                <button
+                  onClick={() => setExpanded(!expanded)}
+                  className="text-xs text-teal-600 hover:text-teal-700 mt-1"
+                >
+                  {expanded ? "收起答案与解析" : "查看答案与解析"}
+                </button>
+              )}
+              {section.displayMode !== "stem-only" && expanded && (
                 <div className="mt-2 space-y-1.5 animate-fade-in">
                   <div className="text-xs p-2 rounded bg-emerald-50/40 border border-emerald-200">
                     <span className="font-medium text-emerald-700">答案：</span>

@@ -21,7 +21,12 @@ export const extractService = {
     schoolYear: string,
     semester: ResourceSemester,
     sourceResourceId: string,
-  ): Promise<{ createdQuestions: Question[]; createdMaterials: Material[] }> {
+  ): Promise<{
+    createdQuestions: Question[];
+    createdMaterials: Material[];
+    questionIdByItemId: Record<string, string>;
+    materialIdByItemId: Record<string, string>;
+  }> {
     return rpcCall("extract", "confirmExtract", [
       teacherId,
       schoolId,
