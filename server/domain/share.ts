@@ -16,6 +16,9 @@ import type {
   Material,
   PlatformResourceSetting,
   PlatformResourceSettingType,
+  PlatformSaveCheckResult,
+  PlatformSaveDecision,
+  PlatformSaveResult,
   Question,
   ShareRecord,
   ShareableResourceType,
@@ -69,6 +72,9 @@ function findOwnedResource(
   if (resource.teacherId !== teacherId || resource.schoolId !== schoolId) {
     throw new Error("无权捐赠不属于自己的资源");
   }
+  if (resource.platformSourceDonationIds?.length) {
+    throw new Error("从平台资源另存的资源不能再次捐赠");
+  }
   return resource;
 }
 
@@ -103,6 +109,47 @@ function questionSimilarity(source: Question, existing: Question): number {
   const sourceText = [source.stem, ...(source.options || []), source.answer].join("\n");
   const existingText = [existing.stem, ...(existing.options || []), existing.answer].join("\n");
   return levenshteinSimilarity(sourceText, existingText);
+}
+
+type CanonicalMergeChoice = "source" | "target" | "both";
+
+function mergeTextField(
+  targetValue: string | undefined,
+  sourceValue: string | undefined,
+  choice: CanonicalMergeChoice,
+  secondLabel: string,
+): string | undefined {
+  if (choice === "source") return sourceValue;
+  if (choice === "target") return targetValue;
+  const target = targetValue?.trim() || "";
+  const source = sourceValue?.trim() || "";
+  if (!target) return sourceValue;
+  if (!source) return targetValue;
+  if (normalizeForSimilarity(target) === normalizeForSimilarity(source)) return targetValue;
+  return `${targetValue}\n\n${secondLabel}：${sourceValue}`;
+}
+
+function mergeQuestionContent(
+  target: Question,
+  source: Question,
+  fields: {
+    stem: CanonicalMergeChoice;
+    answer: CanonicalMergeChoice;
+    analysis: CanonicalMergeChoice;
+    summary: CanonicalMergeChoice;
+  },
+  updatedAt: string,
+): Question {
+  if (fields.stem === "both") throw new Error("题干只能二选一");
+  return {
+    ...target,
+    stem: fields.stem === "source" ? source.stem : target.stem,
+    options: fields.stem === "source" ? source.options : target.options,
+    answer: mergeTextField(target.answer, source.answer, fields.answer, "答案二") || "",
+    analysis: mergeTextField(target.analysis, source.analysis, fields.analysis, "解析二") || "",
+    summary: mergeTextField(target.summary, source.summary, fields.summary, "总结二"),
+    updatedAt,
+  };
 }
 
 function pathHash(value: string): string {
@@ -237,6 +284,76 @@ function primaryDonations(): ShareRecord[] {
 function contributionDonations(): ShareRecord[] {
   return (db.read("shareRecords") as ShareRecord[])
     .filter((item) => item.kind === "donation");
+}
+
+function platformDonationById(donationId: string): ShareRecord {
+  const donation = primaryDonations().find((item) => item.id === donationId);
+  if (!donation?.resourceSnapshot) throw new Error("平台资源不存在");
+  return donation;
+}
+
+function teacherContributedToDonation(teacherId: string, donationId: string): boolean {
+  return contributionDonations().some((item) =>
+    item.fromTeacherId === teacherId
+    && (item.id === donationId || item.mergedIntoDonationId === donationId),
+  );
+}
+
+function checkPlatformSave(
+  donation: ShareRecord,
+  teacherId: string,
+  schoolId: string,
+): PlatformSaveCheckResult {
+  if (teacherContributedToDonation(teacherId, donation.id)) {
+    return {
+      donationId: donation.id,
+      resourceType: donation.resourceType,
+      canSave: false,
+      reason: "自己捐赠或合并贡献的平台资源不能另存",
+      alreadySaved: false,
+    };
+  }
+
+  const owned = (db.read(RESOURCE_COLLECTIONS[donation.resourceType]) as ShareableResource[])
+    .filter((item) => item.teacherId === teacherId && item.schoolId === schoolId);
+  const alreadySaved = owned.some((item) => item.platformSourceDonationIds?.includes(donation.id));
+  if (alreadySaved) {
+    return {
+      donationId: donation.id,
+      resourceType: donation.resourceType,
+      canSave: false,
+      reason: "该平台资源已添加到我的资源",
+      alreadySaved: true,
+    };
+  }
+
+  if (donation.resourceType !== "question") {
+    return {
+      donationId: donation.id,
+      resourceType: donation.resourceType,
+      canSave: true,
+      alreadySaved: false,
+    };
+  }
+
+  const sourceQuestion = donation.resourceSnapshot as Question;
+  const conflict = (owned as Question[])
+    .map((targetQuestion) => ({
+      similarity: questionSimilarity(sourceQuestion, targetQuestion),
+      sourceQuestion: structuredClone(sourceQuestion),
+      targetResourceId: targetQuestion.id,
+      targetQuestion: structuredClone(targetQuestion),
+    }))
+    .filter((candidate) => candidate.similarity > 0.8)
+    .sort((left, right) => right.similarity - left.similarity)[0];
+
+  return {
+    donationId: donation.id,
+    resourceType: donation.resourceType,
+    canSave: true,
+    alreadySaved: false,
+    conflict,
+  };
 }
 
 function contributorRanking(): DonationContributor[] {
@@ -381,6 +498,12 @@ function copySnapshotToTeacher(
   const now = new Date().toISOString();
   const directory = ensureDirectorySnapshot(share.directorySnapshot, toSchoolId);
   const original = share.resourceSnapshot;
+  const platformSourceDonationIds = [
+    ...new Set([
+      ...(original.platformSourceDonationIds || []),
+      ...(share.kind === "donation" ? [share.id] : []),
+    ]),
+  ];
   let copy: ShareableResource;
   let newResourceId: string;
 
@@ -392,6 +515,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
         semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
@@ -409,6 +533,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
         semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
@@ -424,6 +549,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
         semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
@@ -440,6 +566,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
         semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
@@ -454,6 +581,7 @@ function copySnapshotToTeacher(
         id: newResourceId,
         teacherId: toTeacherId,
         schoolId: toSchoolId,
+        platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
         semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
@@ -589,15 +717,16 @@ export const shareService = {
           throw new Error("仅相似度超过 80% 的题目可以合并");
         }
         const choices = request.mergeFields || {};
-        const merged: Question = {
-          ...existing,
-          stem: choices.stem === "source" ? source.stem : existing.stem,
-          answer: choices.answer === "source" ? source.answer : existing.answer,
-          analysis: choices.analysis === "source" ? source.analysis : existing.analysis,
-          summary: choices.summary === "source" ? source.summary : existing.summary,
-          options: choices.stem === "source" ? source.options : existing.options,
-          updatedAt: now,
+        const toCanonical = (choice: typeof choices.answer): CanonicalMergeChoice => {
+          if (choice === "source" || choice === "both") return choice;
+          return "target";
         };
+        const merged = mergeQuestionContent(existing, source, {
+          stem: toCanonical(choices.stem),
+          answer: toCanonical(choices.answer),
+          analysis: toCanonical(choices.analysis),
+          summary: toCanonical(choices.summary),
+        }, now);
         db.update("shareRecords", (list: ShareRecord[]) => list.map((item) =>
           item.id === target.id
             ? {
@@ -676,6 +805,65 @@ export const shareService = {
   async getPlatformDirectoryTree(type: "chapter" | "knowledge"): Promise<TreeNode> {
     await delay(50);
     return buildPlatformTree(type);
+  },
+
+  async checkSaveAsOwnResource(
+    donationId: string,
+    teacherId: string,
+    schoolId: string,
+  ): Promise<PlatformSaveCheckResult> {
+    await delay(50);
+    return checkPlatformSave(platformDonationById(donationId), teacherId, schoolId);
+  },
+
+  async saveDonationAsOwnResource(
+    donationId: string,
+    teacherId: string,
+    schoolId: string,
+    decision?: PlatformSaveDecision,
+  ): Promise<PlatformSaveResult> {
+    await delay(100);
+    const donation = platformDonationById(donationId);
+    const check = checkPlatformSave(donation, teacherId, schoolId);
+    if (!check.canSave) throw new Error(check.reason || "该平台资源不能另存");
+
+    if (check.conflict && !decision) {
+      throw new Error("发现相似题目，请先选择新增或合并");
+    }
+
+    if (decision?.action === "merge") {
+      if (donation.resourceType !== "question" || !decision.targetResourceId) {
+        throw new Error("仅相似题目支持合并");
+      }
+      const questions = db.read("questions") as Question[];
+      const target = questions.find((item) =>
+        item.id === decision.targetResourceId
+        && item.teacherId === teacherId
+        && item.schoolId === schoolId,
+      );
+      if (!target) throw new Error("要合并的个人题目不存在");
+      const source = donation.resourceSnapshot as Question;
+      if (questionSimilarity(source, target) <= 0.8) {
+        throw new Error("仅相似度超过 80% 的题目可以合并");
+      }
+      const directory = ensureDirectorySnapshot(donation.directorySnapshot, schoolId);
+      const now = new Date().toISOString();
+      const merged = mergeQuestionContent(target, source, decision.fields, now);
+      merged.chapterIds = [...new Set([...(target.chapterIds || []), ...directory.chapterIds])];
+      merged.knowledgePointIds = [...new Set([...(target.knowledgePointIds || []), ...directory.knowledgePointIds])];
+      merged.platformSourceDonationIds = [
+        ...new Set([...(target.platformSourceDonationIds || []), donation.id]),
+      ];
+      db.write("questions", questions.map((item) => item.id === target.id ? merged : item));
+      return { resourceType: "question", resourceId: target.id, merged: true };
+    }
+
+    const copied = copySnapshotToTeacher(donation, teacherId, schoolId);
+    return {
+      resourceType: copied.resourceType,
+      resourceId: copied.newResourceId,
+      merged: false,
+    };
   },
 
   async updateDonationResource(
@@ -792,7 +980,8 @@ export const shareService = {
 
     let result: { newResourceId: string; resourceType: ShareableResourceType };
     if (share.kind === "donation") {
-      result = copySnapshotToTeacher(share, toTeacherId, toSchoolId);
+      const saved = await shareService.saveDonationAsOwnResource(share.id, toTeacherId, toSchoolId);
+      result = { newResourceId: saved.resourceId, resourceType: saved.resourceType };
     } else {
       const original = (db.read(RESOURCE_COLLECTIONS[share.resourceType]) as ShareableResource[])
         .find((item) => item.id === share.resourceId);

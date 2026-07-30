@@ -7,7 +7,9 @@ import type {
   PlatformAttributeOption,
   PlatformAttributeOptionType,
   PlatformDonation,
-  ShareableResourceType,
+  PlatformSaveCheckResult,
+  PlatformSaveDecision,
+  PlatformSaveResult,
   TreeNode,
 } from "@/types";
 
@@ -45,12 +47,21 @@ export const donationService = {
     return rpcCall("donation", "donateResources", [teacherId, schoolId, items, decisions]) as any;
   },
 
+  async checkSaveAsOwnResource(
+    donationId: string,
+    teacherId: string,
+    schoolId: string,
+  ): Promise<PlatformSaveCheckResult> {
+    return rpcCall("donation", "checkSaveAsOwnResource", [donationId, teacherId, schoolId]) as any;
+  },
+
   async saveAsOwnResource(
     donationId: string,
     teacherId: string,
     schoolId: string,
-  ): Promise<{ newResourceId: string; resourceType: ShareableResourceType }> {
-    return rpcCall("donation", "saveAsOwnResource", [donationId, teacherId, schoolId]) as any;
+    decision?: PlatformSaveDecision,
+  ): Promise<PlatformSaveResult> {
+    return rpcCall("donation", "saveAsOwnResource", [donationId, teacherId, schoolId, decision]) as any;
   },
 
   async updateDonation(

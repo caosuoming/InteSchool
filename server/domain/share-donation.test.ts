@@ -166,6 +166,92 @@ describe("platform resource donations", () => {
     });
   });
 
+  it("keeps both selected answers, analyses, and summaries with second-field labels", async () => {
+    const appState = state();
+    const source = (appState.questions as Question[]).find((item) => item.id === "q-a")!;
+    source.answer = "B";
+    await runWithState(appState, async () => {
+      const [donation] = await shareService.donateResources("teacher-b", "school-b", [
+        { resourceType: "question", resourceId: "q-b" },
+      ]);
+
+      await expect(shareService.donateResources("teacher-a", "school-a", [{
+        resourceType: "question",
+        resourceId: "q-a",
+        duplicateAction: "merge",
+        duplicateTargetDonationId: donation.id,
+        mergeFields: { stem: "both" },
+      }])).rejects.toThrow("题干只能二选一");
+
+      await shareService.donateResources("teacher-a", "school-a", [{
+        resourceType: "question",
+        resourceId: "q-a",
+        duplicateAction: "merge",
+        duplicateTargetDonationId: donation.id,
+        mergeFields: {
+          stem: "existing",
+          answer: "both",
+          analysis: "both",
+          summary: "both",
+        },
+      }]);
+
+      const snapshot = (await shareService.listPublicDonations())[0].resourceSnapshot as Question;
+      expect(snapshot.answer).toBe("A\n\n答案二：B");
+      expect(snapshot.analysis).toBe("平台原解析\n\n解析二：本次捐赠解析");
+      expect(snapshot.summary).toBe("平台原总结\n\n总结二：本次捐赠总结");
+    });
+  });
+
+  it("deduplicates platform saves, blocks self-saves, and makes merged copies non-donatable", async () => {
+    const appState = state();
+    (appState.questions as Question[]).push(question("q-c", "teacher-c", "school-c", "", "", {
+      answer: "B",
+      analysis: "我的原解析",
+      summary: "我的原总结",
+      chapterIds: [],
+      knowledgePointIds: [],
+    }));
+    await runWithState(appState, async () => {
+      const [donation] = await shareService.donateResources("teacher-b", "school-b", [
+        { resourceType: "question", resourceId: "q-b" },
+      ]);
+
+      const selfCheck = await shareService.checkSaveAsOwnResource(donation.id, "teacher-b", "school-b");
+      expect(selfCheck).toMatchObject({ canSave: false, alreadySaved: false });
+      await expect(shareService.saveDonationAsOwnResource(donation.id, "teacher-b", "school-b"))
+        .rejects.toThrow("自己捐赠");
+
+      const check = await shareService.checkSaveAsOwnResource(donation.id, "teacher-c", "school-c");
+      expect(check.conflict).toMatchObject({ targetResourceId: "q-c" });
+      await expect(shareService.saveDonationAsOwnResource(donation.id, "teacher-c", "school-c"))
+        .rejects.toThrow("请先选择新增或合并");
+
+      const saved = await shareService.saveDonationAsOwnResource(donation.id, "teacher-c", "school-c", {
+        action: "merge",
+        targetResourceId: "q-c",
+        fields: {
+          stem: "target",
+          answer: "both",
+          analysis: "both",
+          summary: "both",
+        },
+      });
+      expect(saved).toEqual({ resourceType: "question", resourceId: "q-c", merged: true });
+      const merged = (appState.questions as Question[]).find((item) => item.id === "q-c")!;
+      expect(merged.answer).toBe("B\n\n答案二：A");
+      expect(merged.analysis).toBe("我的原解析\n\n解析二：平台原解析");
+      expect(merged.summary).toBe("我的原总结\n\n总结二：平台原总结");
+      expect(merged.platformSourceDonationIds).toEqual([donation.id]);
+
+      const repeated = await shareService.checkSaveAsOwnResource(donation.id, "teacher-c", "school-c");
+      expect(repeated).toMatchObject({ canSave: false, alreadySaved: true });
+      await expect(shareService.donateResources("teacher-c", "school-c", [
+        { resourceType: "question", resourceId: "q-c" },
+      ])).rejects.toThrow("平台资源另存的资源不能再次捐赠");
+    });
+  });
+
   it("blocks repeated donations and reserves cross-resource maintenance for top contributors", async () => {
     const appState = state();
     await runWithState(appState, async () => {

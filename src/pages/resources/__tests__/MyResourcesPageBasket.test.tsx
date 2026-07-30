@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyResourcesPage from "@/pages/resources/MyResourcesPage";
@@ -130,7 +130,9 @@ describe("MyResourcesPage resource basket creation", () => {
     expect(createButton.querySelector(".animate-spin")).toBeInTheDocument();
     expect(basketService.createBasket).toHaveBeenCalledWith("teacher-1", "复习资料");
 
-    resolveCreate(createdBasket);
+    await act(async () => {
+      resolveCreate(createdBasket);
+    });
 
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "新建资源篮" })).not.toBeInTheDocument();

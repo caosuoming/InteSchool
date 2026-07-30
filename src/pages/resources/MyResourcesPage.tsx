@@ -245,19 +245,24 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         coursewareService.listCoursewares({ ...baseFilter, teacherId: teacher?.id }),
         materialService.listMaterials({ ...baseFilter, teacherId: teacher?.id }),
       ]);
-      setQuestions(qData);
-      setLectures(lecData);
-      setExamPapers(examData);
-      setCoursewares(cwData);
-      setMaterials(matData);
+      const safeQuestions = qData || [];
+      const safeLectures = lecData || [];
+      const safeExamPapers = examData || [];
+      const safeCoursewares = cwData || [];
+      const safeMaterials = matData || [];
+      setQuestions(safeQuestions);
+      setLectures(safeLectures);
+      setExamPapers(safeExamPapers);
+      setCoursewares(safeCoursewares);
+      setMaterials(safeMaterials);
       // 保存完整列表（含拆解副本），用于查找源资源的拆解副本
-      setAllExamPapers(examData);
-      setAllLectures(lecData);
+      setAllExamPapers(safeExamPapers);
+      setAllLectures(safeLectures);
       // 加载试卷/讲义/课件的课后反思（仅按 targetId 关联）
       const reflectionTargets: string[] = [
-        ...examData.map((r) => r.id),
-        ...lecData.map((r) => r.id),
-        ...cwData.map((r) => r.id),
+        ...safeExamPapers.map((r) => r.id),
+        ...safeLectures.map((r) => r.id),
+        ...safeCoursewares.map((r) => r.id),
       ];
       if (reflectionTargets.length > 0 && teacher) {
         const teacherRefs = await reflectionService.listByTeacher(teacher.id);
@@ -330,10 +335,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       toast.success(`已创建资源篮「${newBasketName.trim()}」`);
       setNewBasketName("");
       await loadBaskets();
+      setIsCreatingBasket(false);
       setCreatingBasket(false);
     } catch (e: any) {
       toast.error("创建失败", e?.message);
-    } finally {
       setIsCreatingBasket(false);
     }
   };
@@ -680,13 +685,21 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const donationKey = (resourceType: ShareableResourceType, resourceId: string) =>
     `${resourceType}:${resourceId}`;
 
+  const platformCopyKeys = useMemo(() => new Set([
+    ...questions.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("question", item.id)),
+    ...examPapers.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("examPaper", item.id)),
+    ...lectures.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("lecture", item.id)),
+    ...coursewares.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("courseware", item.id)),
+    ...materials.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("material", item.id)),
+  ]), [questions, examPapers, lectures, coursewares, materials]);
+
   const isDonated = (resourceType: ShareableResourceType, resourceId: string) =>
     teacherDonations.some((record) =>
       record.resourceType === resourceType && record.sourceResourceId === resourceId,
     );
 
   const toggleDonationSelection = (resourceType: ShareableResourceType, resourceId: string) => {
-    if (isDonated(resourceType, resourceId)) return;
+    if (isDonated(resourceType, resourceId) || platformCopyKeys.has(donationKey(resourceType, resourceId))) return;
     const key = donationKey(resourceType, resourceId);
     setDonationSelections((previous) => {
       const next = new Set(previous);
@@ -699,6 +712,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const donationCardProps = (resourceType: ShareableResourceType, resourceId: string) => ({
     donationSelected: donationSelections.has(donationKey(resourceType, resourceId)),
     donated: isDonated(resourceType, resourceId),
+    donationLocked: platformCopyKeys.has(donationKey(resourceType, resourceId)),
     onToggleDonation: () => toggleDonationSelection(resourceType, resourceId),
   });
 
@@ -881,6 +895,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             teacherDonations
               .filter((record) => record.resourceType === "question")
               .map((record) => record.sourceResourceId),
+          )}
+          donationLockedQuestionIds={new Set(
+            questions
+              .filter((question) => question.platformSourceDonationIds?.length)
+              .map((question) => question.id),
           )}
           onToggleDonation={(question) => toggleDonationSelection("question", question.id)}
         />
@@ -1733,7 +1752,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           setDonationDecisions({});
         }}
         title="题目查重"
-        description="以下题目与平台现有题目的相似度超过 80%，请选择新增或逐字段合并。"
+        description="以下题目与平台现有题目的相似度超过 80%。题干只能二选一，答案、解析、总结可复选并保留为第二项。"
         size="full"
         footer={
           <div className="flex justify-end gap-2">
@@ -1811,11 +1830,20 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         disabled={decision.action !== "merge"}
                         onClick={() => updateDonationDecision(conflict.item.resourceId, (current) => ({
                           ...current,
-                          fields: { ...current.fields, [field.key]: "source" },
+                          fields: {
+                            ...current.fields,
+                            [field.key]: field.key === "stem"
+                              ? "source"
+                              : current.fields[field.key] === "both"
+                                ? "target"
+                                : current.fields[field.key] === "target"
+                                  ? "both"
+                                  : "source",
+                          },
                         }))}
                         className={cn(
                           "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
-                          decision.action === "merge" && decision.fields[field.key] === "source"
+                          decision.action === "merge" && ["source", "both"].includes(decision.fields[field.key])
                             ? "border-gold-400 bg-gold-50"
                             : "border-ink-100 bg-mist/40",
                           decision.action !== "merge" && "opacity-60 cursor-default",
@@ -1827,11 +1855,20 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         disabled={decision.action !== "merge"}
                         onClick={() => updateDonationDecision(conflict.item.resourceId, (current) => ({
                           ...current,
-                          fields: { ...current.fields, [field.key]: "target" },
+                          fields: {
+                            ...current.fields,
+                            [field.key]: field.key === "stem"
+                              ? "target"
+                              : current.fields[field.key] === "both"
+                                ? "source"
+                                : current.fields[field.key] === "source"
+                                  ? "both"
+                                  : "target",
+                          },
                         }))}
                         className={cn(
                           "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
-                          decision.action === "merge" && decision.fields[field.key] === "target"
+                          decision.action === "merge" && ["target", "both"].includes(decision.fields[field.key])
                             ? "border-gold-400 bg-gold-50"
                             : "border-ink-100 bg-mist/40",
                           decision.action !== "merge" && "opacity-60 cursor-default",
@@ -2117,10 +2154,11 @@ interface ResourceCardProps {
   titleBadge?: { text: string; variant: "gold" | "teal" | "ink" | "red" | "green" | "amber" | "default" };
   donationSelected?: boolean;
   donated?: boolean;
+  donationLocked?: boolean;
   onToggleDonation?: () => void;
 }
 
-function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, donationSelected, donated, onToggleDonation }: ResourceCardProps) {
+function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, donationSelected, donated, donationLocked, onToggleDonation }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const isImage = (type === "image");
   const reflectionCount = reflections?.length || 0;
@@ -2136,18 +2174,18 @@ function ResourceCard({ title, description, meta, content, updatedAt, onClick, o
           {onToggleDonation && (
             <button
               onClick={onToggleDonation}
-              disabled={donated}
+              disabled={donated || donationLocked}
               className={cn(
                 "mt-0.5 rounded p-0.5 flex-shrink-0 transition-colors",
-                donated
+                donated || donationLocked
                   ? "text-ink-300 cursor-not-allowed"
                   : donationSelected
                     ? "text-gold-600"
                     : "text-ink-300 hover:text-gold-600",
               )}
-              title={donated ? "该资源已捐赠" : donationSelected ? "取消选择" : "选择捐赠"}
+              title={donated ? "该资源已捐赠" : donationLocked ? "平台资源副本不能再次捐赠" : donationSelected ? "取消选择" : "选择捐赠"}
             >
-              {donationSelected || donated
+              {donationSelected || donated || donationLocked
                 ? <CheckSquare className="w-4 h-4" />
                 : <Square className="w-4 h-4" />}
             </button>
@@ -2221,6 +2259,7 @@ function ResourceCard({ title, description, meta, content, updatedAt, onClick, o
           </div>
           <div className="flex items-start gap-2 flex-shrink-0">
             {donated && <Badge variant="teal">已捐赠</Badge>}
+            {donationLocked && <Badge variant="ink">平台副本</Badge>}
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {onClick && (
               <button

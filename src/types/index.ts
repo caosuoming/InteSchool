@@ -304,6 +304,8 @@ export interface Question {
   sectionOrder?: string[];
   sourceDocId?: string;
   sourceType?: "imported" | "manual" | "shared";
+  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  platformSourceDonationIds?: string[];
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
@@ -375,6 +377,8 @@ export interface ExamPaper {
   isExtractCopy?: boolean;
   /** 源资源ID（拆解副本关联的源试卷ID） */
   sourceResourceId?: string;
+  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  platformSourceDonationIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
   createdAt: string;
@@ -401,6 +405,8 @@ export interface Courseware {
   fileUrl?: string; // 文件地址（如有上传）
   fileSize?: number;
   tags: string[];
+  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  platformSourceDonationIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -429,6 +435,8 @@ export interface Material {
   duplicateHash?: string;
   /** 源资源ID（从哪个试卷/讲义拆解而来） */
   sourceResourceId?: string;
+  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  platformSourceDonationIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -461,7 +469,7 @@ export type ShareScope = "school" | "friends" | "public";
 export type ShareStatus = "pending" | "accepted" | "rejected" | "expired";
 
 export type DonationMergeField = "stem" | "answer" | "analysis" | "summary";
-export type DonationMergeChoice = "source" | "existing";
+export type DonationMergeChoice = "source" | "existing" | "both";
 
 export interface DonationDirectoryEntry {
   id: string;
@@ -576,7 +584,7 @@ export interface DonationItem {
   resourceId: string;
 }
 
-export type DonationMergeFieldSource = "source" | "target";
+export type DonationMergeFieldSource = "source" | "target" | "both";
 
 export interface DonationDecision {
   sourceResourceId: string;
@@ -617,6 +625,39 @@ export interface DonationConflict {
 export interface DonationCheckResult {
   alreadyDonated: DonationItem[];
   conflicts: DonationConflict[];
+}
+
+export interface PlatformSaveConflict {
+  similarity: number;
+  sourceQuestion: Question;
+  targetResourceId: string;
+  targetQuestion: Question;
+}
+
+export interface PlatformSaveCheckResult {
+  donationId: string;
+  resourceType: ShareableResourceType;
+  canSave: boolean;
+  reason?: string;
+  alreadySaved: boolean;
+  conflict?: PlatformSaveConflict;
+}
+
+export interface PlatformSaveDecision {
+  action: "new" | "merge";
+  targetResourceId?: string;
+  fields: {
+    stem: DonationMergeFieldSource;
+    answer: DonationMergeFieldSource;
+    analysis: DonationMergeFieldSource;
+    summary: DonationMergeFieldSource;
+  };
+}
+
+export interface PlatformSaveResult {
+  resourceType: ShareableResourceType;
+  resourceId: string;
+  merged: boolean;
 }
 
 export interface DonorStatus {
@@ -757,6 +798,8 @@ export interface Lecture {
   isExtractCopy?: boolean;
   /** 源资源ID（拆解副本关联的源讲义ID） */
   sourceResourceId?: string;
+  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  platformSourceDonationIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
   /** 版本类型：

@@ -7,6 +7,9 @@ import type {
   PlatformAttributeOptionType,
   PlatformDonation,
   PlatformResourceSnapshot,
+  PlatformSaveCheckResult,
+  PlatformSaveDecision,
+  PlatformSaveResult,
   Question,
   ShareRecord,
   ShareableResourceType,
@@ -135,15 +138,17 @@ export const donationService = {
       .map((item) => {
         const decision = decisionsById.get(item.resourceId);
         if (!decision) return item;
+        const toRequestChoice = (choice: typeof decision.fields.answer) =>
+          choice === "target" ? "existing" as const : choice;
         return {
           ...item,
           duplicateAction: decision.action === "merge" ? "merge" as const : "add" as const,
           duplicateTargetDonationId: decision.targetDonationId,
           mergeFields: {
-            stem: decision.fields.stem === "source" ? "source" as const : "existing" as const,
-            answer: decision.fields.answer === "source" ? "source" as const : "existing" as const,
-            analysis: decision.fields.analysis === "source" ? "source" as const : "existing" as const,
-            summary: decision.fields.summary === "source" ? "source" as const : "existing" as const,
+            stem: toRequestChoice(decision.fields.stem),
+            answer: toRequestChoice(decision.fields.answer),
+            analysis: toRequestChoice(decision.fields.analysis),
+            summary: toRequestChoice(decision.fields.summary),
           },
         };
       });
@@ -151,8 +156,21 @@ export const donationService = {
     return { created: records.map(toPlatformDonation), skipped };
   },
 
-  async saveAsOwnResource(donationId: string, teacherId: string, schoolId: string) {
-    return shareService.acceptShare(donationId, teacherId, schoolId);
+  async checkSaveAsOwnResource(
+    donationId: string,
+    teacherId: string,
+    schoolId: string,
+  ): Promise<PlatformSaveCheckResult> {
+    return shareService.checkSaveAsOwnResource(donationId, teacherId, schoolId);
+  },
+
+  async saveAsOwnResource(
+    donationId: string,
+    teacherId: string,
+    schoolId: string,
+    decision?: PlatformSaveDecision,
+  ): Promise<PlatformSaveResult> {
+    return shareService.saveDonationAsOwnResource(donationId, teacherId, schoolId, decision);
   },
 
   async updateDonation(
