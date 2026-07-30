@@ -55,6 +55,35 @@ interface ExtractReviewModalProps {
 }
 
 type Phase = "extracting" | "review" | "confirming";
+type SolutionField = "answer" | "analysis" | "summary";
+
+const solutionFieldOptions: Array<{ value: SolutionField; label: string }> = [
+  { value: "answer", label: "答案" },
+  { value: "analysis", label: "解析" },
+  { value: "summary", label: "总结" },
+];
+
+const solutionFieldStyles: Record<SolutionField, {
+  border: string;
+  background: string;
+  text: string;
+}> = {
+  answer: {
+    border: "border-emerald-100",
+    background: "bg-emerald-50/60",
+    text: "text-emerald-700",
+  },
+  analysis: {
+    border: "border-blue-100",
+    background: "bg-blue-50/60",
+    text: "text-blue-700",
+  },
+  summary: {
+    border: "border-amber-100",
+    background: "bg-amber-50/60",
+    text: "text-amber-700",
+  },
+};
 
 const blockTypeLabel: Record<BlockType, string> = {
   question: "题目",
@@ -363,6 +392,30 @@ export function ExtractReviewModal({
     );
   };
 
+  const convertSolutionField = (
+    blockId: string,
+    sourceField: SolutionField,
+    targetField: SolutionField,
+  ) => {
+    if (sourceField === targetField) return;
+
+    setBlocks((list) =>
+      list.map((block) => {
+        if (block.id !== blockId) return block;
+
+        const sourceValue = block[sourceField] || "";
+        const targetValue = block[targetField] || "";
+
+        return {
+          ...block,
+          [sourceField]: targetValue,
+          [targetField]: sourceValue,
+          status: "edited",
+        };
+      }),
+    );
+  };
+
   const updateOption = (blockId: string, idx: number, value: string) => {
     setBlocks((list) =>
       list.map((b) => {
@@ -607,6 +660,41 @@ export function ExtractReviewModal({
   const renderDocumentBlock = (block: DocBlock) => {
     const isEditing = editingBlockId === block.id;
 
+    const renderSolutionField = (field: SolutionField) => {
+      const value = block[field];
+      if (!value) return null;
+
+      const label = solutionFieldOptions.find((option) => option.value === field)?.label || field;
+      const styles = solutionFieldStyles[field];
+
+      return (
+        <div className={cn("rounded border px-2 py-1.5 text-xs", styles.border, styles.background)}>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className={cn("font-medium", styles.text)}>{label}：</span>
+            <select
+              aria-label={`将${label}内容转换为`}
+              title="切换内容类型"
+              value={field}
+              onChange={(event) =>
+                convertSolutionField(block.id, field, event.target.value as SolutionField)
+              }
+              className="h-6 rounded border border-ink-200 bg-paper px-1.5 text-[11px] text-ink-600 outline-none transition-colors hover:border-gold-300 focus:border-gold-400"
+            >
+              {solutionFieldOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  转为{option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div
+            className="whitespace-pre-wrap text-ink-700"
+            dangerouslySetInnerHTML={{ __html: renderExtractText(value, allKeywords, true) }}
+          />
+        </div>
+      );
+    };
+
     return (
       <div
         key={block.id}
@@ -663,24 +751,9 @@ export function ExtractReviewModal({
                       ))}
                     </div>
                   )}
-                  {block.answer && (
-                    <div
-                      className="rounded border border-emerald-100 bg-emerald-50/60 px-2 py-1 text-xs"
-                      dangerouslySetInnerHTML={{ __html: `<span class="text-emerald-700 font-medium">答案：</span>${renderExtractText(block.answer, allKeywords, true)}` }}
-                    />
-                  )}
-                  {block.analysis && (
-                    <div
-                      className="rounded border border-blue-100 bg-blue-50/60 px-2 py-1 text-xs"
-                      dangerouslySetInnerHTML={{ __html: `<span class="text-blue-700 font-medium">解析：</span>${renderExtractText(block.analysis, allKeywords, true)}` }}
-                    />
-                  )}
-                  {block.summary && (
-                    <div
-                      className="rounded border border-amber-100 bg-amber-50/60 px-2 py-1 text-xs"
-                      dangerouslySetInnerHTML={{ __html: `<span class="text-amber-700 font-medium">总结：</span>${renderExtractText(block.summary, allKeywords, true)}` }}
-                    />
-                  )}
+                  {renderSolutionField("answer")}
+                  {renderSolutionField("analysis")}
+                  {renderSolutionField("summary")}
                 </div>
               )}
 
@@ -813,10 +886,11 @@ export function ExtractReviewModal({
                     </div>
                   </div>
                 )}
-                <Input
+                <Textarea
                   label="答案"
                   value={block.answer || ""}
                   onChange={(e) => updateBlockField(block.id, { answer: e.target.value })}
+                  rows={2}
                 />
                 <Textarea
                   label="解析"
@@ -825,7 +899,7 @@ export function ExtractReviewModal({
                   rows={2}
                 />
                 <Textarea
-                  label="分析总结"
+                  label="总结"
                   value={block.summary || ""}
                   onChange={(e) => updateBlockField(block.id, { summary: e.target.value })}
                   rows={2}
