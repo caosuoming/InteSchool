@@ -10,6 +10,7 @@ import type { StoredFile, TeacherRecord } from "../types.js";
 import { requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
 import { extractDocxImage } from "../lib/docx-structured-text.js";
+import { convertMathTypeDocxToOmml } from "../lib/mathtype-docx.js";
 import { withSerializedState } from "../rpc.js";
 
 function buildSections(text: string): Array<{
@@ -249,12 +250,32 @@ export async function registerFileRoutes(
       return reply.code(403).send({ error: "无权访问该文件" });
     }
     const extension = extname(file.originalName).toLowerCase();
+    const formulaFormat = (request.query as { formulaFormat?: string }).formulaFormat;
+    if (formulaFormat && !["office", "mathtype"].includes(formulaFormat)) {
+      return reply.code(400).send({ error: "不支持的公式格式" });
+    }
+
     reply.type(safeMimeType(file.originalName));
-    reply.header("Content-Length", file.size);
     const disposition = INLINE_EXTENSIONS.has(extension) ? "inline" : "attachment";
     reply.header("Content-Disposition", `${disposition}; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Content-Security-Policy", "sandbox; default-src 'none'");
-    return reply.send(createReadStream(join(config.uploadsDir, file.storageName)));
+
+    const filePath = join(config.uploadsDir, file.storageName);
+    if (extension === ".docx" && formulaFormat === "office") {
+      const converted = await convertMathTypeDocxToOmml(await readFile(filePath));
+      if (converted.detectedCount > 0 && converted.failedCount > 0) {
+        return reply.type("application/json; charset=utf-8").code(422).send({
+          error: "部分 MathType 公式无法转换为新微软公式，请选择 MathType 格式下载",
+        });
+      }
+      reply.header("Content-Length", converted.buffer.length);
+      reply.header("X-Formula-Format", "office");
+      return reply.send(converted.buffer);
+    }
+
+    reply.header("Content-Length", file.size);
+    if (extension === ".docx") reply.header("X-Formula-Format", "mathtype");
+    return reply.send(createReadStream(filePath));
   });
 }

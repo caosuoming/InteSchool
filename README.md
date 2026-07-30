@@ -178,7 +178,13 @@ INTESCHOOL_AI_MODEL=your-model
 
 ## 本地开发
 
-环境要求：Node.js `>= 22.13.0`，推荐 Node.js 22 LTS。
+环境要求：Node.js `>= 22.13.0`，推荐 Node.js 22 LTS。MathType 公式转换还需要 Ruby 和 `mathtype_to_mathml_plus`：
+
+```bash
+gem install mathtype_to_mathml_plus --version 0.0.16 --no-document
+```
+
+Docker 镜像已内置该依赖。
 
 ```bash
 npm ci

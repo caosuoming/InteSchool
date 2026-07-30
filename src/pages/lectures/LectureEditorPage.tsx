@@ -6,7 +6,7 @@ import {
   GraduationCap, Users, Wand2, Loader2, X, ChevronDown, ChevronRight,
   Type, ListOrdered, CheckCircle2, Edit3, Eye,
   UserCheck, Award, Clock, Presentation, FileBox,
-  Lightbulb, Minus, Printer, Download, Layout,
+  Lightbulb, Minus, Printer, Layout,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
@@ -22,6 +22,7 @@ import { settingsService } from "@/services/settings";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
+import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Textarea, Select } from "@/components/ui/Input";
@@ -1924,14 +1925,12 @@ export default function LectureEditorPage() {
               <FileText className="w-16 h-16 text-ink-300 mx-auto mb-4" />
               <h2 className="text-xl font-bold text-ink-900 mb-2">原稿文件</h2>
               <p className="text-sm text-ink-500 mb-4">{lecture.originalFileName}</p>
-              <a
-                href={lecture.originalFileUrl}
-                download={lecture.originalFileName}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-gold-500 text-white rounded-lg hover:bg-gold-600 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                下载原稿
-              </a>
+              <DocumentDownloadButton
+                fileUrl={lecture.originalFileUrl}
+                fileName={lecture.originalFileName}
+                label="下载原稿"
+                className="gap-2 px-4 py-2 bg-gold-500 text-white rounded-lg hover:bg-gold-600 transition-colors"
+              />
               <p className="text-xs text-ink-400 mt-4">原稿为未拆解的原始上传文件，如需编辑请切换到正稿</p>
             </div>
           </Card>

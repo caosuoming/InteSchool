@@ -23,6 +23,14 @@ vi.mock("../lib/docx-structured-text.js", () => ({
   extractDocxStructuredText: structuredTextMocks.extractDocxStructuredText,
 }));
 
+const mathTypeMocks = vi.hoisted(() => ({
+  convertMathTypeDocxToOmml: vi.fn(),
+}));
+
+vi.mock("../lib/mathtype-docx.js", () => ({
+  convertMathTypeDocxToOmml: mathTypeMocks.convertMathTypeDocxToOmml,
+}));
+
 vi.mock("mammoth", () => ({
   default: {
     extractRawText: mammothMocks.extractRawText,
@@ -70,6 +78,14 @@ beforeEach(async () => {
   mammothMocks.imageHandler = undefined;
   structuredTextMocks.extractDocxStructuredText.mockReset();
   structuredTextMocks.extractDocxStructuredText.mockResolvedValue("");
+  mathTypeMocks.convertMathTypeDocxToOmml.mockReset();
+  mathTypeMocks.convertMathTypeDocxToOmml.mockImplementation(async (buffer: Buffer) => ({
+    buffer,
+    detectedCount: 0,
+    convertedCount: 0,
+    failedCount: 0,
+    warnings: [],
+  }));
   pdfMocks.getText.mockReset();
   pdfMocks.destroy.mockReset();
   pdfMocks.destroy.mockResolvedValue(undefined);
@@ -108,7 +124,7 @@ describe("document extractor", () => {
     expect(result.html).not.toContain("onerror");
     expect(result.html).not.toContain("javascript:");
     expect(mammothMocks.convertToHtml).toHaveBeenCalledWith(
-      { path: filePath },
+      { buffer: Buffer.from("fake docx") },
       expect.objectContaining({ includeDefaultStyleMap: true }),
     );
     expect(mammothMocks.imageHandler).toBeTypeOf("function");

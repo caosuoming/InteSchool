@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, FileText, FileSpreadsheet,
-  Sparkles, Download, Loader2,
+  Sparkles, Loader2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
@@ -14,6 +14,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
+import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { extractStoredFile } from "@/services/api";
 import "katex/dist/katex.min.css";
 import type { Lecture, ExamPaper, ResourceSemester } from "@/types";
@@ -154,14 +155,12 @@ export default function ResourcePreviewPage() {
               返回
             </Button>
             {hasOriginalFile && (
-              <a
-                href={resource.originalFileUrl}
-                download={resource.originalFileName}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gold-600 bg-gold-50 rounded-lg hover:bg-gold-100 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                下载原稿
-              </a>
+              <DocumentDownloadButton
+                fileUrl={resource.originalFileUrl}
+                fileName={resource.originalFileName}
+                label="下载原稿"
+                className="gap-2 px-4 py-2 text-sm font-medium text-gold-600 bg-gold-50 rounded-lg hover:bg-gold-100 transition-colors"
+              />
             )}
           </div>
         }
