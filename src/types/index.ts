@@ -688,9 +688,12 @@ export interface ResourceBase {
 }
 
 export type FilterLogic = "or" | "and";
+export type QuestionSearchField = "stem" | "analysis" | "summary" | "remark";
 
 export interface QuestionFilter {
   keyword?: string;
+  /** 关键词搜索范围；未设置或为空时搜索全部支持字段 */
+  searchFields?: QuestionSearchField[];
   chapterIds?: string[];
   chapterLogic?: FilterLogic;
   knowledgePointIds?: string[];
