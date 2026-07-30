@@ -1,6 +1,7 @@
-import type { Chapter, KnowledgePoint, TreeNode } from "../../src/types/index.js";
+import type { Chapter, KnowledgePoint, Question, TreeNode } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
+import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 
 // 收集某节点及其所有子孙 ID
 function collectSubtree<T extends { id: string; parentId: string | null }>(
@@ -38,7 +39,7 @@ function buildChapterTree(chapters: Chapter[], parentId: string | null = null): 
       id: c.id,
       name: c.name,
       type: "chapter" as const,
-      count: c.questionCount || 0,
+      count: 0,
       order: c.order,
       parentId: c.parentId,
       level: c.level,
@@ -50,7 +51,6 @@ function buildKnowledgeTree(
   points: KnowledgePoint[],
   chapters: Chapter[],
   parentId: string | null = null,
-  nameCountMap?: Map<string, number>,
 ): TreeNode[] {
   return points
     .filter((p) => p.parentId === parentId)
@@ -61,13 +61,13 @@ function buildKnowledgeTree(
         id: p.id,
         name: p.name,
         type: "knowledge" as const,
-        count: nameCountMap?.get(p.name) ?? (p.questionCount || 0),
+        count: 0,
         description: chapter ? `所属章节：${chapter.name}` : undefined,
         order: p.order,
         parentId: p.parentId,
         chapterId: p.chapterId,
         level: p.level,
-        children: buildKnowledgeTree(points, chapters, p.id, nameCountMap),
+        children: buildKnowledgeTree(points, chapters, p.id),
       };
     });
 }
@@ -99,34 +99,30 @@ export const knowledgeService = {
   async getChapterTree(schoolId: string): Promise<TreeNode> {
     await delay(300);
     const chapters = db.read("chapters").filter((c) => c.schoolId === schoolId);
-    return {
+    const questions = db.read("questions").filter((q: Question) => q.schoolId === schoolId);
+    const tree: TreeNode = {
       id: "root",
       name: "全部章节",
       type: "chapter",
-      count: chapters.reduce((sum, c) => sum + (c.questionCount || 0), 0),
+      count: 0,
       children: buildChapterTree(chapters, null),
     };
+    return annotateTreeWithQuestionCounts(tree, questions, "chapter");
   },
 
   async getKnowledgeTree(schoolId: string): Promise<TreeNode> {
     await delay(300);
     const points = db.read("knowledgePoints").filter((p) => p.schoolId === schoolId);
     const chapters = db.read("chapters").filter((c) => c.schoolId === schoolId);
-
-    // 构建同名知识点题目数汇总映射
-    const nameCountMap = new Map<string, number>();
-    for (const p of points) {
-      const cur = nameCountMap.get(p.name) || 0;
-      nameCountMap.set(p.name, cur + (p.questionCount || 0));
-    }
-
-    return {
+    const questions = db.read("questions").filter((q: Question) => q.schoolId === schoolId);
+    const tree: TreeNode = {
       id: "root",
       name: "全部知识点",
       type: "knowledge",
-      count: points.reduce((sum, p) => sum + (p.questionCount || 0), 0),
-      children: buildKnowledgeTree(points, chapters, null, nameCountMap),
+      count: 0,
+      children: buildKnowledgeTree(points, chapters, null),
     };
+    return annotateTreeWithQuestionCounts(tree, questions, "knowledge", points);
   },
 
   async addChapter(

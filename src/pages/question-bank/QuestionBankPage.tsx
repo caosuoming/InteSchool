@@ -212,7 +212,7 @@ export default function QuestionBankPage({
   const [showChapter, setShowChapter] = useState(true);
   const [showKnowledge, setShowKnowledge] = useState(true);
   const [showRemark, setShowRemark] = useState(true);
-  const [showStudentAnswers, setShowStudentAnswers] = useState(false);
+  const [showStudentAnswers, setShowStudentAnswers] = useState(true);
 
   // 相关题目弹窗
   const [relatedModal, setRelatedModal] = useState<{
@@ -384,6 +384,7 @@ export default function QuestionBankPage({
     return () => clearTimeout(t);
   }, [loadQuestions]);
 
+  // 题目变更或手工录入学情后，立即刷新目录总数与已做题数。
   useEffect(() => {
     if (!teacher) return;
     let cancelled = false;
@@ -419,7 +420,7 @@ export default function QuestionBankPage({
     return () => {
       cancelled = true;
     };
-  }, [selectedStudentIds, teacher, dateRange]);
+  }, [selectedStudentIds, teacher, dateRange, questions, studentAnswerRecords]);
 
   // 拉取选中学生的答题记录（用于在题目上方显示答题情况）
   useEffect(() => {
@@ -658,7 +659,7 @@ export default function QuestionBankPage({
         score,
         source: "manual",
       });
-      const records = await analyticsService.listAnswerRecordsByStudents(selectedStudentIds);
+      const records = await analyticsService.listAnswerRecordsByStudents(selectedStudentIds, dateRange);
       setStudentAnswerRecords(records);
       toast.success("答题结果已更新");
     } catch (e: any) {

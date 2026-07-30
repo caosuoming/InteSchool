@@ -1,6 +1,7 @@
 import type { AnswerRecord, AnswerScore, AnswerSource, Question, TreeNode, SchoolClass } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
+import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 
 /** 知识点掌握情况统计项 */
 export interface KnowledgeMastery {
@@ -196,37 +197,32 @@ export const analyticsService = {
     range?: DateRange,
   ): Promise<TreeNode> {
     await delay(100);
-    const allQuestions = db.read("questions");
-    let answeredRecords = db.read("answerRecords").filter((a) => studentIds.includes(a.studentId));
+    const treeNodeIds = new Set<string>();
+    const collectTreeNodeIds = (node: TreeNode) => {
+      if (node.id !== "root") treeNodeIds.add(node.id);
+      node.children.forEach(collectTreeNodeIds);
+    };
+    collectTreeNodeIds(tree);
+
+    const allQuestions = db.read("questions").filter((question: Question) => {
+      const ids = type === "chapter" ? question.chapterIds : question.knowledgePointIds;
+      return ids.some((id) => treeNodeIds.has(id));
+    });
+    const knowledgePoints = type === "knowledge"
+      ? db.read("knowledgePoints").filter((point: { id: string }) => treeNodeIds.has(point.id))
+      : [];
+    let answeredRecords: AnswerRecord[] = db
+      .read("answerRecords")
+      .filter((record: AnswerRecord) => studentIds.includes(record.studentId));
     answeredRecords = filterByDateRange(answeredRecords, range);
-    const answeredIds = new Set(answeredRecords.map((r) => r.questionId));
-
-    const countNode = (node: TreeNode): { count: number; doneCount: number } => {
-      const qField = type === "chapter" ? "chapterIds" : "knowledgePointIds";
-      let total = 0;
-      let done = 0;
-      const nodeQuestions = allQuestions.filter((q: Question) => (q as any)[qField]?.includes(node.id));
-      total += nodeQuestions.length;
-      done += nodeQuestions.filter((q: Question) => answeredIds.has(q.id)).length;
-      for (const child of node.children) {
-        const c = countNode(child);
-        total += c.count;
-        done += c.doneCount;
-      }
-      return { count: total, doneCount: done };
-    };
-
-    const annotate = (node: TreeNode): TreeNode => {
-      const { count, doneCount } = countNode(node);
-      return {
-        ...node,
-        count,
-        doneCount,
-        children: node.children.map(annotate),
-      };
-    };
-
-    return annotate(tree);
+    const answeredIds = new Set<string>(answeredRecords.map((record) => record.questionId));
+    return annotateTreeWithQuestionCounts(
+      tree,
+      allQuestions,
+      type,
+      knowledgePoints,
+      answeredIds,
+    );
   },
 
   // 题目使用情况统计
