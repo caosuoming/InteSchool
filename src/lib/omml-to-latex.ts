@@ -1155,12 +1155,8 @@ function escapeLatex(text: string): string {
     "ϕ": "\\varphi ",
     "ϱ": "\\varrho ",
     "ς": "\\varsigma ",
-    // 数学集合符号
-    "N": "\\mathbb{N}",
-    "Z": "\\mathbb{Z}",
-    "Q": "\\mathbb{Q}",
-    "R": "\\mathbb{R}",
-    "C": "\\mathbb{C}",
+    // 普通拉丁字母必须保持原样。只有显式的双线体 Unicode 字符
+    // （ℕ、ℤ、ℚ、ℝ、ℂ）或 convertSym 中的集合名称才转换为 \mathbb。
     "√": "\\sqrt",
     "…": "\\ldots ",
     "⋯": "\\cdots ",
