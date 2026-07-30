@@ -2,10 +2,11 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
-  FileSpreadsheet, GraduationCap, Clock, Users, Send,
+  FileSpreadsheet, GraduationCap, Users, Send,
   ChevronUp, ChevronDown, Library, Files, FileText, ListOrdered,
   BarChart3, CheckCircle2, AlertCircle, Lock, Calendar, Layout,
   Sparkles, BookOpen, Lightbulb, Printer,
+  CheckSquare, ArrowUpDown,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { examPaperService } from "@/services/examPaper";
@@ -28,6 +29,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { SearchableTree } from "@/components/tree/SearchableTree";
+import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type { ExamPaper, ExamPaperQuestion, Question, Basket, AnyClass, Lecture, ExamPublication, TreeNode, Student, SchoolClass, PersonalClass, ExamPaperType, ResourceSemester } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
@@ -91,6 +93,9 @@ const typeLabels: Record<string, string> = {
   short: "四、填空题",
   essay: "五、解答题",
 };
+const sectionNumerals = ["一", "二", "三", "四", "五", "六", "七", "八"];
+const getGroupHeading = (type: string, index: number) =>
+  `${sectionNumerals[index] || index + 1}、${typeLabel[type] || type}题`;
 
 const groupByType = (questions: ExamPaperQuestion[], qMap: Record<string, Question>, order?: string[]): QuestionGroup[] => {
   const groups: Record<string, QuestionGroup> = {};
@@ -136,6 +141,9 @@ export default function ExamPaperEditorPage() {
   const [examPaperTypes, setExamPaperTypes] = useState<ExamPaperType[]>([]);
   const [duration, setDuration] = useState(90);
   const [paperQuestions, setPaperQuestions] = useState<ExamPaperQuestion[]>([]);
+  const [layoutMode, setLayoutMode] = useState<"grouped" | "flat">("grouped");
+  const [markingAllDone, setMarkingAllDone] = useState(false);
+  const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
 
   // 试题篮
   const [baskets, setBaskets] = useState<Basket[]>([]);
@@ -212,6 +220,7 @@ export default function ExamPaperEditorPage() {
     setTypeId(p.typeId || "");
     setDuration(p.duration);
     setPaperQuestions(p.questions);
+    setLayoutMode(p.layoutMode || "grouped");
     setSelectedStudentIds(p.studentIds || []);
     // 加载关联题目
     const qMap: Record<string, Question> = {};
@@ -237,6 +246,7 @@ export default function ExamPaperEditorPage() {
       settingsService.listExamPaperTypes(schoolId).then((types) =>
         setExamPaperTypes(types.filter((t) => t.enabled)),
       );
+      knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
     }
     // 加载发布记录
     examPublishService.listPublications(schoolId).then((pubs) => {
@@ -386,10 +396,17 @@ export default function ExamPaperEditorPage() {
   const totalScore = useMemo(() =>
     paperQuestions.reduce((sum, q) => sum + q.score, 0), [paperQuestions]);
 
-  const examPaperFormat = useMemo(() => {
-    const type = examPaperTypes.find((t) => t.id === typeId);
-    return type?.format || "gaokao";
-  }, [examPaperTypes, typeId]);
+  const paperQuestionList = useMemo(
+    () => paperQuestions
+      .map((item) => {
+        const linkedQuestion = item.questionId ? questions[item.questionId] : undefined;
+        return linkedQuestion || { difficulty: 3 as const, knowledgePointIds: [] };
+      }),
+    [paperQuestions, questions],
+  );
+
+  const getCompletionQuestionId = (paperQuestion: ExamPaperQuestion) =>
+    paperQuestion.questionId || `exam-item:${paper?.id || id}:${paperQuestion.id}`;
 
   // 加入默认试题篮
   const handleAddToDefaultBasket = async (questionId?: string) => {
@@ -428,6 +445,28 @@ export default function ExamPaperEditorPage() {
       if (target < 0 || target >= next.length) return prev;
       [next[idx], next[target]] = [next[target], next[idx]];
       return next;
+    });
+  };
+
+  const handleMoveWithinGroup = (idx: number, dir: "up" | "down") => {
+    setPaperQuestions((prev) => {
+      const current = prev[idx];
+      if (!current) return prev;
+      const currentType = questions[current.questionId || ""]?.type || current.type;
+      const step = dir === "up" ? -1 : 1;
+      let target = idx + step;
+
+      while (target >= 0 && target < prev.length) {
+        const candidate = prev[target];
+        const candidateType = questions[candidate.questionId || ""]?.type || candidate.type;
+        if (candidateType === currentType) {
+          const next = [...prev];
+          [next[idx], next[target]] = [next[target], next[idx]];
+          return next;
+        }
+        target += step;
+      }
+      return prev;
     });
   };
 
@@ -531,6 +570,7 @@ export default function ExamPaperEditorPage() {
         questions: paperQuestions,
         studentIds: selectedStudentIds,
         typeId: typeId || undefined,
+        layoutMode,
       });
       setPaper(updated);
       toast.success("试卷已保存");
@@ -601,6 +641,76 @@ export default function ExamPaperEditorPage() {
       [next[idx], next[target]] = [next[target], next[idx]];
       return next;
     });
+  };
+
+  const getQuestionDifficulty = (paperQuestion: ExamPaperQuestion) =>
+    paperQuestion.questionId ? questions[paperQuestion.questionId]?.difficulty || 3 : 3;
+
+  const handleSortByDifficulty = () => {
+    setPaperQuestions((previous) => {
+      const next = [...previous];
+      next.sort((left, right) => {
+        if (layoutMode === "grouped") {
+          const leftType = questions[left.questionId || ""]?.type || left.type;
+          const rightType = questions[right.questionId || ""]?.type || right.type;
+          const leftGroup = groupOrder.indexOf(leftType);
+          const rightGroup = groupOrder.indexOf(rightType);
+          if (leftGroup !== rightGroup) return leftGroup - rightGroup;
+        }
+        const difficultyDifference = getQuestionDifficulty(left) - getQuestionDifficulty(right);
+        return difficultyDifference || previous.indexOf(left) - previous.indexOf(right);
+      });
+      return next;
+    });
+    toast.success("已按难度从易到难排序");
+  };
+
+  const handleMarkAllDone = async () => {
+    if (!paper) return;
+    if (selectedStudentIds.length === 0) {
+      toast.warning("请先选择学生");
+      return;
+    }
+    const questionIds = Array.from(new Set(paperQuestions.map(getCompletionQuestionId)));
+    if (questionIds.length === 0) {
+      toast.warning("试卷中暂无题目");
+      return;
+    }
+
+    setMarkingAllDone(true);
+    try {
+      const existingRecords = await analyticsService.listAnswerRecordsByStudents(selectedStudentIds);
+      const existingKeys = new Set(
+        existingRecords
+          .filter((record) => record.lectureId === paper.id)
+          .map((record) => `${record.studentId}:${record.questionId}`),
+      );
+      const pendingRecords = selectedStudentIds.flatMap((studentId) =>
+        questionIds
+          .filter((questionId) => !existingKeys.has(`${studentId}:${questionId}`))
+          .map((questionId) => ({
+            studentId,
+            questionId,
+            lectureId: paper.id,
+            score: "done" as const,
+            source: "manual" as const,
+          })),
+      );
+      if (pendingRecords.length > 0) {
+        await analyticsService.batchSaveAnswerRecords(pendingRecords);
+      }
+      const answeredIds = await analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange);
+      setAnsweredQuestionIds(answeredIds);
+      toast.success(
+        pendingRecords.length > 0
+          ? `已补充 ${pendingRecords.length} 条完成记录，已有得分保持不变`
+          : "所选学生均已存在完成或得分记录",
+      );
+    } catch (error) {
+      toast.error("批量标注失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setMarkingAllDone(false);
+    }
   };
 
   if (loading) {
@@ -763,13 +873,13 @@ export default function ExamPaperEditorPage() {
               />
             ) : (
               <div className="space-y-6">
-                {examPaperFormat === "gaokao" ? (
-                  groupByType(paperQuestions, questions).map((group) => {
+                {layoutMode === "grouped" ? (
+                  groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex) => {
                     const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
                     return (
                       <div key={group.type}>
                         <div className="flex items-center gap-3 mb-4 pb-2 border-b border-ink-200">
-                          <h2 className="font-serif text-lg font-bold text-ink-900">{group.label}</h2>
+                          <h2 className="font-serif text-lg font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
                           <span className="text-sm text-ink-500">共 {group.questions.length} 题</span>
                           <span className="text-sm text-gold-600 font-medium">共 {groupScore} 分</span>
                         </div>
@@ -861,30 +971,38 @@ export default function ExamPaperEditorPage() {
         }
       />
 
-      <div className="grid grid-cols-12 gap-4">
-        {/* 左侧：属性 */}
-        <div className="col-span-3">
-          <Card className="p-4 sticky top-4 space-y-3">
-            <h3 className="font-serif font-semibold text-ink-900 text-sm flex items-center gap-1.5">
+      <div className="space-y-4">
+        {/* 顶部：试卷属性 */}
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
               <FileSpreadsheet className="w-4 h-4 text-gold-600" />
-              试卷属性
-            </h3>
-            <Input label="标题" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <Textarea label="描述" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-            <div className="grid grid-cols-2 gap-2">
-              <Select
-                label="年级"
-                value={grade}
-                onChange={(e) => setGrade(e.target.value)}
-                options={includeCurrentOption(gradeOptions, grade)}
-              />
-              <Select
-                label="学年"
-                value={schoolYear}
-                onChange={(e) => setSchoolYear(e.target.value)}
-                options={includeCurrentOption(schoolYearOptions, schoolYear)}
-              />
+              <h3 className="font-serif font-semibold text-ink-900">试卷属性</h3>
             </div>
+            <div className="flex items-center gap-4 text-xs text-ink-500">
+              <span>{paperQuestions.length} 题</span>
+              <span className="font-semibold text-gold-700">{totalScore} 分</span>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 xl:grid-cols-7 gap-3">
+            <div className="xl:col-span-2">
+              <Input label="标题" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div className="xl:col-span-2">
+              <Textarea label="描述" value={description} onChange={(e) => setDescription(e.target.value)} rows={1} />
+            </div>
+            <Select
+              label="年级"
+              value={grade}
+              onChange={(e) => setGrade(e.target.value)}
+              options={includeCurrentOption(gradeOptions, grade)}
+            />
+            <Select
+              label="学年"
+              value={schoolYear}
+              onChange={(e) => setSchoolYear(e.target.value)}
+              options={includeCurrentOption(schoolYearOptions, schoolYear)}
+            />
             <Select
               label="学期"
               value={semester}
@@ -897,7 +1015,7 @@ export default function ExamPaperEditorPage() {
               onChange={(e) => setTypeId(e.target.value)}
               options={[
                 { value: "", label: "未设置" },
-                ...examPaperTypes.map((t) => ({ value: t.id, label: t.name })),
+                ...examPaperTypes.map((item) => ({ value: item.id, label: item.name })),
               ]}
             />
             <Input
@@ -906,207 +1024,218 @@ export default function ExamPaperEditorPage() {
               value={String(duration)}
               onChange={(e) => setDuration(Number(e.target.value))}
             />
+          </div>
+        </Card>
 
-            <div className="pt-3 border-t border-ink-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-ink-500">总分</span>
-                <span className="font-serif font-bold text-gold-600">{totalScore} 分</span>
-              </div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-ink-500">题数</span>
-                <span className="font-medium text-ink-900">{paperQuestions.length} 题</span>
-              </div>
-              {/* 难度分布迷你 */}
-              <div className="flex gap-1 mt-2">
-                {[1, 2, 3, 4, 5].map((d) => (
-                  <div key={d} className="flex-1 text-center">
-                    <div className={cn(
-                      "text-xs font-mono font-bold",
-                      d <= 2 ? "text-emerald-600" : d === 3 ? "text-amber-600" : "text-red-600",
-                    )}>
-                      {difficultyStats[d]}
-                    </div>
-                    <div className="text-[9px] text-ink-400">{difficultyLabel[d]}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* AI 自动组卷 */}
-            <div className="pt-3 border-t border-ink-100 space-y-1.5">
-              <div className="text-xs font-medium text-ink-600 mb-1">智能组卷</div>
-              <Button variant="gold" size="sm" className="w-full justify-start bg-gradient-to-r from-gold-400 to-amber-400 hover:from-gold-500 hover:to-amber-500" onClick={() => setAutoGenOpen(true)}>
-                <Sparkles className="w-3.5 h-3.5" /> AI 自动组卷
-              </Button>
-            </div>
-
-            {/* 添加题目来源 */}
-            <div className="pt-3 border-t border-ink-100 space-y-1.5">
-              <div className="text-xs font-medium text-ink-600 mb-1">手动添加题目</div>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
-                <Library className="w-3.5 h-3.5" /> 从题库添加
-              </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { setReplaceIdx(null); setAddSource("basket"); }}>
-                <ShoppingBasket className="w-3.5 h-3.5" /> 从试题篮添加
-              </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { setReplaceIdx(null); setAddSource("examPaper"); }}>
-                <Files className="w-3.5 h-3.5" /> 从其它试卷添加
-              </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { setReplaceIdx(null); setAddSource("lecture"); }}>
-                <FileText className="w-3.5 h-3.5" /> 从讲义添加
-              </Button>
-            </div>
-          </Card>
-        </div>
-
-        {/* 右侧：题目列表（大纲+题目在一起） */}
-        <div className="col-span-9">
-          <Card>
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-ink-100">
-              <h3 className="font-serif font-semibold text-ink-900 flex items-center gap-2">
+        <div className="grid xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
+          {/* 左侧：完整试卷 */}
+          <Card className="min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-ink-100">
+              <div className="flex items-center gap-2">
                 <ListOrdered className="w-4 h-4 text-teal-500" />
-                题目列表
+                <h3 className="font-serif font-semibold text-ink-900">试卷全貌</h3>
                 <Badge variant="ink">{paperQuestions.length} 题</Badge>
-              </h3>
-              <Button variant="gold" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
-                <Plus className="w-3.5 h-3.5" />
-                添加题目
-              </Button>
-            </div>
-
-            {/* 学生选择器 + 时间周期选择器 */}
-            <div className="flex items-center gap-2 mb-4 flex-wrap">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowStudentPicker(true)}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5" />
-                  {selectedStudentIds.length > 0 ? (
-                    <span>{getSelectedStudentNames()}</span>
-                  ) : (
-                    <span>选择学生</span>
-                  )}
-                  {selectedStudentIds.length > 0 && (
-                    <span className="ml-1 px-1.5 py-0.5 bg-gold-500/20 text-gold-800 rounded text-xs font-medium">
-                      {selectedStudentIds.length}人
-                    </span>
-                  )}
-                </span>
-              </Button>
-
-              {selectedStudentIds.length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-ink-400" />
-                  <select
-                    value={timeRangeKey}
-                    onChange={(e) => setTimeRangeKey(e.target.value as TimeRangeKey)}
-                    className="text-xs border border-ink-200 rounded px-2 py-1 bg-paper text-ink-700 cursor-pointer focus:outline-none focus:border-gold-400"
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center rounded-md border border-ink-200 p-0.5 bg-ink-50">
+                  <button
+                    onClick={() => setLayoutMode("grouped")}
+                    className={cn(
+                      "px-2.5 py-1 text-xs rounded transition-colors",
+                      layoutMode === "grouped" ? "bg-white text-gold-700 shadow-sm font-medium" : "text-ink-500 hover:text-ink-800",
+                    )}
                   >
-                    {timeRangeOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    按题型
+                  </button>
+                  <button
+                    onClick={() => setLayoutMode("flat")}
+                    className={cn(
+                      "px-2.5 py-1 text-xs rounded transition-colors",
+                      layoutMode === "flat" ? "bg-white text-gold-700 shadow-sm font-medium" : "text-ink-500 hover:text-ink-800",
+                    )}
+                  >
+                    无题型
+                  </button>
                 </div>
-              )}
-
-              {selectedStudentIds.length > 0 && answeredQuestionIds.size > 0 && (
-                <span className="text-xs text-ink-500">
-                  已做过 <span className="font-medium text-gold-700">{answeredQuestionIds.size}</span> 道题（在所选时间段内）
-                </span>
-              )}
+                <Button variant="outline" size="sm" onClick={handleSortByDifficulty} disabled={paperQuestions.length < 2}>
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  按难度排序
+                </Button>
+                <Button variant="gold" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
+                  <Plus className="w-3.5 h-3.5" />
+                  添加题目
+                </Button>
+              </div>
             </div>
 
             {paperQuestions.length === 0 ? (
               <EmptyState
                 icon={<FileText className="w-10 h-10 text-ink-200" />}
                 title="试卷暂无题目"
-                description="从左侧选择来源添加题目"
+                description="从右侧选择来源添加题目"
                 action={
                   <Button variant="gold" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
                     <Plus className="w-3.5 h-3.5" /> 从题库添加
                   </Button>
                 }
               />
-            ) : (
-              <div className="space-y-5">
-                {examPaperFormat === "gaokao" ? (
-                  groupByType(paperQuestions, questions, groupOrder).map((group, gIdx) => {
-                    const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
-                    return (
-                      <div key={group.type}>
-                        <div className="flex items-center gap-3 mb-3 pb-2 border-b border-ink-200">
-                          {/* 大题型顺序调整 */}
-                          <div className="flex flex-col gap-0.5">
-                            <button
-                              onClick={() => handleGroupMove(group.type, "up")}
-                              disabled={gIdx === 0}
-                              className="p-0.5 text-ink-400 hover:text-gold-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="大题型上移"
-                            >
-                              <ChevronUp className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => handleGroupMove(group.type, "down")}
-                              disabled={gIdx === groupByType(paperQuestions, questions, groupOrder).length - 1}
-                              className="p-0.5 text-ink-400 hover:text-gold-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="大题型下移"
-                            >
-                              <ChevronDown className="w-3 h-3" />
-                            </button>
-                          </div>
-                          <h2 className="font-serif text-lg font-bold text-ink-900">{group.label}</h2>
-                          <span className="text-sm text-ink-500">共 {group.questions.length} 题</span>
-                          <span className="text-sm text-gold-600 font-medium">共 {groupScore} 分</span>
+            ) : layoutMode === "grouped" ? (
+              <div className="space-y-6">
+                {groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex, groups) => {
+                  const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
+                  return (
+                    <section key={group.type}>
+                      <div className="flex items-center gap-3 mb-3 pb-2 border-b border-ink-200">
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            onClick={() => handleGroupMove(group.type, "up")}
+                            disabled={groupIndex === 0}
+                            className="p-0.5 text-ink-400 hover:text-gold-600 disabled:opacity-25"
+                            title="题型上移"
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => handleGroupMove(group.type, "down")}
+                            disabled={groupIndex === groups.length - 1}
+                            className="p-0.5 text-ink-400 hover:text-gold-600 disabled:opacity-25"
+                            title="题型下移"
+                          >
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
                         </div>
-                        <div className="space-y-3">
-                          {group.questions.map((item) => (
-                            <EditQuestionRow
-                              key={item.pq.id}
-                              pq={item.pq}
-                              index={item.index}
-                              total={paperQuestions.length}
-                              question={item.question}
-                              answered={Boolean(item.pq.questionId && answeredQuestionIds.has(item.pq.questionId))}
-                              onMoveUp={() => handleMove(item.index, "up")}
-                              onMoveDown={() => handleMove(item.index, "down")}
-                              onRemove={() => handleRemoveQuestion(item.pq.id)}
-                              onReplace={() => handleReplaceQuestion(item.index)}
-                              onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
-                            />
-                          ))}
-                        </div>
+                        <h2 className="font-serif text-base font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
+                        <span className="text-xs text-ink-500">{group.questions.length} 题</span>
+                        <span className="text-xs text-gold-700 font-medium">{groupScore} 分</span>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div className="space-y-3">
-                    {paperQuestions.map((pq, index) => {
-                      const q = pq.questionId ? questions[pq.questionId] : undefined;
-                      return (
-                        <EditQuestionRow
-                          key={pq.id}
-                          pq={pq}
-                          index={index}
-                          total={paperQuestions.length}
-                          question={q}
-                          answered={Boolean(pq.questionId && answeredQuestionIds.has(pq.questionId))}
-                          onMoveUp={() => handleMove(index, "up")}
-                          onMoveDown={() => handleMove(index, "down")}
-                          onRemove={() => handleRemoveQuestion(pq.id)}
-                          onReplace={() => handleReplaceQuestion(index)}
-                          onUpdateScore={(score) => handleUpdateScore(pq.id, score)}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
+                      <div className="space-y-3">
+                        {group.questions.map((item, itemIndex) => (
+                          <EditQuestionRow
+                            key={item.pq.id}
+                            pq={item.pq}
+                            index={item.index}
+                            total={paperQuestions.length}
+                            question={item.question}
+                            answered={answeredQuestionIds.has(getCompletionQuestionId(item.pq))}
+                            canMoveUp={itemIndex > 0}
+                            canMoveDown={itemIndex < group.questions.length - 1}
+                            onMoveUp={() => handleMoveWithinGroup(item.index, "up")}
+                            onMoveDown={() => handleMoveWithinGroup(item.index, "down")}
+                            onRemove={() => handleRemoveQuestion(item.pq.id)}
+                            onReplace={() => handleReplaceQuestion(item.index)}
+                            onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {paperQuestions.map((paperQuestion, index) => (
+                  <EditQuestionRow
+                    key={paperQuestion.id}
+                    pq={paperQuestion}
+                    index={index}
+                    total={paperQuestions.length}
+                    question={paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined}
+                    answered={answeredQuestionIds.has(getCompletionQuestionId(paperQuestion))}
+                    onMoveUp={() => handleMove(index, "up")}
+                    onMoveDown={() => handleMove(index, "down")}
+                    onRemove={() => handleRemoveQuestion(paperQuestion.id)}
+                    onReplace={() => handleReplaceQuestion(index)}
+                    onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
+                  />
+                ))}
               </div>
             )}
           </Card>
+
+          {/* 右侧：组卷与统计 */}
+          <div className="space-y-4 xl:sticky xl:top-4">
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-gold-500" />
+                <h3 className="font-serif font-semibold text-ink-900 text-sm">组卷工具</h3>
+              </div>
+              <Button
+                variant="gold"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => setAutoGenOpen(true)}
+              >
+                <Sparkles className="w-3.5 h-3.5" /> AI 自动组卷
+              </Button>
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
+                  <Library className="w-3.5 h-3.5" /> 题库
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("basket"); }}>
+                  <ShoppingBasket className="w-3.5 h-3.5" /> 试题篮
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("examPaper"); }}>
+                  <Files className="w-3.5 h-3.5" /> 其他试卷
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("lecture"); }}>
+                  <FileText className="w-3.5 h-3.5" /> 讲义
+                </Button>
+              </div>
+              <div className="pt-3 border-t border-ink-100 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-ink-500">当前编排</span>
+                  <span className="font-medium text-ink-800">{layoutMode === "grouped" ? "按题型" : "无题型"}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-ink-500">考试时长</span>
+                  <span className="font-medium text-ink-800">{duration} 分钟</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-ink-500">总分</span>
+                  <span className="font-semibold text-gold-700">{totalScore} 分</span>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-serif font-semibold text-ink-900 text-sm">学生完成标注</h3>
+              </div>
+              <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => setShowStudentPicker(true)}>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Users className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择学生"}</span>
+                </span>
+                {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
+              </Button>
+              {selectedStudentIds.length > 0 && (
+                <select
+                  value={timeRangeKey}
+                  onChange={(e) => setTimeRangeKey(e.target.value as TimeRangeKey)}
+                  className="w-full text-xs border border-ink-200 rounded px-2 py-1.5 bg-paper text-ink-700"
+                >
+                  {timeRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              )}
+              <Button
+                variant="gold"
+                size="sm"
+                className="w-full"
+                onClick={handleMarkAllDone}
+                loading={markingAllDone}
+                disabled={selectedStudentIds.length === 0 || paperQuestions.length === 0}
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                一键标注学生已做
+              </Button>
+              <div className="text-[11px] text-ink-400 leading-relaxed">
+                批量标注仅记录“已做”，不计入正确率；之后可在题库或讲义中补录得分情况。
+              </div>
+            </Card>
+
+            <QuestionDistributionPanel questions={paperQuestionList} knowledgeTree={knowledgeTree} />
+          </div>
         </div>
       </div>
 
@@ -1753,13 +1882,16 @@ function PreviewQuestionItem({
 
 // ===== 编辑模式的题目行 =====
 function EditQuestionRow({
-  pq, index, total, question, answered, onMoveUp, onMoveDown, onRemove, onReplace, onUpdateScore,
+  pq, index, total, question, answered, canMoveUp, canMoveDown,
+  onMoveUp, onMoveDown, onRemove, onReplace, onUpdateScore,
 }: {
   pq: ExamPaperQuestion;
   index: number;
   total: number;
   question: Question | null | undefined;
   answered: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemove: () => void;
@@ -1774,7 +1906,7 @@ function EditQuestionRow({
         <div className="flex flex-col gap-0.5 pt-1">
           <button
             onClick={onMoveUp}
-            disabled={index === 0}
+            disabled={canMoveUp === false || (canMoveUp === undefined && index === 0)}
             className="p-0.5 text-ink-400 hover:text-gold-600 disabled:opacity-30 disabled:cursor-not-allowed"
             title="上移"
           >
@@ -1782,7 +1914,7 @@ function EditQuestionRow({
           </button>
           <button
             onClick={onMoveDown}
-            disabled={index === total - 1}
+            disabled={canMoveDown === false || (canMoveDown === undefined && index === total - 1)}
             className="p-0.5 text-ink-400 hover:text-gold-600 disabled:opacity-30 disabled:cursor-not-allowed"
             title="下移"
           >

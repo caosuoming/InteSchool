@@ -51,6 +51,7 @@ export interface ExamPaperInput {
   totalScore: number;
   questions: ExamPaperQuestion[];
   typeId?: string;
+  layoutMode?: "grouped" | "flat";
   status?: "draft" | "published";
   originalFileUrl?: string;
   originalFileName?: string;
@@ -95,6 +96,7 @@ export const examPaperService = {
       totalScore: input.totalScore,
       questions: input.questions,
       typeId: input.typeId,
+      layoutMode: input.layoutMode || "grouped",
       status: input.status || "draft",
       originalFileUrl: input.originalFileUrl,
       originalFileName: input.originalFileName,

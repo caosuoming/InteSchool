@@ -39,6 +39,7 @@ const scoreConfig: Record<AnswerScore, { label: string; color: string; bg: strin
   correct: { label: "全对", color: "text-emerald-700", bg: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   partial: { label: "半对", color: "text-amber-700", bg: "bg-amber-50 text-amber-700 border-amber-200" },
   wrong: { label: "做错", color: "text-red-700", bg: "bg-red-50 text-red-700 border-red-200" },
+  done: { label: "已做", color: "text-teal-700", bg: "bg-teal-50 text-teal-700 border-teal-200" },
 };
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";

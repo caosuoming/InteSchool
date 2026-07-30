@@ -153,12 +153,51 @@ export const analyticsService = {
     source?: AnswerSource;
   }>): Promise<AnswerRecord[]> {
     await delay(300);
-    const results: AnswerRecord[] = [];
+    if (items.length === 0) return [];
+
+    const now = new Date().toISOString();
+    const current: AnswerRecord[] = db.read("answerRecords");
+    const byKey = new Map<string, AnswerRecord>(
+      current.map((record) => [
+        `${record.studentId}:${record.questionId}:${record.lectureId}`,
+        record,
+      ] as const),
+    );
+    const changed = new Map<string, AnswerRecord>();
+
     for (const item of items) {
-      const r = await this.saveAnswerRecord(item);
-      if (r) results.push(r);
+      const key = `${item.studentId}:${item.questionId}:${item.lectureId}`;
+      const existing = byKey.get(key);
+      const record: AnswerRecord = existing
+        ? {
+            ...existing,
+            score: item.score,
+            isCorrect: item.score === "correct",
+            source: item.source ?? existing.source,
+            answeredAt: now,
+          }
+        : {
+            id: genId("ar"),
+            studentId: item.studentId,
+            questionId: item.questionId,
+            lectureId: item.lectureId,
+            isCorrect: item.score === "correct",
+            score: item.score,
+            source: item.source ?? "manual",
+            answeredAt: now,
+          };
+      byKey.set(key, record);
+      changed.set(record.id, record);
     }
-    return results;
+
+    db.update("answerRecords", () => Array.from(byKey.values()));
+    const touchedQuestionIds = new Set(items.map((item) => item.questionId));
+    db.update("questions", (list) =>
+      list.map((question) =>
+        touchedQuestionIds.has(question.id) ? { ...question, lastUsedAt: now } : question,
+      ),
+    );
+    return Array.from(changed.values());
   },
 
   // 获取指定学生列表做过的题目 ID 集合
@@ -178,12 +217,13 @@ export const analyticsService = {
     const scoreMap = new Map<string, number>();
     for (const q of questions) {
       const qRecords = records.filter((r) => r.questionId === q.id);
-      if (qRecords.length === 0) {
+      const scoredRecords = qRecords.filter((r) => r.score !== "done");
+      if (scoredRecords.length === 0) {
         scoreMap.set(q.id, 0.5);
       } else {
-        const correct = qRecords.filter((r) => r.isCorrect).length;
-        const wrongRate = 1 - correct / qRecords.length;
-        scoreMap.set(q.id, wrongRate * 0.7 + qRecords.length / 20 * 0.3);
+        const correct = scoredRecords.filter((r) => r.isCorrect).length;
+        const wrongRate = 1 - correct / scoredRecords.length;
+        scoreMap.set(q.id, wrongRate * 0.7 + scoredRecords.length / 20 * 0.3);
       }
     }
     return scoreMap;
@@ -234,11 +274,12 @@ export const analyticsService = {
     return questions
       .map((q) => {
         const qRecords = records.filter((r) => r.questionId === q.id);
-        const correct = qRecords.filter((r) => r.isCorrect).length;
+        const scoredRecords = qRecords.filter((r) => r.score !== "done");
+        const correct = scoredRecords.filter((r) => r.isCorrect).length;
         return {
           question: q,
           answerCount: qRecords.length,
-          correctRate: qRecords.length ? correct / qRecords.length : 0,
+          correctRate: scoredRecords.length ? correct / scoredRecords.length : 0,
           studentIds: Array.from(new Set(qRecords.map((r) => r.studentId))),
         };
       })
@@ -254,11 +295,12 @@ export const analyticsService = {
     return students
       .map((s) => {
         const sRecords = records.filter((r) => r.studentId === s.id);
-        const correct = sRecords.filter((r) => r.isCorrect).length;
+        const scoredRecords = sRecords.filter((r) => r.score !== "done");
+        const correct = scoredRecords.filter((r) => r.isCorrect).length;
         return {
           student: s,
           answerCount: sRecords.length,
-          correctRate: sRecords.length ? correct / sRecords.length : 0,
+          correctRate: scoredRecords.length ? correct / scoredRecords.length : 0,
         };
       })
       .filter((s) => s.answerCount > 0)
@@ -291,6 +333,7 @@ export const analyticsService = {
     >();
 
     for (const record of records) {
+      if (record.score === "done") continue;
       const question = questionMap.get(record.questionId);
       if (!question || !question.knowledgePointIds) continue;
       for (const kpId of question.knowledgePointIds) {
