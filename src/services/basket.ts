@@ -2,6 +2,11 @@ import { rpcCall } from "./api";
 
 import type { Basket } from "@/types";
 
+export interface BasketAudience {
+  classIds?: string[];
+  studentIds?: string[];
+}
+
 export const basketService = {
   async listBaskets(teacherId: string): Promise<Basket[]> {
     return rpcCall("basket", "listBaskets", [teacherId]) as any;
@@ -19,8 +24,14 @@ export const basketService = {
     return rpcCall("basket", "setDefaultBasket", [teacherId, basketId]) as any;
   },
 
-  async createBasket(teacherId: string, name: string, description?: string, isDefault = false): Promise<Basket> {
-    return rpcCall("basket", "createBasket", [teacherId, name, description, isDefault]) as any;
+  async createBasket(
+    teacherId: string,
+    name: string,
+    description?: string,
+    isDefault = false,
+    audience: BasketAudience = {},
+  ): Promise<Basket> {
+    return rpcCall("basket", "createBasket", [teacherId, name, description, isDefault, audience]) as any;
   },
 
   async updateBasket(id: string, patch: Partial<Basket>): Promise<Basket> {

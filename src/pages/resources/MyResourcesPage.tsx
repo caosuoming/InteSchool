@@ -8,7 +8,7 @@ import {
   PlayCircle, Copy, MessageSquareText, Star,
   ShoppingCart, CheckSquare, Square, Plus, X,
   Archive, Layout,
-  Gift,
+  Gift, Users, Pencil,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -23,6 +23,8 @@ import { donationService } from "@/services/donation";
 import { knowledgeService } from "@/services/knowledge";
 import { reflectionService } from "@/services/reflection";
 import { basketService } from "@/services/basket";
+import { classService } from "@/services/class";
+import { analyticsService, type KnowledgeMastery } from "@/services/analytics";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -35,7 +37,7 @@ import type {
   Lecture, ExamPaper, Courseware, Material, Question,
   TreeNode, FilterLogic, ShareScope,
   CoursewareType, MaterialType, ShareableResourceType,
-  Reflection, Basket,
+  Reflection, Basket, AnyClass, Student, AnswerRecord,
   DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
@@ -49,6 +51,12 @@ import { Badge } from "@/components/ui/Badge";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { BasketAudiencePicker } from "@/components/basket/BasketAudiencePicker";
+import {
+  basketAudienceLabel,
+  resolveBasketAudienceStudentIds,
+  treeNameMap,
+} from "@/lib/basket-audience";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
@@ -74,6 +82,25 @@ const sortOptions: { value: SortKey; label: string; icon: React.ReactNode }[] = 
 ];
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
+
+const masteryPresentation: Record<
+  KnowledgeMastery["masteryLevel"],
+  { label: string; className: string }
+> = {
+  mastered: { label: "已掌握", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  basic: { label: "基本掌握", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  weak: { label: "薄弱", className: "border-red-200 bg-red-50 text-red-700" },
+  untrained: { label: "未训练", className: "border-ink-100 bg-mist text-ink-500" },
+};
+
+function usageDateLabels(records: AnswerRecord[]): string[] {
+  const formatter = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return Array.from(new Set(records.map((record) => formatter.format(new Date(record.answeredAt)))));
+}
 
 const coursewareTypeLabel: Record<CoursewareType, string> = {
   ppt: "PPT",
@@ -204,10 +231,48 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [creatingBasket, setCreatingBasket] = useState(false);
   const [isCreatingBasket, setIsCreatingBasket] = useState(false);
   const [newBasketName, setNewBasketName] = useState("");
+  const [newBasketClassIds, setNewBasketClassIds] = useState<string[]>([]);
+  const [newBasketStudentIds, setNewBasketStudentIds] = useState<string[]>([]);
+  const [audienceClasses, setAudienceClasses] = useState<AnyClass[]>([]);
+  const [audienceStudents, setAudienceStudents] = useState<Student[]>([]);
+  const [editingBasketAudience, setEditingBasketAudience] = useState(false);
+  const [savingBasketAudience, setSavingBasketAudience] = useState(false);
+  const [draftBasketClassIds, setDraftBasketClassIds] = useState<string[]>([]);
+  const [draftBasketStudentIds, setDraftBasketStudentIds] = useState<string[]>([]);
+  const [basketAnswerRecords, setBasketAnswerRecords] = useState<AnswerRecord[]>([]);
+  const [basketMastery, setBasketMastery] = useState<KnowledgeMastery[]>([]);
+  const [basketInsightsLoading, setBasketInsightsLoading] = useState(false);
 
   const schoolId = teacher?.schoolId || "sch-1";
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(schoolId);
   const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(schoolId);
+  const selectedBasket = useMemo(
+    () => baskets.find((basket) => basket.id === selectedBasketId) || null,
+    [baskets, selectedBasketId],
+  );
+  const basketAudienceStudentIds = useMemo(
+    () => selectedBasket
+      ? resolveBasketAudienceStudentIds(selectedBasket, audienceClasses, audienceStudents)
+      : [],
+    [selectedBasket, audienceClasses, audienceStudents],
+  );
+  const knowledgeNameMap = useMemo(() => treeNameMap(knowledgeTree), [knowledgeTree]);
+  const basketMasteryMap = useMemo(
+    () => new Map(basketMastery.map((item) => [item.knowledgePointId, item])),
+    [basketMastery],
+  );
+  const answerRecordsByQuestion = useMemo(() => {
+    const result = new Map<string, AnswerRecord[]>();
+    basketAnswerRecords.forEach((record) => {
+      const current = result.get(record.questionId) || [];
+      current.push(record);
+      result.set(record.questionId, current);
+    });
+    result.forEach((records) => records.sort(
+      (a, b) => new Date(b.answeredAt).getTime() - new Date(a.answeredAt).getTime(),
+    ));
+    return result;
+  }, [basketAnswerRecords]);
 
   const loadTeacherDonations = useCallback(async () => {
     if (!teacher) return;
@@ -296,6 +361,20 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [teacher]);
 
   useEffect(() => {
+    if (!teacher) return;
+    Promise.all([
+      classService.listMyClasses(teacher.schoolId || null, teacher.id),
+      classService.listMyStudents(teacher.schoolId || null, teacher.id),
+    ]).then(([classes, students]) => {
+      setAudienceClasses(classes);
+      setAudienceStudents(students);
+    }).catch(() => {
+      setAudienceClasses([]);
+      setAudienceStudents([]);
+    });
+  }, [teacher]);
+
+  useEffect(() => {
     if (!selectedBasketId) {
       setBasketQuestions([]);
       setBasketMaterials([]);
@@ -309,12 +388,46 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         questionService.listQuestions({ ids: basket.questionIds }),
         materialService.listMaterials({ ids: basket.materialIds }),
       ]);
-      setBasketQuestions(qs);
-      setBasketMaterials(ms);
+      const questionMap = new Map(qs.map((question) => [question.id, question]));
+      const materialMap = new Map(ms.map((material) => [material.id, material]));
+      setBasketQuestions(
+        basket.questionIds.map((questionId) => questionMap.get(questionId)).filter(Boolean) as Question[],
+      );
+      setBasketMaterials(
+        basket.materialIds.map((materialId) => materialMap.get(materialId)).filter(Boolean) as Material[],
+      );
+      setBaskets((current) => current.map((item) => item.id === basket.id ? basket : item));
       setSelectedQuestionIds(new Set());
       setSelectedMaterialIds(new Set());
     });
   }, [selectedBasketId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedBasket || basketAudienceStudentIds.length === 0) {
+      setBasketAnswerRecords([]);
+      setBasketMastery([]);
+      setBasketInsightsLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    setBasketInsightsLoading(true);
+    Promise.all([
+      analyticsService.listAnswerRecordsByStudents(basketAudienceStudentIds),
+      analyticsService.getKnowledgeMastery(basketAudienceStudentIds, schoolId),
+    ]).then(([records, mastery]) => {
+      if (cancelled) return;
+      setBasketAnswerRecords(records);
+      setBasketMastery(mastery);
+    }).catch(() => {
+      if (cancelled) return;
+      setBasketAnswerRecords([]);
+      setBasketMastery([]);
+    }).finally(() => {
+      if (!cancelled) setBasketInsightsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedBasket, basketAudienceStudentIds, schoolId]);
 
   const loadBaskets = useCallback(async () => {
     if (!teacher) return;
@@ -324,17 +437,55 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const handleCreateBasket = async () => {
     if (!teacher || !newBasketName.trim()) return;
+    if (newBasketClassIds.length === 0 && newBasketStudentIds.length === 0) {
+      toast.warning("请选择资源篮使用对象");
+      return;
+    }
     setIsCreatingBasket(true);
     try {
-      await basketService.createBasket(teacher.id, newBasketName.trim());
+      const created = await basketService.createBasket(
+        teacher.id,
+        newBasketName.trim(),
+        undefined,
+        false,
+        { classIds: newBasketClassIds, studentIds: newBasketStudentIds },
+      );
       toast.success(`已创建资源篮「${newBasketName.trim()}」`);
       setNewBasketName("");
+      setNewBasketClassIds([]);
+      setNewBasketStudentIds([]);
       await loadBaskets();
+      setSelectedBasketId(created.id);
       setIsCreatingBasket(false);
       setCreatingBasket(false);
     } catch (e: any) {
       toast.error("创建失败", e?.message);
       setIsCreatingBasket(false);
+    }
+  };
+
+  const openBasketAudienceEditor = () => {
+    if (!selectedBasket) return;
+    setDraftBasketClassIds(selectedBasket.classIds || []);
+    setDraftBasketStudentIds(selectedBasket.studentIds || []);
+    setEditingBasketAudience(true);
+  };
+
+  const handleSaveBasketAudience = async () => {
+    if (!selectedBasket) return;
+    setSavingBasketAudience(true);
+    try {
+      const updated = await basketService.updateBasket(selectedBasket.id, {
+        classIds: draftBasketClassIds,
+        studentIds: draftBasketStudentIds,
+      });
+      setBaskets((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setEditingBasketAudience(false);
+      toast.success("资源篮使用对象已更新");
+    } catch (e: any) {
+      toast.error("更新使用对象失败", e?.message);
+    } finally {
+      setSavingBasketAudience(false);
     }
   };
 
@@ -435,8 +586,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       grade: selectedQs[0]?.grade || defaultGrade,
       schoolYear: selectedQs[0]?.schoolYear || defaultSchoolYear,
       semester: selectedQs[0]?.semester || defaultSemester,
-      classIds: [],
-      studentIds: [],
+      classIds: selectedBasket?.classIds || [],
+      studentIds: selectedBasket?.studentIds || [],
       sections,
       version: 1,
       status: "draft",
@@ -941,6 +1092,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <div className="text-xs text-ink-400 mt-0.5">
                           {b.questionIds.length} 题 · {b.materialIds.length} 素材
                         </div>
+                        <div className="text-[11px] text-ink-400 mt-0.5 truncate">
+                          {basketAudienceLabel(b)}
+                        </div>
                       </div>
                       <div className="flex items-center gap-0.5 ml-2">
                         <button
@@ -987,16 +1141,29 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             ) : (
               <div>
                 {/* 顶部操作栏 */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="text-sm">
-                    <span className="font-medium text-ink-800">
-                      {baskets.find((b) => b.id === selectedBasketId)?.name}
-                    </span>
-                    <span className="text-ink-400 ml-2">
-                      共 {basketQuestions.length} 题 · {basketMaterials.length} 素材
-                    </span>
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div className="text-sm min-w-0">
+                    <div>
+                      <span className="font-medium text-ink-800">{selectedBasket?.name}</span>
+                      <span className="text-ink-400 ml-2">
+                        共 {basketQuestions.length} 题 · {basketMaterials.length} 素材
+                      </span>
+                    </div>
+                    <div className={cn(
+                      "mt-1 flex items-center gap-1.5 text-xs",
+                      basketAudienceStudentIds.length > 0 ? "text-ink-500" : "text-amber-600",
+                    )}>
+                      <Users className="w-3.5 h-3.5" />
+                      {selectedBasket
+                        ? basketAudienceLabel(selectedBasket, basketAudienceStudentIds.length)
+                        : "尚未选择使用对象"}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <Button variant="outline" onClick={openBasketAudienceEditor}>
+                      <Pencil className="w-4 h-4" />
+                      调整使用对象
+                    </Button>
                     <Button variant="outline" onClick={handleGenerateLecture} disabled={selectedQuestionIds.size === 0 && selectedMaterialIds.size === 0}>
                       <FileText className="w-4 h-4" />
                       生成讲义
@@ -1024,35 +1191,89 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       </button>
                     </div>
                     <div className="space-y-2">
-                      {basketQuestions.map((q) => (
-                        <div
-                          key={q.id}
-                          className={cn(
-                            "p-3 rounded-md border transition-all flex items-start gap-2",
-                            selectedQuestionIds.has(q.id)
-                              ? "border-gold-300 bg-gold-50/50"
-                              : "border-ink-100 hover:border-ink-200",
-                          )}
-                        >
-                          <button
-                            onClick={() => toggleQuestionSelection(q.id)}
-                            className="mt-0.5 flex-shrink-0"
-                          >
-                            {selectedQuestionIds.has(q.id) ? (
-                              <CheckSquare className="w-4 h-4 text-gold-600" />
-                            ) : (
-                              <Square className="w-4 h-4 text-ink-300" />
+                      {basketQuestions.map((q) => {
+                        const usageRecords = answerRecordsByQuestion.get(q.id) || [];
+                        const usedByAudience = usageRecords.length > 0;
+                        const usageDates = usageDateLabels(usageRecords);
+                        return (
+                          <div
+                            key={q.id}
+                            className={cn(
+                              "p-3 rounded-md border transition-all flex items-start gap-2",
+                              usedByAudience
+                                ? "border-red-300 bg-red-50/40"
+                                : selectedQuestionIds.has(q.id)
+                                  ? "border-gold-300 bg-gold-50/50"
+                                  : "border-ink-100 hover:border-ink-200",
                             )}
-                          </button>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="tag-gold">{getQuestionTypeLabel(q.type)}</span>
-                              <span className="text-xs text-ink-400">难度：{difficultyLabel[q.difficulty]}</span>
+                          >
+                            <button
+                              onClick={() => toggleQuestionSelection(q.id)}
+                              className="mt-0.5 flex-shrink-0"
+                            >
+                              {selectedQuestionIds.has(q.id) ? (
+                                <CheckSquare className="w-4 h-4 text-gold-600" />
+                              ) : (
+                                <Square className="w-4 h-4 text-ink-300" />
+                              )}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="tag-gold">{getQuestionTypeLabel(q.type)}</span>
+                                <span className="text-xs text-ink-400">难度：{difficultyLabel[q.difficulty]}</span>
+                                {usedByAudience && (
+                                  <span className="text-xs font-medium text-red-600">所选学生已使用</span>
+                                )}
+                              </div>
+                              <MathHtml className="text-sm text-ink-800">{q.stem}</MathHtml>
+
+                              {usedByAudience && (
+                                <div className="mt-2 rounded border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700">
+                                  使用时间：{usageDates.slice(0, 3).join("、")}
+                                  {usageDates.length > 3 && ` 等 ${usageDates.length} 天`}
+                                  <span className="ml-2 text-red-500">共 {usageRecords.length} 条记录</span>
+                                </div>
+                              )}
+
+                              {q.knowledgePointIds.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-ink-100/80">
+                                  <div className="text-[11px] text-ink-400 mb-1.5">知识点掌握情况</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {q.knowledgePointIds.map((knowledgePointId) => {
+                                      const mastery = basketMasteryMap.get(knowledgePointId);
+                                      const presentation = mastery
+                                        ? masteryPresentation[mastery.masteryLevel]
+                                        : null;
+                                      return (
+                                        <span
+                                          key={knowledgePointId}
+                                          className={cn(
+                                            "inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px]",
+                                            basketAudienceStudentIds.length === 0 || basketInsightsLoading
+                                              ? "border-ink-100 bg-mist text-ink-500"
+                                              : presentation?.className || "border-ink-100 bg-mist text-ink-500",
+                                          )}
+                                        >
+                                          <span>{knowledgeNameMap.get(knowledgePointId) || mastery?.knowledgePointName || "未命名知识点"}</span>
+                                          <span className="font-medium">
+                                            {basketAudienceStudentIds.length === 0
+                                              ? "未选择对象"
+                                              : basketInsightsLoading
+                                                ? "统计中"
+                                                : mastery
+                                                  ? `${presentation?.label}${mastery.totalAttempts > 0 ? ` ${Math.round(mastery.correctRate * 100)}%` : ""}`
+                                                  : "暂无数据"}
+                                          </span>
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            <MathHtml className="text-sm text-ink-800">{q.stem}</MathHtml>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </Card>
                 )}
@@ -1965,24 +2186,95 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       {/* 新建资源篮弹窗 */}
       <Modal
         open={creatingBasket}
-        onClose={() => { setCreatingBasket(false); setNewBasketName(""); }}
+        onClose={() => {
+          setCreatingBasket(false);
+          setNewBasketName("");
+          setNewBasketClassIds([]);
+          setNewBasketStudentIds([]);
+        }}
+        size="lg"
         title="新建资源篮"
-        description="创建一个新的资源篮来收集题目和素材"
+        description="创建资源篮并选择它面向的班级或具体学生"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => { setCreatingBasket(false); setNewBasketName(""); }}>取消</Button>
-            <Button variant="gold" onClick={handleCreateBasket} loading={isCreatingBasket} disabled={!newBasketName.trim()}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setCreatingBasket(false);
+                setNewBasketName("");
+                setNewBasketClassIds([]);
+                setNewBasketStudentIds([]);
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              variant="gold"
+              onClick={handleCreateBasket}
+              loading={isCreatingBasket}
+              disabled={!newBasketName.trim() || newBasketClassIds.length + newBasketStudentIds.length === 0}
+            >
               创建
             </Button>
           </div>
         }
       >
-        <Input
-          label="资源篮名称"
-          value={newBasketName}
-          onChange={(e) => setNewBasketName(e.target.value)}
-          placeholder="输入资源篮名称"
-          autoFocus
+        <div className="space-y-4">
+          <Input
+            label="资源篮名称"
+            value={newBasketName}
+            onChange={(e) => setNewBasketName(e.target.value)}
+            placeholder="输入资源篮名称"
+            autoFocus
+          />
+          <BasketAudiencePicker
+            classes={audienceClasses}
+            students={audienceStudents}
+            classIds={newBasketClassIds}
+            studentIds={newBasketStudentIds}
+            onChange={({ classIds, studentIds }) => {
+              setNewBasketClassIds(classIds);
+              setNewBasketStudentIds(studentIds);
+            }}
+          />
+        </div>
+      </Modal>
+
+      <Modal
+        open={editingBasketAudience}
+        onClose={() => setEditingBasketAudience(false)}
+        size="lg"
+        title="调整资源篮使用对象"
+        description={selectedBasket ? `资源篮：${selectedBasket.name}` : undefined}
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDraftBasketClassIds([]);
+                setDraftBasketStudentIds([]);
+              }}
+            >
+              清空选择
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setEditingBasketAudience(false)}>取消</Button>
+              <Button variant="gold" onClick={handleSaveBasketAudience} loading={savingBasketAudience}>
+                保存
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <BasketAudiencePicker
+          classes={audienceClasses}
+          students={audienceStudents}
+          classIds={draftBasketClassIds}
+          studentIds={draftBasketStudentIds}
+          onChange={({ classIds, studentIds }) => {
+            setDraftBasketClassIds(classIds);
+            setDraftBasketStudentIds(studentIds);
+          }}
         />
       </Modal>
 

@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ShoppingBasket, Plus, Trash2, ArrowRight, FileText,
   ShoppingCart, Clock, FileQuestion, Star, CheckCircle2, BookOpen, Lightbulb, Tag, GraduationCap,
-  TrendingUp, ChevronUp, ChevronDown,
+  TrendingUp, ChevronUp, ChevronDown, Users, Pencil,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { basketService } from "@/services/basket";
 import { questionService } from "@/services/question";
 import { lectureService } from "@/services/lecture";
 import { knowledgeService } from "@/services/knowledge";
+import { classService } from "@/services/class";
+import { analyticsService, type KnowledgeMastery } from "@/services/analytics";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -22,11 +24,32 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { MathHtml } from "@/components/ui/MathHtml";
-import type { Basket, Question } from "@/types";
+import { BasketAudiencePicker } from "@/components/basket/BasketAudiencePicker";
+import { basketAudienceLabel, resolveBasketAudienceStudentIds } from "@/lib/basket-audience";
+import type { AnswerRecord, AnyClass, Basket, Question, Student } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
+
+const masteryPresentation: Record<
+  KnowledgeMastery["masteryLevel"],
+  { label: string; className: string }
+> = {
+  mastered: { label: "已掌握", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  basic: { label: "基本掌握", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  weak: { label: "薄弱", className: "border-red-200 bg-red-50 text-red-700" },
+  untrained: { label: "未训练", className: "border-ink-100 bg-mist text-ink-500" },
+};
+
+function usageDateLabels(records: AnswerRecord[]): string[] {
+  const formatter = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return Array.from(new Set(records.map((record) => formatter.format(new Date(record.answeredAt)))));
+}
 
 export default function BasketsPage() {
   const navigate = useNavigate();
@@ -46,11 +69,46 @@ export default function BasketsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
+  const [newClassIds, setNewClassIds] = useState<string[]>([]);
+  const [newStudentIds, setNewStudentIds] = useState<string[]>([]);
+
+  const [audienceClasses, setAudienceClasses] = useState<AnyClass[]>([]);
+  const [audienceStudents, setAudienceStudents] = useState<Student[]>([]);
+  const [editAudienceOpen, setEditAudienceOpen] = useState(false);
+  const [draftClassIds, setDraftClassIds] = useState<string[]>([]);
+  const [draftStudentIds, setDraftStudentIds] = useState<string[]>([]);
+  const [savingAudience, setSavingAudience] = useState(false);
+  const [answerRecords, setAnswerRecords] = useState<AnswerRecord[]>([]);
+  const [mastery, setMastery] = useState<KnowledgeMastery[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
   // 生成讲义确认
   const [genLectureOpen, setGenLectureOpen] = useState(false);
   const [genLectureTitle, setGenLectureTitle] = useState("");
   const [generating, setGenerating] = useState(false);
+
+  const audienceStudentIds = useMemo(
+    () => selectedBasket
+      ? resolveBasketAudienceStudentIds(selectedBasket, audienceClasses, audienceStudents)
+      : [],
+    [selectedBasket, audienceClasses, audienceStudents],
+  );
+  const recordsByQuestion = useMemo(() => {
+    const result = new Map<string, AnswerRecord[]>();
+    answerRecords.forEach((record) => {
+      const current = result.get(record.questionId) || [];
+      current.push(record);
+      result.set(record.questionId, current);
+    });
+    result.forEach((records) => records.sort(
+      (a, b) => new Date(b.answeredAt).getTime() - new Date(a.answeredAt).getTime(),
+    ));
+    return result;
+  }, [answerRecords]);
+  const masteryMap = useMemo(
+    () => new Map(mastery.map((item) => [item.knowledgePointId, item])),
+    [mastery],
+  );
 
   useEffect(() => {
     if (!teacher) return;
@@ -62,6 +120,48 @@ export default function BasketsPage() {
       setKnowledgeMap(new Map(points.map((p) => [p.id, p.name])));
     });
   }, [teacher]);
+
+  useEffect(() => {
+    if (!teacher) return;
+    Promise.all([
+      classService.listMyClasses(teacher.schoolId || null, teacher.id),
+      classService.listMyStudents(teacher.schoolId || null, teacher.id),
+    ]).then(([classes, students]) => {
+      setAudienceClasses(classes);
+      setAudienceStudents(students);
+    }).catch(() => {
+      setAudienceClasses([]);
+      setAudienceStudents([]);
+    });
+  }, [teacher]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!teacher || !selectedBasket || audienceStudentIds.length === 0) {
+      setAnswerRecords([]);
+      setMastery([]);
+      setInsightsLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    setInsightsLoading(true);
+    Promise.all([
+      analyticsService.listAnswerRecordsByStudents(audienceStudentIds),
+      analyticsService.getKnowledgeMastery(audienceStudentIds, teacher.schoolId!),
+    ]).then(([records, masteryItems]) => {
+      if (cancelled) return;
+      setAnswerRecords(records);
+      setMastery(masteryItems);
+    }).catch(() => {
+      if (cancelled) return;
+      setAnswerRecords([]);
+      setMastery([]);
+    }).finally(() => {
+      if (!cancelled) setInsightsLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [teacher, selectedBasket, audienceStudentIds]);
 
   const load = useCallback(async () => {
     if (!teacher) return;
@@ -78,10 +178,15 @@ export default function BasketsPage() {
   const loadQuestions = async (b: Basket) => {
     setSelectedBasket(b);
     setQuestionsLoading(true);
-    const all = await questionService.listQuestions({});
-    const basketQuestions = all.filter((q) => b.questionIds.includes(q.id));
-    setQuestions(basketQuestions);
-    setQuestionsLoading(false);
+    try {
+      const loaded = await questionService.listQuestions({ ids: b.questionIds });
+      const questionMap = new Map(loaded.map((question) => [question.id, question]));
+      setQuestions(
+        b.questionIds.map((questionId) => questionMap.get(questionId)).filter(Boolean) as Question[],
+      );
+    } finally {
+      setQuestionsLoading(false);
+    }
   };
 
   const handleSetDefault = async (b: Basket) => {
@@ -109,13 +214,51 @@ export default function BasketsPage() {
       toast.error("请填写试题篮名称");
       return;
     }
-    const b = await basketService.createBasket(teacher.id, newName, newDesc);
+    if (newClassIds.length === 0 && newStudentIds.length === 0) {
+      toast.error("请选择试题篮使用对象");
+      return;
+    }
+    const b = await basketService.createBasket(
+      teacher.id,
+      newName.trim(),
+      newDesc.trim() || undefined,
+      false,
+      { classIds: newClassIds, studentIds: newStudentIds },
+    );
     toast.success("试题篮已创建");
     setCreateOpen(false);
     setNewName("");
     setNewDesc("");
+    setNewClassIds([]);
+    setNewStudentIds([]);
     await load();
     loadQuestions(b);
+  };
+
+  const openAudienceEditor = () => {
+    if (!selectedBasket) return;
+    setDraftClassIds(selectedBasket.classIds || []);
+    setDraftStudentIds(selectedBasket.studentIds || []);
+    setEditAudienceOpen(true);
+  };
+
+  const handleSaveAudience = async () => {
+    if (!selectedBasket) return;
+    setSavingAudience(true);
+    try {
+      const updated = await basketService.updateBasket(selectedBasket.id, {
+        classIds: draftClassIds,
+        studentIds: draftStudentIds,
+      });
+      setSelectedBasket(updated);
+      setBaskets((current) => current.map((basket) => basket.id === updated.id ? updated : basket));
+      setEditAudienceOpen(false);
+      toast.success("试题篮使用对象已更新");
+    } catch (error) {
+      toast.error("更新使用对象失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingAudience(false);
+    }
   };
 
   const handleRemoveQuestion = async (q: Question) => {
@@ -160,8 +303,8 @@ export default function BasketsPage() {
         grade: questions[0]?.grade || defaultGrade,
         schoolYear: questions[0]?.schoolYear || defaultSchoolYear,
         semester: questions[0]?.semester || defaultSemester,
-        classIds: [],
-        studentIds: [],
+        classIds: selectedBasket.classIds || [],
+        studentIds: selectedBasket.studentIds || [],
         sections,
       });
       toast.success("讲义已生成，正在跳转...");
@@ -233,6 +376,7 @@ export default function BasketsPage() {
                       )}
                     </div>
                     <div className="text-xs text-ink-500 mt-0.5">{b.description || "无描述"}</div>
+                    <div className="text-[11px] text-ink-400 mt-1 truncate">{basketAudienceLabel(b)}</div>
                   </div>
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     {!b.isDefault && (
@@ -276,7 +420,7 @@ export default function BasketsPage() {
       ) : (
         // 篮子详情视图
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-start justify-between gap-4 mb-4">
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" onClick={() => setSelectedBasket(null)}>
                 ← 返回篮子列表
@@ -284,19 +428,32 @@ export default function BasketsPage() {
               <div>
                 <h2 className="font-serif text-xl font-bold text-ink-900">{selectedBasket.name}</h2>
                 <div className="text-xs text-ink-500">{selectedBasket.description}</div>
+                <div className={cn(
+                  "text-xs mt-1 flex items-center gap-1.5",
+                  audienceStudentIds.length > 0 ? "text-ink-500" : "text-amber-600",
+                )}>
+                  <Users className="w-3.5 h-3.5" />
+                  {basketAudienceLabel(selectedBasket, audienceStudentIds.length)}
+                </div>
               </div>
             </div>
-            <Button
-              variant="gold"
-              onClick={() => {
-                setGenLectureTitle(`${selectedBasket.name}·讲义`);
-                setGenLectureOpen(true);
-              }}
-              disabled={questions.length === 0}
-            >
-              <FileText className="w-4 h-4" />
-              生成讲义
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <Button variant="outline" onClick={openAudienceEditor}>
+                <Pencil className="w-4 h-4" />
+                调整使用对象
+              </Button>
+              <Button
+                variant="gold"
+                onClick={() => {
+                  setGenLectureTitle(`${selectedBasket.name}·讲义`);
+                  setGenLectureOpen(true);
+                }}
+                disabled={questions.length === 0}
+              >
+                <FileText className="w-4 h-4" />
+                生成讲义
+              </Button>
+            </div>
           </div>
 
           <Card>
@@ -319,6 +476,10 @@ export default function BasketsPage() {
                     index={idx}
                     chapterMap={chapterMap}
                     knowledgeMap={knowledgeMap}
+                    usageRecords={recordsByQuestion.get(q.id) || []}
+                    masteryMap={masteryMap}
+                    audienceStudentCount={audienceStudentIds.length}
+                    insightsLoading={insightsLoading}
                     onRemove={() => handleRemoveQuestion(q)}
                     onMoveUp={idx > 0 ? () => handleMoveQuestion(idx, "up") : undefined}
                     onMoveDown={idx < questions.length - 1 ? () => handleMoveQuestion(idx, "down") : undefined}
@@ -333,13 +494,35 @@ export default function BasketsPage() {
       {/* 创建试题篮 */}
       <Modal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        size="sm"
+        onClose={() => {
+          setCreateOpen(false);
+          setNewName("");
+          setNewDesc("");
+          setNewClassIds([]);
+          setNewStudentIds([]);
+        }}
+        size="lg"
         title="新建试题篮"
+        description="选择试题篮面向的班级或具体学生"
         footer={
           <>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button variant="gold" onClick={handleCreate}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setCreateOpen(false);
+                setNewName("");
+                setNewDesc("");
+                setNewClassIds([]);
+                setNewStudentIds([]);
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              variant="gold"
+              onClick={handleCreate}
+              disabled={!newName.trim() || newClassIds.length + newStudentIds.length === 0}
+            >
               <Plus className="w-3.5 h-3.5" />
               创建
             </Button>
@@ -360,7 +543,53 @@ export default function BasketsPage() {
             value={newDesc}
             onChange={(e) => setNewDesc(e.target.value)}
           />
+          <BasketAudiencePicker
+            classes={audienceClasses}
+            students={audienceStudents}
+            classIds={newClassIds}
+            studentIds={newStudentIds}
+            onChange={({ classIds, studentIds }) => {
+              setNewClassIds(classIds);
+              setNewStudentIds(studentIds);
+            }}
+          />
         </div>
+      </Modal>
+
+      <Modal
+        open={editAudienceOpen}
+        onClose={() => setEditAudienceOpen(false)}
+        size="lg"
+        title="调整试题篮使用对象"
+        description={selectedBasket ? `试题篮：${selectedBasket.name}` : undefined}
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDraftClassIds([]);
+                setDraftStudentIds([]);
+              }}
+            >
+              清空选择
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setEditAudienceOpen(false)}>取消</Button>
+              <Button variant="gold" onClick={handleSaveAudience} loading={savingAudience}>保存</Button>
+            </div>
+          </div>
+        }
+      >
+        <BasketAudiencePicker
+          classes={audienceClasses}
+          students={audienceStudents}
+          classIds={draftClassIds}
+          studentIds={draftStudentIds}
+          onChange={({ classIds, studentIds }) => {
+            setDraftClassIds(classIds);
+            setDraftStudentIds(studentIds);
+          }}
+        />
       </Modal>
 
       {/* 生成讲义确认 */}
@@ -400,6 +629,10 @@ function BasketQuestionCard({
   index,
   chapterMap,
   knowledgeMap,
+  usageRecords,
+  masteryMap,
+  audienceStudentCount,
+  insightsLoading,
   onRemove,
   onMoveUp,
   onMoveDown,
@@ -408,6 +641,10 @@ function BasketQuestionCard({
   index: number;
   chapterMap: Map<string, string>;
   knowledgeMap: Map<string, string>;
+  usageRecords: AnswerRecord[];
+  masteryMap: Map<string, KnowledgeMastery>;
+  audienceStudentCount: number;
+  insightsLoading: boolean;
   onRemove: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -415,10 +652,16 @@ function BasketQuestionCard({
   const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(question.schoolId);
   const [expanded, setExpanded] = useState(false);
   const chapterNames = question.chapterIds.map((id) => chapterMap.get(id)).filter(Boolean) as string[];
-  const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
+  const usedByAudience = usageRecords.length > 0;
+  const usageDates = usageDateLabels(usageRecords);
 
   return (
-    <div className="border border-ink-100 rounded-lg overflow-hidden hover:border-ink-200 transition-colors group">
+    <div className={cn(
+      "border rounded-lg overflow-hidden transition-colors group",
+      usedByAudience
+        ? "border-red-300 bg-red-50/30"
+        : "border-ink-100 hover:border-ink-200",
+    )}>
       {/* 顶部操作栏 */}
       <div className="flex items-center justify-between px-3 py-2 bg-mist/50 border-b border-ink-50">
         <div className="flex items-center gap-2">
@@ -429,6 +672,7 @@ function BasketQuestionCard({
           }>
             {difficultyLabel[question.difficulty]}
           </Badge>
+          {usedByAudience && <span className="text-xs font-medium text-red-600">所选学生已使用</span>}
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {onMoveUp && (
@@ -459,6 +703,14 @@ function BasketQuestionCard({
         >
           <MathHtml>{question.stem}</MathHtml>
         </div>
+
+        {usedByAudience && (
+          <div className="mt-2 rounded border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700">
+            使用时间：{usageDates.slice(0, 3).join("、")}
+            {usageDates.length > 3 && ` 等 ${usageDates.length} 天`}
+            <span className="ml-2 text-red-500">共 {usageRecords.length} 条记录</span>
+          </div>
+        )}
 
         {/* 选项预览 */}
         {!expanded && question.options && question.options.length > 0 && (
@@ -534,15 +786,35 @@ function BasketQuestionCard({
               )}
             </div>
           )}
-          {pointNames.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap">
+          {question.knowledgePointIds.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
               <Lightbulb className="w-3 h-3 text-teal-500 flex-shrink-0" />
-              {pointNames.slice(0, 2).map((n) => (
-                <span key={n} className="tag-teal text-[10px] py-0.5">{n}</span>
-              ))}
-              {pointNames.length > 2 && (
-                <span className="text-[10px] text-ink-400">+{pointNames.length - 2}</span>
-              )}
+              {question.knowledgePointIds.map((knowledgePointId) => {
+                const item = masteryMap.get(knowledgePointId);
+                const presentation = item ? masteryPresentation[item.masteryLevel] : null;
+                return (
+                  <span
+                    key={knowledgePointId}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded border px-2 py-1 text-[10px]",
+                      audienceStudentCount === 0 || insightsLoading
+                        ? "border-ink-100 bg-mist text-ink-500"
+                        : presentation?.className || "border-ink-100 bg-mist text-ink-500",
+                    )}
+                  >
+                    <span>{knowledgeMap.get(knowledgePointId) || item?.knowledgePointName || "未命名知识点"}</span>
+                    <span className="font-medium">
+                      {audienceStudentCount === 0
+                        ? "未选择对象"
+                        : insightsLoading
+                          ? "统计中"
+                          : item
+                            ? `${presentation?.label}${item.totalAttempts > 0 ? ` ${Math.round(item.correctRate * 100)}%` : ""}`
+                            : "暂无数据"}
+                    </span>
+                  </span>
+                );
+              })}
             </div>
           )}
         </div>
