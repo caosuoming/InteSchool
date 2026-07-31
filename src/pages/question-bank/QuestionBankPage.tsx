@@ -138,17 +138,21 @@ function getDateRange(key: TimeRangeKey): DateRange | undefined {
 }
 
 interface QuestionBankPageProps {
-  donationSelectedIds?: Set<string>;
+  selectedQuestionIds?: Set<string>;
   donatedQuestionIds?: Set<string>;
   donationLockedQuestionIds?: Set<string>;
-  onToggleDonation?: (question: Question) => void;
+  onToggleSelection?: (question: Question) => void;
+  onQuestionDeleted?: (questionId: string) => void;
+  refreshToken?: number;
 }
 
 export default function QuestionBankPage({
-  donationSelectedIds,
+  selectedQuestionIds,
   donatedQuestionIds,
   donationLockedQuestionIds,
-  onToggleDonation,
+  onToggleSelection,
+  onQuestionDeleted,
+  refreshToken = 0,
 }: QuestionBankPageProps = {}) {
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
@@ -381,6 +385,11 @@ export default function QuestionBankPage({
     const t = setTimeout(loadQuestions, 300);
     return () => clearTimeout(t);
   }, [loadQuestions]);
+
+  useEffect(() => {
+    if (refreshToken === 0) return;
+    loadQuestions();
+  }, [loadQuestions, refreshToken]);
 
   // 题目变更或手工录入学情后，立即刷新目录总数与已做题数。
   useEffect(() => {
@@ -649,6 +658,7 @@ export default function QuestionBankPage({
     try {
       await questionService.deleteQuestion(question.id);
       toast.success("题目已删除");
+      onQuestionDeleted?.(question.id);
       loadQuestions();
     } catch (e: any) {
       toast.error("删除失败", e?.message);
@@ -1114,10 +1124,10 @@ export default function QuestionBankPage({
                   tagOrder={tagPrefs.order}
                   hiddenTags={tagPrefs.hidden}
                   wideLayout={directoryCollapsed}
-                  donationSelected={donationSelectedIds?.has(q.id) || false}
+                  selected={selectedQuestionIds?.has(q.id) || false}
                   donated={donatedQuestionIds?.has(q.id) || false}
                   donationLocked={donationLockedQuestionIds?.has(q.id) || false}
-                  onToggleDonation={onToggleDonation}
+                  onToggleSelection={onToggleSelection}
                   getQuestionTypeLabel={getQuestionTypeLabel}
                 />
               ))}
@@ -1815,10 +1825,10 @@ function QuestionRow({
   tagOrder,
   hiddenTags,
   wideLayout,
-  donationSelected,
+  selected,
   donated,
   donationLocked,
-  onToggleDonation,
+  onToggleSelection,
   getQuestionTypeLabel,
 }: {
   question: Question;
@@ -1854,10 +1864,10 @@ function QuestionRow({
   tagOrder: string[];
   hiddenTags: string[];
   wideLayout?: boolean;
-  donationSelected?: boolean;
+  selected?: boolean;
   donated?: boolean;
   donationLocked?: boolean;
-  onToggleDonation?: (q: Question) => void;
+  onToggleSelection?: (q: Question) => void;
   getQuestionTypeLabel: (type: Question["type"]) => string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -1902,28 +1912,24 @@ function QuestionRow({
         "card-base hover:shadow-cardHover transition-all group",
         wideLayout ? "p-5" : "p-4",
         expanded && "ring-2 ring-gold-300/60",
+        selected && "bg-gold-50/20",
       )}
       onClick={handleCardClick}
     >
       <div className="flex items-start gap-4 cursor-pointer">
-        {onToggleDonation && (
+        {onToggleSelection && (
           <button
             onClick={(event) => {
               event.stopPropagation();
-              if (!donated && !donationLocked) onToggleDonation(question);
+              onToggleSelection(question);
             }}
             className={cn(
               "mt-0.5 flex-shrink-0 rounded p-0.5 transition-colors",
-              donated || donationLocked
-                ? "text-ink-300 cursor-not-allowed"
-                : donationSelected
-                  ? "text-gold-600"
-                  : "text-ink-300 hover:text-gold-600",
+              selected ? "text-gold-600" : "text-ink-300 hover:text-gold-600",
             )}
-            title={donated ? "该题目已捐赠" : donationLocked ? "平台资源副本不能再次捐赠" : donationSelected ? "取消选择" : "选择捐赠"}
-            disabled={donated || donationLocked}
+            title={selected ? "取消选择" : "选择资源"}
           >
-            {donationSelected || donated || donationLocked
+            {selected
               ? <CheckSquare className="w-4 h-4" />
               : <Square className="w-4 h-4" />}
           </button>

@@ -3,6 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import { QuestionListItem } from "@/pages/resources/MyResourcesPage";
 import type { Question } from "@/types";
 
+vi.mock("@/components/ui/MathHtml", () => ({
+  MathHtml: ({ children, className }: { children: string; className?: string }) => (
+    <span className={className}>{children}</span>
+  ),
+}));
+vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
+  default: () => <div>题库</div>,
+}));
+
 const question: Question = {
   id: "question-1",
   teacherId: "teacher-1",
