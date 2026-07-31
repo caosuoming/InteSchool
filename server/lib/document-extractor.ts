@@ -39,6 +39,22 @@ function officeMetafileFormat(source: string): "wmf" | "emf" | null {
   return match?.[1] === "wmf" || match?.[1] === "emf" ? match[1] : null;
 }
 
+const HANDLED_MAMMOTH_WARNING_PATTERNS = [
+  /^An unrecognised element was ignored: \{http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/math\}oMath(?:Para)?$/,
+  /^Unrecognised paragraph style:/,
+];
+
+function documentPreviewWarnings(
+  messages: Array<{ message: string }>,
+  structuredPreviewAvailable: boolean,
+): string[] {
+  return [...new Set(messages.map(({ message }) => message.trim()).filter(Boolean))]
+    .filter((message) => !(
+      structuredPreviewAvailable
+      && HANDLED_MAMMOTH_WARNING_PATTERNS.some((pattern) => pattern.test(message))
+    ));
+}
+
 function renderMathAwareHtml(text: string): string {
   const renderLine = (line: string) => {
     const parts: string[] = [];
@@ -97,6 +113,10 @@ export async function extractDocument(
     ]);
     const text = (structuredText || raw.value.trim()).normalize("NFC");
     const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)/.test(text);
+    const mammothWarnings = documentPreviewWarnings(
+      [...raw.messages, ...rendered.messages],
+      hasRichContent,
+    );
     return {
       text,
       html: hasRichContent
@@ -107,11 +127,7 @@ export async function extractDocument(
             allowedSchemes: ["http", "https", "data"],
           }),
       format: "docx",
-      warnings: [
-        ...raw.messages.map((message) => message.message),
-        ...rendered.messages.map((message) => message.message),
-        ...mathType.warnings,
-      ],
+      warnings: [...new Set([...mammothWarnings, ...mathType.warnings])],
     };
   }
 

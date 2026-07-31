@@ -160,6 +160,32 @@ describe("document extractor", () => {
     expect(result.html).not.toContain("$\\frac{x}{2}=1$");
   });
 
+  it("hides Mammoth diagnostics for formulas and styles handled by the structured preview", async () => {
+    const filePath = join(workDir, "native-formulas.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({
+      value: "公式丢失",
+      messages: [
+        { message: "An unrecognised element was ignored: {http://schemas.openxmlformats.org/officeDocument/2006/math}oMath" },
+        { message: "Unrecognised paragraph style: 'First Paragraph' (Style ID: FirstParagraph)" },
+      ],
+    });
+    mammothMocks.convertToHtml.mockResolvedValue({
+      value: "<p>公式丢失</p>",
+      messages: [
+        { message: "An unrecognised element was ignored: {http://schemas.openxmlformats.org/officeDocument/2006/math}oMathPara" },
+        { message: "kept warning" },
+        { message: "kept warning" },
+      ],
+    });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue("已知 $x^2=1$。");
+
+    const result = await extractDocument(filePath);
+
+    expect(result.html).toContain("class=\"katex\"");
+    expect(result.warnings).toEqual(["kept warning"]);
+  });
+
   it("normalizes decomposed not-equal signs in DOCX preview HTML", async () => {
     const filePath = join(workDir, "not-equal.docx");
     await writeFile(filePath, "fake docx");
