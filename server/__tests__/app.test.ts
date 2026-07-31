@@ -225,8 +225,10 @@ describe("production backend", () => {
     await built.app.close();
     const distDir = join(workDir, "dist");
     await mkdir(distDir, { recursive: true });
+    await mkdir(join(distDir, "assets"), { recursive: true });
     await writeFile(join(distDir, "index.html"), "<!doctype html><title>InteSchool Test</title>");
     await writeFile(join(distDir, "asset.txt"), "static asset");
+    await writeFile(join(distDir, "assets", "chunk-abc123.js"), "export default true;");
     built = await buildApp({
       databasePath: join(workDir, "static.sqlite"),
       uploadsDir: join(workDir, "static-uploads"),
@@ -247,6 +249,16 @@ describe("production backend", () => {
     const asset = await built.app.inject({ method: "GET", url: "/asset.txt" });
     expect(asset.statusCode).toBe(200);
     expect(asset.body).toBe("static asset");
+    expect(asset.headers["cache-control"]).toBe("no-cache");
+
+    const chunk = await built.app.inject({ method: "GET", url: "/assets/chunk-abc123.js" });
+    expect(chunk.statusCode).toBe(200);
+    expect(chunk.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+
+    const missingChunk = await built.app.inject({ method: "GET", url: "/assets/chunk-old.js" });
+    expect(missingChunk.statusCode).toBe(404);
+    expect(missingChunk.headers["content-type"]).toContain("text/plain");
+    expect(missingChunk.body).toBe("静态资源不存在");
 
     const fallback = await built.app.inject({ method: "GET", url: "/dashboard/deep-link" });
     expect(fallback.statusCode).toBe(200);
@@ -257,6 +269,18 @@ describe("production backend", () => {
     const missingApi = await built.app.inject({ method: "GET", url: "/api/missing" });
     expect(missingApi.statusCode).toBe(404);
     expect(missingApi.json()).toEqual({ error: "接口不存在" });
+
+    const repeatedChunks = await Promise.all(Array.from({ length: 320 }, () => built.app.inject({
+      method: "GET",
+      url: "/assets/chunk-abc123.js",
+    })));
+    expect(repeatedChunks.every((response) => response.statusCode === 200)).toBe(true);
+
+    const repeatedPreviewAssets = await Promise.all(Array.from({ length: 320 }, () => built.app.inject({
+      method: "GET",
+      url: "/api/files/00000000-0000-0000-0000-000000000000/assets/rIdFormula",
+    })));
+    expect(repeatedPreviewAssets.every((response) => response.statusCode === 401)).toBe(true);
   });
 
   it("maps duplicate accounts to 409 and invalid credentials to 401", async () => {
