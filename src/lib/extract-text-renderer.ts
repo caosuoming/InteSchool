@@ -1,5 +1,10 @@
 import katex from "katex";
 import { normalizeLegacyOmmlMathText } from "./legacy-omml-formulas";
+import {
+  officeMetafileInlineStyle,
+  parseOfficeMetafileLayout,
+  type OfficeMetafileLayout,
+} from "./office-metafile";
 
 const TOKEN_PATTERN = /\$((?:[^$]|[\r\n])*?)\$|!\[([^\]]*)\]\(([^)]+)\)/g;
 const PLACEHOLDER_PATTERN = /\uE000(\d+)\uE001/g;
@@ -52,21 +57,29 @@ function safeImageSource(source: string): string | null {
   return null;
 }
 
-function officeMetafileAttribute(source: string): string {
-  const match = source.match(/[?&]officeMetafile=(wmf|emf)(?:&|$)/);
-  return match ? ` data-office-metafile="${match[1]}"` : "";
+function officeMetafileAttributes(layout: OfficeMetafileLayout): string {
+  const dimensions = layout.width && layout.height
+    ? ` data-office-width="${layout.width}" data-office-height="${layout.height}"`
+    : "";
+  return ` data-office-metafile="${layout.format}"${dimensions} style="${officeMetafileInlineStyle(layout)}"`;
 }
 
 function renderImage(alt: string, source: string): string {
   const safeSource = safeImageSource(source);
   if (!safeSource) return escapeHtml(`![${alt}](${source})`);
-  return `<img src="${escapeHtml(safeSource)}" alt="${escapeHtml(alt)}"${officeMetafileAttribute(safeSource)} class="max-w-full h-auto rounded-lg border border-ink-200" />`;
+  const metafile = parseOfficeMetafileLayout(safeSource);
+  if (metafile) {
+    return `<img src="${escapeHtml(safeSource)}" alt="${escapeHtml(alt)}"${officeMetafileAttributes(metafile)} class="office-metafile-image inline-block max-w-full h-auto align-middle object-contain" />`;
+  }
+  return `<img src="${escapeHtml(safeSource)}" alt="${escapeHtml(alt)}" class="max-w-full h-auto rounded-lg border border-ink-200" />`;
 }
 
 function renderTextWithKeywords(text: string, keywords: string[]): string {
   if (!keywords.length) return escapeHtml(text);
 
-  const escapedKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean))]
+  const escapedKeywords = [
+    ...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean)),
+  ]
     .sort((left, right) => right.length - left.length)
     .map((keyword) => keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   if (!escapedKeywords.length) return escapeHtml(text);
@@ -75,23 +88,26 @@ function renderTextWithKeywords(text: string, keywords: string[]): string {
     `^([\\s]*)(?:(${escapedKeywords.join("|")})([\\s]*[\\d一二三四五六七八九十]+[、．.）)]?)?)`,
   );
 
-  return text.split(/(\r?\n)/).map((line) => {
-    if (line === "\n" || line === "\r\n") return line;
-    const match = lineStartPattern.exec(line);
-    if (!match) return escapeHtml(line);
+  return text
+    .split(/(\r?\n)/)
+    .map((line) => {
+      if (line === "\n" || line === "\r\n") return line;
+      const match = lineStartPattern.exec(line);
+      if (!match) return escapeHtml(line);
 
-    const leadingSpaces = match[1] || "";
-    const keyword = match[2] || "";
-    const numbering = match[3] || "";
-    const remaining = line.slice(match[0].length);
-    return [
-      escapeHtml(leadingSpaces),
-      keyword
-        ? `<span class="bg-ink-700 text-white px-0.5 py-0 rounded text-xs">${escapeHtml(keyword + numbering)}</span>`
-        : "",
-      escapeHtml(remaining),
-    ].join("");
-  }).join("");
+      const leadingSpaces = match[1] || "";
+      const keyword = match[2] || "";
+      const numbering = match[3] || "";
+      const remaining = line.slice(match[0].length);
+      return [
+        escapeHtml(leadingSpaces),
+        keyword
+          ? `<span class="bg-ink-700 text-white px-0.5 py-0 rounded text-xs">${escapeHtml(keyword + numbering)}</span>`
+          : "",
+        escapeHtml(remaining),
+      ].join("");
+    })
+    .join("");
 }
 
 /**
@@ -115,7 +131,12 @@ export function renderExtractText(
   const decoded = normalizeLegacyOmmlMathText(decodeHtmlEntities(text));
   const protectedText = decoded.replace(
     TOKEN_PATTERN,
-    (_match, latex: string | undefined, alt: string | undefined, source: string | undefined) => {
+    (
+      _match,
+      latex: string | undefined,
+      alt: string | undefined,
+      source: string | undefined,
+    ) => {
       if (latex !== undefined) return reserve(renderFormula(latex));
       return reserve(renderImage(alt || "", source || ""));
     },

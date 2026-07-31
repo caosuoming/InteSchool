@@ -2,12 +2,17 @@
 
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
-import { extractDocxImage, extractDocxStructuredText } from "../lib/docx-structured-text.js";
+import {
+  extractDocxImage,
+  extractDocxStructuredText,
+} from "../lib/docx-structured-text.js";
 
 const documentPrefix = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
   xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
   xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+  xmlns:v="urn:schemas-microsoft-com:vml"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <w:body>`;
 const documentSuffix = `<w:sectPr/></w:body></w:document>`;
@@ -76,47 +81,105 @@ describe("DOCX structure-aware text extraction", () => {
       <w:p><w:r><w:t>答案：4</w:t></w:r></w:p>
     `);
 
-    await expect(extractDocxStructuredText(
-      data,
-      (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
-    )).resolves.toBe(
+    await expect(
+      extractDocxStructuredText(
+        data,
+        (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
+      ),
+    ).resolves.toBe(
       "1. 如图，求阴影面积。![文档图片](/api/files/file-1/assets/rId5)\n答案：4",
     );
   });
 
   it("marks WMF and EMF image relationships for browser-side conversion", async () => {
     const zip = new JSZip();
-    zip.file("word/document.xml", `${documentPrefix}
+    zip.file(
+      "word/document.xml",
+      `${documentPrefix}
       <w:p>
         <w:r><w:t>公式：</w:t></w:r>
         <w:r><w:drawing><a:blip r:embed="rIdWmf"/></w:drawing></w:r>
         <w:r><w:drawing><a:blip r:embed="rIdPng"/></w:drawing></w:r>
       </w:p>
-      ${documentSuffix}`);
-    zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8"?>
+      ${documentSuffix}`,
+    );
+    zip.file(
+      "word/_rels/document.xml.rels",
+      `<?xml version="1.0" encoding="UTF-8"?>
       <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
         <Relationship Id="rIdWmf" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/formula.wmf"/>
         <Relationship Id="rIdPng" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/diagram.png"/>
-      </Relationships>`);
+      </Relationships>`,
+    );
     const data = await zip.generateAsync({ type: "nodebuffer" });
 
-    await expect(extractDocxStructuredText(
-      data,
-      (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
-    )).resolves.toBe(
-      "公式：![文档图片](/api/files/file-1/assets/rIdWmf?officeMetafile=wmf)"
-      + "![文档图片](/api/files/file-1/assets/rIdPng)",
+    await expect(
+      extractDocxStructuredText(
+        data,
+        (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
+      ),
+    ).resolves.toBe(
+      "公式：![文档图片](/api/files/file-1/assets/rIdWmf?officeMetafile=wmf)" +
+        "![文档图片](/api/files/file-1/assets/rIdPng)",
+    );
+  });
+
+  it("preserves Word display dimensions for WMF and EMF previews", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "word/document.xml",
+      `${documentPrefix}
+      <w:p>
+        <w:r>
+          <w:drawing>
+            <wp:inline>
+              <wp:extent cx="952500" cy="476250"/>
+              <a:graphic><a:blip r:embed="rIdWmf"/></a:graphic>
+            </wp:inline>
+          </w:drawing>
+        </w:r>
+        <w:r>
+          <w:object>
+            <v:shape style="width:72pt;height:18pt">
+              <v:imagedata r:id="rIdEmf"/>
+            </v:shape>
+          </w:object>
+        </w:r>
+      </w:p>
+      ${documentSuffix}`,
+    );
+    zip.file(
+      "word/_rels/document.xml.rels",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rIdWmf" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/formula.wmf"/>
+        <Relationship Id="rIdEmf" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/formula.emf"/>
+      </Relationships>`,
+    );
+    const data = await zip.generateAsync({ type: "nodebuffer" });
+
+    await expect(
+      extractDocxStructuredText(
+        data,
+        (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
+      ),
+    ).resolves.toBe(
+      "![文档图片](/api/files/file-1/assets/rIdWmf?officeMetafile=wmf&officeWidth=100.00&officeHeight=50.00)" +
+        "![文档图片](/api/files/file-1/assets/rIdEmf?officeMetafile=emf&officeWidth=96.00&officeHeight=24.00)",
     );
   });
 
   it("reads only internal image relationships from the DOCX package", async () => {
     const zip = new JSZip();
-    zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8"?>
+    zip.file(
+      "word/_rels/document.xml.rels",
+      `<?xml version="1.0" encoding="UTF-8"?>
       <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
         <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/diagram.png"/>
         <Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="media/not-image.png"/>
         <Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://example.com/tracker.png" TargetMode="External"/>
-      </Relationships>`);
+      </Relationships>`,
+    );
     const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     zip.file("word/media/diagram.png", imageData);
     zip.file("word/media/not-image.png", imageData);

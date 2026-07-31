@@ -1,11 +1,75 @@
 import { useLayoutEffect, type RefObject } from "react";
+import {
+  parseOfficeMetafileDisplaySize,
+  type OfficeMetafileDisplaySize,
+  type OfficeMetafileFormat,
+} from "@/lib/office-metafile";
 
-type OfficeMetafileFormat = "wmf" | "emf";
+const MAX_RENDER_WIDTH = 2_400;
+const MAX_RENDER_HEIGHT = 1_600;
+const MIN_RENDER_DIMENSION = 64;
+const RENDER_SCALE = 2;
 
 export const officeMetafilePreviewClassName =
   "[&_.office-metafile-fallback]:my-1 [&_.office-metafile-fallback]:inline-flex [&_.office-metafile-fallback]:rounded-md [&_.office-metafile-fallback]:border [&_.office-metafile-fallback]:border-amber-200 [&_.office-metafile-fallback]:bg-amber-50 [&_.office-metafile-fallback]:px-2 [&_.office-metafile-fallback]:py-1 [&_.office-metafile-fallback]:text-xs [&_.office-metafile-fallback]:text-amber-800";
 
-function metafilePlaceholder(image: HTMLImageElement, message: string): HTMLSpanElement {
+function readDisplaySize(image: HTMLImageElement): OfficeMetafileDisplaySize | null {
+  return parseOfficeMetafileDisplaySize(
+    image.dataset.officeWidth,
+    image.dataset.officeHeight,
+  );
+}
+
+function applyDisplaySize(
+  image: HTMLImageElement,
+  displaySize: OfficeMetafileDisplaySize | null,
+): void {
+  image.style.maxWidth = "100%";
+  image.style.objectFit = "contain";
+  image.style.verticalAlign = "middle";
+  if (displaySize) {
+    image.style.width = `${displaySize.width}px`;
+    image.style.height = "auto";
+    image.style.aspectRatio = `${displaySize.width} / ${displaySize.height}`;
+    image.style.maxHeight = "none";
+    return;
+  }
+  image.style.width = "auto";
+  image.style.height = "auto";
+  image.style.maxHeight = "12rem";
+}
+
+function converterOptions(displaySize: OfficeMetafileDisplaySize | null): {
+  maxWidth: number;
+  maxHeight: number;
+  dpiScale: number;
+} {
+  if (!displaySize) {
+    return { maxWidth: 1_200, maxHeight: 800, dpiScale: RENDER_SCALE };
+  }
+  return {
+    maxWidth: Math.min(
+      MAX_RENDER_WIDTH,
+      Math.max(
+        MIN_RENDER_DIMENSION,
+        Math.ceil(displaySize.width * RENDER_SCALE),
+      ),
+    ),
+    maxHeight: Math.min(
+      MAX_RENDER_HEIGHT,
+      Math.max(
+        MIN_RENDER_DIMENSION,
+        Math.ceil(displaySize.height * RENDER_SCALE),
+      ),
+    ),
+    dpiScale: RENDER_SCALE,
+  };
+}
+
+function metafilePlaceholder(
+  image: HTMLImageElement,
+  message: string,
+): HTMLSpanElement {
   const placeholder = document.createElement("span");
   placeholder.className = "office-metafile-fallback";
   placeholder.setAttribute("role", "img");
@@ -19,6 +83,8 @@ async function convertMetafileImage(
   format: OfficeMetafileFormat,
   signal: AbortSignal,
 ): Promise<void> {
+  const displaySize = readDisplaySize(image);
+  applyDisplaySize(image, displaySize);
   image.dataset.officeMetafileState = "loading";
   image.hidden = true;
   image.setAttribute("aria-busy", "true");
@@ -31,15 +97,15 @@ async function convertMetafileImage(
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-    const [{ convertEmfToDataUrl, convertWmfToDataUrl }, data] = await Promise.all([
-      import("emf-converter"),
-      response.arrayBuffer(),
-    ]);
+    const [{ convertEmfToDataUrl, convertWmfToDataUrl }, data] =
+      await Promise.all([import("emf-converter"), response.arrayBuffer()]);
     if (signal.aborted || !image.isConnected) return;
 
-    const dataUrl = format === "wmf"
-      ? await convertWmfToDataUrl(data, { maxWidth: 2400, maxHeight: 1600, dpiScale: 2 })
-      : await convertEmfToDataUrl(data, { maxWidth: 2400, maxHeight: 1600, dpiScale: 2 });
+    const options = converterOptions(displaySize);
+    const dataUrl =
+      format === "wmf"
+        ? await convertWmfToDataUrl(data, options)
+        : await convertEmfToDataUrl(data, options);
     if (signal.aborted || !image.isConnected) return;
     if (!dataUrl) throw new Error("浏览器无法渲染该图元文件");
 
@@ -48,6 +114,8 @@ async function convertMetafileImage(
     image.removeAttribute("aria-busy");
     image.removeAttribute("data-office-metafile");
     image.removeAttribute("data-office-metafile-state");
+    image.removeAttribute("data-office-width");
+    image.removeAttribute("data-office-height");
   } catch (error) {
     if (signal.aborted || !image.isConnected) return;
     const detail = error instanceof Error ? error.message : "未知错误";
@@ -56,7 +124,9 @@ async function convertMetafileImage(
 }
 
 function convertMetafilesIn(root: ParentNode, signal: AbortSignal): void {
-  const images = root.querySelectorAll<HTMLImageElement>("img[data-office-metafile]");
+  const images = root.querySelectorAll<HTMLImageElement>(
+    "img[data-office-metafile]",
+  );
   for (const image of images) {
     if (image.dataset.officeMetafileState) continue;
     const format = image.dataset.officeMetafile;
@@ -66,14 +136,18 @@ function convertMetafilesIn(root: ParentNode, signal: AbortSignal): void {
   }
 }
 
-export function useOfficeMetafileImages(rootRef: RefObject<HTMLElement | null>): void {
+export function useOfficeMetafileImages(
+  rootRef: RefObject<HTMLElement | null>,
+): void {
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
 
     const controller = new AbortController();
     convertMetafilesIn(root, controller.signal);
-    const observer = new MutationObserver(() => convertMetafilesIn(root, controller.signal));
+    const observer = new MutationObserver(() =>
+      convertMetafilesIn(root, controller.signal),
+    );
     observer.observe(root, { childList: true, subtree: true });
 
     return () => {

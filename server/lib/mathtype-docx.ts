@@ -9,9 +9,11 @@ import { mml2omml } from "mathml2omml";
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const OFFICE_NS = "urn:schemas-microsoft-com:office:office";
 const VML_NS = "urn:schemas-microsoft-com:vml";
+const DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
-const MAX_EQUATION_COUNT = 512;
+const MAX_EQUATION_COUNT = 2_048;
+const MAX_CONVERTER_BATCH_SIZE = 128;
 const MAX_EQUATION_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_EQUATION_BYTES = 50 * 1024 * 1024;
 const MIN_CONVERSION_TIMEOUT_MS = 30_000;
@@ -95,6 +97,13 @@ function nearestWordRun(element: Element): Element | null {
     current = parent.parentNode;
   }
   return null;
+}
+
+function directChildOfRun(element: Element, run: Element | null): Element | null {
+  if (!run) return null;
+  let current: Node = element;
+  while (current.parentNode && current.parentNode !== run) current = current.parentNode;
+  return current.parentNode === run && current.nodeType === 1 ? current as Element : null;
 }
 
 function safePartPath(target: string, prefix: "embeddings" | "media"): string | null {
@@ -237,6 +246,46 @@ async function collectCandidates(
     });
   }
 
+  const claimedPreviewIds = new Set(
+    candidates
+      .map((candidate) => candidate.previewRelationshipId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const standaloneImages = [
+    ...Array.from(document.getElementsByTagNameNS(DRAWING_NS, "blip"))
+      .map((element) => ({ element, id: relationshipId(element, "embed") })),
+    ...Array.from(document.getElementsByTagNameNS(VML_NS, "imagedata"))
+      .map((element) => ({ element, id: relationshipId(element) })),
+  ];
+  for (const { element, id } of standaloneImages) {
+    if (candidates.length >= MAX_EQUATION_COUNT || totalEquationBytes > MAX_TOTAL_EQUATION_BYTES) break;
+    if (!isSafeRelationshipId(id) || claimedPreviewIds.has(id)) continue;
+    const relationshipType = relationships.types.get(id) || "";
+    if (!relationshipType.endsWith("/image")) continue;
+    const target = relationships.targets.get(id);
+    const previewPath = target ? safePartPath(target, "media") : null;
+    if (!previewPath || extname(previewPath).toLowerCase() !== ".wmf") continue;
+    const previewData = await readPart(previewPath);
+    if (!previewData || !looksLikeMathTypeWmf(previewData)) continue;
+    const runElement = nearestWordRun(element);
+    const replacementElement = directChildOfRun(element, runElement);
+    if (!runElement || !replacementElement
+      || !hasOnlyObjectContent(runElement, replacementElement)) continue;
+
+    candidates.push({
+      relationshipId: id,
+      embeddingRelationshipId: null,
+      embeddingPath: null,
+      previewRelationshipId: id,
+      previewPath,
+      objectElement: replacementElement,
+      runElement,
+      data: null,
+      previewData,
+    });
+    claimedPreviewIds.add(id);
+  }
+
   return candidates;
 }
 
@@ -369,7 +418,14 @@ export const decodeMathTypeEquations: MathTypeDecoder = async (equations) => {
       await writeFile(path, equation.data, { mode: 0o600 });
       paths.push({ relationshipId: equation.relationshipId, path });
     }
-    return await runRubyConverter(paths);
+    const mathml = new Map<string, string>();
+    const errors = new Map<string, string>();
+    for (let offset = 0; offset < paths.length; offset += MAX_CONVERTER_BATCH_SIZE) {
+      const result = await runRubyConverter(paths.slice(offset, offset + MAX_CONVERTER_BATCH_SIZE));
+      for (const [id, value] of result.mathml) mathml.set(id, value);
+      for (const [id, value] of result.errors) errors.set(id, value);
+    }
+    return { mathml, errors };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

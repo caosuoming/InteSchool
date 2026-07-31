@@ -8,7 +8,8 @@ const DOCUMENT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8" standalone="yes"
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
   xmlns:o="urn:schemas-microsoft-com:office:office"
-  xmlns:v="urn:schemas-microsoft-com:vml">
+  xmlns:v="urn:schemas-microsoft-com:vml"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
   <w:body>
     <w:p>
       <w:r><w:t>已知</w:t></w:r>
@@ -49,6 +50,28 @@ async function createDocx({
   zip.file("word/_rels/document.xml.rels", RELATIONSHIPS_XML);
   zip.file("word/embeddings/oleObject1.bin", ole);
   zip.file("word/media/image1.wmf", preview);
+  return zip.generateAsync({ type: "nodebuffer" });
+}
+
+async function createStandaloneWmfDocx(preview: Buffer): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <w:body><w:p>
+    <w:r><w:t>所以</w:t></w:r>
+    <w:r><w:drawing><a:graphic><a:blip r:embed="rIdStandalone"/></a:graphic></w:drawing></w:r>
+    <w:r><w:t>成立。</w:t></w:r>
+  </w:p></w:body>
+</w:document>`);
+  zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdStandalone"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+    Target="media/standalone.wmf"/>
+</Relationships>`);
+  zip.file("word/media/standalone.wmf", preview);
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
@@ -137,6 +160,54 @@ describe("MathType DOCX conversion", () => {
       failedCount: 0,
       warnings: [],
     });
+  });
+
+  it("converts standalone MathType WMF images without an OLE object", async () => {
+    const preview = Buffer.concat([
+      Buffer.from("valid-wmf-records"),
+      Buffer.from("MathTypeUU"),
+      Buffer.from([0, 4]),
+      Buffer.from("mtef"),
+    ]);
+    const decoder: MathTypeDecoder = vi.fn(async (equations) => {
+      expect(equations).toHaveLength(1);
+      expect(equations[0]).toMatchObject({
+        relationshipId: "rIdStandalone",
+        format: "wmf",
+      });
+      expect(equations[0].data).toEqual(preview);
+      return new Map([["rIdStandalone", SIMPLE_MATHML]]);
+    });
+
+    const result = await convertMathTypeDocxToOmml(
+      await createStandaloneWmfDocx(preview),
+      decoder,
+    );
+    const converted = await JSZip.loadAsync(result.buffer);
+    const documentXml = await converted.file("word/document.xml")!.async("string");
+    const relationshipsXml = await converted.file("word/_rels/document.xml.rels")!.async("string");
+
+    expect(result).toMatchObject({
+      detectedCount: 1,
+      convertedCount: 1,
+      failedCount: 0,
+      warnings: [],
+    });
+    expect(documentXml).toContain("<m:oMath");
+    expect(documentXml).not.toContain("<w:drawing");
+    expect(documentXml).not.toContain("rIdStandalone");
+    expect(relationshipsXml).not.toContain("rIdStandalone");
+    expect(converted.file("word/media/standalone.wmf")).toBeNull();
+  });
+
+  it("leaves ordinary standalone WMF diagrams untouched", async () => {
+    const decoder = vi.fn<MathTypeDecoder>();
+    const original = await createStandaloneWmfDocx(Buffer.from("ordinary-wmf"));
+    const result = await convertMathTypeDocxToOmml(original, decoder);
+
+    expect(decoder).not.toHaveBeenCalled();
+    expect(result.buffer).toBe(original);
+    expect(result.detectedCount).toBe(0);
   });
 
   it("preserves the original document and reports decoder failures", async () => {
