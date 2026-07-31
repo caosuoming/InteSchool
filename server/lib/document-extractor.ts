@@ -6,6 +6,11 @@ import katex from "katex";
 import sanitizeHtml from "sanitize-html";
 import { extractDocxStructuredText } from "./docx-structured-text.js";
 import { convertMathTypeDocxToOmml } from "./mathtype-docx.js";
+import {
+  officeMetafileInlineStyle,
+  parseOfficeMetafileLayout,
+  type OfficeMetafileLayout,
+} from "../../src/lib/office-metafile.js";
 
 export interface ExtractedDocument {
   text: string;
@@ -29,14 +34,44 @@ function escapeHtml(value: string): string {
 
 function safePreviewImageSource(value: string): string | null {
   const source = value.trim();
-  if (/^\/api\/files\/[A-Za-z0-9-]+\/assets\/[A-Za-z0-9_.%-]+(?:\?officeMetafile=(?:wmf|emf))?$/.test(source)) return source;
-  if (/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(source)) return source;
-  return null;
+  if (/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(source))
+    return source;
+  try {
+    const url = new URL(source, "https://inteschool.invalid");
+    if (url.origin !== "https://inteschool.invalid") return null;
+    if (
+      !/^\/api\/files\/[A-Za-z0-9-]+\/assets\/[A-Za-z0-9_.%-]+$/.test(
+        url.pathname,
+      )
+    )
+      return null;
+    const allowedParameters = new Set([
+      "officeMetafile",
+      "officeWidth",
+      "officeHeight",
+    ]);
+    if ([...url.searchParams.keys()].some((key) => !allowedParameters.has(key)))
+      return null;
+    const hasWidth = url.searchParams.has("officeWidth");
+    const hasHeight = url.searchParams.has("officeHeight");
+    const layout = parseOfficeMetafileLayout(source);
+    if (hasWidth || hasHeight) {
+      if (!hasWidth || !hasHeight || !layout?.width || !layout.height)
+        return null;
+    }
+    const format = url.searchParams.get("officeMetafile");
+    if (format && format !== "wmf" && format !== "emf") return null;
+    return source;
+  } catch {
+    return null;
+  }
 }
 
-function officeMetafileFormat(source: string): "wmf" | "emf" | null {
-  const match = source.match(/[?&]officeMetafile=(wmf|emf)(?:&|$)/);
-  return match?.[1] === "wmf" || match?.[1] === "emf" ? match[1] : null;
+function officeMetafileAttributes(layout: OfficeMetafileLayout): string {
+  const dimensions = layout.width && layout.height
+    ? ` data-office-width="${layout.width}" data-office-height="${layout.height}"`
+    : "";
+  return ` data-office-metafile="${layout.format}"${dimensions} style="${officeMetafileInlineStyle(layout)}" class="office-metafile-image"`;
 }
 
 const HANDLED_MAMMOTH_WARNING_PATTERNS = [
@@ -48,11 +83,17 @@ function documentPreviewWarnings(
   messages: Array<{ message: string }>,
   structuredPreviewAvailable: boolean,
 ): string[] {
-  return [...new Set(messages.map(({ message }) => message.trim()).filter(Boolean))]
-    .filter((message) => !(
-      structuredPreviewAvailable
-      && HANDLED_MAMMOTH_WARNING_PATTERNS.some((pattern) => pattern.test(message))
-    ));
+  return [
+    ...new Set(messages.map(({ message }) => message.trim()).filter(Boolean)),
+  ].filter(
+    (message) =>
+      !(
+        structuredPreviewAvailable &&
+        HANDLED_MAMMOTH_WARNING_PATTERNS.some((pattern) =>
+          pattern.test(message),
+        )
+      ),
+  );
 }
 
 function renderMathAwareHtml(text: string): string {
@@ -65,17 +106,23 @@ function renderMathAwareHtml(text: string): string {
       parts.push(escapeHtml(line.slice(cursor, match.index)));
       const latex = match[1]?.trim();
       if (latex) {
-        parts.push(katex.renderToString(latex, {
-          throwOnError: false,
-          strict: false,
-          output: "htmlAndMathml",
-        }));
+        parts.push(
+          katex.renderToString(latex, {
+            throwOnError: false,
+            strict: false,
+            output: "htmlAndMathml",
+          }),
+        );
       } else {
         const source = safePreviewImageSource(match[3] || "");
         if (source) {
-          const metafile = officeMetafileFormat(source);
-          const metafileAttribute = metafile ? ` data-office-metafile="${metafile}"` : "";
-          parts.push(`<img src="${escapeHtml(source)}" alt="${escapeHtml(match[2] || "文档图片")}"${metafileAttribute}>`);
+          const metafile = parseOfficeMetafileLayout(source);
+          const metafileAttributes = metafile
+            ? officeMetafileAttributes(metafile)
+            : "";
+          parts.push(
+            `<img src="${escapeHtml(source)}" alt="${escapeHtml(match[2] || "文档图片")}"${metafileAttributes}>`,
+          );
         } else {
           parts.push(escapeHtml(match[0]));
         }
@@ -86,7 +133,8 @@ function renderMathAwareHtml(text: string): string {
     return parts.join("");
   };
 
-  return text.split("\n")
+  return text
+    .split("\n")
     .map((line) => `<p>${line ? renderLine(line) : "<br>"}</p>`)
     .join("");
 }
@@ -102,13 +150,16 @@ export async function extractDocument(
     const convertedData = mathType.buffer;
     const [raw, rendered, structuredText] = await Promise.all([
       mammoth.extractRawText({ buffer: convertedData }),
-      mammoth.convertToHtml({ buffer: convertedData }, {
-        includeDefaultStyleMap: true,
-        convertImage: mammoth.images.imgElement(async (image) => ({
-          src: `data:${image.contentType};base64,${await image.read("base64")}`,
-          alt: "文档图片",
-        })),
-      }),
+      mammoth.convertToHtml(
+        { buffer: convertedData },
+        {
+          includeDefaultStyleMap: true,
+          convertImage: mammoth.images.imgElement(async (image) => ({
+            src: `data:${image.contentType};base64,${await image.read("base64")}`,
+            alt: "文档图片",
+          })),
+        },
+      ),
       extractDocxStructuredText(convertedData, options.docxImageUrl),
     ]);
     const text = (structuredText || raw.value.trim()).normalize("NFC");

@@ -18,7 +18,9 @@ describe("extract text renderer", () => {
 
     expect(container.querySelectorAll(".formula-inline")).toHaveLength(2);
     expect(container.querySelectorAll(".katex")).toHaveLength(2);
-    expect(container.querySelector(".bg-ink-700")).toHaveTextContent("核心结论");
+    expect(container.querySelector(".bg-ink-700")).toHaveTextContent(
+      "核心结论",
+    );
     expect(container.textContent).toContain("x≠0");
     expect(container.textContent).toContain("Δ>0");
     expect(html).not.toContain("$x");
@@ -54,10 +56,36 @@ describe("extract text renderer", () => {
     );
   });
 
+  it("uses the Word layout size for legacy formula previews", () => {
+    const html = renderExtractText(
+      "![公式](/api/files/file-1/assets/rId5?officeMetafile=wmf&officeWidth=96.00&officeHeight=24.00)",
+      [],
+      false,
+    );
+    const image = asElement(html).querySelector("img");
+
+    expect(image).toHaveAttribute("data-office-metafile", "wmf");
+    expect(image).toHaveAttribute("data-office-width", "96");
+    expect(image).toHaveAttribute("data-office-height", "24");
+    expect(image).toHaveStyle({
+      width: "96px",
+      maxWidth: "100%",
+      height: "auto",
+      aspectRatio: "96/24",
+      objectFit: "contain",
+    });
+    expect(image).toHaveClass("office-metafile-image", "inline-block");
+    expect(image).not.toHaveClass("border");
+  });
+
   it("escapes decoded HTML and handles empty input and formulas", () => {
     expect(renderExtractText("")).toBe("");
 
-    const html = renderExtractText("&lt;script&gt;bad()&lt;/script&gt; $$", [], false);
+    const html = renderExtractText(
+      "&lt;script&gt;bad()&lt;/script&gt; $$",
+      [],
+      false,
+    );
     const container = asElement(html);
 
     expect(container.querySelector("script")).toBeNull();
@@ -70,11 +98,16 @@ describe("extract text renderer", () => {
   });
 
   it("repairs legacy curve labels in stored extraction text", () => {
-    const html = renderExtractText("椭圆 $\\mathbb{C}_1$ 与点 $\\mathbb{Q}$", [], false);
+    const html = renderExtractText(
+      "椭圆 $\\mathbb{C}_1$ 与点 $\\mathbb{Q}$",
+      [],
+      false,
+    );
     const container = asElement(html);
 
-    const formulas = Array.from(container.querySelectorAll(".katex-html"))
-      .map((element) => element.textContent?.replace(/\u200b/g, ""));
+    const formulas = Array.from(container.querySelectorAll(".katex-html")).map(
+      (element) => element.textContent?.replace(/\u200b/g, ""),
+    );
     expect(formulas).toEqual(["C1", "Q"]);
     expect(container.querySelector(".mathbb")).toBeNull();
   });

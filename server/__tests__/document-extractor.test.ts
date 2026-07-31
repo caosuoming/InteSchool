@@ -9,10 +9,12 @@ const mammothMocks = vi.hoisted(() => ({
   extractRawText: vi.fn(),
   convertToHtml: vi.fn(),
   imgElement: vi.fn(),
-  imageHandler: undefined as undefined | ((image: {
-    contentType: string;
-    read: (encoding: string) => Promise<string>;
-  }) => Promise<{ src: string; alt: string }>),
+  imageHandler: undefined as
+    | undefined
+    | ((image: {
+        contentType: string;
+        read: (encoding: string) => Promise<string>;
+      }) => Promise<{ src: string; alt: string }>),
 }));
 
 const structuredTextMocks = vi.hoisted(() => ({
@@ -79,13 +81,15 @@ beforeEach(async () => {
   structuredTextMocks.extractDocxStructuredText.mockReset();
   structuredTextMocks.extractDocxStructuredText.mockResolvedValue("");
   mathTypeMocks.convertMathTypeDocxToOmml.mockReset();
-  mathTypeMocks.convertMathTypeDocxToOmml.mockImplementation(async (buffer: Buffer) => ({
-    buffer,
-    detectedCount: 0,
-    convertedCount: 0,
-    failedCount: 0,
-    warnings: [],
-  }));
+  mathTypeMocks.convertMathTypeDocxToOmml.mockImplementation(
+    async (buffer: Buffer) => ({
+      buffer,
+      detectedCount: 0,
+      convertedCount: 0,
+      failedCount: 0,
+      warnings: [],
+    }),
+  );
   pdfMocks.getText.mockReset();
   pdfMocks.destroy.mockReset();
   pdfMocks.destroy.mockResolvedValue(undefined);
@@ -105,12 +109,14 @@ describe("document extractor", () => {
       messages: [{ message: "raw warning" }],
     });
     mammothMocks.convertToHtml.mockResolvedValue({
-      value: '<p>安全正文</p><script>alert(1)</script><img src="javascript:bad" onerror="bad">',
+      value:
+        '<p>安全正文</p><script>alert(1)</script><img src="javascript:bad" onerror="bad">',
       messages: [{ message: "render warning" }],
     });
 
     const result = await extractDocument(filePath, {
-      docxImageUrl: (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
+      docxImageUrl: (relationshipId) =>
+        `/api/files/file-1/assets/${relationshipId}`,
     });
 
     expect(result).toEqual({
@@ -128,10 +134,12 @@ describe("document extractor", () => {
       expect.objectContaining({ includeDefaultStyleMap: true }),
     );
     expect(mammothMocks.imageHandler).toBeTypeOf("function");
-    await expect(mammothMocks.imageHandler!({
-      contentType: "image/png",
-      read: vi.fn().mockResolvedValue("aW1hZ2U="),
-    })).resolves.toEqual({
+    await expect(
+      mammothMocks.imageHandler!({
+        contentType: "image/png",
+        read: vi.fn().mockResolvedValue("aW1hZ2U="),
+      }),
+    ).resolves.toEqual({
       src: "data:image/png;base64,aW1hZ2U=",
       alt: "文档图片",
     });
@@ -139,15 +147,22 @@ describe("document extractor", () => {
       expect.any(Buffer),
       expect.any(Function),
     );
-    const imageUrl = structuredTextMocks.extractDocxStructuredText.mock.calls[0][1];
+    const imageUrl =
+      structuredTextMocks.extractDocxStructuredText.mock.calls[0][1];
     expect(imageUrl("rId5")).toBe("/api/files/file-1/assets/rId5");
   });
 
   it("uses structure-aware DOCX text and renders preserved formulas", async () => {
     const filePath = join(workDir, "math.docx");
     await writeFile(filePath, "fake docx");
-    mammothMocks.extractRawText.mockResolvedValue({ value: "公式丢失", messages: [] });
-    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>公式丢失</p>", messages: [] });
+    mammothMocks.extractRawText.mockResolvedValue({
+      value: "公式丢失",
+      messages: [],
+    });
+    mammothMocks.convertToHtml.mockResolvedValue({
+      value: "<p>公式丢失</p>",
+      messages: [],
+    });
     structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
       "1. 已知 $\\frac{x}{2}=1$，求 x。\nA. 1 B. 2 C. 3 D. 4",
     );
@@ -155,7 +170,7 @@ describe("document extractor", () => {
     const result = await extractDocument(filePath);
 
     expect(result.text).toContain("$\\frac{x}{2}=1$");
-    expect(result.html).toContain("class=\"katex\"");
+    expect(result.html).toContain('class="katex"');
     expect(result.html).toContain("A. 1 B. 2 C. 3 D. 4");
     expect(result.html).not.toContain("$\\frac{x}{2}=1$");
   });
@@ -166,23 +181,34 @@ describe("document extractor", () => {
     mammothMocks.extractRawText.mockResolvedValue({
       value: "公式丢失",
       messages: [
-        { message: "An unrecognised element was ignored: {http://schemas.openxmlformats.org/officeDocument/2006/math}oMath" },
-        { message: "Unrecognised paragraph style: 'First Paragraph' (Style ID: FirstParagraph)" },
+        {
+          message:
+            "An unrecognised element was ignored: {http://schemas.openxmlformats.org/officeDocument/2006/math}oMath",
+        },
+        {
+          message:
+            "Unrecognised paragraph style: 'First Paragraph' (Style ID: FirstParagraph)",
+        },
       ],
     });
     mammothMocks.convertToHtml.mockResolvedValue({
       value: "<p>公式丢失</p>",
       messages: [
-        { message: "An unrecognised element was ignored: {http://schemas.openxmlformats.org/officeDocument/2006/math}oMathPara" },
+        {
+          message:
+            "An unrecognised element was ignored: {http://schemas.openxmlformats.org/officeDocument/2006/math}oMathPara",
+        },
         { message: "kept warning" },
         { message: "kept warning" },
       ],
     });
-    structuredTextMocks.extractDocxStructuredText.mockResolvedValue("已知 $x^2=1$。");
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      "已知 $x^2=1$。",
+    );
 
     const result = await extractDocument(filePath);
 
-    expect(result.html).toContain("class=\"katex\"");
+    expect(result.html).toContain('class="katex"');
     expect(result.warnings).toEqual(["kept warning"]);
   });
 
@@ -208,22 +234,58 @@ describe("document extractor", () => {
   it("renders preserved image references alongside formulas", async () => {
     const filePath = join(workDir, "illustrated-math.docx");
     await writeFile(filePath, "fake docx");
-    mammothMocks.extractRawText.mockResolvedValue({ value: "图形题", messages: [] });
-    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>图形题</p>", messages: [] });
+    mammothMocks.extractRawText.mockResolvedValue({
+      value: "图形题",
+      messages: [],
+    });
+    mammothMocks.convertToHtml.mockResolvedValue({
+      value: "<p>图形题</p>",
+      messages: [],
+    });
     structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
       "1. 已知 $x=1$，如图。![示意图](/api/files/file-1/assets/rId5)",
     );
 
     const result = await extractDocument(filePath);
 
-    expect(result.html).toContain("class=\"katex\"");
-    expect(result.html).toContain('<img src="/api/files/file-1/assets/rId5" alt="示意图">');
+    expect(result.html).toContain('class="katex"');
+    expect(result.html).toContain(
+      '<img src="/api/files/file-1/assets/rId5" alt="示意图">',
+    );
+  });
+
+  it("preserves Word dimensions for browser-rendered WMF formulas", async () => {
+    const filePath = join(workDir, "legacy-formula.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({
+      value: "公式",
+      messages: [],
+    });
+    mammothMocks.convertToHtml.mockResolvedValue({
+      value: "<p>公式</p>",
+      messages: [],
+    });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      "所以 ![公式](/api/files/file-1/assets/rId5?officeMetafile=wmf&officeWidth=96.00&officeHeight=24.00)",
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.html).toContain('data-office-metafile="wmf"');
+    expect(result.html).toContain('data-office-width="96"');
+    expect(result.html).toContain('data-office-height="24"');
+    expect(result.html).toContain('class="office-metafile-image"');
+    expect(result.html).toContain(
+      'style="width:96px;max-width:100%;height:auto;aspect-ratio:96/24;object-fit:contain;vertical-align:middle"',
+    );
   });
 
   it("extracts PDF text, escapes preview HTML, and always destroys the parser", async () => {
     const filePath = join(workDir, "paper.pdf");
     await writeFile(filePath, Buffer.from("fake-pdf"));
-    pdfMocks.getText.mockResolvedValue({ text: "  <集合> & \"元素\" '关系'  " });
+    pdfMocks.getText.mockResolvedValue({
+      text: "  <集合> & \"元素\" '关系'  ",
+    });
 
     const result = await extractDocument(filePath);
 
@@ -234,7 +296,9 @@ describe("document extractor", () => {
       warnings: [],
     });
     expect(pdfMocks.constructorArgs).toHaveLength(1);
-    expect(pdfMocks.constructorArgs[0]).toMatchObject({ data: Buffer.from("fake-pdf") });
+    expect(pdfMocks.constructorArgs[0]).toMatchObject({
+      data: Buffer.from("fake-pdf"),
+    });
     expect(pdfMocks.destroy).toHaveBeenCalledOnce();
   });
 
@@ -271,7 +335,8 @@ describe("document extractor", () => {
     const filePath = join(workDir, "slides.pptx");
     await writeFile(filePath, "unsupported");
 
-    await expect(extractDocument(filePath))
-      .rejects.toThrow("该文件格式不支持服务端文本提取");
+    await expect(extractDocument(filePath)).rejects.toThrow(
+      "该文件格式不支持服务端文本提取",
+    );
   });
 });
