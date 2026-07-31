@@ -310,6 +310,34 @@ export const serviceParameters = {
       "toClassId"
     ]
   },
+  "grade": {
+    "listCohorts": [
+      "schoolId"
+    ],
+    "getImportContext": [
+      "schoolId",
+      "cohortKey"
+    ],
+    "listExams": [
+      "schoolId",
+      "cohortKey"
+    ],
+    "getExam": [
+      "examId"
+    ],
+    "importExam": [
+      "schoolId",
+      "teacherId",
+      "input"
+    ],
+    "updateExamSettings": [
+      "examId",
+      "settings"
+    ],
+    "deleteExam": [
+      "examId"
+    ]
+  },
   "courseware": {
     "listCoursewares": [
       "filter"

@@ -24,6 +24,7 @@ const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   courseware: "coursewares",
   examPaper: "examPapers",
   examPublish: "examPublications",
+  grade: "gradeExams",
   knowledge: "knowledgePoints",
   lecture: "lectures",
   lessonCourseware: "lessonCoursewares",
