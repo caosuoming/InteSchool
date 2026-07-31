@@ -11,6 +11,23 @@ export interface StudentInput {
   externalSchool?: string;
 }
 
+function updateSchoolClassStudentCount(classId: string, delta: number): void {
+  db.update("schoolClasses", (list) =>
+    list.map((schoolClass) =>
+      schoolClass.id === classId
+        ? { ...schoolClass, studentCount: Math.max(0, schoolClass.studentCount + delta) }
+        : schoolClass,
+    ),
+  );
+}
+
+function requireActiveStudent(studentId: string): Student {
+  const student = db.read("students").find((item) => item.id === studentId);
+  if (!student) throw new Error("学生不存在");
+  if (student.status !== "active") throw new Error("仅在读学生可执行该操作");
+  return student;
+}
+
 export const classService = {
   async listSchoolClasses(schoolId: string): Promise<SchoolClass[]> {
     await delay(200);
@@ -49,6 +66,7 @@ export const classService = {
       gradYear: gradeYear ? gradeYear + 3 : undefined,
       classTypeId: options?.classTypeId,
       studentCount: 0,
+      status: "active",
       createdBy: teacherId,
       createdAt: new Date().toISOString(),
     };
@@ -83,6 +101,8 @@ export const classService = {
   ): Promise<Student> {
     await delay(300);
     maybeThrowError();
+    const schoolClass = db.read("schoolClasses").find((item) => item.id === classId);
+    if (schoolClass?.status === "graduated") throw new Error("已毕业班级不能新增学生");
     const student: Student = {
       id: genId("stu"),
       name: input.name,
@@ -97,11 +117,7 @@ export const classService = {
     };
     db.update("students", (list) => [...list, student]);
     // 更新班级学生数
-    db.update("schoolClasses", (list) =>
-      list.map((c) =>
-        c.id === classId ? { ...c, studentCount: c.studentCount + 1 } : c,
-      ),
-    );
+    if (schoolClass) updateSchoolClassStudentCount(classId, 1);
     db.update("personalClasses", (list) =>
       list.map((c) =>
         c.id === classId ? { ...c, studentIds: [...c.studentIds, student.id] } : c,
@@ -167,6 +183,21 @@ export const classService = {
   async listStudentsBySchool(schoolId: string): Promise<Student[]> {
     await delay(200);
     return db.read("students").filter((s) => s.schoolId === schoolId);
+  },
+
+  /** 获取已毕业或已转校学生档案。 */
+  async listDepartedStudents(schoolIdOrTeacherId: string, scope: "school" | "personal" = "school"): Promise<Student[]> {
+    await delay(150);
+    const departedStatuses = new Set(["graduated", "transferred"]);
+    const all = db.read("students");
+    if (scope === "school") {
+      return all.filter((student) =>
+        student.schoolId === schoolIdOrTeacherId && departedStatuses.has(student.status),
+      );
+    }
+    const personalClasses = db.read("personalClasses").filter((item) => item.teacherId === schoolIdOrTeacherId);
+    const studentIds = new Set(personalClasses.flatMap((item) => item.studentIds));
+    return all.filter((student) => studentIds.has(student.id) && departedStatuses.has(student.status));
   },
 
   /**
@@ -268,6 +299,8 @@ export const classService = {
   ): Promise<SchoolClass | null> {
     await delay(250);
     maybeThrowError();
+    const current = db.read("schoolClasses").find((item) => item.id === classId);
+    if (current?.status === "graduated") throw new Error("已毕业班级不能再修改");
     let updated: SchoolClass | null = null;
     db.update("schoolClasses", (list) =>
       list.map((c) => {
@@ -336,11 +369,13 @@ export const classService = {
   ): Promise<Student | null> {
     await delay(300);
     maybeThrowError();
-    const student = db.read("students").find((s) => s.id === studentId);
-    if (!student) throw new Error("学生不存在");
-    const toClass = db.read("schoolClasses").find((c) => c.id === toClassId)
-      || db.read("personalClasses").find((c) => c.id === toClassId);
+    const student = requireActiveStudent(studentId);
+    const targetSchoolClass = db.read("schoolClasses").find((item) => item.id === toClassId);
+    const toClass = targetSchoolClass
+      || db.read("personalClasses").find((item) => item.id === toClassId);
     if (!toClass) throw new Error("目标班级不存在");
+    if (targetSchoolClass?.status === "graduated") throw new Error("不能转入已毕业班级");
+    if (student.classId === toClassId) throw new Error("学生已在目标班级中");
 
     const fromClassId = student.classId;
     const studentNoChanged = options?.newStudentNo !== undefined && options.newStudentNo !== student.studentNo;
@@ -366,28 +401,10 @@ export const classService = {
     );
 
     // 更新原班级和新班级的学生人数（如果是学校班级）
-    if (fromClassId) {
-      const fromClass = db.read("schoolClasses").find((c) => c.id === fromClassId);
-      if (fromClass) {
-        db.update("schoolClasses", (list) =>
-          list.map((c) =>
-            c.id === fromClassId
-              ? { ...c, studentCount: Math.max(0, c.studentCount - 1) }
-              : c,
-          ),
-        );
-      }
+    if (fromClassId && db.read("schoolClasses").some((item) => item.id === fromClassId)) {
+      updateSchoolClassStudentCount(fromClassId, -1);
     }
-    const targetSchoolClass = db.read("schoolClasses").find((c) => c.id === toClassId);
-    if (targetSchoolClass) {
-      db.update("schoolClasses", (list) =>
-        list.map((c) =>
-          c.id === toClassId
-            ? { ...c, studentCount: c.studentCount + 1 }
-            : c,
-        ),
-      );
-    }
+    if (targetSchoolClass) updateSchoolClassStudentCount(toClassId, 1);
 
     return updated;
   },
@@ -399,9 +416,7 @@ export const classService = {
   async suspendStudent(studentId: string): Promise<Student | null> {
     await delay(250);
     maybeThrowError();
-    const student = db.read("students").find((s) => s.id === studentId);
-    if (!student) throw new Error("学生不存在");
-    if (student.status === "suspended") throw new Error("学生已处于挂起状态");
+    const student = requireActiveStudent(studentId);
 
     let updated: Student | null = null;
     const now = new Date().toISOString();
@@ -420,20 +435,109 @@ export const classService = {
     );
 
     // 更新学校班级学生数
-    if (fromClassId) {
-      const fromClass = db.read("schoolClasses").find((c) => c.id === fromClassId);
-      if (fromClass) {
-        db.update("schoolClasses", (list) =>
-          list.map((c) =>
-            c.id === fromClassId
-              ? { ...c, studentCount: Math.max(0, c.studentCount - 1) }
-              : c,
-          ),
-        );
-      }
+    if (fromClassId && db.read("schoolClasses").some((item) => item.id === fromClassId)) {
+      updateSchoolClassStudentCount(fromClassId, -1);
     }
 
     return updated;
+  },
+
+  /** 将单个在读学生标记为提前毕业。 */
+  async graduateStudent(studentId: string): Promise<Student | null> {
+    await delay(250);
+    maybeThrowError();
+    const student = requireActiveStudent(studentId);
+    const now = new Date().toISOString();
+    let updated: Student | null = null;
+
+    db.update("students", (list) =>
+      list.map((item) => {
+        if (item.id !== studentId) return item;
+        updated = {
+          ...item,
+          status: "graduated",
+          graduatedAt: now,
+          graduationType: "early",
+        };
+        return updated;
+      }),
+    );
+
+    if (student.classId && db.read("schoolClasses").some((item) => item.id === student.classId)) {
+      updateSchoolClassStudentCount(student.classId, -1);
+    }
+    return updated;
+  },
+
+  /** 将单个在读学生标记为转校离开。 */
+  async transferOutStudent(studentId: string): Promise<Student | null> {
+    await delay(250);
+    maybeThrowError();
+    const student = requireActiveStudent(studentId);
+    const now = new Date().toISOString();
+    let updated: Student | null = null;
+
+    db.update("students", (list) =>
+      list.map((item) => {
+        if (item.id !== studentId) return item;
+        updated = {
+          ...item,
+          status: "transferred",
+          transferredAt: now,
+        };
+        return updated;
+      }),
+    );
+
+    if (student.classId && db.read("schoolClasses").some((item) => item.id === student.classId)) {
+      updateSchoolClassStudentCount(student.classId, -1);
+    }
+    return updated;
+  },
+
+  /** 将班级中的全部在读学生正常毕业，并封存班级。 */
+  async graduateClass(classId: string): Promise<{ class: SchoolClass; graduatedCount: number }> {
+    await delay(350);
+    maybeThrowError();
+    const schoolClass = db.read("schoolClasses").find((item) => item.id === classId);
+    if (!schoolClass) throw new Error("班级不存在");
+    if (schoolClass.status === "graduated") throw new Error("班级已毕业");
+
+    const now = new Date().toISOString();
+    const graduatingIds = new Set(
+      db.read("students")
+        .filter((student) => student.classId === classId && student.status === "active")
+        .map((student) => student.id),
+    );
+
+    db.update("students", (list) =>
+      list.map((student) =>
+        graduatingIds.has(student.id)
+          ? {
+              ...student,
+              status: "graduated",
+              graduatedAt: now,
+              graduationType: "regular",
+            }
+          : student,
+      ),
+    );
+
+    let updatedClass = schoolClass;
+    db.update("schoolClasses", (list) =>
+      list.map((item) => {
+        if (item.id !== classId) return item;
+        updatedClass = {
+          ...item,
+          status: "graduated",
+          graduatedAt: now,
+          studentCount: 0,
+        };
+        return updatedClass;
+      }),
+    );
+
+    return { class: updatedClass, graduatedCount: graduatingIds.size };
   },
 
   /**
@@ -454,11 +558,15 @@ export const classService = {
     let updated: Student | null = null;
     const now = new Date().toISOString();
     const targetClassId = toClassId || student.classId;
+    const targetClass = targetClassId
+      ? db.read("schoolClasses").find((item) => item.id === targetClassId)
+      : undefined;
+    if (targetClass?.status === "graduated") throw new Error("不能恢复到已毕业班级");
 
     if (targetClassId && targetClassId !== student.classId) {
       // 恢复到不同的班级，走换班逻辑
       const fromClassId = student.classId;
-      const toClass = db.read("schoolClasses").find((c) => c.id === targetClassId);
+      const toClass = targetClass;
       db.update("students", (list) =>
         list.map((s) => {
           if (s.id !== studentId) return s;
@@ -478,15 +586,7 @@ export const classService = {
       );
 
       // 更新新班级学生数（原班级在挂起时已经减过了）
-      if (toClass) {
-        db.update("schoolClasses", (list) =>
-          list.map((c) =>
-            c.id === targetClassId
-              ? { ...c, studentCount: c.studentCount + 1 }
-              : c,
-          ),
-        );
-      }
+      if (toClass) updateSchoolClassStudentCount(targetClassId, 1);
     } else {
       // 恢复到原班级
       db.update("students", (list) =>
@@ -503,16 +603,7 @@ export const classService = {
 
       // 更新原班级学生数
       if (targetClassId) {
-        const targetClass = db.read("schoolClasses").find((c) => c.id === targetClassId);
-        if (targetClass) {
-          db.update("schoolClasses", (list) =>
-            list.map((c) =>
-              c.id === targetClassId
-                ? { ...c, studentCount: c.studentCount + 1 }
-                : c,
-            ),
-          );
-        }
+        if (targetClass) updateSchoolClassStudentCount(targetClassId, 1);
       }
     }
     return updated;

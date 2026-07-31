@@ -3,7 +3,7 @@ import {
   GraduationCap, Plus, Users, UserPlus, Trash2,
   School, Layers, ChevronRight, Pencil,
   Calendar, MoreVertical, ArrowRightLeft, PauseCircle,
-  PlayCircle,
+  PlayCircle, Archive,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
@@ -39,6 +39,9 @@ export default function ClassesPage() {
   const [classStudents, setClassStudents] = useState<Student[]>([]);
   const [showSuspended, setShowSuspended] = useState(false);
   const [suspendedStudents, setSuspendedStudents] = useState<Student[]>([]);
+  const [showDeparted, setShowDeparted] = useState(false);
+  const [departedStudents, setDepartedStudents] = useState<Student[]>([]);
+  const [classActionMenuOpen, setClassActionMenuOpen] = useState(false);
 
   // 恢复学生弹窗
   const [resumeOpen, setResumeOpen] = useState(false);
@@ -111,22 +114,28 @@ export default function ClassesPage() {
     const pc = await classService.listPersonalClasses(teacher.id);
     setPersonalClasses(pc);
     if (schoolId) {
-      const [sc, sts, ct, susp] = await Promise.all([
+      const [sc, sts, ct, susp, departed] = await Promise.all([
         classService.listSchoolClasses(schoolId),
         classService.listStudentsBySchool(schoolId),
         settingsService.listClassTypes(schoolId),
         classService.listSuspendedStudents(schoolId, "school"),
+        classService.listDepartedStudents(schoolId, "school"),
       ]);
       setSchoolClasses(sc);
       setStudents(sts);
       setClassTypes(ct.filter((c) => c.enabled));
       setSuspendedStudents(susp);
+      setDepartedStudents(departed);
     } else {
-      const susp = await classService.listSuspendedStudents(teacher.id, "personal");
+      const [susp, departed] = await Promise.all([
+        classService.listSuspendedStudents(teacher.id, "personal"),
+        classService.listDepartedStudents(teacher.id, "personal"),
+      ]);
       setSchoolClasses([]);
       setStudents([]);
       setClassTypes([]);
       setSuspendedStudents(susp);
+      setDepartedStudents(departed);
     }
     setLoading(false);
   }, [schoolId, teacher]);
@@ -137,6 +146,7 @@ export default function ClassesPage() {
 
   const loadClassStudents = async (cls: AnyClass) => {
     setSelectedClass(cls);
+    setClassActionMenuOpen(false);
     const ss = await classService.listStudentsByClass(cls.id);
     setClassStudents(ss);
   };
@@ -267,6 +277,7 @@ export default function ClassesPage() {
 
   // 打开编辑学生弹窗
   const openEditStudent = (s: Student) => {
+    setActionMenuStudentId(null);
     setEditingStudent(s);
     setEditStudentName(s.name);
     setEditStudentNo(s.studentNo || "");
@@ -309,8 +320,9 @@ export default function ClassesPage() {
 
   const filteredStudents = students.filter(
     (s) =>
-      s.name.toLowerCase().includes(searchStudentKw.toLowerCase()) ||
-      s.studentNo.toLowerCase().includes(searchStudentKw.toLowerCase()),
+      s.status === "active"
+      && (s.name.toLowerCase().includes(searchStudentKw.toLowerCase())
+        || s.studentNo.toLowerCase().includes(searchStudentKw.toLowerCase())),
   );
 
   // 打开换班弹窗
@@ -354,9 +366,55 @@ export default function ClassesPage() {
     }
   };
 
+  const handleGraduateStudent = async (student: Student) => {
+    if (!window.confirm(`确定将「${student.name}」标记为提前毕业吗？\n该学生将从在读名单移入离校学生档案，历史学情数据会保留。`)) return;
+    setActionMenuStudentId(null);
+    try {
+      await classService.graduateStudent(student.id);
+      toast.success(`「${student.name}」已提前毕业`);
+      await load();
+      if (selectedClass) await loadClassStudents(selectedClass);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "提前毕业失败");
+    }
+  };
+
+  const handleTransferOut = async (student: Student) => {
+    if (!window.confirm(`确定将「${student.name}」标记为转校吗？\n该学生将从在读名单移入离校学生档案，历史学情数据会保留。`)) return;
+    setActionMenuStudentId(null);
+    try {
+      await classService.transferOutStudent(student.id);
+      toast.success(`「${student.name}」已标记为转校`);
+      await load();
+      if (selectedClass) await loadClassStudents(selectedClass);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "转校操作失败");
+    }
+  };
+
+  const handleGraduateClass = async () => {
+    if (!selectedClass || selectedClass.type !== "school") return;
+    const activeCount = classStudents.length;
+    const message = activeCount > 0
+      ? `确定让「${selectedClass.name}」整班毕业吗？\n当前 ${activeCount} 名在读学生将全部毕业，班级随后封存。历史学情数据会保留。`
+      : `「${selectedClass.name}」当前没有在读学生。确定仍将该班级封存为已毕业吗？`;
+    if (!window.confirm(message)) return;
+    setClassActionMenuOpen(false);
+    try {
+      const result = await classService.graduateClass(selectedClass.id);
+      setSelectedClass(result.class);
+      setClassStudents([]);
+      toast.success(`「${selectedClass.name}」已整班毕业`, `共处理 ${result.graduatedCount} 名学生`);
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "整班毕业失败");
+    }
+  };
+
   const openResume = (s: Student) => {
+    const originalSchoolClass = schoolClasses.find((item) => item.id === s.classId);
     setResumingStudent(s);
-    setResumeTargetClass(s.classId || "");
+    setResumeTargetClass(originalSchoolClass?.status === "graduated" ? "" : s.classId || "");
     setResumeOpen(true);
     setActionMenuStudentId(null);
   };
@@ -441,8 +499,8 @@ export default function ClassesPage() {
                         <ClassListItem
                           key={c.id}
                           cls={c}
-                          selected={selectedClass?.id === c.id && !showSuspended}
-                          onSelect={() => { setShowSuspended(false); loadClassStudents(c); }}
+                          selected={selectedClass?.id === c.id && !showSuspended && !showDeparted}
+                          onSelect={() => { setShowSuspended(false); setShowDeparted(false); loadClassStudents(c); }}
                           onDelete={() => handleDeleteClass(c)}
                           classTypeName={ct?.name}
                           classTypeColor={ct?.color}
@@ -453,8 +511,8 @@ export default function ClassesPage() {
                       <ClassListItem
                         key={c.id}
                         cls={c}
-                        selected={selectedClass?.id === c.id && !showSuspended}
-                        onSelect={() => { setShowSuspended(false); loadClassStudents(c); }}
+                        selected={selectedClass?.id === c.id && !showSuspended && !showDeparted}
+                        onSelect={() => { setShowSuspended(false); setShowDeparted(false); loadClassStudents(c); }}
                         onDelete={() => handleDeleteClass(c)}
                       />
                     ))}
@@ -466,6 +524,7 @@ export default function ClassesPage() {
                   <button
                     onClick={() => {
                       setShowSuspended(true);
+                      setShowDeparted(false);
                       setSelectedClass(null);
                     }}
                     className={cn(
@@ -479,6 +538,30 @@ export default function ClassesPage() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">休学生收容所</div>
                       <div className="text-xs opacity-70">{suspendedStudents.length} 名学生挂起中</div>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 opacity-50" />
+                  </button>
+                </div>
+              )}
+              {departedStudents.length > 0 && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => {
+                      setShowDeparted(true);
+                      setShowSuspended(false);
+                      setSelectedClass(null);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors",
+                      showDeparted
+                        ? "bg-ink-100 text-ink-900 border border-ink-200"
+                        : "text-ink-600 hover:bg-ink-50",
+                    )}
+                  >
+                    <Archive className="w-4 h-4 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">离校学生档案</div>
+                      <div className="text-xs opacity-70">{departedStudents.length} 名学生已毕业或转校</div>
                     </div>
                     <ChevronRight className="w-3.5 h-3.5 opacity-50" />
                   </button>
@@ -582,6 +665,12 @@ export default function ClassesPage() {
                 )}
               </div>
             </Card>
+          ) : showDeparted ? (
+            <DepartedStudentsArchive
+              students={departedStudents}
+              schoolClasses={schoolClasses}
+              personalClasses={personalClasses}
+            />
           ) : !selectedClass ? (
             <Card>
               <EmptyState
@@ -606,6 +695,9 @@ export default function ClassesPage() {
                       <Badge variant={selectedClass.type === "personal" ? "teal" : "ink"}>
                         {selectedClass.type === "personal" ? "个人教学班" : "本校班级"}
                       </Badge>
+                      {selectedClass.type === "school" && selectedClass.status === "graduated" && (
+                        <Badge variant="amber">已毕业</Badge>
+                      )}
                       {selectedClass.type === "school" && (() => {
             const ct = classTypes.find((c) => c.id === (selectedClass as SchoolClass).classTypeId);
             return ct ? (
@@ -646,27 +738,62 @@ export default function ClassesPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {selectedClass.type === "school" && (
+                    <div className="relative">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setClassActionMenuOpen((open) => !open)}
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                        班级操作
+                      </Button>
+                      {classActionMenuOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setClassActionMenuOpen(false)} />
+                          <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] rounded-md border border-ink-200 bg-white py-1 shadow-lg">
+                            {selectedClass.status !== "graduated" && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setClassActionMenuOpen(false);
+                                    openEditClass(selectedClass);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-700 hover:bg-mist"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                  编辑班级
+                                </button>
+                                <button
+                                  onClick={handleGraduateClass}
+                                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-50"
+                                >
+                                  <GraduationCap className="w-3.5 h-3.5" />
+                                  整班毕业
+                                </button>
+                              </>
+                            )}
+                            {selectedClass.status === "graduated" && (
+                              <div className="px-3 py-2 text-xs text-ink-400">班级已封存</div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {!(selectedClass.type === "school" && selectedClass.status === "graduated") && (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => openEditClass(selectedClass as SchoolClass)}
+                      onClick={() =>
+                        selectedClass.type === "personal" && !isPersonal
+                          ? setAddToPersonalOpen(true)
+                          : setAddStudentOpen(true)
+                      }
                     >
-                      <Pencil className="w-3.5 h-3.5" />
-                      编辑班级
+                      <UserPlus className="w-3.5 h-3.5" />
+                      {selectedClass.type === "personal" ? "添加学生" : "新增学生"}
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      selectedClass.type === "personal" && !isPersonal
-                        ? setAddToPersonalOpen(true)
-                        : setAddStudentOpen(true)
-                    }
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    {selectedClass.type === "personal" ? "添加学生" : "新增学生"}
-                  </Button>
                 </div>
               </div>
 
@@ -683,7 +810,9 @@ export default function ClassesPage() {
                 {classStudents.length === 0 ? (
                   <div className="text-center py-10 text-sm text-ink-400 rounded-b-md">
                     <Users className="w-8 h-8 mx-auto mb-2 text-ink-200" />
-                    暂无学生
+                    {selectedClass.type === "school" && selectedClass.status === "graduated"
+                      ? "班级已毕业，学生记录已归档"
+                      : "暂无学生"}
                   </div>
                 ) : (
                   <div className="relative">
@@ -771,22 +900,30 @@ export default function ClassesPage() {
                                       换班
                                     </button>
                                   )}
-                                  {isSuspended ? (
-                                    <button
-                                      onClick={() => openResume(s)}
-                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-600 hover:bg-mist"
-                                    >
-                                      <PlayCircle className="w-3.5 h-3.5" />
-                                      恢复
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => handleSuspend(s)}
-                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-mist"
-                                    >
-                                      <PauseCircle className="w-3.5 h-3.5" />
-                                      挂起（休学）
-                                    </button>
+                                  <button
+                                    onClick={() => handleSuspend(s)}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-mist"
+                                  >
+                                    <PauseCircle className="w-3.5 h-3.5" />
+                                    挂起（休学）
+                                  </button>
+                                  {selectedClass.type === "school" && (
+                                    <>
+                                      <button
+                                        onClick={() => handleGraduateStudent(s)}
+                                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gold-700 hover:bg-gold-50"
+                                      >
+                                        <GraduationCap className="w-3.5 h-3.5" />
+                                        提前毕业
+                                      </button>
+                                      <button
+                                        onClick={() => handleTransferOut(s)}
+                                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                                      >
+                                        <School className="w-3.5 h-3.5" />
+                                        转校
+                                      </button>
+                                    </>
                                   )}
                                   {selectedClass.type === "personal" && (
                                     <button
@@ -1177,7 +1314,9 @@ export default function ClassesPage() {
             options={[
               { value: "", label: "请选择班级" },
               ...(tab === "school"
-                ? schoolClasses.map((c) => ({ value: c.id, label: `${c.grade} · ${c.name}` }))
+                ? schoolClasses
+                    .filter((c) => c.status !== "graduated")
+                    .map((c) => ({ value: c.id, label: `${c.grade} · ${c.name}` }))
                 : personalClasses.map((c) => ({ value: c.id, label: c.name }))
               ),
             ]}
@@ -1213,7 +1352,7 @@ export default function ClassesPage() {
             options={[
               { value: "", label: "请选择班级" },
               ...schoolClasses
-                .filter((c) => c.id !== transferringStudent?.classId)
+                .filter((c) => c.id !== transferringStudent?.classId && c.status !== "graduated")
                 .map((c) => ({ value: c.id, label: `${c.grade} · ${c.name}` })),
             ]}
           />
@@ -1227,6 +1366,93 @@ export default function ClassesPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+function DepartedStudentsArchive({
+  students,
+  schoolClasses,
+  personalClasses,
+}: {
+  students: Student[];
+  schoolClasses: SchoolClass[];
+  personalClasses: PersonalClass[];
+}) {
+  return (
+    <Card>
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-start gap-3">
+          <div className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 bg-ink-100 text-ink-600">
+            <Archive className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-serif text-xl font-bold text-ink-900">离校学生档案</h2>
+              <Badge variant="ink">只读档案</Badge>
+            </div>
+            <div className="text-sm text-ink-500 mt-0.5">
+              已毕业或已转校学生保留在此，历史学情数据不会删除
+            </div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-bold text-ink-700">{students.length}</div>
+          <div className="text-xs text-ink-400">离校学生</div>
+        </div>
+      </div>
+
+      <div className="border border-ink-100 rounded-md overflow-hidden">
+        <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-mist border-b border-ink-100 text-xs font-medium text-ink-600">
+          <div className="col-span-1">#</div>
+          <div className="col-span-3">姓名</div>
+          <div className="col-span-2">学号</div>
+          <div className="col-span-2">原班级</div>
+          <div className="col-span-2">离校原因</div>
+          <div className="col-span-2">离校时间</div>
+        </div>
+        {students.map((student, index) => {
+          const originalClass = schoolClasses.find((item) => item.id === student.classId)?.name
+            || personalClasses.find((item) => item.id === student.classId)?.name
+            || "无班级";
+          const departedAt = student.status === "graduated" ? student.graduatedAt : student.transferredAt;
+          const statusLabel = student.status === "graduated"
+            ? student.graduationType === "early" ? "提前毕业" : "正常毕业"
+            : "转校";
+          return (
+            <div
+              key={student.id}
+              className="grid grid-cols-12 gap-2 px-3 py-2.5 border-b border-ink-100 last:border-0 text-sm items-center hover:bg-mist"
+            >
+              <div className="col-span-1 text-ink-400 font-mono">{index + 1}</div>
+              <div className="col-span-3 flex items-center gap-2 min-w-0">
+                <div className={cn(
+                  "w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0",
+                  student.gender === "female" ? "bg-pink-50 text-pink-600" : "bg-teal-50 text-teal-600",
+                )}>
+                  {student.name.charAt(0)}
+                </div>
+                <span className="truncate text-ink-900">{student.name}</span>
+              </div>
+              <div className="col-span-2 text-ink-600 font-mono text-xs">{student.studentNo || "—"}</div>
+              <div className="col-span-2 text-ink-600 text-xs truncate">{originalClass}</div>
+              <div className="col-span-2">
+                <span className={cn(
+                  "inline-flex text-xs px-2 py-0.5 rounded-full border",
+                  student.status === "graduated"
+                    ? "bg-gold-50 text-gold-700 border-gold-200"
+                    : "bg-red-50 text-red-700 border-red-200",
+                )}>
+                  {statusLabel}
+                </span>
+              </div>
+              <div className="col-span-2 text-ink-500 text-xs">
+                {departedAt ? new Date(departedAt).toLocaleDateString("zh-CN") : "—"}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
@@ -1246,11 +1472,13 @@ function ClassListItem({
   classTypeColor?: string;
 }) {
   const count = cls.type === "school" ? cls.studentCount : cls.studentIds.length;
+  const isGraduated = cls.type === "school" && cls.status === "graduated";
   return (
     <div
       className={cn(
         "group flex items-center gap-2 p-3 rounded-md border transition-all cursor-pointer",
         selected ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
+        isGraduated && "opacity-70",
       )}
       onClick={onSelect}
     >
@@ -1263,6 +1491,11 @@ function ClassListItem({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-medium text-ink-900 truncate">{cls.name}</span>
+          {isGraduated && (
+            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700">
+              已毕业
+            </span>
+          )}
           {classTypeName && (
             <span
               className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border"

@@ -259,6 +259,10 @@ export const serviceParameters = {
     "listStudentsBySchool": [
       "schoolId"
     ],
+    "listDepartedStudents": [
+      "schoolIdOrTeacherId",
+      "scope"
+    ],
     "listMyClasses": [
       "schoolId",
       "teacherId"
@@ -304,6 +308,15 @@ export const serviceParameters = {
     ],
     "suspendStudent": [
       "studentId"
+    ],
+    "graduateStudent": [
+      "studentId"
+    ],
+    "transferOutStudent": [
+      "studentId"
+    ],
+    "graduateClass": [
+      "classId"
     ],
     "resumeStudent": [
       "studentId",
