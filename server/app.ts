@@ -1,6 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
 import compress from "@fastify/compress";
 import helmet from "@fastify/helmet";
@@ -19,6 +19,19 @@ const rpcSchema = z.object({
   method: z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/).max(80),
   args: z.array(z.unknown()).max(20).default([]),
 });
+
+const STATIC_ASSET_PATH = /\.(?:css|eot|gif|ico|jpe?g|js|json|map|otf|png|svg|ttf|wasm|webp|woff2?)$/i;
+const DOCX_PREVIEW_ASSET_PATH = /^\/api\/files\/[^/?]+\/assets\/[^/?]+(?:\?|$)/;
+
+function rateLimitAllowList(request: FastifyRequest): boolean {
+  if (!request.url.startsWith("/api/")) return true;
+  return request.method === "GET" && DOCX_PREVIEW_ASSET_PATH.test(request.url);
+}
+
+function isStaticAssetRequest(url: string): boolean {
+  const path = url.split("?", 1)[0];
+  return path.startsWith("/assets/") || STATIC_ASSET_PATH.test(path);
+}
 
 function statusForError(error: Error): number {
   if (error instanceof ZodError) return 400;
@@ -86,7 +99,11 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
       },
     },
   });
-  await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: "1 minute",
+    allowList: rateLimitAllowList,
+  });
   await app.register(multipart, {
     limits: { files: 1, fileSize: config.maxUploadBytes, fields: 10 },
   });
@@ -126,11 +143,22 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
       prefix: "/",
       wildcard: false,
       decorateReply: true,
-      maxAge: "1h",
+      maxAge: 0,
       immutable: false,
+      setHeaders(reply, path) {
+        const normalizedPath = path.replaceAll("\\", "/");
+        if (normalizedPath.includes("/assets/")) {
+          reply.header("Cache-Control", "public, max-age=31536000, immutable");
+          return;
+        }
+        reply.header("Cache-Control", "no-cache");
+      },
     });
     app.setNotFoundHandler(async (request, reply) => {
       if (request.url.startsWith("/api/")) return reply.code(404).send({ error: "接口不存在" });
+      if (isStaticAssetRequest(request.url)) {
+        return reply.code(404).type("text/plain; charset=utf-8").send("静态资源不存在");
+      }
       const html = await readFile(`${config.distDir}/index.html`, "utf8");
       reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store");
       return reply.send(html);
