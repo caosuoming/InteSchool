@@ -31,6 +31,7 @@ const PrepTaskDetailPage = lazy(() => import("@/pages/prep/PrepTaskDetailPage"))
 const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
 const LessonEditorPage = lazy(() => import("@/pages/lessons/LessonEditorPage"));
 const MyStudentsPage = lazy(() => import("@/pages/students/MyStudentsPage"));
+const StudentGradesPage = lazy(() => import("@/pages/students/StudentGradesPage"));
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 
 function RouteLoading() {
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="/my-students" element={<MyStudentsPage />} />
             <Route path="/my-students/interaction" element={<MyStudentsPage />} />
             <Route path="/my-students/learning" element={<MyStudentsPage />} />
+            <Route path="/my-students/grades" element={<StudentGradesPage />} />
             <Route path="/student-learning" element={<MyStudentsPage />} />
 
             <Route path="/school-resources" element={<SchoolResourcesPage />} />

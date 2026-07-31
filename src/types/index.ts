@@ -260,6 +260,144 @@ export interface Student {
   }>;
 }
 
+// ============ 学生成绩 ============
+
+export interface GradeCohort {
+  /** 稳定标识：优先使用毕业年份，旧班级数据则退化为年级名称。 */
+  key: string;
+  label: string;
+  grade: string;
+  gradYear?: number;
+  classIds: string[];
+  studentCount: number;
+}
+
+export interface GradeTeacherOption {
+  id: string;
+  name: string;
+  subject: string;
+}
+
+export interface GradeImportContext {
+  cohort: GradeCohort;
+  classes: SchoolClass[];
+  students: Student[];
+  teachers: GradeTeacherOption[];
+}
+
+/**
+ * 赋分区间。percentileFrom/percentileTo 表示从高分到低分的累计百分位，
+ * 例如 A 档 0-15、B 档 15-50。
+ */
+export interface GradeBandRule {
+  label: string;
+  percentileFrom: number;
+  percentileTo: number;
+  assignedMin: number;
+  assignedMax: number;
+}
+
+export interface GradeClassSubjectSetting {
+  classId: string;
+  /** 该班实际参加考试的科目。 */
+  examSubjects: string[];
+  /** 参与总分、排名和班级统计的科目。 */
+  statisticSubjects: string[];
+}
+
+export type GradeTemplateKind =
+  | "studentRanking"
+  | "classAverage"
+  | "totalScoreSegment"
+  | "coreAndBestElectiveSegment"
+  | "electiveGradeSegment";
+
+export type GradeScoreMode = "raw" | "assigned";
+
+export interface GradeStatisticsTemplate {
+  id: string;
+  kind: GradeTemplateKind;
+  name: string;
+  enabled: boolean;
+  scoreMode: GradeScoreMode;
+  subjects: string[];
+  /** 分数段宽度，仅分数段模板使用。 */
+  segmentSize?: number;
+  /** 选取最高分的选修科目数量。 */
+  bestElectiveCount?: number;
+}
+
+export interface GradeExamSettings {
+  /** 学科对应的任课教师，可配置多人。 */
+  subjectTeacherIds: Record<string, string[]>;
+  /** 仅需要赋分的学科配置规则；未配置的科目沿用原始分。 */
+  assignmentRules: Record<string, GradeBandRule[]>;
+  classSubjects: GradeClassSubjectSetting[];
+  templates: GradeStatisticsTemplate[];
+}
+
+export interface GradeScoreRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentNo: string;
+  classId: string;
+  className: string;
+  scores: Record<string, number | null>;
+  assignedScores: Record<string, number | null>;
+  rawTotal: number;
+  assignedTotal: number;
+  gradeRank: number;
+  classRank: number;
+}
+
+export interface GradeExam {
+  id: string;
+  schoolId: string;
+  teacherId: string;
+  cohortKey: string;
+  cohortLabel: string;
+  name: string;
+  examDate?: string;
+  sourceFileName: string;
+  sourceSheetName: string;
+  subjects: string[];
+  records: GradeScoreRecord[];
+  settings: GradeExamSettings;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GradeImportRow {
+  rowKey: string;
+  sourceRowNumber: number;
+  sourceName: string;
+  sourceStudentNo: string;
+  sourceClassName: string;
+  scores: Record<string, number | null>;
+  /** 已有学生匹配。 */
+  studentId?: string;
+  /** 表格姓名为学生改名后的姓名时，同步更新学生档案。 */
+  updateStudentName?: boolean;
+  /** 新增学生；classId 必须属于所选年级。 */
+  createStudent?: {
+    name: string;
+    studentNo: string;
+    classId: string;
+  };
+}
+
+export interface GradeExamImportInput {
+  cohortKey: string;
+  name: string;
+  examDate?: string;
+  sourceFileName: string;
+  sourceSheetName: string;
+  subjects: string[];
+  rows: GradeImportRow[];
+  settings: GradeExamSettings;
+}
+
 export type TreeNodeType = "chapter" | "knowledge";
 
 export interface Chapter {
