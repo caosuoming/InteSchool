@@ -57,6 +57,12 @@ import {
   resolveBasketAudienceStudentIds,
   treeNameMap,
 } from "@/lib/basket-audience";
+import {
+  appendUniqueIds,
+  batchResourceKey,
+  parseBatchResourceKey,
+  type BatchResourceRef,
+} from "@/pages/resources/batch-resource";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
@@ -164,13 +170,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [shareMessage, setShareMessage] = useState("");
   const [sharing, setSharing] = useState(false);
 
-  // 平台资源捐赠：选择可跨资源类型和 Tab 保留。
-  const [donationSelections, setDonationSelections] = useState<Set<string>>(new Set());
+  // 批量操作选择可跨资源类型和 Tab 保留。
+  const [resourceSelections, setResourceSelections] = useState<Set<string>>(new Set());
   const [teacherDonations, setTeacherDonations] = useState<PlatformDonation[]>([]);
   const [pendingDonationItems, setPendingDonationItems] = useState<DonationItem[]>([]);
   const [donationCheck, setDonationCheck] = useState<DonationCheckResult | null>(null);
   const [donationDecisions, setDonationDecisions] = useState<Record<string, DonationDecision>>({});
   const [donating, setDonating] = useState(false);
+  const [batchWorking, setBatchWorking] = useState(false);
+  const [batchDirectoryMode, setBatchDirectoryMode] = useState<"chapter" | "knowledge" | null>(null);
+  const [batchDirectoryIds, setBatchDirectoryIds] = useState<string[]>([]);
+  const [resourceRefreshToken, setResourceRefreshToken] = useState(0);
 
   // 课后反思相关：targetId -> 反思列表
   const [reflectionsMap, setReflectionsMap] = useState<Record<string, Reflection[]>>({});
@@ -764,6 +774,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       else if (activeTab === "material") await materialService.deleteMaterial(id);
       else if (activeTab === "examPaper") await examPaperService.deletePaper(id);
       toast.success("已删除");
+      if (activeTab !== "basket") {
+        const key = batchResourceKey(activeTab, id);
+        setResourceSelections((previous) => {
+          const next = new Set(previous);
+          next.delete(key);
+          return next;
+        });
+      }
       loadAll();
     } catch (e: any) {
       toast.error("删除失败", e?.message);
@@ -828,15 +846,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
-  const donationKey = (resourceType: ShareableResourceType, resourceId: string) =>
-    `${resourceType}:${resourceId}`;
-
   const platformCopyKeys = useMemo(() => new Set([
-    ...questions.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("question", item.id)),
-    ...examPapers.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("examPaper", item.id)),
-    ...lectures.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("lecture", item.id)),
-    ...coursewares.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("courseware", item.id)),
-    ...materials.filter((item) => item.platformSourceDonationIds?.length).map((item) => donationKey("material", item.id)),
+    ...questions.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("question", item.id)),
+    ...examPapers.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("examPaper", item.id)),
+    ...lectures.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("lecture", item.id)),
+    ...coursewares.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("courseware", item.id)),
+    ...materials.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("material", item.id)),
   ]), [questions, examPapers, lectures, coursewares, materials]);
 
   const isDonated = (resourceType: ShareableResourceType, resourceId: string) =>
@@ -844,10 +859,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       record.resourceType === resourceType && record.sourceResourceId === resourceId,
     );
 
-  const toggleDonationSelection = (resourceType: ShareableResourceType, resourceId: string) => {
-    if (isDonated(resourceType, resourceId) || platformCopyKeys.has(donationKey(resourceType, resourceId))) return;
-    const key = donationKey(resourceType, resourceId);
-    setDonationSelections((previous) => {
+  const toggleResourceSelection = (resourceType: ShareableResourceType, resourceId: string) => {
+    const key = batchResourceKey(resourceType, resourceId);
+    setResourceSelections((previous) => {
       const next = new Set(previous);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -855,20 +869,18 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     });
   };
 
-  const donationCardProps = (resourceType: ShareableResourceType, resourceId: string) => ({
-    donationSelected: donationSelections.has(donationKey(resourceType, resourceId)),
+  const batchSelectionCardProps = (resourceType: ShareableResourceType, resourceId: string) => ({
+    selected: resourceSelections.has(batchResourceKey(resourceType, resourceId)),
     donated: isDonated(resourceType, resourceId),
-    donationLocked: platformCopyKeys.has(donationKey(resourceType, resourceId)),
-    onToggleDonation: () => toggleDonationSelection(resourceType, resourceId),
+    donationLocked: platformCopyKeys.has(batchResourceKey(resourceType, resourceId)),
+    onToggleSelection: () => toggleResourceSelection(resourceType, resourceId),
   });
 
-  const selectedDonationItems = (): DonationItem[] => [...donationSelections].map((key) => {
-    const separator = key.indexOf(":");
-    return {
-      resourceType: key.slice(0, separator) as ShareableResourceType,
-      resourceId: key.slice(separator + 1),
-    };
-  });
+  const selectedResourceRefs = (): BatchResourceRef[] =>
+    [...resourceSelections].map(parseBatchResourceKey);
+
+  const selectedDonationItems = (): DonationItem[] => selectedResourceRefs()
+    .filter((item) => !platformCopyKeys.has(batchResourceKey(item.resourceType, item.resourceId)));
 
   const completeDonation = async (items: DonationItem[], decisions: DonationDecision[] = []) => {
     if (!teacher || items.length === 0) return;
@@ -881,7 +893,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         decisions,
       );
       toast.success("捐赠完成", `已处理 ${result.created.length} 个资源`);
-      setDonationSelections(new Set());
+      setResourceSelections(new Set());
       setDonationCheck(null);
       setPendingDonationItems([]);
       setDonationDecisions({});
@@ -895,21 +907,26 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const handlePrepareDonation = async () => {
     if (!teacher) return;
+    const selectedItems = selectedResourceRefs();
     const items = selectedDonationItems();
     if (items.length === 0) {
-      toast.warning("请先选择要捐赠的资源");
+      toast.warning(selectedItems.length === 0 ? "请先选择资源" : "所选资源不可捐赠");
       return;
+    }
+    const skippedCount = selectedItems.length - items.length;
+    if (skippedCount > 0) {
+      toast.warning("已跳过不可捐赠资源", `${skippedCount} 个平台资源副本不会重复捐赠`);
     }
     setDonating(true);
     try {
       const check = await donationService.checkDonation(teacher.id, schoolId, items);
-      const already = new Set(check.alreadyDonated.map((item) => donationKey(item.resourceType, item.resourceId)));
-      const pending = items.filter((item) => !already.has(donationKey(item.resourceType, item.resourceId)));
+      const already = new Set(check.alreadyDonated.map((item) => batchResourceKey(item.resourceType, item.resourceId)));
+      const pending = items.filter((item) => !already.has(batchResourceKey(item.resourceType, item.resourceId)));
       if (check.alreadyDonated.length > 0) {
         toast.warning("已跳过重复捐赠", `${check.alreadyDonated.length} 个资源已经捐赠过`);
       }
       if (pending.length === 0) {
-        setDonationSelections(new Set());
+        setResourceSelections(new Set());
         await loadTeacherDonations();
         return;
       }
@@ -952,29 +969,142 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }));
   };
 
+  const deleteBatchResource = async ({ resourceType, resourceId }: BatchResourceRef) => {
+    switch (resourceType) {
+      case "question":
+        return questionService.deleteQuestion(resourceId);
+      case "examPaper":
+        return examPaperService.deletePaper(resourceId);
+      case "lecture":
+        return lectureService.deleteLecture(resourceId);
+      case "courseware":
+        return coursewareService.deleteCourseware(resourceId);
+      case "material":
+        return materialService.deleteMaterial(resourceId);
+    }
+  };
+
+  const getBatchResource = async ({ resourceType, resourceId }: BatchResourceRef) => {
+    switch (resourceType) {
+      case "question":
+        return questionService.getQuestion(resourceId);
+      case "examPaper":
+        return examPaperService.getPaper(resourceId);
+      case "lecture":
+        return lectureService.getLecture(resourceId);
+      case "courseware":
+        return coursewareService.getCourseware(resourceId);
+      case "material":
+        return materialService.getMaterial(resourceId);
+    }
+  };
+
+  const updateBatchResource = async (
+    { resourceType, resourceId }: BatchResourceRef,
+    patch: { chapterIds?: string[]; knowledgePointIds?: string[] },
+  ) => {
+    switch (resourceType) {
+      case "question":
+        return questionService.updateQuestion(resourceId, patch);
+      case "examPaper":
+        return examPaperService.updatePaper(resourceId, patch);
+      case "lecture":
+        return lectureService.updateLecture(resourceId, patch);
+      case "courseware":
+        return coursewareService.updateCourseware(resourceId, patch);
+      case "material":
+        return materialService.updateMaterial(resourceId, patch);
+    }
+  };
+
+  const refreshResourceViews = async () => {
+    await loadAll();
+    setResourceRefreshToken((value) => value + 1);
+  };
+
+  const handleBatchDelete = async () => {
+    const refs = selectedResourceRefs();
+    if (refs.length === 0) return;
+    if (!confirm(`确定要删除选中的 ${refs.length} 个资源吗？此操作不可撤销。`)) return;
+
+    setBatchWorking(true);
+    try {
+      const results = await Promise.allSettled(refs.map(deleteBatchResource));
+      const succeededKeys = new Set(
+        refs
+          .filter((_, index) => results[index].status === "fulfilled")
+          .map((item) => batchResourceKey(item.resourceType, item.resourceId)),
+      );
+      const failedCount = refs.length - succeededKeys.size;
+
+      setResourceSelections((previous) => {
+        const next = new Set(previous);
+        succeededKeys.forEach((key) => next.delete(key));
+        return next;
+      });
+      await refreshResourceViews();
+
+      if (succeededKeys.size > 0) {
+        toast.success("批量删除完成", `已删除 ${succeededKeys.size} 个资源`);
+      }
+      if (failedCount > 0) {
+        toast.error("部分资源删除失败", `${failedCount} 个资源未能删除，仍保持选中`);
+      }
+    } finally {
+      setBatchWorking(false);
+    }
+  };
+
+  const openBatchDirectoryPicker = (mode: "chapter" | "knowledge") => {
+    setBatchDirectoryIds([]);
+    setBatchDirectoryMode(mode);
+  };
+
+  const handleApplyBatchDirectory = async () => {
+    if (!batchDirectoryMode || batchDirectoryIds.length === 0) {
+      toast.warning(batchDirectoryMode === "chapter" ? "请选择要新增的章节" : "请选择要新增的知识点");
+      return;
+    }
+
+    const refs = selectedResourceRefs();
+    setBatchWorking(true);
+    try {
+      const results = await Promise.allSettled(refs.map(async (ref) => {
+        const resource = await getBatchResource(ref);
+        if (!resource) throw new Error(`资源不存在：${ref.resourceId}`);
+
+        if (batchDirectoryMode === "chapter") {
+          const chapterIds = appendUniqueIds(resource.chapterIds, batchDirectoryIds);
+          return updateBatchResource(ref, { chapterIds });
+        }
+        const knowledgePointIds = appendUniqueIds(resource.knowledgePointIds, batchDirectoryIds);
+        return updateBatchResource(ref, { knowledgePointIds });
+      }));
+
+      const succeededCount = results.filter((result) => result.status === "fulfilled").length;
+      const failedCount = results.length - succeededCount;
+      await refreshResourceViews();
+
+      if (succeededCount > 0) {
+        const label = batchDirectoryMode === "chapter" ? "章节" : "知识点";
+        toast.success(`已新增统一${label}`, `已更新 ${succeededCount} 个资源，原有关联保持不变`);
+        setBatchDirectoryMode(null);
+        setBatchDirectoryIds([]);
+      }
+      if (failedCount > 0) {
+        toast.error("部分资源更新失败", `${failedCount} 个资源未能更新`);
+      }
+    } finally {
+      setBatchWorking(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
         title="我的资源"
         description="统一管理我的题库、试卷库、讲义库、课件库、素材库"
         icon={<Library className="w-5 h-5" />}
-        action={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handlePrepareDonation}
-              disabled={donationSelections.size === 0}
-              loading={donating}
-            >
-              <Gift className="w-4 h-4" />
-              捐赠到平台{donationSelections.size > 0 ? `（${donationSelections.size}）` : ""}
-            </Button>
-            <Button variant="gold" onClick={() => navigate("/upload")}>
-              <Upload className="w-4 h-4" />
-              上传资源
-            </Button>
-          </div>
-        }
       />
 
       {/* Tab 切换 */}
@@ -1032,8 +1162,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       {/* 题库 Tab：渲染完整的题库管理/使用页面 */}
       {activeTab === "question" ? (
         <QuestionBankPage
-          donationSelectedIds={new Set(
-            [...donationSelections]
+          selectedQuestionIds={new Set(
+            [...resourceSelections]
               .filter((key) => key.startsWith("question:"))
               .map((key) => key.slice("question:".length)),
           )}
@@ -1047,7 +1177,15 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               .filter((question) => question.platformSourceDonationIds?.length)
               .map((question) => question.id),
           )}
-          onToggleDonation={(question) => toggleDonationSelection("question", question.id)}
+          onToggleSelection={(question) => toggleResourceSelection("question", question.id)}
+          onQuestionDeleted={(questionId) => {
+            setResourceSelections((previous) => {
+              const next = new Set(previous);
+              next.delete(batchResourceKey("question", questionId));
+              return next;
+            });
+          }}
+          refreshToken={resourceRefreshToken}
         />
       ) : activeTab === "basket" ? (
         <div className="grid grid-cols-12 gap-4">
@@ -1536,7 +1674,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   <div key={item.id} className="space-y-2">
                     <ResourceCard
                       key={mainLecture.id}
-                      {...donationCardProps("lecture", mainLecture.id)}
+                      {...batchSelectionCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
                       description={mainLecture.description || (hasExtractCopy ? "文档拆解生成的正稿，可编辑替换其中的题目和知识块" : undefined)}
                       meta={[
@@ -1609,7 +1747,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           原稿备份
                         </div>
                         <ResourceCard
-                          {...donationCardProps("lecture", item.id)}
+                          {...batchSelectionCardProps("lecture", item.id)}
                           title={item.title}
                           description={item.description}
                           meta={[
@@ -1673,7 +1811,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     {hasExtractCopy && extractCopies.map((copy) => (
                       <ResourceCard
                         key={copy.id}
-                        {...donationCardProps("examPaper", copy.id)}
+                        {...batchSelectionCardProps("examPaper", copy.id)}
                         title={copy.title}
                         description={copy.description || "文档拆解生成的副本，可编辑替换其中的题目和知识块"}
                         meta={[
@@ -1711,7 +1849,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     {!hasExtractCopy && (
                       <>
                         <ResourceCard
-                          {...donationCardProps("examPaper", item.id)}
+                          {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
                           description={item.description}
                           meta={[
@@ -1815,7 +1953,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           原稿备份
                         </div>
                         <ResourceCard
-                          {...donationCardProps("examPaper", item.id)}
+                          {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
                           description={item.description}
                           meta={[
@@ -1853,7 +1991,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               {activeTab === "courseware" && (displayedData as Courseware[]).map((item) => (
                 <ResourceCard
                   key={item.id}
-                  {...donationCardProps("courseware", item.id)}
+                  {...batchSelectionCardProps("courseware", item.id)}
                   title={item.title}
                   description={item.description}
                   meta={[
@@ -1881,7 +2019,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               {activeTab === "material" && (displayedData as Material[]).map((item) => (
                 <ResourceCard
                   key={item.id}
-                  {...donationCardProps("material", item.id)}
+                  {...batchSelectionCardProps("material", item.id)}
                   title={item.title}
                   description={item.description}
                   meta={[
@@ -1906,6 +2044,137 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         </div>
       </div>
       )}
+
+      {resourceSelections.size > 0 && (
+        <div
+          role="region"
+          aria-label="批量操作"
+          className="fixed bottom-6 right-6 z-40 w-[420px] max-w-[calc(100vw-2rem)] rounded-xl border border-ink-200 bg-paper p-4 shadow-xl"
+        >
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-ink-900">批量操作</div>
+              <div className="mt-0.5 text-xs text-ink-500">已选择 {resourceSelections.size} 个资源</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setResourceSelections(new Set())}
+              disabled={batchWorking || donating}
+              className="rounded-md p-1.5 text-ink-400 hover:bg-mist hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
+              title="清空选择"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBatchDelete}
+              disabled={batchWorking || donating}
+              className="justify-center border-red-200 text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              批量删除
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrepareDonation}
+              disabled={batchWorking}
+              loading={donating}
+              className="justify-center"
+            >
+              <Gift className="h-3.5 w-3.5" />
+              捐赠到平台
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openBatchDirectoryPicker("chapter")}
+              disabled={batchWorking || donating}
+              className="justify-center"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              新增统一章节
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openBatchDirectoryPicker("knowledge")}
+              disabled={batchWorking || donating}
+              className="justify-center"
+            >
+              <Lightbulb className="h-3.5 w-3.5" />
+              新增统一知识点
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Modal
+        open={!!batchDirectoryMode}
+        onClose={() => {
+          if (batchWorking) return;
+          setBatchDirectoryMode(null);
+          setBatchDirectoryIds([]);
+        }}
+        title={batchDirectoryMode === "chapter" ? "新增统一章节" : "新增统一知识点"}
+        description={`所选目录会追加到 ${resourceSelections.size} 个资源，原有关联不会被覆盖。`}
+        size="md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setBatchDirectoryMode(null);
+                setBatchDirectoryIds([]);
+              }}
+              disabled={batchWorking}
+            >
+              取消
+            </Button>
+            <Button
+              variant="gold"
+              onClick={handleApplyBatchDirectory}
+              loading={batchWorking}
+              disabled={batchDirectoryIds.length === 0}
+            >
+              确认新增
+            </Button>
+          </div>
+        }
+      >
+        <div className="max-h-[55vh] overflow-y-auto pr-1">
+          {batchDirectoryMode === "chapter" ? (
+            chapterTree ? (
+              <SearchableTree
+                data={chapterTree}
+                title="选择章节"
+                accent="gold"
+                checkable
+                checkedIds={batchDirectoryIds}
+                onCheck={setBatchDirectoryIds}
+                searchPlaceholder="搜索章节..."
+              />
+            ) : (
+              <div className="flex justify-center py-10"><Spinner size={20} /></div>
+            )
+          ) : knowledgeTree ? (
+            <SearchableTree
+              data={knowledgeTree}
+              title="选择知识点"
+              accent="teal"
+              checkable
+              checkedIds={batchDirectoryIds}
+              onCheck={setBatchDirectoryIds}
+              searchPlaceholder="搜索知识点..."
+            />
+          ) : (
+            <div className="flex justify-center py-10"><Spinner size={20} /></div>
+          )}
+        </div>
+      </Modal>
 
       {/* 分享弹窗 */}
       <Modal
@@ -2442,13 +2711,13 @@ interface ResourceCardProps {
   onBasketChanged?: () => void;
   className?: string;
   titleBadge?: { text: string; variant: "gold" | "teal" | "ink" | "red" | "green" | "amber" | "default" };
-  donationSelected?: boolean;
+  selected?: boolean;
   donated?: boolean;
   donationLocked?: boolean;
-  onToggleDonation?: () => void;
+  onToggleSelection?: () => void;
 }
 
-function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, donationSelected, donated, donationLocked, onToggleDonation }: ResourceCardProps) {
+function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const isImage = (type === "image");
   const reflectionCount = reflections?.length || 0;
@@ -2457,25 +2726,20 @@ function ResourceCard({ title, description, meta, content, updatedAt, onClick, o
     <>
       <div className={cn(
         "card-base p-4 hover:shadow-cardHover transition-all group",
-        donationSelected && "ring-2 ring-gold-300/60 bg-gold-50/20",
+        selected && "ring-2 ring-gold-300/60 bg-gold-50/20",
         className,
       )}>
         <div className="flex items-start gap-3">
-          {onToggleDonation && (
+          {onToggleSelection && (
             <button
-              onClick={onToggleDonation}
-              disabled={donated || donationLocked}
+              onClick={onToggleSelection}
               className={cn(
                 "mt-0.5 rounded p-0.5 flex-shrink-0 transition-colors",
-                donated || donationLocked
-                  ? "text-ink-300 cursor-not-allowed"
-                  : donationSelected
-                    ? "text-gold-600"
-                    : "text-ink-300 hover:text-gold-600",
+                selected ? "text-gold-600" : "text-ink-300 hover:text-gold-600",
               )}
-              title={donated ? "该资源已捐赠" : donationLocked ? "平台资源副本不能再次捐赠" : donationSelected ? "取消选择" : "选择捐赠"}
+              title={selected ? "取消选择" : "选择资源"}
             >
-              {donationSelected || donated || donationLocked
+              {selected
                 ? <CheckSquare className="w-4 h-4" />
                 : <Square className="w-4 h-4" />}
             </button>
