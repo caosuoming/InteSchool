@@ -1313,6 +1313,30 @@ describe("production backend", () => {
     expect(anonymous.statusCode).toBe(401);
   });
 
+  it("reports formula conversion capabilities without hiding the original MathType download", async () => {
+    const session = await login(built.app);
+    const response = await built.app.inject({
+      method: "GET",
+      url: "/api/files/formula-capabilities",
+      headers: { cookie: session.cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const payload = response.json<{
+      officeFormulaConversion: { available: boolean; message: string };
+      mathTypeOriginalDownload: { available: boolean };
+    }>();
+    expect(typeof payload.officeFormulaConversion.available).toBe("boolean");
+    expect(payload.officeFormulaConversion.message).toBeTruthy();
+    expect(payload.mathTypeOriginalDownload.available).toBe(true);
+
+    const anonymous = await built.app.inject({
+      method: "GET",
+      url: "/api/files/formula-capabilities",
+    });
+    expect(anonymous.statusCode).toBe(401);
+  });
+
   it("lets DOCX downloads preserve MathType or request new Microsoft formulas", async () => {
     const session = await login(built.app);
     const zip = new JSZip();

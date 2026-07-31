@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
+import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
 import { extractStoredFile } from "@/services/api";
 import "katex/dist/katex.min.css";
 import type { Lecture, ExamPaper, ResourceSemester } from "@/types";
@@ -47,7 +48,8 @@ export default function ResourcePreviewPage() {
     loading: boolean;
     html: string;
     error: string;
-  }>({ loading: false, html: "", error: "" });
+    warnings: string[];
+  }>({ loading: false, html: "", error: "", warnings: [] });
 
   const resource = lecture || examPaper;
 
@@ -83,15 +85,16 @@ export default function ResourcePreviewPage() {
     if (!resource?.originalFileUrl || !resource.originalFileName) return;
     const supported = /\.(docx|pdf|txt|md)$/i.test(resource.originalFileName);
     if (!supported) return;
-    setDocPreview({ loading: true, html: "", error: "" });
+    setDocPreview({ loading: true, html: "", error: "", warnings: [] });
     try {
       const extracted = await extractStoredFile(resource.originalFileUrl);
-      setDocPreview({ loading: false, html: extracted.html, error: "" });
+      setDocPreview({ loading: false, html: extracted.html, error: "", warnings: extracted.warnings });
     } catch (error) {
       setDocPreview({
         loading: false,
         html: "",
         error: `加载失败: ${error instanceof Error ? error.message : "未知错误"}`,
+        warnings: [],
       });
     }
   }, [resource]);
@@ -238,7 +241,19 @@ export default function ResourcePreviewPage() {
                       {docPreview.error}
                     </div>
                   ) : docPreview.html ? (
-                    <div dangerouslySetInnerHTML={{ __html: docPreview.html }} />
+                    <>
+                      {docPreview.warnings.length > 0 && (
+                        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                          <div className="font-medium">文档部分内容采用兼容预览</div>
+                          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+                            {docPreview.warnings.slice(0, 5).map((warning) => (
+                              <li key={warning}>{warning}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <OfficeDocumentHtml html={docPreview.html} />
+                    </>
                   ) : (
                     <div className="text-center py-20 text-ink-400">
                       文档内容为空

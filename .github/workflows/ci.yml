@@ -37,6 +37,11 @@ jobs:
       - name: Build production container
         run: docker build --tag inteschool:ci .
 
+      - name: Verify MathType runtime in production container
+        run: >-
+          docker run --rm --entrypoint ruby inteschool:ci
+          -W0 -e 'require "mathtype_to_mathml_plus"; abort "converter unavailable" unless defined?(MathTypeToMathMLPlus::Converter)'
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7

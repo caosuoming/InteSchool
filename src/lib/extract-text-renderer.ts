@@ -52,10 +52,15 @@ function safeImageSource(source: string): string | null {
   return null;
 }
 
+function officeMetafileAttribute(source: string): string {
+  const match = source.match(/[?&]officeMetafile=(wmf|emf)(?:&|$)/);
+  return match ? ` data-office-metafile="${match[1]}"` : "";
+}
+
 function renderImage(alt: string, source: string): string {
   const safeSource = safeImageSource(source);
   if (!safeSource) return escapeHtml(`![${alt}](${source})`);
-  return `<img src="${escapeHtml(safeSource)}" alt="${escapeHtml(alt)}" class="max-w-full h-auto rounded-lg border border-ink-200" />`;
+  return `<img src="${escapeHtml(safeSource)}" alt="${escapeHtml(alt)}"${officeMetafileAttribute(safeSource)} class="max-w-full h-auto rounded-lg border border-ink-200" />`;
 }
 
 function renderTextWithKeywords(text: string, keywords: string[]): string {

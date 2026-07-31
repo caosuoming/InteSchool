@@ -185,9 +185,10 @@ INTESCHOOL_AI_MODEL=your-model
 
 ```bash
 gem install mathtype_to_mathml_plus --version 0.0.16 --no-document
+npm run check:mathtype
 ```
 
-Docker 镜像已内置该依赖。
+Docker 镜像已内置并在 CI 中验证该依赖。生产模式执行 `npm start` 前也会运行自检；缺少 Ruby 或转换器时会直接给出错误，避免服务启动后才出现公式破图。开发模式仍可打开文档：无法语义转换的 WMF/EMF 公式会在浏览器中转为 PNG 兼容预览，下载时可保留原始 MathType 对象。
 
 ```bash
 npm ci
@@ -210,6 +211,7 @@ npm run dev:web
 | 命令 | 作用 |
 | --- | --- |
 | `npm run check` | 前后端 TypeScript 检查 |
+| `npm run check:mathtype` | 检查 Ruby 与 MathType 转换器 |
 | `npm run lint` | ESLint 检查 |
 | `npm test` | 单元与后端集成测试 |
 | `npm run test:coverage` | 覆盖率测试 |

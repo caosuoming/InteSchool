@@ -33,6 +33,27 @@ export interface DocxImageAsset {
 
 type ImageUrlFactory = (relationshipId: string) => string;
 
+function imageExtensionsByRelationship(xml: string | undefined): Map<string, string> {
+  const extensions = new Map<string, string>();
+  if (!xml) return extensions;
+  const relationships = new DOMParser().parseFromString(xml, "application/xml");
+  const entries = Array.from(relationships.getElementsByTagNameNS(PACKAGE_REL_NS, "Relationship"));
+  for (const entry of entries) {
+    if (entry.getAttribute("TargetMode") === "External") continue;
+    if (!entry.getAttribute("Type")?.endsWith("/image")) continue;
+    const id = entry.getAttribute("Id") || "";
+    const extension = extname(entry.getAttribute("Target") || "").toLowerCase();
+    if (id && extension) extensions.set(id, extension);
+  }
+  return extensions;
+}
+
+function appendMetafileHint(url: string, extension: string | undefined): string {
+  if (![".wmf", ".emf"].includes(extension || "")) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}officeMetafile=${extension!.slice(1)}`;
+}
+
 function elementChildren(node: Node): Element[] {
   return Array.from(node.childNodes)
     .filter((child): child is Element => child.nodeType === ELEMENT_NODE);
@@ -124,11 +145,17 @@ export async function extractDocxStructuredText(
   const documentXml = await zip.file("word/document.xml")?.async("string");
   if (!documentXml) return "";
 
+  const relationshipsXml = await zip.file("word/_rels/document.xml.rels")?.async("string");
+  const imageExtensions = imageExtensionsByRelationship(relationshipsXml);
+  const resolvedImageUrl = imageUrl
+    ? (relationshipId: string) => appendMetafileHint(imageUrl(relationshipId), imageExtensions.get(relationshipId))
+    : undefined;
+
   const document = new DOMParser().parseFromString(documentXml, "application/xml");
   const body = document.getElementsByTagNameNS(WORD_NS, "body")[0];
   if (!body) return "";
 
-  return normalizeText(extractBlocks(body, imageUrl).join("\n")).trim();
+  return normalizeText(extractBlocks(body, resolvedImageUrl).join("\n")).trim();
 }
 
 function safeImagePath(target: string): string | null {

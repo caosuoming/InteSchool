@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "katex/dist/katex.min.css";
 import {
   Sparkles,
@@ -38,6 +38,10 @@ import {
   type DocumentBlockType as BlockType,
 } from "@/lib/document-block-parser";
 import { extractStoredFile } from "@/services/api";
+import {
+  officeMetafilePreviewClassName,
+  useOfficeMetafileImages,
+} from "@/hooks/useOfficeMetafileImages";
 import type {
   ExamPaper,
   ExtractedDocumentBlock,
@@ -218,6 +222,8 @@ export function ExtractReviewModal({
   semester,
   onConfirmed,
 }: ExtractReviewModalProps) {
+  const previewRootRef = useRef<HTMLDivElement>(null);
+  useOfficeMetafileImages(previewRootRef);
   const { teacher } = useAuthStore();
   const { options: questionTypeOptions, defaultType: defaultQuestionType } = useQuestionTypeOptions(teacher?.schoolId);
   const extractConfig = useExtractConfigStore();
@@ -1536,7 +1542,9 @@ export function ExtractReviewModal({
           )
         }
       >
-        {phase === "extracting" ? renderExtracting() : renderReview()}
+        <div ref={previewRootRef} className={officeMetafilePreviewClassName}>
+          {phase === "extracting" ? renderExtracting() : renderReview()}
+        </div>
       </Modal>
       
       {/* 关键字配置弹窗 - 可拖动 */}

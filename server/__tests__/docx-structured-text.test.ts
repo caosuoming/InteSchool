@@ -84,6 +84,31 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("marks WMF and EMF image relationships for browser-side conversion", async () => {
+    const zip = new JSZip();
+    zip.file("word/document.xml", `${documentPrefix}
+      <w:p>
+        <w:r><w:t>公式：</w:t></w:r>
+        <w:r><w:drawing><a:blip r:embed="rIdWmf"/></w:drawing></w:r>
+        <w:r><w:drawing><a:blip r:embed="rIdPng"/></w:drawing></w:r>
+      </w:p>
+      ${documentSuffix}`);
+    zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rIdWmf" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/formula.wmf"/>
+        <Relationship Id="rIdPng" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/diagram.png"/>
+      </Relationships>`);
+    const data = await zip.generateAsync({ type: "nodebuffer" });
+
+    await expect(extractDocxStructuredText(
+      data,
+      (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
+    )).resolves.toBe(
+      "公式：![文档图片](/api/files/file-1/assets/rIdWmf?officeMetafile=wmf)"
+      + "![文档图片](/api/files/file-1/assets/rIdPng)",
+    );
+  });
+
   it("reads only internal image relationships from the DOCX package", async () => {
     const zip = new JSZip();
     zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8"?>
