@@ -10,7 +10,7 @@ import type { StoredFile, TeacherRecord } from "../types.js";
 import { requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
 import { extractDocxImage } from "../lib/docx-structured-text.js";
-import { convertMathTypeDocxToOmml } from "../lib/mathtype-docx.js";
+import { convertMathTypeDocxToOmml, probeMathTypeRuntime } from "../lib/mathtype-docx.js";
 import { withSerializedState } from "../rpc.js";
 
 function buildSections(text: string): Array<{
@@ -124,6 +124,20 @@ export async function registerFileRoutes(
 ): Promise<void> {
   const imageUrlFor = (fileId: string) => (relationshipId: string) =>
     `/api/files/${fileId}/assets/${encodeURIComponent(relationshipId)}`;
+
+  app.get("/api/files/formula-capabilities", async (request) => {
+    requireSession(request, store);
+    const mathType = await probeMathTypeRuntime();
+    return {
+      officeFormulaConversion: {
+        available: mathType.available,
+        message: mathType.available
+          ? "MathType 公式可转换为新微软公式"
+          : mathType.message,
+      },
+      mathTypeOriginalDownload: { available: true },
+    };
+  });
 
   app.post("/api/files", async (request) => {
     const session = requireSession(request, store);

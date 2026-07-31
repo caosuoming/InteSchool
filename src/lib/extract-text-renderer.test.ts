@@ -39,6 +39,21 @@ describe("extract text renderer", () => {
     expect(container.textContent).toContain("![危险](javascript:alert(1))");
   });
 
+  it("preserves the Office metafile marker for extraction review conversion", () => {
+    const html = renderExtractText(
+      "![公式](/api/files/file-1/assets/rId5?officeMetafile=wmf)",
+      [],
+      false,
+    );
+    const image = asElement(html).querySelector("img");
+
+    expect(image).toHaveAttribute("data-office-metafile", "wmf");
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/files/file-1/assets/rId5?officeMetafile=wmf",
+    );
+  });
+
   it("escapes decoded HTML and handles empty input and formulas", () => {
     expect(renderExtractText("")).toBe("");
 

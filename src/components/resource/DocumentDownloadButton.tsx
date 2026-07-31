@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Download, FileCode2, Sigma } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, Download, FileCode2, Loader2, Sigma } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
@@ -40,7 +40,41 @@ export function DocumentDownloadButton({
 }: DocumentDownloadButtonProps) {
   const [open, setOpen] = useState(false);
   const [downloading, setDownloading] = useState<DocumentFormulaFormat | "original" | null>(null);
+  const [officeCapability, setOfficeCapability] = useState<{
+    loading: boolean;
+    available: boolean;
+    message: string;
+  }>({ loading: false, available: true, message: "" });
   const isDocx = /\.docx$/i.test(fileName);
+
+  useEffect(() => {
+    if (!open || !isDocx) return;
+    const controller = new AbortController();
+    setOfficeCapability({ loading: true, available: true, message: "" });
+    void fetch("/api/files/formula-capabilities", {
+      credentials: "same-origin",
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(await responseError(response));
+      const payload = await response.json() as {
+        officeFormulaConversion?: { available?: unknown; message?: unknown };
+      };
+      const capability = payload.officeFormulaConversion;
+      setOfficeCapability({
+        loading: false,
+        available: capability?.available === true,
+        message: typeof capability?.message === "string" ? capability.message : "公式转换器状态未知",
+      });
+    }).catch((error) => {
+      if (controller.signal.aborted) return;
+      setOfficeCapability({
+        loading: false,
+        available: false,
+        message: error instanceof Error ? error.message : "无法检查公式转换器",
+      });
+    });
+    return () => controller.abort();
+  }, [isDocx, open]);
 
   const startDownload = async (formulaFormat?: DocumentFormulaFormat) => {
     const state = formulaFormat || "original";
@@ -94,20 +128,33 @@ export function DocumentDownloadButton({
             type="button"
             className="w-full rounded-lg border border-ink-200 p-4 text-left transition-colors hover:border-gold-300 hover:bg-gold-50/40 disabled:opacity-60"
             onClick={() => void startDownload("office")}
-            disabled={downloading !== null}
+            disabled={downloading !== null || officeCapability.loading || !officeCapability.available}
           >
             <div className="flex items-start gap-3">
               <div className="rounded-lg bg-gold-50 p-2 text-gold-600">
-                <Sigma className="h-5 w-5" />
+                {officeCapability.loading
+                  ? <Loader2 className="h-5 w-5 animate-spin" />
+                  : <Sigma className="h-5 w-5" />}
               </div>
               <div>
                 <div className="font-medium text-ink-900">新微软公式</div>
                 <div className="mt-1 text-xs leading-relaxed text-ink-500">
-                  转换为 Word 原生 OMML，可在新版 Microsoft Word 中直接编辑。
+                  {officeCapability.loading
+                    ? "正在检查服务器公式转换能力..."
+                    : officeCapability.available
+                      ? "转换为 Word 原生 OMML，可在新版 Microsoft Word 中直接编辑。"
+                      : "当前部署未启用 MathType 转换器，请选择保留 MathType 原稿。"}
                 </div>
               </div>
             </div>
           </button>
+
+          {!officeCapability.loading && !officeCapability.available && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{officeCapability.message}</span>
+            </div>
+          )}
 
           <button
             type="button"

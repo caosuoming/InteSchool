@@ -7,6 +7,16 @@ const NativeURL = URL;
 const createObjectURLMock = vi.fn(() => "blob:download");
 const revokeObjectURLMock = vi.fn();
 
+function capabilityResponse(available: boolean, message = "MathType 转换器可用"): Response {
+  return new Response(JSON.stringify({
+    officeFormulaConversion: { available, message },
+    mathTypeOriginalDownload: { available: true },
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -26,8 +36,10 @@ afterEach(() => {
 });
 
 describe("DocumentDownloadButton", () => {
-  it("asks for a DOCX formula format and requests Office Math when selected", async () => {
-    fetchMock.mockResolvedValue(new Response("docx", { status: 200 }));
+  it("checks capability and requests Office Math when selected", async () => {
+    fetchMock
+      .mockResolvedValueOnce(capabilityResponse(true))
+      .mockResolvedValueOnce(new Response("docx", { status: 200 }));
     render(
       <DocumentDownloadButton
         fileUrl="/api/files/file-1"
@@ -38,19 +50,57 @@ describe("DocumentDownloadButton", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "下载原稿" }));
     expect(screen.getByText("选择数学公式格式")).toBeInTheDocument();
-    expect(screen.getByText("新微软公式")).toBeInTheDocument();
     expect(screen.getByText("MathType")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /新微软公式/ }));
+    const officeButton = screen.getByRole("button", { name: /新微软公式/ });
+    await waitFor(() => expect(officeButton).toBeEnabled());
+    fireEvent.click(officeButton);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        "/api/files/formula-capabilities",
+        expect.objectContaining({
+          credentials: "same-origin",
+          signal: expect.any(AbortSignal),
+        }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
         "/api/files/file-1?formulaFormat=office",
         { credentials: "same-origin" },
       );
     });
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledOnce();
     expect(createObjectURLMock).toHaveBeenCalled();
+  });
+
+  it("disables Office conversion when the server runtime is unavailable", async () => {
+    fetchMock
+      .mockResolvedValueOnce(capabilityResponse(false, "未安装 mathtype_to_mathml_plus 0.0.16"))
+      .mockResolvedValueOnce(new Response("docx", { status: 200 }));
+    render(
+      <DocumentDownloadButton
+        fileUrl="/api/files/file-1"
+        fileName="数学试卷.docx"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+
+    const officeButton = screen.getByRole("button", { name: /新微软公式/ });
+    await waitFor(() => expect(officeButton).toBeDisabled());
+    expect(screen.getByText("未安装 mathtype_to_mathml_plus 0.0.16")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^MathType 保留上传文档/ }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        "/api/files/file-1?formulaFormat=mathtype",
+        { credentials: "same-origin" },
+      );
+    });
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledOnce();
   });
 
   it("downloads non-DOCX files directly without showing the chooser", async () => {

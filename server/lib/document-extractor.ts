@@ -29,9 +29,14 @@ function escapeHtml(value: string): string {
 
 function safePreviewImageSource(value: string): string | null {
   const source = value.trim();
-  if (/^\/api\/files\/[A-Za-z0-9-]+\/assets\/[A-Za-z0-9_.%-]+$/.test(source)) return source;
+  if (/^\/api\/files\/[A-Za-z0-9-]+\/assets\/[A-Za-z0-9_.%-]+(?:\?officeMetafile=(?:wmf|emf))?$/.test(source)) return source;
   if (/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(source)) return source;
   return null;
+}
+
+function officeMetafileFormat(source: string): "wmf" | "emf" | null {
+  const match = source.match(/[?&]officeMetafile=(wmf|emf)(?:&|$)/);
+  return match?.[1] === "wmf" || match?.[1] === "emf" ? match[1] : null;
 }
 
 function renderMathAwareHtml(text: string): string {
@@ -52,7 +57,9 @@ function renderMathAwareHtml(text: string): string {
       } else {
         const source = safePreviewImageSource(match[3] || "");
         if (source) {
-          parts.push(`<img src="${escapeHtml(source)}" alt="${escapeHtml(match[2] || "文档图片")}">`);
+          const metafile = officeMetafileFormat(source);
+          const metafileAttribute = metafile ? ` data-office-metafile="${metafile}"` : "";
+          parts.push(`<img src="${escapeHtml(source)}" alt="${escapeHtml(match[2] || "文档图片")}"${metafileAttribute}>`);
         } else {
           parts.push(escapeHtml(match[0]));
         }
