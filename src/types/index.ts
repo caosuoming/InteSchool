@@ -217,6 +217,10 @@ export interface SchoolClass {
   gradYear?: number;
   classTypeId?: string;
   studentCount: number;
+  /** 班级状态；旧数据未设置时按在读班级处理。 */
+  status?: "active" | "graduated";
+  /** 整班毕业时间 */
+  graduatedAt?: string;
   createdBy: string;
   createdAt: string;
 }
@@ -233,7 +237,7 @@ export interface PersonalClass {
 
 export type AnyClass = SchoolClass | PersonalClass;
 
-export type StudentStatus = "active" | "suspended";
+export type StudentStatus = "active" | "suspended" | "graduated" | "transferred";
 
 export interface Student {
   id: string;
@@ -245,12 +249,18 @@ export interface Student {
   gender?: "male" | "female";
   isExternal?: boolean;
   externalSchool?: string;
-  /** 学生状态：在读 / 挂起（休学等） */
+  /** 学生状态：在读 / 挂起 / 已毕业 / 已转校 */
   status: StudentStatus;
   /** 挂起时间 */
   suspendedAt?: string;
   /** 恢复时间 */
   resumedAt?: string;
+  /** 毕业时间 */
+  graduatedAt?: string;
+  /** 毕业类型：正常毕业 / 提前毕业 */
+  graduationType?: "regular" | "early";
+  /** 转校时间 */
+  transferredAt?: string;
   /** 历史班级记录（换班时追加） */
   classHistory?: Array<{
     fromClassId: string;

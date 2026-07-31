@@ -29,7 +29,7 @@ function cohortKeyForClass(item: SchoolClass): string {
 
 function buildCohorts(schoolId: string): GradeCohort[] {
   const classes = readList<SchoolClass>("schoolClasses")
-    .filter((item) => item.schoolId === schoolId);
+    .filter((item) => item.schoolId === schoolId && item.status !== "graduated");
   const students = readList<Student>("students")
     .filter((item) => item.schoolId === schoolId && item.status === "active");
   const groups = new Map<string, SchoolClass[]>();

@@ -52,6 +52,10 @@ export const classService = {
     return rpcCall("class", "listStudentsBySchool", [schoolId]) as any;
   },
 
+  async listDepartedStudents(schoolIdOrTeacherId: string, scope: "school" | "personal" = "school"): Promise<Student[]> {
+    return rpcCall("class", "listDepartedStudents", [schoolIdOrTeacherId, scope]) as any;
+  },
+
   async listMyClasses(schoolId: string | null, teacherId: string): Promise<AnyClass[]> {
     return rpcCall("class", "listMyClasses", [schoolId, teacherId]) as any;
   },
@@ -98,6 +102,18 @@ export const classService = {
 
   async suspendStudent(studentId: string): Promise<Student | null> {
     return rpcCall("class", "suspendStudent", [studentId]) as any;
+  },
+
+  async graduateStudent(studentId: string): Promise<Student | null> {
+    return rpcCall("class", "graduateStudent", [studentId]) as any;
+  },
+
+  async transferOutStudent(studentId: string): Promise<Student | null> {
+    return rpcCall("class", "transferOutStudent", [studentId]) as any;
+  },
+
+  async graduateClass(classId: string): Promise<{ class: SchoolClass; graduatedCount: number }> {
+    return rpcCall("class", "graduateClass", [classId]) as any;
   },
 
   async resumeStudent(studentId: string, toClassId?: string): Promise<Student | null> {
