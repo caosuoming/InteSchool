@@ -8,6 +8,13 @@ import type {
 import { questionService } from "./question.js";
 import { materialService } from "./material.js";
 
+const OMITTED_CONTENT = "略";
+
+function normalizeQuestionField(value: string | undefined, missingMarkers: string[] = []): string {
+  const normalized = value?.trim() || "";
+  return normalized && !missingMarkers.includes(normalized) ? normalized : OMITTED_CONTENT;
+}
+
 export const extractService = {
   async confirmExtract(
     teacherId: string,
@@ -39,15 +46,16 @@ export const extractService = {
         continue;
       }
       if (!item.stem.trim()) throw new Error("题干不能为空");
-      if (!item.answer.trim() || item.answer === "待教师补充") throw new Error("题目答案尚未补充");
-      if (!item.analysis.trim() || item.analysis === "待教师补充解析") throw new Error("题目解析尚未补充");
+      const answer = normalizeQuestionField(item.answer, ["待教师补充"]);
+      const analysis = normalizeQuestionField(item.analysis, ["待教师补充解析"]);
+      const summary = normalizeQuestionField(item.summary);
       const created = await questionService.createQuestion(teacherId, schoolId, {
         type: item.type,
         stem: item.stem,
         options: item.options,
-        answer: item.answer,
-        analysis: item.analysis,
-        summary: item.summary || "",
+        answer,
+        analysis,
+        summary,
         chapterIds,
         knowledgePointIds,
         grade,

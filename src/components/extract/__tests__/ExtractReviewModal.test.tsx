@@ -242,6 +242,49 @@ describe("ExtractReviewModal", () => {
     expect(mocks.confirmExtract.mock.calls[0][2].questions[0].stem).toBe("（本小题12分）示例题目");
   });
 
+  it("fills missing answer, analysis, and summary with 略 before ingestion", async () => {
+    const user = userEvent.setup();
+    mocks.parseDocumentBlocks.mockReturnValue([
+      {
+        id: "block-question",
+        type: "question",
+        content: "没有配套答案的题目",
+        order: 0,
+        status: "new",
+        questionType: "essay",
+        answer: "答案：",
+        analysis: "待教师补充解析",
+        summary: "   ",
+        difficulty: 3,
+      },
+    ]);
+
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+      />,
+    );
+
+    await screen.findByText("题目 1");
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0]).toMatchObject({
+      answer: "略",
+      analysis: "略",
+      summary: "略",
+    });
+  });
+
   it("creates the lecture manuscript from all reviewed blocks in their original order", async () => {
     mocks.parseDocumentBlocks.mockReturnValue([
       {
