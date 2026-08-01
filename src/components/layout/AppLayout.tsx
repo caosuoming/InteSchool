@@ -13,6 +13,7 @@ import { shareService } from "@/services/share";
 import { cn } from "@/lib/utils";
 import { ToastContainer } from "@/components/ui/Toast";
 import { canManageSchoolExams } from "@/lib/exam-permissions";
+import { BrandMark } from "@/components/brand/BrandMark";
 
 interface NavItem {
   path: string;
@@ -156,9 +157,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-ink-800">
           <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-md bg-gold-400 text-ink-900 flex items-center justify-center font-serif font-bold text-lg flex-shrink-0">
-              智
-            </div>
+            <BrandMark className="w-9 h-9" />
             {!sidebarCollapsed && (
               <div className="min-w-0">
                 <div className="font-serif font-semibold text-base text-paper truncate">智题云校</div>
