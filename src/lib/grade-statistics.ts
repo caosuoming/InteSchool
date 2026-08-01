@@ -63,6 +63,20 @@ export function buildDefaultGradeSettings(
       teachers.filter((teacher) => teacher.subject === subject).map((teacher) => teacher.id),
     ]),
   );
+  const classSubjectTeacherIds = Object.fromEntries(
+    unique(classIds).map((classId) => [
+      classId,
+      Object.fromEntries(normalizedSubjects.map((subject) => [
+        subject,
+        teachers
+          .filter((teacher) => (
+            teacher.subject === subject
+            && (!teacher.teachingClassIds?.length || teacher.teachingClassIds.includes(classId))
+          ))
+          .map((teacher) => teacher.id),
+      ])),
+    ]),
+  );
   const assignmentRules = Object.fromEntries(
     electiveSubjects.map((subject) => [
       subject,
@@ -77,6 +91,7 @@ export function buildDefaultGradeSettings(
 
   return {
     subjectTeacherIds,
+    classSubjectTeacherIds,
     assignmentRules,
     classSubjects,
     templates: [
@@ -163,6 +178,19 @@ export function normalizeGradeSettings(
       unique(settings.subjectTeacherIds?.[subject] || []).filter((id) => teacherSet.size === 0 || teacherSet.has(id)),
     ]),
   );
+  const classSubjectTeacherIds = Object.fromEntries(
+    [...classSet].map((classId) => [
+      classId,
+      Object.fromEntries([...subjectSet].map((subject) => [
+        subject,
+        unique(
+          settings.classSubjectTeacherIds?.[classId]?.[subject]
+            || subjectTeacherIds[subject]
+            || [],
+        ).filter((id) => teacherSet.size === 0 || teacherSet.has(id)),
+      ])),
+    ]),
+  );
 
   const byClass = new Map(
     (settings.classSubjects || [])
@@ -215,6 +243,7 @@ export function normalizeGradeSettings(
 
   return {
     subjectTeacherIds,
+    classSubjectTeacherIds,
     assignmentRules,
     classSubjects,
     templates,

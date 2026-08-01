@@ -42,15 +42,44 @@ describe("grade statistics", () => {
     const settings = buildDefaultGradeSettings(
       ["数学", "化学"],
       ["class-1", "class-2"],
-      [{ id: "teacher-chemistry", name: "化学教师", subject: "化学" }],
+      [
+        {
+          id: "teacher-chemistry-1",
+          name: "一班化学教师",
+          subject: "化学",
+          teachingClassIds: ["class-1"],
+        },
+        {
+          id: "teacher-chemistry-2",
+          name: "二班化学教师",
+          subject: "化学",
+          teachingClassIds: ["class-2"],
+        },
+      ],
     );
 
     expect(settings.assignmentRules.化学).toHaveLength(5);
     expect(settings.assignmentRules.数学).toBeUndefined();
-    expect(settings.subjectTeacherIds.化学).toEqual(["teacher-chemistry"]);
+    expect(settings.subjectTeacherIds.化学).toEqual(["teacher-chemistry-1", "teacher-chemistry-2"]);
+    expect(settings.classSubjectTeacherIds?.["class-1"].化学).toEqual(["teacher-chemistry-1"]);
+    expect(settings.classSubjectTeacherIds?.["class-2"].化学).toEqual(["teacher-chemistry-2"]);
     expect(settings.classSubjects).toHaveLength(2);
     expect(settings.templates.map((item) => item.kind)).toContain("classAverage");
     expect(settings.templates.find((item) => item.kind === "customTable")?.columns?.length).toBeGreaterThan(0);
+  });
+
+  it("migrates legacy subject-wide teachers into every class", () => {
+    const settings = normalizeGradeSettings({
+      subjectTeacherIds: { 数学: ["teacher-math"] },
+      assignmentRules: {},
+      classSubjects: [],
+      templates: [],
+    }, ["数学"], ["class-1", "class-2"], ["teacher-math"]);
+
+    expect(settings.classSubjectTeacherIds).toEqual({
+      "class-1": { 数学: ["teacher-math"] },
+      "class-2": { 数学: ["teacher-math"] },
+    });
   });
 
   it("assigns elective scores and produces grade and class competition ranks", () => {

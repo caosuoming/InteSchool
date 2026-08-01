@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import JSZip from "jszip";
 import { buildApp, type BuiltApp } from "../app.js";
 import { fetchPublicText } from "../lib/safe-fetch.js";
+import { buildDefaultGradeSettings } from "../../src/lib/grade-statistics.js";
 
 interface SessionContext {
   cookie: string;
@@ -861,6 +862,118 @@ describe("production backend", () => {
     });
     expect(spoof.statusCode).toBe(403);
     expect(spoof.json()).toEqual({ error: "无权以其他教师身份执行操作" });
+  });
+
+  it("restricts exam preprocessing mutations to grade and school managers", async () => {
+    const session = await login(built.app);
+    const schoolId = String(session.teacher.schoolId);
+    const teacherId = String(session.teacher.id);
+    const headers = {
+      cookie: session.cookie,
+      "x-inteschool-csrf": session.csrfToken,
+    };
+    const cohortsResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: { service: "grade", method: "listCohorts", args: [schoolId] },
+    });
+    const cohorts = cohortsResponse.json<{ result: Array<{ key: string }> }>().result;
+    expect(cohorts.length).toBeGreaterThan(0);
+    const cohortKey = cohorts[0].key;
+
+    const contextResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: { service: "grade", method: "getImportContext", args: [schoolId, cohortKey] },
+    });
+    const context = contextResponse.json<{
+      result: {
+        classes: Array<{ id: string }>;
+        teachers: Array<{ id: string; name: string; subject: string }>;
+      };
+    }>().result;
+    const subjects = ["数学"];
+    const settings = buildDefaultGradeSettings(
+      subjects,
+      context.classes.map((item) => item.id),
+      context.teachers,
+    );
+    const payload = {
+      service: "grade",
+      method: "saveCohortSettings",
+      args: [schoolId, teacherId, cohortKey, subjects, settings],
+    };
+
+    const initial = built.store.loadState();
+    const ordinaryState = structuredClone(initial);
+    ordinaryState.teachers = ordinaryState.teachers.map((item) => item.id === teacherId
+      ? {
+          ...item,
+          role: "teacher" as const,
+          roles: ["teacher" as const],
+          affiliations: item.affiliations.map((affiliation) => affiliation.id === item.currentAffiliationId
+            ? {
+                ...affiliation,
+                role: "teacher" as const,
+                roles: ["teacher" as const],
+              }
+            : affiliation),
+        }
+      : item);
+    built.store.saveState(initial, ordinaryState);
+
+    const forbidden = await built.app.inject({ method: "POST", url: "/api/rpc", headers, payload });
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json()).toEqual({ error: "该操作需要年级组长或学校管理员权限" });
+    const roomPayload = {
+      service: "examArrangement",
+      method: "listCohorts",
+      args: [schoolId],
+    };
+    const roomForbidden = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: roomPayload,
+    });
+    expect(roomForbidden.statusCode).toBe(403);
+    expect(roomForbidden.json()).toEqual({ error: "该操作需要年级组长或学校管理员权限" });
+
+    const before = built.store.loadState();
+    const state = structuredClone(before);
+    state.teachers = state.teachers.map((item) => item.id === teacherId
+      ? {
+          ...item,
+          roles: [...new Set([...item.roles, "gradeLeader" as const])],
+          affiliations: item.affiliations.map((affiliation) => affiliation.id === item.currentAffiliationId
+            ? {
+                ...affiliation,
+                roles: [
+                  ...new Set([
+                    ...(Array.isArray(affiliation.roles) ? affiliation.roles : []),
+                    "gradeLeader" as const,
+                  ]),
+                ],
+              }
+            : affiliation),
+        }
+      : item);
+    built.store.saveState(before, state);
+
+    const allowed = await built.app.inject({ method: "POST", url: "/api/rpc", headers, payload });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json<{ result: { cohortKey: string } }>().result.cohortKey).toBe(cohortKey);
+    const roomAllowed = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: roomPayload,
+    });
+    expect(roomAllowed.statusCode).toBe(200);
+    expect(roomAllowed.json<{ result: Array<{ key: string }> }>().result)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ key: cohortKey })]));
   });
 
   it("returns an empty student list without losing the service method receiver", async () => {

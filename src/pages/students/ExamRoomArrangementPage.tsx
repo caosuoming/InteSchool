@@ -142,7 +142,7 @@ function cloneDraft(arrangement: ExamArrangement): ExamArrangementInput {
   };
 }
 
-export default function ExamRoomArrangementPage() {
+export default function ExamRoomArrangementPage({ embedded = false }: { embedded?: boolean }) {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const schoolId = getCurrentAffiliation()?.schoolId || null;
   const [cohorts, setCohorts] = useState<GradeCohort[]>([]);
@@ -401,25 +401,31 @@ export default function ExamRoomArrangementPage() {
     return groups;
   }, [assignments]);
 
+  const pageActions = draft ? (
+    <>
+      <Button variant="outline" onClick={handleNew}><RotateCcw className="h-4 w-4" />新建方案</Button>
+      <Button variant="gold" onClick={handleSave} loading={saving}><Save className="h-4 w-4" />生成并保存</Button>
+      <Button variant="outline" disabled={assignments.length === 0} onClick={() => window.print()}>
+        <Printer className="h-4 w-4" />打印桌贴
+      </Button>
+    </>
+  ) : undefined;
+
   return (
     <div>
-      <div className="no-print">
-        <PageHeader
-          title="考场安排"
-          description="按年级配置考场容量、班级与科目限制，自动生成座位表和高考式桌贴"
-          icon={<LayoutGrid className="h-5 w-5" />}
-          action={draft ? (
-            <>
-              <Button variant="outline" onClick={handleNew}><RotateCcw className="h-4 w-4" />新建方案</Button>
-              <Button variant="gold" onClick={handleSave} loading={saving}><Save className="h-4 w-4" />生成并保存</Button>
-              <Button variant="outline" disabled={assignments.length === 0} onClick={() => window.print()}>
-                <Printer className="h-4 w-4" />打印桌贴
-              </Button>
-            </>
-          ) : undefined}
-        />
-        <StudentSectionTabs />
-      </div>
+      {embedded ? (
+        pageActions && <div className="no-print mb-5 flex flex-wrap justify-end gap-2">{pageActions}</div>
+      ) : (
+        <div className="no-print">
+          <PageHeader
+            title="考场安排"
+            description="按年级配置考场容量、班级与科目限制，自动生成座位表和高考式桌贴"
+            icon={<LayoutGrid className="h-5 w-5" />}
+            action={pageActions}
+          />
+          <StudentSectionTabs />
+        </div>
+      )}
 
       {!schoolId ? (
         <Card className="no-print"><EmptyState icon={<Users className="h-8 w-8" />} title="个人身份暂不支持考场安排" description="请切换到已认证学校身份后使用。" /></Card>

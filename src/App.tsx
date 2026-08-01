@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, applyUiScale } from "@/stores/settings";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { RequireExamManager } from "@/components/auth/RequireExamManager";
 
 const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
 const SchoolAuthPage = lazy(() => import("@/pages/auth/SchoolAuthPage"));
@@ -34,7 +35,7 @@ const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
 const LessonEditorPage = lazy(() => import("@/pages/lessons/LessonEditorPage"));
 const MyStudentsPage = lazy(() => import("@/pages/students/MyStudentsPage"));
 const StudentGradesPage = lazy(() => import("@/pages/students/StudentGradesPage"));
-const ExamRoomArrangementPage = lazy(() => import("@/pages/students/ExamRoomArrangementPage"));
+const MyExamsPage = lazy(() => import("@/pages/exams/MyExamsPage"));
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 
 function RouteLoading() {
@@ -88,8 +89,13 @@ export default function App() {
             <Route path="/my-students/interaction" element={<MyStudentsPage />} />
             <Route path="/my-students/learning" element={<MyStudentsPage />} />
             <Route path="/my-students/grades" element={<StudentGradesPage />} />
-            <Route path="/my-students/exam-rooms" element={<ExamRoomArrangementPage />} />
+            <Route path="/my-students/exam-rooms" element={<Navigate to="/my-exams/rooms" replace />} />
             <Route path="/student-learning" element={<MyStudentsPage />} />
+
+            {/* 我的考试（年级组长及学校管理身份） */}
+            <Route path="/my-exams" element={<RequireExamManager><MyExamsPage /></RequireExamManager>} />
+            <Route path="/my-exams/rooms" element={<RequireExamManager><MyExamsPage section="rooms" /></RequireExamManager>} />
+            <Route path="/my-exams/grades" element={<RequireExamManager><MyExamsPage section="grades" /></RequireExamManager>} />
 
             <Route path="/school-resources" element={<SchoolResourcesPage />} />
             <Route path="/platform-resources" element={<PlatformResourcesPage />} />

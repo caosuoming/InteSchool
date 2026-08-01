@@ -362,6 +362,7 @@ export interface GradeTeacherOption {
   id: string;
   name: string;
   subject: string;
+  teachingClassIds?: string[];
 }
 
 export interface GradeImportContext {
@@ -443,10 +444,25 @@ export interface GradeTemplateProfile {
 export interface GradeExamSettings {
   /** 学科对应的任课教师，可配置多人。 */
   subjectTeacherIds: Record<string, string[]>;
+  /** 班级和学科对应的任课教师；旧数据缺失时从 subjectTeacherIds 迁移。 */
+  classSubjectTeacherIds?: Record<string, Record<string, string[]>>;
   /** 仅需要赋分的学科配置规则；未配置的科目沿用原始分。 */
   assignmentRules: Record<string, GradeBandRule[]>;
   classSubjects: GradeClassSubjectSetting[];
   templates: GradeStatisticsTemplate[];
+}
+
+/** 同一年级的成绩预处理配置，导入不同考试时复用。 */
+export interface GradeCohortSettings {
+  id: string;
+  schoolId: string;
+  cohortKey: string;
+  cohortLabel: string;
+  subjects: string[];
+  settings: GradeExamSettings;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GradeScoreRecord {
@@ -568,7 +584,7 @@ export interface GradeExamImportInput {
   sourceSheetName: string;
   subjects: string[];
   rows: GradeImportRow[];
-  settings: GradeExamSettings;
+  settings?: GradeExamSettings;
 }
 
 export type TreeNodeType = "chapter" | "knowledge";

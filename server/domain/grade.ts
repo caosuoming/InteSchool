@@ -1,5 +1,6 @@
 import type {
   GradeCohort,
+  GradeCohortSettings,
   GradeExam,
   GradeExamImportInput,
   GradeExamSettings,
@@ -77,7 +78,12 @@ function teacherOptions(schoolId: string): GradeTeacherOption[] {
     .flatMap((teacher) => {
       const affiliation = teacher.affiliations?.find((item) => item.schoolId === schoolId);
       if (!affiliation || affiliation.status !== "active") return [];
-      return [{ id: teacher.id, name: teacher.name, subject: affiliation.subject }];
+      return [{
+        id: teacher.id,
+        name: teacher.name,
+        subject: affiliation.subject,
+        teachingClassIds: affiliation.teachingClassIds || [],
+      }];
     })
     .sort((left, right) => left.subject.localeCompare(right.subject, "zh-CN") || left.name.localeCompare(right.name, "zh-CN"));
 }
@@ -168,15 +174,115 @@ function defaultOrNormalizedSettings(
     context.classes.map((item) => item.id),
     context.teachers,
   );
+  const baseSettings = settings || defaults;
   const inheritedDefaults = context.templateProfile
-    ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }
-    : defaults;
+    ? { ...baseSettings, templates: structuredClone(context.templateProfile.templates) }
+    : baseSettings;
   return normalizeGradeSettings(
-    settings || inheritedDefaults,
+    inheritedDefaults,
     subjects,
     context.classes.map((item) => item.id),
     context.teachers.map((item) => item.id),
   );
+}
+
+function cohortSettingsFor(schoolId: string, cohortKey: string): GradeCohortSettings | null {
+  return readList<GradeCohortSettings>("gradeCohortSettings")
+    .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey) || null;
+}
+
+function templateProfileFor(schoolId: string, cohortKey: string): GradeTemplateProfile | null {
+  return readList<GradeTemplateProfile>("gradeTemplateProfiles")
+    .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey) || null;
+}
+
+function upsertTemplateProfile(
+  schoolId: string,
+  cohortKey: string,
+  teacherId: string,
+  templates: GradeStatisticsTemplate[],
+): GradeTemplateProfile {
+  const current = templateProfileFor(schoolId, cohortKey);
+  const now = new Date().toISOString();
+  const profile: GradeTemplateProfile = {
+    id: current?.id || genId("grade-template-profile"),
+    schoolId,
+    cohortKey,
+    templates: structuredClone(templates),
+    updatedByTeacherId: teacherId,
+    createdAt: current?.createdAt || now,
+    updatedAt: now,
+  };
+  db.update("gradeTemplateProfiles", (items: GradeTemplateProfile[] = []) => current
+    ? items.map((item) => item.id === current.id ? profile : item)
+    : [...items, profile]);
+  return profile;
+}
+
+function recalculateCohortExams(
+  schoolId: string,
+  cohortKey: string,
+  settings: GradeExamSettings,
+  context: GradeImportContext,
+): void {
+  db.update("gradeExams", (value: GradeExam[] | undefined) => {
+    const exams = Array.isArray(value) ? value : [];
+    return exams.map((exam) => {
+      if (exam.schoolId !== schoolId || exam.cohortKey !== cohortKey) return exam;
+      const normalized = normalizeGradeSettings(
+        settings,
+        exam.subjects,
+        context.classes.map((item) => item.id),
+        context.teachers.map((item) => item.id),
+      );
+      return {
+        ...exam,
+        settings: normalized,
+        records: calculateGradeRecords(examBaseRecords(exam.records), exam.subjects, normalized),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  });
+}
+
+function persistCohortSettings(
+  schoolId: string,
+  teacherId: string,
+  cohortKey: string,
+  subjects: string[],
+  settings: GradeExamSettings,
+): GradeCohortSettings {
+  const context = requireContext(schoolId, cohortKey);
+  const normalizedSubjects = normalizeSubjects(subjects);
+  const normalizedSettings = normalizeGradeSettings(
+    settings,
+    normalizedSubjects,
+    context.classes.map((item) => item.id),
+    context.teachers.map((item) => item.id),
+  );
+  const existing = cohortSettingsFor(schoolId, cohortKey);
+  const now = new Date().toISOString();
+  const record: GradeCohortSettings = {
+    id: existing?.id || genId("grade-cohort-settings"),
+    schoolId,
+    cohortKey,
+    cohortLabel: context.cohort.label,
+    subjects: normalizedSubjects,
+    settings: normalizedSettings,
+    updatedBy: teacherId,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  };
+
+  db.update("gradeCohortSettings", (value: GradeCohortSettings[] | undefined) => {
+    const records = Array.isArray(value) ? value : [];
+    return existing
+      ? records.map((item) => item.id === existing.id ? record : item)
+      : [...records, record];
+  });
+  upsertTemplateProfile(schoolId, cohortKey, teacherId, normalizedSettings.templates);
+  recalculateCohortExams(schoolId, cohortKey, normalizedSettings, context);
+  return record;
 }
 
 function activeAffiliation(teacher: Teacher): TeacherAffiliation | null {
@@ -396,8 +502,7 @@ export const gradeService = {
   ): Promise<GradeTemplateProfile | null> {
     await delay(100);
     requireContext(schoolId, cohortKey);
-    return readList<GradeTemplateProfile>("gradeTemplateProfiles")
-      .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey) || null;
+    return templateProfileFor(schoolId, cohortKey);
   },
 
   async saveCohortTemplateProfile(
@@ -412,33 +517,107 @@ export const gradeService = {
     requireGradeTemplateManager(schoolId, teacherId);
     const context = requireContext(schoolId, cohortKey);
     const subjects = normalizeSubjects(subjectsInput || []);
-    const defaults = buildDefaultGradeSettings(
-      subjects,
+    const cohortSettings = cohortSettingsFor(schoolId, cohortKey);
+    const effectiveSubjects = cohortSettings?.subjects || subjects;
+    const defaults = cohortSettings?.settings || buildDefaultGradeSettings(
+      effectiveSubjects,
       context.classes.map((item) => item.id),
       context.teachers,
     );
     const normalizedTemplates = normalizeGradeSettings(
       { ...defaults, templates: templates || [] },
-      subjects,
+      effectiveSubjects,
       context.classes.map((item) => item.id),
       context.teachers.map((item) => item.id),
     ).templates;
-    const profiles = readList<GradeTemplateProfile>("gradeTemplateProfiles");
-    const current = profiles.find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey);
-    const now = new Date().toISOString();
-    const profile: GradeTemplateProfile = {
-      id: current?.id || genId("grade-template-profile"),
-      schoolId,
-      cohortKey,
-      templates: normalizedTemplates,
-      updatedByTeacherId: teacherId,
-      createdAt: current?.createdAt || now,
-      updatedAt: now,
+    if (cohortSettings) {
+      persistCohortSettings(
+        schoolId,
+        teacherId,
+        cohortKey,
+        effectiveSubjects,
+        { ...cohortSettings.settings, templates: normalizedTemplates },
+      );
+      return templateProfileFor(schoolId, cohortKey)!;
+    }
+    return upsertTemplateProfile(schoolId, cohortKey, teacherId, normalizedTemplates);
+  },
+
+  async getCohortSettings(
+    schoolId: string,
+    cohortKey: string,
+  ): Promise<GradeCohortSettings | null> {
+    await delay(100);
+    requireContext(schoolId, cohortKey);
+    return cohortSettingsFor(schoolId, cohortKey);
+  },
+
+  async saveCohortSettings(
+    schoolId: string,
+    teacherId: string,
+    cohortKey: string,
+    subjects: string[],
+    settings: GradeExamSettings,
+  ): Promise<GradeCohortSettings> {
+    await delay(200);
+    maybeThrowError();
+    return persistCohortSettings(schoolId, teacherId, cohortKey, subjects, settings);
+  },
+
+  async copyCohortSettings(
+    schoolId: string,
+    teacherId: string,
+    sourceCohortKey: string,
+    targetCohortKey: string,
+  ): Promise<GradeCohortSettings> {
+    await delay(200);
+    maybeThrowError();
+    if (sourceCohortKey === targetCohortKey) throw new Error("来源年级和目标年级不能相同");
+    const source = cohortSettingsFor(schoolId, sourceCohortKey);
+    if (!source) throw new Error("来源年级尚未保存成绩预处理配置");
+    const sourceContext = requireContext(schoolId, sourceCohortKey);
+    const targetContext = requireContext(schoolId, targetCohortKey);
+    const sourceClassSettings = new Map(
+      source.settings.classSubjects.map((item) => [item.classId, item]),
+    );
+    const sourceClasses = [...sourceContext.classes]
+      .sort((left, right) => left.name.localeCompare(right.name, "zh-CN", { numeric: true }));
+    const targetClasses = [...targetContext.classes]
+      .sort((left, right) => left.name.localeCompare(right.name, "zh-CN", { numeric: true }));
+    const classMappings = targetClasses.map((targetClass, index) => {
+      const sameName = sourceClasses.find((item) => item.name === targetClass.name);
+      const sourceClass = sameName || sourceClasses[index];
+      return { targetClass, sourceClass };
+    });
+    const targetClassSubjects = classMappings.map(({ targetClass, sourceClass }) => {
+      const sourceSetting = sourceClass ? sourceClassSettings.get(sourceClass.id) : undefined;
+      return {
+        classId: targetClass.id,
+        examSubjects: [...(sourceSetting?.examSubjects || source.subjects)],
+        statisticSubjects: [...(sourceSetting?.statisticSubjects || source.subjects)],
+      };
+    });
+    const targetClassSubjectTeacherIds = Object.fromEntries(
+      classMappings.map(({ targetClass, sourceClass }) => [
+        targetClass.id,
+        structuredClone(
+          (sourceClass && source.settings.classSubjectTeacherIds?.[sourceClass.id])
+            || source.settings.subjectTeacherIds,
+        ),
+      ]),
+    );
+    const copied: GradeExamSettings = {
+      ...structuredClone(source.settings),
+      classSubjects: targetClassSubjects,
+      classSubjectTeacherIds: targetClassSubjectTeacherIds,
     };
-    db.update("gradeTemplateProfiles", (items: GradeTemplateProfile[] = []) => current
-      ? items.map((item) => item.id === current.id ? profile : item)
-      : [...items, profile]);
-    return profile;
+    return persistCohortSettings(
+      schoolId,
+      teacherId,
+      targetCohortKey,
+      source.subjects,
+      copied,
+    );
   },
 
   async listExams(schoolId: string, cohortKey?: string): Promise<GradeExam[]> {
@@ -541,7 +720,8 @@ export const gradeService = {
       });
     });
 
-    const settings = defaultOrNormalizedSettings(input.settings, subjects, context);
+    const preset = cohortSettingsFor(schoolId, input.cohortKey);
+    const settings = defaultOrNormalizedSettings(input.settings || preset?.settings, subjects, context);
     const records = calculateGradeRecords(baseRecords, subjects, settings);
     const now = new Date().toISOString();
     const exam: GradeExam = {
@@ -587,16 +767,14 @@ export const gradeService = {
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
     if (!current) throw new Error("成绩考试不存在");
-    const context = requireContext(current.schoolId, current.cohortKey);
-    const normalized = defaultOrNormalizedSettings(settings, current.subjects, context);
-    const updated: GradeExam = {
-      ...current,
-      settings: normalized,
-      records: calculateGradeRecords(examBaseRecords(current.records), current.subjects, normalized),
-      updatedAt: new Date().toISOString(),
-    };
-    db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
-    return updated;
+    persistCohortSettings(
+      current.schoolId,
+      current.teacherId,
+      current.cohortKey,
+      current.subjects,
+      settings,
+    );
+    return readList<GradeExam>("gradeExams").find((item) => item.id === examId)!;
   },
 
   async deleteExam(examId: string): Promise<void> {

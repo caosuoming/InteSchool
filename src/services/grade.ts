@@ -1,6 +1,7 @@
 import { rpcCall } from "./api";
 import type {
   GradeCohort,
+  GradeCohortSettings,
   GradeExam,
   GradeExamImportInput,
   GradeExamSettings,
@@ -41,6 +42,40 @@ export const gradeService = {
       subjects,
       templates,
     ]) as Promise<GradeTemplateProfile>;
+  },
+
+  async getCohortSettings(schoolId: string, cohortKey: string): Promise<GradeCohortSettings | null> {
+    return rpcCall("grade", "getCohortSettings", [schoolId, cohortKey]) as Promise<GradeCohortSettings | null>;
+  },
+
+  async saveCohortSettings(
+    schoolId: string,
+    teacherId: string,
+    cohortKey: string,
+    subjects: string[],
+    settings: GradeExamSettings,
+  ): Promise<GradeCohortSettings> {
+    return rpcCall("grade", "saveCohortSettings", [
+      schoolId,
+      teacherId,
+      cohortKey,
+      subjects,
+      settings,
+    ]) as Promise<GradeCohortSettings>;
+  },
+
+  async copyCohortSettings(
+    schoolId: string,
+    teacherId: string,
+    sourceCohortKey: string,
+    targetCohortKey: string,
+  ): Promise<GradeCohortSettings> {
+    return rpcCall("grade", "copyCohortSettings", [
+      schoolId,
+      teacherId,
+      sourceCohortKey,
+      targetCohortKey,
+    ]) as Promise<GradeCohortSettings>;
   },
 
   async listExams(schoolId: string, cohortKey?: string): Promise<GradeExam[]> {

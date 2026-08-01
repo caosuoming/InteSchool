@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type {
   GradeCohort,
+  GradeCohortSettings,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -32,7 +33,7 @@ import {
   type GradeWorkbookData,
 } from "@/lib/grade-spreadsheet";
 import { autoMatchGradeRows, gradeRowResolutionError } from "@/lib/grade-matching";
-import { buildDefaultGradeSettings } from "@/lib/grade-statistics";
+import { buildDefaultGradeSettings, normalizeGradeSettings } from "@/lib/grade-statistics";
 import { cn } from "@/lib/utils";
 import { GradeSettingsEditor } from "./GradeSettingsEditor";
 
@@ -93,6 +94,7 @@ export function GradeImportWizard({
   const [step, setStep] = useState<WizardStep>(1);
   const [cohortKey, setCohortKey] = useState("");
   const [context, setContext] = useState<GradeImportContext | null>(null);
+  const [cohortSettings, setCohortSettings] = useState<GradeCohortSettings | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
   const [workbook, setWorkbook] = useState<GradeWorkbookData | null>(null);
   const [sheetIndex, setSheetIndex] = useState(0);
@@ -109,6 +111,7 @@ export function GradeImportWizard({
     setStep(1);
     setCohortKey("");
     setContext(null);
+    setCohortSettings(null);
     setWorkbook(null);
     setSheetIndex(0);
     setHeaderRowIndex(0);
@@ -127,13 +130,20 @@ export function GradeImportWizard({
   useEffect(() => {
     if (!cohortKey) {
       setContext(null);
+      setCohortSettings(null);
       return;
     }
     let active = true;
     setContextLoading(true);
-    gradeService.getImportContext(schoolId, cohortKey)
-      .then((value) => {
-        if (active) setContext(value);
+    Promise.all([
+      gradeService.getImportContext(schoolId, cohortKey),
+      gradeService.getCohortSettings(schoolId, cohortKey),
+    ])
+      .then(([value, preset]) => {
+        if (active) {
+          setContext(value);
+          setCohortSettings(preset);
+        }
       })
       .catch((error) => {
         if (active) toast.error("加载年级学生失败", error instanceof Error ? error.message : undefined);
@@ -203,14 +213,25 @@ export function GradeImportWizard({
       const parsed = parseGradeRows(selectedSheet, headerRowIndex, mappings);
       const matched = autoMatchGradeRows(parsed, context);
       setRows(matched);
+      const importedSubjects = mappedSubjects(mappings);
       const defaults = buildDefaultGradeSettings(
-        mappedSubjects(mappings),
+        importedSubjects,
         context.classes.map((item) => item.id),
         context.teachers,
       );
-      setSettings(context.templateProfile
+      const formulaDefaults = context.templateProfile
         ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }
-        : defaults);
+        : defaults;
+      setSettings(cohortSettings
+        ? normalizeGradeSettings(
+            context.templateProfile
+              ? { ...cohortSettings.settings, templates: structuredClone(context.templateProfile.templates) }
+              : cohortSettings.settings,
+            importedSubjects,
+            context.classes.map((item) => item.id),
+            context.teachers.map((item) => item.id),
+          )
+        : formulaDefaults);
       setStep(2);
     } catch (error) {
       toast.error("字段映射不完整", error instanceof Error ? error.message : undefined);
