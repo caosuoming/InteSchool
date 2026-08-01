@@ -1,6 +1,8 @@
 import type {
   ExtractedDocumentBlock,
   Lecture,
+  LectureColumnTemplate,
+  LectureColumnTemplateItem,
   LectureFilter,
   LectureSection,
   ResourceSemester,
@@ -69,6 +71,12 @@ export interface LectureInput {
   originalFileSize?: number;
 }
 
+export interface LectureColumnTemplateInput {
+  name: string;
+  description?: string;
+  columns: LectureColumnTemplateItem[];
+}
+
 export const lectureService = {
   async listLectures(filter: LectureFilter = {}): Promise<Lecture[]> {
     await delay(300);
@@ -81,6 +89,69 @@ export const lectureService = {
   async getLecture(id: string): Promise<Lecture | null> {
     await delay(200);
     return db.read("lectures").find((l) => l.id === id) || null;
+  },
+
+  async listColumnTemplates(
+    teacherId: string,
+    schoolId: string,
+  ): Promise<LectureColumnTemplate[]> {
+    await delay(150);
+    return db
+      .read("lectureColumnTemplates")
+      .filter((template: LectureColumnTemplate) => (
+        template.teacherId === teacherId && template.schoolId === schoolId
+      ))
+      .sort((a: LectureColumnTemplate, b: LectureColumnTemplate) => (
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      ));
+  },
+
+  async createColumnTemplate(
+    teacherId: string,
+    schoolId: string,
+    input: LectureColumnTemplateInput,
+  ): Promise<LectureColumnTemplate> {
+    await delay(250);
+    maybeThrowError();
+    const name = input.name.trim();
+    const columns = input.columns
+      .map((column) => ({
+        title: column.title.trim(),
+        content: column.content.trim(),
+      }))
+      .filter((column) => column.title.length > 0);
+    if (!name) throw new Error("请填写模板名称");
+    if (columns.length === 0) throw new Error("请至少保存一个栏目");
+
+    const now = new Date().toISOString();
+    const template: LectureColumnTemplate = {
+      id: genId("lectpl"),
+      teacherId,
+      schoolId,
+      name,
+      description: input.description?.trim() || undefined,
+      columns,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.update("lectureColumnTemplates", (list) => [template, ...list]);
+    return template;
+  },
+
+  async deleteColumnTemplate(
+    templateId: string,
+    teacherId: string,
+  ): Promise<void> {
+    await delay(150);
+    const template = db
+      .read("lectureColumnTemplates")
+      .find((item: LectureColumnTemplate) => item.id === templateId);
+    if (!template) return;
+    if (template.teacherId !== teacherId) throw new Error("无权删除该栏目模板");
+    db.update(
+      "lectureColumnTemplates",
+      (list) => list.filter((item: LectureColumnTemplate) => item.id !== templateId),
+    );
   },
 
   async createLecture(

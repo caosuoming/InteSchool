@@ -39,7 +39,7 @@ import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoo
 import type {
   Lecture, LectureSection, Question, Basket, AnyClass, TreeNode,
   Student, AnswerRecord, AnswerScore, Courseware, Material, SchoolClass, PersonalClass,
-  LectureType, ResourceSemester, ExamPaper,
+  LectureColumnTemplate, LectureType, ResourceSemester, ExamPaper,
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
@@ -185,6 +185,12 @@ export default function LectureEditorPage() {
   const [outlineExpanded, setOutlineExpanded] = useState<Record<string, boolean>>({});
   const [columnTemplateOpen, setColumnTemplateOpen] = useState(false);
   const [templateChapterIds, setTemplateChapterIds] = useState<string[]>([]);
+  const [columnTemplates, setColumnTemplates] = useState<LectureColumnTemplate[]>([]);
+  const [createColumnTemplateOpen, setCreateColumnTemplateOpen] = useState(false);
+  const [columnTemplateName, setColumnTemplateName] = useState("");
+  const [columnTemplateDescription, setColumnTemplateDescription] = useState("");
+  const [savingColumnTemplate, setSavingColumnTemplate] = useState(false);
+  const [deletingColumnTemplateId, setDeletingColumnTemplateId] = useState<string | null>(null);
 
   // 题目编辑（同步题库）
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
@@ -266,14 +272,16 @@ export default function LectureEditorPage() {
   useEffect(() => {
     const load = async () => {
       if (!teacher || (id === "new" && !resourceOptionsReady)) return;
-      const [chs, kps, lecTypes] = await Promise.all([
+      const [chs, kps, lecTypes, savedColumnTemplates] = await Promise.all([
         knowledgeService.getChapterTree(teacher.schoolId!),
         knowledgeService.getKnowledgeTree(teacher.schoolId!),
         settingsService.listLectureTypes(teacher.schoolId!),
+        lectureService.listColumnTemplates(teacher.id, teacher.schoolId!),
       ]);
       setChapterTree(chs);
       setKnowledgeTree(kps);
       setLectureTypes(lecTypes.filter((t) => t.enabled));
+      setColumnTemplates(savedColumnTemplates);
       const allClasses = await classSvc.listAllClasses(teacher.schoolId!, teacher.id);
       setClasses(allClasses);
       setBaskets(await basketService.listBaskets(teacher.id));
@@ -527,6 +535,83 @@ export default function LectureEditorPage() {
     setColumnTemplateOpen(false);
     setTemplateChapterIds([]);
     toast.success(`已从模板添加 ${newColumns.length} 个栏目`);
+  };
+
+  const handleApplySavedColumnTemplate = (template: LectureColumnTemplate) => {
+    const existingTitles = new Set(
+      sections
+        .filter((section) => section.type === "chapter")
+        .map((section) => section.title.trim()),
+    );
+    const now = Date.now();
+    const newColumns = template.columns
+      .filter((column) => !existingTitles.has(column.title.trim()))
+      .map<LectureSection>((column, index) => ({
+        id: `sec-saved-template-${now}-${index}`,
+        title: column.title,
+        type: "chapter",
+        content: column.content,
+        children: [],
+      }));
+    if (newColumns.length === 0) {
+      toast.warning("该模板中的栏目已全部存在");
+      return;
+    }
+    setSections((previous) => [...previous, ...newColumns]);
+    setSelectedChapterId(newColumns[0].id);
+    setOutlineExpanded((previous) => ({
+      ...previous,
+      ...Object.fromEntries(newColumns.map((column) => [column.id, true])),
+    }));
+    setColumnTemplateOpen(false);
+    setTemplateChapterIds([]);
+    toast.success(`已使用模板“${template.name}”添加 ${newColumns.length} 个栏目`);
+  };
+
+  const handleCreateColumnTemplate = async () => {
+    if (!teacher?.schoolId) return;
+    const columns = sections
+      .filter((section) => section.type === "chapter")
+      .map((section) => ({ title: section.title, content: section.content }));
+    if (!columnTemplateName.trim()) {
+      toast.warning("请填写模板名称");
+      return;
+    }
+    if (columns.length === 0) {
+      toast.warning("当前讲义没有可保存的栏目");
+      return;
+    }
+    setSavingColumnTemplate(true);
+    try {
+      const created = await lectureService.createColumnTemplate(teacher.id, teacher.schoolId, {
+        name: columnTemplateName,
+        description: columnTemplateDescription,
+        columns,
+      });
+      setColumnTemplates((previous) => [created, ...previous]);
+      setCreateColumnTemplateOpen(false);
+      setColumnTemplateName("");
+      setColumnTemplateDescription("");
+      toast.success(`已保存栏目模板“${created.name}”`);
+    } catch (error) {
+      toast.error("保存栏目模板失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingColumnTemplate(false);
+    }
+  };
+
+  const handleDeleteColumnTemplate = async (template: LectureColumnTemplate) => {
+    if (!teacher) return;
+    setDeletingColumnTemplateId(template.id);
+    try {
+      await lectureService.deleteColumnTemplate(template.id, teacher.id);
+      setColumnTemplates((previous) => previous.filter((item) => item.id !== template.id));
+      toast.success(`已删除栏目模板“${template.name}”`);
+    } catch (error) {
+      toast.error("删除栏目模板失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDeletingColumnTemplateId(null);
+    }
   };
 
   const handleAddTextSection = () => {
@@ -1686,6 +1771,9 @@ export default function LectureEditorPage() {
                   <Badge variant="ink">{sections.filter((section) => section.type === "chapter").length}</Badge>
                 </div>
                 <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => setCreateColumnTemplateOpen(true)} className="p-1.5 rounded text-ink-500 hover:text-gold-700 hover:bg-gold-50" title="将当前栏目保存为模板">
+                    <Save className="w-3.5 h-3.5" />
+                  </button>
                   <button type="button" onClick={() => setColumnTemplateOpen(true)} className="p-1.5 rounded text-ink-500 hover:text-gold-700 hover:bg-gold-50" title="从模板添加栏目">
                     <LayoutTemplate className="w-3.5 h-3.5" />
                   </button>
@@ -1738,8 +1826,9 @@ export default function LectureEditorPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-1.5 pt-3 mt-3 border-t border-ink-100">
+              <div className="grid grid-cols-3 gap-1.5 pt-3 mt-3 border-t border-ink-100">
                 <Button variant="outline" size="sm" onClick={() => setColumnTemplateOpen(true)}><LayoutTemplate className="w-3.5 h-3.5" /> 模板</Button>
+                <Button variant="outline" size="sm" onClick={() => setCreateColumnTemplateOpen(true)}><Save className="w-3.5 h-3.5" /> 保存模板</Button>
                 <Button variant="gold" size="sm" onClick={handleAddChapter}><Plus className="w-3.5 h-3.5" /> 新建</Button>
               </div>
             </Card>
@@ -2288,9 +2377,9 @@ export default function LectureEditorPage() {
           setColumnTemplateOpen(false);
           setTemplateChapterIds([]);
         }}
-        size="md"
-        title="从模板添加栏目"
-        description={`已选择 ${templateChapterIds.length} 个栏目`}
+        size="lg"
+        title="栏目模板"
+        description={`已保存 ${columnTemplates.length} 个模板；也可从章节目录生成栏目`}
         footer={
           <>
             <Button
@@ -2304,27 +2393,142 @@ export default function LectureEditorPage() {
             </Button>
             <Button variant="gold" onClick={handleAddColumnsFromTemplate} disabled={templateChapterIds.length === 0}>
               <Plus className="w-3.5 h-3.5" />
-              添加所选栏目
+              从章节目录添加{templateChapterIds.length > 0 ? `（${templateChapterIds.length}）` : ""}
             </Button>
           </>
         }
       >
-        {chapterTree ? (
-          <div className="h-[420px] overflow-y-auto rounded-lg border border-ink-100 p-2">
-            <SearchableTree
-              data={chapterTree}
-              title="栏目模板"
-              accent="gold"
-              checkable
-              checkedIds={templateChapterIds}
-              onCheck={(ids) => setTemplateChapterIds(ids.filter((id) => id !== "root"))}
-              expandLevel={2}
-              searchPlaceholder="搜索栏目模板..."
-            />
+        <div className="space-y-5">
+          <section>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div>
+                <h4 className="text-sm font-semibold text-ink-800">我的栏目模板</h4>
+                <p className="text-xs text-ink-400 mt-0.5">保存当前讲义的栏目结构，并在其它讲义中复用。</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setColumnTemplateOpen(false);
+                  setCreateColumnTemplateOpen(true);
+                }}
+              >
+                <Save className="w-3.5 h-3.5" /> 保存当前栏目
+              </Button>
+            </div>
+            {columnTemplates.length === 0 ? (
+              <div className="py-8 text-center rounded-lg border border-dashed border-ink-200 text-sm text-ink-400">
+                暂无已保存模板
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                {columnTemplates.map((template) => (
+                  <div key={template.id} className="rounded-lg border border-ink-100 p-3 bg-paper">
+                    <div className="flex items-start gap-2">
+                      <LayoutTemplate className="w-4 h-4 text-gold-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-ink-800 truncate">{template.name}</div>
+                        <div className="text-xs text-ink-400 mt-0.5">
+                          {template.columns.length} 个栏目{template.description ? ` · ${template.description}` : ""}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {template.columns.slice(0, 4).map((column, index) => (
+                            <span key={`${column.title}-${index}`} className="px-1.5 py-0.5 rounded bg-ink-50 text-[10px] text-ink-500">
+                              {column.title}
+                            </span>
+                          ))}
+                          {template.columns.length > 4 && <span className="text-[10px] text-ink-400">+{template.columns.length - 4}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-1.5 mt-3 pt-2 border-t border-ink-100">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={deletingColumnTemplateId === template.id}
+                        onClick={() => handleDeleteColumnTemplate(template)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> 删除
+                      </Button>
+                      <Button variant="gold" size="sm" onClick={() => handleApplySavedColumnTemplate(template)}>
+                        <Plus className="w-3.5 h-3.5" /> 使用模板
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="pt-4 border-t border-ink-100">
+            <div className="mb-2">
+              <h4 className="text-sm font-semibold text-ink-800">从章节目录生成栏目</h4>
+              <p className="text-xs text-ink-400 mt-0.5">将学校章节树中的节点批量转换为讲义栏目。</p>
+            </div>
+            {chapterTree ? (
+              <div className="h-[300px] overflow-y-auto rounded-lg border border-ink-100 p-2">
+                <SearchableTree
+                  data={chapterTree}
+                  title="章节目录"
+                  accent="gold"
+                  checkable
+                  checkedIds={templateChapterIds}
+                  onCheck={(ids) => setTemplateChapterIds(ids.filter((id) => id !== "root"))}
+                  expandLevel={2}
+                  searchPlaceholder="搜索章节..."
+                />
+              </div>
+            ) : (
+              <div className="py-10 text-center text-sm text-ink-400">暂无可用章节目录</div>
+            )}
+          </section>
+        </div>
+      </Modal>
+
+      <Modal
+        open={createColumnTemplateOpen}
+        onClose={() => {
+          setCreateColumnTemplateOpen(false);
+          setColumnTemplateName("");
+          setColumnTemplateDescription("");
+        }}
+        size="sm"
+        title="保存栏目模板"
+        description={`将当前 ${sections.filter((section) => section.type === "chapter").length} 个栏目保存为可复用模板`}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCreateColumnTemplateOpen(false)}>取消</Button>
+            <Button variant="gold" loading={savingColumnTemplate} onClick={handleCreateColumnTemplate}>
+              <Save className="w-3.5 h-3.5" /> 保存模板
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Input
+            label="模板名称"
+            value={columnTemplateName}
+            onChange={(event) => setColumnTemplateName(event.target.value)}
+            placeholder="如：专题复习讲义"
+          />
+          <Textarea
+            label="模板说明"
+            value={columnTemplateDescription}
+            onChange={(event) => setColumnTemplateDescription(event.target.value)}
+            rows={3}
+            placeholder="说明该模板的适用场景（可选）"
+          />
+          <div className="rounded-lg border border-ink-100 bg-ink-50/50 p-3">
+            <div className="text-xs font-medium text-ink-600 mb-2">将保存以下栏目</div>
+            <div className="flex flex-wrap gap-1.5">
+              {sections.filter((section) => section.type === "chapter").map((section) => (
+                <span key={section.id} className="px-2 py-1 rounded bg-paper border border-ink-100 text-xs text-ink-600">
+                  {section.title}
+                </span>
+              ))}
+            </div>
           </div>
-        ) : (
-          <div className="py-10 text-center text-sm text-ink-400">暂无可用栏目模板</div>
-        )}
+        </div>
       </Modal>
 
       {/* 添加题目弹窗 */}
