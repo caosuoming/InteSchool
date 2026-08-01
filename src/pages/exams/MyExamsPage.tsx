@@ -30,6 +30,7 @@ import { Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import {
+  ASSIGNMENT_GRADE_SUBJECTS,
   buildDefaultGradeSettings,
   DEFAULT_ASSIGNMENT_RULES,
   normalizeGradeSettings,
@@ -88,7 +89,9 @@ function addSubject(
         .map((teacher) => teacher.id),
     },
   ]));
-  const isElective = ["物理", "化学", "生物", "政治", "历史", "地理"].includes(subject);
+  const usesAssignment = ASSIGNMENT_GRADE_SUBJECTS.includes(
+    subject as (typeof ASSIGNMENT_GRADE_SUBJECTS)[number],
+  );
   return {
     ...current,
     subjectTeacherIds: {
@@ -96,7 +99,7 @@ function addSubject(
       [subject]: teacherIds,
     },
     classSubjectTeacherIds,
-    assignmentRules: isElective
+    assignmentRules: usesAssignment
       ? {
           ...current.assignmentRules,
           [subject]: DEFAULT_ASSIGNMENT_RULES.map((rule) => ({ ...rule })),

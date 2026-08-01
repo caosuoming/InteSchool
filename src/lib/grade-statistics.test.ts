@@ -68,6 +68,59 @@ describe("grade statistics", () => {
     expect(settings.templates.find((item) => item.kind === "customTable")?.columns?.length).toBeGreaterThan(0);
   });
 
+  it("only enables assignment conversion for chemistry, biology, politics, and geography", () => {
+    const subjects = ["物理", "化学", "生物", "政治", "历史", "地理"];
+    const settings = buildDefaultGradeSettings(subjects, ["class-1"]);
+
+    expect(Object.keys(settings.assignmentRules).sort()).toEqual(
+      ["化学", "生物", "政治", "地理"].sort(),
+    );
+
+    settings.assignmentRules.物理 = settings.assignmentRules.化学.map((rule) => ({ ...rule }));
+    const normalized = normalizeGradeSettings(settings, subjects, ["class-1"]);
+    expect(normalized.assignmentRules.物理).toBeUndefined();
+    expect(normalized.assignmentRules.历史).toBeUndefined();
+  });
+
+  it("ranks non-unified subjects inside each class and keeps them out of that class total", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1", "class-2"]);
+    settings.classSubjects = settings.classSubjects.map((item) => item.classId === "class-1"
+      ? { ...item, separateRankSubjects: ["化学"] }
+      : item);
+    const normalized = normalizeGradeSettings(settings, ["数学", "化学"], ["class-1", "class-2"]);
+    const records = calculateGradeRecords([
+      { ...baseRecords[0], scores: { 数学: 100, 化学: 90 } },
+      { ...baseRecords[1], scores: { 数学: 90, 化学: 80 } },
+      { ...baseRecords[2], scores: { 数学: 80, 化学: 70 } },
+      {
+        ...baseRecords[2],
+        id: "score-4",
+        studentId: "student-4",
+        studentName: "丁",
+        studentNo: "004",
+        scores: { 数学: 70, 化学: 60 },
+      },
+    ], ["数学", "化学"], normalized);
+
+    const firstClassTop = records.find((record) => record.studentId === "student-1")!;
+    const firstClassSecond = records.find((record) => record.studentId === "student-2")!;
+    const secondClassTop = records.find((record) => record.studentId === "student-3")!;
+    const secondClassSecond = records.find((record) => record.studentId === "student-4")!;
+
+    expect(normalized.classSubjects.find((item) => item.classId === "class-1")?.statisticSubjects)
+      .toEqual(["数学"]);
+    expect(firstClassTop.rawTotal).toBe(100);
+    expect(secondClassTop.rawTotal).toBe(80);
+    expect(firstClassTop.assignedScores.化学).toBe(100);
+    expect(secondClassTop.assignedScores.化学).toBe(100);
+    expect(firstClassTop.subjectRanks?.化学).toBe(1);
+    expect(firstClassSecond.subjectRanks?.化学).toBe(2);
+    expect(firstClassTop.subjectRankScopes?.化学).toBe("class");
+    expect(secondClassTop.subjectRanks?.化学).toBe(1);
+    expect(secondClassSecond.subjectRanks?.化学).toBe(2);
+    expect(secondClassTop.subjectRankScopes?.化学).toBe("cohort");
+  });
+
   it("migrates legacy subject-wide teachers into every class", () => {
     const settings = normalizeGradeSettings({
       subjectTeacherIds: { 数学: ["teacher-math"] },

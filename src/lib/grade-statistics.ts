@@ -13,6 +13,7 @@ import {
 
 export const CORE_GRADE_SUBJECTS = ["语文", "数学", "英语"] as const;
 export const ELECTIVE_GRADE_SUBJECTS = ["物理", "化学", "生物", "政治", "历史", "地理"] as const;
+export const ASSIGNMENT_GRADE_SUBJECTS = ["化学", "生物", "政治", "地理"] as const;
 
 export const DEFAULT_ASSIGNMENT_RULES: GradeBandRule[] = [
   { label: "A", percentileFrom: 0, percentileTo: 15, assignedMin: 86, assignedMax: 100 },
@@ -54,6 +55,9 @@ export function buildDefaultGradeSettings(
   const electiveSubjects = normalizedSubjects.filter((subject) =>
     ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]),
   );
+  const assignmentSubjects = normalizedSubjects.filter((subject) =>
+    ASSIGNMENT_GRADE_SUBJECTS.includes(subject as (typeof ASSIGNMENT_GRADE_SUBJECTS)[number]),
+  );
   const coreSubjects = normalizedSubjects.filter((subject) =>
     CORE_GRADE_SUBJECTS.includes(subject as (typeof CORE_GRADE_SUBJECTS)[number]),
   );
@@ -78,7 +82,7 @@ export function buildDefaultGradeSettings(
     ]),
   );
   const assignmentRules = Object.fromEntries(
-    electiveSubjects.map((subject) => [
+    assignmentSubjects.map((subject) => [
       subject,
       DEFAULT_ASSIGNMENT_RULES.map((rule) => ({ ...rule })),
     ]),
@@ -87,6 +91,7 @@ export function buildDefaultGradeSettings(
     classId,
     examSubjects: [...normalizedSubjects],
     statisticSubjects: [...normalizedSubjects],
+    separateRankSubjects: [],
   }));
 
   return {
@@ -166,6 +171,7 @@ export function normalizeGradeSettings(
   const assignmentRules: Record<string, GradeBandRule[]> = {};
   for (const [subject, rules] of Object.entries(settings.assignmentRules || {})) {
     if (!subjectSet.has(subject)) continue;
+    if (!ASSIGNMENT_GRADE_SUBJECTS.includes(subject as (typeof ASSIGNMENT_GRADE_SUBJECTS)[number])) continue;
     validateAssignmentRules(rules);
     assignmentRules[subject] = [...rules]
       .sort((a, b) => a.percentileFrom - b.percentileFrom)
@@ -200,9 +206,11 @@ export function normalizeGradeSettings(
   const classSubjects = [...classSet].map((classId) => {
     const current = byClass.get(classId);
     const examSubjects = unique(current?.examSubjects || [...subjectSet]).filter((subject) => subjectSet.has(subject));
-    const statisticSubjects = unique(current?.statisticSubjects || examSubjects)
+    const separateRankSubjects = unique(current?.separateRankSubjects || [])
       .filter((subject) => examSubjects.includes(subject));
-    return { classId, examSubjects, statisticSubjects };
+    const statisticSubjects = unique(current?.statisticSubjects || examSubjects)
+      .filter((subject) => examSubjects.includes(subject) && !separateRankSubjects.includes(subject));
+    return { classId, examSubjects, statisticSubjects, separateRankSubjects };
   });
 
   const templateIds = new Set<string>();
@@ -347,16 +355,73 @@ export function calculateGradeRecords(
     assignedTotal: 0,
     gradeRank: 0,
     classRank: 0,
+    subjectRanks: Object.fromEntries(normalizedSubjects.map((subject) => [subject, null])),
+    subjectRankScopes: Object.fromEntries(normalizedSubjects.map((subject) => [subject, "cohort" as const])),
   }));
 
   for (const [subject, rules] of Object.entries(settings.assignmentRules)) {
     if (!normalizedSubjects.includes(subject)) continue;
-    assignSubjectScores(records, subject, rules);
+    const unifiedRecords = records.filter((record) =>
+      !(classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject),
+    );
+    assignSubjectScores(unifiedRecords, subject, rules);
+
+    const separateByClass = new Map<string, GradeScoreRecord[]>();
+    records.forEach((record) => {
+      if (!(classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject)) return;
+      const group = separateByClass.get(record.classId) || [];
+      group.push(record);
+      separateByClass.set(record.classId, group);
+    });
+    separateByClass.forEach((group) => assignSubjectScores(group, subject, rules));
   }
 
+  normalizedSubjects.forEach((subject) => {
+    const unifiedRecords = records.filter((record) => {
+      if (typeof record.assignedScores[subject] !== "number") return false;
+      const separateSubjects = classSettings.get(record.classId)?.separateRankSubjects || [];
+      return !separateSubjects.includes(subject);
+    });
+    const unifiedRanks = competitionRanks(
+      unifiedRecords,
+      (record) => record.assignedScores[subject] as number,
+      (record) => record.studentNo,
+    );
+    unifiedRanks.forEach((rank, record) => {
+      record.subjectRanks![subject] = rank;
+      record.subjectRankScopes![subject] = "cohort";
+    });
+
+    const separateByClass = new Map<string, GradeScoreRecord[]>();
+    records.forEach((record) => {
+      if (typeof record.assignedScores[subject] !== "number") return;
+      const separateSubjects = classSettings.get(record.classId)?.separateRankSubjects || [];
+      if (!separateSubjects.includes(subject)) return;
+      const group = separateByClass.get(record.classId) || [];
+      group.push(record);
+      separateByClass.set(record.classId, group);
+    });
+    separateByClass.forEach((group) => {
+      const ranks = competitionRanks(
+        group,
+        (record) => record.assignedScores[subject] as number,
+        (record) => record.studentNo,
+      );
+      ranks.forEach((rank, record) => {
+        record.subjectRanks![subject] = rank;
+        record.subjectRankScopes![subject] = "class";
+      });
+    });
+  });
+
+  const nonUnifiedSubjects = new Set(
+    settings.classSubjects.flatMap((item) => item.separateRankSubjects || []),
+  );
   records.forEach((record) => {
     const configured = classSettings.get(record.classId)?.statisticSubjects || normalizedSubjects;
-    const statisticSubjects = configured.filter((subject) => normalizedSubjects.includes(subject));
+    const statisticSubjects = configured.filter((subject) =>
+      normalizedSubjects.includes(subject) && !nonUnifiedSubjects.has(subject),
+    );
     record.rawTotal = statisticSubjects.reduce((total, subject) => {
       const value = record.scores[subject];
       return total + (typeof value === "number" ? value : 0);

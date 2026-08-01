@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Input, Select } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { buildDefaultCustomGradeColumns } from "@/lib/grade-formula";
+import { ASSIGNMENT_GRADE_SUBJECTS, DEFAULT_ASSIGNMENT_RULES } from "@/lib/grade-statistics";
 
 interface GradeSettingsEditorProps {
   settings: GradeExamSettings;
@@ -165,8 +166,11 @@ function AssignmentSettings({
   subjects,
   onChange,
 }: GradeSettingsEditorProps) {
-  const assignedSubjects = subjects.filter((subject) => settings.assignmentRules[subject]);
-  const unassignedSubjects = subjects.filter((subject) => !settings.assignmentRules[subject]);
+  const eligibleSubjects = subjects.filter((subject) =>
+    ASSIGNMENT_GRADE_SUBJECTS.includes(subject as (typeof ASSIGNMENT_GRADE_SUBJECTS)[number]),
+  );
+  const assignedSubjects = eligibleSubjects.filter((subject) => settings.assignmentRules[subject]);
+  const unassignedSubjects = eligibleSubjects.filter((subject) => !settings.assignmentRules[subject]);
 
   return (
     <Card className="p-0 overflow-hidden">
@@ -177,7 +181,7 @@ function AssignmentSettings({
           </div>
           <div>
             <div className="font-medium text-ink-900">赋分对照表</div>
-            <div className="mt-0.5 text-xs text-ink-500">按年级内原始分排名划分等级，再在各等级分值区间内线性换算。</div>
+            <div className="mt-0.5 text-xs text-ink-500">仅化学、生物、政治、地理使用赋分；按年级原始分排名划分等级后线性换算。</div>
           </div>
         </div>
         {unassignedSubjects.length > 0 && (
@@ -190,13 +194,7 @@ function AssignmentSettings({
                   ...settings,
                   assignmentRules: {
                     ...settings.assignmentRules,
-                    [subject]: [
-                      { label: "A", percentileFrom: 0, percentileTo: 15, assignedMin: 86, assignedMax: 100 },
-                      { label: "B", percentileFrom: 15, percentileTo: 50, assignedMin: 71, assignedMax: 85 },
-                      { label: "C", percentileFrom: 50, percentileTo: 85, assignedMin: 56, assignedMax: 70 },
-                      { label: "D", percentileFrom: 85, percentileTo: 98, assignedMin: 41, assignedMax: 55 },
-                      { label: "E", percentileFrom: 98, percentileTo: 100, assignedMin: 30, assignedMax: 40 },
-                    ],
+                    [subject]: DEFAULT_ASSIGNMENT_RULES.map((rule) => ({ ...rule })),
                   },
                 })}
                 className="rounded-md border border-ink-200 px-2.5 py-1 text-xs text-ink-600 hover:border-gold-300 hover:text-gold-700"
@@ -299,17 +297,18 @@ function ClassSubjectSettings({
           <SlidersHorizontal className="h-4 w-4" />
         </div>
         <div>
-          <div className="font-medium text-ink-900">各班考试与统计科目</div>
-          <div className="mt-0.5 text-xs text-ink-500">考试科目表示该班实际有成绩；统计科目决定总分、排名和均分的计算范围。</div>
+          <div className="font-medium text-ink-900">各班统考与单独排名科目</div>
+          <div className="mt-0.5 text-xs text-ink-500">非统考科目使用本班试卷，自动退出年级统一总分与科目排名，并在班内单独排名。</div>
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-[760px] w-full text-xs">
+        <table className="min-w-[980px] w-full text-xs">
           <thead className="bg-ink-50 text-ink-500">
             <tr>
               <th className="px-4 py-2.5 text-left font-medium">班级</th>
               <th className="px-4 py-2.5 text-left font-medium">考试科目</th>
-              <th className="px-4 py-2.5 text-left font-medium">纳入统计</th>
+              <th className="px-4 py-2.5 text-left font-medium">非统考（班内单独排名）</th>
+              <th className="px-4 py-2.5 text-left font-medium">纳入统一总分</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100">
@@ -318,6 +317,7 @@ function ClassSubjectSettings({
                 classId: classItem.id,
                 examSubjects: subjects,
                 statisticSubjects: subjects,
+                separateRankSubjects: [],
               };
               const replace = (patch: Partial<typeof current>) => onChange({
                 ...settings,
@@ -343,6 +343,28 @@ function ClassSubjectSettings({
                             replace({
                               examSubjects,
                               statisticSubjects: current.statisticSubjects.filter((item) => examSubjects.includes(item)),
+                              separateRankSubjects: (current.separateRankSubjects || []).filter((item) => examSubjects.includes(item)),
+                            });
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex max-w-xl flex-wrap gap-1.5">
+                      {subjects.map((subject) => (
+                        <CheckboxPill
+                          key={subject}
+                          checked={(current.separateRankSubjects || []).includes(subject)}
+                          label={subject}
+                          onChange={() => {
+                            if (!current.examSubjects.includes(subject)) return;
+                            const separateRankSubjects = toggleValue(current.separateRankSubjects || [], subject);
+                            replace({
+                              separateRankSubjects,
+                              statisticSubjects: separateRankSubjects.includes(subject)
+                                ? current.statisticSubjects.filter((item) => item !== subject)
+                                : current.statisticSubjects,
                             });
                           }}
                         />
@@ -358,6 +380,7 @@ function ClassSubjectSettings({
                           label={subject}
                           onChange={() => {
                             if (!current.examSubjects.includes(subject)) return;
+                            if ((current.separateRankSubjects || []).includes(subject)) return;
                             replace({ statisticSubjects: toggleValue(current.statisticSubjects, subject) });
                           }}
                         />
