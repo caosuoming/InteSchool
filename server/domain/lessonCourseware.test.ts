@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
-import type { Courseware } from "../../src/types/index.js";
+import type { Courseware, ExamPaper, Lecture, Question } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { coursewareService } from "./courseware.js";
 import { lessonCoursewareService } from "./lessonCourseware.js";
@@ -55,6 +55,9 @@ function createState(courseware = sourceCourseware()): AppState {
     }],
     currentTeacherId: "teacher-1",
     coursewares: [courseware],
+    questions: [],
+    examPapers: [],
+    lectures: [],
     lessonCoursewares: [],
     schoolClasses: [{
       id: "class-1",
@@ -67,6 +70,94 @@ function createState(courseware = sourceCourseware()): AppState {
       createdBy: "teacher-1",
       createdAt: now,
     }],
+  };
+}
+
+function sourceQuestion(overrides: Partial<Question> = {}): Question {
+  return {
+    id: "question-1",
+    teacherId: "teacher-1",
+    schoolId: "school-1",
+    type: "single",
+    stem: '<p>观察图像并选择答案。</p><img src="/api/files/question-image" alt="函数图像">',
+    options: ["A. 递增", "B. 递减"],
+    answer: "A",
+    analysis: "函数随自变量增大而增大。",
+    chapterIds: ["chapter-1"],
+    knowledgePointIds: ["knowledge-1"],
+    difficulty: 2,
+    recommendation: 4,
+    usageCount: 0,
+    remark: "",
+    isShared: false,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function sourceExamPaper(question = sourceQuestion()): ExamPaper {
+  return {
+    id: "paper-1",
+    teacherId: "teacher-1",
+    schoolId: "school-1",
+    title: "函数单元测验",
+    chapterIds: ["chapter-1"],
+    knowledgePointIds: ["knowledge-1"],
+    grade: "高一",
+    schoolYear: "2026-2027",
+    semester: "上学期",
+    duration: 45,
+    totalScore: 10,
+    questions: [{
+      id: "paper-question-1",
+      questionId: question.id,
+      stem: question.stem,
+      options: question.options,
+      answer: question.answer,
+      analysis: question.analysis,
+      score: 10,
+      type: question.type,
+    }],
+    status: "draft",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function sourceLecture(): Lecture {
+  return {
+    id: "lecture-1",
+    teacherId: "teacher-1",
+    schoolId: "school-1",
+    title: "函数讲义",
+    description: "函数的基本性质",
+    chapterIds: ["chapter-1"],
+    knowledgePointIds: ["knowledge-1"],
+    grade: "高一",
+    schoolYear: "2026-2027",
+    semester: "上学期",
+    classIds: [],
+    studentIds: [],
+    originalFileName: "函数专题讲义.docx",
+    sections: [{
+      id: "section-1",
+      title: "函数概念",
+      type: "chapter",
+      content: "本章介绍函数概念。",
+      children: [{
+        id: "section-2",
+        title: "例题 1",
+        type: "question",
+        content: "",
+        questionId: "question-1",
+        children: [],
+      }],
+    }],
+    version: 1,
+    status: "draft",
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -152,6 +243,86 @@ describe("courseware lesson flow", () => {
       });
       expect(classroomLessons.map((item) => item.id)).toEqual([lesson.id]);
       expect(await lessonCoursewareService.listCoursewares({ classId: "class-2" })).toEqual([]);
+    });
+  });
+
+  it("creates an exam cover and one editable slide per question", async () => {
+    const question = sourceQuestion({
+      options: [
+        'A. <img src="/api/files/option-a" alt="选项 A">递增',
+        "B. ![选项 B](/api/files/option-b)递减",
+      ],
+    });
+    const state = createState();
+    state.questions = [question];
+    const paper = sourceExamPaper(question);
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1",
+        "school-1",
+        paper,
+      );
+
+      expect(lesson.slides).toHaveLength(2);
+      expect(lesson.slides[0]).toMatchObject({
+        type: "section",
+        title: paper.title,
+      });
+      expect(lesson.slides[1]).toMatchObject({
+        type: "question",
+        title: "第 1 题",
+        questionId: question.id,
+        questionSnapshot: {
+          stem: "<p>观察图像并选择答案。</p>",
+          options: ["A. 递增", "B. 递减"],
+        },
+      });
+      expect(lesson.slides[1].elements).toEqual([
+        expect.objectContaining({ kind: "image", src: "/api/files/question-image" }),
+        expect.objectContaining({ kind: "image", src: "/api/files/option-a" }),
+        expect.objectContaining({ kind: "image", src: "/api/files/option-b" }),
+      ]);
+      expect(new Set(lesson.slides[1].elements?.map((element) => element.y)).size).toBe(3);
+    });
+  });
+
+  it("creates a lecture cover and recursively snapshots knowledge and question pages", async () => {
+    const state = createState();
+    const question = sourceQuestion();
+    state.questions = [question];
+    const lecture = sourceLecture();
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromLecture(
+        "teacher-1",
+        "school-1",
+        lecture,
+      );
+
+      expect(lesson.slides).toHaveLength(3);
+      expect(lesson.slides[0]).toMatchObject({
+        type: "section",
+        title: lecture.originalFileName,
+      });
+      expect(lesson.slides[1]).toMatchObject({
+        type: "section",
+        title: "函数概念",
+        content: "本章介绍函数概念。",
+      });
+      expect(lesson.slides[2]).toMatchObject({
+        type: "question",
+        title: "例题 1",
+        questionId: question.id,
+        questionSnapshot: {
+          type: question.type,
+          answer: question.answer,
+          analysis: question.analysis,
+        },
+      });
+      expect(lesson.slides[2].elements).toEqual([
+        expect.objectContaining({ kind: "image", src: "/api/files/question-image" }),
+      ]);
     });
   });
 });

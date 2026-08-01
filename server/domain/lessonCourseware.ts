@@ -1,4 +1,14 @@
-import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture, ResourceSemester } from "../../src/types/index.js";
+import type {
+  LessonCourseware,
+  LessonCoursewareFilter,
+  LessonSlide,
+  LessonSlideElement,
+  ExamPaper,
+  Lecture,
+  LectureSection,
+  Question,
+  ResourceSemester,
+} from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
@@ -22,6 +32,117 @@ function matchFilter(c: LessonCourseware, filter: LessonCoursewareFilter): boole
     if (!filter.knowledgePointIds.some((k) => c.knowledgePointIds.includes(k))) return false;
   }
   return true;
+}
+
+const HTML_IMAGE_PATTERN = /<img\b[^>]*\bsrc=(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>/gi;
+const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
+
+function safeImageSource(value: string): string | null {
+  const source = value.trim();
+  return /^(?:https?:\/\/|data:image\/[a-z0-9.+-]+;base64,|\/)/i.test(source)
+    ? source
+    : null;
+}
+
+function imageAlt(html: string): string {
+  const match = html.match(/\balt=(?:"([^"]*)"|'([^']*)')/i);
+  return (match?.[1] || match?.[2] || "题目图片").trim() || "题目图片";
+}
+
+function createImageElement(src: string, alt: string, index: number): LessonSlideElement {
+  const row = index % 3;
+  const column = Math.floor(index / 3);
+  return {
+    id: genId("element"),
+    kind: "image",
+    src,
+    alt,
+    x: Math.max(4, 64 - column * 8),
+    y: 18 + row * 24,
+    width: 30,
+    height: 20,
+    animation: "fade",
+  };
+}
+
+function extractFloatingImages(content: string, offset = 0): {
+  content: string;
+  elements: LessonSlideElement[];
+} {
+  const elements: LessonSlideElement[] = [];
+  let cleaned = content || "";
+
+  cleaned = cleaned.replace(HTML_IMAGE_PATTERN, (match, doubleQuoted, singleQuoted, unquoted) => {
+    const src = safeImageSource(doubleQuoted || singleQuoted || unquoted || "");
+    if (!src) return match;
+    elements.push(createImageElement(src, imageAlt(match), offset + elements.length));
+    return "";
+  });
+
+  cleaned = cleaned.replace(MARKDOWN_IMAGE_PATTERN, (match, alt, rawSource) => {
+    const src = safeImageSource(rawSource);
+    if (!src) return match;
+    elements.push(createImageElement(src, alt || "题目图片", offset + elements.length));
+    return "";
+  });
+
+  return { content: cleaned.trim(), elements };
+}
+
+function questionSlide(
+  question: Pick<Question, "id" | "stem" | "type" | "options" | "answer" | "analysis">,
+  title: string,
+): LessonSlide {
+  const stem = extractFloatingImages(question.stem);
+  let imageOffset = stem.elements.length;
+  const options = question.options?.map((option) => {
+    const extracted = extractFloatingImages(option, imageOffset);
+    imageOffset += extracted.elements.length;
+    return extracted;
+  });
+  const optionImageCount = options?.reduce((sum, item) => sum + item.elements.length, 0) || 0;
+  const answer = extractFloatingImages(question.answer, stem.elements.length + optionImageCount);
+  const analysis = extractFloatingImages(
+    question.analysis,
+    stem.elements.length + optionImageCount + answer.elements.length,
+  );
+
+  return {
+    id: genId("slide"),
+    type: "question",
+    title,
+    questionId: question.id,
+    questionSnapshot: {
+      stem: stem.content,
+      type: question.type,
+      options: options?.map((item) => item.content),
+      answer: answer.content,
+      analysis: analysis.content,
+    },
+    elements: [
+      ...stem.elements,
+      ...(options?.flatMap((item) => item.elements) || []),
+      ...answer.elements,
+      ...analysis.elements,
+    ],
+    relatedQuestionIds: [],
+    askableStudentIds: [],
+  };
+}
+
+function titleSlide(title: string, subtitle: string): LessonSlide {
+  return {
+    id: genId("slide"),
+    type: "section",
+    title,
+    content: subtitle,
+    relatedQuestionIds: [],
+    askableStudentIds: [],
+  };
+}
+
+function flattenLectureSections(sections: LectureSection[]): LectureSection[] {
+  return sections.flatMap((section) => [section, ...flattenLectureSections(section.children || [])]);
 }
 
 export interface LessonCoursewareInput {
@@ -144,21 +265,17 @@ export const lessonCoursewareService = {
     schoolId: string,
     examPaper: ExamPaper,
   ): Promise<LessonCourseware> {
-    const slides: LessonSlide[] = examPaper.questions.map((q, i) => ({
-      id: genId("slide"),
-      type: "question",
-      title: `第 ${i + 1} 题`,
-      questionId: q.questionId,
-      questionSnapshot: {
+    const slides: LessonSlide[] = [
+      titleSlide(examPaper.title, `${examPaper.grade} · ${examPaper.schoolYear}`),
+      ...examPaper.questions.map((q, i) => questionSlide({
+        id: q.questionId || q.id,
         stem: q.stem,
         type: q.type,
         options: q.options,
         answer: q.answer,
         analysis: q.analysis,
-      },
-      relatedQuestionIds: [],
-      askableStudentIds: [],
-    }));
+      }, `第 ${i + 1} 题`)),
+    ];
 
     return this.createCourseware(teacherId, schoolId, {
       title: `${examPaper.title}（上课课件）`,
@@ -183,24 +300,42 @@ export const lessonCoursewareService = {
     schoolId: string,
     lecture: Lecture,
   ): Promise<LessonCourseware> {
-    const slides: LessonSlide[] = [];
+    const questions = db.read("questions");
+    const slides: LessonSlide[] = [
+      titleSlide(lecture.originalFileName || lecture.title, lecture.description || `${lecture.grade} · ${lecture.schoolYear}`),
+    ];
 
-    lecture.sections.forEach((sec) => {
-      if (sec.type === "question" && sec.questionId) {
-        slides.push({
-          id: genId("slide"),
-          type: "question",
-          title: sec.title,
-          questionId: sec.questionId,
-          relatedQuestionIds: [],
-          askableStudentIds: [],
-        });
+    flattenLectureSections(lecture.sections).forEach((sec) => {
+      if (sec.type === "question") {
+        const question = sec.questionId
+          ? questions.find((item) => item.id === sec.questionId)
+          : undefined;
+        if (question) {
+          slides.push(questionSlide(question, sec.title));
+        } else {
+          slides.push({
+            id: genId("slide"),
+            type: "question",
+            title: sec.title,
+            questionId: sec.questionId,
+            questionSnapshot: {
+              stem: sec.content,
+              type: "essay",
+              answer: "",
+              analysis: "",
+            },
+            relatedQuestionIds: [],
+            askableStudentIds: [],
+          });
+        }
       } else {
         slides.push({
           id: genId("slide"),
-          type: "knowledge",
+          type: sec.type === "chapter" ? "section" : "knowledge",
           title: sec.title,
           content: sec.content,
+          relatedQuestionIds: [],
+          askableStudentIds: [],
         });
       }
     });
