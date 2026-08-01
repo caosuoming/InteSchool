@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { QuestionListItem } from "@/pages/resources/MyResourcesPage";
+import { FileText } from "lucide-react";
+import { OriginalFileRow, QuestionListItem } from "@/pages/resources/MyResourcesPage";
 import type { Question } from "@/types";
 
 vi.mock("@/components/ui/MathHtml", () => ({
@@ -44,5 +45,27 @@ describe("QuestionListItem", () => {
     );
 
     expect(screen.getByText(question.stem)).not.toHaveClass("line-clamp-2");
+  });
+});
+
+describe("OriginalFileRow", () => {
+  it("keeps a decomposed resource's original file on one compact row with only view and download actions", () => {
+    const onView = vi.fn();
+
+    render(
+      <OriginalFileRow
+        fileUrl="/api/files/original.docx"
+        fileName="期末数学试卷.docx"
+        icon={FileText}
+        onView={onView}
+      />,
+    );
+
+    expect(screen.getByText("期末数学试卷.docx")).toBeInTheDocument();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["查看", "下载"]);
+    expect(screen.queryByText("原稿备份")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    expect(onView).toHaveBeenCalledOnce();
   });
 });
