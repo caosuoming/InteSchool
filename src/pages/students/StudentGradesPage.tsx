@@ -277,7 +277,7 @@ function ClassComparison({
           secondaryLabel={`${data.scope === "school" ? "全校" : "同年级"}均分`}
         />
         <div className="overflow-x-auto border-t border-ink-100">
-          <table className="min-w-[720px] w-full text-xs">
+          <table className="min-w-[920px] w-full text-xs">
             <thead className="bg-ink-50 text-ink-500">
               <tr>
                 <th className="px-4 py-2.5 text-left font-medium">考试</th>
@@ -382,6 +382,7 @@ function StudentTrend({
                 <th className="px-4 py-2.5 text-left font-medium">日期</th>
                 <th className="px-4 py-2.5 text-right font-medium">年级名次</th>
                 <th className="px-4 py-2.5 text-right font-medium">名次变化</th>
+                <th className="px-4 py-2.5 text-left font-medium">科目名次</th>
                 <th className="px-4 py-2.5 text-right font-medium">成绩口径</th>
                 <th className="px-4 py-2.5 text-right font-medium">成绩</th>
               </tr>
@@ -396,6 +397,23 @@ function StudentTrend({
                     <td className="px-4 py-3 text-ink-500">{examDateLabel(item.exam)}</td>
                     <td className="px-4 py-3 text-right font-semibold text-gold-700">{item.record.gradeRank}</td>
                     <td className="px-4 py-3 text-right"><Delta value={change} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex min-w-52 flex-wrap gap-1.5">
+                        {item.exam.subjects.flatMap((subject) => {
+                          const rank = item.record.subjectRanks?.[subject];
+                          if (typeof rank !== "number") return [];
+                          const scope = item.record.subjectRankScopes?.[subject] === "class" ? "班内" : "年级";
+                          return [(
+                            <span key={subject} className="rounded bg-ink-50 px-2 py-1 text-ink-600">
+                              {subject} · {scope}第 {rank}
+                            </span>
+                          )];
+                        })}
+                        {!item.exam.subjects.some((subject) => typeof item.record.subjectRanks?.[subject] === "number") && (
+                          <span className="text-ink-400">—</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right text-ink-500">{item.metricLabel}</td>
                     <td className="px-4 py-3 text-right font-medium text-ink-800">{formatNumber(item.metricValue)}</td>
                   </tr>

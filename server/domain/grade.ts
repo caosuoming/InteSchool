@@ -296,10 +296,17 @@ function unique(values: Array<string | undefined>): string[] {
 }
 
 function projectScores(
-  values: Record<string, number | null>,
+  values: Record<string, number | null> | undefined,
   subjects: string[],
 ): Record<string, number | null> {
-  return Object.fromEntries(subjects.map((subject) => [subject, values[subject] ?? null]));
+  return Object.fromEntries(subjects.map((subject) => [subject, values?.[subject] ?? null]));
+}
+
+function projectRankScopes(
+  values: GradeScoreRecord["subjectRankScopes"] | undefined,
+  subjects: string[],
+): GradeScoreRecord["subjectRankScopes"] {
+  return Object.fromEntries(subjects.map((subject) => [subject, values?.[subject] || "cohort"]));
 }
 
 function buildQueryData(teacher: Teacher): GradeQueryData {
@@ -450,6 +457,8 @@ function buildQueryData(teacher: Teacher): GradeQueryData {
         assignedTotal: canViewAll ? record.assignedTotal : null,
         gradeRank: record.gradeRank,
         classRank: record.classRank,
+        subjectRanks: projectScores(record.subjectRanks, visibleSubjects),
+        subjectRankScopes: projectRankScopes(record.subjectRankScopes, visibleSubjects),
       }];
     });
     return [{
@@ -595,6 +604,7 @@ export const gradeService = {
         classId: targetClass.id,
         examSubjects: [...(sourceSetting?.examSubjects || source.subjects)],
         statisticSubjects: [...(sourceSetting?.statisticSubjects || source.subjects)],
+        separateRankSubjects: [...(sourceSetting?.separateRankSubjects || [])],
       };
     });
     const targetClassSubjectTeacherIds = Object.fromEntries(

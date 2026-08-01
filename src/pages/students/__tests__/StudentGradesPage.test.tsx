@@ -52,6 +52,8 @@ const exam: GradeQueryExam = {
       assignedTotal: 198,
       gradeRank: 3,
       classRank: 1,
+      subjectRanks: { 数学: 2, 化学: 1 },
+      subjectRankScopes: { 数学: "cohort", 化学: "class" },
     },
   ],
   createdAt: "2026-11-10T08:00:00.000Z",
@@ -101,6 +103,16 @@ describe("StudentGradesPage", () => {
     expect(screen.queryByText("导出成绩")).not.toBeInTheDocument();
     expect(screen.queryByText("统计设置")).not.toBeInTheDocument();
     expect(screen.queryByText("删除记录")).not.toBeInTheDocument();
+  });
+
+  it("labels non-unified subject rankings as class-only", async () => {
+    vi.mocked(gradeService.getQueryData).mockResolvedValue(queryData("homeroom"));
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /学生名次趋势/ }));
+
+    expect(await screen.findByText("化学 · 班内第 1")).toBeInTheDocument();
+    expect(screen.getByText("数学 · 年级第 2")).toBeInTheDocument();
   });
 
   it("shows full-subject analysis for a homeroom teacher", async () => {

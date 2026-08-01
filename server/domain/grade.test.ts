@@ -424,6 +424,7 @@ describe("grade service", () => {
       settings.classSubjects = settings.classSubjects.map((item, index) => ({
         ...item,
         statisticSubjects: index === 0 ? ["数学"] : ["化学"],
+        separateRankSubjects: index === 0 ? ["化学"] : [],
       }));
       settings.classSubjectTeacherIds = {
         "class-1": { 数学: ["teacher-1"], 化学: [] },
@@ -449,6 +450,10 @@ describe("grade service", () => {
       expect(copied.settings.classSubjects.map((item) => item.statisticSubjects)).toEqual([
         ["数学"],
         ["化学"],
+      ]);
+      expect(copied.settings.classSubjects.map((item) => item.separateRankSubjects)).toEqual([
+        ["化学"],
+        [],
       ]);
       expect(copied.settings.classSubjects.some((item) => ["class-1", "class-2"].includes(item.classId))).toBe(false);
       expect(copied.settings.classSubjectTeacherIds).toEqual({
