@@ -37,6 +37,9 @@ vi.mock("@/services/share", () => ({
     getPlatformDirectoryTree: vi.fn(),
     listPlatformResourceSettings: vi.fn(),
     updateDonationResource: vi.fn(),
+    setSubjectModerator: vi.fn(),
+    updateDonationOrder: vi.fn(),
+    deleteDonationResource: vi.fn(),
   },
 }));
 
@@ -139,6 +142,8 @@ function donationRecord(
     resourceTitle: resourceType === "question" ? (snapshot as Question).stem : (snapshot as Material).title,
     resourceSnapshot: snapshot,
     directorySnapshot: { chapters: [], knowledgePoints: [] },
+    platformSubject: "数学",
+    platformOrder: id === "donation-self" ? 1 : id === "donation-other" ? 2 : 3,
     status: "pending",
     createdAt: "2026-08-01T00:00:00.000Z",
   };
@@ -157,6 +162,9 @@ describe("PlatformResourcesPage layout and filters", () => {
       teacher: {
         id: "teacher-self",
         schoolId: "school-1",
+        subject: "数学",
+        role: "teacher",
+        affiliations: [],
       } as Teacher,
       loading: false,
       error: null,
@@ -165,14 +173,16 @@ describe("PlatformResourcesPage layout and filters", () => {
     vi.mocked(shareService.listPublicDonations).mockResolvedValue(donations);
     vi.mocked(shareService.listDonationStatus).mockResolvedValue([donations[0]]);
     vi.mocked(shareService.listDonationContributors).mockResolvedValue([
-      { teacherId: "teacher-self", nickname: "本人", donationCount: 1, rank: 1, isTopContributor: true },
-      { teacherId: "teacher-other", nickname: "其他教师", donationCount: 2, rank: 2, isTopContributor: true },
+      { teacherId: "teacher-self", nickname: "本人", donationCount: 1, rank: 1, isTopContributor: true, subjects: ["数学"], moderatorSubjects: [] },
+      { teacherId: "teacher-other", nickname: "其他教师", donationCount: 2, rank: 2, isTopContributor: true, subjects: ["数学"], moderatorSubjects: [] },
     ]);
     vi.mocked(shareService.getDonationPrivileges).mockResolvedValue({
       donationCount: 1,
       rank: 1,
       isTopContributor: false,
-      canManagePlatformSettings: true,
+      canManagePlatformSettings: false,
+      canManageAllSubjects: false,
+      moderatedSubjects: [],
     });
     vi.mocked(shareService.getPlatformDirectoryTree).mockImplementation(async (type) => ({
       ...emptyTree,

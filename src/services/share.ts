@@ -50,24 +50,24 @@ export const shareService = {
     return rpcCall("share", "donateResources", [teacherId, schoolId, requests]) as any;
   },
 
-  async listPublicDonations(): Promise<ShareRecord[]> {
-    return rpcCall("share", "listPublicDonations", []) as any;
+  async listPublicDonations(teacherId: string): Promise<ShareRecord[]> {
+    return rpcCall("share", "listPublicDonations", [teacherId]) as any;
   },
 
   async listDonationStatus(teacherId: string): Promise<ShareRecord[]> {
     return rpcCall("share", "listDonationStatus", [teacherId]) as any;
   },
 
-  async listDonationContributors(): Promise<DonationContributor[]> {
-    return rpcCall("share", "listDonationContributors", []) as any;
+  async listDonationContributors(teacherId: string): Promise<DonationContributor[]> {
+    return rpcCall("share", "listDonationContributors", [teacherId]) as any;
   },
 
   async getDonationPrivileges(teacherId: string): Promise<DonationPrivileges> {
     return rpcCall("share", "getDonationPrivileges", [teacherId]) as any;
   },
 
-  async getPlatformDirectoryTree(type: "chapter" | "knowledge"): Promise<TreeNode> {
-    return rpcCall("share", "getPlatformDirectoryTree", [type]) as any;
+  async getPlatformDirectoryTree(type: "chapter" | "knowledge", teacherId: string): Promise<TreeNode> {
+    return rpcCall("share", "getPlatformDirectoryTree", [type, teacherId]) as any;
   },
 
   async updateDonationResource(
@@ -96,6 +96,27 @@ export const shareService = {
     settings: Array<{ type: PlatformResourceSettingType; values: string[] }>,
   ): Promise<PlatformResourceSetting[]> {
     return rpcCall("share", "updatePlatformResourceSettings", [teacherId, settings]) as any;
+  },
+
+  async setSubjectModerator(
+    adminTeacherId: string,
+    subject: string,
+    targetTeacherId: string,
+    enabled: boolean,
+  ): Promise<DonationContributor[]> {
+    return rpcCall("share", "setSubjectModerator", [adminTeacherId, subject, targetTeacherId, enabled]) as any;
+  },
+
+  async updateDonationOrder(
+    teacherId: string,
+    subject: string,
+    donationIds: string[],
+  ): Promise<ShareRecord[]> {
+    return rpcCall("share", "updateDonationOrder", [teacherId, subject, donationIds]) as any;
+  },
+
+  async deleteDonationResource(adminTeacherId: string, donationId: string): Promise<void> {
+    await rpcCall("share", "deleteDonationResource", [adminTeacherId, donationId]);
   },
 
   async listIncomingShares(teacherId: string): Promise<ShareRecord[]> {

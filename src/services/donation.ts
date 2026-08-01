@@ -14,8 +14,8 @@ import type {
 } from "@/types";
 
 export const donationService = {
-  async listDonations(): Promise<PlatformDonation[]> {
-    return rpcCall("donation", "listDonations", []) as any;
+  async listDonations(teacherId: string): Promise<PlatformDonation[]> {
+    return rpcCall("donation", "listDonations", [teacherId]) as any;
   },
 
   async listTeacherDonations(teacherId: string): Promise<PlatformDonation[]> {
@@ -26,8 +26,8 @@ export const donationService = {
     return rpcCall("donation", "getDonorStatus", [teacherId]) as any;
   },
 
-  async getCatalogTrees(): Promise<{ chapterTree: TreeNode; knowledgeTree: TreeNode }> {
-    return rpcCall("donation", "getCatalogTrees", []) as any;
+  async getCatalogTrees(teacherId: string): Promise<{ chapterTree: TreeNode; knowledgeTree: TreeNode }> {
+    return rpcCall("donation", "getCatalogTrees", [teacherId]) as any;
   },
 
   async checkDonation(

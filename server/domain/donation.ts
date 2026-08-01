@@ -40,6 +40,18 @@ function teacherNickname(teacherId: string): string {
     ?.nickname?.trim() || "匿名用户";
 }
 
+function teacherSubject(teacherId: string): string {
+  const teacher = (db.read("teachers") || [])
+    .find((item: { id: string }) => item.id === teacherId) as {
+      subject?: string;
+      affiliations?: Array<Record<string, unknown>>;
+      currentAffiliationId?: string | null;
+    } | undefined;
+  const affiliation = teacher?.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher?.affiliations?.find((item) => item.isCurrent === true);
+  return (typeof affiliation?.subject === "string" ? affiliation.subject : teacher?.subject)?.trim() || "未分类";
+}
+
 function toPlatformDonation(record: ShareRecord): PlatformDonation {
   const snapshot = sourceSnapshot(record);
   return {
@@ -49,6 +61,8 @@ function toPlatformDonation(record: ShareRecord): PlatformDonation {
     donorNickname: teacherNickname(record.fromTeacherId),
     resourceType: record.resourceType,
     sourceResourceId: record.sourceResourceId || record.resourceId,
+    subject: record.platformSubject?.trim() || teacherSubject(record.fromTeacherId),
+    order: record.platformOrder || 0,
     status: record.mergedIntoDonationId ? "merged" : "active",
     mergedIntoDonationId: record.mergedIntoDonationId,
     snapshot,
@@ -73,8 +87,8 @@ const settingTypeMap: Partial<Record<PlatformAttributeOptionType, "grade" | "sch
 };
 
 export const donationService = {
-  async listDonations(): Promise<PlatformDonation[]> {
-    return (await shareService.listPublicDonations()).map(toPlatformDonation);
+  async listDonations(teacherId?: string): Promise<PlatformDonation[]> {
+    return (await shareService.listPublicDonations(teacherId)).map(toPlatformDonation);
   },
 
   async listTeacherDonations(teacherId: string): Promise<PlatformDonation[]> {
@@ -90,10 +104,10 @@ export const donationService = {
     };
   },
 
-  async getCatalogTrees() {
+  async getCatalogTrees(teacherId: string) {
     const [chapterTree, knowledgeTree] = await Promise.all([
-      shareService.getPlatformDirectoryTree("chapter"),
-      shareService.getPlatformDirectoryTree("knowledge"),
+      shareService.getPlatformDirectoryTree("chapter", teacherId),
+      shareService.getPlatformDirectoryTree("knowledge", teacherId),
     ]);
     return { chapterTree, knowledgeTree };
   },

@@ -89,6 +89,8 @@ export interface Teacher {
   affiliations: TeacherAffiliation[];
   /** 当前激活的所属单位ID */
   currentAffiliationId: string | null;
+  /** 可管理的平台资源学科；仅平台超级管理员可以授予或撤销。 */
+  platformModeratorSubjects?: string[];
   createdAt: string;
 }
 
@@ -729,6 +731,10 @@ export interface DonationContributor {
   donationCount: number;
   rank: number;
   isTopContributor: boolean;
+  /** 该教师实际捐赠过资源的学科。 */
+  subjects: string[];
+  /** 该教师担任平台资源版主的学科。 */
+  moderatorSubjects: string[];
 }
 
 export interface DonationPrivileges {
@@ -736,6 +742,8 @@ export interface DonationPrivileges {
   rank: number | null;
   isTopContributor: boolean;
   canManagePlatformSettings: boolean;
+  canManageAllSubjects: boolean;
+  moderatedSubjects: string[];
 }
 
 export type PlatformResourceSettingType =
@@ -777,6 +785,10 @@ export interface ShareRecord {
   resourceSnapshot?: Question | ExamPaper | Lecture | Courseware | Material;
   /** 捐赠时同步的章节与知识点路径 */
   directorySnapshot?: DonationDirectorySnapshot;
+  /** 捐赠时所属学科；平台资源按该字段隔离和管理。 */
+  platformSubject?: string;
+  /** 同一学科内的平台展示顺序。 */
+  platformOrder?: number;
   /** 合并贡献指向的主捐赠记录；该记录只计贡献，不重复展示资源 */
   mergedIntoDonationId?: string;
   /** 分享附言 */
@@ -821,6 +833,8 @@ export interface PlatformDonation {
   donorNickname: string;
   resourceType: ShareableResourceType;
   sourceResourceId: string;
+  subject: string;
+  order: number;
   status: "active" | "merged";
   mergedIntoDonationId?: string;
   snapshot: PlatformResourceSnapshot;
