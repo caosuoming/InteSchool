@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
-import type { Chapter, KnowledgePoint, Question, ShareRecord } from "../../src/types/index.js";
+import type { Chapter, Courseware, ExamPaper, KnowledgePoint, Lecture, Material, Question, ShareRecord } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { shareService } from "./share.js";
 
@@ -152,7 +152,12 @@ describe("platform resource donations", () => {
       expect(result.resourceType).toBe("question");
 
       const copied = (appState.questions as Question[]).find((item) => item.id === result.newResourceId)!;
-      expect(copied).toMatchObject({ teacherId: "teacher-c", schoolId: "school-c", sourceType: "shared" });
+      expect(copied).toMatchObject({
+        teacherId: "teacher-c",
+        schoolId: "school-c",
+        sourceType: "shared",
+        stem: "函数 f(x)=x² 的导数是什么？（副本）",
+      });
       expect(copied.chapterIds).toHaveLength(1);
       expect(copied.knowledgePointIds).toHaveLength(1);
       expect((appState.chapters as Chapter[]).find((item) => item.id === copied.chapterIds[0])).toMatchObject({
@@ -163,6 +168,83 @@ describe("platform resource donations", () => {
         schoolId: "school-c",
         name: "二次函数",
       });
+    });
+  });
+
+  it("appends the copy suffix for every platform resource type", async () => {
+    const appState = state();
+    const sharedFields = {
+      teacherId: "teacher-b",
+      schoolId: "school-b",
+      chapterIds: ["ch-b"],
+      knowledgePointIds: ["kp-b"],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    (appState.examPapers as ExamPaper[]).push({
+      ...sharedFields,
+      id: "exam-b",
+      title: "函数测试",
+      duration: 60,
+      totalScore: 100,
+      questions: [],
+      status: "draft",
+    });
+    (appState.lectures as Lecture[]).push({
+      ...sharedFields,
+      id: "lecture-b",
+      title: "函数讲义",
+      classIds: [],
+      studentIds: [],
+      sections: [],
+      version: 1,
+      status: "draft",
+    });
+    (appState.coursewares as Courseware[]).push({
+      ...sharedFields,
+      id: "courseware-b",
+      title: "函数课件",
+      type: "ppt",
+      content: "",
+      tags: [],
+    });
+    (appState.materials as Material[]).push({
+      ...sharedFields,
+      id: "material-b",
+      title: "函数素材",
+      type: "text",
+      content: "",
+      tags: [],
+    });
+
+    await runWithState(appState, async () => {
+      const requests = [
+        { resourceType: "question" as const, resourceId: "q-b" },
+        { resourceType: "examPaper" as const, resourceId: "exam-b" },
+        { resourceType: "lecture" as const, resourceId: "lecture-b" },
+        { resourceType: "courseware" as const, resourceId: "courseware-b" },
+        { resourceType: "material" as const, resourceId: "material-b" },
+      ];
+      const donations = await shareService.donateResources("teacher-b", "school-b", requests);
+      expect(donations).toHaveLength(5);
+
+      for (const donation of donations) {
+        await shareService.saveDonationAsOwnResource(donation.id, "teacher-c", "school-c");
+      }
+
+      expect((appState.questions as Question[]).find((item) => item.teacherId === "teacher-c")?.stem)
+        .toBe("函数 f(x)=x² 的导数是什么？（副本）");
+      expect((appState.examPapers as ExamPaper[]).find((item) => item.teacherId === "teacher-c")?.title)
+        .toBe("函数测试（副本）");
+      expect((appState.lectures as Lecture[]).find((item) => item.teacherId === "teacher-c")?.title)
+        .toBe("函数讲义（副本）");
+      expect((appState.coursewares as Courseware[]).find((item) => item.teacherId === "teacher-c")?.title)
+        .toBe("函数课件（副本）");
+      expect((appState.materials as Material[]).find((item) => item.teacherId === "teacher-c")?.title)
+        .toBe("函数素材（副本）");
     });
   });
 
@@ -248,7 +330,7 @@ describe("platform resource donations", () => {
       expect(repeated).toMatchObject({ canSave: false, alreadySaved: true });
       await expect(shareService.donateResources("teacher-c", "school-c", [
         { resourceType: "question", resourceId: "q-c" },
-      ])).rejects.toThrow("平台资源另存的资源不能再次捐赠");
+      ])).rejects.toThrow("平台资源创建的副本不能再次捐赠");
     });
   });
 

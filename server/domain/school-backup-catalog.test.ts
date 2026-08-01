@@ -227,6 +227,7 @@ describe("independent school resource catalogs", () => {
       );
       const copy = (state.questions as Question[]).find((item) => item.id === result.newResourceId)!;
       expect(copy.teacherId).toBe("teacher-b");
+      expect(copy.stem).toBe("函数 f(x)=x² 的导数是什么？（副本）");
       expect(copy.summary).toBe("幂函数求导公式");
       expect(copy.remark).toBe("重点题");
       expect((state.chapters as Chapter[]).find((item) => item.id === copy.chapterIds[0])?.name).toBe("函数");
@@ -337,6 +338,7 @@ describe("independent school resource catalogs", () => {
       const restored = (state.lectures as Lecture[]).find(
         (item) => item.id === saved.newResourceId,
       )!;
+      expect(restored.title).toBe("函数专题讲义（副本）");
       expect(restored.description).toBe("跨班讲义");
       expect(restored.sections[0].children[0].questionId).toBe("q-a");
       expect(restored.classIds).toEqual(["class-other"]);
@@ -448,6 +450,7 @@ describe("independent school resource catalogs", () => {
       const restored = (state.examPapers as ExamPaper[]).find(
         (item) => item.id === saved.newResourceId,
       )!;
+      expect(restored.title).toBe("函数单元测试（副本）");
       expect(restored.description).toBe("跨学生发布");
       expect(restored.duration).toBe(60);
       expect(restored.questions[0].questionId).toBe("q-a");

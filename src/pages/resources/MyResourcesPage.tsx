@@ -189,7 +189,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     list: Reflection[];
   } | null>(null);
 
-  // 另存为弹窗
+  // 创建副本弹窗
   const [duplicateTarget, setDuplicateTarget] = useState<{
     type: "examPaper" | "lecture" | "courseware";
     id: string;
@@ -825,22 +825,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     if (!duplicateTarget) return;
     setDuplicating(true);
     try {
-      let msg: string;
+      let resourceLabel: string;
       if (duplicateTarget.type === "examPaper") {
         await examPaperService.duplicatePaper(duplicateTarget.id, duplicateTitle.trim() || undefined);
-        msg = "试卷已另存为副本";
+        resourceLabel = "试卷";
       } else if (duplicateTarget.type === "lecture") {
         await lectureService.duplicateLecture(duplicateTarget.id, duplicateTitle.trim() || undefined);
-        msg = "讲义已另存为副本";
+        resourceLabel = "讲义";
       } else {
         await coursewareService.duplicateCourseware(duplicateTarget.id, duplicateTitle.trim() || undefined);
-        msg = "课件已另存为副本";
+        resourceLabel = "课件";
       }
-      toast.success("已另存为", `${msg}，课后反思已同步复制`);
+      toast.success(`${resourceLabel}副本已创建`, "课后反思已同步复制");
       setDuplicateTarget(null);
       loadAll();
     } catch (e: any) {
-      toast.error("另存为失败", e?.message);
+      toast.error("创建副本失败", e?.message);
     } finally {
       setDuplicating(false);
     }
@@ -2419,11 +2419,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         )}
       </Modal>
 
-      {/* 另存为弹窗 */}
+      {/* 创建副本弹窗 */}
       <Modal
         open={!!duplicateTarget}
         onClose={() => setDuplicateTarget(null)}
-        title="另存为"
+        title="创建副本"
         description={duplicateTarget?.originalTitle}
         size="sm"
         footer={
@@ -2431,7 +2431,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <Button variant="ghost" onClick={() => setDuplicateTarget(null)}>取消</Button>
             <Button variant="gold" onClick={handleDuplicate} loading={duplicating}>
               <Copy className="w-4 h-4" />
-              确认另存为
+              确认创建副本
             </Button>
           </div>
         }
@@ -2446,7 +2446,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           <div className="p-2.5 rounded-md bg-teal-50/60 border border-teal-200 text-xs text-teal-800 flex items-start gap-2">
             <Sparkles className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
             <div>
-              另存为会创建一个新的资源副本，并自动复制所有关联的课后反思到新资源。
+              创建副本会生成一个新的资源，并自动复制所有关联的课后反思。
             </div>
           </div>
         </div>
@@ -2855,7 +2855,7 @@ function ResourceCard({ title, description, meta, content, updatedAt, onClick, o
               <button
                 onClick={onDuplicate}
                 className="p-1.5 rounded text-ink-400 hover:bg-indigo-50 hover:text-indigo-700"
-                title="另存为"
+                title="创建副本"
               >
                 <Copy className="w-4 h-4" />
               </button>

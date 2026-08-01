@@ -6,6 +6,10 @@ export function genId(prefix = "id"): string {
   return `${prefix}-${randomUUID()}`;
 }
 
+export function appendCopySuffix(name: string): string {
+  return `${name}（副本）`;
+}
+
 export function maybeThrowError(_errorRate = 0): void {
   // Production services must not inject random failures.
 }

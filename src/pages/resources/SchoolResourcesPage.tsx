@@ -86,7 +86,7 @@ export default function SchoolResourcesPage() {
     semester: ResourceSemester;
   } | null>(null);
   const [saving, setSaving] = useState(false);
-  // 另存为状态：记录已"另存为"过的备份ID，避免重复操作
+  // 副本状态：记录已创建过副本的备份 ID，避免重复操作
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [schoolTeachers, setSchoolTeachers] = useState<Teacher[]>([]);
@@ -280,7 +280,7 @@ export default function SchoolResourcesPage() {
     }
   };
 
-  // 另存为我的资源：所有老师均可调用
+  // 创建个人副本：所有老师均可调用
   const handleSaveAsOwn = async (item: SchoolResourceBackup) => {
     if (!teacher) return;
     if (savedIds.has(item.id)) {
@@ -292,9 +292,9 @@ export default function SchoolResourcesPage() {
       const result = await schoolBackupService.saveAsOwnResource(item.id, teacher);
       setSavedIds((prev) => new Set(prev).add(item.id));
       const typeLabel = resourceTypeLabel[result.resourceType];
-      toast.success(`已另存为我的${typeLabel}`, "可在「我的资源」中查看");
+      toast.success(`${typeLabel}副本已创建`, "可在「我的资源」中查看");
     } catch (e: any) {
-      toast.error("另存为失败", e?.message);
+      toast.error("创建副本失败", e?.message);
     } finally {
       setSavingIds((prev) => {
         const next = new Set(prev);
@@ -638,7 +638,7 @@ export default function SchoolResourcesPage() {
                               ? "text-emerald-600 bg-emerald-50"
                               : "text-ink-400 hover:bg-teal-50 hover:text-teal-600",
                           )}
-                          title={savedIds.has(item.id) ? "已添加到我的资源" : "另存为我的资源"}
+                          title={savedIds.has(item.id) ? "副本已创建" : "创建副本"}
                         >
                           {savedIds.has(item.id) ? (
                             <Check className="w-4 h-4" />

@@ -1,5 +1,5 @@
 import { db } from "../runtime-db.js";
-import { genId, delay } from "../domain-shared.js";
+import { appendCopySuffix, genId, delay } from "../domain-shared.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import type {
   Chapter,
@@ -73,7 +73,7 @@ function findOwnedResource(
     throw new Error("无权捐赠不属于自己的资源");
   }
   if (resource.platformSourceDonationIds?.length) {
-    throw new Error("从平台资源另存的资源不能再次捐赠");
+    throw new Error("从平台资源创建的副本不能再次捐赠");
   }
   return resource;
 }
@@ -309,7 +309,7 @@ function checkPlatformSave(
       donationId: donation.id,
       resourceType: donation.resourceType,
       canSave: false,
-      reason: "自己捐赠或合并贡献的平台资源不能另存",
+      reason: "自己捐赠或合并贡献的平台资源不能创建副本",
       alreadySaved: false,
     };
   }
@@ -322,7 +322,7 @@ function checkPlatformSave(
       donationId: donation.id,
       resourceType: donation.resourceType,
       canSave: false,
-      reason: "该平台资源已添加到我的资源",
+      reason: "该平台资源的副本已创建",
       alreadySaved: true,
     };
   }
@@ -513,6 +513,7 @@ function copySnapshotToTeacher(
       copy = {
         ...(original as Question),
         id: newResourceId,
+        stem: appendCopySuffix((original as Question).stem),
         teacherId: toTeacherId,
         schoolId: toSchoolId,
         platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
@@ -531,6 +532,7 @@ function copySnapshotToTeacher(
       copy = {
         ...(original as ExamPaper),
         id: newResourceId,
+        title: appendCopySuffix((original as ExamPaper).title),
         teacherId: toTeacherId,
         schoolId: toSchoolId,
         platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
@@ -547,6 +549,7 @@ function copySnapshotToTeacher(
       copy = {
         ...(original as Lecture),
         id: newResourceId,
+        title: appendCopySuffix((original as Lecture).title),
         teacherId: toTeacherId,
         schoolId: toSchoolId,
         platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
@@ -564,6 +567,7 @@ function copySnapshotToTeacher(
       copy = {
         ...(original as Courseware),
         id: newResourceId,
+        title: appendCopySuffix((original as Courseware).title),
         teacherId: toTeacherId,
         schoolId: toSchoolId,
         platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
@@ -579,6 +583,7 @@ function copySnapshotToTeacher(
       copy = {
         ...(original as Material),
         id: newResourceId,
+        title: appendCopySuffix((original as Material).title),
         teacherId: toTeacherId,
         schoolId: toSchoolId,
         platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
@@ -825,7 +830,7 @@ export const shareService = {
     await delay(100);
     const donation = platformDonationById(donationId);
     const check = checkPlatformSave(donation, teacherId, schoolId);
-    if (!check.canSave) throw new Error(check.reason || "该平台资源不能另存");
+    if (!check.canSave) throw new Error(check.reason || "该平台资源不能创建副本");
 
     if (check.conflict && !decision) {
       throw new Error("发现相似题目，请先选择新增或合并");

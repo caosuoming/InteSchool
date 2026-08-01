@@ -137,7 +137,7 @@ export const examPaperService = {
   },
 
   /**
-   * 另存为：复制试卷（含题目），并复制关联的课后反思
+   * 创建副本：复制试卷（含题目），并复制关联的课后反思
    */
   async duplicatePaper(
     sourceId: string,

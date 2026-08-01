@@ -10,7 +10,7 @@ import type {
   ResourceSemester,
 } from "../../src/types/index.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
-import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { appendCopySuffix, delay, genId, maybeThrowError } from "../domain-shared.js";
 import {
   getSchoolResourceChapterTree,
   getSchoolResourceKnowledgeTree,
@@ -422,7 +422,7 @@ export const schoolBackupService = {
   },
 
   /**
-   * 另存为我的资源：将一份校本备份复制为当前教师自己的资源
+   * 创建副本：将一份校本备份复制为当前教师自己的资源
    * 所有老师均可调用（不限备课组长权限）
    * 优先使用源资源进行完整复制；若源资源已被删除，则从 contentSnapshot 尽量还原
    * 返回新资源的类型与ID
@@ -490,6 +490,7 @@ export const schoolBackupService = {
         const copy: Question = {
           ...original,
           id: newResourceId,
+          stem: appendCopySuffix(original.stem),
           teacherId,
           schoolId,
           chapterIds: directory.chapterIds,
@@ -541,6 +542,7 @@ export const schoolBackupService = {
         const copy: ExamPaper = {
           ...original,
           id: newResourceId,
+          title: appendCopySuffix(original.title),
           teacherId,
           schoolId,
           chapterIds: directory.chapterIds,
@@ -584,6 +586,7 @@ export const schoolBackupService = {
         const copy: Lecture = {
           ...original,
           id: newResourceId,
+          title: appendCopySuffix(original.title),
           teacherId,
           schoolId,
           chapterIds: directory.chapterIds,
@@ -605,6 +608,7 @@ export const schoolBackupService = {
         const copy: Courseware = {
           ...original,
           id: newResourceId,
+          title: appendCopySuffix(original.title),
           teacherId,
           schoolId,
           chapterIds: directory.chapterIds,
@@ -624,6 +628,7 @@ export const schoolBackupService = {
         const copy: Material = {
           ...original,
           id: newResourceId,
+          title: appendCopySuffix(original.title),
           teacherId,
           schoolId,
           chapterIds: directory.chapterIds,
