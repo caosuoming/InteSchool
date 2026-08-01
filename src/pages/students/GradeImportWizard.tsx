@@ -203,11 +203,14 @@ export function GradeImportWizard({
       const parsed = parseGradeRows(selectedSheet, headerRowIndex, mappings);
       const matched = autoMatchGradeRows(parsed, context);
       setRows(matched);
-      setSettings(buildDefaultGradeSettings(
+      const defaults = buildDefaultGradeSettings(
         mappedSubjects(mappings),
         context.classes.map((item) => item.id),
         context.teachers,
-      ));
+      );
+      setSettings(context.templateProfile
+        ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }
+        : defaults);
       setStep(2);
     } catch (error) {
       toast.error("字段映射不完整", error instanceof Error ? error.message : undefined);

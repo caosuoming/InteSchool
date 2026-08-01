@@ -5,7 +5,9 @@ import type {
   GradeExamSettings,
   GradeImportContext,
   GradeScoreRecord,
+  GradeStatisticsTemplate,
   GradeTeacherOption,
+  GradeTemplateProfile,
   SchoolClass,
   Student,
   Teacher,
@@ -84,7 +86,33 @@ function requireContext(schoolId: string, cohortKey: string): GradeImportContext
   const students = readList<Student>("students")
     .filter((item) => item.schoolId === schoolId && classIdSet.has(item.classId) && item.status === "active")
     .sort((left, right) => left.classId.localeCompare(right.classId) || left.studentNo.localeCompare(right.studentNo));
-  return { cohort, classes, students, teachers: teacherOptions(schoolId) };
+  const templateProfile = readList<GradeTemplateProfile>("gradeTemplateProfiles")
+    .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey);
+  return {
+    cohort,
+    classes,
+    students,
+    teachers: teacherOptions(schoolId),
+    templateProfile,
+  };
+}
+
+function requireGradeTemplateManager(schoolId: string, teacherId: string): void {
+  const teacher = readList<Teacher>("teachers").find((item) => item.id === teacherId);
+  if (!teacher) throw new Error("当前教师不存在");
+  const affiliation = teacher.affiliations?.find((item) =>
+    item.schoolId === schoolId && item.status === "active",
+  );
+  if (!affiliation) throw new Error("当前教师不属于该学校");
+  const roles = new Set<string>(affiliation.roles || teacher.roles || []);
+  const managerialRoles = new Set(["gradeLeader", "dean", "principal"]);
+  const administrativeRole = affiliation.role === "school_admin"
+    || affiliation.role === "platform_admin"
+    || teacher.role === "school_admin"
+    || teacher.role === "platform_admin";
+  if (!administrativeRole && ![...roles].some((role) => managerialRoles.has(role))) {
+    throw new Error("仅学校管理员、年级组长或教务管理人员可发布年级成绩模板");
+  }
 }
 
 function normalizeSubjects(subjects: string[]): string[] {
@@ -134,8 +162,11 @@ function defaultOrNormalizedSettings(
     context.classes.map((item) => item.id),
     context.teachers,
   );
+  const inheritedDefaults = context.templateProfile
+    ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }
+    : defaults;
   return normalizeGradeSettings(
-    settings || defaults,
+    settings || inheritedDefaults,
     subjects,
     context.classes.map((item) => item.id),
     context.teachers.map((item) => item.id),
@@ -151,6 +182,57 @@ export const gradeService = {
   async getImportContext(schoolId: string, cohortKey: string): Promise<GradeImportContext> {
     await delay(150);
     return requireContext(schoolId, cohortKey);
+  },
+
+  async getCohortTemplateProfile(
+    schoolId: string,
+    cohortKey: string,
+  ): Promise<GradeTemplateProfile | null> {
+    await delay(100);
+    requireContext(schoolId, cohortKey);
+    return readList<GradeTemplateProfile>("gradeTemplateProfiles")
+      .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey) || null;
+  },
+
+  async saveCohortTemplateProfile(
+    schoolId: string,
+    cohortKey: string,
+    teacherId: string,
+    subjectsInput: string[],
+    templates: GradeStatisticsTemplate[],
+  ): Promise<GradeTemplateProfile> {
+    await delay(180);
+    maybeThrowError();
+    requireGradeTemplateManager(schoolId, teacherId);
+    const context = requireContext(schoolId, cohortKey);
+    const subjects = normalizeSubjects(subjectsInput || []);
+    const defaults = buildDefaultGradeSettings(
+      subjects,
+      context.classes.map((item) => item.id),
+      context.teachers,
+    );
+    const normalizedTemplates = normalizeGradeSettings(
+      { ...defaults, templates: templates || [] },
+      subjects,
+      context.classes.map((item) => item.id),
+      context.teachers.map((item) => item.id),
+    ).templates;
+    const profiles = readList<GradeTemplateProfile>("gradeTemplateProfiles");
+    const current = profiles.find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey);
+    const now = new Date().toISOString();
+    const profile: GradeTemplateProfile = {
+      id: current?.id || genId("grade-template-profile"),
+      schoolId,
+      cohortKey,
+      templates: normalizedTemplates,
+      updatedByTeacherId: teacherId,
+      createdAt: current?.createdAt || now,
+      updatedAt: now,
+    };
+    db.update("gradeTemplateProfiles", (items: GradeTemplateProfile[] = []) => current
+      ? items.map((item) => item.id === current.id ? profile : item)
+      : [...items, profile]);
+    return profile;
   },
 
   async listExams(schoolId: string, cohortKey?: string): Promise<GradeExam[]> {

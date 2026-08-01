@@ -1,5 +1,5 @@
 import type { GradeExam, GradeImportRow } from "../types/index.js";
-import { averageGradeValues } from "./grade-reports.js";
+import { buildGradeReportTable } from "./grade-reports.js";
 
 export type GradeCellValue = string | number | null;
 export type GradeColumnRole = "ignore" | "className" | "studentName" | "studentNo" | `subject:${string}`;
@@ -248,7 +248,6 @@ export async function readGradeWorkbook(file: File): Promise<GradeWorkbookData> 
 
 export async function exportGradeExam(exam: GradeExam): Promise<void> {
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
-  const assignedSubjects = exam.subjects.filter((subject) => exam.settings.assignmentRules[subject]);
   const border = { borderStyle: "thin" as const, borderColor: "#D5DBE5" };
   const header = (value: string) => ({
     value,
@@ -260,77 +259,53 @@ export async function exportGradeExam(exam: GradeExam): Promise<void> {
     height: 24,
     ...border,
   });
-  const valueCell = (value: string | number | null | undefined, align: "left" | "right" | "center" = "left") => ({
+  const valueCell = (value: string | number | null | undefined) => ({
     value: value ?? undefined,
     type: typeof value === "number" ? Number : String,
-    align,
+    align: typeof value === "number" ? "right" as const : "left" as const,
     alignVertical: "center" as const,
     height: 22,
     ...border,
   });
 
-  const rankingHeaders = [
-    "年级名次",
-    "班级名次",
-    "班级",
-    "姓名",
-    "学号",
-    ...exam.subjects,
-    ...assignedSubjects.map((subject) => `${subject}(赋分)`),
-    "原始总分",
-    "赋分总分",
-  ];
-  const rankingData = [
-    rankingHeaders.map(header),
-    ...exam.records.map((record) => [
-      valueCell(record.gradeRank, "center"),
-      valueCell(record.classRank, "center"),
-      valueCell(record.className),
-      valueCell(record.studentName),
-      valueCell(record.studentNo),
-      ...exam.subjects.map((subject) => valueCell(record.scores[subject], "right")),
-      ...assignedSubjects.map((subject) => valueCell(record.assignedScores[subject], "right")),
-      valueCell(record.rawTotal, "right"),
-      valueCell(record.assignedTotal, "right"),
-    ]),
-  ];
+  const enabledTemplates = exam.settings.templates.filter((template) => template.enabled);
+  if (enabledTemplates.length === 0) throw new Error("没有启用的成绩输出模板");
 
-  const classNames = [...new Set(exam.records.map((record) => record.className))];
-  const averageHeaders = [
-    "班级",
-    "人数",
-    ...exam.subjects.map((subject) => `${subject}平均分`),
-    "原始总分平均",
-    "赋分总分平均",
-  ];
-  const averageData = [
-    averageHeaders.map(header),
-    ...classNames.map((className) => {
-      const records = exam.records.filter((record) => record.className === className);
-      return [
-        valueCell(className),
-        valueCell(records.length, "right"),
-        ...exam.subjects.map((subject) => valueCell(averageGradeValues(records.map((record) => record.assignedScores[subject])), "right")),
-        valueCell(averageGradeValues(records.map((record) => record.rawTotal)), "right"),
-        valueCell(averageGradeValues(records.map((record) => record.assignedTotal)), "right"),
-      ];
-    }),
-  ];
+  const usedNames = new Set<string>();
+  const safeSheetName = (name: string, index: number): string => {
+    const base = name
+      .replace(/[\\/:*?]/g, "_")
+      .split("[").join("_")
+      .split("]").join("_")
+      .trim()
+      .slice(0, 31) || `统计表${index + 1}`;
+    let candidate = base;
+    let suffix = 2;
+    while (usedNames.has(candidate)) {
+      const ending = `-${suffix}`;
+      candidate = `${base.slice(0, 31 - ending.length)}${ending}`;
+      suffix += 1;
+    }
+    usedNames.add(candidate);
+    return candidate;
+  };
+
+  const sheets = enabledTemplates.map((template, index) => {
+    const report = buildGradeReportTable(exam, template);
+    if (report.headers.length === 0) throw new Error(`模板“${template.name}”没有输出列`);
+    return {
+      sheet: safeSheetName(template.name, index),
+      data: [
+        report.headers.map(header),
+        ...report.rows.map((row) => row.map(valueCell)),
+      ],
+      stickyRowsCount: 1,
+      columns: report.headers.map((_, columnIndex) => ({
+        width: Math.max(8, Math.min(40, report.widths?.[columnIndex] || 14)),
+      })),
+    };
+  });
 
   const safeName = exam.name.replace(/[\\/:*?"<>|]/g, "_");
-  await writeXlsxFile([
-    {
-      sheet: "学生名次表",
-      data: rankingData,
-      stickyRowsCount: 1,
-      stickyColumnsCount: 5,
-      columns: rankingHeaders.map((_, index) => ({ width: index === 2 ? 16 : index === 3 ? 12 : index === 4 ? 16 : 11 })),
-    },
-    {
-      sheet: "班级平均分表",
-      data: averageData,
-      stickyRowsCount: 1,
-      columns: averageHeaders.map((_, index) => ({ width: index === 0 ? 16 : 14 })),
-    },
-  ]).toFile(`${safeName}_成绩统计.xlsx`);
+  await writeXlsxFile(sheets).toFile(`${safeName}_成绩统计.xlsx`);
 }

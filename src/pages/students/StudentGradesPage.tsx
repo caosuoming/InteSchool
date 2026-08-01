@@ -4,6 +4,7 @@ import {
   Download,
   FileSpreadsheet,
   Import,
+  Save,
   Search,
   Settings2,
   Trash2,
@@ -32,6 +33,7 @@ import {
   averageGradeValues,
   buildElectiveGradeDistribution,
   buildGradeClassAverages,
+  buildGradeReportTable,
   buildGradeScoreSegments,
   gradeTemplateTotal,
 } from "@/lib/grade-reports";
@@ -66,6 +68,55 @@ function SummaryCard({
 }
 
 function TemplateReport({ exam, template }: { exam: GradeExam; template: GradeStatisticsTemplate }) {
+  if (template.kind === "customTable") {
+    const table = buildGradeReportTable(exam, template);
+    if (table.headers.length === 0) {
+      return <div className="p-8 text-center text-sm text-ink-400">该公式表尚未配置输出列。</div>;
+    }
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-[760px] w-full text-xs">
+          <thead className="bg-ink-50 text-ink-500">
+            <tr>
+              {table.headers.map((header, index) => (
+                <th
+                  key={`${header}-${index}`}
+                  className="px-3 py-2 text-left font-medium"
+                  style={{ minWidth: `${table.widths?.[index] || 12}ch` }}
+                >
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {table.rows.slice(0, 100).map((row, rowIndex) => (
+              <tr key={`${template.id}-${rowIndex}`}>
+                {row.map((value, cellIndex) => (
+                  <td
+                    key={`${rowIndex}-${cellIndex}`}
+                    className={cn(
+                      "px-3 py-2.5 text-ink-700",
+                      typeof value === "number" && "text-right tabular-nums",
+                      typeof value === "string" && value.startsWith("#错误:") && "text-red-600",
+                    )}
+                  >
+                    {value ?? "—"}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {table.rows.length > 100 && (
+          <div className="border-t border-ink-100 px-4 py-2 text-center text-xs text-ink-400">
+            在线预览显示前 100 行，导出文件包含全部 {table.rows.length} 行。
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (template.kind === "studentRanking") {
     const records = [...exam.records].sort((left, right) => left.gradeRank - right.gradeRank).slice(0, 20);
     return (
@@ -80,9 +131,9 @@ function TemplateReport({ exam, template }: { exam: GradeExam; template: GradeSt
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100">
-            {records.map((record, index) => (
+            {records.map((record) => (
               <tr key={record.id}>
-                <td className="px-3 py-2.5 text-ink-500">{index + 1}</td>
+                <td className="px-3 py-2.5 text-ink-500">{record.gradeRank}</td>
                 <td className="px-3 py-2.5 text-ink-600">{record.className}</td>
                 <td className="px-3 py-2.5 font-medium text-ink-900">{record.studentName}</td>
                 <td className="px-3 py-2.5 text-right font-medium text-ink-900">{gradeTemplateTotal(record, template)}</td>
@@ -185,6 +236,13 @@ export default function StudentGradesPage() {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const currentAffiliation = getCurrentAffiliation();
   const schoolId = currentAffiliation?.schoolId || null;
+  const canPublishCohortTemplates = Boolean(
+    currentAffiliation
+    && (
+      ["school_admin", "platform_admin"].includes(currentAffiliation.role)
+      || currentAffiliation.roles.some((role) => ["gradeLeader", "dean", "principal"].includes(role))
+    ),
+  );
   const [cohorts, setCohorts] = useState<GradeCohort[]>([]);
   const [exams, setExams] = useState<GradeExam[]>([]);
   const [selectedExamId, setSelectedExamId] = useState("");
@@ -197,6 +255,7 @@ export default function StudentGradesPage() {
   const [settingsContext, setSettingsContext] = useState<GradeImportContext | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<GradeExamSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [publishingTemplates, setPublishingTemplates] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const selectedExam = exams.find((item) => item.id === selectedExamId) || null;
@@ -309,6 +368,26 @@ export default function StudentGradesPage() {
     }
   };
 
+  const handlePublishTemplates = async () => {
+    if (!schoolId || !teacher || !selectedExam || !settingsDraft) return;
+    setPublishingTemplates(true);
+    try {
+      const profile = await gradeService.saveCohortTemplateProfile(
+        schoolId,
+        selectedExam.cohortKey,
+        teacher.id,
+        selectedExam.subjects,
+        settingsDraft.templates,
+      );
+      setSettingsContext((current) => current ? { ...current, templateProfile: profile } : current);
+      toast.success("年级成绩模板已发布", `后续导入 ${selectedExam.cohortLabel} 成绩时将自动继承`);
+    } catch (error) {
+      toast.error("发布年级模板失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setPublishingTemplates(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -409,6 +488,11 @@ export default function StudentGradesPage() {
                     <Button variant="outline" onClick={handleDelete} className="text-red-600 hover:border-red-300">
                       <Trash2 className="h-4 w-4" />删除记录
                     </Button>
+                    {canPublishCohortTemplates && (
+                      <Button variant="outline" onClick={handlePublishTemplates} loading={publishingTemplates}>
+                        <Save className="h-4 w-4" />发布为年级模板
+                      </Button>
+                    )}
                     <Button variant="gold" onClick={handleSaveSettings} loading={savingSettings}>
                       <Settings2 className="h-4 w-4" />保存并重算
                     </Button>

@@ -5,6 +5,8 @@ import type {
   GradeExamImportInput,
   GradeExamSettings,
   GradeImportContext,
+  GradeStatisticsTemplate,
+  GradeTemplateProfile,
 } from "@/types";
 
 export const gradeService = {
@@ -14,6 +16,26 @@ export const gradeService = {
 
   async getImportContext(schoolId: string, cohortKey: string): Promise<GradeImportContext> {
     return rpcCall("grade", "getImportContext", [schoolId, cohortKey]) as Promise<GradeImportContext>;
+  },
+
+  async getCohortTemplateProfile(schoolId: string, cohortKey: string): Promise<GradeTemplateProfile | null> {
+    return rpcCall("grade", "getCohortTemplateProfile", [schoolId, cohortKey]) as Promise<GradeTemplateProfile | null>;
+  },
+
+  async saveCohortTemplateProfile(
+    schoolId: string,
+    cohortKey: string,
+    teacherId: string,
+    subjects: string[],
+    templates: GradeStatisticsTemplate[],
+  ): Promise<GradeTemplateProfile> {
+    return rpcCall("grade", "saveCohortTemplateProfile", [
+      schoolId,
+      cohortKey,
+      teacherId,
+      subjects,
+      templates,
+    ]) as Promise<GradeTemplateProfile>;
   },
 
   async listExams(schoolId: string, cohortKey?: string): Promise<GradeExam[]> {

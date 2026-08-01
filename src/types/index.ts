@@ -293,6 +293,8 @@ export interface GradeImportContext {
   classes: SchoolClass[];
   students: Student[];
   teachers: GradeTeacherOption[];
+  /** 年级管理员发布的默认输出模板；新导入考试会自动继承。 */
+  templateProfile?: GradeTemplateProfile;
 }
 
 /**
@@ -320,9 +322,22 @@ export type GradeTemplateKind =
   | "classAverage"
   | "totalScoreSegment"
   | "coreAndBestElectiveSegment"
-  | "electiveGradeSegment";
+  | "electiveGradeSegment"
+  | "customTable";
 
 export type GradeScoreMode = "raw" | "assigned";
+
+export interface GradeTemplateColumn {
+  id: string;
+  /** 输出列名。 */
+  name: string;
+  /**
+   * 安全公式表达式。支持字段、四则运算、IF，以及 RAW/SCORE/SCORES、
+   * SUM/AVERAGE/MAX/MIN/BEST/ROUND 等函数，不执行任意 JavaScript。
+   */
+  formula: string;
+  width?: number;
+}
 
 export interface GradeStatisticsTemplate {
   id: string;
@@ -335,6 +350,18 @@ export interface GradeStatisticsTemplate {
   segmentSize?: number;
   /** 选取最高分的选修科目数量。 */
   bestElectiveCount?: number;
+  /** 自定义在线表格列，仅 customTable 模板使用。 */
+  columns?: GradeTemplateColumn[];
+}
+
+export interface GradeTemplateProfile {
+  id: string;
+  schoolId: string;
+  cohortKey: string;
+  templates: GradeStatisticsTemplate[];
+  updatedByTeacherId: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GradeExamSettings {
