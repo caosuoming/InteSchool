@@ -1,13 +1,25 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Search, School as SchoolIcon, Upload, ArrowRight, CheckCircle2, Loader2, Building2, MapPin, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  CheckCircle2,
+  Clock3,
+  Loader2,
+  MapPin,
+  Plus,
+  Search,
+  School as SchoolIcon,
+  Upload,
+  Users,
+} from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { schoolService } from "@/services/school";
 import { authService } from "@/services/auth";
 import { uploadFile } from "@/services/api";
 import { toast } from "@/stores/ui";
-import { Button, Input, Select } from "@/components/ui";
-import type { School } from "@/types";
+import { Button, Input, Modal, Select, Textarea } from "@/components/ui";
+import type { School, SchoolCreationApplication } from "@/types";
 import { cn } from "@/lib/utils";
 
 export default function SchoolAuthPage() {
@@ -23,6 +35,15 @@ export default function SchoolAuthPage() {
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [creationOpen, setCreationOpen] = useState(false);
+  const [creationSubmitting, setCreationSubmitting] = useState(false);
+  const [creationApplications, setCreationApplications] = useState<SchoolCreationApplication[]>([]);
+  const [schoolDraft, setSchoolDraft] = useState({
+    name: "",
+    code: "",
+    city: "",
+    description: "",
+  });
 
   useEffect(() => {
     if (!teacher) {
@@ -35,11 +56,18 @@ export default function SchoolAuthPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const data = await schoolService.listSchools();
-      setSchools(data);
-      setLoading(false);
+      try {
+        const [data, applications] = await Promise.all([
+          schoolService.listSchools(),
+          schoolService.listMySchoolCreationApplications(),
+        ]);
+        setSchools(data);
+        setCreationApplications(applications);
+      } finally {
+        setLoading(false);
+      }
     };
-    load();
+    void load();
   }, []);
 
   const handleSearch = async (kw: string) => {
@@ -51,6 +79,30 @@ export default function SchoolAuthPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) setProofFile(file);
+  };
+
+  const openCreationApplication = () => {
+    setSchoolDraft((draft) => ({ ...draft, name: keyword.trim() || draft.name }));
+    setCreationOpen(true);
+  };
+
+  const handleCreateSchoolApplication = async () => {
+    if (!schoolDraft.name.trim() || !schoolDraft.code.trim() || !schoolDraft.city.trim()) {
+      toast.error("请填写学校名称、代码和所在城市");
+      return;
+    }
+    setCreationSubmitting(true);
+    try {
+      const application = await schoolService.submitSchoolCreationApplication(schoolDraft);
+      setCreationApplications((items) => [application, ...items]);
+      setCreationOpen(false);
+      setSchoolDraft({ name: "", code: "", city: "", description: "" });
+      toast.success("新增学校申请已提交", "平台超级管理员审核通过后，该学校会出现在搜索结果中");
+    } catch (error) {
+      toast.error("提交失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setCreationSubmitting(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -140,7 +192,19 @@ export default function SchoolAuthPage() {
                     加载中...
                   </div>
                 ) : schools.length === 0 ? (
-                  <div className="text-center py-8 text-ink-400 text-sm">未找到匹配的学校</div>
+                  <div className="text-center py-10 px-4">
+                    <SchoolIcon className="w-10 h-10 mx-auto mb-3 text-ink-200" />
+                    <div className="text-sm font-medium text-ink-700">未找到匹配的学校</div>
+                    <p className="text-xs text-ink-400 mt-1 mb-4">
+                      请确认关键词无误，或提交新增学校申请。
+                    </p>
+                    {keyword.trim() && (
+                      <Button variant="outline" onClick={openCreationApplication}>
+                        <Plus className="w-4 h-4" />
+                        申请新增“{keyword.trim()}”
+                      </Button>
+                    )}
+                  </div>
                 ) : (
                   schools.map((school) => (
                     <button
@@ -190,6 +254,40 @@ export default function SchoolAuthPage() {
                 )}
               </div>
             </div>
+
+            {creationApplications.length > 0 && (
+              <div className="card-base p-5 mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Clock3 className="w-4 h-4 text-gold-600" />
+                  <h3 className="font-serif font-semibold text-ink-900">我的新增学校申请</h3>
+                </div>
+                <div className="space-y-2">
+                  {creationApplications.slice(0, 5).map((application) => (
+                    <div
+                      key={application.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-ink-100 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-ink-800 truncate">{application.name}</div>
+                        <div className="text-xs text-ink-400 mt-0.5">{application.city} · {application.code}</div>
+                      </div>
+                      <span className={cn(
+                        "text-xs px-2 py-1 rounded-full flex-shrink-0",
+                        application.status === "approved" && "bg-emerald-50 text-emerald-700",
+                        application.status === "pending" && "bg-amber-50 text-amber-700",
+                        application.status === "rejected" && "bg-red-50 text-red-700",
+                      )}>
+                        {application.status === "approved"
+                          ? "已通过"
+                          : application.status === "pending"
+                            ? "审核中"
+                            : "未通过"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 认证表单 */}
@@ -274,6 +372,55 @@ export default function SchoolAuthPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={creationOpen}
+        onClose={() => !creationSubmitting && setCreationOpen(false)}
+        title="申请新增学校"
+        description="提交后由平台超级管理员审核。审核通过前不会出现在学校搜索结果中。"
+        footer={(
+          <>
+            <Button variant="ghost" disabled={creationSubmitting} onClick={() => setCreationOpen(false)}>
+              取消
+            </Button>
+            <Button variant="gold" loading={creationSubmitting} onClick={handleCreateSchoolApplication}>
+              提交审核
+            </Button>
+          </>
+        )}
+      >
+        <div className="space-y-4">
+          <Input
+            label="学校名称"
+            value={schoolDraft.name}
+            maxLength={100}
+            onChange={(event) => setSchoolDraft((draft) => ({ ...draft, name: event.target.value }))}
+            placeholder="例如：南京市第一中学"
+          />
+          <Input
+            label="学校代码"
+            value={schoolDraft.code}
+            maxLength={24}
+            onChange={(event) => setSchoolDraft((draft) => ({ ...draft, code: event.target.value.toUpperCase() }))}
+            placeholder="例如：NJYZ"
+            hint="2-24 位字母、数字、下划线或短横线"
+          />
+          <Input
+            label="所在城市"
+            value={schoolDraft.city}
+            maxLength={50}
+            onChange={(event) => setSchoolDraft((draft) => ({ ...draft, city: event.target.value }))}
+            placeholder="例如：南京"
+          />
+          <Textarea
+            label="学校简介（可选）"
+            value={schoolDraft.description}
+            maxLength={500}
+            onChange={(event) => setSchoolDraft((draft) => ({ ...draft, description: event.target.value }))}
+            placeholder="可填写学校全称、校区等便于审核的信息"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

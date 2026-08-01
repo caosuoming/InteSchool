@@ -159,6 +159,21 @@ export interface SchoolAdminApplication {
   reviewedBy?: string;
 }
 
+export interface SchoolCreationApplication {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  name: string;
+  code: string;
+  city: string;
+  description: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  schoolId?: string;
+}
+
 export interface SchoolApplication {
   id: string;
   teacherId: string;
