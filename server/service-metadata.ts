@@ -908,6 +908,21 @@ export const serviceParameters = {
     ],
     "getSchool": [
       "schoolId"
+    ],
+    "submitSchoolCreationApplication": [
+      "input",
+      "teacher"
+    ],
+    "listMySchoolCreationApplications": [
+      "teacher"
+    ],
+    "listPendingSchoolCreationApplications": [
+      "teacher"
+    ],
+    "reviewSchoolCreationApplication": [
+      "applicationId",
+      "approved",
+      "teacher"
     ]
   },
   "schoolBackup": {

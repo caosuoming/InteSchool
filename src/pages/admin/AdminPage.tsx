@@ -14,6 +14,7 @@ import {
   UserPlus,
   ShieldCheck,
   UsersRound,
+  Building2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, uiScaleConfig, type UiScale } from "@/stores/settings";
@@ -71,6 +72,13 @@ const allAdminItems: AdminItem[] = [
     title: "学校管理员审核",
     description: "审核各学校教师提交的学校管理员权限申请",
     href: "/admin/school-admin-applications",
+    platformOnly: true,
+  },
+  {
+    icon: Building2,
+    title: "新增学校审核",
+    description: "审核用户提交的新学校申请，通过后将学校加入平台目录",
+    href: "/admin/school-creation-applications",
     platformOnly: true,
   },
   {
