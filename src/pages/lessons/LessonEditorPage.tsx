@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Plus, Trash2, Send, Save,
   FileQuestion, Blocks, SplitSquareHorizontal,
   Merge, Edit3, Check, X, MessageSquareText, Star,
-  Play, School, ExternalLink, Presentation,
+  Play, School, ExternalLink, Type, Image as ImageIcon,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -12,7 +12,15 @@ import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { questionService } from "@/services/question";
 import { reflectionService } from "@/services/reflection";
 import { classService } from "@/services/class";
-import type { LessonCourseware, LessonSlide, Question, Reflection, Student, SchoolClass } from "@/types";
+import type {
+  LessonCourseware,
+  LessonSlide,
+  LessonSlideElement,
+  Question,
+  Reflection,
+  Student,
+  SchoolClass,
+} from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -23,6 +31,8 @@ import { PresentationMode } from "./PresentationMode";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { getCoursewareEditorUrl } from "@/lib/courseware-online";
+import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
+import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 
 export function LessonEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -50,10 +60,6 @@ export function LessonEditorPage() {
   const [newReflectionRating, setNewReflectionRating] = useState("4");
   const [submittingReflection, setSubmittingReflection] = useState(false);
 
-  // 拆分合并相关
-  const [editingSlideId, setEditingSlideId] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState("");
-
   // 预览模式
   const [previewMode, setPreviewMode] = useState(false);
 
@@ -66,6 +72,7 @@ export function LessonEditorPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [classModalOpen, setClassModalOpen] = useState(false);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
   const loadCourseware = useCallback(async () => {
     if (!id) return;
@@ -126,6 +133,46 @@ export function LessonEditorPage() {
   }, [teacher]);
 
   const currentSlide = slides[currentIndex];
+  const selectedElement = currentSlide?.elements?.find((item) => item.id === selectedElementId) || null;
+
+  useEffect(() => {
+    setSelectedElementId(null);
+  }, [currentSlide?.id]);
+
+  const updateCurrentElements = (elements: LessonSlideElement[]) => {
+    setSlides((previous) => previous.map((slide, index) =>
+      index === currentIndex ? { ...slide, elements } : slide));
+  };
+
+  const addTextElement = () => {
+    if (!currentSlide) return;
+    const element: LessonSlideElement = {
+      id: genId("element"),
+      kind: "text",
+      content: "双击右侧属性编辑文本",
+      x: 12,
+      y: 68,
+      width: 38,
+      height: 14,
+      fontSize: 24,
+      textAlign: "left",
+      animation: "rise",
+    };
+    updateCurrentElements([...(currentSlide.elements || []), element]);
+    setSelectedElementId(element.id);
+  };
+
+  const updateSelectedElement = (patch: Partial<LessonSlideElement>) => {
+    if (!selectedElement || !currentSlide) return;
+    updateCurrentElements((currentSlide.elements || []).map((element) =>
+      element.id === selectedElement.id ? { ...element, ...patch } as LessonSlideElement : element));
+  };
+
+  const deleteSelectedElement = () => {
+    if (!selectedElement || !currentSlide) return;
+    updateCurrentElements((currentSlide.elements || []).filter((element) => element.id !== selectedElement.id));
+    setSelectedElementId(null);
+  };
 
   const handleSave = async () => {
     if (!courseware) return;
@@ -355,25 +402,6 @@ export function LessonEditorPage() {
     toast.success("已合并");
   };
 
-  const startEditSlide = () => {
-    if (!currentSlide) return;
-    setEditingSlideId(currentSlide.id);
-    setEditContent(currentSlide.content || currentSlide.questionSnapshot?.stem || "");
-  };
-
-  const saveEditSlide = () => {
-    if (!currentSlide) return;
-    if (currentSlide.type === "knowledge") {
-      updateCurrentSlide({ content: editContent });
-    } else if (currentSlide.questionSnapshot) {
-      updateCurrentSlide({
-        questionSnapshot: { ...currentSlide.questionSnapshot, stem: editContent },
-      });
-    }
-    setEditingSlideId(null);
-    toast.success("已保存修改");
-  };
-
   const addNewSlide = () => {
     const newSlide: LessonSlide = {
       id: genId("slide"),
@@ -532,96 +560,23 @@ export function LessonEditorPage() {
         {/* 中间：主编辑区 */}
         <div className="flex-1 flex flex-col bg-mist/30 overflow-auto">
           {currentSlide && (
-            <div className="flex-1 p-8">
-              <div className="max-w-3xl mx-auto bg-paper rounded-xl shadow-lg min-h-[500px] p-8">
-                {/* 页面标题 */}
-                <div className="flex items-center gap-2 mb-6 pb-4 border-b border-ink-100">
-                  <Badge variant={currentSlide.type === "question" ? "gold" : "teal"}>
-                    {currentSlide.type === "question" ? "题目页" : "知识块"}
-                  </Badge>
-                  <input
-                    value={currentSlide.title}
-                    onChange={(e) => updateCurrentSlide({ title: e.target.value })}
-                    className="flex-1 text-lg font-serif font-semibold text-ink-900 bg-transparent focus:outline-none"
-                  />
+            <div className="flex-1 p-6">
+              <div className="mx-auto max-w-5xl">
+                <div className="mb-3 flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={addTextElement} disabled={currentSlide.type === "courseware"}>
+                    <Type className="w-4 h-4" />
+                    新增文本
+                  </Button>
+                  <span className="text-xs text-ink-500">
+                    页面元素 {(currentSlide.elements || []).length} 个
+                    {selectedElement ? " · 可拖动元素并从右侧调整属性" : " · 点击元素后可拖动和缩放"}
+                  </span>
                 </div>
 
-                {/* 题目内容 */}
-                {currentSlide.type === "question" && currentSlide.questionSnapshot && (
-                  <div className="space-y-6">
-                    <div>
-                      <div className="text-xs text-ink-400 mb-2 flex items-center justify-between">
-                        <span>题干（{questionTypeLabel[currentSlide.questionSnapshot.type]}）</span>
-                        <button
-                          onClick={() => openFormulaEditor("stem")}
-                          className="text-gold-600 hover:text-gold-700 flex items-center gap-1"
-                        >
-                          <Edit3 className="w-3 h-3" />
-                          公式编辑器编辑
-                        </button>
-                      </div>
-                      <div
-                        className="text-base text-ink-900 leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: currentSlide.questionSnapshot.stem }}
-                      />
-                    </div>
-
-                    {currentSlide.questionSnapshot.options && (
-                      <div className="space-y-2">
-                        <div className="text-xs text-ink-400 mb-2">选项</div>
-                        {currentSlide.questionSnapshot.options.map((opt, i) => (
-                          <div key={i} className="flex items-start gap-2 p-3 rounded-lg bg-mist/40">
-                            <span className="w-6 h-6 rounded-full bg-ink-900 text-paper flex items-center justify-center text-xs font-mono flex-shrink-0">
-                              {String.fromCharCode(65 + i)}
-                            </span>
-                            <span className="text-sm text-ink-700">{opt}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-ink-100">
-                      <div>
-                        <div className="text-xs text-ink-400 mb-1 flex items-center justify-between">
-                          <span>参考答案</span>
-                          <button
-                            onClick={() => openFormulaEditor("answer")}
-                            className="text-gold-600 hover:text-gold-700 flex items-center gap-1 text-[11px]"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                            公式编辑
-                          </button>
-                        </div>
-                        <div
-                          className="text-sm font-medium text-emerald-600"
-                          dangerouslySetInnerHTML={{ __html: currentSlide.questionSnapshot.answer }}
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xs text-ink-400 mb-1 flex items-center justify-between">
-                          <span>解析</span>
-                          <button
-                            onClick={() => openFormulaEditor("analysis")}
-                            className="text-gold-600 hover:text-gold-700 flex items-center gap-1 text-[11px]"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                            公式编辑
-                          </button>
-                        </div>
-                        <div
-                          className="text-sm text-ink-600"
-                          dangerouslySetInnerHTML={{ __html: currentSlide.questionSnapshot.analysis }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 外部课件内容 */}
-                {currentSlide.type === "courseware" && (
-                  <div className="space-y-4">
-                    <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-[52vh]" />
-                    <div className="flex items-center gap-2 flex-wrap">
+                {currentSlide.type === "courseware" ? (
+                  <div className="overflow-hidden rounded-xl bg-paper shadow-lg">
+                    <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-[64vh]" />
+                    <div className="flex items-center gap-2 border-t border-ink-100 px-4 py-3">
                       {getCoursewareEditorUrl(currentSlide) && (
                         <Button
                           variant="outline"
@@ -634,82 +589,41 @@ export function LessonEditorPage() {
                       <span className="text-xs text-ink-500">{currentSlide.fileName || currentSlide.content}</span>
                     </div>
                   </div>
+                ) : (
+                  <LessonSlideCanvas
+                    elements={currentSlide.elements}
+                    editable
+                    selectedElementId={selectedElementId}
+                    onSelectElement={setSelectedElementId}
+                    onElementsChange={updateCurrentElements}
+                  >
+                    <LessonSlideContent slide={currentSlide} showAnswer />
+                  </LessonSlideCanvas>
                 )}
 
-                {/* 知识块内容 */}
-                {currentSlide.type === "knowledge" && (
-                  <div>
-                    {editingSlideId === currentSlide.id ? (
-                      <div className="space-y-3">
-                        <Textarea
-                          value={editContent}
-                          onChange={(e) => setEditContent(e.target.value)}
-                          placeholder="输入知识块内容..."
-                          rows={15}
-                        />
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => setEditingSlideId(null)}>
-                            取消
-                          </Button>
-                          <Button variant="gold" size="sm" onClick={saveEditSlide}>
-                            <Check className="w-4 h-4" />
-                            保存
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="text-base text-ink-800 leading-relaxed whitespace-pre-wrap">
-                          {currentSlide.content || "点击编辑按钮添加内容"}
-                        </div>
-                        <div className="flex items-center gap-2 pt-4 border-t border-ink-100">
-                          <Button variant="outline" size="sm" onClick={startEditSlide}>
-                            <Edit3 className="w-4 h-4" />
-                            编辑内容
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={splitSlide}>
-                            <SplitSquareHorizontal className="w-4 h-4" />
-                            拆分页面
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={mergeWithNext}
-                            disabled={currentIndex >= slides.length - 1}
-                          >
-                            <Merge className="w-4 h-4" />
-                            合并下一页
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                <div className="mt-4 flex items-center justify-between">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentIndex((index) => Math.max(0, index - 1))}
+                    disabled={currentIndex === 0}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    上一页
+                  </Button>
+                  <div className="text-sm text-ink-500">
+                    第 {currentIndex + 1} 页，共 {slides.length} 页
                   </div>
-                )}
-              </div>
-
-              {/* 底部翻页 */}
-              <div className="max-w-3xl mx-auto flex items-center justify-between mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
-                  disabled={currentIndex === 0}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  上一页
-                </Button>
-                <div className="text-sm text-ink-500">
-                  第 {currentIndex + 1} 页，共 {slides.length} 页
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentIndex((index) => Math.min(slides.length - 1, index + 1))}
+                    disabled={currentIndex === slides.length - 1}
+                  >
+                    下一页
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentIndex((i) => Math.min(slides.length - 1, i + 1))}
-                  disabled={currentIndex === slides.length - 1}
-                >
-                  下一页
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
               </div>
             </div>
           )}
@@ -768,103 +682,172 @@ export function LessonEditorPage() {
           <div className="flex-1 overflow-auto p-3">
             {/* 属性面板 */}
             {!showStudentPanel && !showRelatedPanel && !showReflectionPanel && currentSlide && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-ink-600 mb-1.5">页面标题</label>
-                  <Input
-                    value={currentSlide.title}
-                    onChange={(e) => updateCurrentSlide({ title: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-ink-600 mb-1.5">页面类型</label>
-                  {currentSlide.type === "courseware" ? (
-                    <div className="rounded-lg border border-gold-200 bg-gold-50/50 p-3 text-xs text-ink-600">
-                      <div className="flex items-center gap-1.5 font-medium text-ink-800 mb-1">
-                        <Presentation className="w-3.5 h-3.5" />外部课件页
-                      </div>
-                      此页面保留原始 PPT 或 GeoGebra 文件，可直接预览并打开在线编辑器。
-                    </div>
-                  ) : (
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => updateCurrentSlide({ type: "question" })}
-                      className={cn(
-                        "flex-1 py-2 text-xs rounded border transition-colors flex items-center justify-center gap-1",
-                        currentSlide.type === "question"
-                          ? "bg-gold-50 border-gold-300 text-gold-700"
-                          : "border-ink-200 text-ink-500 hover:border-ink-300",
-                      )}
-                    >
-                      <FileQuestion className="w-3.5 h-3.5" />
-                      题目
-                    </button>
-                    <button
-                      onClick={() => updateCurrentSlide({ type: "knowledge" })}
-                      className={cn(
-                        "flex-1 py-2 text-xs rounded border transition-colors flex items-center justify-center gap-1",
-                        currentSlide.type === "knowledge"
-                          ? "bg-teal-50 border-teal-300 text-teal-700"
-                          : "border-ink-200 text-ink-500 hover:border-ink-300",
-                      )}
-                    >
-                      <Blocks className="w-3.5 h-3.5" />
-                      知识块
-                    </button>
+              selectedElement ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 rounded-lg bg-mist px-3 py-2 text-sm font-medium text-ink-800">
+                    {selectedElement.kind === "text" ? <Type className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
+                    {selectedElement.kind === "text" ? "文本元素" : "图片元素"}
                   </div>
-                  )}
-                </div>
 
-                {currentSlide.type === "knowledge" && (
+                  {selectedElement.kind === "text" ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium text-ink-600 mb-1.5">文本内容</label>
+                        <Textarea
+                          value={selectedElement.content}
+                          onChange={(event) => updateSelectedElement({ content: event.target.value })}
+                          rows={5}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-medium text-ink-600 mb-1.5">字号</label>
+                          <Input
+                            type="number"
+                            min={12}
+                            max={64}
+                            value={selectedElement.fontSize || 24}
+                            onChange={(event) => updateSelectedElement({ fontSize: Number(event.target.value) || 24 })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-ink-600 mb-1.5">对齐</label>
+                          <select
+                            value={selectedElement.textAlign || "left"}
+                            onChange={(event) => updateSelectedElement({ textAlign: event.target.value as "left" | "center" | "right" })}
+                            className="input-base"
+                          >
+                            <option value="left">左对齐</option>
+                            <option value="center">居中</option>
+                            <option value="right">右对齐</option>
+                          </select>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-medium text-ink-600 mb-1.5">图片说明</label>
+                      <Input
+                        value={selectedElement.alt || ""}
+                        onChange={(event) => updateSelectedElement({ alt: event.target.value })}
+                        placeholder="题目图片"
+                      />
+                    </div>
+                  )}
+
                   <div>
-                    <label className="block text-xs font-medium text-ink-600 mb-1.5">备注</label>
-                    <Textarea
-                      value={currentSlide.note || ""}
-                      onChange={(e) => updateCurrentSlide({ note: e.target.value })}
-                      placeholder="授课备注..."
-                      rows={3}
+                    <label className="block text-xs font-medium text-ink-600 mb-1.5">入场动画</label>
+                    <select
+                      value={selectedElement.animation || "none"}
+                      onChange={(event) => updateSelectedElement({ animation: event.target.value as LessonSlideElement["animation"] })}
+                      className="input-base"
+                    >
+                      <option value="none">无动画</option>
+                      <option value="fade">淡入</option>
+                      <option value="rise">上浮</option>
+                      <option value="zoom">缩放</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 text-xs font-medium text-ink-600">位置与尺寸（%）</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["x", "y", "width", "height"] as const).map((field) => (
+                        <label key={field} className="text-[11px] text-ink-500">
+                          {{ x: "横坐标", y: "纵坐标", width: "宽度", height: "高度" }[field]}
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={Math.round(selectedElement[field])}
+                            onChange={(event) => updateSelectedElement({ [field]: Number(event.target.value) } as Partial<LessonSlideElement>)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button variant="ghost" size="sm" className="w-full text-red-500" onClick={deleteSelectedElement}>
+                    <Trash2 className="w-4 h-4" />删除元素
+                  </Button>
+                  <Button variant="outline" size="sm" className="w-full" onClick={() => setSelectedElementId(null)}>
+                    返回页面属性
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-ink-600 mb-1.5">页面标题</label>
+                    <Input
+                      value={currentSlide.title}
+                      onChange={(event) => updateCurrentSlide({ title: event.target.value })}
                     />
                   </div>
-                )}
+                  <div className="rounded-lg border border-ink-100 bg-mist/40 p-3 text-xs text-ink-600">
+                    页面类型：{currentSlide.type === "section" ? "封面/章节" : currentSlide.type === "question" ? "题目" : currentSlide.type === "courseware" ? "外部课件" : "知识块"}
+                  </div>
 
-                <div className="pt-3 border-t border-ink-100">
-                  <div className="text-xs font-medium text-ink-600 mb-2">页面操作</div>
-                  <div className="space-y-2">
-                    <Button variant="outline" size="sm" className="w-full" onClick={addNewSlide}>
-                      <Plus className="w-4 h-4" />
-                      在下方插入新页
+                  {(currentSlide.type === "knowledge" || currentSlide.type === "section") && (
+                    <div>
+                      <label className="block text-xs font-medium text-ink-600 mb-1.5">页面内容</label>
+                      <Textarea
+                        value={currentSlide.content || ""}
+                        onChange={(event) => updateCurrentSlide({ content: event.target.value })}
+                        rows={7}
+                      />
+                    </div>
+                  )}
+
+                  {currentSlide.type === "question" && currentSlide.questionSnapshot && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-ink-600">题目内容</div>
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => openFormulaEditor("stem")}>
+                        <Edit3 className="w-4 h-4" />编辑题干
+                      </Button>
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => openFormulaEditor("answer")}>
+                        <Edit3 className="w-4 h-4" />编辑答案
+                      </Button>
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => openFormulaEditor("analysis")}>
+                        <Edit3 className="w-4 h-4" />编辑解析
+                      </Button>
+                    </div>
+                  )}
+
+                  {currentSlide.type !== "courseware" && (
+                    <Button variant="outline" size="sm" className="w-full" onClick={addTextElement}>
+                      <Type className="w-4 h-4" />新增文本框
                     </Button>
-                    {currentSlide.type === "knowledge" && (
-                      <>
-                        <Button variant="outline" size="sm" className="w-full" onClick={splitSlide}>
-                          <SplitSquareHorizontal className="w-4 h-4" />
-                          拆分当前页
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                          onClick={mergeWithNext}
-                          disabled={currentIndex >= slides.length - 1}
-                        >
-                          <Merge className="w-4 h-4" />
-                          与下一页合并
-                        </Button>
-                      </>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full text-red-500 hover:text-red-600"
-                      onClick={() => deleteSlide(currentIndex)}
-                      disabled={slides.length <= 1}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      删除当前页
-                    </Button>
+                  )}
+
+                  <div className="pt-3 border-t border-ink-100">
+                    <div className="text-xs font-medium text-ink-600 mb-2">页面操作</div>
+                    <div className="space-y-2">
+                      <Button variant="outline" size="sm" className="w-full" onClick={addNewSlide}>
+                        <Plus className="w-4 h-4" />在下方插入新页
+                      </Button>
+                      {currentSlide.type === "knowledge" && (
+                        <>
+                          <Button variant="outline" size="sm" className="w-full" onClick={splitSlide}>
+                            <SplitSquareHorizontal className="w-4 h-4" />拆分当前页
+                          </Button>
+                          <Button variant="outline" size="sm" className="w-full" onClick={mergeWithNext} disabled={currentIndex >= slides.length - 1}>
+                            <Merge className="w-4 h-4" />与下一页合并
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-red-500 hover:text-red-600"
+                        onClick={() => deleteSlide(currentIndex)}
+                        disabled={slides.length <= 1}
+                      >
+                        <Trash2 className="w-4 h-4" />删除当前页
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             )}
 
             {/* 提问学生面板 */}

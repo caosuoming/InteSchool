@@ -1592,6 +1592,35 @@ export interface QuestionReference {
 /** 课件页类型 */
 export type LessonSlideType = "question" | "knowledge" | "section" | "courseware";
 
+/** 课件元素入场动画 */
+export type LessonElementAnimation = "none" | "fade" | "rise" | "zoom";
+
+interface LessonSlideElementBase {
+  id: string;
+  /** 坐标和尺寸均使用相对课件画布的百分比，便于不同屏幕等比展示。 */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  animation?: LessonElementAnimation;
+}
+
+export interface LessonSlideTextElement extends LessonSlideElementBase {
+  kind: "text";
+  content: string;
+  fontSize?: number;
+  textAlign?: "left" | "center" | "right";
+}
+
+export interface LessonSlideImageElement extends LessonSlideElementBase {
+  kind: "image";
+  src: string;
+  alt?: string;
+}
+
+/** 可在课件画布中自由移动、缩放的元素。 */
+export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement;
+
 /** 课件页 - 每一页内容 */
 export interface LessonSlide {
   id: string;
@@ -1621,6 +1650,8 @@ export interface LessonSlide {
   fileName?: string;
   onlineAccessToken?: string;
   editorUrl?: string;
+  /** 页面上额外添加的文本框、题图等自由布局元素。 */
+  elements?: LessonSlideElement[];
 }
 
 /** 课件来源类型 */

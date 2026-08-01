@@ -6,6 +6,8 @@ import {
 import type { LessonSlide, Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
+import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
+import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 
 interface PresentationModeProps {
   slides: LessonSlide[];
@@ -259,76 +261,17 @@ export function PresentationMode({
       >
         {/* 幻灯片内容 */}
         <div className="absolute inset-0 flex items-center justify-center p-8">
-          <div className={cn(
-            "bg-paper rounded-xl shadow-2xl w-full max-w-5xl h-full max-h-full overflow-auto",
-            currentSlide?.type === "courseware" ? "p-0" : "p-12",
-          )}>
-            {currentSlide?.type === "question" && currentSlide.questionSnapshot ? (
-              <div className="space-y-8">
-                <div className="flex items-center gap-2 pb-4 border-b border-ink-100">
-                  <span className="px-2 py-0.5 rounded text-xs bg-gold-100 text-gold-800 font-medium">
-                    {questionTypeLabel[currentSlide.questionSnapshot.type]}题
-                  </span>
-                  <span className="font-serif text-xl font-semibold text-ink-900">
-                    {currentSlide.title}
-                  </span>
-                </div>
-                <div className="text-xl text-ink-900 leading-relaxed whitespace-pre-wrap">
-                  {currentSlide.questionSnapshot.stem}
-                </div>
-                {currentSlide.questionSnapshot.options && (
-                  <div className="space-y-2">
-                    {currentSlide.questionSnapshot.options.map((opt, i) => {
-                      const isAnswer = showAnswer && currentSlide.questionSnapshot?.answer?.includes(String.fromCharCode(65 + i));
-                      return (
-                        <div
-                          key={i}
-                          className={cn(
-                            "flex items-start gap-3 p-3 rounded-lg border-2 text-lg",
-                            isAnswer
-                              ? "border-emerald-400 bg-emerald-50"
-                              : "border-ink-100 bg-mist/30",
-                          )}
-                        >
-                          <span className="w-7 h-7 rounded-full bg-ink-900 text-paper flex items-center justify-center text-sm font-mono flex-shrink-0">
-                            {String.fromCharCode(65 + i)}
-                          </span>
-                          <span className="text-ink-800">{opt}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {showAnswer && (
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-ink-100 animate-fade-in">
-                    <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-                      <div className="text-xs text-emerald-700 font-medium mb-1">参考答案</div>
-                      <div className="text-base font-medium text-emerald-900 whitespace-pre-wrap">
-                        {currentSlide.questionSnapshot.answer}
-                      </div>
-                    </div>
-                    <div className="p-4 rounded-lg bg-gold-50 border border-gold-200">
-                      <div className="text-xs text-gold-700 font-medium mb-1">解析</div>
-                      <div className="text-sm text-ink-800 whitespace-pre-wrap leading-relaxed">
-                        {currentSlide.questionSnapshot.analysis}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : currentSlide?.type === "courseware" ? (
+          {currentSlide?.type === "courseware" ? (
+            <div className="h-full w-full max-w-6xl overflow-hidden rounded-xl bg-paper shadow-2xl">
               <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-full min-h-[60vh]" />
-            ) : (
-              <div className="space-y-4">
-                <div className="font-serif text-2xl font-bold text-ink-900 pb-4 border-b border-ink-100">
-                  {currentSlide?.title}
-                </div>
-                <div className="text-lg text-ink-800 leading-relaxed whitespace-pre-wrap">
-                  {currentSlide?.content}
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          ) : currentSlide ? (
+            <div className="w-full max-w-6xl">
+              <LessonSlideCanvas key={currentSlide.id} elements={currentSlide.elements} className="shadow-2xl">
+                <LessonSlideContent slide={currentSlide} showAnswer={showAnswer} />
+              </LessonSlideCanvas>
+            </div>
+          ) : null}
         </div>
 
         {/* 画笔 canvas 覆盖层 */}
