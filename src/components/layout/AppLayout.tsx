@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { ToastContainer } from "@/components/ui/Toast";
 import { canManageSchoolExams } from "@/lib/exam-permissions";
 import { BrandMark } from "@/components/brand/BrandMark";
+import { ExtractTaskCenter } from "@/components/extract/ExtractTaskCenter";
+import { useExtractTasksStore } from "@/stores/extractTasks";
 
 interface NavItem {
   path: string;
@@ -108,12 +110,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }, [teacher]);
 
   const handleSwitchAffiliation = async (affId: string) => {
+    useExtractTasksStore.getState().reset();
     await switchAffiliation(affId);
     setAffiliationDropdownOpen(false);
     navigate("/dashboard");
   };
 
   const handleLogout = async () => {
+    useExtractTasksStore.getState().reset();
     await logout();
     navigate("/login");
   };
@@ -438,6 +442,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </div>
 
       <ToastContainer />
+      <ExtractTaskCenter />
     </div>
   );
 }

@@ -13,12 +13,15 @@ import { Card } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
 import { extractStoredFile } from "@/services/api";
 import "katex/dist/katex.min.css";
-import type { Lecture, ExamPaper, ResourceSemester } from "@/types";
+import type { Lecture, ExamPaper } from "@/types";
+import {
+  isExtractTaskRunning,
+  useExtractTasksStore,
+} from "@/stores/extractTasks";
 
 
 
@@ -32,17 +35,8 @@ export default function ResourcePreviewPage() {
   const [loading, setLoading] = useState(true);
   const [lecture, setLecture] = useState<Lecture | null>(null);
   const [examPaper, setExamPaper] = useState<ExamPaper | null>(null);
-  const [extractModal, setExtractModal] = useState<{
-    open: boolean;
-    resourceId: string;
-    resourceType: "examPaper" | "lecture";
-    resourceTitle: string;
-    chapterIds: string[];
-    knowledgePointIds: string[];
-    grade: string;
-    schoolYear: string;
-    semester: ResourceSemester;
-  } | null>(null);
+  const extractTasks = useExtractTasksStore((state) => state.tasks);
+  const startExtractTask = useExtractTasksStore((state) => state.startTask);
 
   const [docPreview, setDocPreview] = useState<{
     loading: boolean;
@@ -100,6 +94,21 @@ export default function ResourcePreviewPage() {
   useEffect(() => {
     loadDocxPreview();
   }, [loadDocxPreview]);
+
+  useEffect(() => {
+    const handleExtractConfirmed = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        resourceId: string;
+        resourceType: "lecture" | "examPaper";
+      }>).detail;
+      if (detail?.resourceId === id && detail.resourceType === resourceType) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener("extract-task-confirmed", handleExtractConfirmed);
+    return () => window.removeEventListener("extract-task-confirmed", handleExtractConfirmed);
+  }, [id, resourceType]);
+
   if (!resource) {
     if (loading) {
       return (
@@ -112,12 +121,13 @@ export default function ResourcePreviewPage() {
   }
 
   const isExtracted = resource.extractStatus === "done";
-  const isExtracting = resource.extractStatus === "extracting";
+  const isExtracting = resource.extractStatus === "extracting"
+    || (resourceType ? isExtractTaskRunning(extractTasks, resource.id, resourceType) : false);
   const hasOriginalFile = !!resource.originalFileUrl;
 
   const handleOpenExtract = () => {
-    setExtractModal({
-      open: true,
+    if (!resourceType) return;
+    startExtractTask({
       resourceId: resource.id,
       resourceType,
       resourceTitle: resource.title,
@@ -127,11 +137,6 @@ export default function ResourcePreviewPage() {
       schoolYear: resource.schoolYear,
       semester: resource.semester || "上学期",
     });
-  };
-
-  const handleExtractConfirmed = () => {
-    setExtractModal(null);
-    window.location.reload();
   };
 
   const getDocUrl = () => {
@@ -286,21 +291,6 @@ export default function ResourcePreviewPage() {
         )}
       </div>
 
-      {extractModal && (
-        <ExtractReviewModal
-          open={extractModal.open}
-          onClose={() => setExtractModal(null)}
-          resourceId={extractModal.resourceId}
-          resourceType={extractModal.resourceType}
-          resourceTitle={extractModal.resourceTitle}
-          chapterIds={extractModal.chapterIds}
-          knowledgePointIds={extractModal.knowledgePointIds}
-          grade={extractModal.grade}
-          schoolYear={extractModal.schoolYear}
-          semester={extractModal.semester}
-          onConfirmed={handleExtractConfirmed}
-        />
-      )}
     </div>
   );
 }
