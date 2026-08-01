@@ -15,6 +15,7 @@ export interface TeacherRecord {
   prepGroupIds: string[];
   affiliations: Array<Record<string, unknown>>;
   currentAffiliationId: string | null;
+  platformModeratorSubjects?: string[];
   createdAt: string;
   [key: string]: unknown;
 }

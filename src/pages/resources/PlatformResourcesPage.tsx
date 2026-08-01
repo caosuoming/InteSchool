@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpDown,
   BookOpen,
   Calendar,
@@ -17,6 +19,9 @@ import {
   Plus,
   Presentation,
   Search,
+  ShieldCheck,
+  Trash2,
+  Users,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
@@ -45,6 +50,7 @@ import type {
   Question,
   ShareRecord,
   ShareableResourceType,
+  Teacher,
   TreeNode,
   ResourceSemester,
 } from "@/types";
@@ -57,7 +63,7 @@ import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedD
 
 type ResourceTypeFilter = "all" | ShareableResourceType;
 type LeftTab = "chapter" | "knowledge";
-type SortKey = "updated" | "created" | "title";
+type SortKey = "layout" | "updated" | "created" | "title";
 type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
 
 interface PlatformResourceItem {
@@ -72,6 +78,8 @@ interface PlatformResourceItem {
   semester?: ResourceSemester;
   fromTeacherId: string;
   fromSchoolId: string;
+  subject: string;
+  order: number;
   chapterIds: string[];
   knowledgePointIds: string[];
   createdAt: string;
@@ -132,6 +140,7 @@ const typeFilterConfig: { key: ResourceTypeFilter; label: string; icon: typeof F
 ];
 
 const sortOptions: { value: SortKey; label: string; icon: React.ReactNode }[] = [
+  { value: "layout", label: "平台编排", icon: <ArrowUpDown className="w-3.5 h-3.5" /> },
   { value: "updated", label: "最近更新", icon: <Clock className="w-3.5 h-3.5" /> },
   { value: "created", label: "捐赠时间", icon: <Calendar className="w-3.5 h-3.5" /> },
   { value: "title", label: "标题排序", icon: <FileText className="w-3.5 h-3.5" /> },
@@ -199,6 +208,21 @@ function uniqueFilterOptions(
     .map((value) => ({ value, label: getLabel(value) }));
 }
 
+function getActiveAffiliation(teacher: Teacher | null) {
+  if (!teacher) return null;
+  return teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent)
+    || null;
+}
+
+function getActiveRole(teacher: Teacher | null): Teacher["role"] | null {
+  return getActiveAffiliation(teacher)?.role || teacher?.role || null;
+}
+
+function getActiveSubject(teacher: Teacher | null): string {
+  return getActiveAffiliation(teacher)?.subject?.trim() || teacher?.subject?.trim() || "";
+}
+
 function CompactFilterSelect({
   label,
   value,
@@ -237,6 +261,8 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
     resourceType: share.resourceType,
     fromTeacherId: share.fromTeacherId,
     fromSchoolId: share.fromSchoolId,
+    subject: share.platformSubject?.trim() || "未分类",
+    order: share.platformOrder || 0,
     createdAt: share.createdAt,
     updatedAt: snapshot.updatedAt || share.createdAt,
     grade: snapshot.grade,
@@ -398,7 +424,9 @@ export default function PlatformResourcesPage() {
   const [chapterLogic, setChapterLogic] = useState<FilterLogic>("or");
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
   const [typeFilter, setTypeFilter] = useState<ResourceTypeFilter>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("updated");
+  const [sortKey, setSortKey] = useState<SortKey>("layout");
+  const [selectedSubject, setSelectedSubject] = useState("");
+  const [moderatorSubject, setModeratorSubject] = useState("");
   const [items, setItems] = useState<PlatformResourceItem[]>([]);
   const [contributors, setContributors] = useState<DonationContributor[]>([]);
   const [privileges, setPrivileges] = useState<DonationPrivileges | null>(null);
@@ -417,8 +445,13 @@ export default function PlatformResourcesPage() {
     title: "", description: "", grade: "", schoolYear: "", semester: "上学期" as ResourceSemester, originalFileName: "", difficulty: "", recommendation: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [updatingModeratorId, setUpdatingModeratorId] = useState<string | null>(null);
 
   const schoolId = teacher?.schoolId || "sch-1";
+  const platformAdmin = getActiveRole(teacher) === "platform_admin";
+  const teacherSubject = getActiveSubject(teacher);
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
 
   const loadAll = useCallback(async () => {
@@ -429,12 +462,12 @@ export default function PlatformResourcesPage() {
     setLoading(true);
     try {
       const [donations, myDonations, contributorList, myPrivileges, chapterData, knowledgeData] = await Promise.all([
-        shareService.listPublicDonations(),
+        shareService.listPublicDonations(teacher.id),
         shareService.listDonationStatus(teacher.id),
-        shareService.listDonationContributors(),
+        shareService.listDonationContributors(teacher.id),
         shareService.getDonationPrivileges(teacher.id),
-        shareService.getPlatformDirectoryTree("chapter"),
-        shareService.getPlatformDirectoryTree("knowledge"),
+        shareService.getPlatformDirectoryTree("chapter", teacher.id),
+        shareService.getPlatformDirectoryTree("knowledge", teacher.id),
       ]);
       const nextItems = donations.map(snapshotToItem).filter((item): item is PlatformResourceItem => Boolean(item));
       setItems(nextItems);
@@ -443,13 +476,14 @@ export default function PlatformResourcesPage() {
       setPrivileges(myPrivileges);
       setChapterTree(chapterData);
       setKnowledgeTree(knowledgeData);
+      if (!platformAdmin) setSelectedSubject(teacherSubject);
     } catch (error) {
       console.error("加载平台资源失败", error);
       toast.error("加载平台资源失败");
     } finally {
       setLoading(false);
     }
-  }, [teacher]);
+  }, [platformAdmin, teacher, teacherSubject]);
 
   useEffect(() => {
     void loadAll();
@@ -459,6 +493,16 @@ export default function PlatformResourcesPage() {
     () => new Map(contributors.map((item) => [item.teacherId, item])),
     [contributors],
   );
+
+  const subjectOptions = useMemo(() => [...new Set([
+    ...items.map((item) => item.subject),
+    ...contributors.flatMap((item) => [...item.subjects, ...item.moderatorSubjects]),
+  ].filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-CN")), [contributors, items]);
+
+  const managedContributors = useMemo(() => {
+    const subject = moderatorSubject || selectedSubject || subjectOptions[0] || "";
+    return contributors.filter((item) => item.subjects.includes(subject) || item.moderatorSubjects.includes(subject));
+  }, [contributors, moderatorSubject, selectedSubject, subjectOptions]);
 
   const commonFilterOptions = useMemo(() => ({
     grade: uniqueFilterOptions(items.map((item) => item.grade)),
@@ -524,6 +568,7 @@ export default function PlatformResourcesPage() {
 
   const displayedItems = useMemo(() => {
     let list = items;
+    if (selectedSubject) list = list.filter((item) => item.subject === selectedSubject);
     if (typeFilter !== "all") list = list.filter((item) => item.resourceType === typeFilter);
     if (keyword.trim()) {
       const term = keyword.trim().toLowerCase();
@@ -587,11 +632,12 @@ export default function PlatformResourcesPage() {
         : checkedKnowledge.some((id) => item.knowledgePointIds.includes(id)));
     }
     const sorted = [...list];
+    if (sortKey === "layout") sorted.sort((a, b) => a.subject.localeCompare(b.subject, "zh-CN") || a.order - b.order || b.createdAt.localeCompare(a.createdAt));
     if (sortKey === "updated") sorted.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     if (sortKey === "created") sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     if (sortKey === "title") sorted.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
     return sorted;
-  }, [items, typeFilter, keyword, filters, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, sortKey]);
+  }, [items, selectedSubject, typeFilter, keyword, filters, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, sortKey]);
 
   const updateFilter = (key: keyof PlatformResourceFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -726,6 +772,59 @@ export default function PlatformResourcesPage() {
     }
   };
 
+  const movePlatformItem = async (item: PlatformResourceItem, direction: -1 | 1) => {
+    if (!teacher) return;
+    const subjectItems = items
+      .filter((candidate) => candidate.subject === item.subject)
+      .sort((left, right) => left.order - right.order || left.createdAt.localeCompare(right.createdAt));
+    const index = subjectItems.findIndex((candidate) => candidate.shareId === item.shareId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= subjectItems.length) return;
+    [subjectItems[index], subjectItems[targetIndex]] = [subjectItems[targetIndex], subjectItems[index]];
+    setReorderingId(item.shareId);
+    try {
+      await shareService.updateDonationOrder(teacher.id, item.subject, subjectItems.map((candidate) => candidate.shareId));
+      toast.success("平台资源布局已更新");
+      await loadAll();
+    } catch (error: any) {
+      toast.error("调整布局失败", error?.message);
+    } finally {
+      setReorderingId(null);
+    }
+  };
+
+  const deletePlatformItem = async (item: PlatformResourceItem) => {
+    if (!teacher || !platformAdmin) return;
+    if (!window.confirm(`确认删除平台资源“${item.title}”？该操作会同时移除其合并贡献记录。`)) return;
+    setDeletingId(item.shareId);
+    try {
+      await shareService.deleteDonationResource(teacher.id, item.shareId);
+      toast.success("平台资源已删除");
+      await loadAll();
+    } catch (error: any) {
+      toast.error("删除失败", error?.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const toggleSubjectModerator = async (contributor: DonationContributor) => {
+    if (!teacher || !platformAdmin) return;
+    const subject = moderatorSubject || selectedSubject || subjectOptions[0];
+    if (!subject) return;
+    const enabled = !contributor.moderatorSubjects.includes(subject);
+    setUpdatingModeratorId(contributor.teacherId);
+    try {
+      const updated = await shareService.setSubjectModerator(teacher.id, subject, contributor.teacherId, enabled);
+      setContributors(updated);
+      toast.success(enabled ? "已设为学科版主" : "已撤销学科版主", `${contributor.nickname} · ${subject}`);
+    } catch (error: any) {
+      toast.error("版主管理失败", error?.message);
+    } finally {
+      setUpdatingModeratorId(null);
+    }
+  };
+
   const updateSaveDecision = (updater: (decision: PlatformSaveDecision) => PlatformSaveDecision) => {
     setSaveConflict((current) => current ? { ...current, decision: updater(current.decision) } : current);
   };
@@ -745,9 +844,88 @@ export default function PlatformResourcesPage() {
     <div>
       <PageHeader
         title="平台资源"
-        description="浏览教师捐赠的资源；接受后会自动同步章节和知识点目录"
+        description="平台资源按学科独立维护；创建副本后会自动同步章节和知识点目录"
         icon={<Cloud className="w-5 h-5" />}
       />
+
+      <Card className="mb-4 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-gold-600" />
+            <div>
+              <div className="text-sm font-medium text-ink-800">
+                {platformAdmin ? "平台超级管理员视图" : `${teacherSubject || "未设置"}学科资源`}
+              </div>
+              <div className="text-xs text-ink-400">
+                {platformAdmin
+                  ? "可查看全部学科、管理版主并删除平台资源"
+                  : privileges?.moderatedSubjects.length
+                    ? `可维护：${privileges.moderatedSubjects.join("、")}`
+                    : "仅展示当前学科及获授权管理的学科"}
+              </div>
+            </div>
+          </div>
+          {platformAdmin && (
+            <label className="ml-auto flex items-center gap-2 text-xs text-ink-500">
+              查看学科
+              <select
+                aria-label="平台学科筛选"
+                value={selectedSubject}
+                onChange={(event) => setSelectedSubject(event.target.value)}
+                className="input-base min-w-36 py-1.5 text-xs"
+              >
+                <option value="">全部学科</option>
+                {subjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+      </Card>
+
+      {platformAdmin && subjectOptions.length > 0 && (
+        <Card className="mb-4 p-4">
+          <div className="mb-3 flex flex-wrap items-end gap-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-ink-500" />
+              <div>
+                <div className="text-sm font-medium text-ink-800">捐赠用户与学科版主</div>
+                <div className="text-xs text-ink-400">超级管理员可从该学科捐赠者中任命版主</div>
+              </div>
+            </div>
+            <div className="ml-auto w-44">
+              <Select
+                aria-label="版主管理学科"
+                value={moderatorSubject || selectedSubject || subjectOptions[0]}
+                onChange={(event) => setModeratorSubject(event.target.value)}
+                options={subjectOptions.map((subject) => ({ value: subject, label: subject }))}
+              />
+            </div>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {managedContributors.map((contributor) => {
+              const subject = moderatorSubject || selectedSubject || subjectOptions[0];
+              const moderator = contributor.moderatorSubjects.includes(subject);
+              return (
+                <div key={contributor.teacherId} className="flex items-center gap-3 rounded-lg border border-ink-100 bg-mist/30 p-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-ink-800">{contributor.nickname}</div>
+                    <div className="text-xs text-ink-400">累计捐赠 {contributor.donationCount} 项 · 第 {contributor.rank} 名</div>
+                  </div>
+                  <Button
+                    variant={moderator ? "ink" : "outline"}
+                    size="sm"
+                    loading={updatingModeratorId === contributor.teacherId}
+                    onClick={() => toggleSubjectModerator(contributor)}
+                  >
+                    {moderator ? "撤销版主" : "设为版主"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+          {managedContributors.length === 0 && <div className="py-4 text-center text-xs text-ink-400">该学科暂无捐赠用户</div>}
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(210px,240px)_minmax(0,1fr)]">
         <div>
@@ -943,22 +1121,64 @@ export default function PlatformResourcesPage() {
             <div className="space-y-3">
               {displayedItems.map((item) => {
                 const contributor = contributorMap.get(item.fromTeacherId);
-                const canEdit = item.fromTeacherId === teacher?.id || Boolean(privileges?.isTopContributor);
+                const canManageSubject = platformAdmin || Boolean(privileges?.moderatedSubjects.includes(item.subject));
+                const canEdit = item.fromTeacherId === teacher?.id || canManageSubject;
+                const subjectItems = items
+                  .filter((candidate) => candidate.subject === item.subject)
+                  .sort((left, right) => left.order - right.order || left.createdAt.localeCompare(right.createdAt));
+                const subjectIndex = subjectItems.findIndex((candidate) => candidate.shareId === item.shareId);
                 const chapterNames = resolveNames(chapterTree, item.chapterIds);
                 const knowledgeNames = resolveNames(knowledgeTree, item.knowledgePointIds);
                 return (
                   <div key={item.shareId} className="card-base p-4 hover:shadow-cardHover transition-all group">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
                       <span className="tag-gold">{resourceTypeLabel[item.resourceType]}</span>
+                      <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">{item.subject}</span>
                       <span className="flex items-center gap-1 text-xs text-ink-500">
                         捐赠者：{contributor?.nickname || "匿名用户"}
                         {contributor?.isTopContributor && <Crown className="w-3.5 h-3.5 text-gold-500" aria-label="贡献榜前十" />}
                       </span>
                       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                        {canManageSubject && (
+                          <div className="flex items-center rounded-md border border-ink-200 bg-paper">
+                            <button
+                              type="button"
+                              aria-label={`上移${item.title}`}
+                              title="在本学科平台布局中上移"
+                              disabled={subjectIndex <= 0 || reorderingId !== null}
+                              onClick={() => movePlatformItem(item, -1)}
+                              className="p-1.5 text-ink-500 hover:bg-mist disabled:cursor-not-allowed disabled:opacity-30"
+                            >
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`下移${item.title}`}
+                              title="在本学科平台布局中下移"
+                              disabled={subjectIndex < 0 || subjectIndex >= subjectItems.length - 1 || reorderingId !== null}
+                              onClick={() => movePlatformItem(item, 1)}
+                              className="border-l border-ink-200 p-1.5 text-ink-500 hover:bg-mist disabled:cursor-not-allowed disabled:opacity-30"
+                            >
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
                         {canEdit && (
                           <Button variant="outline" size="sm" onClick={() => openEdit(item)}>
                             <Edit3 className="w-3.5 h-3.5" />
                             修改属性
+                          </Button>
+                        )}
+                        {platformAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                            loading={deletingId === item.shareId}
+                            onClick={() => deletePlatformItem(item)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            删除
                           </Button>
                         )}
                         <Button

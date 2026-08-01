@@ -6,7 +6,12 @@ import { shareService } from "./share.js";
 
 const now = "2026-07-29T09:00:00.000Z";
 
-function teacher(id: string, name: string, schoolId: string) {
+function teacher(
+  id: string,
+  name: string,
+  schoolId: string,
+  overrides: Partial<AppState["teachers"][number]> = {},
+): AppState["teachers"][number] {
   return {
     id,
     email: `${id}@example.com`,
@@ -23,6 +28,7 @@ function teacher(id: string, name: string, schoolId: string) {
     affiliations: [],
     currentAffiliationId: null,
     createdAt: now,
+    ...overrides,
   };
 }
 
@@ -336,34 +342,88 @@ describe("platform resource donations", () => {
     });
   });
 
-  it("blocks repeated donations and reserves cross-resource maintenance for top contributors", async () => {
+  it("uses explicit platform admins and subject moderators instead of ranking-based management", async () => {
     const appState = state();
+    appState.teachers.push(teacher("teacher-admin", "平台管理员", "school-admin", {
+      role: "platform_admin",
+      subject: "平台管理",
+    }));
+    (appState.questions as Question[]).push(question("q-a-2", "teacher-a", "school-a", "ch-a", "kp-a", {
+      stem: "第二道数学平台题目",
+    }));
     await runWithState(appState, async () => {
-      const [donation] = await shareService.donateResources("teacher-b", "school-b", [
+      const [donationB] = await shareService.donateResources("teacher-b", "school-b", [
         { resourceType: "question", resourceId: "q-b" },
       ]);
       expect(await shareService.donateResources("teacher-b", "school-b", [
         { resourceType: "question", resourceId: "q-b" },
       ])).toEqual([]);
+      const [donationA] = await shareService.donateResources("teacher-a", "school-a", [
+        { resourceType: "question", resourceId: "q-a-2" },
+      ]);
 
       const contributor = await shareService.getDonationPrivileges("teacher-b");
-      expect(contributor).toMatchObject({ donationCount: 1, rank: 1, isTopContributor: true });
+      expect(contributor).toMatchObject({ donationCount: 1, isTopContributor: true });
       expect((await shareService.getDonationPrivileges("teacher-c")).isTopContributor).toBe(false);
 
-      await shareService.updateDonationResource("teacher-b", donation.id, { title: "贡献者修改后的题干" });
-      expect((await shareService.listPublicDonations())[0].resourceTitle).toBe("贡献者修改后的题干");
-      await expect(shareService.updateDonationResource("teacher-c", donation.id, { title: "越权修改" }))
-        .rejects.toThrow("仅捐赠者本人或贡献榜前十名");
+      await expect(shareService.updateDonationResource("teacher-b", donationA.id, { title: "排名越权修改" }))
+        .rejects.toThrow("学科版主");
+      await expect(shareService.updateDonationResource("teacher-c", donationB.id, { title: "普通教师越权修改" }))
+        .rejects.toThrow("学科版主");
+
+      await shareService.setSubjectModerator("teacher-admin", "数学", "teacher-c", true);
+      expect(await shareService.getDonationPrivileges("teacher-c")).toMatchObject({
+        moderatedSubjects: ["数学"],
+        canManageAllSubjects: false,
+      });
+      await shareService.updateDonationResource("teacher-c", donationB.id, { title: "数学版主修改后的题干" });
+      expect((await shareService.listPublicDonations("teacher-c")).find((item) => item.id === donationB.id)?.resourceTitle)
+        .toBe("数学版主修改后的题干");
+
+      await shareService.updateDonationOrder("teacher-c", "数学", [donationA.id, donationB.id]);
+      expect((await shareService.listPublicDonations("teacher-c")).map((item) => item.id))
+        .toEqual([donationA.id, donationB.id]);
 
       const settings = await shareService.listPlatformResourceSettings();
-      await shareService.updatePlatformResourceSettings("teacher-b", settings.map((item) => ({
+      await expect(shareService.updatePlatformResourceSettings("teacher-b", settings.map((item) => ({
+        type: item.type,
+        values: item.values,
+      })))).rejects.toThrow("平台超级管理员");
+      await shareService.updatePlatformResourceSettings("teacher-admin", settings.map((item) => ({
         type: item.type,
         values: item.type === "grade" ? ["高一", "高二"] : item.values,
       })));
       expect((appState.platformResourceSettings as Array<{ type: string; values: string[] }>).find((item) => item.type === "grade")?.values)
         .toEqual(["高一", "高二"]);
-      await expect(shareService.updatePlatformResourceSettings("teacher-c", []))
-        .rejects.toThrow("仅贡献榜前十名");
+
+      await expect(shareService.deleteDonationResource("teacher-c", donationB.id))
+        .rejects.toThrow("平台超级管理员");
+      await shareService.deleteDonationResource("teacher-admin", donationB.id);
+      expect((await shareService.listPublicDonations("teacher-admin")).some((item) => item.id === donationB.id)).toBe(false);
+    });
+  });
+
+  it("separates platform resources by subject while allowing platform admins to view all subjects", async () => {
+    const appState = state();
+    appState.teachers.push(
+      teacher("teacher-physics", "物理老师", "school-physics", { subject: "物理" }),
+      teacher("teacher-admin", "平台管理员", "school-admin", { role: "platform_admin", subject: "平台管理" }),
+    );
+    (appState.questions as Question[]).push(question("q-physics", "teacher-physics", "school-physics", "ch-a", "kp-a", {
+      stem: "牛顿第二定律的表达式是什么？",
+    }));
+    await runWithState(appState, async () => {
+      await shareService.donateResources("teacher-b", "school-b", [
+        { resourceType: "question", resourceId: "q-b" },
+      ]);
+      await shareService.donateResources("teacher-physics", "school-physics", [
+        { resourceType: "question", resourceId: "q-physics" },
+      ]);
+
+      expect((await shareService.listPublicDonations("teacher-a")).map((item) => item.platformSubject)).toEqual(["数学"]);
+      expect((await shareService.listPublicDonations("teacher-physics")).map((item) => item.platformSubject)).toEqual(["物理"]);
+      expect(new Set((await shareService.listPublicDonations("teacher-admin")).map((item) => item.platformSubject)))
+        .toEqual(new Set(["数学", "物理"]));
     });
   });
 

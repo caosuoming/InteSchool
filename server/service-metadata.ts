@@ -1,13 +1,17 @@
 export const serviceParameters = {
   "donation": {
-    "listDonations": [],
+    "listDonations": [
+      "teacherId"
+    ],
     "listTeacherDonations": [
       "teacherId"
     ],
     "getDonorStatus": [
       "teacherId"
     ],
-    "getCatalogTrees": [],
+    "getCatalogTrees": [
+      "teacherId"
+    ],
     "checkDonation": [
       "teacherId",
       "schoolId",
@@ -992,16 +996,21 @@ export const serviceParameters = {
       "schoolId",
       "requests"
     ],
-    "listPublicDonations": [],
+    "listPublicDonations": [
+      "teacherId"
+    ],
     "listDonationStatus": [
       "teacherId"
     ],
-    "listDonationContributors": [],
+    "listDonationContributors": [
+      "teacherId"
+    ],
     "getDonationPrivileges": [
       "teacherId"
     ],
     "getPlatformDirectoryTree": [
-      "type"
+      "type",
+      "teacherId"
     ],
     "updateDonationResource": [
       "teacherId",
@@ -1012,6 +1021,21 @@ export const serviceParameters = {
     "updatePlatformResourceSettings": [
       "teacherId",
       "settings"
+    ],
+    "setSubjectModerator": [
+      "teacherId",
+      "subject",
+      "targetTeacherId",
+      "enabled"
+    ],
+    "updateDonationOrder": [
+      "teacherId",
+      "subject",
+      "donationIds"
+    ],
+    "deleteDonationResource": [
+      "teacherId",
+      "donationId"
     ],
     "listIncomingShares": [
       "teacherId"

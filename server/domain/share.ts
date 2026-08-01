@@ -56,6 +56,77 @@ const DEFAULT_PLATFORM_SETTINGS: Record<PlatformResourceSettingType, string[]> =
   category: ["练习", "考试", "作业", "复习"],
 };
 
+type PlatformTeacher = {
+  id: string;
+  role: "teacher" | "school_admin" | "platform_admin";
+  subject?: string;
+  nickname?: string;
+  affiliations?: Array<Record<string, unknown>>;
+  currentAffiliationId?: string | null;
+  platformModeratorSubjects?: string[];
+};
+
+function platformTeachers(): PlatformTeacher[] {
+  return (db.read("teachers") || []) as PlatformTeacher[];
+}
+
+function platformTeacher(teacherId: string): PlatformTeacher {
+  const teacher = platformTeachers().find((item) => item.id === teacherId);
+  if (!teacher) throw new Error("教师不存在");
+  return teacher;
+}
+
+function activeAffiliation(teacher: PlatformTeacher): Record<string, unknown> | undefined {
+  return teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent === true);
+}
+
+function activePlatformRole(teacher: PlatformTeacher): string {
+  const affiliation = activeAffiliation(teacher);
+  return typeof affiliation?.role === "string" ? affiliation.role : teacher.role;
+}
+
+function activePlatformSubject(teacher: PlatformTeacher): string {
+  const affiliation = activeAffiliation(teacher);
+  const subject = typeof affiliation?.subject === "string" ? affiliation.subject : teacher.subject;
+  return subject?.trim() || "";
+}
+
+function isPlatformAdmin(teacherId: string): boolean {
+  return activePlatformRole(platformTeacher(teacherId)) === "platform_admin";
+}
+
+function moderatedSubjects(teacherId: string): string[] {
+  return [...new Set((platformTeacher(teacherId).platformModeratorSubjects || []).map((item) => item.trim()).filter(Boolean))];
+}
+
+function donationSubject(record: ShareRecord): string {
+  if (record.platformSubject?.trim()) return record.platformSubject.trim();
+  const donor = platformTeachers().find((item) => item.id === record.fromTeacherId);
+  return donor ? activePlatformSubject(donor) || "未分类" : "未分类";
+}
+
+function canManageSubject(teacherId: string, subject: string): boolean {
+  return isPlatformAdmin(teacherId) || moderatedSubjects(teacherId).includes(subject);
+}
+
+function visibleSubjectsFor(teacherId: string): string[] | null {
+  if (isPlatformAdmin(teacherId)) return null;
+  const teacher = platformTeacher(teacherId);
+  return [...new Set([activePlatformSubject(teacher), ...moderatedSubjects(teacherId)].filter(Boolean))];
+}
+
+function canViewSubject(teacherId: string, subject: string): boolean {
+  const visible = visibleSubjectsFor(teacherId);
+  return visible === null || visible.includes(subject);
+}
+
+function nextPlatformOrder(subject: string): number {
+  return primaryDonations()
+    .filter((item) => donationSubject(item) === subject)
+    .reduce((maximum, item) => Math.max(maximum, item.platformOrder || 0), 0) + 1;
+}
+
 function resourceTitle(type: ShareableResourceType, resource: ShareableResource): string {
   return type === "question" ? (resource as Question).stem : (resource as Exclude<ShareableResource, Question>).title;
 }
@@ -357,13 +428,14 @@ function checkPlatformSave(
 }
 
 function contributorRanking(): DonationContributor[] {
-  const teachers = db.read("teachers") as Array<{ id: string; nickname?: string }>;
-  const counts = new Map<string, { count: number; firstAt: string }>();
+  const teachers = platformTeachers();
+  const counts = new Map<string, { count: number; firstAt: string; subjects: Set<string> }>();
   for (const donation of contributionDonations()) {
     const current = counts.get(donation.fromTeacherId);
     counts.set(donation.fromTeacherId, {
       count: (current?.count || 0) + 1,
       firstAt: current && current.firstAt < donation.createdAt ? current.firstAt : donation.createdAt,
+      subjects: new Set([...(current?.subjects || []), donationSubject(donation)]),
     });
   }
   return [...counts.entries()]
@@ -374,22 +446,28 @@ function contributorRanking(): DonationContributor[] {
       donationCount: value.count,
       rank: index + 1,
       isTopContributor: index < 10,
+      subjects: [...value.subjects].sort((left, right) => left.localeCompare(right, "zh-CN")),
+      moderatorSubjects: [...new Set(teachers.find((teacher) => teacher.id === teacherId)?.platformModeratorSubjects || [])]
+        .sort((left, right) => left.localeCompare(right, "zh-CN")),
     }));
 }
 
 function privilegesFor(teacherId: string): DonationPrivileges {
   const contributor = contributorRanking().find((item) => item.teacherId === teacherId);
+  const admin = isPlatformAdmin(teacherId);
   return {
     donationCount: contributor?.donationCount || 0,
     rank: contributor?.rank || null,
     isTopContributor: contributor?.isTopContributor || false,
-    canManagePlatformSettings: contributor?.isTopContributor || false,
+    canManagePlatformSettings: admin,
+    canManageAllSubjects: admin,
+    moderatedSubjects: moderatedSubjects(teacherId),
   };
 }
 
-function buildPlatformTree(type: "chapter" | "knowledge"): TreeNode {
+function buildPlatformTree(type: "chapter" | "knowledge", donations = primaryDonations()): TreeNode {
   const entries = new Map<string, DonationDirectoryEntry>();
-  for (const donation of primaryDonations()) {
+  for (const donation of donations) {
     const source = type === "chapter"
       ? donation.directorySnapshot?.chapters || []
       : donation.directorySnapshot?.knowledgePoints || [];
@@ -399,7 +477,7 @@ function buildPlatformTree(type: "chapter" | "knowledge"): TreeNode {
     }
   }
   const resourceCounts = new Map<string, number>();
-  for (const donation of primaryDonations()) {
+  for (const donation of donations) {
     const source = type === "chapter"
       ? donation.directorySnapshot?.chapters || []
       : donation.directorySnapshot?.knowledgePoints || [];
@@ -422,7 +500,7 @@ function buildPlatformTree(type: "chapter" | "knowledge"): TreeNode {
     id: "root",
     name: type === "chapter" ? "全部章节" : "全部知识点",
     type,
-    count: primaryDonations().length,
+    count: donations.length,
     children: makeChildren(null),
   };
 }
@@ -671,6 +749,8 @@ export const shareService = {
     await delay(100);
     const teacher = (db.read("teachers") as Array<{ id: string; schoolId: string | null }>).find((item) => item.id === teacherId);
     if (!teacher?.schoolId) throw new Error("请先完成学校认证");
+    const subject = activePlatformSubject(platformTeacher(teacherId));
+    if (!subject) throw new Error("请先在当前任教单位设置学科后再捐赠资源");
     const records = contributionDonations();
     const contributors = new Map(contributorRanking().map((item) => [item.teacherId, item.nickname]));
     return requests.map((request) => {
@@ -682,6 +762,7 @@ export const shareService = {
       );
       const duplicates = request.resourceType === "question"
         ? primaryDonations()
+          .filter((item) => donationSubject(item) === subject)
           .filter((item) => item.resourceType === "question" && item.resourceSnapshot)
           .map((item) => ({
             donationId: item.id,
@@ -710,6 +791,8 @@ export const shareService = {
   ): Promise<ShareRecord[]> {
     await delay(200);
     if (!requests.length) throw new Error("请至少选择一项资源");
+    const subject = activePlatformSubject(platformTeacher(teacherId));
+    if (!subject) throw new Error("请先在当前任教单位设置学科后再捐赠资源");
     const now = new Date().toISOString();
     const existingRecords = contributionDonations();
     const created: ShareRecord[] = [];
@@ -731,6 +814,7 @@ export const shareService = {
           && item.resourceSnapshot,
         );
         if (!target) throw new Error("要合并的平台题目不存在");
+        if (donationSubject(target) !== subject) throw new Error("不能跨学科合并平台资源");
         const source = resource as Question;
         const existing = target.resourceSnapshot as Question;
         if (questionSimilarity(source, existing) <= 0.8) {
@@ -769,6 +853,8 @@ export const shareService = {
           resourceTitle: merged.stem,
           mergedIntoDonationId: target.id,
           directorySnapshot,
+          platformSubject: subject,
+          platformOrder: target.platformOrder,
           status: "pending",
           createdAt: now,
         };
@@ -790,6 +876,8 @@ export const shareService = {
         resourceTitle: resourceTitle(request.resourceType, resource),
         resourceSnapshot: snapshot,
         directorySnapshot,
+        platformSubject: subject,
+        platformOrder: nextPlatformOrder(subject),
         status: "pending",
         createdAt: now,
       };
@@ -800,9 +888,24 @@ export const shareService = {
     return created;
   },
 
-  async listPublicDonations(): Promise<ShareRecord[]> {
+  async listPublicDonations(teacherId?: string): Promise<ShareRecord[]> {
     await delay(50);
-    return primaryDonations().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const visibleSubjects = teacherId ? visibleSubjectsFor(teacherId) : null;
+    const donations = primaryDonations()
+      .filter((item) => visibleSubjects === null || visibleSubjects.includes(donationSubject(item)))
+      .sort((left, right) => {
+        const subjectOrder = donationSubject(left).localeCompare(donationSubject(right), "zh-CN");
+        if (subjectOrder !== 0) return subjectOrder;
+        return (left.platformOrder || Number.MAX_SAFE_INTEGER) - (right.platformOrder || Number.MAX_SAFE_INTEGER)
+          || right.createdAt.localeCompare(left.createdAt);
+      });
+    const nextOrder = new Map<string, number>();
+    return donations.map((item) => {
+      const subject = donationSubject(item);
+      const order = item.platformOrder || (nextOrder.get(subject) || 0) + 1;
+      nextOrder.set(subject, Math.max(nextOrder.get(subject) || 0, order));
+      return { ...item, platformSubject: subject, platformOrder: order };
+    });
   },
 
   async listDonationStatus(teacherId: string): Promise<ShareRecord[]> {
@@ -812,9 +915,14 @@ export const shareService = {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
-  async listDonationContributors(): Promise<DonationContributor[]> {
+  async listDonationContributors(teacherId?: string): Promise<DonationContributor[]> {
     await delay(50);
-    return contributorRanking();
+    const visibleSubjects = teacherId ? visibleSubjectsFor(teacherId) : null;
+    return contributorRanking().filter((item) =>
+      visibleSubjects === null
+      || item.subjects.some((subject) => visibleSubjects.includes(subject))
+      || item.moderatorSubjects.some((subject) => visibleSubjects.includes(subject)),
+    );
   },
 
   async getDonationPrivileges(teacherId: string): Promise<DonationPrivileges> {
@@ -822,9 +930,13 @@ export const shareService = {
     return privilegesFor(teacherId);
   },
 
-  async getPlatformDirectoryTree(type: "chapter" | "knowledge"): Promise<TreeNode> {
+  async getPlatformDirectoryTree(type: "chapter" | "knowledge", teacherId?: string): Promise<TreeNode> {
     await delay(50);
-    return buildPlatformTree(type);
+    const visibleSubjects = teacherId ? visibleSubjectsFor(teacherId) : null;
+    const donations = primaryDonations().filter((item) =>
+      visibleSubjects === null || visibleSubjects.includes(donationSubject(item)),
+    );
+    return buildPlatformTree(type, donations);
   },
 
   async checkSaveAsOwnResource(
@@ -833,7 +945,9 @@ export const shareService = {
     schoolId: string,
   ): Promise<PlatformSaveCheckResult> {
     await delay(50);
-    return checkPlatformSave(platformDonationById(donationId), teacherId, schoolId);
+    const donation = platformDonationById(donationId);
+    if (!canViewSubject(teacherId, donationSubject(donation))) throw new Error("无权访问其他学科的平台资源");
+    return checkPlatformSave(donation, teacherId, schoolId);
   },
 
   async saveDonationAsOwnResource(
@@ -844,6 +958,7 @@ export const shareService = {
   ): Promise<PlatformSaveResult> {
     await delay(100);
     const donation = platformDonationById(donationId);
+    if (!canViewSubject(teacherId, donationSubject(donation))) throw new Error("无权访问其他学科的平台资源");
     const check = checkPlatformSave(donation, teacherId, schoolId);
     if (!check.canSave) throw new Error(check.reason || "该平台资源不能创建副本");
 
@@ -894,9 +1009,9 @@ export const shareService = {
     await delay(100);
     const donation = primaryDonations().find((item) => item.id === donationId);
     if (!donation || !donation.resourceSnapshot) throw new Error("平台资源不存在");
-    const privileges = privilegesFor(teacherId);
-    if (donation.fromTeacherId !== teacherId && !privileges.isTopContributor) {
-      throw new Error("仅捐赠者本人或贡献榜前十名可以修改该平台资源");
+    const subject = donationSubject(donation);
+    if (donation.fromTeacherId !== teacherId && !canManageSubject(teacherId, subject)) {
+      throw new Error("仅捐赠者本人、该学科版主或平台超级管理员可以修改该平台资源");
     }
     const snapshot = structuredClone(donation.resourceSnapshot) as ShareableResource & Record<string, unknown>;
     if (typeof patch.grade === "string") snapshot.grade = patch.grade;
@@ -947,8 +1062,8 @@ export const shareService = {
     settings: Array<{ type: PlatformResourceSettingType; values: string[] }>,
   ): Promise<PlatformResourceSetting[]> {
     await delay(100);
-    if (!privilegesFor(teacherId).canManagePlatformSettings) {
-      throw new Error("仅贡献榜前十名可以修改平台资源属性选项");
+    if (!isPlatformAdmin(teacherId)) {
+      throw new Error("仅平台超级管理员可以修改平台资源属性选项");
     }
     const now = new Date().toISOString();
     const normalized = settings.map((item) => ({
@@ -960,6 +1075,69 @@ export const shareService = {
     }));
     db.write("platformResourceSettings", normalized);
     return normalized;
+  },
+
+  async setSubjectModerator(
+    teacherId: string,
+    subject: string,
+    targetTeacherId: string,
+    enabled: boolean,
+  ): Promise<DonationContributor[]> {
+    await delay(100);
+    if (!isPlatformAdmin(teacherId)) throw new Error("仅平台超级管理员可以管理学科版主");
+    const normalizedSubject = subject.trim();
+    if (!normalizedSubject) throw new Error("请选择学科");
+    const target = platformTeacher(targetTeacherId);
+    const teacherSubjects = new Set([
+      target.subject?.trim() || "",
+      ...(target.affiliations || [])
+        .map((item) => typeof item.subject === "string" ? item.subject.trim() : ""),
+    ].filter(Boolean));
+    if (!teacherSubjects.has(normalizedSubject)) throw new Error("只能将该学科任课教师设为版主");
+
+    db.update("teachers", (teachers: PlatformTeacher[]) => teachers.map((teacher) => {
+      if (teacher.id !== targetTeacherId) return teacher;
+      const subjects = new Set((teacher.platformModeratorSubjects || []).map((item) => item.trim()).filter(Boolean));
+      if (enabled) subjects.add(normalizedSubject);
+      else subjects.delete(normalizedSubject);
+      return { ...teacher, platformModeratorSubjects: [...subjects].sort((left, right) => left.localeCompare(right, "zh-CN")) };
+    }));
+    return contributorRanking();
+  },
+
+  async updateDonationOrder(
+    teacherId: string,
+    subject: string,
+    donationIds: string[],
+  ): Promise<ShareRecord[]> {
+    await delay(100);
+    const normalizedSubject = subject.trim();
+    if (!canManageSubject(teacherId, normalizedSubject)) {
+      throw new Error("仅该学科版主或平台超级管理员可以调整资源布局");
+    }
+    const donations = primaryDonations().filter((item) => donationSubject(item) === normalizedSubject);
+    const expectedIds = new Set(donations.map((item) => item.id));
+    if (donationIds.length !== expectedIds.size || donationIds.some((id) => !expectedIds.has(id))) {
+      throw new Error("资源排序列表不完整，请刷新后重试");
+    }
+    const orderById = new Map(donationIds.map((id, index) => [id, index + 1]));
+    db.update("shareRecords", (records: ShareRecord[]) => records.map((record) => {
+      const order = orderById.get(record.id);
+      return order === undefined ? record : { ...record, platformSubject: normalizedSubject, platformOrder: order };
+    }));
+    return primaryDonations()
+      .filter((item) => donationSubject(item) === normalizedSubject)
+      .sort((left, right) => (left.platformOrder || 0) - (right.platformOrder || 0));
+  },
+
+  async deleteDonationResource(teacherId: string, donationId: string): Promise<void> {
+    await delay(100);
+    if (!isPlatformAdmin(teacherId)) throw new Error("仅平台超级管理员可以删除平台资源");
+    const donation = primaryDonations().find((item) => item.id === donationId);
+    if (!donation) throw new Error("平台资源不存在");
+    db.update("shareRecords", (records: ShareRecord[]) => records.filter((record) =>
+      record.id !== donationId && record.mergedIntoDonationId !== donationId,
+    ));
   },
 
   async listIncomingShares(teacherId: string): Promise<ShareRecord[]> {
