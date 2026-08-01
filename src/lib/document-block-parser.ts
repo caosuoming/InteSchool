@@ -49,6 +49,13 @@ interface TrailingSolution {
   summary?: string;
 }
 
+type TrailingSolutionHeadingKind = "answer" | "answerAnalysis";
+
+interface NumberedTrailingEntry {
+  number: string;
+  rest: string;
+}
+
 function createBlockId(): string {
   return `doc-block-${crypto.randomUUID()}`;
 }
@@ -273,12 +280,32 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
   return match ? normalizeQuestionNumber(match[1]) : undefined;
 }
 
-function isTrailingSolutionHeading(text: string): boolean {
+function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind | null {
   const normalized = text
     .replace(/\s+/g, "")
     .replace(/^[【［[(（]+/, "")
     .replace(/[】］\])）:：]+$/, "");
-  return /^(?:参考)?答案(?:与|和|及)?解析$/.test(normalized);
+  if (/^(?:参考)?答案$/.test(normalized)) return "answer";
+  if (/^(?:参考)?答案(?:与|和|及)?解析$/.test(normalized)) return "answerAnalysis";
+  return null;
+}
+
+const builtInTrailingAnalysisKeywords = ["详解", "【详解】"];
+
+function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
+  const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?[、.．:：)）]\s*/g;
+  const markers = [...line.matchAll(markerPattern)];
+  if (markers.length === 0) return [];
+  const firstIndex = markers[0].index || 0;
+  if (line.slice(0, firstIndex).trim()) return [];
+
+  return markers.map((marker, index) => ({
+    number: normalizeQuestionNumber(marker[2]),
+    rest: line.slice(
+      (marker.index || 0) + marker[0].length,
+      markers[index + 1]?.index ?? line.length,
+    ).trim(),
+  }));
 }
 
 function fieldSearchPattern(keywords: string[]): RegExp | null {
@@ -341,14 +368,18 @@ function parseTrailingSolutions(
   lines: string[],
   config: DocumentParseConfig,
 ): TrailingSolution[] {
+  const analysisKeywords = [
+    ...config.analysisKeywords,
+    ...builtInTrailingAnalysisKeywords,
+  ];
   const patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]> = [
     ["answer", fieldSearchPattern(config.answerKeywords)],
-    ["analysis", fieldSearchPattern(config.analysisKeywords)],
+    ["analysis", fieldSearchPattern(analysisKeywords)],
     ["summary", fieldSearchPattern(config.summaryKeywords)],
   ];
   const anchoredPatterns = [
     keywordPattern(config.answerKeywords),
-    keywordPattern(config.analysisKeywords),
+    keywordPattern(analysisKeywords),
     keywordPattern(config.summaryKeywords),
   ];
   const solutions: TrailingSolution[] = [];
@@ -364,6 +395,23 @@ function parseTrailingSolutions(
   for (const originalLine of lines) {
     const line = originalLine.trim();
     if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
+
+    const numberedEntries = splitNumberedTrailingEntries(line);
+    if (numberedEntries.length > 0) {
+      for (const entry of numberedEntries) {
+        submitCurrent();
+        current = {
+          number: entry.number,
+          order: solutions.length,
+        };
+        currentField = "answer";
+        if (entry.rest) {
+          currentField = appendTrailingSolutionLine(current, entry.rest, currentField, patterns)
+            || currentField;
+        }
+      }
+      continue;
+    }
 
     let entry = extractLeadingQuestionNumber(line);
     if (!entry) {
@@ -381,9 +429,10 @@ function parseTrailingSolutions(
         number: entry.number,
         order: solutions.length,
       };
+      currentField = "answer";
       currentField = entry.rest
-        ? appendTrailingSolutionLine(current, entry.rest, undefined, patterns)
-        : undefined;
+        ? appendTrailingSolutionLine(current, entry.rest, currentField, patterns) || currentField
+        : currentField;
       continue;
     }
 
@@ -398,6 +447,7 @@ function mergeTrailingSolutions(
   blocks: DocumentBlock[],
   solutions: TrailingSolution[],
   config: DocumentParseConfig,
+  options: { allowPositionalFallback?: boolean } = {},
 ): number {
   const questions = blocks.filter((block) => block.type === "question");
   const questionsByNumber = new Map<string, DocumentBlock[]>();
@@ -418,7 +468,7 @@ function mergeTrailingSolutions(
       const ordinalTarget = questions[ordinal];
       if (!used.has(ordinalTarget)) target = ordinalTarget;
     }
-    if (!target && solutions.length === questions.length) {
+    if (!target && options.allowPositionalFallback !== false && solutions.length === questions.length) {
       const positionalTarget = questions[solution.order];
       if (positionalTarget && !used.has(positionalTarget)) target = positionalTarget;
     }
@@ -636,17 +686,24 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const solutionHeadingIndexes = lines
-    .map((line, index) => (isTrailingSolutionHeading(line.trim()) ? index : -1))
-    .filter((index) => index >= 0)
+    .map((line, index) => ({ index, kind: trailingSolutionHeadingKind(line.trim()) }))
+    .filter((entry): entry is { index: number; kind: TrailingSolutionHeadingKind } => Boolean(entry.kind))
     .reverse();
 
-  for (const headingIndex of solutionHeadingIndexes) {
+  for (const { index: headingIndex, kind } of solutionHeadingIndexes) {
     const solutions = parseTrailingSolutions(lines.slice(headingIndex + 1), config);
     if (solutions.length === 0) continue;
 
     const blocks = parseDocumentBlocksCore(lines.slice(0, headingIndex).join("\n"), config);
-    if (!blocks.some((block) => block.type === "question")) continue;
-    if (mergeTrailingSolutions(blocks, solutions, config) > 0) return blocks;
+    const questions = blocks.filter((block) => block.type === "question");
+    if (questions.length === 0) continue;
+    if (kind === "answer" && questions.some((question) => question.answer || question.analysis)) continue;
+
+    const merged = mergeTrailingSolutions(blocks, solutions, config, {
+      allowPositionalFallback: kind !== "answer",
+    });
+    const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
+    if (merged >= requiredMatches) return blocks;
   }
 
   return parseDocumentBlocksCore(content, config);

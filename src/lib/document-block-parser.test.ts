@@ -193,6 +193,72 @@ describe("document block parser", () => {
     });
   });
 
+  it.each([
+    "参考答案",
+    "答案",
+    "答案解析",
+    "参考答案及解析",
+    "参考答案与解析",
+  ])("maps an unlabelled trailing %s section and treats 详解 as analysis", (heading) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 计算集合运算的结果 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 判断复数等式 A. 甲 B. 乙 C. 丙 D. 丁",
+        heading,
+        "1. D",
+        "【详解】由集合定义直接计算可得。",
+        "2. C",
+        "详解：设复数 z=a+bi，再比较实部与虚部。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      answer: "D",
+      analysis: "由集合定义直接计算可得。",
+    });
+    expect(blocks[1]).toMatchObject({
+      answer: "C",
+      analysis: "设复数 z=a+bi，再比较实部与虚部。",
+    });
+  });
+
+  it("maps compact answer keys from a trailing 答案 section", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "3. 第三题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案",
+        "1. A  2. C  3. D",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(3);
+    expect(blocks.map((block) => block.answer)).toEqual(["A", "C", "D"]);
+  });
+
+  it("does not reinterpret an inline 答案 label as a trailing answer section", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案",
+        "A",
+        "解析：第一题解析。",
+        "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ answer: "A", analysis: "第一题解析。" });
+    expect(blocks[1]).toMatchObject({ content: "2. 第二题" });
+    expect(blocks[1].answer).toBeUndefined();
+    expect(blocks[1].analysis).toBeUndefined();
+  });
+
   it("splits keyword-labelled questions without requiring a separator", () => {
     const blocks = parseDocumentBlocks(
       [
