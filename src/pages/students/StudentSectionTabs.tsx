@@ -1,4 +1,4 @@
-import { BarChart3, LineChart, MessagesSquare } from "lucide-react";
+import { BarChart3, LayoutGrid, LineChart, MessagesSquare } from "lucide-react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { cn } from "@/lib/utils";
 
@@ -6,6 +6,7 @@ const tabs = [
   { key: "interaction", label: "师生互动", icon: MessagesSquare, path: "/my-students?tab=interaction" },
   { key: "learning", label: "学生学情", icon: LineChart, path: "/my-students?tab=learning" },
   { key: "grades", label: "学生成绩", icon: BarChart3, path: "/my-students/grades" },
+  { key: "examRooms", label: "考场安排", icon: LayoutGrid, path: "/my-students/exam-rooms" },
 ] as const;
 
 export function StudentSectionTabs() {
@@ -13,6 +14,8 @@ export function StudentSectionTabs() {
   const [searchParams] = useSearchParams();
   const active = location.pathname === "/my-students/grades"
     ? "grades"
+    : location.pathname === "/my-students/exam-rooms"
+      ? "examRooms"
     : searchParams.get("tab") === "learning"
       ? "learning"
       : "interaction";

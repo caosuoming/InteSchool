@@ -34,6 +34,7 @@ const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
 const LessonEditorPage = lazy(() => import("@/pages/lessons/LessonEditorPage"));
 const MyStudentsPage = lazy(() => import("@/pages/students/MyStudentsPage"));
 const StudentGradesPage = lazy(() => import("@/pages/students/StudentGradesPage"));
+const ExamRoomArrangementPage = lazy(() => import("@/pages/students/ExamRoomArrangementPage"));
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 
 function RouteLoading() {
@@ -87,6 +88,7 @@ export default function App() {
             <Route path="/my-students/interaction" element={<MyStudentsPage />} />
             <Route path="/my-students/learning" element={<MyStudentsPage />} />
             <Route path="/my-students/grades" element={<StudentGradesPage />} />
+            <Route path="/my-students/exam-rooms" element={<ExamRoomArrangementPage />} />
             <Route path="/student-learning" element={<MyStudentsPage />} />
 
             <Route path="/school-resources" element={<SchoolResourcesPage />} />

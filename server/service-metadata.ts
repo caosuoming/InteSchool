@@ -1,4 +1,25 @@
 export const serviceParameters = {
+  "examArrangement": {
+    "listCohorts": [
+      "schoolId"
+    ],
+    "getContext": [
+      "schoolId",
+      "cohortKey"
+    ],
+    "listArrangements": [
+      "schoolId",
+      "cohortKey"
+    ],
+    "saveArrangement": [
+      "schoolId",
+      "teacherId",
+      "input"
+    ],
+    "deleteArrangement": [
+      "arrangementId"
+    ]
+  },
   "donation": {
     "listDonations": [
       "teacherId"

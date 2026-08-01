@@ -146,6 +146,8 @@
 /* ===== 打印样式 ===== */
 @media print {
   .no-print { display: none !important; }
+  .print-content-shell { margin-left: 0 !important; }
+  .print-content { padding: 0 !important; }
   .print-area {
     box-shadow: none !important;
     border: none !important;
@@ -162,4 +164,60 @@
   }
   body { background: white !important; }
   @page { margin: 12mm; }
+}
+
+.print-only { display: none; }
+
+@media print {
+  .print-only { display: block !important; }
+  .exam-desk-label-sheet {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8mm;
+  }
+  .exam-desk-label {
+    break-inside: avoid;
+    min-height: 74mm;
+    border: 1.2mm solid #111;
+    padding: 7mm;
+    color: #111;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .exam-desk-label-title {
+    text-align: center;
+    font-family: "Songti SC", "SimSun", serif;
+    font-size: 18pt;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .exam-desk-label-meta,
+  .exam-desk-label-row,
+  .exam-desk-label-seat {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4mm;
+  }
+  .exam-desk-label-meta,
+  .exam-desk-label-row { font-size: 10pt; }
+  .exam-desk-label-seat { font-size: 15pt; }
+  .exam-desk-label-seat strong { font-size: 22pt; }
+  .exam-desk-label-name {
+    text-align: center;
+    font-family: "Songti SC", "SimSun", serif;
+    font-size: 28pt;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+  }
+  .exam-desk-label-admission {
+    border-top: 0.4mm solid #111;
+    padding-top: 2.5mm;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11pt;
+    letter-spacing: 0.08em;
+  }
 }
