@@ -48,8 +48,7 @@ export default function ResourcePreviewPage() {
     loading: boolean;
     html: string;
     error: string;
-    warnings: string[];
-  }>({ loading: false, html: "", error: "", warnings: [] });
+  }>({ loading: false, html: "", error: "" });
 
   const resource = lecture || examPaper;
 
@@ -85,16 +84,15 @@ export default function ResourcePreviewPage() {
     if (!resource?.originalFileUrl || !resource.originalFileName) return;
     const supported = /\.(docx|pdf|txt|md)$/i.test(resource.originalFileName);
     if (!supported) return;
-    setDocPreview({ loading: true, html: "", error: "", warnings: [] });
+    setDocPreview({ loading: true, html: "", error: "" });
     try {
       const extracted = await extractStoredFile(resource.originalFileUrl);
-      setDocPreview({ loading: false, html: extracted.html, error: "", warnings: extracted.warnings });
+      setDocPreview({ loading: false, html: extracted.html, error: "" });
     } catch (error) {
       setDocPreview({
         loading: false,
         html: "",
         error: `加载失败: ${error instanceof Error ? error.message : "未知错误"}`,
-        warnings: [],
       });
     }
   }, [resource]);
@@ -241,19 +239,7 @@ export default function ResourcePreviewPage() {
                       {docPreview.error}
                     </div>
                   ) : docPreview.html ? (
-                    <>
-                      {docPreview.warnings.length > 0 && (
-                        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                          <div className="font-medium">文档部分内容采用兼容预览</div>
-                          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
-                            {docPreview.warnings.slice(0, 5).map((warning) => (
-                              <li key={warning}>{warning}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      <OfficeDocumentHtml html={docPreview.html} />
-                    </>
+                    <OfficeDocumentHtml html={docPreview.html} />
                   ) : (
                     <div className="text-center py-20 text-ink-400">
                       文档内容为空

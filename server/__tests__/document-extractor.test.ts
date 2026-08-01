@@ -250,7 +250,32 @@ describe("document extractor", () => {
 
     expect(result.html).toContain('class="katex"');
     expect(result.html).toContain(
-      '<img src="/api/files/file-1/assets/rId5" alt="示意图">',
+      '<img src="/api/files/file-1/assets/rId5" alt="示意图" style="max-width:100%;height:auto;object-fit:contain;vertical-align:middle" class="office-document-image">',
+    );
+  });
+
+  it("renders ordinary images at their Word display dimensions", async () => {
+    const filePath = join(workDir, "scaled-image.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({
+      value: "图形题",
+      messages: [],
+    });
+    mammothMocks.convertToHtml.mockResolvedValue({
+      value: "<p>图形题</p>",
+      messages: [],
+    });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      "如图。![示意图](/api/files/file-1/assets/rId5?officeWidth=200.00&officeHeight=100.00)",
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.html).toContain('data-office-width="200"');
+    expect(result.html).toContain('data-office-height="100"');
+    expect(result.html).toContain('class="office-document-image"');
+    expect(result.html).toContain(
+      'style="width:200px;max-width:100%;height:auto;aspect-ratio:200/100;object-fit:contain;vertical-align:middle"',
     );
   });
 

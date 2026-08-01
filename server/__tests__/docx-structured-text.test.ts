@@ -169,6 +169,42 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves Word display dimensions for ordinary document images", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "word/document.xml",
+      `${documentPrefix}
+      <w:p>
+        <w:r>
+          <w:drawing>
+            <wp:inline>
+              <wp:extent cx="1905000" cy="952500"/>
+              <a:graphic><a:blip r:embed="rIdPng"/></a:graphic>
+            </wp:inline>
+          </w:drawing>
+        </w:r>
+      </w:p>
+      ${documentSuffix}`,
+    );
+    zip.file(
+      "word/_rels/document.xml.rels",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rIdPng" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/diagram.png"/>
+      </Relationships>`,
+    );
+    const data = await zip.generateAsync({ type: "nodebuffer" });
+
+    await expect(
+      extractDocxStructuredText(
+        data,
+        (relationshipId) => `/api/files/file-1/assets/${relationshipId}`,
+      ),
+    ).resolves.toBe(
+      "![文档图片](/api/files/file-1/assets/rIdPng?officeWidth=200.00&officeHeight=100.00)",
+    );
+  });
+
   it("reads only internal image relationships from the DOCX package", async () => {
     const zip = new JSZip();
     zip.file(

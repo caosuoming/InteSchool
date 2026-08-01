@@ -8,7 +8,9 @@ import { extractDocxStructuredText } from "./docx-structured-text.js";
 import { convertMathTypeDocxToOmml } from "./mathtype-docx.js";
 import {
   officeMetafileInlineStyle,
+  parseOfficeMetafileDisplaySize,
   parseOfficeMetafileLayout,
+  type OfficeMetafileDisplaySize,
   type OfficeMetafileLayout,
 } from "../../src/lib/office-metafile.js";
 
@@ -54,10 +56,12 @@ function safePreviewImageSource(value: string): string | null {
       return null;
     const hasWidth = url.searchParams.has("officeWidth");
     const hasHeight = url.searchParams.has("officeHeight");
-    const layout = parseOfficeMetafileLayout(source);
+    const displaySize = parseOfficeMetafileDisplaySize(
+      url.searchParams.get("officeWidth"),
+      url.searchParams.get("officeHeight"),
+    );
     if (hasWidth || hasHeight) {
-      if (!hasWidth || !hasHeight || !layout?.width || !layout.height)
-        return null;
+      if (!hasWidth || !hasHeight || !displaySize) return null;
     }
     const format = url.searchParams.get("officeMetafile");
     if (format && format !== "wmf" && format !== "emf") return null;
@@ -72,6 +76,30 @@ function officeMetafileAttributes(layout: OfficeMetafileLayout): string {
     ? ` data-office-width="${layout.width}" data-office-height="${layout.height}"`
     : "";
   return ` data-office-metafile="${layout.format}"${dimensions} style="${officeMetafileInlineStyle(layout)}" class="office-metafile-image"`;
+}
+
+function documentImageInlineStyle(
+  displaySize: OfficeMetafileDisplaySize | null,
+): string {
+  if (displaySize) {
+    return `width:${displaySize.width}px;max-width:100%;height:auto;aspect-ratio:${displaySize.width}/${displaySize.height};object-fit:contain;vertical-align:middle`;
+  }
+  return "max-width:100%;height:auto;object-fit:contain;vertical-align:middle";
+}
+
+function documentImageAttributes(source: string): string {
+  const metafile = parseOfficeMetafileLayout(source);
+  if (metafile) return officeMetafileAttributes(metafile);
+
+  const url = new URL(source, "https://inteschool.invalid");
+  const displaySize = parseOfficeMetafileDisplaySize(
+    url.searchParams.get("officeWidth"),
+    url.searchParams.get("officeHeight"),
+  );
+  const dimensions = displaySize
+    ? ` data-office-width="${displaySize.width}" data-office-height="${displaySize.height}"`
+    : "";
+  return `${dimensions} style="${documentImageInlineStyle(displaySize)}" class="office-document-image"`;
 }
 
 const HANDLED_MAMMOTH_WARNING_PATTERNS = [
@@ -116,12 +144,8 @@ function renderMathAwareHtml(text: string): string {
       } else {
         const source = safePreviewImageSource(match[3] || "");
         if (source) {
-          const metafile = parseOfficeMetafileLayout(source);
-          const metafileAttributes = metafile
-            ? officeMetafileAttributes(metafile)
-            : "";
           parts.push(
-            `<img src="${escapeHtml(source)}" alt="${escapeHtml(match[2] || "文档图片")}"${metafileAttributes}>`,
+            `<img src="${escapeHtml(source)}" alt="${escapeHtml(match[2] || "文档图片")}"${documentImageAttributes(source)}>`,
           );
         } else {
           parts.push(escapeHtml(match[0]));
