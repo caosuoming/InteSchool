@@ -209,6 +209,11 @@ function removeKeywords(text: string, keywords: string[]): string {
   return processedLines.join("").trim();
 }
 
+function normalizeQuestionField(text: string, missingMarkers: string[] = []): string {
+  const normalized = text.trim();
+  return normalized && !missingMarkers.includes(normalized) ? normalized : "略";
+}
+
 export function ExtractReviewModal({
   open,
   onClose,
@@ -607,9 +612,15 @@ export function ExtractReviewModal({
           type: b.questionType || defaultQuestionType,
           stem,
           options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
-          answer: removeKeywords(b.answer || "", answerKeywords),
-          analysis: removeKeywords(b.analysis || "", analysisKeywords),
-          summary: removeKeywords(b.summary || "", summaryKeywords),
+          answer: normalizeQuestionField(
+            removeKeywords(b.answer || "", answerKeywords),
+            ["待教师补充"],
+          ),
+          analysis: normalizeQuestionField(
+            removeKeywords(b.analysis || "", analysisKeywords),
+            ["待教师补充解析"],
+          ),
+          summary: normalizeQuestionField(removeKeywords(b.summary || "", summaryKeywords)),
           difficulty: b.difficulty || 3,
           status: b.status as "new" | "duplicate" | "confirmed" | "edited",
           duplicateOf: b.duplicateOf as Question | undefined,
