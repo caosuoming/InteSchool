@@ -27,7 +27,6 @@ export function QuestionCard({
 }: QuestionCardProps) {
   const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(question.schoolId);
   const hasRemarks = (question.remarks && question.remarks.length > 0) || !!question.remark;
-  const hasStemImage = /<img\b/i.test(question.stem);
   const remarkCount = question.remarks?.length || (question.remark ? 1 : 0);
 
   return (
@@ -93,10 +92,9 @@ export function QuestionCard({
         )}
       </div>
 
-      <MathHtml className={cn(
-        "text-sm text-ink-900 mb-2 leading-relaxed",
-        !hasStemImage && "line-clamp-2",
-      )}>{question.stem}</MathHtml>
+      <MathHtml className="text-sm text-ink-900 mb-2 leading-relaxed">
+        {question.stem}
+      </MathHtml>
 
       {question.options && question.options.length > 0 && (
         <div className="text-xs text-ink-600 space-y-0.5 mb-2">

@@ -63,6 +63,7 @@ export const extractService = {
         semester,
         difficulty: item.difficulty as 1 | 2 | 3 | 4 | 5,
         recommendation: 3,
+        duplicateDecision: item.status === "confirmed" ? "add" : undefined,
       });
       createdQuestions.push(created);
       questionIdByItemId[item.id] = created.id;

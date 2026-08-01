@@ -850,6 +850,11 @@ export const serviceParameters = {
       "options",
       "schoolId"
     ],
+    "findSimilarQuestions": [
+      "stem",
+      "schoolId",
+      "excludeQuestionId"
+    ],
     "createQuestion": [
       "teacherId",
       "schoolId",
@@ -857,7 +862,8 @@ export const serviceParameters = {
     ],
     "updateQuestion": [
       "id",
-      "patch"
+      "patch",
+      "duplicateDecision"
     ],
     "deleteQuestion": [
       "id"

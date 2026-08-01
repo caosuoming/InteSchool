@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getLecture: vi.fn(),
   extractStoredFile: vi.fn(),
   parseDocumentBlocks: vi.fn(),
+  findSimilarQuestions: vi.fn(),
   confirmExtract: vi.fn(),
   createLectureExtractCopy: vi.fn(),
   createExamExtractCopy: vi.fn(),
@@ -78,6 +79,12 @@ vi.mock("@/services/extract", () => ({
   },
 }));
 
+vi.mock("@/services/question", () => ({
+  questionService: {
+    findSimilarQuestions: mocks.findSimilarQuestions,
+  },
+}));
+
 vi.mock("@/services/api", () => ({
   extractStoredFile: mocks.extractStoredFile,
 }));
@@ -95,6 +102,7 @@ describe("ExtractReviewModal", () => {
       originalFileName: "lecture.docx",
     });
     mocks.extractStoredFile.mockResolvedValue({ text: "mock document" });
+    mocks.findSimilarQuestions.mockResolvedValue([]);
     mocks.confirmExtract.mockResolvedValue({
       createdQuestions: [{ id: "question-created" }],
       createdMaterials: [{ id: "material-created" }],
@@ -282,6 +290,50 @@ describe("ExtractReviewModal", () => {
       answer: "略",
       analysis: "略",
       summary: "略",
+    });
+  });
+
+  it("requires a decision for highly similar questions before importing", async () => {
+    const user = userEvent.setup();
+    const duplicateQuestion = {
+      id: "question-existing",
+      stem: "示例题目",
+      answer: "A",
+      analysis: "已有解析",
+    };
+    mocks.findSimilarQuestions.mockResolvedValue([
+      { question: duplicateQuestion, similarity: 0.96 },
+    ]);
+
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+      />,
+    );
+
+    await screen.findByText("题目 1");
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+
+    expect(mocks.confirmExtract).not.toHaveBeenCalled();
+    expect(await screen.findByText(/相似度 96\.0%/)).toBeInTheDocument();
+    expect(screen.getByText(/question-existing/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "复用已有题" }));
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0]).toMatchObject({
+      status: "duplicate",
+      duplicateOf: duplicateQuestion,
     });
   });
 

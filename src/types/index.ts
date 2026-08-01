@@ -733,6 +733,11 @@ export interface Question {
   updatedAt: string;
 }
 
+export interface SimilarQuestionCandidate {
+  question: Question;
+  similarity: number;
+}
+
 export interface SchoolSetting {
   id: string;
   schoolId: string;

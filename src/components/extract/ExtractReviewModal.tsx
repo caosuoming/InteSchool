@@ -28,6 +28,7 @@ import { toast } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
 import { useExtractConfigStore } from "@/stores/extractConfig";
 import { extractService } from "@/services/extract";
+import { questionService } from "@/services/question";
 import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
 import { renderExtractText } from "@/lib/extract-text-renderer";
@@ -69,6 +70,13 @@ interface ExtractReviewModalProps {
 
 type Phase = "extracting" | "review" | "confirming";
 type SolutionField = "answer" | "analysis" | "summary";
+type DuplicateDecision = "reuse" | "add";
+
+interface DuplicateCheck {
+  candidate: Question;
+  similarity: number;
+  decision?: DuplicateDecision;
+}
 
 const solutionFieldOptions: Array<{ value: SolutionField; label: string }> = [
   { value: "answer", label: "答案" },
@@ -239,6 +247,7 @@ export function ExtractReviewModal({
   const [blocks, setBlocks] = useState<DocBlock[]>([]);
   const [preservedScoreLabelBlockIds, setPreservedScoreLabelBlockIds] = useState<Set<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [duplicateChecks, setDuplicateChecks] = useState<Record<string, DuplicateCheck>>({});
   const [showKeywordConfig, setShowKeywordConfig] = useState(false);
   const [newKeywordValue, setNewKeywordValue] = useState("");
   const [activeKeywordTab, setActiveKeywordTab] = useState<"question" | "answerAnalysis" | "questionType">("question");
@@ -259,6 +268,7 @@ export function ExtractReviewModal({
     setBlocks([]);
     setPreservedScoreLabelBlockIds(new Set());
     setEditingBlockId(null);
+    setDuplicateChecks({});
 
     if (!teacher) {
       setError("未获取到教师信息，请重新登录后再试");
@@ -412,6 +422,14 @@ export function ExtractReviewModal({
     setBlocks((list) =>
       list.map((b) => (b.id === id ? { ...b, ...field, status: "edited" } : b)),
     );
+    if (field.content !== undefined) {
+      setDuplicateChecks((current) => {
+        if (!current[id]) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }
   };
 
   const convertSolutionField = (
@@ -633,6 +651,52 @@ export function ExtractReviewModal({
         return;
       }
 
+      const duplicateResults = await Promise.all(
+        extractedQuestions.map(async (item) => ({
+          item,
+          candidates: await questionService.findSimilarQuestions(
+            item.stem,
+            teacher.schoolId!,
+          ),
+        })),
+      );
+      const nextDuplicateChecks: Record<string, DuplicateCheck> = {};
+      for (const { item, candidates } of duplicateResults) {
+        const candidate = candidates[0];
+        if (!candidate) continue;
+        const previous = duplicateChecks[item.id];
+        nextDuplicateChecks[item.id] = {
+          candidate: candidate.question,
+          similarity: candidate.similarity,
+          decision: previous?.candidate.id === candidate.question.id
+            ? previous.decision
+            : undefined,
+        };
+      }
+      setDuplicateChecks(nextDuplicateChecks);
+      if (Object.values(nextDuplicateChecks).some((check) => !check.decision)) {
+        toast.warning("发现高度相似题目，请逐题选择复用已有题或仍然新增");
+        setPhase("review");
+        return;
+      }
+
+      const resolvedQuestions = extractedQuestions.map((item) => {
+        const check = nextDuplicateChecks[item.id];
+        if (!check) return item;
+        if (check.decision === "reuse") {
+          return {
+            ...item,
+            status: "duplicate" as const,
+            duplicateOf: check.candidate,
+          };
+        }
+        return {
+          ...item,
+          status: "confirmed" as const,
+          duplicateOf: undefined,
+        };
+      });
+
       const extractedKnowledge = knowledgeBlocks.map((b) => ({
         id: b.id,
         title: b.knowledgeTitle || truncate(removeKeywords(b.content, questionKeywords), 20),
@@ -649,7 +713,7 @@ export function ExtractReviewModal({
       } = await extractService.confirmExtract(
         teacher.id,
         teacher.schoolId!,
-        { questions: extractedQuestions, knowledgeBlocks: extractedKnowledge },
+        { questions: resolvedQuestions, knowledgeBlocks: extractedKnowledge },
         chapterIds,
         knowledgePointIds,
         grade,
@@ -753,6 +817,7 @@ export function ExtractReviewModal({
 
   const renderDocumentBlock = (block: DocBlock) => {
     const isEditing = editingBlockId === block.id;
+    const duplicateCheck = duplicateChecks[block.id];
     const scoreLabelCleanup = block.type === "question"
       ? stripLeadingScoreLabels(removeKeywords(block.content, extractConfig.questionKeywords))
       : { text: block.content, labels: [] };
@@ -812,6 +877,7 @@ export function ExtractReviewModal({
                 <span className="text-xs text-ink-400">#{block.order + 1}</span>
                 {block.status === "edited" && <Badge variant="gold">已编辑</Badge>}
                 {block.status === "duplicate" && <Badge variant="amber">重复</Badge>}
+                {duplicateCheck && !duplicateCheck.decision && <Badge variant="amber">待查重确认</Badge>}
               </div>
 
               {block.type === "heading" && (
@@ -852,6 +918,48 @@ export function ExtractReviewModal({
                   {renderSolutionField("answer")}
                   {renderSolutionField("analysis")}
                   {renderSolutionField("summary")}
+                  {duplicateCheck && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-medium">
+                          发现高度相似题目 · 相似度 {(duplicateCheck.similarity * 100).toFixed(1)}%
+                        </div>
+                        <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono">
+                          ID: {duplicateCheck.candidate.id}
+                        </code>
+                      </div>
+                      <div
+                        className="mb-3 rounded border border-amber-100 bg-white/70 p-2 text-ink-800"
+                        dangerouslySetInnerHTML={{
+                          __html: renderExtractText(duplicateCheck.candidate.stem, [], false),
+                        }}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={duplicateCheck.decision === "reuse" ? "gold" : "outline"}
+                          onClick={() => setDuplicateChecks((current) => ({
+                            ...current,
+                            [block.id]: { ...current[block.id], decision: "reuse" },
+                          }))}
+                        >
+                          复用已有题
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={duplicateCheck.decision === "add" ? "gold" : "outline"}
+                          onClick={() => setDuplicateChecks((current) => ({
+                            ...current,
+                            [block.id]: { ...current[block.id], decision: "add" },
+                          }))}
+                        >
+                          仍作为新题入库
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {scoreLabelCleanup.labels.length > 0 && (
                     <label className="flex cursor-pointer items-start gap-2 rounded border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-xs text-amber-900">
                       <input

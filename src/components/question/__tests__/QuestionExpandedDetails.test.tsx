@@ -7,6 +7,7 @@ describe("QuestionExpandedDetails", () => {
     render(
       <QuestionExpandedDetails
         question={{
+          id: "question-123",
           answer: "A",
           analysis: "逐步解析",
           summary: "考查二次函数的顶点性质",
@@ -15,6 +16,8 @@ describe("QuestionExpandedDetails", () => {
     );
 
     expect(screen.getByText("答案")).toBeInTheDocument();
+    expect(screen.getByText("题目唯一 ID")).toBeInTheDocument();
+    expect(screen.getByText("question-123")).toBeInTheDocument();
     expect(screen.getByText("解析")).toBeInTheDocument();
     expect(screen.getByText("总结")).toBeInTheDocument();
     expect(screen.getByText("考查二次函数的顶点性质")).toBeInTheDocument();
@@ -24,6 +27,7 @@ describe("QuestionExpandedDetails", () => {
     const { container } = render(
       <QuestionExpandedDetails
         question={{
+          id: "question-456",
           answer: "A",
           analysis: "逐步解析",
         }}
