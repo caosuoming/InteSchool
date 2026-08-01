@@ -3,6 +3,7 @@ import type { GradeExamSettings } from "../types/index.js";
 import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
+  normalizeGradeSettings,
   validateAssignmentRules,
 } from "./grade-statistics.js";
 
@@ -49,6 +50,7 @@ describe("grade statistics", () => {
     expect(settings.subjectTeacherIds.化学).toEqual(["teacher-chemistry"]);
     expect(settings.classSubjects).toHaveLength(2);
     expect(settings.templates.map((item) => item.kind)).toContain("classAverage");
+    expect(settings.templates.find((item) => item.kind === "customTable")?.columns?.length).toBeGreaterThan(0);
   });
 
   it("assigns elective scores and produces grade and class competition ranks", () => {
@@ -84,5 +86,18 @@ describe("grade statistics", () => {
       { label: "A", percentileFrom: 0, percentileTo: 20, assignedMin: 80, assignedMax: 100 },
       { label: "B", percentileFrom: 30, percentileTo: 100, assignedMin: 60, assignedMax: 79 },
     ])).toThrow("首尾相接");
+  });
+
+  it("rejects unsupported formulas in custom templates", () => {
+    const settings = buildDefaultGradeSettings(["数学"], ["class-1"]);
+    const custom = settings.templates.find((item) => item.kind === "customTable")!;
+    custom.columns = [{ id: "unsafe", name: "非法列", formula: '=process("x")' }];
+
+    expect(() => normalizeGradeSettings(
+      settings,
+      ["数学"],
+      ["class-1"],
+      [],
+    )).toThrow("不支持函数");
   });
 });

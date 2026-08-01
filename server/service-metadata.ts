@@ -335,6 +335,17 @@ export const serviceParameters = {
       "schoolId",
       "cohortKey"
     ],
+    "getCohortTemplateProfile": [
+      "schoolId",
+      "cohortKey"
+    ],
+    "saveCohortTemplateProfile": [
+      "schoolId",
+      "cohortKey",
+      "teacherId",
+      "subjectsInput",
+      "templates"
+    ],
     "listExams": [
       "schoolId",
       "cohortKey"

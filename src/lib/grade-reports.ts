@@ -4,6 +4,18 @@ import type {
   GradeScoreRecord,
   GradeStatisticsTemplate,
 } from "../types/index.js";
+import {
+  displayGradeFormulaValue,
+  evaluateGradeFormula,
+} from "./grade-formula.js";
+
+export type GradeReportCell = string | number | null;
+
+export interface GradeReportTable {
+  headers: string[];
+  rows: GradeReportCell[][];
+  widths?: number[];
+}
 
 export interface GradeClassAverage {
   classId: string;
@@ -133,4 +145,96 @@ export function buildElectiveGradeDistribution(
       });
       return { subject, counts, total };
     });
+}
+
+export function buildGradeReportTable(
+  exam: GradeExam,
+  template: GradeStatisticsTemplate,
+): GradeReportTable {
+  if (template.kind === "customTable") {
+    const columns = template.columns || [];
+    return {
+      headers: columns.map((column) => column.name),
+      widths: columns.map((column) => column.width || 14),
+      rows: [...exam.records]
+        .sort((left, right) => left.gradeRank - right.gradeRank || left.studentNo.localeCompare(right.studentNo))
+        .map((record) => columns.map((column) => {
+          try {
+            return displayGradeFormulaValue(evaluateGradeFormula(
+              column.formula,
+              record,
+              template.scoreMode,
+            ));
+          } catch (error) {
+            return `#错误: ${error instanceof Error ? error.message : "公式无效"}`;
+          }
+        })),
+    };
+  }
+
+  if (template.kind === "studentRanking") {
+    const records = [...exam.records].sort((left, right) => left.gradeRank - right.gradeRank);
+    return {
+      headers: ["年级名次", "班级名次", "班级", "学号", "姓名", ...template.subjects, "模板总分"],
+      widths: [10, 10, 16, 16, 12, ...template.subjects.map(() => 12), 14],
+      rows: records.map((record) => [
+        record.gradeRank,
+        record.classRank,
+        record.className,
+        record.studentNo,
+        record.studentName,
+        ...template.subjects.map((subject) => recordSubjectValue(record, subject, template.scoreMode)),
+        gradeTemplateTotal(record, template),
+      ]),
+    };
+  }
+
+  if (template.kind === "classAverage") {
+    const classIds = [...new Set(exam.records.map((record) => record.classId))];
+    const rows = classIds.map((classId) => {
+      const records = exam.records.filter((record) => record.classId === classId);
+      const subjectAverages = template.subjects.map((subject) => averageGradeValues(records.map((record) =>
+        recordSubjectValue(record, subject, template.scoreMode),
+      )));
+      const totals = records.map((record) => template.subjects.reduce((sum, subject) => {
+        const value = recordSubjectValue(record, subject, template.scoreMode);
+        return sum + (typeof value === "number" ? value : 0);
+      }, 0));
+      return [
+        records[0]?.className || "未知班级",
+        records.length,
+        ...subjectAverages,
+        averageGradeValues(totals),
+      ] satisfies GradeReportCell[];
+    }).sort((left, right) => (
+      Number(right[right.length - 1] || 0) - Number(left[left.length - 1] || 0)
+    ));
+    return {
+      headers: ["班级", "人数", ...template.subjects, "总分平均"],
+      widths: [16, 10, ...template.subjects.map(() => 12), 14],
+      rows,
+    };
+  }
+
+  if (template.kind === "electiveGradeSegment") {
+    const distribution = buildElectiveGradeDistribution(exam, template);
+    const labels = [...new Set(distribution.flatMap((item) => Object.keys(item.counts)))];
+    return {
+      headers: ["科目", ...labels.map((label) => `${label}档人数`), "参考人数"],
+      widths: [12, ...labels.map(() => 12), 12],
+      rows: distribution.map((item) => [
+        item.subject,
+        ...labels.map((label) => item.counts[label] || 0),
+        item.total,
+      ]),
+    };
+  }
+
+  const values = exam.records.map((record) => gradeTemplateTotal(record, template));
+  const segments = buildGradeScoreSegments(values, template.segmentSize || 10);
+  return {
+    headers: ["分数段", "人数", "比例"],
+    widths: [16, 12, 12],
+    rows: segments.map((segment) => [segment.label, segment.count, `${(segment.rate * 100).toFixed(1)}%`]),
+  };
 }

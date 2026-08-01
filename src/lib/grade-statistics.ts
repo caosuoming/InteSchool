@@ -6,6 +6,10 @@ import type {
   GradeStatisticsTemplate,
   GradeTeacherOption,
 } from "../types/index.js";
+import {
+  buildDefaultCustomGradeColumns,
+  validateGradeFormula,
+} from "./grade-formula.js";
 
 export const CORE_GRADE_SUBJECTS = ["语文", "数学", "英语"] as const;
 export const ELECTIVE_GRADE_SUBJECTS = ["物理", "化学", "生物", "政治", "历史", "地理"] as const;
@@ -97,6 +101,10 @@ export function buildDefaultGradeSettings(
         electiveSubjects,
         { bestElectiveCount: 2 },
       ),
+      {
+        ...template("custom-ranking", "customTable", "自定义成绩表", "assigned", normalizedSubjects),
+        columns: buildDefaultCustomGradeColumns(normalizedSubjects),
+      },
     ],
   };
 }
@@ -169,16 +177,41 @@ export function normalizeGradeSettings(
     return { classId, examSubjects, statisticSubjects };
   });
 
-  const templates = (settings.templates || []).map((item, index) => ({
-    ...item,
-    id: item.id || `template-${index + 1}`,
-    name: item.name.trim() || `统计表 ${index + 1}`,
-    subjects: unique(item.subjects || []).filter((subject) => subjectSet.has(subject)),
-    segmentSize: item.segmentSize && item.segmentSize > 0 ? item.segmentSize : undefined,
-    bestElectiveCount: item.bestElectiveCount && item.bestElectiveCount > 0
-      ? Math.floor(item.bestElectiveCount)
-      : undefined,
-  }));
+  const templateIds = new Set<string>();
+  const templates = (settings.templates || []).slice(0, 30).map((item, index) => {
+    const fallbackId = `template-${index + 1}`;
+    let id = item.id?.trim() || fallbackId;
+    if (templateIds.has(id)) id = `${id}-${index + 1}`;
+    templateIds.add(id);
+    const columns = item.kind === "customTable"
+      ? (item.columns || []).slice(0, 40).map((column, columnIndex) => {
+        const name = column.name?.trim() || `列 ${columnIndex + 1}`;
+        const formula = column.formula?.trim();
+        if (!formula) throw new Error(`模板“${item.name || index + 1}”的“${name}”公式不能为空`);
+        validateGradeFormula(formula, [...subjectSet]);
+        return {
+          id: column.id?.trim() || `column-${columnIndex + 1}`,
+          name,
+          formula,
+          width: Number.isFinite(column.width) ? Math.max(8, Math.min(40, Number(column.width))) : undefined,
+        };
+      })
+      : undefined;
+    if (item.kind === "customTable" && columns?.length === 0) {
+      throw new Error(`模板“${item.name || index + 1}”至少需要一列`);
+    }
+    return {
+      ...item,
+      id,
+      name: item.name.trim() || `统计表 ${index + 1}`,
+      subjects: unique(item.subjects || []).filter((subject) => subjectSet.has(subject)),
+      segmentSize: item.segmentSize && item.segmentSize > 0 ? item.segmentSize : undefined,
+      bestElectiveCount: item.bestElectiveCount && item.bestElectiveCount > 0
+        ? Math.floor(item.bestElectiveCount)
+        : undefined,
+      columns,
+    };
+  });
 
   return {
     subjectTeacherIds,

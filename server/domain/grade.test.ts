@@ -78,6 +78,7 @@ function state(): AppState {
       },
     ],
     gradeExams: [],
+    gradeTemplateProfiles: [],
   };
 }
 
@@ -171,6 +172,46 @@ describe("grade service", () => {
           },
         ],
       })).rejects.toThrow("重复匹配");
+    });
+  });
+
+  it("restricts cohort template publishing and exposes the saved profile", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const context = await gradeService.getImportContext("school-1", "grad-2026");
+      const templates = buildDefaultGradeSettings(
+        ["数学", "化学"],
+        context.classes.map((item) => item.id),
+        context.teachers,
+      ).templates;
+
+      await expect(gradeService.saveCohortTemplateProfile(
+        "school-1",
+        "grad-2026",
+        "teacher-1",
+        ["数学", "化学"],
+        templates,
+      )).rejects.toThrow("仅学校管理员、年级组长或教务管理人员");
+
+      const teacher = (appState.teachers as any[])[0];
+      teacher.roles = ["teacher", "gradeLeader"];
+      teacher.affiliations[0].roles = ["teacher", "gradeLeader"];
+
+      const profile = await gradeService.saveCohortTemplateProfile(
+        "school-1",
+        "grad-2026",
+        "teacher-1",
+        ["数学", "化学"],
+        templates,
+      );
+
+      expect(profile.templates.some((item) => item.kind === "customTable")).toBe(true);
+      expect(appState.gradeTemplateProfiles).toEqual([profile]);
+      await expect(gradeService.getCohortTemplateProfile("school-1", "grad-2026"))
+        .resolves.toEqual(profile);
+      await expect(gradeService.getImportContext("school-1", "grad-2026"))
+        .resolves.toEqual(expect.objectContaining({ templateProfile: profile }));
     });
   });
 });
