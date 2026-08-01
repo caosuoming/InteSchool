@@ -90,6 +90,8 @@ function state(): AppState {
     materials: [],
     chapters,
     knowledgePoints: points,
+    schoolChapters: [],
+    schoolKnowledgePoints: [],
     shareRecords: [],
     platformResourceSettings: [],
     schoolBackups: [],
@@ -394,6 +396,46 @@ describe("platform resource donations", () => {
       expect(await shareService.listIncomingShares("teacher-a")).toEqual([]);
       expect(await shareService.listOutgoingShares("teacher-b")).toEqual([]);
       expect((appState.shareRecords as ShareRecord[]).filter((item) => item.kind === "donation")).toHaveLength(1);
+    });
+  });
+
+  it("groups public ordinary shares behind one batch identifier", async () => {
+    const appState = state();
+    (appState.questions as Question[]).push(question("q-a-2", "teacher-a", "school-a", "ch-a", "kp-a", {
+      stem: "第二道批量分享题目",
+    }));
+    await runWithState(appState, async () => {
+      const first = await shareService.createShare({
+        fromTeacherId: "teacher-a",
+        fromSchoolId: "school-a",
+        scope: "public",
+        resourceType: "question",
+        resourceId: "q-a",
+        resourceTitle: "第一道批量分享题目",
+        batchId: "batch-public",
+      });
+      const second = await shareService.createShare({
+        fromTeacherId: "teacher-a",
+        fromSchoolId: "school-a",
+        scope: "public",
+        resourceType: "question",
+        resourceId: "q-a-2",
+        resourceTitle: "第二道批量分享题目",
+        batchId: "batch-public",
+      });
+      await shareService.createShare({
+        fromTeacherId: "teacher-a",
+        fromSchoolId: "school-a",
+        scope: "school",
+        resourceType: "question",
+        resourceId: "q-a",
+        resourceTitle: "不应出现在链接中",
+        batchId: "batch-public",
+      });
+
+      expect((await shareService.getBatchShare("batch-public")).map((item) => item.id))
+        .toEqual([first.id, second.id]);
+      expect(await shareService.getBatchShare("missing-batch")).toEqual([]);
     });
   });
 

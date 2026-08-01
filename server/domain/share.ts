@@ -613,11 +613,13 @@ export const shareService = {
     resourceTitle: string;
     message?: string;
     expiresAt?: string;
+    batchId?: string;
   }): Promise<ShareRecord> {
     await delay(200);
     const now = new Date().toISOString();
     const record: ShareRecord = {
       id: genId("share"),
+      batchId: params.batchId,
       kind: "share",
       fromTeacherId: params.fromTeacherId,
       fromSchoolId: params.fromSchoolId,
@@ -650,6 +652,19 @@ export const shareService = {
       }
     }
     return record;
+  },
+
+  async getBatchShare(batchId: string): Promise<ShareRecord[]> {
+    await delay(100);
+    const normalizedBatchId = batchId.trim();
+    if (!normalizedBatchId) return [];
+    return (db.read("shareRecords") as ShareRecord[])
+      .filter((item) =>
+        item.kind !== "donation"
+        && item.scope === "public"
+        && item.batchId === normalizedBatchId,
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   },
 
   async checkDonationCandidates(teacherId: string, requests: DonationRequest[]): Promise<DonationPreview[]> {

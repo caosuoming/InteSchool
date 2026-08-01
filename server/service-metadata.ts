@@ -980,6 +980,9 @@ export const serviceParameters = {
     "createShare": [
       "params"
     ],
+    "getBatchShare": [
+      "batchId"
+    ],
     "checkDonationCandidates": [
       "teacherId",
       "requests"

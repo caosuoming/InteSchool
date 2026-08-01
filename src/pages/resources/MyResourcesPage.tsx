@@ -221,6 +221,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [batchWorking, setBatchWorking] = useState(false);
   const [batchDirectoryMode, setBatchDirectoryMode] = useState<"chapter" | "knowledge" | null>(null);
   const [batchDirectoryIds, setBatchDirectoryIds] = useState<string[]>([]);
+  const [batchShareLink, setBatchShareLink] = useState("");
+  const [batchShareCount, setBatchShareCount] = useState(0);
   const [resourceRefreshToken, setResourceRefreshToken] = useState(0);
 
   // 课后反思相关：targetId -> 反思列表
@@ -1061,6 +1063,76 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const refreshResourceViews = async () => {
     await loadAll();
     setResourceRefreshToken((value) => value + 1);
+  };
+
+  const handleBatchShare = async () => {
+    if (!teacher) return;
+    const refs = selectedResourceRefs();
+    if (refs.length === 0) return;
+
+    setBatchWorking(true);
+    try {
+      const batchId = genId("batch-share");
+      const results = await Promise.allSettled(refs.map(async (ref) => {
+        const resource = await getBatchResource(ref);
+        if (!resource) throw new Error(`资源不存在：${ref.resourceId}`);
+        const resourceTitle = ref.resourceType === "question"
+          ? (resource as Question).stem
+          : (resource as ExamPaper | Lecture | Courseware | Material).title;
+        return shareService.createShare({
+          fromTeacherId: teacher.id,
+          fromSchoolId: schoolId,
+          scope: "public",
+          resourceType: ref.resourceType,
+          resourceId: ref.resourceId,
+          resourceTitle,
+          batchId,
+        });
+      }));
+      const succeededCount = results.filter((result) => result.status === "fulfilled").length;
+      const failedCount = refs.length - succeededCount;
+
+      if (succeededCount > 0) {
+        setBatchShareLink(`${window.location.origin}/shared-resources/${encodeURIComponent(batchId)}`);
+        setBatchShareCount(succeededCount);
+        toast.success("批量分享链接已生成", `链接包含 ${succeededCount} 个资源`);
+      }
+      if (failedCount > 0) {
+        toast.error("部分资源分享失败", `${failedCount} 个资源未加入分享链接`);
+      }
+    } finally {
+      setBatchWorking(false);
+    }
+  };
+
+  const handleCopyBatchShareLink = async () => {
+    if (!batchShareLink) return;
+    try {
+      await navigator.clipboard.writeText(batchShareLink);
+      toast.success("链接已复制");
+    } catch (error) {
+      toast.error("复制失败", error instanceof Error ? error.message : "请手动复制链接");
+    }
+  };
+
+  const handleBatchAction = (action: string) => {
+    switch (action) {
+      case "share":
+        void handleBatchShare();
+        break;
+      case "delete":
+        void handleBatchDelete();
+        break;
+      case "donate":
+        void handlePrepareDonation();
+        break;
+      case "chapter":
+        openBatchDirectoryPicker("chapter");
+        break;
+      case "knowledge":
+        openBatchDirectoryPicker("knowledge");
+        break;
+    }
   };
 
   const handleBatchDelete = async () => {
@@ -2034,68 +2106,62 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         <div
           role="region"
           aria-label="批量操作"
-          className="fixed bottom-6 right-6 z-40 w-[420px] max-w-[calc(100vw-2rem)] rounded-xl border border-ink-200 bg-paper p-4 shadow-xl"
+          className="fixed bottom-6 right-6 z-40 flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-lg border border-ink-200 bg-paper p-2 shadow-xl"
         >
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-ink-900">批量操作</div>
-              <div className="mt-0.5 text-xs text-ink-500">已选择 {resourceSelections.size} 个资源</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setResourceSelections(new Set())}
-              disabled={batchWorking || donating}
-              className="rounded-md p-1.5 text-ink-400 hover:bg-mist hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
-              title="清空选择"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleBatchDelete}
-              disabled={batchWorking || donating}
-              className="justify-center border-red-200 text-red-600 hover:bg-red-50"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              批量删除
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePrepareDonation}
-              disabled={batchWorking}
-              loading={donating}
-              className="justify-center"
-            >
-              <Gift className="h-3.5 w-3.5" />
-              捐赠到平台
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openBatchDirectoryPicker("chapter")}
-              disabled={batchWorking || donating}
-              className="justify-center"
-            >
-              <BookOpen className="h-3.5 w-3.5" />
-              新增统一章节
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openBatchDirectoryPicker("knowledge")}
-              disabled={batchWorking || donating}
-              className="justify-center"
-            >
-              <Lightbulb className="h-3.5 w-3.5" />
-              新增统一知识点
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setResourceSelections(new Set())}
+            disabled={batchWorking || donating}
+            className="whitespace-nowrap"
+          >
+            <X className="h-3.5 w-3.5" />
+            取消批量选择
+          </Button>
+          <select
+            value=""
+            onChange={(event) => handleBatchAction(event.target.value)}
+            disabled={batchWorking || donating}
+            aria-label="选择批量操作"
+            className="h-8 min-w-44 cursor-pointer rounded-md border border-ink-200 bg-paper px-3 text-sm text-ink-700 outline-none transition-colors hover:border-ink-300 focus:border-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="" disabled>
+              {batchWorking || donating ? "正在处理..." : `批量操作（${resourceSelections.size}）`}
+            </option>
+            <option value="share">批量分享</option>
+            <option value="delete">批量删除</option>
+            <option value="donate">捐赠到平台</option>
+            <option value="chapter">新增统一章节</option>
+            <option value="knowledge">新增统一知识点</option>
+          </select>
         </div>
       )}
+
+      <Modal
+        open={!!batchShareLink}
+        onClose={() => setBatchShareLink("")}
+        title="批量分享链接"
+        description={`已生成包含 ${batchShareCount} 个资源的分享链接。接收者登录后可一次性导入。`}
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setBatchShareLink("")}>关闭</Button>
+            <Button variant="gold" onClick={handleCopyBatchShareLink}>
+              <Copy className="h-4 w-4" />
+              复制链接
+            </Button>
+          </div>
+        }
+      >
+        <Input
+          label="分享链接"
+          aria-label="批量分享链接"
+          value={batchShareLink}
+          readOnly
+          onFocus={(event) => event.currentTarget.select()}
+          className="font-mono text-xs"
+        />
+      </Modal>
 
       <Modal
         open={!!batchDirectoryMode}

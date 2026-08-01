@@ -756,6 +756,8 @@ export interface PlatformResourceSetting {
 /** 资源分享记录 */
 export interface ShareRecord {
   id: string;
+  /** 批量分享批次 ID；用于通过一个链接聚合多个普通分享记录 */
+  batchId?: string;
   fromTeacherId: string;
   fromSchoolId: string;
   /** 接收者教师ID（好友时指定，不确定对象时为空） */
