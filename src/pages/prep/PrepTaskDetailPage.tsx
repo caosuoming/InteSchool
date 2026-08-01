@@ -258,6 +258,7 @@ export default function PrepTaskDetailPage() {
     teacher.roles.includes("prepLeader") ||
     teacher.roles.includes("subjectLeader") ||
     teacher.roles.includes("dean") ||
+    teacher.roles.includes("vicePrincipal") ||
     teacher.roles.includes("principal");
 
   return (

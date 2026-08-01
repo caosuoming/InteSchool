@@ -362,10 +362,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
                         .map((r) => {
                           const labels: Record<string, string> = {
                             teacher: "教师",
+                            headTeacher: "班主任",
                             gradeLeader: "年级组长",
                             subjectLeader: "学科组长",
                             prepLeader: "备课组长",
                             dean: "教务主任",
+                            vicePrincipal: "副校长",
                             principal: "校长",
                           };
                           return labels[r] || r;

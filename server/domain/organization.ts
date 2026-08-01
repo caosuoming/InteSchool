@@ -7,20 +7,24 @@ import { delay, genId } from "../domain-shared.js";
 /** 角色中文标签 */
 export const roleLabels: Record<TeacherRole, string> = {
   teacher: "教师",
+  headTeacher: "班主任",
   gradeLeader: "年级组长",
   subjectLeader: "学科组长",
   prepLeader: "备课组长",
   dean: "教务主任",
+  vicePrincipal: "副校长",
   principal: "校长",
 };
 
 /** 角色颜色（用于 Badge） */
 export const roleBadgeVariants: Record<TeacherRole, "ink" | "gold" | "teal" | "blue" | "purple" | "red"> = {
   teacher: "ink",
+  headTeacher: "teal",
   prepLeader: "teal",
   subjectLeader: "blue",
   gradeLeader: "purple",
   dean: "gold",
+  vicePrincipal: "red",
   principal: "red",
 };
 
@@ -29,7 +33,7 @@ export function canManage(
   roles: TeacherRole[],
   level: "personal" | "prep" | "subject" | "grade" | "school",
 ): boolean {
-  if (roles.includes("principal") || roles.includes("dean")) return true;
+  if (roles.includes("principal") || roles.includes("vicePrincipal") || roles.includes("dean")) return true;
   if (level === "personal") return true;
   if (level === "prep" && roles.includes("prepLeader")) return true;
   if (level === "subject" && roles.includes("subjectLeader")) return true;
@@ -266,7 +270,18 @@ export const organizationService = {
   async updateTeacherRoles(teacherId: string, roles: TeacherRole[]): Promise<void> {
     await delay(200);
     db.update("teachers", (list) =>
-      list.map((t) => (t.id === teacherId ? { ...t, roles } : t)),
+      list.map((t) => {
+        if (t.id !== teacherId) return t;
+        const activeAffiliationId = t.currentAffiliationId
+          || t.affiliations.find((affiliation) => affiliation.isCurrent)?.id
+          || null;
+        const affiliations = t.affiliations.map((affiliation) =>
+          affiliation.id === activeAffiliationId
+            ? { ...affiliation, roles }
+            : affiliation,
+        );
+        return { ...t, roles, affiliations };
+      }),
     );
   },
 

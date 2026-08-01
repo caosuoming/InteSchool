@@ -35,6 +35,7 @@ export function canEditSchoolBackup(teacher: Teacher | null | undefined): boolea
     "subjectLeader",
     "gradeLeader",
     "dean",
+    "vicePrincipal",
     "principal",
   ].includes(role));
 }

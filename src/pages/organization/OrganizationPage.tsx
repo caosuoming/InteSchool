@@ -39,7 +39,7 @@ const PERMISSION_LEVELS: { key: "personal" | "prep" | "subject" | "grade" | "sch
 
 // 权限矩阵：角色列
 const PERMISSION_ROLES: TeacherRole[] = [
-  "teacher", "prepLeader", "subjectLeader", "gradeLeader", "dean", "principal",
+  "teacher", "headTeacher", "prepLeader", "subjectLeader", "gradeLeader", "dean", "vicePrincipal", "principal",
 ];
 
 // 当前选中项类型
