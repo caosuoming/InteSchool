@@ -641,10 +641,10 @@ export default function LectureEditorPage() {
       allChapters.forEach((c) => { chapterMap[c.id] = c.name; });
 
       const allKnowledges = await knowledgeService.listKnowledgePoints(sid);
-      const knowledgeMap: Record<string, { name: string; chapterId: string }> = {};
-      allKnowledges.forEach((k) => { knowledgeMap[k.id] = { name: k.name, chapterId: k.chapterId }; });
+      const knowledgeMap: Record<string, string> = {};
+      allKnowledges.forEach((k) => { knowledgeMap[k.id] = k.name; });
 
-      const targetChapterIds = autoSelChapterIds.length > 0 ? autoSelChapterIds : [...new Set(autoSelKnowledgeIds.map((kid) => knowledgeMap[kid]?.chapterId).filter(Boolean))];
+      const targetChapterIds = autoSelChapterIds;
       const targetKnowledgeIds = autoSelKnowledgeIds.length > 0 ? autoSelKnowledgeIds : [];
 
       const allQs = await questionService.listQuestions({
@@ -675,29 +675,7 @@ export default function LectureEditorPage() {
         };
         secIdx++;
 
-        const kpsInChapter = targetKnowledgeIds.filter((kid) => knowledgeMap[kid]?.chapterId === chId);
-        const kpsToShow = kpsInChapter.length > 0 ? kpsInChapter : autoSelKnowledgeIds.slice(0, 1);
-
-        if (autoIncludeKnowledgeAnalysis) {
-          for (const kid of kpsToShow) {
-            const kpName = knowledgeMap[kid]?.name || "知识点";
-            try {
-              const analysis = await aiService.generateKnowledgePoint(kpName);
-              chapterSec.children.push({
-                id: `sec-auto-${Date.now()}-${secIdx}`,
-                title: `知识点·${kpName}`,
-                type: "knowledge",
-                content: analysis,
-                children: [],
-              });
-              secIdx++;
-            } catch { /* 忽略单个生成失败 */ }
-          }
-        }
-
-        const chapterQs = shuffledQs.filter((q) =>
-          q.chapterIds?.includes(chId) || q.knowledgePointIds?.some((kid) => kpsInChapter.includes(kid)),
-        );
+        const chapterQs = shuffledQs.filter((q) => q.chapterIds?.includes(chId));
         for (const q of chapterQs) {
           chapterSec.children.push({
             id: `sec-auto-${Date.now()}-${secIdx}`,
@@ -710,9 +688,7 @@ export default function LectureEditorPage() {
           secIdx++;
         }
 
-        const chapterMats = shuffledMats.filter((m) =>
-          m.chapterIds.includes(chId) || m.knowledgePointIds.some((kid) => kpsInChapter.includes(kid)),
-        );
+        const chapterMats = shuffledMats.filter((m) => m.chapterIds.includes(chId));
         for (const m of chapterMats) {
           chapterSec.children.push({
             id: `sec-auto-${Date.now()}-${secIdx}`,
@@ -726,6 +702,23 @@ export default function LectureEditorPage() {
 
         if (chapterSec.children.length > 0) {
           newSections.push(chapterSec);
+        }
+      }
+
+      if (autoIncludeKnowledgeAnalysis) {
+        for (const kid of targetKnowledgeIds) {
+          const kpName = knowledgeMap[kid] || "知识点";
+          try {
+            const analysis = await aiService.generateKnowledgePoint(kpName);
+            newSections.push({
+              id: `sec-auto-${Date.now()}-${secIdx}`,
+              title: `知识点·${kpName}`,
+              type: "knowledge",
+              content: analysis,
+              children: [],
+            });
+            secIdx++;
+          } catch { /* 忽略单个生成失败 */ }
         }
       }
 

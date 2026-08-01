@@ -298,7 +298,6 @@ describe("MyResourcesPage resource basket", () => {
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([{
       knowledgePointId: "kp-1",
       knowledgePointName: "平方根",
-      chapterName: "集合与函数",
       totalAttempts: 4,
       correctCount: 1,
       partialCount: 0,

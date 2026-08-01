@@ -125,31 +125,14 @@ export default function KnowledgeTreePage() {
       }
       
       const existingPoint = allPoints.find((p) => p.name === name);
-      
-      const chapters = await knowledgeService.listChapters(teacher.schoolId!);
-      if (chapters.length === 0) {
-        toast.error("请先创建章节");
-        return;
-      }
-      
-      if (existingPoint) {
-        await knowledgeService.addKnowledgePoint(
-          teacher.schoolId!,
-          existingPoint.chapterId,
-          targetParentId,
-          name,
-          existingPoint.questionCount,
-        );
-        toast.success("已克隆同名节点");
-      } else {
-        await knowledgeService.addKnowledgePoint(
-          teacher.schoolId!,
-          chapters[0].id,
-          targetParentId,
-          name,
-        );
-        toast.success("节点已添加");
-      }
+
+      await knowledgeService.addKnowledgePoint(
+        teacher.schoolId!,
+        targetParentId,
+        name,
+        existingPoint?.questionCount,
+      );
+      toast.success(existingPoint ? "已克隆同名节点" : "节点已添加");
     }
     
     setAddNodeOpen(false);

@@ -70,10 +70,8 @@ function inferChapters(stem: string): string[] {
   return matched.sort((left, right) => right.score - left.score).slice(0, 2).map((item) => item.id);
 }
 
-function inferKnowledgePoints(stem: string, chapterIds: string[]): string[] {
-  const candidates = chapterIds.length
-    ? db.read("knowledgePoints").filter((point) => chapterIds.includes(point.chapterId))
-    : db.read("knowledgePoints");
+function inferKnowledgePoints(stem: string, _chapterIds: string[]): string[] {
+  const candidates = db.read("knowledgePoints");
   const matched: Array<{ id: string; score: number }> = [];
   for (const point of candidates) {
     const keywords = point.name.split(/[、与和及]/).map((item) => item.trim()).filter((item) => item.length >= 2);

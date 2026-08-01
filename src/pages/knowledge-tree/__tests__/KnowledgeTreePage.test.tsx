@@ -30,6 +30,10 @@ vi.mock("@/services/question", () => ({
   },
 }));
 
+vi.mock("@/components/question/QuestionCard", () => ({
+  QuestionCard: () => <div data-testid="question-card" />,
+}));
+
 vi.mock("@/services/basket", () => ({
   basketService: {
     listBaskets: vi.fn(),
@@ -74,6 +78,15 @@ describe("KnowledgeTreePage", () => {
 
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
+    vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([]);
+    vi.mocked(knowledgeService.addKnowledgePoint).mockResolvedValue({
+      id: "point-new",
+      schoolId: "school-1",
+      parentId: null,
+      name: "独立知识点",
+      order: 1,
+      level: 0,
+    });
     vi.mocked(questionService.listQuestions).mockResolvedValue([]);
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
   });
@@ -94,5 +107,28 @@ describe("KnowledgeTreePage", () => {
       expect(screen.getByRole("button", { name: "添加节点到「全部知识点」" })).toBeInTheDocument();
     });
     expect(screen.queryByText("章节课")).not.toBeInTheDocument();
+  });
+
+  it("adds a knowledge point without loading or selecting a chapter", async () => {
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "知识点" }));
+    fireEvent.click(await screen.findByRole("button", { name: "添加节点到「全部知识点」" }));
+    fireEvent.change(screen.getByLabelText("节点名称"), { target: { value: "独立知识点" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(knowledgeService.addKnowledgePoint).toHaveBeenCalledWith(
+        "school-1",
+        null,
+        "独立知识点",
+        undefined,
+      );
+    });
+    expect(knowledgeService.listChapters).not.toHaveBeenCalled();
   });
 });

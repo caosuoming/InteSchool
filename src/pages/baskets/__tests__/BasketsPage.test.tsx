@@ -158,7 +158,6 @@ describe("BasketsPage", () => {
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([{
       knowledgePointId: "kp-1",
       knowledgePointName: "整数运算",
-      chapterName: "数与式",
       totalAttempts: 2,
       correctCount: 1,
       partialCount: 0,

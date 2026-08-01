@@ -618,7 +618,8 @@ export interface KnowledgePoint {
   id: string;
   schoolId: string;
   parentId: string | null;
-  chapterId: string;
+  /** 旧数据可能保留该字段；知识点目录本身不依赖章节目录。 */
+  chapterId?: string;
   name: string;
   description?: string;
   order: number;
@@ -639,7 +640,7 @@ export interface TreeNode {
   order?: number;
   /** 父节点 ID（null 表示顶级） */
   parentId?: string | null;
-  /** 知识点归属的章节 ID（仅知识点节点） */
+  /** 兼容旧数据的章节 ID；知识点树不使用该字段建立关系。 */
   chapterId?: string;
   /** 层级深度（根=0） */
   level?: number;

@@ -7,7 +7,6 @@ import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 export interface KnowledgeMastery {
   knowledgePointId: string;
   knowledgePointName: string;
-  chapterName: string;
   totalAttempts: number;
   correctCount: number;
   partialCount: number;
@@ -320,7 +319,6 @@ export const analyticsService = {
     records = filterByDateRange(records, range);
     const questions = db.read("questions").filter((q) => q.schoolId === schoolId);
     const knowledgePoints = db.read("knowledgePoints").filter((p) => p.schoolId === schoolId);
-    const chapters = db.read("chapters").filter((c) => c.schoolId === schoolId);
 
     const questionMap = new Map<string, Question>(
       questions.map((q: Question) => [q.id, q] as const),
@@ -348,9 +346,6 @@ export const analyticsService = {
     }
 
     // 构建结果：包含所有知识点（未训练的也列出）
-    const getChapterName = (chapterId: string) =>
-      chapters.find((c) => c.id === chapterId)?.name || "";
-
     return knowledgePoints.map((kp) => {
       const stat = kpStats.get(kp.id) || { total: 0, correct: 0, partial: 0, wrong: 0 };
       const correctRate = stat.total > 0 ? stat.correct / stat.total : 0;
@@ -363,7 +358,6 @@ export const analyticsService = {
       return {
         knowledgePointId: kp.id,
         knowledgePointName: kp.name,
-        chapterName: getChapterName(kp.chapterId),
         totalAttempts: stat.total,
         correctCount: stat.correct,
         partialCount: stat.partial,
