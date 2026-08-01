@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type { TreeNode } from "@/types";
 
@@ -73,5 +73,30 @@ describe("SearchableTree", () => {
     });
 
     expect(screen.getByText("未匹配到节点")).toBeVisible();
+  });
+
+  it("uses the custom reset handler when provided", () => {
+    const onCheck = vi.fn();
+    const onReset = vi.fn();
+
+    render(
+      <SearchableTree
+        data={tree}
+        title="章节目录"
+        checkable
+        checkedIds={["chapter-1"]}
+        onCheck={onCheck}
+        onReset={onReset}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("搜索目录..."), {
+      target: { value: "集合" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重置" }));
+
+    expect(onReset).toHaveBeenCalledOnce();
+    expect(onCheck).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText("搜索目录...")).toHaveValue("");
   });
 });
