@@ -168,6 +168,38 @@ describe("ExtractReviewModal", () => {
     expect(screen.getAllByRole("button", { name: /与上一块合并/ })).toHaveLength(2);
   });
 
+  it("reviews background extraction blocks without parsing the file again", async () => {
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="后台讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[
+          {
+            id: "background-block",
+            type: "knowledge",
+            content: "后台拆解结果",
+            knowledgeTitle: "后台知识块",
+            order: 0,
+            status: "new",
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText("后台拆解结果")).toBeInTheDocument();
+    expect(mocks.getLecture).not.toHaveBeenCalled();
+    expect(mocks.extractStoredFile).not.toHaveBeenCalled();
+    expect(mocks.parseDocumentBlocks).not.toHaveBeenCalled();
+  });
+
   it("moves and swaps answer, analysis, and summary content without overwriting it", async () => {
     const user = userEvent.setup();
 

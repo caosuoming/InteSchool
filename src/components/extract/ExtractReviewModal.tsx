@@ -65,6 +65,7 @@ interface ExtractReviewModalProps {
   grade: string;
   schoolYear: string;
   semester: ResourceSemester;
+  initialBlocks?: DocBlock[];
   onConfirmed?: () => void;
 }
 
@@ -233,6 +234,7 @@ export function ExtractReviewModal({
   grade,
   schoolYear,
   semester,
+  initialBlocks,
   onConfirmed,
 }: ExtractReviewModalProps) {
   const previewRootRef = useRef<HTMLDivElement>(null);
@@ -240,11 +242,11 @@ export function ExtractReviewModal({
   const { teacher } = useAuthStore();
   const { options: questionTypeOptions, defaultType: defaultQuestionType } = useQuestionTypeOptions(teacher?.schoolId);
   const extractConfig = useExtractConfigStore();
-  const [phase, setPhase] = useState<Phase>("extracting");
-  const [progress, setProgress] = useState(0);
-  const [progressMsg, setProgressMsg] = useState("正在初始化...");
+  const [phase, setPhase] = useState<Phase>(initialBlocks ? "review" : "extracting");
+  const [progress, setProgress] = useState(initialBlocks ? 100 : 0);
+  const [progressMsg, setProgressMsg] = useState(initialBlocks ? "拆解完成，等待审阅" : "正在初始化...");
   const [error, setError] = useState<string | null>(null);
-  const [blocks, setBlocks] = useState<DocBlock[]>([]);
+  const [blocks, setBlocks] = useState<DocBlock[]>(initialBlocks || []);
   const [preservedScoreLabelBlockIds, setPreservedScoreLabelBlockIds] = useState<Set<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [duplicateChecks, setDuplicateChecks] = useState<Record<string, DuplicateCheck>>({});
@@ -326,8 +328,19 @@ export function ExtractReviewModal({
 
   useEffect(() => {
     if (!open) return;
+    if (initialBlocks) {
+      setPhase("review");
+      setProgress(100);
+      setProgressMsg("拆解完成，等待审阅");
+      setError(null);
+      setBlocks(initialBlocks);
+      setPreservedScoreLabelBlockIds(new Set());
+      setEditingBlockId(null);
+      setDuplicateChecks({});
+      return;
+    }
     runExtraction();
-  }, [open, runExtraction]);
+  }, [initialBlocks, open, runExtraction]);
 
   // 拖动处理函数
   const handleMouseDown = (e: React.MouseEvent) => {

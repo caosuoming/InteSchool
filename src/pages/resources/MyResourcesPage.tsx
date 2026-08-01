@@ -45,7 +45,6 @@ import { genId } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
-import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { Badge } from "@/components/ui/Badge";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
@@ -63,6 +62,10 @@ import {
   parseBatchResourceKey,
   type BatchResourceRef,
 } from "@/pages/resources/batch-resource";
+import {
+  isExtractTaskRunning,
+  useExtractTasksStore,
+} from "@/stores/extractTasks";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
@@ -242,22 +245,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [duplicateTitle, setDuplicateTitle] = useState("");
   const [duplicating, setDuplicating] = useState(false);
 
-  // AI 拆解弹窗
-  const [extractModal, setExtractModal] = useState<{
-    open: boolean;
-    resourceId: string;
-    resourceType: "examPaper" | "lecture";
-    resourceTitle: string;
-    chapterIds: string[];
-    knowledgePointIds: string[];
-    grade: string;
-    schoolYear: string;
-    semester: ResourceSemester;
-  } | null>(null);
+  const extractTasks = useExtractTasksStore((state) => state.tasks);
+  const startExtractTask = useExtractTasksStore((state) => state.startTask);
 
   const handleOpenExtract = (resource: ExamPaper | Lecture, type: "examPaper" | "lecture") => {
-    setExtractModal({
-      open: true,
+    startExtractTask({
       resourceId: resource.id,
       resourceType: type,
       resourceTitle: resource.title,
@@ -267,12 +259,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       schoolYear: resource.schoolYear,
       semester: resource.semester || "上学期",
     });
-  };
-
-  const handleExtractConfirmed = () => {
-    setExtractModal(null);
-    // 刷新列表
-    loadAll();
   };
 
   // 资源篮相关状态
@@ -416,6 +402,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   useEffect(() => {
     const timer = setTimeout(() => loadAll(), 300);
     return () => clearTimeout(timer);
+  }, [loadAll]);
+
+  useEffect(() => {
+    const handleExtractConfirmed = () => {
+      void loadAll();
+    };
+    window.addEventListener("extract-task-confirmed", handleExtractConfirmed);
+    return () => window.removeEventListener("extract-task-confirmed", handleExtractConfirmed);
   }, [loadAll]);
 
   // 资源篮加载逻辑
@@ -1988,7 +1982,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 );
                 const hasExtractCopy = extractCopies.length > 0;
                 const isExtracted = item.extractStatus === "done";
-                const isExtracting = item.extractStatus === "extracting";
+                const isExtracting = item.extractStatus === "extracting"
+                  || isExtractTaskRunning(extractTasks, item.id, "lecture");
                 const mainLecture = hasExtractCopy ? extractCopies[0] : item;
                 return (
                   <div key={item.id} className="space-y-2">
@@ -2098,7 +2093,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 );
                 const hasExtractCopy = extractCopies.length > 0;
                 const isExtracted = item.extractStatus === "done";
-                const isExtracting = item.extractStatus === "extracting";
+                const isExtracting = item.extractStatus === "extracting"
+                  || isExtractTaskRunning(extractTasks, item.id, "examPaper");
                 return (
                   <div key={item.id} className="space-y-2">
                     {hasExtractCopy && extractCopies.map((copy) => (
@@ -2821,22 +2817,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         />
       </Modal>
 
-      {/* AI 拆解审阅弹窗 */}
-      {extractModal && (
-        <ExtractReviewModal
-          open={extractModal.open}
-          onClose={() => setExtractModal(null)}
-          resourceId={extractModal.resourceId}
-          resourceType={extractModal.resourceType}
-          resourceTitle={extractModal.resourceTitle}
-          chapterIds={extractModal.chapterIds}
-          knowledgePointIds={extractModal.knowledgePointIds}
-          grade={extractModal.grade}
-          schoolYear={extractModal.schoolYear}
-          semester={extractModal.semester}
-          onConfirmed={handleExtractConfirmed}
-        />
-      )}
     </div>
   );
 }
