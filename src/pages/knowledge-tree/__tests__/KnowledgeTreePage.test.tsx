@@ -19,6 +19,7 @@ vi.mock("@/services/knowledge", () => ({
     addKnowledgePoint: vi.fn(),
     renameNode: vi.fn(),
     deleteNode: vi.fn(),
+    mergeNodes: vi.fn(),
     moveNode: vi.fn(),
     reorderSiblings: vi.fn(),
   },
@@ -54,6 +55,13 @@ const chapterTree: TreeNode = {
       count: 0,
       children: [],
     },
+    {
+      id: "chapter-target",
+      name: "目标章节",
+      type: "chapter",
+      count: 2,
+      children: [],
+    },
   ],
 };
 
@@ -67,6 +75,7 @@ const knowledgeTree: TreeNode = {
 
 describe("KnowledgeTreePage", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     useAuthStore.setState({
       teacher: {
         id: "teacher-1",
@@ -130,5 +139,30 @@ describe("KnowledgeTreePage", () => {
       );
     });
     expect(knowledgeService.listChapters).not.toHaveBeenCalled();
+  });
+
+  it("merges a selected node into another child of the same parent", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText("章节课"));
+    fireEvent.click(screen.getByRole("button", { name: "合并" }));
+    fireEvent.click(screen.getByRole("button", { name: /合并到.*目标章节/ }));
+
+    await waitFor(() => {
+      expect(knowledgeService.mergeNodes).toHaveBeenCalledWith(
+        "chapter-course",
+        "chapter-target",
+        "chapter",
+      );
+    });
+    expect(window.confirm).toHaveBeenCalledWith(
+      "确定将「章节课」合并到「目标章节」吗？目标节点将保留，子节点和资源关联会一并迁移。",
+    );
   });
 });
