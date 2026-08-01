@@ -4,6 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { PlatformQuestionContent } from "@/pages/resources/PlatformResourcesPage";
 import type { Question } from "@/types";
 
+vi.mock("@/components/ui/MathHtml", () => ({
+  MathHtml: ({ children, className }: { children: string; className?: string }) => (
+    <span className={className} data-math-rendered={children.includes("$") ? "true" : "false"}>
+      {children}
+    </span>
+  ),
+}));
+
 const question: Question = {
   id: "question-61",
   teacherId: "teacher-1",
@@ -34,7 +42,7 @@ describe("PlatformQuestionContent", () => {
     expect(screen.getByText(/这里是必须完整显示的后续题干内容/)).not.toHaveClass("line-clamp-2");
     expect(screen.getByText("A.")).toBeInTheDocument();
     expect(screen.getByText("B.")).toBeInTheDocument();
-    expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(3);
+    expect(container.querySelectorAll('[data-math-rendered="true"]').length).toBeGreaterThanOrEqual(3);
     expect(screen.queryByText("答案")).not.toBeInTheDocument();
   });
 

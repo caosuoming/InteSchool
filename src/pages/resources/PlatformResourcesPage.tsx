@@ -17,7 +17,6 @@ import {
   Plus,
   Presentation,
   Search,
-  Settings2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
@@ -41,8 +40,6 @@ import type {
   Lecture,
   Material,
   MaterialType,
-  PlatformResourceSetting,
-  PlatformResourceSettingType,
   PlatformSaveCheckResult,
   PlatformSaveDecision,
   Question,
@@ -80,12 +77,54 @@ interface PlatformResourceItem {
   createdAt: string;
   updatedAt: string;
   meta: { label: string; value: string }[];
+  snapshot: ShareableResource;
   question?: Question;
 }
 
+interface PlatformResourceFilters {
+  grade: string;
+  schoolYear: string;
+  semester: string;
+  questionType: string;
+  difficulty: string;
+  recommendation: string;
+  category: string;
+  sourceType: string;
+  status: string;
+  layoutMode: string;
+  originalFileType: string;
+  versionType: string;
+  coursewareType: string;
+  materialType: string;
+  tag: string;
+}
+
+interface FilterOption {
+  value: string;
+  label: string;
+}
+
+const emptyFilters: PlatformResourceFilters = {
+  grade: "",
+  schoolYear: "",
+  semester: "",
+  questionType: "",
+  difficulty: "",
+  recommendation: "",
+  category: "",
+  sourceType: "",
+  status: "",
+  layoutMode: "",
+  originalFileType: "",
+  versionType: "",
+  coursewareType: "",
+  materialType: "",
+  tag: "",
+};
+
 const typeFilterConfig: { key: ResourceTypeFilter; label: string; icon: typeof FileText }[] = [
   { key: "all", label: "全部", icon: FileText },
-  { key: "question", label: "题库", icon: FileQuestion },
+  { key: "question", label: "题目", icon: FileQuestion },
   { key: "examPaper", label: "试卷", icon: FileSpreadsheet },
   { key: "lecture", label: "讲义", icon: FileText },
   { key: "courseware", label: "课件", icon: Presentation },
@@ -116,13 +155,79 @@ const materialTypeLabel: Record<MaterialType, string> = {
 
 const difficultyLabelText = ["", "简单", "较易", "中等", "较难", "困难"];
 
-const settingLabels: Record<PlatformResourceSettingType, string> = {
-  grade: "年级",
-  schoolYear: "学年",
-  source: "来源",
-  questionType: "题型",
-  category: "题类",
+const questionCategoryLabel: Record<string, string> = {
+  practice: "练习",
+  exam: "考试",
+  homework: "作业",
+  review: "复习",
 };
+
+const questionSourceLabel: Record<string, string> = {
+  imported: "文档导入",
+  manual: "手工录入",
+  shared: "分享获得",
+};
+
+const resourceStatusLabel: Record<string, string> = {
+  draft: "草稿",
+  published: "已发布",
+};
+
+const examLayoutLabel: Record<string, string> = {
+  grouped: "按题型分组",
+  flat: "连续编排",
+};
+
+const originalFileTypeLabel: Record<string, string> = {
+  word: "Word",
+  pdf: "PDF",
+};
+
+const lectureVersionLabel: Record<string, string> = {
+  origin: "原稿",
+  extract: "正稿",
+  preview: "预览稿",
+  "answer-sheet": "答题卡",
+};
+
+function uniqueFilterOptions(
+  values: Array<string | number | undefined>,
+  getLabel: (value: string) => string = (value) => value,
+): FilterOption[] {
+  return [...new Set(values.filter((value): value is string | number => value !== undefined && value !== "").map(String))]
+    .sort((a, b) => a.localeCompare(b, "zh-CN", { numeric: true }))
+    .map((value) => ({ value, label: getLabel(value) }));
+}
+
+function CompactFilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <label className="flex min-w-[148px] items-center gap-2 rounded-md border border-ink-200 bg-paper px-2.5 py-1.5">
+      <span className="shrink-0 text-xs text-ink-500">{label}</span>
+      <select
+        aria-label={`${label}筛选`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-w-0 flex-1 cursor-pointer bg-transparent text-xs text-ink-700 outline-none"
+      >
+        <option value="">全部</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
   const snapshot = share.resourceSnapshot as ShareableResource | undefined;
@@ -137,6 +242,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
     grade: snapshot.grade,
     schoolYear: snapshot.schoolYear,
     semester: snapshot.semester || "上学期",
+    snapshot,
     chapterIds: share.directorySnapshot?.chapters.filter((item) => item.selected).map((item) => item.id) || [],
     knowledgePointIds: share.directorySnapshot?.knowledgePoints.filter((item) => item.selected).map((item) => item.id) || [],
   };
@@ -296,7 +402,7 @@ export default function PlatformResourcesPage() {
   const [items, setItems] = useState<PlatformResourceItem[]>([]);
   const [contributors, setContributors] = useState<DonationContributor[]>([]);
   const [privileges, setPrivileges] = useState<DonationPrivileges | null>(null);
-  const [settings, setSettings] = useState<PlatformResourceSetting[]>([]);
+  const [filters, setFilters] = useState<PlatformResourceFilters>(emptyFilters);
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [ownContributionIds, setOwnContributionIds] = useState<Set<string>>(new Set());
@@ -311,9 +417,6 @@ export default function PlatformResourcesPage() {
     title: "", description: "", grade: "", schoolYear: "", semester: "上学期" as ResourceSemester, originalFileName: "", difficulty: "", recommendation: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsDraft, setSettingsDraft] = useState<Record<string, string>>({});
-  const [savingSettings, setSavingSettings] = useState(false);
 
   const schoolId = teacher?.schoolId || "sch-1";
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
@@ -325,14 +428,13 @@ export default function PlatformResourcesPage() {
     }
     setLoading(true);
     try {
-      const [donations, myDonations, contributorList, myPrivileges, chapterData, knowledgeData, settingList] = await Promise.all([
+      const [donations, myDonations, contributorList, myPrivileges, chapterData, knowledgeData] = await Promise.all([
         shareService.listPublicDonations(),
         shareService.listDonationStatus(teacher.id),
         shareService.listDonationContributors(),
         shareService.getDonationPrivileges(teacher.id),
         shareService.getPlatformDirectoryTree("chapter"),
         shareService.getPlatformDirectoryTree("knowledge"),
-        shareService.listPlatformResourceSettings(),
       ]);
       const nextItems = donations.map(snapshotToItem).filter((item): item is PlatformResourceItem => Boolean(item));
       setItems(nextItems);
@@ -341,7 +443,6 @@ export default function PlatformResourcesPage() {
       setPrivileges(myPrivileges);
       setChapterTree(chapterData);
       setKnowledgeTree(knowledgeData);
-      setSettings(settingList);
     } catch (error) {
       console.error("加载平台资源失败", error);
       toast.error("加载平台资源失败");
@@ -359,6 +460,68 @@ export default function PlatformResourcesPage() {
     [contributors],
   );
 
+  const commonFilterOptions = useMemo(() => ({
+    grade: uniqueFilterOptions(items.map((item) => item.grade)),
+    schoolYear: uniqueFilterOptions(items.map((item) => item.schoolYear)).reverse(),
+    semester: uniqueFilterOptions(items.map((item) => item.semester)),
+  }), [items]);
+
+  const typeSpecificFilterOptions = useMemo(() => {
+    const typedItems = typeFilter === "all"
+      ? []
+      : items.filter((item) => item.resourceType === typeFilter);
+    if (typeFilter === "question") {
+      const questions = typedItems.map((item) => item.snapshot as Question);
+      return {
+        questionType: uniqueFilterOptions(questions.map((item) => item.type), getDefaultQuestionTypeLabel),
+        difficulty: uniqueFilterOptions(
+          questions.map((item) => item.difficulty),
+          (value) => `${value} · ${difficultyLabelText[Number(value)]}`,
+        ),
+        recommendation: uniqueFilterOptions(questions.map((item) => item.recommendation), (value) => `${value} 星`),
+        category: uniqueFilterOptions(questions.map((item) => item.category), (value) => questionCategoryLabel[value] || value),
+        sourceType: uniqueFilterOptions(questions.map((item) => item.sourceType), (value) => questionSourceLabel[value] || value),
+      };
+    }
+    if (typeFilter === "examPaper") {
+      const papers = typedItems.map((item) => item.snapshot as ExamPaper);
+      return {
+        status: uniqueFilterOptions(papers.map((item) => item.status), (value) => resourceStatusLabel[value] || value),
+        layoutMode: uniqueFilterOptions(papers.map((item) => item.layoutMode), (value) => examLayoutLabel[value] || value),
+        originalFileType: uniqueFilterOptions(papers.map((item) => item.originalFileType), (value) => originalFileTypeLabel[value] || value),
+      };
+    }
+    if (typeFilter === "lecture") {
+      const lectures = typedItems.map((item) => item.snapshot as Lecture);
+      return {
+        status: uniqueFilterOptions(lectures.map((item) => item.status), (value) => resourceStatusLabel[value] || value),
+        versionType: uniqueFilterOptions(lectures.map((item) => item.versionType), (value) => lectureVersionLabel[value] || value),
+        originalFileType: uniqueFilterOptions(lectures.map((item) => item.originalFileType), (value) => originalFileTypeLabel[value] || value),
+      };
+    }
+    if (typeFilter === "courseware") {
+      const coursewares = typedItems.map((item) => item.snapshot as Courseware);
+      return {
+        coursewareType: uniqueFilterOptions(
+          coursewares.map((item) => item.type),
+          (value) => coursewareTypeLabel[value as CoursewareType] || value,
+        ),
+        tag: uniqueFilterOptions(coursewares.flatMap((item) => item.tags || [])),
+      };
+    }
+    if (typeFilter === "material") {
+      const materials = typedItems.map((item) => item.snapshot as Material);
+      return {
+        materialType: uniqueFilterOptions(
+          materials.map((item) => item.type),
+          (value) => materialTypeLabel[value as MaterialType] || value,
+        ),
+        tag: uniqueFilterOptions(materials.flatMap((item) => item.tags || [])),
+      };
+    }
+    return {};
+  }, [items, typeFilter]);
+
   const displayedItems = useMemo(() => {
     let list = items;
     if (typeFilter !== "all") list = list.filter((item) => item.resourceType === typeFilter);
@@ -369,6 +532,49 @@ export default function PlatformResourcesPage() {
         || item.description?.toLowerCase().includes(term)
         || item.content?.toLowerCase().includes(term),
       );
+    }
+    if (filters.grade) list = list.filter((item) => item.grade === filters.grade);
+    if (filters.schoolYear) list = list.filter((item) => item.schoolYear === filters.schoolYear);
+    if (filters.semester) list = list.filter((item) => item.semester === filters.semester);
+    if (typeFilter === "question") {
+      list = list.filter((item) => {
+        const question = item.snapshot as Question;
+        return (!filters.questionType || question.type === filters.questionType)
+          && (!filters.difficulty || String(question.difficulty) === filters.difficulty)
+          && (!filters.recommendation || String(question.recommendation) === filters.recommendation)
+          && (!filters.category || question.category === filters.category)
+          && (!filters.sourceType || question.sourceType === filters.sourceType);
+      });
+    }
+    if (typeFilter === "examPaper") {
+      list = list.filter((item) => {
+        const paper = item.snapshot as ExamPaper;
+        return (!filters.status || paper.status === filters.status)
+          && (!filters.layoutMode || paper.layoutMode === filters.layoutMode)
+          && (!filters.originalFileType || paper.originalFileType === filters.originalFileType);
+      });
+    }
+    if (typeFilter === "lecture") {
+      list = list.filter((item) => {
+        const lecture = item.snapshot as Lecture;
+        return (!filters.status || lecture.status === filters.status)
+          && (!filters.versionType || lecture.versionType === filters.versionType)
+          && (!filters.originalFileType || lecture.originalFileType === filters.originalFileType);
+      });
+    }
+    if (typeFilter === "courseware") {
+      list = list.filter((item) => {
+        const courseware = item.snapshot as Courseware;
+        return (!filters.coursewareType || courseware.type === filters.coursewareType)
+          && (!filters.tag || courseware.tags.includes(filters.tag));
+      });
+    }
+    if (typeFilter === "material") {
+      list = list.filter((item) => {
+        const material = item.snapshot as Material;
+        return (!filters.materialType || material.type === filters.materialType)
+          && (!filters.tag || material.tags.includes(filters.tag));
+      });
     }
     if (checkedChapters.length > 0) {
       list = list.filter((item) => chapterLogic === "and"
@@ -385,7 +591,31 @@ export default function PlatformResourcesPage() {
     if (sortKey === "created") sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     if (sortKey === "title") sorted.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
     return sorted;
-  }, [items, typeFilter, keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, sortKey]);
+  }, [items, typeFilter, keyword, filters, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, sortKey]);
+
+  const updateFilter = (key: keyof PlatformResourceFilters, value: string) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleTypeFilterChange = (nextType: ResourceTypeFilter) => {
+    setTypeFilter(nextType);
+    setFilters((current) => ({
+      ...emptyFilters,
+      grade: current.grade,
+      schoolYear: current.schoolYear,
+      semester: current.semester,
+    }));
+  };
+
+  const hasActiveFilters = Object.values(filters).some(Boolean)
+    || checkedChapters.length > 0
+    || checkedKnowledge.length > 0;
+
+  const clearAllFilters = () => {
+    setFilters(emptyFilters);
+    setCheckedChapters([]);
+    setCheckedKnowledge([]);
+  };
 
   const saveToMyResources = async (
     item: PlatformResourceItem,
@@ -496,32 +726,6 @@ export default function PlatformResourcesPage() {
     }
   };
 
-  const openSettings = () => {
-    setSettingsDraft(Object.fromEntries(settings.map((item) => [item.type, item.values.join("、")])));
-    setSettingsOpen(true);
-  };
-
-  const saveSettings = async () => {
-    if (!teacher) return;
-    setSavingSettings(true);
-    try {
-      await shareService.updatePlatformResourceSettings(
-        teacher.id,
-        settings.map((item) => ({
-          type: item.type,
-          values: (settingsDraft[item.type] || "").split(/[、,，\n]/).map((value) => value.trim()).filter(Boolean),
-        })),
-      );
-      toast.success("平台资源属性选项已更新");
-      setSettingsOpen(false);
-      await loadAll();
-    } catch (error: any) {
-      toast.error("保存失败", error?.message);
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
   const updateSaveDecision = (updater: (decision: PlatformSaveDecision) => PlatformSaveDecision) => {
     setSaveConflict((current) => current ? { ...current, decision: updater(current.decision) } : current);
   };
@@ -543,16 +747,10 @@ export default function PlatformResourcesPage() {
         title="平台资源"
         description="浏览教师捐赠的资源；接受后会自动同步章节和知识点目录"
         icon={<Cloud className="w-5 h-5" />}
-        action={privileges?.canManagePlatformSettings ? (
-          <Button variant="outline" onClick={openSettings}>
-            <Settings2 className="w-4 h-4" />
-            属性选项设置
-          </Button>
-        ) : undefined}
       />
 
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-3">
+      <div className="grid gap-4 lg:grid-cols-[minmax(210px,240px)_minmax(0,1fr)]">
+        <div>
           <Card className="p-3 sticky top-4">
             <div className="flex gap-1 mb-3 p-1 bg-mist rounded-md">
               <button
@@ -608,7 +806,7 @@ export default function PlatformResourcesPage() {
           </Card>
         </div>
 
-        <div className="col-span-9">
+        <div className="min-w-0">
           <div className="flex items-center gap-3 mb-4 flex-wrap">
             <div className="relative flex-1 max-w-md min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
@@ -645,7 +843,7 @@ export default function PlatformResourcesPage() {
               return (
                 <button
                   key={filter.key}
-                  onClick={() => setTypeFilter(filter.key)}
+                  onClick={() => handleTypeFilterChange(filter.key)}
                   className={cn(
                     "px-3 py-1.5 rounded-full text-xs font-medium border transition-all flex items-center gap-1.5",
                     typeFilter === filter.key
@@ -659,6 +857,78 @@ export default function PlatformResourcesPage() {
               );
             })}
             <span className="ml-auto text-xs text-ink-400">共 {displayedItems.length} 项</span>
+          </div>
+
+          <div className="mb-4 rounded-lg border border-ink-100 bg-mist/30 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <CompactFilterSelect
+                label="年级"
+                value={filters.grade}
+                options={commonFilterOptions.grade}
+                onChange={(value) => updateFilter("grade", value)}
+              />
+              <CompactFilterSelect
+                label="学年"
+                value={filters.schoolYear}
+                options={commonFilterOptions.schoolYear}
+                onChange={(value) => updateFilter("schoolYear", value)}
+              />
+              <CompactFilterSelect
+                label="学期"
+                value={filters.semester}
+                options={commonFilterOptions.semester}
+                onChange={(value) => updateFilter("semester", value)}
+              />
+
+              {typeFilter === "question" && (
+                <>
+                  <CompactFilterSelect label="题型" value={filters.questionType} options={typeSpecificFilterOptions.questionType || []} onChange={(value) => updateFilter("questionType", value)} />
+                  <CompactFilterSelect label="难度" value={filters.difficulty} options={typeSpecificFilterOptions.difficulty || []} onChange={(value) => updateFilter("difficulty", value)} />
+                  <CompactFilterSelect label="推荐" value={filters.recommendation} options={typeSpecificFilterOptions.recommendation || []} onChange={(value) => updateFilter("recommendation", value)} />
+                  <CompactFilterSelect label="题类" value={filters.category} options={typeSpecificFilterOptions.category || []} onChange={(value) => updateFilter("category", value)} />
+                  <CompactFilterSelect label="来源" value={filters.sourceType} options={typeSpecificFilterOptions.sourceType || []} onChange={(value) => updateFilter("sourceType", value)} />
+                </>
+              )}
+              {typeFilter === "examPaper" && (
+                <>
+                  <CompactFilterSelect label="状态" value={filters.status} options={typeSpecificFilterOptions.status || []} onChange={(value) => updateFilter("status", value)} />
+                  <CompactFilterSelect label="编排" value={filters.layoutMode} options={typeSpecificFilterOptions.layoutMode || []} onChange={(value) => updateFilter("layoutMode", value)} />
+                  <CompactFilterSelect label="原稿" value={filters.originalFileType} options={typeSpecificFilterOptions.originalFileType || []} onChange={(value) => updateFilter("originalFileType", value)} />
+                </>
+              )}
+              {typeFilter === "lecture" && (
+                <>
+                  <CompactFilterSelect label="状态" value={filters.status} options={typeSpecificFilterOptions.status || []} onChange={(value) => updateFilter("status", value)} />
+                  <CompactFilterSelect label="版本" value={filters.versionType} options={typeSpecificFilterOptions.versionType || []} onChange={(value) => updateFilter("versionType", value)} />
+                  <CompactFilterSelect label="原稿" value={filters.originalFileType} options={typeSpecificFilterOptions.originalFileType || []} onChange={(value) => updateFilter("originalFileType", value)} />
+                </>
+              )}
+              {typeFilter === "courseware" && (
+                <>
+                  <CompactFilterSelect label="课件类型" value={filters.coursewareType} options={typeSpecificFilterOptions.coursewareType || []} onChange={(value) => updateFilter("coursewareType", value)} />
+                  <CompactFilterSelect label="标签" value={filters.tag} options={typeSpecificFilterOptions.tag || []} onChange={(value) => updateFilter("tag", value)} />
+                </>
+              )}
+              {typeFilter === "material" && (
+                <>
+                  <CompactFilterSelect label="素材类型" value={filters.materialType} options={typeSpecificFilterOptions.materialType || []} onChange={(value) => updateFilter("materialType", value)} />
+                  <CompactFilterSelect label="标签" value={filters.tag} options={typeSpecificFilterOptions.tag || []} onChange={(value) => updateFilter("tag", value)} />
+                </>
+              )}
+
+              {typeFilter === "all" && (
+                <span className="text-xs text-ink-400">选择具体资源类型后可使用对应属性筛选</span>
+              )}
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="ml-auto text-xs text-ink-500 underline decoration-ink-300 underline-offset-2 hover:text-ink-800"
+                >
+                  清空筛选
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -678,43 +948,13 @@ export default function PlatformResourcesPage() {
                 const knowledgeNames = resolveNames(knowledgeTree, item.knowledgePointIds);
                 return (
                   <div key={item.shareId} className="card-base p-4 hover:shadow-cardHover transition-all group">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="tag-gold">{resourceTypeLabel[item.resourceType]}</span>
-                          <span className="text-xs text-ink-500 flex items-center gap-1">
-                            捐赠者：{contributor?.nickname || "匿名用户"}
-                            {contributor?.isTopContributor && <Crown className="w-3.5 h-3.5 text-gold-500" aria-label="贡献榜前十" />}
-                          </span>
-                        </div>
-                        {item.question ? (
-                          <PlatformQuestionContent
-                            question={item.question}
-                            expanded={expandedQuestionIds.has(item.shareId)}
-                            onToggle={() => toggleQuestionDetails(item.shareId)}
-                          />
-                        ) : (
-                          <>
-                            <div className="font-medium text-ink-900 mb-1 line-clamp-2">{item.title}</div>
-                            {item.description && <div className="text-xs text-ink-500 mb-2 line-clamp-2">{item.description}</div>}
-                            {item.content && (
-                              <div className="text-xs text-ink-600 mb-2 line-clamp-2 leading-relaxed bg-mist/40 p-2 rounded">
-                                {item.content}
-                              </div>
-                            )}
-                          </>
-                        )}
-                        <div className="flex items-center gap-3 flex-wrap text-xs text-ink-400">
-                          {item.meta.map((meta) => (
-                            <span key={meta.label}><span className="text-ink-300">{meta.label}：</span><span className="text-ink-600">{meta.value}</span></span>
-                          ))}
-                          {chapterNames && <span><span className="text-ink-300">章节：</span><span className="text-ink-600">{chapterNames}</span></span>}
-                          {knowledgeNames && <span><span className="text-ink-300">知识点：</span><span className="text-ink-600">{knowledgeNames}</span></span>}
-                          {item.originalFileName && <span><span className="text-ink-300">文件名：</span><span className="text-ink-600">{item.originalFileName}</span></span>}
-                          <span className="ml-auto text-ink-300">{timeAgo(item.updatedAt)}</span>
-                        </div>
-                      </div>
-                      <div className="flex-shrink-0 flex items-center gap-2">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="tag-gold">{resourceTypeLabel[item.resourceType]}</span>
+                      <span className="flex items-center gap-1 text-xs text-ink-500">
+                        捐赠者：{contributor?.nickname || "匿名用户"}
+                        {contributor?.isTopContributor && <Crown className="w-3.5 h-3.5 text-gold-500" aria-label="贡献榜前十" />}
+                      </span>
+                      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                         {canEdit && (
                           <Button variant="outline" size="sm" onClick={() => openEdit(item)}>
                             <Edit3 className="w-3.5 h-3.5" />
@@ -736,6 +976,32 @@ export default function PlatformResourcesPage() {
                               : "创建副本"}
                         </Button>
                       </div>
+                    </div>
+                    {item.question ? (
+                      <PlatformQuestionContent
+                        question={item.question}
+                        expanded={expandedQuestionIds.has(item.shareId)}
+                        onToggle={() => toggleQuestionDetails(item.shareId)}
+                      />
+                    ) : (
+                      <>
+                        <div className="mb-1 font-medium text-ink-900 line-clamp-2">{item.title}</div>
+                        {item.description && <div className="mb-2 text-xs text-ink-500 line-clamp-2">{item.description}</div>}
+                        {item.content && (
+                          <div className="mb-2 rounded bg-mist/40 p-2 text-xs leading-relaxed text-ink-600 line-clamp-2">
+                            {item.content}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-ink-400">
+                      {item.meta.map((meta) => (
+                        <span key={meta.label}><span className="text-ink-300">{meta.label}：</span><span className="text-ink-600">{meta.value}</span></span>
+                      ))}
+                      {chapterNames && <span><span className="text-ink-300">章节：</span><span className="text-ink-600">{chapterNames}</span></span>}
+                      {knowledgeNames && <span><span className="text-ink-300">知识点：</span><span className="text-ink-600">{knowledgeNames}</span></span>}
+                      {item.originalFileName && <span><span className="text-ink-300">文件名：</span><span className="text-ink-600">{item.originalFileName}</span></span>}
+                      <span className="ml-auto text-ink-300">{timeAgo(item.updatedAt)}</span>
                     </div>
                   </div>
                 );
@@ -937,32 +1203,6 @@ export default function PlatformResourcesPage() {
         </div>
       </Modal>
 
-      <Modal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        title="平台资源属性选项"
-        description="贡献榜前十名可维护平台资源后台使用的可选项。使用顿号、逗号或换行分隔。"
-        size="md"
-        footer={(
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setSettingsOpen(false)}>取消</Button>
-            <Button variant="gold" loading={savingSettings} onClick={saveSettings}>保存设置</Button>
-          </div>
-        )}
-      >
-        <div className="space-y-4">
-          {settings.map((setting) => (
-            <label key={setting.type} className="block text-sm text-ink-700">
-              <span className="block mb-1">{settingLabels[setting.type]}</span>
-              <textarea
-                value={settingsDraft[setting.type] || ""}
-                onChange={(event) => setSettingsDraft((draft) => ({ ...draft, [setting.type]: event.target.value }))}
-                className="input-base min-h-16"
-              />
-            </label>
-          ))}
-        </div>
-      </Modal>
     </div>
   );
 }
