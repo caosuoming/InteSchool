@@ -349,6 +349,9 @@ export const serviceParameters = {
     ]
   },
   "grade": {
+    "getQueryData": [
+      "teacher"
+    ],
     "listCohorts": [
       "schoolId"
     ],

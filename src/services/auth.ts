@@ -191,7 +191,12 @@ export const authService = {
 
   async updateTeacherTeachingProfile(
     teacherId: string,
-    patch: { subject?: string; teachingGrades?: string[]; teachingClassIds?: string[] },
+    patch: {
+      subject?: string;
+      teachingGrades?: string[];
+      teachingClassIds?: string[];
+      homeroomClassIds?: string[];
+    },
   ): Promise<Teacher> {
     return apiRequest<Teacher>(`/api/auth/teachers/${encodeURIComponent(teacherId)}/teaching-profile`, {
       method: "PATCH",

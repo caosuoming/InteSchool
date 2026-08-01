@@ -5,11 +5,16 @@ import type {
   GradeExamImportInput,
   GradeExamSettings,
   GradeImportContext,
+  GradeQueryData,
   GradeStatisticsTemplate,
   GradeTemplateProfile,
 } from "@/types";
 
 export const gradeService = {
+  async getQueryData(): Promise<GradeQueryData> {
+    return rpcCall("grade", "getQueryData", []) as Promise<GradeQueryData>;
+  },
+
   async listCohorts(schoolId: string): Promise<GradeCohort[]> {
     return rpcCall("grade", "listCohorts", [schoolId]) as Promise<GradeCohort[]>;
   },

@@ -4,6 +4,9 @@ import type {
   GradeExamImportInput,
   GradeExamSettings,
   GradeImportContext,
+  GradeQueryClass,
+  GradeQueryData,
+  GradeQueryExam,
   GradeScoreRecord,
   GradeStatisticsTemplate,
   GradeTeacherOption,
@@ -11,12 +14,15 @@ import type {
   SchoolClass,
   Student,
   Teacher,
+  TeacherAffiliation,
+  TeacherRole,
 } from "../../src/types/index.js";
 import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
   normalizeGradeSettings,
 } from "../../src/lib/grade-statistics.js";
+import { averageGradeValues } from "../../src/lib/grade-reports.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
@@ -105,7 +111,7 @@ function requireGradeTemplateManager(schoolId: string, teacherId: string): void 
   );
   if (!affiliation) throw new Error("当前教师不属于该学校");
   const roles = new Set<string>(affiliation.roles || teacher.roles || []);
-  const managerialRoles = new Set(["gradeLeader", "dean", "principal"]);
+  const managerialRoles = new Set(["gradeLeader", "dean", "vicePrincipal", "principal"]);
   const administrativeRole = affiliation.role === "school_admin"
     || affiliation.role === "platform_admin"
     || teacher.role === "school_admin"
@@ -173,7 +179,207 @@ function defaultOrNormalizedSettings(
   );
 }
 
+function activeAffiliation(teacher: Teacher): TeacherAffiliation | null {
+  return teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent)
+    || null;
+}
+
+function unique(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function projectScores(
+  values: Record<string, number | null>,
+  subjects: string[],
+): Record<string, number | null> {
+  return Object.fromEntries(subjects.map((subject) => [subject, values[subject] ?? null]));
+}
+
+function buildQueryData(teacher: Teacher): GradeQueryData {
+  const affiliation = activeAffiliation(teacher);
+  const schoolId = affiliation ? affiliation.schoolId : teacher.schoolId;
+  if (!schoolId) throw new Error("请先完成学校认证");
+
+  const roles = unique(affiliation ? affiliation.roles : teacher.roles || []) as TeacherRole[];
+  const accountRole = affiliation?.role || teacher.role;
+  const subject = affiliation ? affiliation.subject : teacher.subject;
+  const allClasses = readList<SchoolClass>("schoolClasses")
+    .filter((item) => item.schoolId === schoolId && item.status !== "graduated");
+  const classMap = new Map(allClasses.map((item) => [item.id, item]));
+  const configuredTeachingClassIds = affiliation
+    ? affiliation.teachingClassIds || []
+    : teacher.teachingClassIds || [];
+  const legacyTeachingClassIds = allClasses
+    .filter((item) => item.createdBy === teacher.id)
+    .map((item) => item.id);
+  const teachingClassIds = unique((configuredTeachingClassIds.length > 0
+    ? configuredTeachingClassIds
+    : legacyTeachingClassIds).filter((id) => classMap.has(id)));
+  const configuredHomeroomClassIds = affiliation
+    ? affiliation.homeroomClassIds || []
+    : teacher.homeroomClassIds || [];
+  const homeroomClassIds = unique(configuredHomeroomClassIds
+    .filter((id) => classMap.has(id)));
+  const assignedClassIds = unique([...teachingClassIds, ...homeroomClassIds]);
+  const configuredGrades = unique(affiliation
+    ? affiliation.teachingGrades || []
+    : teacher.teachingGrades || []);
+  const inferredGrades = unique(assignedClassIds.map((id) => classMap.get(id)?.grade));
+  const grades = configuredGrades.length > 0 ? configuredGrades : inferredGrades;
+  const isSchoolWide = accountRole === "school_admin"
+    || accountRole === "platform_admin"
+    || roles.some((role) => ["principal", "vicePrincipal", "dean"].includes(role));
+  const isGradeWide = !isSchoolWide && roles.includes("gradeLeader");
+  const hasHomeroom = !isSchoolWide && !isGradeWide && homeroomClassIds.length > 0;
+  const scope = isSchoolWide ? "school" : isGradeWide ? "grade" : hasHomeroom ? "homeroom" : "teacher";
+  const scopeLabel = scope === "school"
+    ? "全校"
+    : scope === "grade"
+      ? grades.join("、") || "所管年级"
+      : scope === "homeroom"
+        ? "班主任班级"
+        : "任教班级";
+
+  const fullClassIds = scope === "school"
+    ? allClasses.map((item) => item.id)
+    : scope === "grade"
+      ? allClasses.filter((item) => grades.includes(item.grade)).map((item) => item.id)
+      : scope === "homeroom"
+        ? homeroomClassIds
+        : [];
+  const fullClassSet = new Set(fullClassIds);
+  const teachingClassSet = new Set(teachingClassIds);
+  const homeroomClassSet = new Set(homeroomClassIds);
+  const targetClassIds = scope === "school" || scope === "grade" ? fullClassIds : assignedClassIds;
+  const targetClassSet = new Set(targetClassIds);
+  const targetCohorts = new Set(targetClassIds.map((id) => classMap.get(id)).filter(Boolean).map((item) => cohortKeyForClass(item!)));
+  const schoolExams = readList<GradeExam>("gradeExams")
+    .filter((exam) => exam.schoolId === schoolId)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+  const relevantExams = scope === "school"
+    ? schoolExams
+    : schoolExams.filter((exam) =>
+        targetCohorts.has(exam.cohortKey)
+        && exam.records.some((record) => targetClassSet.has(record.classId)),
+      );
+  const relevantCohorts = new Set(relevantExams.map((exam) => exam.cohortKey));
+  const visibleClasses = allClasses.filter((item) => {
+    if (scope === "school") return true;
+    if (scope === "grade") return fullClassSet.has(item.id);
+    return relevantCohorts.has(cohortKeyForClass(item));
+  });
+
+  const classes: GradeQueryClass[] = visibleClasses
+    .map((item): GradeQueryClass => ({
+      id: item.id,
+      name: item.name,
+      grade: item.grade,
+      cohortKey: cohortKeyForClass(item),
+      access: fullClassSet.has(item.id)
+        ? "all"
+        : teachingClassSet.has(item.id)
+          ? "subject"
+          : "aggregate",
+    }))
+    .sort((left, right) => left.grade.localeCompare(right.grade, "zh-CN") || left.name.localeCompare(right.name, "zh-CN"));
+
+  const exams: GradeQueryExam[] = relevantExams.flatMap((exam) => {
+    const subjects = scope === "teacher"
+      ? exam.subjects.filter((item) => item === subject)
+      : [...exam.subjects];
+    if (subjects.length === 0) return [];
+
+    const aggregateRecords = scope === "school"
+      ? exam.records
+      : scope === "grade"
+        ? exam.records.filter((record) => fullClassSet.has(record.classId))
+        : exam.records;
+    const subjectAverages = Object.fromEntries(subjects.map((item) => [
+      item,
+      averageGradeValues(aggregateRecords.map((record) => record.assignedScores[item])),
+    ]));
+    const byClass = new Map<string, GradeScoreRecord[]>();
+    aggregateRecords.forEach((record) => {
+      const current = byClass.get(record.classId) || [];
+      current.push(record);
+      byClass.set(record.classId, current);
+    });
+    const classSummaries = [...byClass.entries()]
+      .map(([classId, records]) => {
+        const canViewFullSummary = scope === "school" || scope === "grade" || fullClassSet.has(classId);
+        const summarySubjects = canViewFullSummary
+          ? subjects
+          : subjects.filter((item) => item === subject);
+        return {
+          classId,
+          className: records[0]?.className || classMap.get(classId)?.name || "未知班级",
+          studentCount: records.length,
+          subjectAverages: Object.fromEntries(summarySubjects.map((item) => [
+            item,
+            averageGradeValues(records.map((record) => record.assignedScores[item])),
+          ])),
+          rawTotalAverage: canViewFullSummary ? averageGradeValues(records.map((record) => record.rawTotal)) : null,
+          assignedTotalAverage: canViewFullSummary ? averageGradeValues(records.map((record) => record.assignedTotal)) : null,
+        };
+      })
+      .sort((left, right) => left.className.localeCompare(right.className, "zh-CN"));
+    const records = exam.records.flatMap((record) => {
+      const canViewAll = fullClassSet.has(record.classId) || homeroomClassSet.has(record.classId);
+      const canViewSubject = teachingClassSet.has(record.classId);
+      if (!canViewAll && !canViewSubject) return [];
+      const visibleSubjects = canViewAll ? subjects : subjects.filter((item) => item === subject);
+      if (visibleSubjects.length === 0) return [];
+      return [{
+        id: record.id,
+        studentId: record.studentId,
+        studentName: record.studentName,
+        studentNo: record.studentNo,
+        classId: record.classId,
+        className: record.className,
+        scores: projectScores(record.scores, visibleSubjects),
+        assignedScores: projectScores(record.assignedScores, visibleSubjects),
+        rawTotal: canViewAll ? record.rawTotal : null,
+        assignedTotal: canViewAll ? record.assignedTotal : null,
+        gradeRank: record.gradeRank,
+        classRank: record.classRank,
+      }];
+    });
+    return [{
+      id: exam.id,
+      cohortKey: exam.cohortKey,
+      cohortLabel: exam.cohortLabel,
+      name: exam.name,
+      examDate: exam.examDate,
+      subjects,
+      subjectAverages,
+      classSummaries,
+      records,
+      createdAt: exam.createdAt,
+    }];
+  });
+
+  return {
+    scope,
+    scopeLabel,
+    subject,
+    roles,
+    teachingClassIds,
+    homeroomClassIds,
+    fullClassIds,
+    grades,
+    classes,
+    exams,
+  };
+}
+
 export const gradeService = {
+  async getQueryData(teacher: Teacher): Promise<GradeQueryData> {
+    await delay(150);
+    return buildQueryData(teacher);
+  },
+
   async listCohorts(schoolId: string): Promise<GradeCohort[]> {
     await delay(120);
     return buildCohorts(schoolId);

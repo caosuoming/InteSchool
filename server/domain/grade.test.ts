@@ -214,4 +214,89 @@ describe("grade service", () => {
         .resolves.toEqual(expect.objectContaining({ templateProfile: profile }));
     });
   });
+
+  it("scopes query details by teaching and homeroom assignments", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const teacher = appState.teachers[0] as any;
+      teacher.teachingClassIds = ["class-1"];
+      teacher.homeroomClassIds = ["class-2"];
+      teacher.affiliations[0].teachingClassIds = ["class-1"];
+      const context = await gradeService.getImportContext("school-1", "grad-2026");
+      const subjects = ["数学", "化学"];
+      const settings = buildDefaultGradeSettings(subjects, context.classes.map((item) => item.id), context.teachers);
+      await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "期中考试",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects,
+        settings,
+        rows: [
+          {
+            rowKey: "row-1",
+            sourceRowNumber: 2,
+            sourceName: "旧姓名",
+            sourceStudentNo: "202601",
+            sourceClassName: "高三(1)班",
+            studentId: "student-1",
+            scores: { 数学: 120, 化学: 80 },
+          },
+          {
+            rowKey: "row-2",
+            sourceRowNumber: 3,
+            sourceName: "二班学生",
+            sourceStudentNo: "202602",
+            sourceClassName: "高三(2)班",
+            createStudent: {
+              name: "二班学生",
+              studentNo: "202602",
+              classId: "class-2",
+            },
+            scores: { 数学: 100, 化学: 90 },
+          },
+        ],
+      });
+
+      const teacherQuery = await gradeService.getQueryData(teacher);
+      expect(teacherQuery.scope).toBe("teacher");
+      expect(teacherQuery.homeroomClassIds).toEqual([]);
+      expect(teacherQuery.exams[0].subjects).toEqual(["数学"]);
+      expect(teacherQuery.exams[0].records).toHaveLength(1);
+      expect(teacherQuery.exams[0].records[0]).toMatchObject({ classId: "class-1", rawTotal: null });
+      expect(Object.keys(teacherQuery.exams[0].records[0].scores)).toEqual(["数学"]);
+      expect(teacherQuery.exams[0].classSummaries).toHaveLength(2);
+      expect(Object.keys(teacherQuery.exams[0].classSummaries[0].subjectAverages)).toEqual(["数学"]);
+
+      teacher.homeroomClassIds = ["class-1"];
+      teacher.affiliations[0].homeroomClassIds = ["class-1"];
+      teacher.affiliations[0].roles = ["teacher", "headTeacher"];
+      const homeroomQuery = await gradeService.getQueryData(teacher);
+      expect(homeroomQuery.scope).toBe("homeroom");
+      expect(homeroomQuery.fullClassIds).toEqual(["class-1"]);
+      expect(homeroomQuery.exams[0].subjects).toEqual(subjects);
+      expect(homeroomQuery.exams[0].records).toHaveLength(1);
+      expect(homeroomQuery.exams[0].records[0].rawTotal).toBe(200);
+      expect(Object.keys(homeroomQuery.exams[0].records[0].scores)).toEqual(subjects);
+      expect(Object.keys(homeroomQuery.exams[0].classSummaries.find((item) => item.classId === "class-1")!.subjectAverages)).toEqual(subjects);
+      expect(Object.keys(homeroomQuery.exams[0].classSummaries.find((item) => item.classId === "class-2")!.subjectAverages)).toEqual(["数学"]);
+
+      teacher.role = "school_admin";
+      teacher.roles = ["principal"];
+      teacher.affiliations[0].role = "teacher";
+      teacher.affiliations[0].roles = ["gradeLeader"];
+      teacher.affiliations[0].teachingGrades = ["高三"];
+      teacher.affiliations[0].homeroomClassIds = [];
+      const gradeQuery = await gradeService.getQueryData(teacher);
+      expect(gradeQuery.scope).toBe("grade");
+      expect(gradeQuery.fullClassIds).toEqual(["class-1", "class-2"]);
+      expect(gradeQuery.exams[0].records).toHaveLength(2);
+
+      teacher.affiliations[0].roles = ["vicePrincipal"];
+      const schoolQuery = await gradeService.getQueryData(teacher);
+      expect(schoolQuery.scope).toBe("school");
+      expect(schoolQuery.scopeLabel).toBe("全校");
+    });
+  });
 });

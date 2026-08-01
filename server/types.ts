@@ -8,6 +8,7 @@ export interface TeacherRecord {
   subject: string;
   teachingGrades?: string[];
   teachingClassIds?: string[];
+  homeroomClassIds?: string[];
   status: "pending" | "active" | "rejected";
   role: "teacher" | "school_admin" | "platform_admin";
   roles: string[];

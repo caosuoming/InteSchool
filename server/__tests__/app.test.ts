@@ -679,14 +679,29 @@ describe("production backend", () => {
     });
     expect(approved.statusCode).toBe(200);
 
+    const managedSchoolId = String(target.teacher.schoolId);
+    const managedClassId = String(
+      (built.store.loadState().schoolClasses as Array<{ id: string; schoolId: string }>)
+        .find((item) => item.schoolId === managedSchoolId)!.id,
+    );
     const managed = await built.app.inject({
       method: "PATCH",
       url: `/api/auth/teachers/${String(target.teacher.id)}/teaching-profile`,
       headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
-      payload: { subject: "语文", teachingGrades: ["高三"], teachingClassIds: [] },
+      payload: {
+        subject: "语文",
+        teachingGrades: ["高三"],
+        teachingClassIds: [],
+        homeroomClassIds: [managedClassId],
+      },
     });
-    expect(managed.statusCode).toBe(200);
-    expect(managed.json()).toMatchObject({ subject: "语文", teachingGrades: ["高三"] });
+    expect(managed.statusCode, managed.body).toBe(200);
+    expect(managed.json()).toMatchObject({
+      subject: "语文",
+      teachingGrades: ["高三"],
+      homeroomClassIds: [managedClassId],
+      roles: expect.arrayContaining(["headTeacher"]),
+    });
 
     const crossSchool = await built.app.inject({
       method: "PATCH",

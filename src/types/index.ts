@@ -5,10 +5,12 @@ export type TeacherStatus = "pending" | "active" | "rejected";
 /** 教师身份角色 */
 export type TeacherRole =
   | "teacher"       // 普通教师
+  | "headTeacher"   // 班主任
   | "gradeLeader"   // 年级组长
   | "subjectLeader" // 学科组长
   | "prepLeader"    // 备课组长
   | "dean"          // 教务主任
+  | "vicePrincipal" // 副校长
   | "principal";    // 校长
 
 /** 教师所属单位（学校或个人） */
@@ -24,6 +26,8 @@ export interface TeacherAffiliation {
   teachingGrades?: string[];
   /** 当前单位任教班级 ID */
   teachingClassIds?: string[];
+  /** 当前单位担任班主任的班级 ID */
+  homeroomClassIds?: string[];
   employeeNo?: string;
   status: TeacherStatus;
   role: "teacher" | "school_admin" | "platform_admin";
@@ -73,6 +77,8 @@ export interface Teacher {
   teachingGrades?: string[];
   /** @deprecated 使用 affiliations 代替 */
   teachingClassIds?: string[];
+  /** @deprecated 使用 affiliations 代替 */
+  homeroomClassIds?: string[];
   /** @deprecated 使用 affiliations 代替 */
   employeeNo?: string;
   /** @deprecated 使用 affiliations 代替 */
@@ -473,6 +479,66 @@ export interface GradeExam {
   settings: GradeExamSettings;
   createdAt: string;
   updatedAt: string;
+}
+
+export type GradeQueryScope = "teacher" | "homeroom" | "grade" | "school";
+
+export interface GradeQueryClass {
+  id: string;
+  name: string;
+  grade: string;
+  cohortKey: string;
+  access: "subject" | "all" | "aggregate";
+}
+
+export interface GradeQueryClassSummary {
+  classId: string;
+  className: string;
+  studentCount: number;
+  subjectAverages: Record<string, number | null>;
+  rawTotalAverage: number | null;
+  assignedTotalAverage: number | null;
+}
+
+export interface GradeQueryRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentNo: string;
+  classId: string;
+  className: string;
+  scores: Record<string, number | null>;
+  assignedScores: Record<string, number | null>;
+  rawTotal: number | null;
+  assignedTotal: number | null;
+  gradeRank: number;
+  classRank: number;
+}
+
+export interface GradeQueryExam {
+  id: string;
+  cohortKey: string;
+  cohortLabel: string;
+  name: string;
+  examDate?: string;
+  subjects: string[];
+  subjectAverages: Record<string, number | null>;
+  classSummaries: GradeQueryClassSummary[];
+  records: GradeQueryRecord[];
+  createdAt: string;
+}
+
+export interface GradeQueryData {
+  scope: GradeQueryScope;
+  scopeLabel: string;
+  subject: string;
+  roles: TeacherRole[];
+  teachingClassIds: string[];
+  homeroomClassIds: string[];
+  fullClassIds: string[];
+  grades: string[];
+  classes: GradeQueryClass[];
+  exams: GradeQueryExam[];
 }
 
 export interface GradeImportRow {

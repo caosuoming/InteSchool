@@ -33,6 +33,7 @@ const teachingFieldsSchema = z.object({
   subject: z.string().trim().min(1).max(50),
   teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).default([]),
   teachingClassIds: z.array(z.string().min(1).max(100)).max(100).default([]),
+  homeroomClassIds: z.array(z.string().min(1).max(100)).max(20).default([]),
 });
 
 const registerSchema = loginSchema.extend({
@@ -79,6 +80,7 @@ const managedTeachingProfileSchema = teachingFieldsSchema.partial({
   subject: true,
   teachingGrades: true,
   teachingClassIds: true,
+  homeroomClassIds: true,
 }).refine((input) => Object.values(input).some((value) => value !== undefined), {
   message: "至少需要修改一项教学资料",
 });
@@ -126,18 +128,32 @@ function validateTeachingClassIds(
 function updateTeacherTeachingProfile(
   teacher: TeacherRecord,
   schoolId: string | null,
-  patch: { subject?: string; teachingGrades?: string[]; teachingClassIds?: string[] },
+  patch: {
+    subject?: string;
+    teachingGrades?: string[];
+    teachingClassIds?: string[];
+    homeroomClassIds?: string[];
+  },
 ): TeacherRecord {
   const affiliationIndex = teacher.affiliations.findIndex((item) => item.schoolId === schoolId);
   if (affiliationIndex < 0) throw new Error("所属单位不存在");
-  const affiliations = teacher.affiliations.map((item, index) => index === affiliationIndex
-    ? {
-        ...item,
-        ...(patch.subject !== undefined ? { subject: patch.subject } : {}),
-        ...(patch.teachingGrades !== undefined ? { teachingGrades: patch.teachingGrades } : {}),
-        ...(patch.teachingClassIds !== undefined ? { teachingClassIds: patch.teachingClassIds } : {}),
-      }
-    : item);
+  const affiliations = teacher.affiliations.map((item, index) => {
+    if (index !== affiliationIndex) return item;
+    const currentRoles = Array.isArray(item.roles) ? item.roles.filter((role): role is string => typeof role === "string") : [];
+    const nextRoles = patch.homeroomClassIds === undefined
+      ? currentRoles
+      : patch.homeroomClassIds.length > 0
+        ? [...new Set([...currentRoles, "headTeacher"])]
+        : currentRoles.filter((role) => role !== "headTeacher");
+    return {
+      ...item,
+      ...(patch.subject !== undefined ? { subject: patch.subject } : {}),
+      ...(patch.teachingGrades !== undefined ? { teachingGrades: patch.teachingGrades } : {}),
+      ...(patch.teachingClassIds !== undefined ? { teachingClassIds: patch.teachingClassIds } : {}),
+      ...(patch.homeroomClassIds !== undefined ? { homeroomClassIds: patch.homeroomClassIds } : {}),
+      roles: nextRoles,
+    };
+  });
   const target = affiliations[affiliationIndex];
   const isCurrent = target.id === teacher.currentAffiliationId || target.isCurrent === true;
   return {
@@ -145,6 +161,8 @@ function updateTeacherTeachingProfile(
     ...(isCurrent && patch.subject !== undefined ? { subject: patch.subject } : {}),
     ...(isCurrent && patch.teachingGrades !== undefined ? { teachingGrades: patch.teachingGrades } : {}),
     ...(isCurrent && patch.teachingClassIds !== undefined ? { teachingClassIds: patch.teachingClassIds } : {}),
+    ...(isCurrent && patch.homeroomClassIds !== undefined ? { homeroomClassIds: patch.homeroomClassIds } : {}),
+    ...(isCurrent ? { roles: target.roles as string[] } : {}),
     affiliations,
   };
 }
@@ -592,7 +610,11 @@ export async function registerAuthRoutes(
       const classIds = input.teachingClassIds
         ?? (target.affiliations.find((item) => item.schoolId === manager.schoolId)?.teachingClassIds as string[] | undefined)
         ?? [];
+      const homeroomClassIds = input.homeroomClassIds
+        ?? (target.affiliations.find((item) => item.schoolId === manager.schoolId)?.homeroomClassIds as string[] | undefined)
+        ?? [];
       validateTeachingClassIds(state, manager.schoolId, classIds);
+      validateTeachingClassIds(state, manager.schoolId, homeroomClassIds);
       state.teachers[index] = updateTeacherTeachingProfile(target, manager.schoolId, input);
       return publicTeacher(state.teachers[index]);
     });
@@ -714,6 +736,7 @@ export async function registerAuthRoutes(
         subject: String(target.subject || ""),
         teachingGrades: Array.isArray(target.teachingGrades) ? target.teachingGrades as string[] : [],
         teachingClassIds: Array.isArray(target.teachingClassIds) ? target.teachingClassIds as string[] : [],
+        homeroomClassIds: Array.isArray(target.homeroomClassIds) ? target.homeroomClassIds as string[] : [],
         employeeNo: typeof target.employeeNo === "string" ? target.employeeNo : undefined,
         status: target.status as TeacherRecord["status"],
         role: target.role as TeacherRecord["role"],

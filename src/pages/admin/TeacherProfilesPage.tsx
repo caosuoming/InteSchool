@@ -17,6 +17,7 @@ export default function TeacherProfilesPage() {
   const [subject, setSubject] = useState("数学");
   const [grades, setGrades] = useState<string[]>([]);
   const [classIds, setClassIds] = useState<string[]>([]);
+  const [homeroomClassIds, setHomeroomClassIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const schoolId = current?.schoolId || null;
 
@@ -36,6 +37,7 @@ export default function TeacherProfilesPage() {
     setSubject(affiliation?.subject || selected.subject || "数学");
     setGrades(affiliation?.teachingGrades || selected.teachingGrades || []);
     setClassIds(affiliation?.teachingClassIds || selected.teachingClassIds || []);
+    setHomeroomClassIds(affiliation?.homeroomClassIds || selected.homeroomClassIds || []);
   }, [selected, schoolId]);
 
   const toggle = (value: string, values: string[], setValues: (next: string[]) => void) => setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
@@ -43,7 +45,12 @@ export default function TeacherProfilesPage() {
     if (!selected) return;
     setSaving(true);
     try {
-      await authService.updateTeacherTeachingProfile(selected.id, { subject, teachingGrades: grades, teachingClassIds: classIds });
+      await authService.updateTeacherTeachingProfile(selected.id, {
+        subject,
+        teachingGrades: grades,
+        teachingClassIds: classIds,
+        homeroomClassIds,
+      });
       toast.success("教师教学资料已更新");
       await load();
     } catch (error) {
@@ -59,6 +66,7 @@ export default function TeacherProfilesPage() {
         <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
         <Choices label="任教年级" values={GRADE_OPTIONS} selected={grades} onToggle={(value) => toggle(value, grades, setGrades)} />
         <Choices label="任教班级" values={classes.map((item) => item.id)} labels={Object.fromEntries(classes.map((item) => [item.id, `${item.grade} · ${item.name}`]))} selected={classIds} onToggle={(value) => toggle(value, classIds, setClassIds)} />
+        <Choices label="班主任班级" values={classes.map((item) => item.id)} labels={Object.fromEntries(classes.map((item) => [item.id, `${item.grade} · ${item.name}`]))} selected={homeroomClassIds} onToggle={(value) => toggle(value, homeroomClassIds, setHomeroomClassIds)} />
         <Button variant="gold" loading={saving} onClick={save}><Save className="w-4 h-4" />保存教师资料</Button>
       </>}
     </Card>

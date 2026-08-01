@@ -41,7 +41,7 @@ export interface BackupInput {
 /**
  * 判断教师是否具有"备课组长及以上"权限
  * 备课组长/prepLeader、学科组长/subjectLeader、年级组长/gradeLeader、
- * 教务主任/dean、校长/principal、学校管理员/school_admin、平台管理员/platform_admin
+ * 教务主任/dean、副校长/vicePrincipal、校长/principal、学校管理员/school_admin、平台管理员/platform_admin
  * 均视为有修改校本资源属性的权限
  */
 export function canEditSchoolBackup(
@@ -55,6 +55,7 @@ export function canEditSchoolBackup(
     "subjectLeader",
     "gradeLeader",
     "dean",
+    "vicePrincipal",
     "principal",
   ];
   return teacher.roles.some((r) => privilegedRoles.includes(r));
