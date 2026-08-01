@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import {
   GitBranch, Search, Plus, Folder, FolderOpen, FileText,
   BookOpen, ArrowRight, ShoppingBasket,
-  Pencil, Trash2, ChevronUp, ChevronDown, FolderInput,
+  Pencil, Trash2, ChevronUp, ChevronDown, FolderInput, GitMerge,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { knowledgeService } from "@/services/knowledge";
@@ -40,6 +40,8 @@ export default function KnowledgeTreePage() {
   const [newNodeName, setNewNodeName] = useState("");
   const [parentNode, setParentNode] = useState<TreeNode | null>(null);
   const [moveToOpen, setMoveToOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [merging, setMerging] = useState(false);
 
   const handleKindChange = (nextKind: TreeKind) => {
     if (nextKind === kind) return;
@@ -55,6 +57,8 @@ export default function KnowledgeTreePage() {
     setNewNodeName("");
     setParentNode(null);
     setMoveToOpen(false);
+    setMergeOpen(false);
+    setMerging(false);
   };
 
   const loadTree = useCallback(async () => {
@@ -203,6 +207,27 @@ export default function KnowledgeTreePage() {
     }
   };
 
+  const handleMergeTo = async (target: TreeNode) => {
+    if (!selectedNode) return;
+    if (!window.confirm(
+      `确定将「${selectedNode.name}」合并到「${target.name}」吗？目标节点将保留，子节点和资源关联会一并迁移。`,
+    )) return;
+
+    setMerging(true);
+    try {
+      await knowledgeService.mergeNodes(selectedNode.id, target.id, kind);
+      toast.success("节点已合并");
+      setMergeOpen(false);
+      setSelectedNode(null);
+      setQuestions([]);
+      await loadTree();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "合并失败");
+    } finally {
+      setMerging(false);
+    }
+  };
+
   const handleMoveUp = async () => {
     if (!selectedNode || !tree) return;
     const parent = findParentTreeNode(tree, selectedNode.id);
@@ -266,6 +291,12 @@ export default function KnowledgeTreePage() {
 
   const displayedTree = tree && search ? filterTree(tree, search) : tree;
   const activeAddParent = selectedNode ?? tree;
+  const selectedParent = selectedNode && tree
+    ? findParentTreeNode(tree, selectedNode.id)
+    : null;
+  const mergeCandidates = selectedParent
+    ? selectedParent.children.filter((node) => node.id !== selectedNode?.id)
+    : [];
 
   return (
     <div>
@@ -419,6 +450,17 @@ export default function KnowledgeTreePage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => setMergeOpen(true)}
+                          disabled={mergeCandidates.length === 0}
+                          className="h-7 px-2.5"
+                          title={mergeCandidates.length === 0 ? "当前节点没有可合并的同级节点" : undefined}
+                        >
+                          <GitMerge className="w-3 h-3 mr-1" />
+                          合并
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={handleDelete}
                           className="h-7 px-2.5 text-red-500 hover:bg-red-50"
                         >
@@ -551,6 +593,36 @@ export default function KnowledgeTreePage() {
           onChange={(e) => setNewNodeName(e.target.value)}
           autoFocus
         />
+      </Modal>
+
+      {/* 合并同级节点 */}
+      <Modal
+        open={mergeOpen}
+        onClose={() => !merging && setMergeOpen(false)}
+        size="sm"
+        title="合并节点到..."
+        description={selectedNode
+          ? `将「${selectedNode.name}」合并到同一父节点下的另一个节点，目标节点名称将保留。`
+          : undefined}
+      >
+        <div className="space-y-1 max-h-[400px] overflow-auto">
+          {mergeCandidates.map((node) => (
+            <button
+              key={node.id}
+              type="button"
+              disabled={merging}
+              onClick={() => handleMergeTo(node)}
+              className="w-full text-left p-2.5 rounded-md border border-ink-100 hover:border-gold-300 hover:bg-gold-50/30 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex items-center gap-2">
+                <GitMerge className="w-3.5 h-3.5 text-gold-600" />
+                <span className="text-ink-500">合并到</span>
+                <span className="font-medium text-ink-900 truncate">{node.name}</span>
+                <span className="ml-auto text-xs text-ink-400">{node.count} 道题</span>
+              </div>
+            </button>
+          ))}
+        </div>
       </Modal>
 
       {/* 移动节点 */}

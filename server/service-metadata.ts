@@ -545,6 +545,11 @@ export const serviceParameters = {
       "id",
       "type"
     ],
+    "mergeNodes": [
+      "sourceId",
+      "targetId",
+      "type"
+    ],
     "moveNode": [
       "id",
       "type",

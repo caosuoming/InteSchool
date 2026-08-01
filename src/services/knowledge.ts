@@ -47,6 +47,10 @@ export const knowledgeService = {
     return rpcCall("knowledge", "deleteNode", [id, type]) as any;
   },
 
+  async mergeNodes(sourceId: string, targetId: string, type: "chapter" | "knowledge"): Promise<void> {
+    return rpcCall("knowledge", "mergeNodes", [sourceId, targetId, type]) as any;
+  },
+
   async moveNode(id: string, type: "chapter" | "knowledge", newParentId: string | null): Promise<void> {
     return rpcCall("knowledge", "moveNode", [id, type, newParentId]) as any;
   },

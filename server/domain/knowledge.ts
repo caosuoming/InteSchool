@@ -30,6 +30,140 @@ function getParentLevel<T extends { id: string; level: number }>(
   return parentId ? list.find((item) => item.id === parentId)?.level ?? 0 : -1;
 }
 
+type DirectoryRecord = Chapter | KnowledgePoint;
+
+const DIRECTORY_REFERENCE_COLLECTIONS = [
+  "questions",
+  "examPapers",
+  "coursewares",
+  "materials",
+  "lectures",
+  "lessonCoursewares",
+  "schoolBackups",
+] as const;
+
+function replaceDirectoryIds(ids: string[], replacements: Map<string, string>): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    const replacement = replacements.get(id) ?? id;
+    if (!seen.has(replacement)) {
+      result.push(replacement);
+      seen.add(replacement);
+    }
+  }
+  return result;
+}
+
+function mergeDirectoryRecords<T extends DirectoryRecord>(
+  input: T[],
+  sourceId: string,
+  targetId: string,
+): { records: T[]; replacements: Map<string, string> } {
+  if (sourceId === targetId) throw new Error("不能将节点合并到自身");
+
+  const records = input.map((item) => ({ ...item }));
+  const originalIndex = new Map(records.map((item, index) => [item.id, index]));
+  const byId = new Map(records.map((item) => [item.id, item]));
+  const source = byId.get(sourceId);
+  const target = byId.get(targetId);
+  if (!source || !target) throw new Error("待合并节点不存在");
+  if (source.schoolId !== target.schoolId) throw new Error("不能合并不同学校的节点");
+  if (source.parentId !== target.parentId) throw new Error("只能合并同一父节点下的子节点");
+
+  const replacements = new Map<string, string>();
+
+  const childrenOf = (parentId: string) => records
+    .filter((item) => item.parentId === parentId && !replacements.has(item.id))
+    .sort((left, right) =>
+      left.order - right.order
+      || (originalIndex.get(left.id) ?? 0) - (originalIndex.get(right.id) ?? 0));
+
+  const mergePair = (currentSourceId: string, currentTargetId: string) => {
+    const currentSource = byId.get(currentSourceId);
+    const currentTarget = byId.get(currentTargetId);
+    if (!currentSource || !currentTarget) throw new Error("待合并节点不存在");
+
+    const targetChildren = childrenOf(currentTargetId);
+    let nextOrder = targetChildren.reduce((maximum, child) => Math.max(maximum, child.order), 0);
+
+    for (const sourceChild of childrenOf(currentSourceId)) {
+      const sameNameTarget = targetChildren.find(
+        (candidate) => candidate.name === sourceChild.name && !replacements.has(candidate.id),
+      );
+      if (sameNameTarget) {
+        mergePair(sourceChild.id, sameNameTarget.id);
+      } else {
+        sourceChild.parentId = currentTargetId;
+        sourceChild.order = ++nextOrder;
+        targetChildren.push(sourceChild);
+      }
+    }
+
+    const sourceDescription = (currentSource as KnowledgePoint).description;
+    const targetDescription = (currentTarget as KnowledgePoint).description;
+    if (!targetDescription && sourceDescription) {
+      (currentTarget as KnowledgePoint).description = sourceDescription;
+    }
+    replacements.set(currentSourceId, currentTargetId);
+  };
+
+  mergePair(sourceId, targetId);
+
+  const merged = records.filter((item) => !replacements.has(item.id));
+  const siblingGroups = new Map<string, T[]>();
+  for (const item of merged) {
+    const key = `${item.schoolId}\u0000${item.parentId ?? ""}`;
+    const group = siblingGroups.get(key) ?? [];
+    group.push(item);
+    siblingGroups.set(key, group);
+  }
+  for (const siblings of siblingGroups.values()) {
+    siblings
+      .sort((left, right) =>
+        left.order - right.order
+        || (originalIndex.get(left.id) ?? 0) - (originalIndex.get(right.id) ?? 0))
+      .forEach((item, index) => {
+        item.order = index + 1;
+      });
+  }
+
+  return { records: merged, replacements };
+}
+
+function updateDirectoryReferences(
+  type: "chapter" | "knowledge",
+  replacements: Map<string, string>,
+): void {
+  const field = type === "chapter" ? "chapterIds" : "knowledgePointIds";
+  for (const collection of DIRECTORY_REFERENCE_COLLECTIONS) {
+    const records = db.read(collection);
+    if (!Array.isArray(records)) continue;
+    db.update(collection, (items: Array<Record<string, unknown>>) =>
+      items.map((item) => {
+        const ids = item[field];
+        if (!Array.isArray(ids)) return item;
+        const nextIds = replaceDirectoryIds(
+          ids.filter((id): id is string => typeof id === "string"),
+          replacements,
+        );
+        return nextIds.length === ids.length && nextIds.every((id, index) => id === ids[index])
+          ? item
+          : { ...item, [field]: nextIds };
+      }),
+    );
+  }
+
+  if (type === "chapter") {
+    db.update("knowledgePoints", (points: KnowledgePoint[]) =>
+      points.map((point) => {
+        if (!point.chapterId || !replacements.has(point.chapterId)) return point;
+        return { ...point, chapterId: replacements.get(point.chapterId) };
+      }),
+    );
+  }
+}
+
 // 将扁平章节列表构建为树形结构
 function buildChapterTree(chapters: Chapter[], parentId: string | null = null): TreeNode[] {
   return chapters
@@ -258,6 +392,32 @@ export const knowledgeService = {
           };
         }),
       );
+    }
+  },
+
+  // 将一个节点合并到同级目标节点；保留目标节点并迁移子节点和所有资源关联
+  async mergeNodes(
+    sourceId: string,
+    targetId: string,
+    type: "chapter" | "knowledge",
+  ): Promise<void> {
+    await delay(200);
+    if (type === "chapter") {
+      const { records, replacements } = mergeDirectoryRecords(
+        db.read("chapters") as Chapter[],
+        sourceId,
+        targetId,
+      );
+      db.write("chapters", records);
+      updateDirectoryReferences(type, replacements);
+    } else {
+      const { records, replacements } = mergeDirectoryRecords(
+        db.read("knowledgePoints") as KnowledgePoint[],
+        sourceId,
+        targetId,
+      );
+      db.write("knowledgePoints", records);
+      updateDirectoryReferences(type, replacements);
     }
   },
 
