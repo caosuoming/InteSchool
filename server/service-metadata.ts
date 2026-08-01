@@ -561,6 +561,19 @@ export const serviceParameters = {
     "getLecture": [
       "id"
     ],
+    "listColumnTemplates": [
+      "teacherId",
+      "schoolId"
+    ],
+    "createColumnTemplate": [
+      "teacherId",
+      "schoolId",
+      "input"
+    ],
+    "deleteColumnTemplate": [
+      "templateId",
+      "teacherId"
+    ],
     "createLecture": [
       "teacherId",
       "schoolId",

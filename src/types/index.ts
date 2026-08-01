@@ -1205,6 +1205,23 @@ export interface LectureSection {
   displayMode?: "stem-only";
 }
 
+export interface LectureColumnTemplateItem {
+  title: string;
+  content: string;
+}
+
+/** 教师保存的讲义栏目模板，可在不同讲义间复用。 */
+export interface LectureColumnTemplate {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  name: string;
+  description?: string;
+  columns: LectureColumnTemplateItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type LectureStatus = "draft" | "published";
 
 export interface Lecture {

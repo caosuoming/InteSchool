@@ -21,7 +21,7 @@ export const COLLECTIONS = [
   "schools", "teachers", "applications", "schoolClasses", "personalClasses",
   "classTypeCategories", "students", "chapters", "knowledgePoints",
   "schoolChapters", "schoolKnowledgePoints", "questions",
-  "lectures", "examPapers", "coursewares", "materials", "baskets", "documents",
+  "lectures", "lectureColumnTemplates", "examPapers", "coursewares", "materials", "baskets", "documents",
   "recognitions", "answerRecords", "subjectGroups", "prepGroups", "onlineResources",
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
   "shareRecords", "examPublications", "lessonCoursewares", "reflections",

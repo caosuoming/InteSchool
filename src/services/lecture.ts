@@ -3,6 +3,8 @@ import { rpcCall } from "./api";
 import type {
   ExtractedDocumentBlock,
   Lecture,
+  LectureColumnTemplate,
+  LectureColumnTemplateItem,
   LectureFilter,
   LectureSection,
   ResourceSemester,
@@ -26,6 +28,12 @@ export interface LectureInput {
   originalFileSize?: number;
 }
 
+export interface LectureColumnTemplateInput {
+  name: string;
+  description?: string;
+  columns: LectureColumnTemplateItem[];
+}
+
 export const lectureService = {
   async listLectures(filter: LectureFilter = {}): Promise<Lecture[]> {
     return rpcCall("lecture", "listLectures", [filter]) as any;
@@ -33,6 +41,22 @@ export const lectureService = {
 
   async getLecture(id: string): Promise<Lecture | null> {
     return rpcCall("lecture", "getLecture", [id]) as any;
+  },
+
+  async listColumnTemplates(teacherId: string, schoolId: string): Promise<LectureColumnTemplate[]> {
+    return rpcCall("lecture", "listColumnTemplates", [teacherId, schoolId]) as any;
+  },
+
+  async createColumnTemplate(
+    teacherId: string,
+    schoolId: string,
+    input: LectureColumnTemplateInput,
+  ): Promise<LectureColumnTemplate> {
+    return rpcCall("lecture", "createColumnTemplate", [teacherId, schoolId, input]) as any;
+  },
+
+  async deleteColumnTemplate(templateId: string, teacherId: string): Promise<void> {
+    return rpcCall("lecture", "deleteColumnTemplate", [templateId, teacherId]) as any;
   },
 
   async createLecture(teacherId: string, schoolId: string, input: LectureInput): Promise<Lecture> {
