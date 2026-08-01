@@ -12,6 +12,7 @@ import { knowledgeService } from "@/services/knowledge";
 import { lectureService } from "@/services/lecture";
 import { materialService } from "@/services/material";
 import { questionService } from "@/services/question";
+import { shareService } from "@/services/share";
 import type { Material, Teacher, TreeNode } from "@/types";
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
@@ -112,7 +113,11 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/analytics", () => ({
   analyticsService: {},
 }));
-vi.mock("@/services/share", () => ({ shareService: {} }));
+vi.mock("@/services/share", () => ({
+  shareService: {
+    createShare: vi.fn(),
+  },
+}));
 vi.mock("@/stores/ui", () => ({
   toast: {
     success: vi.fn(),
@@ -184,6 +189,7 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(materialService.getMaterial).mockResolvedValue(material);
     vi.mocked(materialService.updateMaterial).mockResolvedValue(material);
     vi.mocked(materialService.deleteMaterial).mockResolvedValue(undefined);
+    vi.mocked(shareService.createShare).mockResolvedValue({} as never);
     vi.mocked(donationService.listTeacherDonations).mockResolvedValue([]);
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
@@ -201,20 +207,25 @@ describe("MyResourcesPage batch actions", () => {
     fireEvent.click(await screen.findByTitle("选择资源"));
 
     const panel = screen.getByRole("region", { name: "批量操作" });
-    expect(panel).toHaveTextContent("已选择 1 个资源");
-    expect(screen.getByRole("button", { name: "批量删除" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "捐赠到平台" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新增统一章节" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新增统一知识点" })).toBeInTheDocument();
+    expect(panel).toHaveTextContent("取消批量选择");
+    const actionSelect = screen.getByRole("combobox", { name: "选择批量操作" });
+    expect(actionSelect).toHaveTextContent("批量操作（1）");
+    expect(screen.getByRole("option", { name: "批量分享" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "批量删除" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "捐赠到平台" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "新增统一章节" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "新增统一知识点" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTitle("清空选择"));
+    fireEvent.click(screen.getByRole("button", { name: "取消批量选择" }));
     expect(screen.queryByRole("region", { name: "批量操作" })).not.toBeInTheDocument();
   });
 
   it("appends a shared chapter without removing existing chapter ids", async () => {
     renderPage();
     fireEvent.click(await screen.findByTitle("选择资源"));
-    fireEvent.click(screen.getByRole("button", { name: "新增统一章节" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "chapter" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "选择章节" }));
     fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
 
@@ -229,11 +240,37 @@ describe("MyResourcesPage batch actions", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     renderPage();
     fireEvent.click(await screen.findByTitle("选择资源"));
-    fireEvent.click(screen.getByRole("button", { name: "批量删除" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "delete" },
+    });
 
     await waitFor(() => {
       expect(materialService.deleteMaterial).toHaveBeenCalledWith("material-1");
       expect(screen.queryByRole("region", { name: "批量操作" })).not.toBeInTheDocument();
     });
+  });
+
+  it("creates one copyable link for the selected resources", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByTitle("选择资源"));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "share" },
+    });
+
+    await waitFor(() => {
+      expect(shareService.createShare).toHaveBeenCalledWith(expect.objectContaining({
+        fromTeacherId: "teacher-1",
+        fromSchoolId: "school-1",
+        scope: "public",
+        resourceType: "material",
+        resourceId: "material-1",
+        resourceTitle: "函数素材",
+        batchId: expect.stringMatching(/^batch-share-/),
+      }));
+    });
+
+    expect((screen.getByRole("textbox", { name: "批量分享链接" }) as HTMLInputElement).value)
+      .toMatch(/\/shared-resources\/batch-share-/);
+    expect(screen.getByRole("button", { name: "复制链接" })).toBeInTheDocument();
   });
 });

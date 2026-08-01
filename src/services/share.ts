@@ -26,8 +26,13 @@ export const shareService = {
     resourceTitle: string;
     message?: string;
     expiresAt?: string;
+    batchId?: string;
   }): Promise<ShareRecord> {
     return rpcCall("share", "createShare", [params]) as any;
+  },
+
+  async getBatchShare(batchId: string): Promise<ShareRecord[]> {
+    return rpcCall("share", "getBatchShare", [batchId]) as any;
   },
 
   async checkDonationCandidates(

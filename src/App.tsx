@@ -16,6 +16,7 @@ const SchoolResourcesPage = lazy(() => import("@/pages/resources/SchoolResources
 const PlatformResourcesPage = lazy(() => import("@/pages/resources/PlatformResourcesPage"));
 const UploadPage = lazy(() => import("@/pages/resources/UploadPage"));
 const ResourcePreviewPage = lazy(() => import("@/pages/resources/ResourcePreviewPage"));
+const BatchSharePage = lazy(() => import("@/pages/resources/BatchSharePage"));
 const KnowledgeTreePage = lazy(() => import("@/pages/knowledge-tree/KnowledgeTreePage"));
 const ClassesPage = lazy(() => import("@/pages/classes/ClassesPage"));
 const BasketsPage = lazy(() => import("@/pages/baskets/BasketsPage"));
@@ -107,6 +108,7 @@ export default function App() {
             <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
             <Route path="/exam-papers/:id/answer-sheet" element={<ExamPaperAnswerSheetPage />} />
             <Route path="/resources/preview/:id" element={<ResourcePreviewPage />} />
+            <Route path="/shared-resources/:batchId" element={<BatchSharePage />} />
             <Route path="/import" element={<Navigate to="/upload" replace />} />
 
             <Route path="/profile" element={<ProfilePage />} />
