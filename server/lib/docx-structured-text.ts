@@ -77,15 +77,15 @@ function appendQueryParameters(
   return `${url}${separator}${parameters.map(([key, value]) => `${key}=${value}`).join("&")}`;
 }
 
-function appendMetafileHint(
+function appendImageLayoutHint(
   url: string,
   extension: string | undefined,
   displaySize?: ImageDisplaySize | null,
 ): string {
-  if (![".wmf", ".emf"].includes(extension || "")) return url;
-  const parameters: Array<[string, string]> = [
-    ["officeMetafile", extension!.slice(1)],
-  ];
+  const parameters: Array<[string, string]> = [];
+  if ([".wmf", ".emf"].includes(extension || "")) {
+    parameters.push(["officeMetafile", extension!.slice(1)]);
+  }
   if (displaySize) {
     parameters.push(
       ["officeWidth", displaySize.width.toFixed(2)],
@@ -309,7 +309,7 @@ export async function extractDocxStructuredText(
   const imageExtensions = imageExtensionsByRelationship(relationshipsXml);
   const resolvedImageUrl = imageUrl
     ? (relationshipId: string, displaySize?: ImageDisplaySize | null) =>
-        appendMetafileHint(
+        appendImageLayoutHint(
           imageUrl(relationshipId),
           imageExtensions.get(relationshipId),
           displaySize,
