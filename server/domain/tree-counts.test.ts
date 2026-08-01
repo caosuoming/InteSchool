@@ -181,7 +181,9 @@ describe("live directory counts", () => {
       expect(findNode(chapterTree, "ch-child").count).toBe(2);
 
       const knowledgeTree = await knowledgeService.getKnowledgeTree("school-a");
-      expect(findNode(knowledgeTree, "kp-alias-a").count).toBe(3);
+      expect(findNode(knowledgeTree, "kp-alias-a")).toMatchObject({ count: 3 });
+      expect(findNode(knowledgeTree, "kp-alias-a").description).toBeUndefined();
+      expect(findNode(knowledgeTree, "kp-alias-a").chapterId).toBeUndefined();
       expect(findNode(knowledgeTree, "kp-alias-b").count).toBe(3);
       expect(knowledgeTree.count).toBe(3);
 
@@ -192,6 +194,31 @@ describe("live directory counts", () => {
       const refreshedChapterTree = await knowledgeService.getChapterTree("school-a");
       expect(findNode(refreshedChapterTree, "ch-parent").count).toBe(4);
       expect(findNode(refreshedChapterTree, "ch-child").count).toBe(3);
+    });
+  });
+
+  it("creates knowledge points without a chapter directory", async () => {
+    const appState = state();
+    appState.chapters = [];
+    appState.knowledgePoints = [];
+    appState.questions = [];
+
+    await runWithState(appState, async () => {
+      const point = await knowledgeService.addKnowledgePoint(
+        "school-a",
+        null,
+        "独立知识点",
+      );
+
+      expect(point).toMatchObject({
+        schoolId: "school-a",
+        parentId: null,
+        name: "独立知识点",
+      });
+      expect(point.chapterId).toBeUndefined();
+
+      const tree = await knowledgeService.getKnowledgeTree("school-a");
+      expect(findNode(tree, point.id).name).toBe("独立知识点");
     });
   });
 

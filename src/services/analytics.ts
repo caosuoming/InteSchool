@@ -5,7 +5,6 @@ import type { AnswerRecord, AnswerScore, AnswerSource, Question, Student, TreeNo
 export interface KnowledgeMastery {
   knowledgePointId: string;
   knowledgePointName: string;
-  chapterName: string;
   totalAttempts: number;
   correctCount: number;
   partialCount: number;

@@ -49,27 +49,21 @@ function buildChapterTree(chapters: Chapter[], parentId: string | null = null): 
 
 function buildKnowledgeTree(
   points: KnowledgePoint[],
-  chapters: Chapter[],
   parentId: string | null = null,
 ): TreeNode[] {
   return points
     .filter((p) => p.parentId === parentId)
     .sort((a, b) => a.order - b.order)
-    .map((p) => {
-      const chapter = chapters.find((c) => c.id === p.chapterId);
-      return {
-        id: p.id,
-        name: p.name,
-        type: "knowledge" as const,
-        count: 0,
-        description: chapter ? `所属章节：${chapter.name}` : undefined,
-        order: p.order,
-        parentId: p.parentId,
-        chapterId: p.chapterId,
-        level: p.level,
-        children: buildKnowledgeTree(points, chapters, p.id),
-      };
-    });
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      type: "knowledge" as const,
+      count: 0,
+      order: p.order,
+      parentId: p.parentId,
+      level: p.level,
+      children: buildKnowledgeTree(points, p.id),
+    }));
 }
 
 // 获取与指定知识点同名的所有知识点ID（分身）
@@ -113,14 +107,13 @@ export const knowledgeService = {
   async getKnowledgeTree(schoolId: string): Promise<TreeNode> {
     await delay(300);
     const points = db.read("knowledgePoints").filter((p) => p.schoolId === schoolId);
-    const chapters = db.read("chapters").filter((c) => c.schoolId === schoolId);
     const questions = db.read("questions").filter((q: Question) => q.schoolId === schoolId);
     const tree: TreeNode = {
       id: "root",
       name: "全部知识点",
       type: "knowledge",
       count: 0,
-      children: buildKnowledgeTree(points, chapters, null),
+      children: buildKnowledgeTree(points, null),
     };
     return annotateTreeWithQuestionCounts(tree, questions, "knowledge", points);
   },
@@ -149,7 +142,6 @@ export const knowledgeService = {
 
   async addKnowledgePoint(
     schoolId: string,
-    chapterId: string,
     parentId: string | null,
     name: string,
     questionCount: number = 0,
@@ -162,7 +154,6 @@ export const knowledgeService = {
       id: genId("kp"),
       schoolId,
       parentId,
-      chapterId,
       name,
       order: siblings.length + 1,
       level: parentLevel + 1,

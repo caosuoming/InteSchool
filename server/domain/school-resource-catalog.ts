@@ -114,8 +114,6 @@ function transferDirectories(
     );
     if (!source) return null;
 
-    const chapterId = ensureChapter(source.chapterId);
-    if (!chapterId) return null;
     const parentId = source.parentId
       ? ensureKnowledgePoint(source.parentId)
       : null;
@@ -124,7 +122,6 @@ function transferDirectories(
       (item) =>
         item.schoolId === schoolId &&
         item.parentId === parentId &&
-        item.chapterId === chapterId &&
         normalizedName(item.name) === name,
     );
     if (!target) {
@@ -132,7 +129,6 @@ function transferDirectories(
         id: genId(config.knowledgePointIdPrefix),
         schoolId,
         parentId,
-        chapterId,
         name,
         description: source.description,
         order:
@@ -238,16 +234,6 @@ function buildCatalogTree(type: DirectoryKind, schoolId: string): TreeNode {
         parentId: entry.parentId,
         order: entry.order,
         level: entry.level,
-        chapterId:
-          type === "knowledge"
-            ? (entry as KnowledgePoint).chapterId
-            : undefined,
-        description:
-          type === "knowledge"
-            ? chapters.find(
-                (chapter) => chapter.id === (entry as KnowledgePoint).chapterId,
-              )?.name
-            : undefined,
         children: children.map((child) => child.node),
       },
     };

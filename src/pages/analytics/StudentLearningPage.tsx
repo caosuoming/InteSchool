@@ -110,7 +110,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const [prevBestClass, setPrevBestClass] = useState<{ mastery: KnowledgeMastery[]; className: string } | null>(null);
   const [classAvgMastery, setClassAvgMastery] = useState<KnowledgeMastery[]>([]);
   const [showComparison, setShowComparison] = useState(true);
-  const [showChapter, setShowChapter] = useState(false);
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("all");
   const dateRange = useMemo(() => getDateRange(timeRangeKey), [timeRangeKey]);
 
@@ -529,12 +528,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                           {showComparison ? "隐藏对比" : "显示对比"}
                         </button>
                       )}
-                      <button
-                        onClick={() => setShowChapter(!showChapter)}
-                        className="text-xs text-gold-600 hover:text-gold-700 font-medium"
-                      >
-                        {showChapter ? "隐藏章节" : "显示章节"}
-                      </button>
                       <BarChart3 className="w-4 h-4 text-gold-600" />
                     </div>
                   }
@@ -547,7 +540,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                       <thead>
                         <tr className="border-b border-ink-100 text-xs text-ink-500">
                           <th className="text-left py-2 px-3 font-medium">知识点</th>
-                          {showChapter && <th className="text-left py-2 px-3 font-medium">所属章节</th>}
                           <th className="text-center py-2 px-3 font-medium">训练次数</th>
                           <th className="text-center py-2 px-3 font-medium">全对</th>
                           <th className="text-center py-2 px-3 font-medium">半对</th>
@@ -577,7 +569,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                 <td className="py-2.5 px-3 text-ink-900 font-medium">
                                   {m.knowledgePointName}
                                 </td>
-                                {showChapter && <td className="py-2.5 px-3 text-xs text-ink-500">{m.chapterName || "—"}</td>}
                                 <td className="py-2.5 px-3 text-center font-mono text-ink-700">
                                   {m.totalAttempts}
                                 </td>

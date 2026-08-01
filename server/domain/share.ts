@@ -277,14 +277,6 @@ function collectDirectorySnapshot(resource: ShareableResource): DonationDirector
       knowledgeIds.add(current.id);
       current = current.parentId ? points.find((item) => item.id === current!.parentId) : undefined;
     }
-    const selected = points.find((item) => item.id === selectedId);
-    if (selected) {
-      let chapter = chapters.find((item) => item.id === selected.chapterId);
-      while (chapter && !chapterIds.has(chapter.id)) {
-        chapterIds.add(chapter.id);
-        chapter = chapter.parentId ? chapters.find((item) => item.id === chapter!.parentId) : undefined;
-      }
-    }
   }
 
   const chapterEntries = [...chapterIds]
@@ -309,18 +301,13 @@ function collectDirectorySnapshot(resource: ShareableResource): DonationDirector
       const point = points.find((item) => item.id === id);
       if (!point) return null;
       const path = knowledgePath(id, points);
-      const chapterFullPath = chapterPath(point.chapterId, chapters);
       const parentPath = point.parentId ? knowledgePath(point.parentId, points) : "";
-      const identity = `${chapterFullPath}::${path}`;
-      const parentIdentity = parentPath ? `${chapterFullPath}::${parentPath}` : "";
       return {
-        id: `platform-knowledge-${pathHash(identity)}`,
+        id: `platform-knowledge-${pathHash(path)}`,
         name: point.name,
         path,
-        parentId: parentIdentity ? `platform-knowledge-${pathHash(parentIdentity)}` : null,
+        parentId: parentPath ? `platform-knowledge-${pathHash(parentPath)}` : null,
         selected: selectedKnowledgeIds.has(id),
-        chapterId: `platform-chapter-${pathHash(chapterFullPath)}`,
-        chapterPath: chapterFullPath,
       };
     })
     .filter((item): item is DonationDirectoryEntry => Boolean(item))
@@ -535,12 +522,9 @@ function ensureDirectorySnapshot(
 
   for (const entry of [...snapshot.knowledgePoints].sort((a, b) => a.path.split(" / ").length - b.path.split(" / ").length)) {
     const parentId = entry.parentId ? knowledgeMap.get(entry.parentId) || null : null;
-    const chapterId = entry.chapterId ? chapterMap.get(entry.chapterId) : undefined;
-    if (!chapterId) continue;
     let existing = points.find((item) =>
       item.schoolId === schoolId
       && item.parentId === parentId
-      && item.chapterId === chapterId
       && item.name === entry.name,
     );
     if (!existing) {
@@ -548,7 +532,6 @@ function ensureDirectorySnapshot(
         id: genId("kp"),
         schoolId,
         parentId,
-        chapterId,
         name: entry.name,
         order: points.filter((item) => item.schoolId === schoolId && item.parentId === parentId).length + 1,
         level: parentId ? (points.find((item) => item.id === parentId)?.level || 0) + 1 : 0,

@@ -27,8 +27,8 @@ export const knowledgeService = {
     return rpcCall("knowledge", "addChapter", [schoolId, parentId, name]) as any;
   },
 
-  async addKnowledgePoint(schoolId: string, chapterId: string, parentId: string | null, name: string, questionCount: number = 0): Promise<KnowledgePoint> {
-    return rpcCall("knowledge", "addKnowledgePoint", [schoolId, chapterId, parentId, name, questionCount]) as any;
+  async addKnowledgePoint(schoolId: string, parentId: string | null, name: string, questionCount: number = 0): Promise<KnowledgePoint> {
+    return rpcCall("knowledge", "addKnowledgePoint", [schoolId, parentId, name, questionCount]) as any;
   },
 
   async getChapterPath(chapterId: string): Promise<string> {
