@@ -22,6 +22,8 @@ interface SearchableTreeProps {
   logic?: FilterLogic;
   /** 逻辑变更回调 */
   onLogicChange?: (logic: FilterLogic) => void;
+  /** 自定义重置行为；未提供时仅清空当前树的勾选 */
+  onReset?: () => void;
 }
 
 function findMatchingNodeIds(node: TreeNode, keyword: string): string[] {
@@ -60,6 +62,7 @@ export function SearchableTree({
   showLogicSelector = false,
   logic = "or",
   onLogicChange,
+  onReset,
 }: SearchableTreeProps) {
   const [keyword, setKeyword] = useState("");
   const normalizedKeyword = keyword.trim();
@@ -79,7 +82,11 @@ export function SearchableTree({
 
   const handleReset = () => {
     setKeyword("");
-    onCheck?.([]);
+    if (onReset) {
+      onReset();
+    } else {
+      onCheck?.([]);
+    }
   };
 
   const accentClass =

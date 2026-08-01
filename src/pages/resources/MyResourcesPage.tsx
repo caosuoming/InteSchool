@@ -8,7 +8,7 @@ import {
   PlayCircle, Copy, MessageSquareText, Star,
   ShoppingCart, CheckSquare, Square, Plus, X,
   Layout,
-  Gift, Users, Pencil,
+  Gift, Users, Pencil, Check,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -824,6 +824,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   };
 
   const noTreeSelection = checkedChapters.length === 0 && checkedKnowledge.length === 0;
+  const resetDirectorySelections = useCallback(() => {
+    setCheckedChapters([]);
+    setCheckedKnowledge([]);
+  }, []);
 
   // 排序
   const sortedData = useMemo(() => {
@@ -1776,22 +1780,44 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <div className="flex gap-1 mb-3 p-1 bg-mist rounded-md">
               <button
                 onClick={() => setLeftTab("chapter")}
+                aria-label="章节目录"
                 className={cn(
                   "flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5",
                   leftTab === "chapter" ? "bg-paper text-gold-600 shadow-sm" : "text-ink-500 hover:text-ink-700",
                 )}
               >
-                <BookOpen className="w-3.5 h-3.5" />
+                <span className="relative inline-flex">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  {checkedChapters.length > 0 && (
+                    <span
+                      className="absolute -bottom-1.5 -right-1.5 inline-flex h-3 w-3 items-center justify-center rounded-full bg-emerald-500 text-white ring-1 ring-paper"
+                      aria-label="章节目录已有勾选"
+                    >
+                      <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                    </span>
+                  )}
+                </span>
                 章节目录
               </button>
               <button
                 onClick={() => setLeftTab("knowledge")}
+                aria-label="知识点"
                 className={cn(
                   "flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5",
                   leftTab === "knowledge" ? "bg-paper text-gold-600 shadow-sm" : "text-ink-500 hover:text-ink-700",
                 )}
               >
-                <Lightbulb className="w-3.5 h-3.5" />
+                <span className="relative inline-flex">
+                  <Lightbulb className="w-3.5 h-3.5" />
+                  {checkedKnowledge.length > 0 && (
+                    <span
+                      className="absolute -bottom-1.5 -right-1.5 inline-flex h-3 w-3 items-center justify-center rounded-full bg-emerald-500 text-white ring-1 ring-paper"
+                      aria-label="知识点目录已有勾选"
+                    >
+                      <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                    </span>
+                  )}
+                </span>
                 知识点
               </button>
             </div>
@@ -1808,6 +1834,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   showLogicSelector
                   logic={chapterLogic}
                   onLogicChange={setChapterLogic}
+                  onReset={resetDirectorySelections}
                 />
               ) : (
                 <SearchableTree
@@ -1821,6 +1848,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   showLogicSelector
                   logic={knowledgeLogic}
                   onLogicChange={setKnowledgeLogic}
+                  onReset={resetDirectorySelections}
                 />
               )
             ) : (

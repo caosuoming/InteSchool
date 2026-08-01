@@ -38,10 +38,29 @@ vi.mock("@/components/ui/MathHtml", () => ({
   ),
 }));
 vi.mock("@/components/tree/SearchableTree", () => ({
-  SearchableTree: ({ title, onCheck }: { title: string; onCheck?: (ids: string[]) => void }) => (
-    <button type="button" onClick={() => onCheck?.([title === "选择章节" ? "chapter-new" : "knowledge-new"])}>
-      {title}
-    </button>
+  SearchableTree: ({
+    title,
+    onCheck,
+    onReset,
+  }: {
+    title: string;
+    onCheck?: (ids: string[]) => void;
+    onReset?: () => void;
+  }) => (
+    <div>
+      <button
+        type="button"
+        aria-label={title.endsWith("目录") ? `勾选${title}` : undefined}
+        onClick={() => onCheck?.([title.includes("章节") ? "chapter-new" : "knowledge-new"])}
+      >
+        {title}
+      </button>
+      {onReset && (
+        <button type="button" aria-label={`重置${title}`} onClick={onReset}>
+          重置
+        </button>
+      )}
+    </div>
   ),
 }));
 
@@ -218,6 +237,22 @@ describe("MyResourcesPage batch actions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "取消批量选择" }));
     expect(screen.queryByRole("region", { name: "批量操作" })).not.toBeInTheDocument();
+  });
+
+  it("marks selected directory tabs and resets both directory selections together", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "勾选章节目录" }));
+    expect(screen.getByLabelText("章节目录已有勾选")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "知识点" }));
+    fireEvent.click(screen.getByRole("button", { name: "勾选知识点目录" }));
+    expect(screen.getByLabelText("章节目录已有勾选")).toBeInTheDocument();
+    expect(screen.getByLabelText("知识点目录已有勾选")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重置知识点目录" }));
+    expect(screen.queryByLabelText("章节目录已有勾选")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("知识点目录已有勾选")).not.toBeInTheDocument();
   });
 
   it("appends a shared chapter without removing existing chapter ids", async () => {
