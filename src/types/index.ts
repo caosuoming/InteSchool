@@ -284,6 +284,74 @@ export interface GradeCohort {
   studentCount: number;
 }
 
+// ============ 考场安排 ============
+
+export type ExamArrangementMode = "combination" | "subject";
+
+export interface ExamRoomConfig {
+  id: string;
+  name: string;
+  capacity: number;
+}
+
+export interface ExamClassRoomRule {
+  classId: string;
+  /** 该班默认参加的科目，可按学生继续微调。 */
+  defaultSubjects: string[];
+  /** 每个科目允许使用的考场 ID。 */
+  subjectRoomIds: Record<string, string[]>;
+}
+
+export interface ExamStudentSubjectSelection {
+  studentId: string;
+  subjects: string[];
+}
+
+export interface ExamSeatAssignment {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentNo: string;
+  classId: string;
+  className: string;
+  /** 单科模式为科目，选科模式为科目组合。 */
+  subjectLabel: string;
+  /** 同一 sessionKey 内考场容量不能重复使用。 */
+  sessionKey: string;
+  roomId: string;
+  roomName: string;
+  seatNo: number;
+  admissionNo: string;
+}
+
+export interface ExamArrangementInput {
+  id?: string;
+  cohortKey: string;
+  name: string;
+  examDate?: string;
+  mode: ExamArrangementMode;
+  subjects: string[];
+  rooms: ExamRoomConfig[];
+  classRules: ExamClassRoomRule[];
+  studentSubjects: ExamStudentSubjectSelection[];
+}
+
+export interface ExamArrangement extends Omit<ExamArrangementInput, "id"> {
+  id: string;
+  schoolId: string;
+  teacherId: string;
+  cohortLabel: string;
+  assignments: ExamSeatAssignment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExamArrangementContext {
+  cohort: GradeCohort;
+  classes: SchoolClass[];
+  students: Student[];
+}
+
 export interface GradeTeacherOption {
   id: string;
   name: string;

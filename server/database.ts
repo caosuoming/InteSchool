@@ -26,7 +26,7 @@ export const COLLECTIONS = [
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
   "shareRecords", "examPublications", "lessonCoursewares", "reflections",
   "studentInteractions", "schoolBackups", "platformResourceSettings", "schoolAdminApplications",
-  "gradeExams", "gradeTemplateProfiles",
+  "gradeExams", "gradeTemplateProfiles", "examArrangements",
 ] as const;
 
 type CollectionName = (typeof COLLECTIONS)[number];

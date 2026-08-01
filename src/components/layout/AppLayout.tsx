@@ -133,7 +133,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* 侧栏 */}
       <aside
         className={cn(
-          "fixed left-0 top-0 bottom-0 bg-ink-900 text-ink-100 flex flex-col z-30 transition-all duration-300",
+          "no-print fixed left-0 top-0 bottom-0 bg-ink-900 text-ink-100 flex flex-col z-30 transition-all duration-300",
           sidebarCollapsed ? "w-16" : "w-60",
         )}
       >
@@ -401,7 +401,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <button
         onClick={toggleSidebar}
         className={cn(
-          "fixed top-20 z-30 w-5 h-10 bg-paper border border-ink-200 rounded-r-md shadow-sm flex items-center justify-center text-ink-500 hover:text-ink-900 hover:bg-mist transition-all",
+          "no-print fixed top-20 z-30 w-5 h-10 bg-paper border border-ink-200 rounded-r-md shadow-sm flex items-center justify-center text-ink-500 hover:text-ink-900 hover:bg-mist transition-all",
           sidebarCollapsed ? "left-16" : "left-60",
         )}
       >
@@ -411,12 +411,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* 主区域 */}
       <div
         className={cn(
-          "flex-1 min-w-0 transition-all duration-300",
+          "print-content-shell flex-1 min-w-0 transition-all duration-300",
           sidebarCollapsed ? "ml-16" : "ml-60",
         )}
       >
         <main className="min-h-screen">
-          <div className="p-6 lg:p-8 animate-fade-in">{children}</div>
+          <div className="print-content p-6 lg:p-8 animate-fade-in">{children}</div>
         </main>
       </div>
 
