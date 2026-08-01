@@ -110,6 +110,7 @@ function usageDateLabels(records: AnswerRecord[]): string[] {
 
 const coursewareTypeLabel: Record<CoursewareType, string> = {
   ppt: "PPT",
+  ggb: "GeoGebra",
   pdf: "PDF",
   video: "视频",
   image: "图片",
@@ -2243,6 +2244,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   basketResourceType="courseware"
                   basketResourceId={item.id}
                   onBasketChanged={loadAll}
+                  onClick={() => navigate(`/coursewares/${item.id}`)}
+                  showAddToLesson
+                  onAddToLesson={async () => {
+                    if (!teacher) return;
+                    try {
+                      const lesson = await lessonCoursewareService.createFromCourseware(
+                        teacher.id,
+                        teacher.schoolId!,
+                        item,
+                      );
+                      toast.success("已添加到上课", "请选择班级并完成发布");
+                      navigate(`/my-lessons/${lesson.id}/edit`);
+                    } catch (error) {
+                      toast.error("添加失败", error instanceof Error ? error.message : undefined);
+                    }
+                  }}
                   onShare={() => handleOpenShare("courseware", item.id, item.title)}
                   onDelete={() => handleDelete(item.id)}
                   onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}

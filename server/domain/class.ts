@@ -1,4 +1,4 @@
-import type { SchoolClass, PersonalClass, Student, AnyClass } from "../../src/types/index.js";
+import type { SchoolClass, PersonalClass, Student, AnyClass, ClassroomChoice } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
@@ -29,6 +29,21 @@ function requireActiveStudent(studentId: string): Student {
 }
 
 export const classService = {
+  async listClassroomChoices(): Promise<ClassroomChoice[]> {
+    await delay(100);
+    const schoolNames = new Map(db.read("schools").map((school) => [school.id, school.name]));
+    return db.read("schoolClasses")
+      .filter((item) => item.status !== "graduated")
+      .map((item) => ({
+        id: item.id,
+        schoolId: item.schoolId,
+        schoolName: schoolNames.get(item.schoolId) || "学校",
+        name: item.name,
+        grade: item.grade,
+      }))
+      .sort((a, b) => `${a.schoolName}${a.grade}${a.name}`.localeCompare(`${b.schoolName}${b.grade}${b.name}`, "zh-CN"));
+  },
+
   async listSchoolClasses(schoolId: string): Promise<SchoolClass[]> {
     await delay(200);
     return db.read("schoolClasses").filter((c) => c.schoolId === schoolId);

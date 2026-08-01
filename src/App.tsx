@@ -6,6 +6,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { RequireExamManager } from "@/components/auth/RequireExamManager";
 
 const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
+const ClassroomLoginPage = lazy(() => import("@/pages/auth/ClassroomLoginPage"));
 const SchoolAuthPage = lazy(() => import("@/pages/auth/SchoolAuthPage"));
 const DashboardPage = lazy(() => import("@/pages/dashboard/DashboardPage"));
 const LectureEditorPage = lazy(() => import("@/pages/lectures/LectureEditorPage"));
@@ -17,6 +18,7 @@ const SchoolResourcesPage = lazy(() => import("@/pages/resources/SchoolResources
 const PlatformResourcesPage = lazy(() => import("@/pages/resources/PlatformResourcesPage"));
 const UploadPage = lazy(() => import("@/pages/resources/UploadPage"));
 const ResourcePreviewPage = lazy(() => import("@/pages/resources/ResourcePreviewPage"));
+const CoursewarePreviewPage = lazy(() => import("@/pages/resources/CoursewarePreviewPage"));
 const BatchSharePage = lazy(() => import("@/pages/resources/BatchSharePage"));
 const KnowledgeTreePage = lazy(() => import("@/pages/knowledge-tree/KnowledgeTreePage"));
 const ClassesPage = lazy(() => import("@/pages/classes/ClassesPage"));
@@ -34,6 +36,7 @@ const PrepWorkspacePage = lazy(() => import("@/pages/prep/PrepWorkspacePage"));
 const PrepTaskDetailPage = lazy(() => import("@/pages/prep/PrepTaskDetailPage"));
 const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
 const LessonEditorPage = lazy(() => import("@/pages/lessons/LessonEditorPage"));
+const ClassroomPage = lazy(() => import("@/pages/lessons/ClassroomPage"));
 const MyStudentsPage = lazy(() => import("@/pages/students/MyStudentsPage"));
 const StudentGradesPage = lazy(() => import("@/pages/students/StudentGradesPage"));
 const MyExamsPage = lazy(() => import("@/pages/exams/MyExamsPage"));
@@ -84,6 +87,8 @@ export default function App() {
             {/* 我的上课 */}
             <Route path="/my-lessons" element={<MyLessonsPage />} />
             <Route path="/my-lessons/:id/edit" element={<LessonEditorPage />} />
+            <Route path="/classroom" element={<ClassroomPage />} />
+            <Route path="/classroom/:classId" element={<ClassroomPage />} />
 
             {/* 我的学生 */}
             <Route path="/my-students" element={<MyStudentsPage />} />
@@ -119,6 +124,7 @@ export default function App() {
             <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
             <Route path="/exam-papers/:id/answer-sheet" element={<ExamPaperAnswerSheetPage />} />
             <Route path="/resources/preview/:id" element={<ResourcePreviewPage />} />
+            <Route path="/coursewares/:id" element={<CoursewarePreviewPage />} />
             <Route path="/shared-resources/:batchId" element={<BatchSharePage />} />
             <Route path="/import" element={<Navigate to="/upload" replace />} />
 
@@ -147,6 +153,7 @@ export default function App() {
             path="/login"
             element={teacher ? <Navigate to={teacher.schoolId ? "/dashboard" : "/school-auth"} replace /> : <LoginPage />}
           />
+          <Route path="/classroom-login" element={<ClassroomLoginPage />} />
           <Route
             path="/school-auth"
             element={teacher ? <SchoolAuthPage /> : <Navigate to="/login" replace />}

@@ -260,6 +260,14 @@ export interface PersonalClass {
 
 export type AnyClass = SchoolClass | PersonalClass;
 
+export interface ClassroomChoice {
+  id: string;
+  schoolId: string;
+  schoolName: string;
+  name: string;
+  grade: string;
+}
+
 export type StudentStatus = "active" | "suspended" | "graduated" | "transferred";
 
 export interface Student {
@@ -821,7 +829,7 @@ export interface ExamPaper {
 }
 
 /** 课件类型 */
-export type CoursewareType = "ppt" | "pdf" | "video" | "image" | "other";
+export type CoursewareType = "ppt" | "ggb" | "pdf" | "video" | "image" | "other";
 
 /** 课件 */
 export interface Courseware {
@@ -838,7 +846,12 @@ export interface Courseware {
   type: CoursewareType;
   content: string; // 课件内容摘要或文本内容
   fileUrl?: string; // 文件地址（如有上传）
+  fileName?: string;
   fileSize?: number;
+  /** 可公开访问的高熵文件令牌，供外部在线预览器读取。 */
+  onlineAccessToken?: string;
+  /** 绑定后的在线编辑地址，例如 WPS 在线文档共享链接。 */
+  editorUrl?: string;
   tags: string[];
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
@@ -1577,7 +1590,7 @@ export interface QuestionReference {
 // ============ 上课课件 ============
 
 /** 课件页类型 */
-export type LessonSlideType = "question" | "knowledge" | "section";
+export type LessonSlideType = "question" | "knowledge" | "section" | "courseware";
 
 /** 课件页 - 每一页内容 */
 export interface LessonSlide {
@@ -1602,10 +1615,16 @@ export interface LessonSlide {
   askableStudentIds?: string[];
   /** 备注 */
   note?: string;
+  /** 外部课件信息（type=courseware 时） */
+  coursewareType?: CoursewareType;
+  fileUrl?: string;
+  fileName?: string;
+  onlineAccessToken?: string;
+  editorUrl?: string;
 }
 
 /** 课件来源类型 */
-export type LessonSourceType = "examPaper" | "lecture" | "manual";
+export type LessonSourceType = "examPaper" | "lecture" | "courseware" | "manual";
 
 /** 上课课件 */
 export interface LessonCourseware {
@@ -1629,6 +1648,9 @@ export interface LessonCourseware {
   slides: LessonSlide[];
   /** 班级ID */
   classIds: string[];
+  /** 发布时展示的学科与教师信息 */
+  subject?: string;
+  teacherName?: string;
   /** 发布状态 */
   status: "draft" | "published";
   /** 发布时间 */
@@ -1646,6 +1668,7 @@ export interface LessonCoursewareFilter {
   chapterIds?: string[];
   knowledgePointIds?: string[];
   status?: "draft" | "published";
+  classId?: string;
   teacherId?: string;
   schoolId?: string;
 }

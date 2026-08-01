@@ -48,7 +48,7 @@ function buildSections(text: string): Array<{
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
   ".md", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".webp",
-  ".mp3", ".mp4", ".wav", ".webm",
+  ".mp3", ".mp4", ".wav", ".webm", ".ggb",
 ]);
 
 const MIME_TYPES: Record<string, string> = {
@@ -70,11 +70,12 @@ const MIME_TYPES: Record<string, string> = {
   ".mp4": "video/mp4",
   ".wav": "audio/wav",
   ".webm": "video/webm",
+  ".ggb": "application/vnd.geogebra.file",
 };
 
 const INLINE_EXTENSIONS = new Set([
   ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp",
-  ".mp3", ".mp4", ".wav", ".webm",
+  ".mp3", ".mp4", ".wav", ".webm", ".ggb",
 ]);
 
 function safeMimeType(name: string): string {
@@ -124,6 +125,35 @@ export async function registerFileRoutes(
 ): Promise<void> {
   const imageUrlFor = (fileId: string) => (relationshipId: string) =>
     `/api/files/${fileId}/assets/${encodeURIComponent(relationshipId)}`;
+
+  app.get("/api/courseware-files/:token", async (request, reply) => {
+    const token = (request.params as { token: string }).token;
+    const coursewares = store.loadState().coursewares as Array<{
+      teacherId: string;
+      schoolId: string;
+      fileUrl?: string;
+      onlineAccessToken?: string;
+    }>;
+    const courseware = coursewares.find((item) => item.onlineAccessToken === token);
+    if (!courseware?.fileUrl) return reply.code(404).send({ error: "课件文件不存在" });
+    const match = courseware.fileUrl.match(/^\/api\/files\/([^/?#]+)/);
+    const file = match ? store.getFile(match[1]) : null;
+    if (!file) return reply.code(404).send({ error: "课件文件不存在" });
+    const fileBelongsToCoursewareScope = file.ownerId === courseware.teacherId
+      || Boolean(file.schoolId && file.schoolId === courseware.schoolId);
+    if (!fileBelongsToCoursewareScope) {
+      return reply.code(404).send({ error: "课件文件不存在" });
+    }
+    const extension = extname(file.originalName).toLowerCase();
+    reply.type(safeMimeType(file.originalName));
+    reply.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);
+    reply.header("Access-Control-Allow-Origin", "*");
+    reply.header("Cross-Origin-Resource-Policy", "cross-origin");
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Content-Length", file.size);
+    if (extension === ".ggb") reply.header("Cache-Control", "private, max-age=300");
+    return reply.send(createReadStream(join(config.uploadsDir, file.storageName)));
+  });
 
   app.get("/api/files/formula-capabilities", async (request) => {
     requireSession(request, store);

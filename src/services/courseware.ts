@@ -13,7 +13,9 @@ export interface CoursewareInput {
   type: CoursewareType;
   content: string;
   fileUrl?: string;
+  fileName?: string;
   fileSize?: number;
+  editorUrl?: string;
   tags: string[];
 }
 
