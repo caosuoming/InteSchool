@@ -397,9 +397,9 @@ export default function PlatformResourcesPage() {
       const result = await donationService.saveAsOwnResource(item.shareId, teacher.id, schoolId, decision);
       setSavedIds((current) => new Set(current).add(item.shareId));
       setSaveConflict(null);
-      toast.success(result.merged ? "已合并到我的题目" : "已添加到我的资源", item.title);
+      toast.success(result.merged ? "已合并到我的题目" : "副本已创建", item.title);
     } catch (error: any) {
-      toast.error("添加失败", error?.message);
+      toast.error("创建副本失败", error?.message);
     } finally {
       setAddingIds((current) => {
         const next = new Set(current);
@@ -412,7 +412,7 @@ export default function PlatformResourcesPage() {
   const handleAddToMyResources = async (item: PlatformResourceItem) => {
     if (!teacher) return;
     if (ownContributionIds.has(item.shareId)) {
-      toast.warning("本人捐赠或参与合并的平台资源不能另存");
+      toast.warning("本人捐赠或参与合并的平台资源不能创建副本");
       return;
     }
     setAddingIds((current) => new Set(current).add(item.shareId));
@@ -420,7 +420,7 @@ export default function PlatformResourcesPage() {
       const check = await donationService.checkSaveAsOwnResource(item.shareId, teacher.id, schoolId);
       if (!check.canSave) {
         if (check.alreadySaved) setSavedIds((current) => new Set(current).add(item.shareId));
-        toast.warning(check.reason || "该平台资源不能另存");
+        toast.warning(check.reason || "该平台资源不能创建副本");
         return;
       }
       if (!check.conflict) {
@@ -732,8 +732,8 @@ export default function PlatformResourcesPage() {
                           {ownContributionIds.has(item.shareId)
                             ? "本人捐赠"
                             : savedIds.has(item.shareId)
-                              ? "已添加"
-                              : "添加到我的资源"}
+                              ? "已创建"
+                              : "创建副本"}
                         </Button>
                       </div>
                     </div>
@@ -748,7 +748,7 @@ export default function PlatformResourcesPage() {
       <Modal
         open={Boolean(saveConflict && saveQuestionConflict)}
         onClose={() => setSaveConflict(null)}
-        title="另存题目查重"
+        title="创建题目副本查重"
         description="平台题目与我的题目相似度超过 80%。题干只能二选一，答案、解析、总结可复选并保留为第二项。"
         size="full"
         footer={saveConflict ? (
@@ -759,7 +759,7 @@ export default function PlatformResourcesPage() {
               loading={addingIds.has(saveConflict.item.shareId)}
               onClick={() => saveToMyResources(saveConflict.item, saveConflict.decision)}
             >
-              确认另存
+              确认创建副本
             </Button>
           </div>
         ) : null}

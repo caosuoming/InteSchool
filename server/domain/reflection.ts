@@ -81,7 +81,7 @@ export const reflectionService = {
   },
 
   /**
-   * 复制反思到新资源（用于另存为场景）
+   * 复制反思到新资源（用于创建副本场景）
    */
   async copyToTarget(
     teacherId: string,

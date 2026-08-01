@@ -147,7 +147,7 @@ export const lectureService = {
   },
 
   /**
-   * 另存为：复制讲义（含 sections），并复制关联的课后反思
+   * 创建副本：复制讲义（含 sections），并复制关联的课后反思
    */
   async duplicateLecture(
     sourceId: string,

@@ -502,7 +502,7 @@ export interface Question {
   sectionOrder?: string[];
   sourceDocId?: string;
   sourceType?: "imported" | "manual" | "shared";
-  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
   grade?: string;
   schoolYear?: string;
@@ -591,7 +591,7 @@ export interface ExamPaper {
   isExtractCopy?: boolean;
   /** 源资源ID（拆解副本关联的源试卷ID） */
   sourceResourceId?: string;
-  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
@@ -619,7 +619,7 @@ export interface Courseware {
   fileUrl?: string; // 文件地址（如有上传）
   fileSize?: number;
   tags: string[];
-  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
   createdAt: string;
   updatedAt: string;
@@ -649,7 +649,7 @@ export interface Material {
   duplicateHash?: string;
   /** 源资源ID（从哪个试卷/讲义拆解而来） */
   sourceResourceId?: string;
-  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
   createdAt: string;
   updatedAt: string;
@@ -1016,7 +1016,7 @@ export interface Lecture {
   isExtractCopy?: boolean;
   /** 源资源ID（拆解副本关联的源讲义ID） */
   sourceResourceId?: string;
-  /** 从平台资源另存时记录来源；此类副本不可再次捐赠。 */
+  /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
