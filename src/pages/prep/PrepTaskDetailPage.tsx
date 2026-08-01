@@ -39,7 +39,7 @@ import type {
 } from "@/types";
 
 export default function PrepTaskDetailPage() {
-  const { taskId } = useParams<{ taskId: string }>();
+  const { id: taskId } = useParams<{ id: string }>();
   const { teacher } = useAuthStore();
   const [task, setTask] = useState<PrepTask | null>(null);
   const [loading, setLoading] = useState(true);

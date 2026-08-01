@@ -28,6 +28,7 @@ const SettingsPage = lazy(() => import("@/pages/admin/SettingsPage"));
 const RegistrationAccessPage = lazy(() => import("@/pages/admin/RegistrationAccessPage"));
 const TeacherProfilesPage = lazy(() => import("@/pages/admin/TeacherProfilesPage"));
 const SchoolAdminApplicationsPage = lazy(() => import("@/pages/admin/SchoolAdminApplicationsPage"));
+const PrepWorkspacePage = lazy(() => import("@/pages/prep/PrepWorkspacePage"));
 const PrepTaskDetailPage = lazy(() => import("@/pages/prep/PrepTaskDetailPage"));
 const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
 const LessonEditorPage = lazy(() => import("@/pages/lessons/LessonEditorPage"));
@@ -90,7 +91,7 @@ export default function App() {
 
             <Route path="/school-resources" element={<SchoolResourcesPage />} />
             <Route path="/platform-resources" element={<PlatformResourcesPage />} />
-            <Route path="/prep" element={<DashboardPage />} />
+            <Route path="/prep" element={<PrepWorkspacePage />} />
             <Route path="/prep/tasks/:id" element={<PrepTaskDetailPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />

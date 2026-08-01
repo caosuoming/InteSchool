@@ -15,8 +15,12 @@ import { delay, genId } from "../domain-shared.js";
 export const taskTypeLabels: Record<PrepTaskType, string> = {
   paper: "出试卷",
   lecture: "编讲义",
-  exercise: "设计练习",
+  exercise: "出作业",
   review: "复习计划",
+  literatureReview: "文献综述",
+  examAnalysis: "试卷分析",
+  research: "专题研究",
+  gradeAnalysis: "学生成绩分析",
 };
 
 /** 任务状态中文标签 */

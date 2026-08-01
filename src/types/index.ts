@@ -1254,7 +1254,15 @@ export interface OnlineResourceSearchParams {
 // ============ 集体备课任务类型 ============
 
 /** 备课任务流程类型 */
-export type PrepTaskType = "paper" | "lecture" | "exercise" | "review";
+export type PrepTaskType =
+  | "paper"
+  | "lecture"
+  | "exercise"
+  | "review"
+  | "literatureReview"
+  | "examAnalysis"
+  | "research"
+  | "gradeAnalysis";
 
 /** 任务状态 */
 export type PrepTaskStatus = "created" | "in_progress" | "completed" | "cancelled";
