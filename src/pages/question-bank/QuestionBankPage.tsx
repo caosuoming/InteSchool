@@ -825,7 +825,7 @@ export default function QuestionBankPage({
         {/* 左侧：章节/知识点目录 Tab 切换 */}
         {!directoryCollapsed && (
           <div className="col-span-12 lg:col-span-4">
-            <Card className="p-0 overflow-hidden">
+            <Card className="p-0 overflow-hidden sticky top-4 h-fit">
               {/* Tab 头 */}
               <div className="flex border-b border-ink-100">
                 <div className="flex flex-1 min-w-0">

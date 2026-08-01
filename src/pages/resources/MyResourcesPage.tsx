@@ -279,6 +279,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [basketMaterials, setBasketMaterials] = useState<Material[]>([]);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
+  const [expandedBasketQuestionIds, setExpandedBasketQuestionIds] = useState<Set<string>>(new Set());
+  const [excludedBasketQuestionTypes, setExcludedBasketQuestionTypes] = useState<Set<string>>(new Set());
   const [creatingBasket, setCreatingBasket] = useState(false);
   const [isCreatingBasket, setIsCreatingBasket] = useState(false);
   const [newBasketName, setNewBasketName] = useState("");
@@ -296,7 +298,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const schoolId = teacher?.schoolId || "sch-1";
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(schoolId);
-  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(schoolId);
+  const questionTypeConfig = useQuestionTypeOptions(schoolId);
+  const getQuestionTypeLabel = questionTypeConfig.getLabel;
+  const questionTypeOptions = questionTypeConfig.options ?? [];
   const selectedBasket = useMemo(
     () => baskets.find((basket) => basket.id === selectedBasketId) || null,
     [baskets, selectedBasketId],
@@ -324,6 +328,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     ));
     return result;
   }, [basketAnswerRecords]);
+  const visibleBasketQuestions = useMemo(
+    () => basketQuestions.filter((question) => !excludedBasketQuestionTypes.has(question.type)),
+    [basketQuestions, excludedBasketQuestionTypes],
+  );
+  const allVisibleQuestionsSelected = visibleBasketQuestions.length > 0
+    && visibleBasketQuestions.every((question) => selectedQuestionIds.has(question.id));
 
   const loadTeacherDonations = useCallback(async () => {
     if (!teacher) return;
@@ -431,6 +441,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       setBasketMaterials([]);
       setSelectedQuestionIds(new Set());
       setSelectedMaterialIds(new Set());
+      setExpandedBasketQuestionIds(new Set());
       return;
     }
     basketService.getBasket(selectedBasketId).then(async (basket) => {
@@ -450,6 +461,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       setBaskets((current) => current.map((item) => item.id === basket.id ? basket : item));
       setSelectedQuestionIds(new Set());
       setSelectedMaterialIds(new Set());
+      setExpandedBasketQuestionIds(new Set());
     });
   }, [selectedBasketId]);
 
@@ -583,12 +595,34 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     });
   };
 
+  const toggleBasketQuestionExpanded = (questionId: string) => {
+    setExpandedBasketQuestionIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(questionId)) next.delete(questionId);
+      else next.add(questionId);
+      return next;
+    });
+  };
+
+  const toggleBasketQuestionType = (questionType: string) => {
+    setExcludedBasketQuestionTypes((previous) => {
+      const next = new Set(previous);
+      if (next.has(questionType)) next.delete(questionType);
+      else next.add(questionType);
+      return next;
+    });
+  };
+
   const selectAllQuestions = () => {
-    if (selectedQuestionIds.size === basketQuestions.length) {
-      setSelectedQuestionIds(new Set());
-    } else {
-      setSelectedQuestionIds(new Set(basketQuestions.map((q) => q.id)));
-    }
+    setSelectedQuestionIds((previous) => {
+      const next = new Set(previous);
+      if (allVisibleQuestionsSelected) {
+        visibleBasketQuestions.forEach((question) => next.delete(question.id));
+      } else {
+        visibleBasketQuestions.forEach((question) => next.add(question.id));
+      }
+      return next;
+    });
   };
 
   const selectAllMaterials = () => {
@@ -596,6 +630,49 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       setSelectedMaterialIds(new Set());
     } else {
       setSelectedMaterialIds(new Set(basketMaterials.map((m) => m.id)));
+    }
+  };
+
+  const handleRemoveBasketQuestion = async (questionId: string) => {
+    if (!selectedBasketId) return;
+    try {
+      await basketService.removeQuestion(selectedBasketId, questionId);
+      setBasketQuestions((current) => current.filter((question) => question.id !== questionId));
+      setSelectedQuestionIds((current) => {
+        const next = new Set(current);
+        next.delete(questionId);
+        return next;
+      });
+      setExpandedBasketQuestionIds((current) => {
+        const next = new Set(current);
+        next.delete(questionId);
+        return next;
+      });
+      setBaskets((current) => current.map((basket) => basket.id === selectedBasketId
+        ? { ...basket, questionIds: basket.questionIds.filter((id) => id !== questionId) }
+        : basket));
+      toast.success("已从资源篮移除题目");
+    } catch (error: any) {
+      toast.error("移除题目失败", error?.message);
+    }
+  };
+
+  const handleRemoveBasketMaterial = async (materialId: string) => {
+    if (!selectedBasketId) return;
+    try {
+      await basketService.removeMaterial(selectedBasketId, materialId);
+      setBasketMaterials((current) => current.filter((material) => material.id !== materialId));
+      setSelectedMaterialIds((current) => {
+        const next = new Set(current);
+        next.delete(materialId);
+        return next;
+      });
+      setBaskets((current) => current.map((basket) => basket.id === selectedBasketId
+        ? { ...basket, materialIds: basket.materialIds.filter((id) => id !== materialId) }
+        : basket));
+      toast.success("已从资源篮移除素材");
+    } catch (error: any) {
+      toast.error("移除素材失败", error?.message);
     }
   };
 
@@ -1357,23 +1434,48 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 {/* 题目列表 */}
                 {basketQuestions.length > 0 && (
                   <Card className="p-3 mb-4">
-                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-ink-100">
-                      <div className="text-sm font-medium text-ink-700 flex items-center gap-1.5">
-                        <FileQuestion className="w-4 h-4" />
-                        题目（{basketQuestions.length}）
+                    <div className="flex items-center justify-between gap-3 mb-3 pb-2 border-b border-ink-100">
+                      <div className="flex items-center gap-3 flex-wrap min-w-0">
+                        <div className="text-sm font-medium text-ink-700 flex items-center gap-1.5 whitespace-nowrap">
+                          <FileQuestion className="w-4 h-4" />
+                          题目（{visibleBasketQuestions.length === basketQuestions.length
+                            ? basketQuestions.length
+                            : `${visibleBasketQuestions.length}/${basketQuestions.length}`}）
+                        </div>
+                        <fieldset
+                          className="flex items-center gap-x-3 gap-y-1 flex-wrap"
+                          aria-label="按题型筛选资源篮题目"
+                        >
+                          {questionTypeOptions.map((option) => (
+                            <label
+                              key={option.value}
+                              className="inline-flex items-center gap-1.5 text-xs text-ink-600 cursor-pointer select-none"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!excludedBasketQuestionTypes.has(option.value)}
+                                onChange={() => toggleBasketQuestionType(option.value)}
+                                className="w-3.5 h-3.5 rounded border-ink-300 text-gold-500 focus:ring-gold-500"
+                              />
+                              {option.label}
+                            </label>
+                          ))}
+                        </fieldset>
                       </div>
                       <button
                         onClick={selectAllQuestions}
-                        className="text-xs text-ink-500 hover:text-gold-600"
+                        disabled={visibleBasketQuestions.length === 0}
+                        className="text-xs text-ink-500 hover:text-gold-600 disabled:text-ink-300 disabled:cursor-not-allowed whitespace-nowrap"
                       >
-                        {selectedQuestionIds.size === basketQuestions.length ? "取消全选" : `全选 (${basketQuestions.length})`}
+                        {allVisibleQuestionsSelected ? "取消全选" : `全选 (${visibleBasketQuestions.length})`}
                       </button>
                     </div>
                     <div className="space-y-2">
-                      {basketQuestions.map((q) => {
+                      {visibleBasketQuestions.map((q) => {
                         const usageRecords = answerRecordsByQuestion.get(q.id) || [];
                         const usedByAudience = usageRecords.length > 0;
                         const usageDates = usageDateLabels(usageRecords);
+                        const expanded = expandedBasketQuestionIds.has(q.id);
                         return (
                           <div
                             key={q.id}
@@ -1404,7 +1506,60 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                   <span className="text-xs font-medium text-red-600">所选学生已使用</span>
                                 )}
                               </div>
-                              <MathHtml className="text-sm text-ink-800">{q.stem}</MathHtml>
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                aria-expanded={expanded}
+                                title="查看完整答案、解析和总结"
+                                className="group cursor-pointer rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/50"
+                                onClick={() => toggleBasketQuestionExpanded(q.id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    toggleBasketQuestionExpanded(q.id);
+                                  }
+                                }}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <MathHtml className="text-sm text-ink-800">{q.stem}</MathHtml>
+                                    {q.options && q.options.length > 0 && (
+                                      <div className="mt-2 space-y-1 text-sm text-ink-700">
+                                        {q.options.map((option, index) => (
+                                          <div key={`${q.id}-option-${index}`} className="flex items-start gap-1.5">
+                                            <span className="font-medium text-ink-500 flex-shrink-0">
+                                              {String.fromCharCode(65 + index)}.
+                                            </span>
+                                            <MathHtml className="flex-1 min-w-0">{option}</MathHtml>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  {expanded ? (
+                                    <ChevronDown className="w-4 h-4 mt-0.5 flex-shrink-0 text-gold-600" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 mt-0.5 flex-shrink-0 text-ink-400 group-hover:text-gold-600" />
+                                  )}
+                                </div>
+                              </div>
+
+                              {expanded && (
+                                <div className="mt-3 grid gap-3 rounded-md border border-ink-100 bg-paper/70 p-3">
+                                  <div>
+                                    <div className="text-xs font-medium text-ink-500 mb-1">答案</div>
+                                    <MathHtml className="text-sm text-ink-800">{q.answer || "暂无答案"}</MathHtml>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-medium text-ink-500 mb-1">解析</div>
+                                    <MathHtml className="text-sm text-ink-800">{q.analysis || "暂无解析"}</MathHtml>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-medium text-ink-500 mb-1">总结</div>
+                                    <MathHtml className="text-sm text-ink-800">{q.summary || "暂无总结"}</MathHtml>
+                                  </div>
+                                </div>
+                              )}
 
                               {usedByAudience && (
                                 <div className="mt-2 rounded border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700">
@@ -1450,9 +1605,23 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 </div>
                               )}
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBasketQuestion(q.id)}
+                              className="p-1 rounded text-ink-300 hover:text-red-500 hover:bg-red-50 flex-shrink-0"
+                              title="从资源篮移除"
+                              aria-label="从资源篮移除题目"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
                           </div>
                         );
                       })}
+                      {visibleBasketQuestions.length === 0 && (
+                        <div className="py-8 text-center text-sm text-ink-400">
+                          当前题型筛选下没有题目
+                        </div>
+                      )}
                     </div>
                   </Card>
                 )}
@@ -1500,6 +1669,15 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             <div className="text-sm text-ink-800 font-medium">{m.title}</div>
                             <div className="text-xs text-ink-500 line-clamp-1">{m.content}</div>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBasketMaterial(m.id)}
+                            className="p-1 rounded text-ink-300 hover:text-red-500 hover:bg-red-50 flex-shrink-0"
+                            title="从资源篮移除"
+                            aria-label="从资源篮移除素材"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
                       ))}
                     </div>
