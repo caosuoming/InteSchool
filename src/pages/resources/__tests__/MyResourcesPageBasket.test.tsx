@@ -12,6 +12,7 @@ import { questionService } from "@/services/question";
 import type {
   AnswerRecord,
   Basket,
+  Material,
   Question,
   SchoolClass,
   Student,
@@ -31,7 +32,13 @@ vi.mock("@/hooks/useSchoolResourceOptions", () => ({
   }),
 }));
 vi.mock("@/hooks/useQuestionTypeOptions", () => ({
-  useQuestionTypeOptions: () => ({ getLabel: (value: string) => value === "single" ? "单选题" : value }),
+  useQuestionTypeOptions: () => ({
+    options: [
+      { value: "single", label: "单选题" },
+      { value: "essay", label: "解答题" },
+    ],
+    getLabel: (value: string) => value === "single" ? "单选题" : value === "essay" ? "解答题" : value,
+  }),
 }));
 vi.mock("@/components/ui/MathHtml", () => ({
   MathHtml: ({ children, className }: { children: string; className?: string }) => (
@@ -92,6 +99,8 @@ vi.mock("@/services/basket", () => ({
     updateBasket: vi.fn(),
     deleteBasket: vi.fn(),
     setDefaultBasket: vi.fn(),
+    removeQuestion: vi.fn(),
+    removeMaterial: vi.fn(),
   },
 }));
 vi.mock("@/stores/ui", () => ({
@@ -165,6 +174,23 @@ const basketQuestion: Question = {
   remark: "",
   isShared: false,
   hiddenByExamIds: [],
+  createdAt: "2026-07-01T00:00:00.000Z",
+  updatedAt: "2026-07-01T00:00:00.000Z",
+};
+
+const basketMaterial: Material = {
+  id: "material-1",
+  teacherId: "teacher-1",
+  schoolId: "school-1",
+  title: "平方根知识块",
+  chapterIds: ["chapter-1"],
+  knowledgePointIds: ["kp-1"],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  type: "knowledgeBlock",
+  content: "平方根的定义与性质。",
+  tags: [],
   createdAt: "2026-07-01T00:00:00.000Z",
   updatedAt: "2026-07-01T00:00:00.000Z",
 };
@@ -294,8 +320,62 @@ describe("MyResourcesPage resource basket", () => {
     expect(screen.getByText("薄弱 25%")).toBeInTheDocument();
     expect(screen.getByText("平方根")).toBeInTheDocument();
     expect(container.querySelector('[data-math-rendered="true"]')).not.toBeNull();
+
+    expect(screen.queryByText("答案")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("查看完整答案、解析和总结"));
+    expect(screen.getByText("答案")).toBeInTheDocument();
+    expect(screen.getByText("解析")).toBeInTheDocument();
+    expect(screen.getByText("总结")).toBeInTheDocument();
+    expect(screen.getByText("B")).toBeInTheDocument();
+
+    const singleTypeFilter = screen.getByRole("checkbox", { name: "单选题" });
+    expect(singleTypeFilter).toBeChecked();
+    fireEvent.click(singleTypeFilter);
+    expect(await screen.findByText("题目（0/1）")).toBeInTheDocument();
+    expect(screen.queryByTitle("查看完整答案、解析和总结")).not.toBeInTheDocument();
+    fireEvent.click(singleTypeFilter);
+    expect(await screen.findByTitle("查看完整答案、解析和总结")).toBeInTheDocument();
+
     expect(analyticsService.listAnswerRecordsByStudents).toHaveBeenCalledWith([studentOne.id]);
     expect(analyticsService.getKnowledgeMastery).toHaveBeenCalledWith([studentOne.id], "school-1");
+  });
+
+  it("removes questions and materials from the selected basket", async () => {
+    const populatedBasket: Basket = {
+      ...createdBasket,
+      questionIds: [basketQuestion.id],
+      materialIds: [basketMaterial.id],
+    };
+    vi.mocked(basketService.listBaskets).mockResolvedValue([populatedBasket]);
+    vi.mocked(basketService.getBasket).mockResolvedValue(populatedBasket);
+    vi.mocked(basketService.removeQuestion).mockResolvedValue();
+    vi.mocked(basketService.removeMaterial).mockResolvedValue();
+    vi.mocked(questionService.listQuestions).mockImplementation(async (filter) =>
+      filter.ids?.includes(basketQuestion.id) ? [basketQuestion] : [],
+    );
+    vi.mocked(materialService.listMaterials).mockImplementation(async (filter) =>
+      filter.ids?.includes(basketMaterial.id) ? [basketMaterial] : [],
+    );
+
+    render(
+      <MemoryRouter>
+        <MyResourcesPage initialTab="basket" />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText("复习资料"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "从资源篮移除题目" }));
+    await waitFor(() => {
+      expect(basketService.removeQuestion).toHaveBeenCalledWith(populatedBasket.id, basketQuestion.id);
+    });
+    expect(screen.queryByTitle("查看完整答案、解析和总结")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "从资源篮移除素材" }));
+    await waitFor(() => {
+      expect(basketService.removeMaterial).toHaveBeenCalledWith(populatedBasket.id, basketMaterial.id);
+    });
+    expect(await screen.findByText("资源篮为空")).toBeInTheDocument();
   });
 
   it("updates the audience from an opened basket", async () => {
