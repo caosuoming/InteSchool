@@ -415,9 +415,11 @@ export default function DashboardPage() {
                                 {taskStatusLabels[task.status]}
                               </span>
                             </div>
-                            <Button variant="ghost" size="sm">
-                              查看详情
-                            </Button>
+                            <Link to={`/prep/tasks/${task.id}`}>
+                              <Button variant="ghost" size="sm">
+                                查看详情
+                              </Button>
+                            </Link>
                           </div>
                           <div className="flex items-center gap-3 text-xs text-ink-500 mb-3">
                             <span>{task.subject} · {task.grade}</span>
