@@ -4,6 +4,7 @@ import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
 
 const ESCAPED_DOLLAR = "\uE000INTESCHOOL_DOLLAR\uE001";
 const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea";
+const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
 const SAFE_RICH_TEXT_TAGS = sanitizeHtml.defaults.allowedTags.concat([
   "img",
@@ -56,6 +57,8 @@ export function renderMathHtml(content: string): string {
     template.content.append(document.createTextNode(normalizedContent));
   }
 
+  replaceMarkdownImages(template.content);
+
   const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
   let current = walker.nextNode();
@@ -88,6 +91,56 @@ export function renderMathHtml(content: string): string {
   }
 
   return template.innerHTML;
+}
+
+function replaceMarkdownImages(root: DocumentFragment): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let current = walker.nextNode();
+  while (current) {
+    textNodes.push(current as Text);
+    current = walker.nextNode();
+  }
+
+  for (const textNode of textNodes) {
+    if (textNode.parentElement?.closest(SKIP_SELECTOR)) continue;
+    const text = textNode.data;
+    MARKDOWN_IMAGE_PATTERN.lastIndex = 0;
+    if (!MARKDOWN_IMAGE_PATTERN.test(text)) continue;
+
+    MARKDOWN_IMAGE_PATTERN.lastIndex = 0;
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+    while ((match = MARKDOWN_IMAGE_PATTERN.exec(text)) !== null) {
+      if (match.index > cursor) {
+        fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+      }
+      const source = safeImageSource(match[2]);
+      if (!source) {
+        fragment.append(document.createTextNode(match[0]));
+      } else {
+        const image = document.createElement("img");
+        image.src = source;
+        image.alt = match[1] || "题目图片";
+        image.loading = "lazy";
+        fragment.append(image);
+      }
+      cursor = MARKDOWN_IMAGE_PATTERN.lastIndex;
+    }
+    if (cursor < text.length) {
+      fragment.append(document.createTextNode(text.slice(cursor)));
+    }
+    textNode.replaceWith(fragment);
+  }
+}
+
+function safeImageSource(value: string): string | null {
+  const source = value.trim();
+  if (/^(?:https?:\/\/|data:image\/[a-z0-9.+-]+;base64,|\/)/i.test(source)) {
+    return source;
+  }
+  return null;
 }
 
 export function containsMathDelimiter(content: string): boolean {

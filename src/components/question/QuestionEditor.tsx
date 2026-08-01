@@ -13,7 +13,14 @@ import { MathHtml } from "@/components/ui/MathHtml";
 import { containsMathDelimiter } from "@/lib/math-html";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
-import type { Question, Chapter, KnowledgePoint, TreeNode, ResourceSemester } from "@/types";
+import type {
+  Question,
+  Chapter,
+  KnowledgePoint,
+  TreeNode,
+  ResourceSemester,
+  SimilarQuestionCandidate,
+} from "@/types";
 
 const difficultyOptions = [
   { value: "1", label: "1 - 简单" },
@@ -78,6 +85,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [saving, setSaving] = useState(false);
+  const [duplicateConflict, setDuplicateConflict] = useState<SimilarQuestionCandidate | null>(null);
   // 公式编辑器目标字段
   const [formulaTarget, setFormulaTarget] = useState<"stem" | "answer" | "analysis" | null>(null);
 
@@ -107,11 +115,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     .filter((p) => form.knowledgePointIds.includes(p.id))
     .map((p) => p.name);
 
-  const handleSave = async () => {
-    if (!form.stem.trim()) {
-      toast.error("题干不能为空");
-      return;
-    }
+  const persistQuestion = async (duplicateDecision?: "add") => {
     setSaving(true);
     try {
       const updated = await questionService.updateQuestion(question.id, {
@@ -132,14 +136,42 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         schoolYear: form.schoolYear,
         semester: form.semester as ResourceSemester,
         isShared: form.isShared,
-      });
+      }, duplicateDecision);
       toast.success("题目已更新");
+      setDuplicateConflict(null);
       onSaved(updated);
     } catch (e: any) {
       toast.error("保存失败", e?.message);
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    if (!form.stem.trim()) {
+      toast.error("题干不能为空");
+      return;
+    }
+    if (teacher?.schoolId && form.stem !== question.stem) {
+      setSaving(true);
+      try {
+        const [candidate] = await questionService.findSimilarQuestions(
+          form.stem,
+          teacher.schoolId,
+          question.id,
+        );
+        if (candidate) {
+          setDuplicateConflict(candidate);
+          return;
+        }
+      } catch (error) {
+        toast.error("查重失败", error instanceof Error ? error.message : undefined);
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+    await persistQuestion();
   };
 
   return (
@@ -503,13 +535,52 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           />
         )}
       </Modal>
+
+      <Modal
+        open={!!duplicateConflict}
+        onClose={() => setDuplicateConflict(null)}
+        title="发现高度相似题目"
+        description="题干修改后必须先完成查重确认。可取消修改，或明确保留为另一道题。"
+        size="lg"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDuplicateConflict(null)} disabled={saving}>
+              返回修改
+            </Button>
+            <Button variant="gold" onClick={() => persistQuestion("add")} loading={saving}>
+              仍然保存
+            </Button>
+          </div>
+        }
+      >
+        {duplicateConflict && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="font-medium text-amber-800">
+                相似度 {(duplicateConflict.similarity * 100).toFixed(1)}%
+              </span>
+              <code className="rounded bg-mist px-2 py-1 font-mono text-xs text-ink-700">
+                ID: {duplicateConflict.question.id}
+              </code>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+              <div className="mb-1 text-xs font-medium text-ink-500">已有题目题干</div>
+              <MathHtml className="text-sm text-ink-900 whitespace-pre-wrap">
+                {duplicateConflict.question.stem}
+              </MathHtml>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
 
 // 富文本或 LaTeX 内容需要显示渲染后的预览。
 function needsRichPreview(s: string): boolean {
-  return /<[a-z][\s\S]*?>/i.test(s) || containsMathDelimiter(s);
+  return /<[a-z][\s\S]*?>/i.test(s)
+    || /!\[[^\]]*\]\([^)]+\)/.test(s)
+    || containsMathDelimiter(s);
 }
 
 export default QuestionEditor;

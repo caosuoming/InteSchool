@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import type { Question } from "@/types";
 
 type QuestionExpandedDetailsProps = {
-  question: Pick<Question, "answer" | "analysis" | "summary">;
+  question: Pick<Question, "id" | "answer" | "analysis" | "summary">;
   wideLayout?: boolean;
 };
 
@@ -15,6 +15,10 @@ export function QuestionExpandedDetails({
 
   return (
     <div className="space-y-3 mb-3 animate-fade-in">
+      <div className="flex items-center gap-2 text-xs text-ink-500">
+        <span className="font-medium">题目唯一 ID</span>
+        <code className="rounded bg-mist px-2 py-1 font-mono text-ink-700">{question.id}</code>
+      </div>
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1">答案</div>
         <div

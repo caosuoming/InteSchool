@@ -702,9 +702,26 @@ export default function QuestionBankPage({
   };
 
   const handleReplaceQuestion = async () => {
-    if (!replaceQuestion || !replaceForm) return;
+    if (!replaceQuestion || !replaceForm || !teacher?.schoolId) return;
     setReplaceSaving(true);
     try {
+      let duplicateDecision: "add" | undefined;
+      if (replaceForm.stem !== replaceQuestion.stem) {
+        const [candidate] = await questionService.findSimilarQuestions(
+          replaceForm.stem,
+          teacher.schoolId,
+          replaceQuestion.id,
+        );
+        if (candidate) {
+          const accepted = confirm(
+            `发现高度相似题目（相似度 ${(candidate.similarity * 100).toFixed(1)}%）\n`
+            + `已有题目 ID：${candidate.question.id}\n\n`
+            + `${candidate.question.stem.slice(0, 160)}\n\n仍要保存为当前题目吗？`,
+          );
+          if (!accepted) return;
+          duplicateDecision = "add";
+        }
+      }
       await questionService.updateQuestion(replaceQuestion.id, {
         stem: replaceForm.stem,
         options: replaceForm.options.length > 0 ? replaceForm.options : undefined,
@@ -712,7 +729,7 @@ export default function QuestionBankPage({
         analysis: replaceForm.analysis,
         difficulty: replaceForm.difficulty as 1 | 2 | 3 | 4 | 5,
         recommendation: replaceForm.recommendation as 1 | 2 | 3 | 4 | 5,
-      });
+      }, duplicateDecision);
       toast.success("题目已替换");
       setReplaceQuestion(null);
       loadQuestions();
@@ -1876,7 +1893,6 @@ function QuestionRow({
   const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
   const hasChapter = chapterNames.length > 0;
   const hasPoint = pointNames.length > 0;
-  const hasStemImage = /<img\b/i.test(question.stem);
 
   // 选中学生的答题情况：取该题对应的答题记录，按学生维度展示
   const questionStudentAnswers = useMemo(() => {
@@ -2116,7 +2132,6 @@ function QuestionRow({
             <div className={cn(
               "text-ink-900 leading-relaxed mb-2",
               wideLayout ? "text-base" : "text-sm",
-              !expanded && !hasStemImage && "line-clamp-2",
             )}>
               <MathHtml>{question.stem}</MathHtml>
             </div>

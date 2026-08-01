@@ -1,6 +1,13 @@
 import { rpcCall } from "./api";
 
-import type { Question, QuestionFilter, QuestionType, QuestionRemark, ResourceSemester } from "@/types";
+import type {
+  Question,
+  QuestionFilter,
+  QuestionType,
+  QuestionRemark,
+  ResourceSemester,
+  SimilarQuestionCandidate,
+} from "@/types";
 
 export interface QuestionInput {
   type: QuestionType;
@@ -18,6 +25,7 @@ export interface QuestionInput {
   recommendation: 1 | 2 | 3 | 4 | 5;
   remark?: string;
   isShared?: boolean;
+  duplicateDecision?: "add";
 }
 
 export const questionService = {
@@ -33,12 +41,20 @@ export const questionService = {
     return rpcCall("question", "checkDuplicate", [stem, answer, options, schoolId]) as any;
   },
 
+  async findSimilarQuestions(
+    stem: string,
+    schoolId: string,
+    excludeQuestionId?: string,
+  ): Promise<SimilarQuestionCandidate[]> {
+    return rpcCall("question", "findSimilarQuestions", [stem, schoolId, excludeQuestionId]) as any;
+  },
+
   async createQuestion(teacherId: string, schoolId: string, input: QuestionInput): Promise<Question> {
     return rpcCall("question", "createQuestion", [teacherId, schoolId, input]) as any;
   },
 
-  async updateQuestion(id: string, patch: Partial<Question>): Promise<Question> {
-    return rpcCall("question", "updateQuestion", [id, patch]) as any;
+  async updateQuestion(id: string, patch: Partial<Question>, duplicateDecision?: "add"): Promise<Question> {
+    return rpcCall("question", "updateQuestion", [id, patch, duplicateDecision]) as any;
   },
 
   async deleteQuestion(id: string): Promise<void> {

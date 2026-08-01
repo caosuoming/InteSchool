@@ -64,6 +64,28 @@ describe("renderMathHtml", () => {
     expect(container.querySelector("img")).toHaveAttribute("loading", "lazy");
   });
 
+  it("renders document-extraction markdown images", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      "观察下图：\n![文档图片](/api/files/file-1/assets/rId7?officeWidth=320&officeHeight=180)",
+    );
+
+    expect(container).toHaveTextContent("观察下图");
+    expect(container.querySelector("img")).toHaveAttribute(
+      "src",
+      "/api/files/file-1/assets/rId7?officeWidth=320&officeHeight=180",
+    );
+    expect(container.querySelector("img")).toHaveAttribute("alt", "文档图片");
+  });
+
+  it("leaves unsafe markdown image sources as text", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml("![危险图片](javascript:alert(1))");
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(container).toHaveTextContent("![危险图片](javascript:alert(1))");
+  });
+
   it("removes executable rich-text content", () => {
     const container = document.createElement("div");
     container.innerHTML = renderMathHtml(
