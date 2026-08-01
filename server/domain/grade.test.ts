@@ -79,7 +79,37 @@ function state(): AppState {
     ],
     gradeExams: [],
     gradeTemplateProfiles: [],
+    gradeCohortSettings: [],
   };
+}
+
+function addSecondCohort(appState: AppState): void {
+  (appState.schoolClasses as any[]).push(
+    {
+      id: "class-3",
+      type: "school",
+      schoolId: "school-1",
+      name: "高二(1)班",
+      grade: "高二",
+      gradeYear: 2024,
+      gradYear: 2027,
+      studentCount: 0,
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    },
+    {
+      id: "class-4",
+      type: "school",
+      schoolId: "school-1",
+      name: "高二(2)班",
+      grade: "高二",
+      gradeYear: 2024,
+      gradYear: 2027,
+      studentCount: 0,
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    },
+  );
 }
 
 describe("grade service", () => {
@@ -299,4 +329,133 @@ describe("grade service", () => {
       expect(schoolQuery.scopeLabel).toBe("全校");
     });
   });
+  it("shares cohort preprocessing across imports and recalculates existing exams", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const context = await gradeService.getImportContext("school-1", "grad-2026");
+      const subjects = ["数学", "化学"];
+      const initialSettings = buildDefaultGradeSettings(subjects, context.classes.map((item) => item.id));
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "已有考试",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects,
+        settings: initialSettings,
+        rows: [{
+          rowKey: "row-1",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          studentId: "student-1",
+          scores: { 数学: 100, 化学: 50 },
+        }],
+      });
+      expect(exam.records[0].rawTotal).toBe(150);
+
+      const sharedSettings = buildDefaultGradeSettings(subjects, context.classes.map((item) => item.id));
+      sharedSettings.templates[0].name = "年级统一名次表";
+      sharedSettings.classSubjects = sharedSettings.classSubjects.map((item) => ({
+        ...item,
+        statisticSubjects: ["数学"],
+      }));
+      const saved = await gradeService.saveCohortSettings(
+        "school-1",
+        "teacher-1",
+        "grad-2026",
+        subjects,
+        sharedSettings,
+      );
+
+      expect(saved.settings.templates[0].name).toBe("年级统一名次表");
+      expect((appState.gradeTemplateProfiles as any[])[0].templates[0].name).toBe("年级统一名次表");
+      expect((appState.gradeExams as any[])[0].records[0].rawTotal).toBe(100);
+
+      const inherited = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "继承配置的考试",
+        sourceFileName: "scores-2.xlsx",
+        sourceSheetName: "成绩",
+        subjects,
+        rows: [{
+          rowKey: "row-2",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          studentId: "student-1",
+          scores: { 数学: 90, 化学: 40 },
+        }],
+      });
+      expect(inherited.settings.templates[0].name).toBe("年级统一名次表");
+      expect(inherited.records[0].rawTotal).toBe(90);
+
+      const teacher = (appState.teachers as any[])[0];
+      teacher.roles = ["teacher", "gradeLeader"];
+      teacher.affiliations[0].roles = ["teacher", "gradeLeader"];
+      const publishedTemplates = saved.settings.templates.map((item, index) => index === 0
+        ? { ...item, name: "公式发布后的统一名次表" }
+        : item);
+      await gradeService.saveCohortTemplateProfile(
+        "school-1",
+        "grad-2026",
+        "teacher-1",
+        subjects,
+        publishedTemplates,
+      );
+      expect((appState.gradeCohortSettings as any[])[0].settings.templates[0].name)
+        .toBe("公式发布后的统一名次表");
+      expect((appState.gradeExams as any[]).every((item) =>
+        item.settings.templates[0].name === "公式发布后的统一名次表"))
+        .toBe(true);
+    });
+  });
+
+  it("copies cohort preprocessing and remaps class settings to the target grade", async () => {
+    const appState = state();
+    addSecondCohort(appState);
+
+    await runWithState(appState, async () => {
+      const sourceContext = await gradeService.getImportContext("school-1", "grad-2026");
+      const subjects = ["数学", "化学"];
+      const settings = buildDefaultGradeSettings(subjects, sourceContext.classes.map((item) => item.id));
+      settings.classSubjects = settings.classSubjects.map((item, index) => ({
+        ...item,
+        statisticSubjects: index === 0 ? ["数学"] : ["化学"],
+      }));
+      settings.classSubjectTeacherIds = {
+        "class-1": { 数学: ["teacher-1"], 化学: [] },
+        "class-2": { 数学: [], 化学: ["teacher-1"] },
+      };
+      await gradeService.saveCohortSettings(
+        "school-1",
+        "teacher-1",
+        "grad-2026",
+        subjects,
+        settings,
+      );
+
+      const copied = await gradeService.copyCohortSettings(
+        "school-1",
+        "teacher-1",
+        "grad-2026",
+        "grad-2027",
+      );
+
+      expect(copied.cohortLabel).toBe("2027届高二");
+      expect(copied.settings.classSubjects.map((item) => item.classId)).toEqual(["class-3", "class-4"]);
+      expect(copied.settings.classSubjects.map((item) => item.statisticSubjects)).toEqual([
+        ["数学"],
+        ["化学"],
+      ]);
+      expect(copied.settings.classSubjects.some((item) => ["class-1", "class-2"].includes(item.classId))).toBe(false);
+      expect(copied.settings.classSubjectTeacherIds).toEqual({
+        "class-3": { 数学: ["teacher-1"], 化学: [] },
+        "class-4": { 数学: [], 化学: ["teacher-1"] },
+      });
+    });
+  });
+
 });

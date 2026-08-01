@@ -5,13 +5,14 @@ import {
   ChevronLeft, School, User, Settings, Users,
   FolderOpen, Download,
   ChevronDown, ChevronRight, Building2, Cloud,
-  BookOpen, Check, Crown,
+  BookOpen, Check, Crown, ClipboardList, MapPinned, FileSpreadsheet,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { shareService } from "@/services/share";
 import { cn } from "@/lib/utils";
 import { ToastContainer } from "@/components/ui/Toast";
+import { canManageSchoolExams } from "@/lib/exam-permissions";
 
 interface NavItem {
   path: string;
@@ -19,6 +20,7 @@ interface NavItem {
   icon: typeof LayoutDashboard;
   /** 是否仅学校身份可见（个人身份隐藏） */
   schoolOnly?: boolean;
+  examManagerOnly?: boolean;
   children?: { path: string; label: string; icon: typeof LayoutDashboard }[];
 }
 
@@ -35,6 +37,17 @@ const allNavItems: NavItem[] = [
     icon: BookOpen,
   },
   { path: "/my-students", label: "我的学生", icon: Users },
+  {
+    path: "/my-exams",
+    label: "我的考试",
+    icon: ClipboardList,
+    schoolOnly: true,
+    examManagerOnly: true,
+    children: [
+      { path: "/my-exams/rooms", label: "考场布置", icon: MapPinned },
+      { path: "/my-exams/grades", label: "成绩处理", icon: FileSpreadsheet },
+    ],
+  },
   { path: "/school-resources", label: "校本资源", icon: Building2, schoolOnly: true },
   { path: "/platform-resources", label: "平台资源", icon: Cloud },
   { path: "/prep", label: "集体备课", icon: Users, schoolOnly: true },
@@ -54,10 +67,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const affiliations = teacher ? getAffiliations() : [];
   const currentAffiliation = teacher ? getCurrentAffiliation() : null;
   const isPersonalIdentity = !currentAffiliation?.schoolId;
+  const canManageExams = teacher ? canManageSchoolExams(teacher, currentAffiliation) : false;
 
   // 根据当前身份过滤导航菜单
   const navItems = allNavItems.filter((item) => {
     if (item.schoolOnly && isPersonalIdentity) return false;
+    if (item.examManagerOnly && !canManageExams) return false;
     return true;
   });
 

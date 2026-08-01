@@ -62,6 +62,35 @@ function CheckboxPill({
   );
 }
 
+function updateClassTeacherSelection(
+  settings: GradeExamSettings,
+  classId: string,
+  subject: string,
+  teacherIds: string[],
+): GradeExamSettings {
+  const classSubjectTeacherIds = {
+    ...settings.classSubjectTeacherIds,
+    [classId]: {
+      ...settings.classSubjectTeacherIds?.[classId],
+      [subject]: teacherIds,
+    },
+  };
+  const subjectTeacherIds = [
+    ...new Set(
+      Object.values(classSubjectTeacherIds)
+        .flatMap((classTeachers) => classTeachers[subject] || []),
+    ),
+  ];
+  return {
+    ...settings,
+    classSubjectTeacherIds,
+    subjectTeacherIds: {
+      ...settings.subjectTeacherIds,
+      [subject]: subjectTeacherIds,
+    },
+  };
+}
+
 function TeacherSettings({
   settings,
   subjects,
@@ -75,38 +104,57 @@ function TeacherSettings({
           <UsersRound className="h-4 w-4" />
         </div>
         <div>
-          <div className="font-medium text-ink-900">任课老师名单</div>
-          <div className="mt-0.5 text-xs text-ink-500">按科目核对本次考试涉及的任课教师，可多选。</div>
+          <div className="font-medium text-ink-900">班级任课教师</div>
+          <div className="mt-0.5 text-xs text-ink-500">按班级和科目维护任课教师，可为同一班级同一科目选择多人。</div>
         </div>
       </div>
-      <div className="divide-y divide-ink-100">
-        {subjects.map((subject) => {
-          const teachers = context.teachers.filter((teacher) => teacher.subject === subject);
-          const selected = settings.subjectTeacherIds[subject] || [];
-          return (
-            <div key={subject} className="grid gap-3 px-5 py-3 md:grid-cols-[7rem_1fr] md:items-center">
-              <div className="font-medium text-sm text-ink-800">{subject}</div>
-              <div className="flex flex-wrap gap-2">
-                {teachers.length === 0 ? (
-                  <span className="text-xs text-ink-400">学校教师档案中暂无该科目教师</span>
-                ) : teachers.map((teacher) => (
-                  <CheckboxPill
-                    key={teacher.id}
-                    checked={selected.includes(teacher.id)}
-                    label={teacher.name}
-                    onChange={() => onChange({
-                      ...settings,
-                      subjectTeacherIds: {
-                        ...settings.subjectTeacherIds,
-                        [subject]: toggleValue(selected, teacher.id),
-                      },
-                    })}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+      <div className="overflow-x-auto">
+        <table className="min-w-max w-full text-xs">
+          <thead className="bg-ink-50 text-ink-500">
+            <tr>
+              <th className="sticky left-0 z-10 min-w-28 border-r border-ink-100 bg-ink-50 px-4 py-2.5 text-left font-medium">班级</th>
+              {subjects.map((subject) => (
+                <th key={subject} className="min-w-44 px-4 py-2.5 text-left font-medium">{subject}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {context.classes.map((classItem) => (
+              <tr key={classItem.id} className="align-top">
+                <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-4 py-3 font-medium text-ink-800">
+                  {classItem.name}
+                </td>
+                {subjects.map((subject) => {
+                  const teachers = context.teachers.filter((teacher) => teacher.subject === subject);
+                  const selected = settings.classSubjectTeacherIds?.[classItem.id]?.[subject]
+                    || settings.subjectTeacherIds[subject]
+                    || [];
+                  return (
+                    <td key={subject} className="px-4 py-3">
+                      <div className="flex max-w-64 flex-wrap gap-1.5">
+                        {teachers.length === 0 ? (
+                          <span className="text-ink-400">暂无该科教师</span>
+                        ) : teachers.map((teacher) => (
+                          <CheckboxPill
+                            key={teacher.id}
+                            checked={selected.includes(teacher.id)}
+                            label={teacher.name}
+                            onChange={() => onChange(updateClassTeacherSelection(
+                              settings,
+                              classItem.id,
+                              subject,
+                              toggleValue(selected, teacher.id),
+                            ))}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </Card>
   );

@@ -370,6 +370,23 @@ export const serviceParameters = {
       "subjectsInput",
       "templates"
     ],
+    "getCohortSettings": [
+      "schoolId",
+      "cohortKey"
+    ],
+    "saveCohortSettings": [
+      "schoolId",
+      "teacherId",
+      "cohortKey",
+      "subjects",
+      "settings"
+    ],
+    "copyCohortSettings": [
+      "schoolId",
+      "teacherId",
+      "sourceCohortKey",
+      "targetCohortKey"
+    ],
     "listExams": [
       "schoolId",
       "cohortKey"

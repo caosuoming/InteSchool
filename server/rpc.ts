@@ -3,6 +3,7 @@ import { runWithState } from "./runtime-db.js";
 import { serviceRegistry, type ServiceName } from "./service-registry.js";
 import { serviceParameters } from "./service-metadata.js";
 import type { DatabaseStore } from "./database.js";
+import { EXAM_MANAGER_ROLES } from "../src/lib/exam-permissions.js";
 
 const PUBLIC_CALLS = new Set([
   "school.listSchools",
@@ -11,6 +12,14 @@ const PUBLIC_CALLS = new Set([
 ]);
 
 const ADMIN_SERVICE_MUTATIONS = new Set(["settings", "organization"]);
+const EXAM_MANAGER_MUTATIONS = new Set([
+  "importExam",
+  "saveCohortTemplateProfile",
+  "saveCohortSettings",
+  "copyCohortSettings",
+  "updateExamSettings",
+  "deleteExam",
+]);
 const READ_PREFIXES = ["list", "get", "search", "check", "is", "verify", "annotate"];
 const READ_METHODS = new Set([
   "webAnalyzeQuestion",
@@ -106,6 +115,14 @@ function activeRole(teacher: TeacherRecord): string {
 
 function isAdmin(teacher: TeacherRecord): boolean {
   return ["school_admin", "platform_admin"].includes(activeRole(teacher));
+}
+
+function canManageExams(teacher: TeacherRecord): boolean {
+  if (isAdmin(teacher)) return true;
+  const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent);
+  const roles = Array.isArray(affiliation?.roles) ? affiliation.roles : teacher.roles;
+  return roles.some((role) => EXAM_MANAGER_ROLES.includes(role as (typeof EXAM_MANAGER_ROLES)[number]));
 }
 
 function findRecord(state: AppState, id: string): Record<string, unknown> | null {
@@ -265,6 +282,12 @@ function authorize(
 
   if (ADMIN_SERVICE_MUTATIONS.has(service) && !isReadOnly(method) && !admin) {
     throw new Error("该操作需要学校管理员权限");
+  }
+  if (service === "grade" && EXAM_MANAGER_MUTATIONS.has(method) && !canManageExams(teacher)) {
+    throw new Error("该操作需要年级组长或学校管理员权限");
+  }
+  if (service === "examArrangement" && !canManageExams(teacher)) {
+    throw new Error("该操作需要年级组长或学校管理员权限");
   }
   if (service === "class" && ["createSchoolClass", "updateSchoolClass"].includes(method) && !admin) {
     throw new Error("该操作需要学校管理员权限");
