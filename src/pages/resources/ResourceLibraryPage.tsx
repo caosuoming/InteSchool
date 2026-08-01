@@ -50,6 +50,7 @@ const sortOptions: { value: SortKey; label: string; icon: React.ReactNode }[] = 
 
 const coursewareTypeLabel: Record<CoursewareType, string> = {
   ppt: "PPT",
+  ggb: "GeoGebra",
   pdf: "PDF",
   video: "视频",
   image: "图片",

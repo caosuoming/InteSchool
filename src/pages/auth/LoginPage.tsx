@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { GraduationCap, Lock, Mail, School, Smartphone, Sparkles, User as UserIcon } from "lucide-react";
+import { BookOpen, GraduationCap, Lock, Mail, School, Smartphone, Sparkles, User as UserIcon } from "lucide-react";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 import { authService } from "@/services/auth";
 import { SUBJECT_OPTIONS } from "@/lib/education";
@@ -146,6 +146,12 @@ export default function LoginPage() {
             {error && <div className="px-3 py-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700">{error}</div>}
             <Button type="submit" variant="gold" size="lg" loading={loading} className="w-full" disabled={mode === "register" && !context}>{mode === "login" ? "登录" : "注册并进入学校"}</Button>
           </form>
+
+          {mode === "login" && (
+            <Button type="button" variant="outline" className="w-full mt-3" onClick={() => navigate("/classroom-login")}>
+              <BookOpen className="w-4 h-4" />我要上课（登录并选择班级）
+            </Button>
+          )}
 
           <div className="mt-6 text-center text-sm text-ink-500">
             {mode === "login" ? "还没有账号？" : "已有账号？"}

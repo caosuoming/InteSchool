@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   BookOpen, Plus, Search, Trash2, Send,
-  FileSpreadsheet, FileText, Edit3, Clock,
+  FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -96,10 +96,17 @@ export function MyLessonsPage() {
   const sourceLabel: Record<string, string> = {
     examPaper: "试卷来源",
     lecture: "讲义来源",
+    courseware: "课件库来源",
     manual: "手动创建",
   };
 
-  const SourceIcon = cw => cw.sourceType === "examPaper" ? FileSpreadsheet : cw.sourceType === "lecture" ? FileText : BookOpen;
+  const SourceIcon = (cw: LessonCourseware) => cw.sourceType === "examPaper"
+    ? FileSpreadsheet
+    : cw.sourceType === "lecture"
+      ? FileText
+      : cw.sourceType === "courseware"
+        ? Presentation
+        : BookOpen;
 
   return (
     <div>
@@ -139,14 +146,15 @@ export function MyLessonsPage() {
               { value: "all", label: "全部来源" },
               { value: "examPaper", label: "试卷来源" },
               { value: "lecture", label: "讲义来源" },
+              { value: "courseware", label: "课件库来源" },
               { value: "manual", label: "手动创建" },
             ]}
             className="w-32"
           />
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="gold" onClick={() => {}}>
+            <Button variant="gold" onClick={() => navigate("/my-resources/coursewares")}>
               <Plus className="w-4 h-4" />
-              新建课件
+              从课件库添加
             </Button>
           </div>
         </div>
@@ -163,7 +171,7 @@ export function MyLessonsPage() {
           <BookOpen className="w-12 h-12 mx-auto text-ink-300 mb-3" />
           <div className="text-sm text-ink-500 mb-2">暂无上课课件</div>
           <div className="text-xs text-ink-400 mb-4">
-            在试卷库或讲义库中点击「添加到上课」即可创建上课课件
+            在课件库、试卷库或讲义库中点击「添加到上课」即可创建上课课件
           </div>
           <Button variant="outline" onClick={() => navigate("/my-resources/exam-papers")}>
             去试卷库看看
@@ -207,6 +215,10 @@ export function MyLessonsPage() {
                       来源：{cw.sourceTitle}
                     </div>
                   )}
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-3 h-3" />
+                    {cw.classIds.length > 0 ? `已选择 ${cw.classIds.length} 个班级` : "尚未选择授课班级"}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1 pt-3 border-t border-ink-100">
@@ -223,7 +235,9 @@ export function MyLessonsPage() {
                     <Button
                       variant="gold"
                       size="sm"
-                      onClick={() => handlePublish(cw)}
+                      onClick={() => cw.classIds.length > 0
+                        ? handlePublish(cw)
+                        : navigate(`/my-lessons/${cw.id}/edit`)}
                     >
                       <Send className="w-3.5 h-3.5" />
                       发布

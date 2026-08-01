@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { SchoolClass, PersonalClass, Student, AnyClass } from "@/types";
+import type { SchoolClass, PersonalClass, Student, AnyClass, ClassroomChoice } from "@/types";
 
 export interface StudentInput {
   name: string;
@@ -12,6 +12,10 @@ export interface StudentInput {
 }
 
 export const classService = {
+  async listClassroomChoices(): Promise<ClassroomChoice[]> {
+    return rpcCall("class", "listClassroomChoices", []) as any;
+  },
+
   async listSchoolClasses(schoolId: string): Promise<SchoolClass[]> {
     return rpcCall("class", "listSchoolClasses", [schoolId]) as any;
   },

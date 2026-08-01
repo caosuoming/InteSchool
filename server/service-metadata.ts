@@ -243,6 +243,7 @@ export const serviceParameters = {
     ]
   },
   "class": {
+    "listClassroomChoices": [],
     "listSchoolClasses": [
       "schoolId"
     ],
@@ -655,6 +656,11 @@ export const serviceParameters = {
       "teacherId",
       "schoolId",
       "lecture"
+    ],
+    "createFromCourseware": [
+      "teacherId",
+      "schoolId",
+      "sourceId"
     ]
   },
   "material": {

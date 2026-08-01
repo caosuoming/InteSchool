@@ -155,7 +155,7 @@ const resourceTypeLabel: Record<ShareableResourceType, string> = {
 };
 
 const coursewareTypeLabel: Record<CoursewareType, string> = {
-  ppt: "PPT", pdf: "PDF", video: "视频", image: "图片", other: "其他",
+  ppt: "PPT", ggb: "GeoGebra", pdf: "PDF", video: "视频", image: "图片", other: "其他",
 };
 
 const materialTypeLabel: Record<MaterialType, string> = {

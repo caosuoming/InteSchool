@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Plus, Trash2, Send, Save,
   FileQuestion, Blocks, SplitSquareHorizontal,
   Merge, Edit3, Check, X, MessageSquareText, Star,
-  Play,
+  Play, School, ExternalLink, Presentation,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -12,7 +12,7 @@ import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { questionService } from "@/services/question";
 import { reflectionService } from "@/services/reflection";
 import { classService } from "@/services/class";
-import type { LessonCourseware, LessonSlide, Question, Reflection, Student } from "@/types";
+import type { LessonCourseware, LessonSlide, Question, Reflection, Student, SchoolClass } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { genId } from "@/lib/service-utils";
 import { PresentationMode } from "./PresentationMode";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
+import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
+import { getCoursewareEditorUrl } from "@/lib/courseware-online";
 
 export function LessonEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -62,6 +64,8 @@ export function LessonEditorPage() {
   } | null>(null);
 
   const [students, setStudents] = useState<Student[]>([]);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [classModalOpen, setClassModalOpen] = useState(false);
 
   const loadCourseware = useCallback(async () => {
     if (!id) return;
@@ -110,9 +114,15 @@ export function LessonEditorPage() {
 
   useEffect(() => {
     if (!teacher?.schoolId) return;
-    classService.listMyStudents(teacher.schoolId, teacher.id)
-      .then(setStudents)
-      .catch((error) => toast.error("学生列表加载失败", error instanceof Error ? error.message : undefined));
+    Promise.all([
+      classService.listMyStudents(teacher.schoolId, teacher.id),
+      classService.listSchoolClasses(teacher.schoolId),
+    ])
+      .then(([studentItems, classItems]) => {
+        setStudents(studentItems);
+        setClasses(classItems.filter((item) => item.status !== "graduated"));
+      })
+      .catch((error) => toast.error("班级与学生列表加载失败", error instanceof Error ? error.message : undefined));
   }, [teacher]);
 
   const currentSlide = slides[currentIndex];
@@ -124,6 +134,7 @@ export function LessonEditorPage() {
       const updated = await lessonCoursewareService.updateCourseware(courseware.id, {
         slides,
         title: courseware.title,
+        classIds: courseware.classIds,
       });
       setCourseware(updated);
       toast.success("已保存");
@@ -136,16 +147,34 @@ export function LessonEditorPage() {
 
   const handlePublish = async () => {
     if (!courseware) return;
+    if (courseware.classIds.length === 0) {
+      setClassModalOpen(true);
+      toast.error("请先选择授课班级");
+      return;
+    }
     setPublishing(true);
     try {
+      await lessonCoursewareService.updateCourseware(courseware.id, {
+        slides,
+        title: courseware.title,
+        classIds: courseware.classIds,
+      });
       await lessonCoursewareService.publishCourseware(courseware.id);
-      toast.success("已发布", "课件已推送到上课应用，学生端可查看");
+      toast.success("已发布", "课件已推送到“我要上课”页面");
       loadCourseware();
     } catch (err) {
       toast.error("发布失败", err instanceof Error ? err.message : undefined);
     } finally {
       setPublishing(false);
     }
+  };
+
+  const toggleClass = (classId: string) => {
+    if (!courseware) return;
+    const next = courseware.classIds.includes(classId)
+      ? courseware.classIds.filter((id) => id !== classId)
+      : [...courseware.classIds, classId];
+    setCourseware({ ...courseware, classIds: next });
   };
 
   const moveSlide = (from: number, to: number) => {
@@ -397,6 +426,10 @@ export function LessonEditorPage() {
           {currentIndex + 1} / {slides.length} 页
         </div>
         <div className="h-5 w-px bg-ink-200" />
+        <Button variant="outline" size="sm" onClick={() => setClassModalOpen(true)}>
+          <School className="w-4 h-4" />
+          授课班级 {courseware?.classIds.length ? `(${courseware.classIds.length})` : ""}
+        </Button>
         <Button variant="outline" size="sm" onClick={handleSave} loading={saving}>
           <Save className="w-4 h-4" />
           保存
@@ -584,6 +617,25 @@ export function LessonEditorPage() {
                   </div>
                 )}
 
+                {/* 外部课件内容 */}
+                {currentSlide.type === "courseware" && (
+                  <div className="space-y-4">
+                    <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-[52vh]" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getCoursewareEditorUrl(currentSlide) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(getCoursewareEditorUrl(currentSlide), "_blank", "noopener,noreferrer")}
+                        >
+                          <ExternalLink className="w-4 h-4" />在线编辑
+                        </Button>
+                      )}
+                      <span className="text-xs text-ink-500">{currentSlide.fileName || currentSlide.content}</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* 知识块内容 */}
                 {currentSlide.type === "knowledge" && (
                   <div>
@@ -726,6 +778,14 @@ export function LessonEditorPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-ink-600 mb-1.5">页面类型</label>
+                  {currentSlide.type === "courseware" ? (
+                    <div className="rounded-lg border border-gold-200 bg-gold-50/50 p-3 text-xs text-ink-600">
+                      <div className="flex items-center gap-1.5 font-medium text-ink-800 mb-1">
+                        <Presentation className="w-3.5 h-3.5" />外部课件页
+                      </div>
+                      此页面保留原始 PPT 或 GeoGebra 文件，可直接预览并打开在线编辑器。
+                    </div>
+                  ) : (
                   <div className="flex gap-1">
                     <button
                       onClick={() => updateCurrentSlide({ type: "question" })}
@@ -752,6 +812,7 @@ export function LessonEditorPage() {
                       知识块
                     </button>
                   </div>
+                  )}
                 </div>
 
                 {currentSlide.type === "knowledge" && (
@@ -1008,6 +1069,49 @@ export function LessonEditorPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={classModalOpen}
+        onClose={() => setClassModalOpen(false)}
+        title="选择授课班级"
+        description="发布后，所选班级可在“我要上课”中看到该课件"
+        size="md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setClassModalOpen(false)}>完成</Button>
+            <Button variant="gold" onClick={async () => { await handleSave(); setClassModalOpen(false); }} loading={saving}>
+              <Save className="w-4 h-4" />保存班级
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-2 max-h-80 overflow-auto">
+          {classes.length === 0 ? (
+            <div className="py-8 text-center text-sm text-ink-500">暂无可选班级</div>
+          ) : classes.map((item) => {
+            const selected = courseware?.classIds.includes(item.id) || false;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => toggleClass(item.id)}
+                className={cn(
+                  "w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                  selected ? "border-gold-300 bg-gold-50" : "border-ink-100 hover:border-ink-300",
+                )}
+              >
+                <span className={cn(
+                  "w-4 h-4 rounded border flex items-center justify-center",
+                  selected ? "bg-gold-400 border-gold-400" : "border-ink-300",
+                )}>
+                  {selected && <Check className="w-3 h-3 text-ink-900" />}
+                </span>
+                <span className="flex-1 text-sm text-ink-800">{item.grade} · {item.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Modal>
 
       {/* 公式编辑器弹窗 */}
       <Modal

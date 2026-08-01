@@ -69,12 +69,13 @@ const resourceTypes: {
 }[] = [
   { key: "examPaper", label: "试卷", icon: FileSpreadsheet, description: "Word/PDF版试卷，上传后可在资源库中进行文档拆解", supportsAIExtract: true, formats: ".doc,.docx,.pdf" },
   { key: "lecture", label: "讲义", icon: FileText, description: "Word/PDF版讲义，上传后可在资源库中进行文档拆解", supportsAIExtract: true, formats: ".doc,.docx,.pdf" },
-  { key: "courseware", label: "课件", icon: Presentation, description: "PPT、几何画板、视频等课件", supportsAIExtract: false, formats: ".ppt,.pptx,.pdf,.mp4,.jpg,.png" },
+  { key: "courseware", label: "课件", icon: Presentation, description: "PPT、几何画板、视频等课件", supportsAIExtract: false, formats: ".ppt,.pptx,.ggb,.pdf,.mp4,.jpg,.png" },
   { key: "material", label: "素材", icon: FileBox, description: "文本、图片、音视频等素材", supportsAIExtract: false, formats: ".txt,.jpg,.png,.mp3,.mp4,.pdf" },
 ];
 
 const coursewareTypeOptions = [
   { value: "ppt", label: "PPT" },
+  { value: "ggb", label: "GeoGebra" },
   { value: "pdf", label: "PDF" },
   { value: "video", label: "视频" },
   { value: "image", label: "图片" },
@@ -352,6 +353,7 @@ export function UploadPage() {
               type: (item.coursewareType || coursewareType) as CoursewareType,
               content: item.description.trim() || item.file.name,
               fileUrl: uploaded.url,
+              fileName: item.file.name,
               fileSize: item.file.size,
               tags: [],
             },

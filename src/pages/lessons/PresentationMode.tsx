@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   X, ChevronLeft, ChevronRight, Pen, Eraser, Trash2,
-  Palette, FileQuestion, Blocks, Users, Link2, Eye, EyeOff,
+  Palette, FileQuestion, Blocks, Users, Link2, Eye, EyeOff, Presentation,
 } from "lucide-react";
 import type { LessonSlide, Question } from "@/types";
 import { cn } from "@/lib/utils";
+import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 
 interface PresentationModeProps {
   slides: LessonSlide[];
@@ -258,7 +259,10 @@ export function PresentationMode({
       >
         {/* 幻灯片内容 */}
         <div className="absolute inset-0 flex items-center justify-center p-8">
-          <div className="bg-paper rounded-xl shadow-2xl w-full max-w-5xl h-full max-h-full overflow-auto p-12">
+          <div className={cn(
+            "bg-paper rounded-xl shadow-2xl w-full max-w-5xl h-full max-h-full overflow-auto",
+            currentSlide?.type === "courseware" ? "p-0" : "p-12",
+          )}>
             {currentSlide?.type === "question" && currentSlide.questionSnapshot ? (
               <div className="space-y-8">
                 <div className="flex items-center gap-2 pb-4 border-b border-ink-100">
@@ -312,6 +316,8 @@ export function PresentationMode({
                   </div>
                 )}
               </div>
+            ) : currentSlide?.type === "courseware" ? (
+              <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-full min-h-[60vh]" />
             ) : (
               <div className="space-y-4">
                 <div className="font-serif text-2xl font-bold text-ink-900 pb-4 border-b border-ink-100">
@@ -483,6 +489,8 @@ export function PresentationMode({
             <div className="flex flex-col items-center">
               {slide.type === "question" ? (
                 <FileQuestion className="w-3 h-3 mb-0.5" />
+              ) : slide.type === "courseware" ? (
+                <Presentation className="w-3 h-3 mb-0.5" />
               ) : (
                 <Blocks className="w-3 h-3 mb-0.5" />
               )}

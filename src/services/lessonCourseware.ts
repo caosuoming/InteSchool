@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture, ResourceSemester } from "@/types";
+import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture, Courseware, ResourceSemester } from "@/types";
 
 export interface LessonCoursewareInput {
   title: string;
@@ -10,7 +10,7 @@ export interface LessonCoursewareInput {
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
-  sourceType: "examPaper" | "lecture" | "manual";
+  sourceType: "examPaper" | "lecture" | "courseware" | "manual";
   sourceId?: string;
   sourceTitle?: string;
   slides: LessonSlide[];
@@ -52,5 +52,9 @@ export const lessonCoursewareService = {
 
   async createFromLecture(teacherId: string, schoolId: string, lecture: Lecture): Promise<LessonCourseware> {
     return rpcCall("lessonCourseware", "createFromLecture", [teacherId, schoolId, lecture]) as any;
+  },
+
+  async createFromCourseware(teacherId: string, schoolId: string, courseware: Courseware): Promise<LessonCourseware> {
+    return rpcCall("lessonCourseware", "createFromCourseware", [teacherId, schoolId, courseware.id]) as any;
   }
 };

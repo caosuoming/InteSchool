@@ -9,6 +9,7 @@ const PUBLIC_CALLS = new Set([
   "school.listSchools",
   "school.searchSchools",
   "school.getSchool",
+  "class.listClassroomChoices",
 ]);
 
 const ADMIN_SERVICE_MUTATIONS = new Set(["settings", "organization"]);

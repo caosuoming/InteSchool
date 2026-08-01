@@ -12,6 +12,7 @@ function matchFilter(c: LessonCourseware, filter: LessonCoursewareFilter): boole
   if (filter.schoolYear && c.schoolYear !== filter.schoolYear) return false;
   if (filter.semester && (c.semester || "上学期") !== filter.semester) return false;
   if (filter.status && c.status !== filter.status) return false;
+  if (filter.classId && !c.classIds.includes(filter.classId)) return false;
   if (filter.teacherId && c.teacherId !== filter.teacherId) return false;
   if (filter.schoolId && c.schoolId !== filter.schoolId) return false;
   if (filter.chapterIds?.length) {
@@ -31,7 +32,7 @@ export interface LessonCoursewareInput {
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
-  sourceType: "examPaper" | "lecture" | "manual";
+  sourceType: "examPaper" | "lecture" | "courseware" | "manual";
   sourceId?: string;
   sourceTitle?: string;
   slides: LessonSlide[];
@@ -60,6 +61,7 @@ export const lessonCoursewareService = {
     await delay(400);
     maybeThrowError();
     const now = new Date().toISOString();
+    const teacher = db.read("teachers").find((item) => item.id === teacherId);
     const courseware: LessonCourseware = {
       id: genId("lc"),
       teacherId,
@@ -76,6 +78,8 @@ export const lessonCoursewareService = {
       sourceTitle: input.sourceTitle,
       slides: input.slides,
       classIds: input.classIds,
+      subject: teacher?.subject,
+      teacherName: teacher?.name,
       status: "draft",
       createdAt: now,
       updatedAt: now,
@@ -112,7 +116,13 @@ export const lessonCoursewareService = {
 
   async publishCourseware(id: string): Promise<LessonCourseware> {
     await delay(400);
+    const courseware = db.read("lessonCoursewares").find((item) => item.id === id);
+    if (!courseware) throw new Error("课件不存在");
+    if (courseware.classIds.length === 0) throw new Error("请先选择至少一个授课班级");
+    const teacher = db.read("teachers").find((item) => item.id === courseware.teacherId);
     return this.updateCourseware(id, {
+      subject: teacher?.subject || courseware.subject,
+      teacherName: teacher?.name || courseware.teacherName,
       status: "published",
       publishedAt: new Date().toISOString(),
     });
@@ -206,6 +216,43 @@ export const lessonCoursewareService = {
       sourceId: lecture.id,
       sourceTitle: lecture.title,
       slides,
+      classIds: [],
+    });
+  },
+
+  async createFromCourseware(
+    teacherId: string,
+    schoolId: string,
+    sourceId: string,
+  ): Promise<LessonCourseware> {
+    const source = db.read("coursewares").find((item) =>
+      item.id === sourceId && item.teacherId === teacherId && item.schoolId === schoolId);
+    if (!source) throw new Error("课件不存在或无权访问");
+    const slide: LessonSlide = {
+      id: genId("slide"),
+      type: "courseware",
+      title: source.title,
+      content: source.description || source.content,
+      coursewareType: source.type,
+      fileUrl: source.fileUrl,
+      fileName: source.fileName,
+      onlineAccessToken: source.onlineAccessToken,
+      editorUrl: source.editorUrl,
+      relatedQuestionIds: [],
+      askableStudentIds: [],
+    };
+    return this.createCourseware(teacherId, schoolId, {
+      title: `${source.title}（上课课件）`,
+      description: source.description,
+      chapterIds: source.chapterIds,
+      knowledgePointIds: source.knowledgePointIds,
+      grade: source.grade,
+      schoolYear: source.schoolYear,
+      semester: source.semester || "上学期",
+      sourceType: "courseware",
+      sourceId: source.id,
+      sourceTitle: source.title,
+      slides: [slide],
       classIds: [],
     });
   },

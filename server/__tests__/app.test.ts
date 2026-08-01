@@ -1653,6 +1653,66 @@ describe("production backend", () => {
     expect(missingDownload.statusCode).toBe(404);
   });
 
+  it("serves uploaded GeoGebra courseware through a tokenized public preview URL", async () => {
+    const session = await login(built.app);
+    const multipart = multipartPayload(
+      "function.ggb",
+      "geogebra-test-content",
+      "application/vnd.geogebra.file",
+    );
+    const uploadResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/files",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+        "content-type": multipart.contentType,
+      },
+      payload: multipart.body,
+    });
+    expect(uploadResponse.statusCode).toBe(200);
+    const uploaded = uploadResponse.json<{ url: string }>();
+
+    const createResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+      },
+      payload: {
+        service: "courseware",
+        method: "createCourseware",
+        args: ["tch-1", "sch-1", {
+          title: "函数图像",
+          chapterIds: [],
+          knowledgePointIds: [],
+          grade: "高一",
+          schoolYear: "2026-2027",
+          semester: "上学期",
+          type: "ggb",
+          content: "动态函数图像",
+          fileUrl: uploaded.url,
+          fileName: "function.ggb",
+          fileSize: 21,
+          tags: [],
+        }],
+      },
+    });
+    expect(createResponse.statusCode).toBe(200);
+    const created = createResponse.json<{ result: { onlineAccessToken: string } }>().result;
+    expect(created.onlineAccessToken).toEqual(expect.any(String));
+
+    const previewResponse = await built.app.inject({
+      method: "GET",
+      url: `/api/courseware-files/${created.onlineAccessToken}`,
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    expect(previewResponse.headers["content-type"]).toContain("application/vnd.geogebra.file");
+    expect(previewResponse.headers["access-control-allow-origin"]).toBe("*");
+    expect(previewResponse.body).toBe("geogebra-test-content");
+  });
+
   it("supports public school RPC calls and rejects unknown RPC targets", async () => {
     const publicSchools = await built.app.inject({
       method: "POST",
@@ -1661,6 +1721,24 @@ describe("production backend", () => {
     });
     expect(publicSchools.statusCode).toBe(200);
     expect(publicSchools.json<{ result: unknown[] }>().result.length).toBeGreaterThan(0);
+
+    const publicClasses = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      payload: { service: "class", method: "listClassroomChoices", args: [] },
+    });
+    expect(publicClasses.statusCode).toBe(200);
+    expect(publicClasses.json<{ result: Array<Record<string, unknown>> }>().result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.any(String),
+          schoolId: expect.any(String),
+          schoolName: expect.any(String),
+          name: expect.any(String),
+          grade: expect.any(String),
+        }),
+      ]),
+    );
 
     const unknownService = await built.app.inject({
       method: "POST",

@@ -87,11 +87,13 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", "https://www.geogebra.org"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "blob:"],
-        fontSrc: ["'self'", "data:"],
-        connectSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "blob:", "https://www.geogebra.org"],
+        fontSrc: ["'self'", "data:", "https://www.geogebra.org"],
+        connectSrc: ["'self'", "https://www.geogebra.org"],
+        workerSrc: ["'self'", "blob:", "https://www.geogebra.org"],
+        frameSrc: ["'self'", "https://view.officeapps.live.com"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         baseUri: ["'self'"],
