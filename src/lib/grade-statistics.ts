@@ -10,10 +10,14 @@ import {
   buildDefaultCustomGradeColumns,
   validateGradeFormula,
 } from "./grade-formula.js";
+import {
+  ASSIGNABLE_GRADE_SUBJECTS,
+  isAssignableGradeSubject,
+} from "./grade-subjects.js";
 
 export const CORE_GRADE_SUBJECTS = ["语文", "数学", "英语"] as const;
 export const ELECTIVE_GRADE_SUBJECTS = ["物理", "化学", "生物", "政治", "历史", "地理"] as const;
-export const ASSIGNMENT_GRADE_SUBJECTS = ["化学", "生物", "政治", "地理"] as const;
+export const ASSIGNMENT_GRADE_SUBJECTS = ASSIGNABLE_GRADE_SUBJECTS;
 
 export const DEFAULT_ASSIGNMENT_RULES: GradeBandRule[] = [
   { label: "A", percentileFrom: 0, percentileTo: 15, assignedMin: 86, assignedMax: 100 },
@@ -55,9 +59,7 @@ export function buildDefaultGradeSettings(
   const electiveSubjects = normalizedSubjects.filter((subject) =>
     ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]),
   );
-  const assignmentSubjects = normalizedSubjects.filter((subject) =>
-    ASSIGNMENT_GRADE_SUBJECTS.includes(subject as (typeof ASSIGNMENT_GRADE_SUBJECTS)[number]),
-  );
+  const assignableSubjects = normalizedSubjects.filter(isAssignableGradeSubject);
   const coreSubjects = normalizedSubjects.filter((subject) =>
     CORE_GRADE_SUBJECTS.includes(subject as (typeof CORE_GRADE_SUBJECTS)[number]),
   );
@@ -82,7 +84,7 @@ export function buildDefaultGradeSettings(
     ]),
   );
   const assignmentRules = Object.fromEntries(
-    assignmentSubjects.map((subject) => [
+    assignableSubjects.map((subject) => [
       subject,
       DEFAULT_ASSIGNMENT_RULES.map((rule) => ({ ...rule })),
     ]),
@@ -265,7 +267,10 @@ interface BaseGradeRecord {
   studentNo: string;
   classId: string;
   className: string;
+  subjectSelection?: string;
+  classType?: string;
   scores: Record<string, number | null>;
+  sourceAssignedScores?: Record<string, number | null>;
 }
 
 function competitionRanks<T>(
@@ -330,6 +335,7 @@ function assignSubjectScores(
     const rawMin = Math.min(...rawScores);
     const rawMax = Math.max(...rawScores);
     group.forEach((record) => {
+      if (typeof record.sourceAssignedScores?.[subject] === "number") return;
       const raw = record.scores[subject] as number;
       const assigned = rawMax === rawMin
         ? rule.assignedMax
@@ -347,17 +353,29 @@ export function calculateGradeRecords(
 ): GradeScoreRecord[] {
   const normalizedSubjects = unique(subjects);
   const classSettings = new Map(settings.classSubjects.map((item) => [item.classId, item]));
-  const records: GradeScoreRecord[] = baseRecords.map((record) => ({
-    ...record,
-    scores: Object.fromEntries(normalizedSubjects.map((subject) => [subject, record.scores[subject] ?? null])),
-    assignedScores: Object.fromEntries(normalizedSubjects.map((subject) => [subject, record.scores[subject] ?? null])),
-    rawTotal: 0,
-    assignedTotal: 0,
-    gradeRank: 0,
-    classRank: 0,
-    subjectRanks: Object.fromEntries(normalizedSubjects.map((subject) => [subject, null])),
-    subjectRankScopes: Object.fromEntries(normalizedSubjects.map((subject) => [subject, "cohort" as const])),
-  }));
+  const records: GradeScoreRecord[] = baseRecords.map((record) => {
+    const sourceAssignedScores = record.sourceAssignedScores
+      ? Object.fromEntries(normalizedSubjects.map((subject) => [
+          subject,
+          record.sourceAssignedScores?.[subject] ?? null,
+        ]))
+      : undefined;
+    return {
+      ...record,
+      scores: Object.fromEntries(normalizedSubjects.map((subject) => [subject, record.scores[subject] ?? null])),
+      sourceAssignedScores,
+      assignedScores: Object.fromEntries(normalizedSubjects.map((subject) => {
+        const imported = sourceAssignedScores?.[subject];
+        return [subject, typeof imported === "number" ? imported : record.scores[subject] ?? null];
+      })),
+      rawTotal: 0,
+      assignedTotal: 0,
+      gradeRank: 0,
+      classRank: 0,
+      subjectRanks: Object.fromEntries(normalizedSubjects.map((subject) => [subject, null])),
+      subjectRankScopes: Object.fromEntries(normalizedSubjects.map((subject) => [subject, "cohort" as const])),
+    };
+  });
 
   for (const [subject, rules] of Object.entries(settings.assignmentRules)) {
     if (!normalizedSubjects.includes(subject)) continue;

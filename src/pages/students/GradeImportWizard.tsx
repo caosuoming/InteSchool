@@ -27,13 +27,23 @@ import { gradeService } from "@/services/grade";
 import {
   GRADE_SUBJECT_OPTIONS,
   detectGradeSheet,
+  gradeSubjectScoreAvailability,
   parseGradeRows,
   readGradeWorkbook,
   type GradeColumnMapping,
+  type GradeSubjectScoreAvailability,
   type GradeWorkbookData,
 } from "@/lib/grade-spreadsheet";
 import { autoMatchGradeRows, gradeRowResolutionError } from "@/lib/grade-matching";
-import { buildDefaultGradeSettings, normalizeGradeSettings } from "@/lib/grade-statistics";
+import {
+  buildDefaultGradeSettings,
+  DEFAULT_ASSIGNMENT_RULES,
+  normalizeGradeSettings,
+} from "@/lib/grade-statistics";
+import {
+  ASSIGNABLE_GRADE_SUBJECTS,
+  isAssignableGradeSubject,
+} from "@/lib/grade-subjects";
 import { cn } from "@/lib/utils";
 import { GradeSettingsEditor } from "./GradeSettingsEditor";
 
@@ -56,10 +66,7 @@ const steps = [
 ];
 
 function mappedSubjects(mappings: GradeColumnMapping[]): string[] {
-  return [...new Set(mappings
-    .map((item) => item.role)
-    .filter((role) => role.startsWith("subject:"))
-    .map((role) => role.slice("subject:".length)))];
+  return gradeSubjectScoreAvailability(mappings).map((item) => item.subject);
 }
 
 function deriveExamName(fileName: string): string {
@@ -71,7 +78,21 @@ function roleLabel(role: GradeColumnMapping["role"]): string {
   if (role === "className") return "班级";
   if (role === "studentName") return "姓名";
   if (role === "studentNo") return "学号/考号";
+  if (role === "subjectSelection") return "选科";
+  if (role === "classType") return "班型";
+  if (role.startsWith("assignedSubject:")) return `赋分：${role.slice("assignedSubject:".length)}`;
   return `科目：${role.slice("subject:".length)}`;
+}
+
+function withoutImportedAssignmentRules(
+  settings: GradeExamSettings,
+  availability: GradeSubjectScoreAvailability[],
+): GradeExamSettings {
+  const assignmentRules = { ...settings.assignmentRules };
+  availability.filter((item) => item.hasAssigned).forEach((item) => {
+    delete assignmentRules[item.subject];
+  });
+  return { ...settings, assignmentRules };
 }
 
 function MatchStatus({ row }: { row: GradeImportRow }) {
@@ -158,6 +179,11 @@ export function GradeImportWizard({
 
   const selectedSheet = workbook?.sheets[sheetIndex] || null;
   const subjects = useMemo(() => mappedSubjects(mappings), [mappings]);
+  const scoreAvailability = useMemo(() => gradeSubjectScoreAvailability(mappings), [mappings]);
+  const importedAssignedSubjects = useMemo(
+    () => scoreAvailability.filter((item) => item.hasAssigned).map((item) => item.subject),
+    [scoreAvailability],
+  );
   const unresolvedCount = rows.filter((row) => gradeRowResolutionError(row)).length;
   const previewRows = selectedSheet?.rows.slice(headerRowIndex + 1, headerRowIndex + 7) || [];
 
@@ -222,7 +248,7 @@ export function GradeImportWizard({
       const formulaDefaults = context.templateProfile
         ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }
         : defaults;
-      setSettings(cohortSettings
+      const preparedSettings = cohortSettings
         ? normalizeGradeSettings(
             context.templateProfile
               ? { ...cohortSettings.settings, templates: structuredClone(context.templateProfile.templates) }
@@ -231,7 +257,8 @@ export function GradeImportWizard({
             context.classes.map((item) => item.id),
             context.teachers.map((item) => item.id),
           )
-        : formulaDefaults);
+        : formulaDefaults;
+      setSettings(withoutImportedAssignmentRules(preparedSettings, scoreAvailability));
       setStep(2);
     } catch (error) {
       toast.error("字段映射不完整", error instanceof Error ? error.message : undefined);
@@ -296,6 +323,17 @@ export function GradeImportWizard({
       return;
     }
     setStep(3);
+  };
+
+  const setSubjectScoreHandling = (subject: string, mode: "raw" | "convert") => {
+    if (!settings) return;
+    const assignmentRules = { ...settings.assignmentRules };
+    if (mode === "convert") {
+      assignmentRules[subject] = DEFAULT_ASSIGNMENT_RULES.map((rule) => ({ ...rule }));
+    } else {
+      delete assignmentRules[subject];
+    }
+    setSettings({ ...settings, assignmentRules });
   };
 
   const handleSubmit = async () => {
@@ -509,9 +547,16 @@ export function GradeImportWizard({
                             <option value="className">班级</option>
                             <option value="studentName">姓名</option>
                             <option value="studentNo">学号/考号</option>
-                            <optgroup label="成绩科目">
+                            <option value="subjectSelection">选科</option>
+                            <option value="classType">班型</option>
+                            <optgroup label="原始成绩">
                               {[...new Set([...GRADE_SUBJECT_OPTIONS, mapping.header])].map((subject) => (
-                                <option key={subject} value={`subject:${subject}`}>科目：{subject}</option>
+                                <option key={subject} value={`subject:${subject}`}>原始分：{subject}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="表内赋分">
+                              {ASSIGNABLE_GRADE_SUBJECTS.map((subject) => (
+                                <option key={subject} value={`assignedSubject:${subject}`}>赋分：{subject}</option>
                               ))}
                             </optgroup>
                           </select>
@@ -537,7 +582,14 @@ export function GradeImportWizard({
               <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 px-4 py-3 text-xs text-ink-500">
                 <span>当前映射：</span>
                 {mappings.filter((item) => item.role !== "ignore").map((item) => (
-                  <Badge key={item.columnIndex} variant={item.role.startsWith("subject:") ? "teal" : "gold"}>
+                  <Badge
+                    key={item.columnIndex}
+                    variant={item.role.startsWith("assignedSubject:")
+                      ? "teal"
+                      : item.role.startsWith("subject:")
+                        ? "gold"
+                        : "ink"}
+                  >
                     {item.header} → {roleLabel(item.role)}
                   </Badge>
                 ))}
@@ -567,6 +619,8 @@ export function GradeImportWizard({
                   <th className="px-3 py-2.5 text-left font-medium">原班级</th>
                   <th className="px-3 py-2.5 text-left font-medium">姓名</th>
                   <th className="px-3 py-2.5 text-left font-medium">学号/考号</th>
+                  <th className="px-3 py-2.5 text-left font-medium">选科</th>
+                  <th className="px-3 py-2.5 text-left font-medium">班型</th>
                   <th className="px-3 py-2.5 text-left font-medium">处理方式</th>
                   <th className="px-3 py-2.5 text-left font-medium">匹配或新增信息</th>
                   <th className="px-3 py-2.5 text-left font-medium">状态</th>
@@ -581,6 +635,8 @@ export function GradeImportWizard({
                       <td className="px-3 py-3 text-ink-700">{row.sourceClassName || "未填写"}</td>
                       <td className="px-3 py-3 font-medium text-ink-900">{row.sourceName}</td>
                       <td className="px-3 py-3 text-ink-600">{row.sourceStudentNo || "未填写"}</td>
+                      <td className="px-3 py-3 text-ink-600">{row.subjectSelection || "未填写"}</td>
+                      <td className="px-3 py-3 text-ink-600">{row.classType || "未填写"}</td>
                       <td className="px-3 py-3">
                         <select
                           value={row.createStudent ? "__new__" : row.studentId || ""}
@@ -659,13 +715,80 @@ export function GradeImportWizard({
       )}
 
       {step === 3 && context && settings && (
-        <GradeSettingsEditor
-          settings={settings}
-          subjects={subjects}
-          context={context}
-          onChange={setSettings}
-          section="settings"
-        />
+        <div className="space-y-4">
+          <div className="overflow-hidden rounded-xl border border-ink-200 bg-paper">
+            <div className="border-b border-ink-100 bg-mist/50 px-5 py-4">
+              <div className="font-medium text-ink-900">原始分与赋分处理</div>
+              <div className="mt-0.5 text-xs text-ink-500">
+                表格已有赋分时直接使用；只有原始分的化学、生物、政治、地理可选择保留原始分或按规则换算。
+              </div>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
+              {scoreAvailability.map((item) => {
+                const canConvert = item.hasRaw && !item.hasAssigned && isAssignableGradeSubject(item.subject);
+                const converting = Boolean(settings.assignmentRules[item.subject]);
+                return (
+                  <div key={item.subject} className="rounded-lg border border-ink-200 px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-ink-900">{item.subject}</span>
+                      {item.hasRaw && item.hasAssigned ? (
+                        <Badge variant="teal">原始分 + 表内赋分</Badge>
+                      ) : item.hasAssigned ? (
+                        <Badge variant="teal">仅表内赋分</Badge>
+                      ) : canConvert && converting ? (
+                        <Badge variant="gold">规则换算赋分</Badge>
+                      ) : (
+                        <Badge variant="ink">仅原始分</Badge>
+                      )}
+                    </div>
+                    {item.hasRaw && item.hasAssigned && (
+                      <div className="mt-2 text-xs text-ink-500">原始分用于原始口径，表内赋分用于赋分口径。</div>
+                    )}
+                    {!item.hasRaw && item.hasAssigned && (
+                      <div className="mt-2 text-xs text-ink-500">原始分留空，排名和默认统计直接引用表内赋分。</div>
+                    )}
+                    {canConvert && (
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSubjectScoreHandling(item.subject, "raw")}
+                          className={cn(
+                            "rounded-md border px-2.5 py-1.5 text-xs",
+                            !converting
+                              ? "border-ink-500 bg-ink-50 font-medium text-ink-800"
+                              : "border-ink-200 text-ink-500 hover:border-ink-300",
+                          )}
+                        >
+                          只用原始分
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSubjectScoreHandling(item.subject, "convert")}
+                          className={cn(
+                            "rounded-md border px-2.5 py-1.5 text-xs",
+                            converting
+                              ? "border-gold-400 bg-gold-50 font-medium text-gold-800"
+                              : "border-ink-200 text-ink-500 hover:border-gold-300",
+                          )}
+                        >
+                          换算赋分
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <GradeSettingsEditor
+            settings={settings}
+            subjects={subjects}
+            context={context}
+            onChange={setSettings}
+            section="settings"
+            importedAssignedSubjects={importedAssignedSubjects}
+          />
+        </div>
       )}
 
       {step === 4 && context && settings && (

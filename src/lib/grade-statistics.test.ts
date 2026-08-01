@@ -146,6 +146,27 @@ describe("grade statistics", () => {
     expect(records.find((record) => record.studentId === "student-3")?.classRank).toBe(1);
   });
 
+  it("preserves imported assigned scores and supports assigned-only subjects", () => {
+    const settings = buildDefaultGradeSettings(["化学", "生物"], ["class-1"]);
+    const records = calculateGradeRecords([{
+      ...baseRecords[0],
+      subjectSelection: "物化生",
+      classType: "强基班",
+      scores: { 化学: 72, 生物: null },
+      sourceAssignedScores: { 化学: 88, 生物: 91 },
+    }], ["化学", "生物"], settings);
+
+    expect(records[0]).toMatchObject({
+      subjectSelection: "物化生",
+      classType: "强基班",
+      scores: { 化学: 72, 生物: null },
+      sourceAssignedScores: { 化学: 88, 生物: 91 },
+      assignedScores: { 化学: 88, 生物: 91 },
+      rawTotal: 72,
+      assignedTotal: 179,
+    });
+  });
+
   it("uses competition ranking for equal totals", () => {
     const settings: GradeExamSettings = {
       subjectTeacherIds: { 数学: [] },

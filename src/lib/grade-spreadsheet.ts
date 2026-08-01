@@ -1,8 +1,20 @@
 import type { GradeExam, GradeImportRow } from "../types/index.js";
 import { buildGradeReportTable } from "./grade-reports.js";
+import {
+  ASSIGNABLE_GRADE_SUBJECTS,
+  isAssignableGradeSubject,
+} from "./grade-subjects.js";
 
 export type GradeCellValue = string | number | null;
-export type GradeColumnRole = "ignore" | "className" | "studentName" | "studentNo" | `subject:${string}`;
+export type GradeColumnRole =
+  | "ignore"
+  | "className"
+  | "studentName"
+  | "studentNo"
+  | "subjectSelection"
+  | "classType"
+  | `subject:${string}`
+  | `assignedSubject:${string}`;
 
 export interface GradeWorkbookSheet {
   name: string;
@@ -26,10 +38,21 @@ export interface GradeSheetDetection {
   mappings: GradeColumnMapping[];
 }
 
+export interface GradeSubjectScoreAvailability {
+  subject: string;
+  hasRaw: boolean;
+  hasAssigned: boolean;
+}
+
 const CLASS_ALIASES = new Set(["班级", "班别", "行政班", "教学班", "班"]);
 const NAME_ALIASES = new Set(["姓名", "学生姓名", "考生姓名", "名字"]);
 const STUDENT_NO_ALIASES = new Set(["学号", "学生学号", "考号", "准考证号", "学籍号", "考生号"]);
+const SUBJECT_SELECTION_ALIASES = new Set(["选科", "科类", "选科组合", "科目组合", "选考科目"]);
+const CLASS_TYPE_ALIASES = new Set(["班型", "班类", "班级类型", "班型类别"]);
 const IGNORED_HEADERS = ["总分", "合计", "排名", "名次", "年级名次", "班级名次", "序号", "备注", "类别"];
+const ASSIGNED_SUBJECT_SHORTHANDS: Record<string, string> = Object.fromEntries(
+  ASSIGNABLE_GRADE_SUBJECTS.map((subject) => [`${subject[0]}赋`, subject]),
+);
 
 const SUBJECT_ALIASES: Record<string, string[]> = {
   语文: ["语文", "语文科"],
@@ -88,14 +111,28 @@ export function normalizeClassName(value: string): string {
     .toLowerCase();
 }
 
-function subjectFromHeader(header: GradeCellValue): string | null {
-  const normalized = normalizeGradeHeader(header)
+function normalizedSubjectHeader(header: GradeCellValue): string {
+  return normalizeGradeHeader(header)
     .replace(/^(原始|卷面|最终|期中|期末|月考|联考)/, "")
     .replace(/(成绩|分数|得分|原始分|卷面分|赋分|等级分|标准分)$/g, "");
+}
+
+function subjectFromHeader(header: GradeCellValue): string | null {
+  const normalized = normalizedSubjectHeader(header);
   for (const [subject, aliases] of Object.entries(SUBJECT_ALIASES)) {
     if (aliases.some((alias) => normalized === normalizeGradeHeader(alias))) return subject;
   }
   return null;
+}
+
+function assignedSubjectFromHeader(header: GradeCellValue): string | null {
+  const normalized = normalizeGradeHeader(header);
+  if (ASSIGNED_SUBJECT_SHORTHANDS[normalized]) return ASSIGNED_SUBJECT_SHORTHANDS[normalized];
+  if (!/(赋分|等级分|标准分|赋)$/.test(normalized)) return null;
+  const subject = subjectFromHeader(header);
+  return subject && isAssignableGradeSubject(subject)
+    ? subject
+    : null;
 }
 
 function suggestedRole(header: GradeCellValue): Omit<GradeColumnMapping, "columnIndex" | "header"> {
@@ -104,9 +141,13 @@ function suggestedRole(header: GradeCellValue): Omit<GradeColumnMapping, "column
   if (CLASS_ALIASES.has(normalized)) return { role: "className", confidence: "high" };
   if (NAME_ALIASES.has(normalized)) return { role: "studentName", confidence: "high" };
   if (STUDENT_NO_ALIASES.has(normalized)) return { role: "studentNo", confidence: "high" };
+  if (SUBJECT_SELECTION_ALIASES.has(normalized)) return { role: "subjectSelection", confidence: "high" };
+  if (CLASS_TYPE_ALIASES.has(normalized)) return { role: "classType", confidence: "high" };
   if (IGNORED_HEADERS.some((item) => normalized.includes(normalizeGradeHeader(item)))) {
     return { role: "ignore", confidence: "medium" };
   }
+  const assignedSubject = assignedSubjectFromHeader(header);
+  if (assignedSubject) return { role: `assignedSubject:${assignedSubject}`, confidence: "high" };
   const subject = subjectFromHeader(header);
   if (subject) return { role: `subject:${subject}`, confidence: "high" };
   return { role: "ignore", confidence: "low" };
@@ -125,9 +166,11 @@ function scoreHeaderRow(row: GradeCellValue[]): number {
       score += 5;
     } else if (suggestion.role === "studentNo") {
       score += 5;
-    } else if (suggestion.role.startsWith("subject:")) {
+    } else if (suggestion.role.startsWith("subject:") || suggestion.role.startsWith("assignedSubject:")) {
       subjectCount += 1;
       score += 3;
+    } else if (suggestion.role === "subjectSelection" || suggestion.role === "classType") {
+      score += 2;
     }
   });
   if (!hasName) score -= 10;
@@ -181,9 +224,29 @@ export function validateGradeMappings(mappings: GradeColumnMapping[]): void {
   const activeRoles = mappings.map((item) => item.role).filter((role) => role !== "ignore");
   if (!activeRoles.includes("studentName")) throw new Error("请指定“姓名”字段");
   if (!activeRoles.includes("className")) throw new Error("请指定“班级”字段");
-  const subjects = activeRoles.filter((role) => role.startsWith("subject:"));
+  const subjects = activeRoles.filter((role) =>
+    role.startsWith("subject:") || role.startsWith("assignedSubject:"),
+  );
   if (subjects.length === 0) throw new Error("请至少指定一个成绩科目");
   if (new Set(activeRoles).size !== activeRoles.length) throw new Error("同一字段或科目不能重复映射");
+}
+
+export function gradeSubjectScoreAvailability(
+  mappings: GradeColumnMapping[],
+): GradeSubjectScoreAvailability[] {
+  const bySubject = new Map<string, GradeSubjectScoreAvailability>();
+  mappings.forEach((mapping) => {
+    const raw = mapping.role.startsWith("subject:");
+    const assigned = mapping.role.startsWith("assignedSubject:");
+    if (!raw && !assigned) return;
+    const prefix = raw ? "subject:" : "assignedSubject:";
+    const subject = mapping.role.slice(prefix.length);
+    const current = bySubject.get(subject) || { subject, hasRaw: false, hasAssigned: false };
+    if (raw) current.hasRaw = true;
+    if (assigned) current.hasAssigned = true;
+    bySubject.set(subject, current);
+  });
+  return [...bySubject.values()];
 }
 
 export function parseGradeRows(
@@ -194,6 +257,7 @@ export function parseGradeRows(
   validateGradeMappings(mappings);
   const roleColumn = new Map(mappings.map((item) => [item.role, item.columnIndex]));
   const subjectMappings = mappings.filter((item) => item.role.startsWith("subject:"));
+  const assignedSubjectMappings = mappings.filter((item) => item.role.startsWith("assignedSubject:"));
   const rows: GradeImportRow[] = [];
 
   for (let index = headerRowIndex + 1; index < sheet.rows.length; index += 1) {
@@ -203,8 +267,14 @@ export function parseGradeRows(
     const sourceClassName = stringValue(source[roleColumn.get("className")!]);
     const studentNoColumn = roleColumn.get("studentNo");
     const sourceStudentNo = studentNoColumn === undefined ? "" : stringValue(source[studentNoColumn]);
+    const subjectSelectionColumn = roleColumn.get("subjectSelection");
+    const classTypeColumn = roleColumn.get("classType");
     const scores = Object.fromEntries(subjectMappings.map((mapping) => [
       mapping.role.slice("subject:".length),
+      parseScore(source[mapping.columnIndex]),
+    ]));
+    const assignedScores = Object.fromEntries(assignedSubjectMappings.map((mapping) => [
+      mapping.role.slice("assignedSubject:".length),
       parseScore(source[mapping.columnIndex]),
     ]));
     rows.push({
@@ -213,7 +283,10 @@ export function parseGradeRows(
       sourceName,
       sourceStudentNo,
       sourceClassName,
+      subjectSelection: subjectSelectionColumn === undefined ? undefined : stringValue(source[subjectSelectionColumn]) || undefined,
+      classType: classTypeColumn === undefined ? undefined : stringValue(source[classTypeColumn]) || undefined,
       scores,
+      assignedScores: assignedSubjectMappings.length > 0 ? assignedScores : undefined,
     });
   }
   if (rows.length === 0) throw new Error("表头下方没有可导入的学生成绩");

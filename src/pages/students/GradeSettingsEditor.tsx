@@ -26,6 +26,8 @@ interface GradeSettingsEditorProps {
   context: GradeImportContext;
   onChange: (settings: GradeExamSettings) => void;
   section?: "all" | "settings" | "templates";
+  /** 已由成绩表直接提供赋分的科目，不再重复执行规则换算。 */
+  importedAssignedSubjects?: string[];
 }
 
 function toggleValue(values: string[], value: string): string[] {
@@ -165,12 +167,17 @@ function AssignmentSettings({
   settings,
   subjects,
   onChange,
+  importedAssignedSubjects = [],
 }: GradeSettingsEditorProps) {
   const eligibleSubjects = subjects.filter((subject) =>
     ASSIGNMENT_GRADE_SUBJECTS.includes(subject as (typeof ASSIGNMENT_GRADE_SUBJECTS)[number]),
   );
   const assignedSubjects = eligibleSubjects.filter((subject) => settings.assignmentRules[subject]);
-  const unassignedSubjects = eligibleSubjects.filter((subject) => !settings.assignmentRules[subject]);
+  const importedAssignedSet = new Set(importedAssignedSubjects);
+  const unassignedSubjects = eligibleSubjects.filter((subject) =>
+    !settings.assignmentRules[subject]
+    && !importedAssignedSet.has(subject),
+  );
 
   return (
     <Card className="p-0 overflow-hidden">
@@ -206,7 +213,24 @@ function AssignmentSettings({
         )}
       </div>
       <div className="space-y-5 p-5">
-        {assignedSubjects.length === 0 ? (
+        {importedAssignedSubjects.length > 0 && (
+          <div className="rounded-lg border border-teal-200 bg-teal-50/60 px-4 py-3">
+            <div className="text-sm font-medium text-teal-900">使用成绩表中的赋分</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {importedAssignedSubjects.map((subject) => (
+                <Badge key={subject} variant="teal">{subject}：表内赋分</Badge>
+              ))}
+            </div>
+            <div className="mt-2 text-xs text-teal-700">这些科目的赋分会原样保留，修改年级换算规则时不会被覆盖。</div>
+          </div>
+        )}
+        {assignedSubjects.length === 0 && unassignedSubjects.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-ink-200 py-8 text-center text-sm text-ink-400">
+            {importedAssignedSubjects.length > 0
+              ? "当前没有需要按规则换算的科目。"
+              : "当前成绩科目不需要等级赋分。"}
+          </div>
+        ) : assignedSubjects.length === 0 ? (
           <div className="rounded-lg border border-dashed border-ink-200 py-8 text-center text-sm text-ink-400">
             当前所有科目均使用原始分。需要赋分时，从右上角添加科目。
           </div>
@@ -454,7 +478,7 @@ function FormulaColumnEditor({
           公式列编辑器
         </div>
         <div className="text-ink-500">
-          字段：姓名、学号、班级、年级名次、班级名次、原始总分、赋分总分；函数：RAW、SCORE、SCORES、SUM、AVERAGE、BEST、IF、ROUND
+          字段：姓名、学号、班级、选科、班型、年级名次、班级名次、原始总分、赋分总分；函数：RAW、SCORE、SCORES、SUM、AVERAGE、BEST、IF、ROUND
         </div>
       </div>
       <div className="overflow-x-auto">

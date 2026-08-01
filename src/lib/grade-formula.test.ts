@@ -13,6 +13,8 @@ const record: GradeScoreRecord = {
   studentNo: "202601",
   classId: "class-1",
   className: "高三(1)班",
+  subjectSelection: "物化生",
+  classType: "强基班",
   scores: {
     语文: 110,
     数学: 125,
@@ -38,6 +40,7 @@ const record: GradeScoreRecord = {
 describe("grade formula engine", () => {
   it("evaluates fields, arrays, and best-subject aggregation", () => {
     expect(evaluateGradeFormula("=姓名", record)).toBe("张三");
+    expect(evaluateGradeFormula("=CONCAT(班型, 选科)", record)).toBe("强基班物化生");
     expect(evaluateGradeFormula(
       '=SUM(SCORES("语文", "数学", "英语"), BEST(SCORES("物理", "化学", "生物"), 2))',
       record,
