@@ -6,6 +6,7 @@ import { authService } from "@/services/auth";
 import { SUBJECT_OPTIONS } from "@/lib/education";
 import { useAuthStore } from "@/stores/auth";
 import type { RegistrationContext } from "@/types";
+import { BrandMark } from "@/components/brand/BrandMark";
 
 type Mode = "login" | "register";
 
@@ -80,7 +81,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top_left,_#f3c969,_transparent_45%)]" />
         <div className="relative z-10 flex flex-col justify-between w-full">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-lg bg-gold-400 text-ink-900 flex items-center justify-center font-serif font-bold text-2xl">智</div>
+            <BrandMark className="w-12 h-12" />
             <div><div className="font-serif text-2xl font-bold">智题云校</div><div className="text-xs text-ink-400 tracking-widest">ZHI TI YUN XIAO</div></div>
           </div>
           <div className="max-w-md space-y-5">
