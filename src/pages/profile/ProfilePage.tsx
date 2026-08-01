@@ -1,9 +1,22 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { BookOpen, Building2, KeyRound, Mail, School, ShieldCheck, Users } from "lucide-react";
+import { BookOpen, Building2, FolderOpen, HardDrive, KeyRound, Mail, RefreshCw, School, ShieldCheck, Users } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
 import { classService } from "@/services/class";
 import { authService } from "@/services/auth";
+import {
+  ensureLocalBackupPermission,
+  getLocalBackupSnapshot,
+  isLocalBackupSupported,
+  loadLocalBackupDirectory,
+  localBackupKey,
+  pickLocalBackupDirectory,
+  saveLocalBackupDirectory,
+  startLocalResourceBackup,
+  subscribeLocalBackup,
+  type BackupDirectoryHandle,
+  type LocalBackupSnapshot,
+} from "@/services/localResourceBackup";
 import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -28,6 +41,14 @@ export default function ProfilePage() {
   const [adminReason, setAdminReason] = useState("");
   const [adminApplications, setAdminApplications] = useState<SchoolAdminApplication[]>([]);
   const [submittingAdmin, setSubmittingAdmin] = useState(false);
+  const backupContext = teacher
+    ? { teacherId: teacher.id, schoolId: affiliation?.schoolId || null }
+    : null;
+  const backupKey = backupContext ? localBackupKey(backupContext) : "";
+  const [backupSnapshot, setBackupSnapshot] = useState<LocalBackupSnapshot>({
+    running: false,
+    state: { directoryName: "", lastCompletedAt: null, lastResult: null },
+  });
 
   useEffect(() => {
     setNickname(teacher?.nickname || "");
@@ -50,6 +71,14 @@ export default function ProfilePage() {
     void classService.listSchoolClasses(affiliation.schoolId).then(setClasses);
     void authService.getMySchoolAdminApplications().then(setAdminApplications);
   }, [affiliation?.schoolId]);
+
+  useEffect(() => {
+    if (!backupKey) return;
+    setBackupSnapshot(getLocalBackupSnapshot(backupKey));
+    return subscribeLocalBackup((changedKey, snapshot) => {
+      if (changedKey === backupKey) setBackupSnapshot(snapshot);
+    });
+  }, [backupKey]);
 
   if (!teacher) return null;
 
@@ -108,6 +137,56 @@ export default function ProfilePage() {
     }
   };
 
+  const runBackup = (directory: BackupDirectoryHandle) => {
+    if (!backupContext) return;
+    void startLocalResourceBackup(backupContext, directory)
+      .then((result) => {
+        if (result.failed > 0) {
+          toast.warning(
+            "本地备份已完成，但有部分资源失败",
+            `已更新 ${result.updated} 项，跳过 ${result.skipped} 项，失败 ${result.failed} 项`,
+          );
+          return;
+        }
+        toast.success(
+          "“我的资源”本地备份完成",
+          `已更新 ${result.updated} 项，跳过 ${result.skipped} 项`,
+        );
+      })
+      .catch((error) => {
+        toast.error("本地备份失败", error instanceof Error ? error.message : undefined);
+      });
+  };
+
+  const handleChooseBackupDirectory = async () => {
+    if (!backupContext) return;
+    try {
+      const directory = await pickLocalBackupDirectory();
+      await saveLocalBackupDirectory(backupKey, directory);
+      runBackup(directory);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast.error("无法选择备份文件夹", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const handleRunBackup = async () => {
+    const directory = await loadLocalBackupDirectory(backupKey);
+    if (!directory) {
+      toast.error("请先选择本地备份文件夹");
+      return;
+    }
+    try {
+      if (!await ensureLocalBackupPermission(directory)) {
+        toast.error("未获得备份文件夹的写入权限，请重新选择文件夹");
+        return;
+      }
+      runBackup(directory);
+    } catch (error) {
+      toast.error("无法访问备份文件夹", error instanceof Error ? error.message : undefined);
+    }
+  };
+
   const activeRole = affiliation?.role || teacher.role;
   const latestApplication = adminApplications[0];
 
@@ -141,6 +220,71 @@ export default function ProfilePage() {
       </Card>
 
       <Card className="p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-5 w-5 text-gold-600" />
+              <h2 className="font-serif text-lg font-semibold">“我的资源”本地备份</h2>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm text-ink-500">
+              将题目、试卷、讲义、课件、素材和资源篮增量保存到本地文件夹。备份在后台执行，期间可继续使用其他功能。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!isLocalBackupSupported() || backupSnapshot.running}
+              onClick={handleChooseBackupDirectory}
+            >
+              <FolderOpen className="h-4 w-4" />
+              {backupSnapshot.state.directoryName ? "更换文件夹" : "选择文件夹并备份"}
+            </Button>
+            {backupSnapshot.state.directoryName && (
+              <Button
+                type="button"
+                variant="gold"
+                loading={backupSnapshot.running}
+                onClick={handleRunBackup}
+              >
+                <RefreshCw className="h-4 w-4" />
+                {backupSnapshot.running ? "正在备份" : "立即增量备份"}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {!isLocalBackupSupported() ? (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            当前浏览器不支持直接写入本地文件夹，请使用最新版 Chrome 或 Edge。
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg bg-ink-50 p-4">
+              <div className="text-xs text-ink-500">备份文件夹</div>
+              <div className="mt-1 text-sm font-medium text-ink-900">
+                {backupSnapshot.state.directoryName || "尚未选择"}
+              </div>
+            </div>
+            <div className="rounded-lg bg-ink-50 p-4">
+              <div className="text-xs text-ink-500">上次备份时间</div>
+              <div className="mt-1 text-sm font-medium text-ink-900">
+                {formatBackupTime(backupSnapshot.state.lastCompletedAt)}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {backupSnapshot.state.lastResult && (
+          <p className="mt-3 text-xs text-ink-500">
+            上次共检查 {backupSnapshot.state.lastResult.total} 项，更新 {backupSnapshot.state.lastResult.updated} 项，
+            跳过 {backupSnapshot.state.lastResult.skipped} 项
+            {backupSnapshot.state.lastResult.failed > 0 ? `，失败 ${backupSnapshot.state.lastResult.failed} 项` : ""}。
+          </p>
+        )}
+      </Card>
+
+      <Card className="p-6">
         <div className="flex items-center justify-between gap-3 mb-4"><div className="flex items-center gap-2"><School className="w-5 h-5 text-gold-600" /><h2 className="font-serif text-lg font-semibold">所属学校</h2></div><Link to="/school-auth?add=1"><Button variant="outline">新增学校</Button></Link></div>
         <div className="space-y-2">{teacher.affiliations.filter((item) => item.schoolId).map((item) => <div key={item.id} className="rounded-lg border border-ink-100 p-3 flex justify-between"><div><div className="font-medium">{item.schoolName}</div><div className="text-xs text-ink-500">{item.subject} · {item.status}</div></div>{item.isCurrent && <span className="text-xs text-emerald-700">当前身份</span>}</div>)}</div>
       </Card>
@@ -158,6 +302,20 @@ export default function ProfilePage() {
       </Card>
     </div>
   );
+}
+
+function formatBackupTime(value: string | null): string {
+  if (!value) return "尚未备份";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "尚未备份";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
 }
 
 function ChoiceGrid({ label, values, selected, onToggle, labels = {}, empty, icon }: { label: string; values: string[]; selected: string[]; onToggle: (value: string) => void; labels?: Record<string, string>; empty?: string; icon: React.ReactNode }) {
