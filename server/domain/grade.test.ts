@@ -168,6 +168,56 @@ describe("grade service", () => {
     });
   });
 
+  it("imports assigned scores and preserves them across recalculation", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const context = await gradeService.getImportContext("school-1", "grad-2026");
+      const subjects = ["化学", "生物"];
+      const settings = buildDefaultGradeSettings(subjects, context.classes.map((item) => item.id));
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "赋分导入",
+        sourceFileName: "assigned.xlsx",
+        sourceSheetName: "成绩",
+        subjects,
+        settings,
+        rows: [{
+          rowKey: "row-assigned",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          subjectSelection: "物化生",
+          classType: "强基班",
+          studentId: "student-1",
+          scores: { 化学: 72 },
+          assignedScores: { 化学: 88, 生物: 91 },
+        }],
+      });
+
+      expect(exam.records[0]).toMatchObject({
+        subjectSelection: "物化生",
+        classType: "强基班",
+        scores: { 化学: 72, 生物: null },
+        sourceAssignedScores: { 化学: 88, 生物: 91 },
+        assignedScores: { 化学: 88, 生物: 91 },
+        rawTotal: 72,
+        assignedTotal: 179,
+      });
+
+      settings.assignmentRules.化学 = [{
+        label: "全部",
+        percentileFrom: 0,
+        percentileTo: 100,
+        assignedMin: 30,
+        assignedMax: 30,
+      }];
+      const recalculated = await gradeService.updateExamSettings(exam.id, settings);
+      expect(recalculated.records[0].assignedScores).toEqual({ 化学: 88, 生物: 91 });
+    });
+  });
+
   it("rejects duplicate matches to the same existing student", async () => {
     const appState = state();
 

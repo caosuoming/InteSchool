@@ -491,7 +491,13 @@ export interface GradeScoreRecord {
   studentNo: string;
   classId: string;
   className: string;
+  /** 成绩表中的学生选科组合或科类。 */
+  subjectSelection?: string;
+  /** 成绩表中的班型描述。 */
+  classType?: string;
   scores: Record<string, number | null>;
+  /** 成绩表直接提供的赋分；重算设置时继续保留，不由规则覆盖。 */
+  sourceAssignedScores?: Record<string, number | null>;
   assignedScores: Record<string, number | null>;
   rawTotal: number;
   assignedTotal: number;
@@ -545,6 +551,8 @@ export interface GradeQueryRecord {
   studentNo: string;
   classId: string;
   className: string;
+  subjectSelection?: string;
+  classType?: string;
   scores: Record<string, number | null>;
   assignedScores: Record<string, number | null>;
   rawTotal: number | null;
@@ -587,7 +595,11 @@ export interface GradeImportRow {
   sourceName: string;
   sourceStudentNo: string;
   sourceClassName: string;
+  subjectSelection?: string;
+  classType?: string;
   scores: Record<string, number | null>;
+  /** 原始表格直接提供的赋分列。 */
+  assignedScores?: Record<string, number | null>;
   /** 已有学生匹配。 */
   studentId?: string;
   /** 表格姓名为学生改名后的姓名时，同步更新学生档案。 */

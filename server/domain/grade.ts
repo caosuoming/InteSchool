@@ -160,7 +160,10 @@ function examBaseRecords(records: GradeScoreRecord[]) {
     studentNo: record.studentNo,
     classId: record.classId,
     className: record.className,
+    subjectSelection: record.subjectSelection,
+    classType: record.classType,
     scores: record.scores,
+    sourceAssignedScores: record.sourceAssignedScores,
   }));
 }
 
@@ -451,6 +454,8 @@ function buildQueryData(teacher: Teacher): GradeQueryData {
         studentNo: record.studentNo,
         classId: record.classId,
         className: record.className,
+        subjectSelection: record.subjectSelection,
+        classType: record.classType,
         scores: projectScores(record.scores, visibleSubjects),
         assignedScores: projectScores(record.assignedScores, visibleSubjects),
         rawTotal: canViewAll ? record.rawTotal : null,
@@ -671,7 +676,10 @@ export const gradeService = {
       studentNo: string;
       classId: string;
       className: string;
+      subjectSelection?: string;
+      classType?: string;
       scores: Record<string, number | null>;
+      sourceAssignedScores?: Record<string, number | null>;
     }> = [];
 
     input.rows.forEach((row, index) => {
@@ -726,7 +734,12 @@ export const gradeService = {
         studentNo: student.studentNo,
         classId: student.classId,
         className: classItem.name,
+        subjectSelection: row.subjectSelection?.trim() || undefined,
+        classType: row.classType?.trim() || undefined,
         scores: normalizeScores(row.scores, subjects, sourceRowNumber),
+        sourceAssignedScores: row.assignedScores
+          ? normalizeScores(row.assignedScores, subjects, sourceRowNumber)
+          : undefined,
       });
     });
 
