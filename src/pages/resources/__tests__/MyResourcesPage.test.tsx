@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { FileText } from "lucide-react";
-import { OriginalFileRow, QuestionListItem } from "@/pages/resources/MyResourcesPage";
+import { OriginalFileRow, QuestionListItem, ResourceCard } from "@/pages/resources/MyResourcesPage";
 import type { Question } from "@/types";
 
 vi.mock("@/components/ui/MathHtml", () => ({
@@ -62,10 +62,42 @@ describe("OriginalFileRow", () => {
     );
 
     expect(screen.getByText("期末数学试卷.docx")).toBeInTheDocument();
+    expect(screen.getByText("期末数学试卷.docx").parentElement).toHaveClass("ml-4");
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["查看", "下载"]);
     expect(screen.queryByText("原稿备份")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "查看" }));
     expect(onView).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ResourceCard", () => {
+  it("shows compact lecture actions directly and keeps conversion in the action area", () => {
+    const onConvertToExamPaper = vi.fn();
+
+    render(
+      <ResourceCard
+        title="函数讲义"
+        meta={[]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+        onClick={vi.fn()}
+        onShare={vi.fn()}
+        onDelete={vi.fn()}
+        onConvertToExamPaper={onConvertToExamPaper}
+        alwaysShowActions
+        compactActions
+      />,
+    );
+
+    const actionArea = screen.getByTestId("resource-card-actions");
+    const convertButton = screen.getByTitle("转试卷");
+
+    expect(actionArea).toHaveClass("opacity-100", "gap-0.5");
+    expect(actionArea).not.toHaveClass("opacity-0");
+    expect(convertButton).toHaveClass("p-1");
+    expect(actionArea).toContainElement(convertButton);
+
+    fireEvent.click(convertButton);
+    expect(onConvertToExamPaper).toHaveBeenCalledOnce();
   });
 });
