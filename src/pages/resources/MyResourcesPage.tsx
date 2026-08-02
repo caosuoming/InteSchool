@@ -43,6 +43,7 @@ import type {
 import { timeAgo } from "@/lib/service-utils";
 import { genId } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
@@ -146,7 +147,7 @@ export function OriginalFileRow({
   const displayName = fileName || "原稿文件";
 
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-lg bg-ink-50/60 px-3 py-2 text-sm">
+    <div className="ml-4 flex min-w-0 items-center gap-3 rounded-lg bg-ink-50/60 px-3 py-2 text-sm">
       <FileIcon className="h-4 w-4 flex-shrink-0 text-ink-400" />
       <span className="min-w-0 flex-1 truncate text-ink-600" title={displayName}>
         {displayName}
@@ -1595,13 +1596,19 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                   <div className="flex-1 min-w-0">
                                     <MathHtml className="text-sm text-ink-800">{q.stem}</MathHtml>
                                     {q.options && q.options.length > 0 && (
-                                      <div className="mt-2 space-y-1 text-sm text-ink-700">
+                                      <div
+                                        data-testid={`basket-question-options-${q.id}`}
+                                        className={cn(
+                                          "mt-2 grid gap-x-4 gap-y-1.5 text-sm text-ink-700",
+                                          getQuestionOptionGridColumns(q.options),
+                                        )}
+                                      >
                                         {q.options.map((option, index) => (
-                                          <div key={`${q.id}-option-${index}`} className="flex items-start gap-1.5">
-                                            <span className="font-medium text-ink-500 flex-shrink-0">
+                                          <div key={`${q.id}-option-${index}`} className="flex items-start gap-1">
+                                            <span className="font-mono font-semibold text-ink-500 flex-shrink-0">
                                               {String.fromCharCode(65 + index)}.
                                             </span>
-                                            <MathHtml className="flex-1 min-w-0">{option}</MathHtml>
+                                            <MathHtml className="min-w-0 break-all">{option}</MathHtml>
                                           </div>
                                         ))}
                                       </div>
@@ -2010,6 +2017,18 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       onDelete={() => handleDelete(mainLecture.id)}
                       onViewReflections={() => setViewingReflections({ title: mainLecture.title, list: reflectionsMap[mainLecture.id] || [] })}
                       onDuplicate={() => openDuplicate("lecture", mainLecture.id, mainLecture.title)}
+                      alwaysShowActions
+                      compactActions
+                      onConvertToExamPaper={async () => {
+                        if (!teacher) return;
+                        try {
+                          const result = await lectureService.convertToExamPaper(mainLecture.id);
+                          toast.success("已转换为试卷", "正在跳转到试卷编辑器...");
+                          navigate(`/exam-papers/${result.paperId}/edit`);
+                        } catch (err) {
+                          toast.error("转换失败", err instanceof Error ? err.message : undefined);
+                        }
+                      }}
                       showAddToLesson
                       titleBadge={hasExtractCopy ? { text: "正稿", variant: "gold" } : (!isExtracted && item.originalFileUrl ? { text: "待拆解", variant: "amber" } : undefined)}
                       onAddToLesson={async () => {
@@ -2028,7 +2047,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       }}
                     />
                     {item.originalFileUrl && !hasExtractCopy && (
-                      <div className="flex items-center gap-3 text-xs flex-wrap pl-1">
+                      <div className="flex items-center gap-3 text-xs flex-wrap pl-4">
                         <div className="flex items-center gap-2">
                           <FileText className="w-3.5 h-3.5 text-ink-400" />
                           <span className="text-ink-500">原稿：{item.originalFileName}</span>
@@ -2063,25 +2082,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         onView={() => navigate(`/resources/preview/${item.id}?type=lecture`)}
                       />
                     )}
-                    <div className="mt-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          if (!teacher) return;
-                          try {
-                            const result = await lectureService.convertToExamPaper(mainLecture.id);
-                            toast.success("已转换为试卷", "正在跳转到试卷编辑器...");
-                            navigate(`/exam-papers/${result.paperId}/edit`);
-                          } catch (err) {
-                            toast.error("转换失败", err instanceof Error ? err.message : undefined);
-                          }
-                        }}
-                      >
-                        <FileSpreadsheet className="w-3.5 h-3.5" />
-                        转试卷
-                      </Button>
-                    </div>
                   </div>
                 );
               })}
@@ -2954,6 +2954,7 @@ interface ResourceCardProps {
   onDelete?: () => void;
   onAddToLesson?: () => void;
   onDuplicate?: () => void;
+  onConvertToExamPaper?: () => void;
   onViewReflections?: () => void;
   reflections?: Reflection[];
   fileUrl?: string;
@@ -2969,13 +2970,17 @@ interface ResourceCardProps {
   donated?: boolean;
   donationLocked?: boolean;
   onToggleSelection?: () => void;
+  alwaysShowActions?: boolean;
+  compactActions?: boolean;
 }
 
-function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection }: ResourceCardProps) {
+export function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const isImage = (type === "image");
   const reflectionCount = reflections?.length || 0;
   const latestReflection = reflections?.[0];
+  const actionButtonPadding = compactActions ? "p-1" : "p-1.5";
+  const actionIconSize = compactActions ? "w-3.5 h-3.5" : "w-4 h-4";
   return (
     <>
       <div className={cn(
@@ -3065,62 +3070,78 @@ function ResourceCard({ title, description, meta, content, updatedAt, onClick, o
               </div>
             )}
           </div>
-          <div className="flex items-start gap-2 flex-shrink-0">
+          <div className={cn("flex items-start flex-shrink-0", compactActions ? "gap-1" : "gap-2")}>
             {donated && <Badge variant="teal">已捐赠</Badge>}
             {donationLocked && <Badge variant="ink">平台副本</Badge>}
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div
+              data-testid="resource-card-actions"
+              className={cn(
+                "flex items-center transition-opacity",
+                compactActions ? "gap-0.5" : "gap-1",
+                alwaysShowActions ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              )}
+            >
             {onClick && (
               <button
                 onClick={onClick}
-                className="p-1.5 rounded text-ink-400 hover:bg-mist hover:text-ink-700"
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-mist hover:text-ink-700")}
                 title="查看/编辑"
               >
-                <Eye className="w-4 h-4" />
+                <Eye className={actionIconSize} />
               </button>
             )}
             {isImage && (
               <button
                 onClick={() => setPreviewOpen(true)}
-                className="p-1.5 rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600"
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600")}
                 title="预览图片"
               >
-                <Eye className="w-4 h-4" />
+                <Eye className={actionIconSize} />
               </button>
             )}
             {onShare && (
               <button
                 onClick={onShare}
-                className="p-1.5 rounded text-ink-400 hover:bg-teal-50 hover:text-teal-700"
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-teal-50 hover:text-teal-700")}
                 title="分享"
               >
-                <Share2 className="w-4 h-4" />
+                <Share2 className={actionIconSize} />
               </button>
             )}
             {showAddToLesson && onAddToLesson && (
               <button
                 onClick={onAddToLesson}
-                className="p-1.5 rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600"
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600")}
                 title="添加到上课"
               >
-                <PlayCircle className="w-4 h-4" />
+                <PlayCircle className={actionIconSize} />
+              </button>
+            )}
+            {onConvertToExamPaper && (
+              <button
+                onClick={onConvertToExamPaper}
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600")}
+                title="转试卷"
+              >
+                <FileSpreadsheet className={actionIconSize} />
               </button>
             )}
             {onDuplicate && (
               <button
                 onClick={onDuplicate}
-                className="p-1.5 rounded text-ink-400 hover:bg-indigo-50 hover:text-indigo-700"
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-indigo-50 hover:text-indigo-700")}
                 title="创建副本"
               >
-                <Copy className="w-4 h-4" />
+                <Copy className={actionIconSize} />
               </button>
             )}
             {onDelete && (
               <button
                 onClick={onDelete}
-                className="p-1.5 rounded text-ink-400 hover:bg-red-50 hover:text-red-600"
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-red-50 hover:text-red-600")}
                 title="删除"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className={actionIconSize} />
               </button>
             )}
             </div>

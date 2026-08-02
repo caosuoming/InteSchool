@@ -40,6 +40,7 @@ import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester, QuestionSearchField } from "@/types";
 import { cn } from "@/lib/utils";
+import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { inferScore } from "@/services/analytics";
 import { generateQuestionDocx } from "@/lib/docx";
 
@@ -2138,9 +2139,7 @@ function QuestionRow({
 
             {/* 选项（网格布局，根据选项长度动态调整列数；答案高亮仅在展开时显示） */}
             {question.options && question.options.length > 0 && (() => {
-              // 根据选项长度动态决定列数
-              const maxOptLen = Math.max(...question.options.map(o => o.length));
-              const gridCols = maxOptLen > 60 ? 'grid-cols-1' : maxOptLen > 30 ? 'grid-cols-2' : 'grid-cols-4';
+              const gridCols = getQuestionOptionGridColumns(question.options);
               return (
                 <div className={cn(
                   "mb-2 grid gap-x-4 gap-y-1.5 text-ink-700",

@@ -319,6 +319,11 @@ describe("MyResourcesPage resource basket", () => {
     expect(screen.getByText("薄弱 25%")).toBeInTheDocument();
     expect(screen.getByText("平方根")).toBeInTheDocument();
     expect(container.querySelector('[data-math-rendered="true"]')).not.toBeNull();
+    expect(screen.getByTestId(`basket-question-options-${basketQuestion.id}`)).toHaveClass(
+      "grid",
+      "grid-cols-4",
+      "gap-x-4",
+    );
 
     expect(screen.queryByText("答案")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTitle("查看完整答案、解析和总结"));
