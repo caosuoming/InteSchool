@@ -2,6 +2,7 @@ import { aiService } from "./domain/ai.js";
 import { analyticsService } from "./domain/analytics.js";
 import { basketService } from "./domain/basket.js";
 import { classService } from "./domain/class.js";
+import { classroomHomeworkService } from "./domain/classroomHomework.js";
 import { coursewareService } from "./domain/courseware.js";
 import { donationService } from "./domain/donation.js";
 import { examPaperService } from "./domain/examPaper.js";
@@ -29,6 +30,7 @@ export const serviceRegistry = {
   analytics: analyticsService,
   basket: basketService,
   class: classService,
+  classroomHomework: classroomHomeworkService,
   courseware: coursewareService,
   donation: donationService,
   examArrangement: examArrangementService,
