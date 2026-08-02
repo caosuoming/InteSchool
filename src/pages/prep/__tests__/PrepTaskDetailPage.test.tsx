@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -122,6 +122,39 @@ function renderPage() {
 describe("PrepTaskDetailPage submissions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(window, "PointerEvent", {
+      configurable: true,
+      value: MouseEvent,
+    });
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      writable: true,
+      value: null,
+    });
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: vi.fn(function requestFullscreen(this: HTMLElement) {
+        Object.defineProperty(document, "fullscreenElement", {
+          configurable: true,
+          writable: true,
+          value: this,
+        });
+        document.dispatchEvent(new Event("fullscreenchange"));
+        return Promise.resolve();
+      }),
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      value: vi.fn(() => {
+        Object.defineProperty(document, "fullscreenElement", {
+          configurable: true,
+          writable: true,
+          value: null,
+        });
+        document.dispatchEvent(new Event("fullscreenchange"));
+        return Promise.resolve();
+      }),
+    });
     useAuthStore.setState({ teacher, loading: false, error: null });
     vi.mocked(organizationService.listTeachers).mockResolvedValue([teacher]);
     vi.mocked(prepService.updateAssignment).mockResolvedValue();
@@ -211,7 +244,23 @@ describe("PrepTaskDetailPage submissions", () => {
             mimeType: "image/png",
             size: 1024,
           }],
-          annotations: [],
+          annotations: [{
+            id: "stroke-mine",
+            targetId: "image-1",
+            tool: "pen",
+            color: "black",
+            points: [{ x: 0.45, y: 0.5 }, { x: 0.55, y: 0.5 }],
+            createdBy: teacher.id,
+            createdAt: "2026-08-02T01:01:00.000Z",
+          }, {
+            id: "stroke-other",
+            targetId: "image-1",
+            tool: "pen",
+            color: "red",
+            points: [{ x: 0.2, y: 0.2 }, { x: 0.3, y: 0.2 }],
+            createdBy: "teacher-2",
+            createdAt: "2026-08-02T01:02:00.000Z",
+          }],
         },
       }],
     });
@@ -229,5 +278,52 @@ describe("PrepTaskDetailPage submissions", () => {
     expect(screen.getByRole("button", { name: "蓝色笔" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "黄色荧光笔" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "绿色荧光笔" })).toBeInTheDocument();
+    const eraser = screen.getByRole("button", { name: "橡皮" });
+    const canvas = screen.getByLabelText("成果批注画布");
+    expect(eraser).toBeInTheDocument();
+    expect(eraser.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    Object.defineProperty(canvas.parentElement, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 1000,
+        height: 1000,
+        left: 0,
+        right: 1000,
+        top: 0,
+        width: 1000,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+    Object.defineProperties(canvas, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    await user.click(eraser);
+    fireEvent.pointerDown(canvas, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 500, clientY: 500, pointerId: 1 });
+    expect(screen.getByText("当前显示 1 条批注，其中 0 条由你添加。")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "保存当前批注" }));
+    await waitFor(() => {
+      expect(prepService.saveSubmissionAnnotations).toHaveBeenCalledWith(
+        "task-1",
+        "assignment-1",
+        "image-1",
+        [],
+        teacher,
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: "全屏" }));
+    expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("button", { name: "退出全屏" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "退出全屏" }));
+    expect(document.exitFullscreen).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("button", { name: "全屏" })).toBeInTheDocument();
   });
 });
