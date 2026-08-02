@@ -175,6 +175,42 @@ describe("document extractor", () => {
     expect(result.html).not.toContain("$\\frac{x}{2}=1$");
   });
 
+  it("extracts DOCX text without generating preview HTML", async () => {
+    const filePath = join(workDir, "text-only.docx");
+    await writeFile(filePath, "fake docx");
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      "18. （1）证明见解析；\n（2）$m\\le e-1$。",
+    );
+
+    const result = await extractDocument(filePath, { includeHtml: false });
+
+    expect(result).toEqual({
+      text: "18. （1）证明见解析；\n（2）$m\\le e-1$。",
+      html: "",
+      format: "docx",
+      warnings: [],
+    });
+    expect(mammothMocks.extractRawText).not.toHaveBeenCalled();
+    expect(mammothMocks.convertToHtml).not.toHaveBeenCalled();
+  });
+
+  it("falls back to Mammoth raw text in text-only mode", async () => {
+    const filePath = join(workDir, "text-only-fallback.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({
+      value: "  fallback body  ",
+      messages: [{ message: "fallback warning" }],
+    });
+
+    await expect(extractDocument(filePath, { includeHtml: false })).resolves.toEqual({
+      text: "fallback body",
+      html: "",
+      format: "docx",
+      warnings: ["fallback warning"],
+    });
+    expect(mammothMocks.convertToHtml).not.toHaveBeenCalled();
+  });
+
   it("hides Mammoth diagnostics for formulas and styles handled by the structured preview", async () => {
     const filePath = join(workDir, "native-formulas.docx");
     await writeFile(filePath, "fake docx");
@@ -325,6 +361,19 @@ describe("document extractor", () => {
       data: Buffer.from("fake-pdf"),
     });
     expect(pdfMocks.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("omits PDF preview HTML in text-only mode", async () => {
+    const filePath = join(workDir, "paper-text-only.pdf");
+    await writeFile(filePath, Buffer.from("fake-pdf"));
+    pdfMocks.getText.mockResolvedValue({ text: " body " });
+
+    await expect(extractDocument(filePath, { includeHtml: false })).resolves.toEqual({
+      text: "body",
+      html: "",
+      format: "pdf",
+      warnings: [],
+    });
   });
 
   it("destroys the PDF parser when extraction fails", async () => {

@@ -23,6 +23,7 @@ export interface ExtractedDocument {
 
 export interface ExtractDocumentOptions {
   docxImageUrl?: (relationshipId: string) => string;
+  includeHtml?: boolean;
 }
 
 function escapeHtml(value: string): string {
@@ -168,10 +169,29 @@ export async function extractDocument(
   options: ExtractDocumentOptions = {},
 ): Promise<ExtractedDocument> {
   const extension = extname(filePath).toLowerCase();
+  const includeHtml = options.includeHtml !== false;
   if (extension === ".docx") {
     const data = await readFile(filePath);
     const mathType = await convertMathTypeDocxToOmml(data);
     const convertedData = mathType.buffer;
+    if (!includeHtml) {
+      const structuredText = await extractDocxStructuredText(convertedData, options.docxImageUrl);
+      const raw = structuredText
+        ? { value: "", messages: [] as Array<{ message: string }> }
+        : await mammoth.extractRawText({ buffer: convertedData });
+      const text = (structuredText || raw.value.trim()).normalize("NFC");
+      return {
+        text,
+        html: "",
+        format: "docx",
+        warnings: [
+          ...new Set([
+            ...raw.messages.map(({ message }) => message.trim()).filter(Boolean),
+            ...mathType.warnings,
+          ]),
+        ],
+      };
+    }
     const [raw, rendered, structuredText] = await Promise.all([
       mammoth.extractRawText({ buffer: convertedData }),
       mammoth.convertToHtml(
@@ -214,7 +234,7 @@ export async function extractDocument(
       const text = result.text.trim();
       return {
         text,
-        html: `<pre>${escapeHtml(text)}</pre>`,
+        html: includeHtml ? `<pre>${escapeHtml(text)}</pre>` : "",
         format: "pdf",
         warnings: [],
       };
@@ -227,7 +247,7 @@ export async function extractDocument(
     const text = (await readFile(filePath, "utf8")).trim();
     return {
       text,
-      html: `<pre>${escapeHtml(text)}</pre>`,
+      html: includeHtml ? `<pre>${escapeHtml(text)}</pre>` : "",
       format: "text",
       warnings: [],
     };

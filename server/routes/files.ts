@@ -11,6 +11,7 @@ import { requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
 import { extractDocxImage } from "../lib/docx-structured-text.js";
 import { convertMathTypeDocxToOmml, probeMathTypeRuntime } from "../lib/mathtype-docx.js";
+import { createAsyncLimiter } from "../lib/async-limiter.js";
 import { withSerializedState } from "../rpc.js";
 
 function buildSections(text: string): Array<{
@@ -125,6 +126,51 @@ export async function registerFileRoutes(
 ): Promise<void> {
   const imageUrlFor = (fileId: string) => (relationshipId: string) =>
     `/api/files/${fileId}/assets/${encodeURIComponent(relationshipId)}`;
+  const limitExtraction = createAsyncLimiter(config.documentExtractionConcurrency);
+  const inFlightExtractions = new Map<string, ReturnType<typeof extractDocument>>();
+  const extractedTextCache = new Map<string, Awaited<ReturnType<typeof extractDocument>>>();
+  const cacheExtractedText = (
+    fileId: string,
+    extracted: Awaited<ReturnType<typeof extractDocument>>,
+  ) => {
+    const textOnly = { ...extracted, html: "" };
+    extractedTextCache.delete(fileId);
+    extractedTextCache.set(fileId, textOnly);
+    if (extractedTextCache.size > 8) {
+      const oldestFileId = extractedTextCache.keys().next().value;
+      if (oldestFileId) extractedTextCache.delete(oldestFileId);
+    }
+    return textOnly;
+  };
+  const extractStoredDocument = (file: StoredFile, includeHtml: boolean) => {
+    if (!includeHtml) {
+      const cached = extractedTextCache.get(file.id);
+      if (cached) return Promise.resolve(cached);
+      const previewExtraction = inFlightExtractions.get(`${file.id}:preview`);
+      if (previewExtraction) {
+        return previewExtraction.then((extracted) => cacheExtractedText(file.id, extracted));
+      }
+    }
+
+    const key = `${file.id}:${includeHtml ? "preview" : "text"}`;
+    const existing = inFlightExtractions.get(key);
+    if (existing) return existing;
+
+    const extraction = limitExtraction(() => extractDocument(
+      join(config.uploadsDir, file.storageName),
+      {
+        docxImageUrl: imageUrlFor(file.id),
+        includeHtml,
+      },
+    )).then((extracted) => {
+      cacheExtractedText(file.id, extracted);
+      return extracted;
+    }).finally(() => {
+      inFlightExtractions.delete(key);
+    });
+    inFlightExtractions.set(key, extraction);
+    return extraction;
+  };
 
   app.get("/api/courseware-files/:token", async (request, reply) => {
     const token = (request.params as { token: string }).token;
@@ -221,9 +267,10 @@ export async function registerFileRoutes(
     if (!canReadFile(store, teacher, file)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
-    return extractDocument(join(config.uploadsDir, file.storageName), {
-      docxImageUrl: imageUrlFor(file.id),
-    });
+    const textOnly = ["1", "true"].includes(
+      String((request.query as { textOnly?: string }).textOnly || "").toLowerCase(),
+    );
+    return extractStoredDocument(file, !textOnly);
   });
 
   app.post("/api/files/:id/import", async (request, reply) => {
@@ -235,9 +282,7 @@ export async function registerFileRoutes(
     if (file.ownerId !== session.teacherId) return reply.code(403).send({ error: "只能导入自己上传的文件" });
     const teacher = store.getTeacherById(session.teacherId);
     if (!teacher?.schoolId) throw new Error("请先完成学校认证");
-    const extracted = await extractDocument(join(config.uploadsDir, file.storageName), {
-      docxImageUrl: imageUrlFor(file.id),
-    });
+    const extracted = await extractStoredDocument(file, false);
     const extension = extname(file.originalName).toLowerCase();
     const fileType = extension === ".pdf" ? "pdf" : extension === ".md" || extension === ".txt" ? "markdown" : "word";
     return withSerializedState(store, (state) => {

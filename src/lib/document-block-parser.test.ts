@@ -240,6 +240,29 @@ describe("document block parser", () => {
     expect(blocks.map((block) => block.answer)).toEqual(["A", "C", "D"]);
   });
 
+  it("keeps numbered sub-question answers together before trailing analysis", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "2. 前一道题。",
+        "18. 已知函数 f(x)，完成下列各问。",
+        "答案与解析",
+        "18. （1）证明见解析；",
+        "（2）（i）证明见解析；（ii）$m\\le e-1$。",
+        "【详解】（1）解法一：先研究函数的单调性。",
+        "再由零点存在性完成证明。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1]).toMatchObject({
+      content: "18. 已知函数 f(x)，完成下列各问。",
+      answer: "（1）证明见解析；\n（2）（i）证明见解析；（ii）$m\\le e-1$。",
+      analysis: "（1）解法一：先研究函数的单调性。\n再由零点存在性完成证明。",
+    });
+    expect(blocks[0].answer).toBeUndefined();
+  });
+
   it("does not reinterpret an inline 答案 label as a trailing answer section", () => {
     const blocks = parseDocumentBlocks(
       [

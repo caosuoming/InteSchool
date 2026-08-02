@@ -162,13 +162,13 @@ describe("api service", () => {
       .mockResolvedValueOnce(jsonResponse({ text: "body", html: "<pre>body</pre>", format: "text", warnings: [] }))
       .mockResolvedValueOnce(jsonResponse({ id: "document-1" }));
 
-    await expect(extractStoredFile("/api/files/file-1"))
+    await expect(extractStoredFile("/api/files/file-1", { textOnly: true }))
       .resolves.toMatchObject({ text: "body", format: "text" });
     setCsrfToken("import-csrf");
     await expect(importStoredFile<{ id: string }>("file / 1"))
       .resolves.toEqual({ id: "document-1" });
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/files/file-1/content");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/files/file-1/content?textOnly=1");
     expect(fetchMock.mock.calls[1][0]).toBe("/api/files/file%20%2F%201/import");
     expect(new Headers(fetchMock.mock.calls[1][1]?.headers).get("X-InteSchool-CSRF"))
       .toBe("import-csrf");
