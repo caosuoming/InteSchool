@@ -123,11 +123,11 @@ export function LessonEditorPage() {
     if (!teacher?.schoolId) return;
     Promise.all([
       classService.listMyStudents(teacher.schoolId, teacher.id),
-      classService.listSchoolClasses(teacher.schoolId),
+      classService.listMyClasses(teacher.schoolId, teacher.id),
     ])
       .then(([studentItems, classItems]) => {
         setStudents(studentItems);
-        setClasses(classItems.filter((item) => item.status !== "graduated"));
+        setClasses(classItems.filter((item): item is SchoolClass => item.type === "school"));
       })
       .catch((error) => toast.error("班级与学生列表加载失败", error instanceof Error ? error.message : undefined));
   }, [teacher]);

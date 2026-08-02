@@ -301,4 +301,53 @@ describe("class lifecycle service", () => {
       expect(getStudent(state, "student-suspended")).toMatchObject({ status: "suspended" });
     });
   });
+
+  it("lists only assigned school classes plus the teacher's personal classes", async () => {
+    const state = createState();
+    state.teachers = [{
+      id: "teacher-1",
+      schoolId: "school-1",
+      teachingClassIds: ["class-1"],
+      affiliations: [{
+        id: "aff-1",
+        teacherId: "teacher-1",
+        schoolId: "school-1",
+        teachingClassIds: ["class-1"],
+        homeroomClassIds: [],
+        isCurrent: true,
+      }],
+      currentAffiliationId: "aff-1",
+    } as any];
+    state.personalClasses = [{
+      id: "personal-1",
+      type: "personal",
+      teacherId: "teacher-1",
+      name: "竞赛辅导班",
+      description: "个人教学班",
+      studentIds: ["student-personal"],
+      createdAt: "2025-09-01T00:00:00.000Z",
+    }];
+    (state.students as Array<Record<string, unknown>>).push({
+      id: "student-personal",
+      name: "个人班学生",
+      studentNo: "P001",
+      classId: "personal-1",
+      schoolId: "school-1",
+      grade: "高三",
+      status: "active",
+    });
+
+    await runWithState(state, async () => {
+      const classes = await classService.listMyClasses("school-1", "teacher-1");
+      const students = await classService.listMyStudents("school-1", "teacher-1");
+
+      expect(classes.map((item) => item.id)).toEqual(["class-1", "personal-1"]);
+      expect(students.map((item) => item.id)).toEqual(expect.arrayContaining([
+        "student-early",
+        "student-transfer",
+        "student-personal",
+      ]));
+      expect(students.map((item) => item.id)).not.toContain("student-regular");
+    });
+  });
 });

@@ -219,13 +219,26 @@ export const classService = {
   },
 
   /**
-   * 列出当前教师所教班级（含校本班级中 createdBy 是该教师的，以及该教师的个人班级）
+   * 列出当前教师所教班级（由学校管理人员配置的任教/班主任班级，以及教师自己的个人班级）
    */
   async listMyClasses(schoolId: string | null, teacherId: string): Promise<AnyClass[]> {
     await delay(200);
+    const teacher = db.read("teachers").find((item) => item.id === teacherId);
+    const affiliation = teacher?.affiliations?.find((item) => item.schoolId === schoolId)
+      || teacher?.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+      || teacher?.affiliations?.find((item) => item.isCurrent);
+    const assignedSchoolClassIds = new Set([
+      ...(affiliation?.teachingClassIds || teacher?.teachingClassIds || []),
+      ...(affiliation?.homeroomClassIds || teacher?.homeroomClassIds || []),
+    ]);
     const school = db
       .read("schoolClasses")
-      .filter((c) => c.schoolId === schoolId && c.createdBy === teacherId);
+      .filter((c) =>
+        c.schoolId === schoolId
+        && assignedSchoolClassIds.has(c.id)
+        && c.status !== "graduated"
+        && c.status !== "deleted",
+      );
     const personal = db
       .read("personalClasses")
       .filter((c) => c.teacherId === teacherId);

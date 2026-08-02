@@ -48,7 +48,6 @@ export const authService = {
       newSchool?: { name: string; code: string; city: string; description?: string };
       subject: string;
       teachingGrades?: string[];
-      teachingClassIds?: string[];
     } | string,
     password?: string,
     name?: string,
@@ -108,7 +107,6 @@ export const authService = {
     nickname?: string;
     subject?: string;
     teachingGrades?: string[];
-    teachingClassIds?: string[];
   }): Promise<Teacher> {
     const teacher = await apiRequest<Teacher>("/api/auth/profile", {
       method: "PATCH",
@@ -143,7 +141,6 @@ export const authService = {
     subjects: string[] | string,
     proofFileId?: string,
     teachingGrades: string[] = [],
-    teachingClassIds: string[] = [],
     position = "",
     requestSchoolAdmin = false,
   ): Promise<SchoolApplication> {
@@ -156,7 +153,6 @@ export const authService = {
         subjects: normalizedSubjects,
         proofFileId,
         teachingGrades,
-        teachingClassIds,
         position,
         requestSchoolAdmin,
       }),

@@ -5,6 +5,7 @@ import { useSettingsStore, applyUiScale } from "@/stores/settings";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { RequireExamManager } from "@/components/auth/RequireExamManager";
 import { RequireSchoolRosterManager } from "@/components/auth/RequireSchoolRosterManager";
+import { RequireTeachingProfileManager } from "@/components/auth/RequireTeachingProfileManager";
 
 const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
 const ClassroomLoginPage = lazy(() => import("@/pages/auth/ClassroomLoginPage"));
@@ -109,7 +110,7 @@ export default function App() {
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />
             <Route path="/admin/registration-access" element={<RegistrationAccessPage />} />
-            <Route path="/admin/teacher-profiles" element={<TeacherProfilesPage />} />
+            <Route path="/admin/teacher-profiles" element={<RequireTeachingProfileManager><TeacherProfilesPage /></RequireTeachingProfileManager>} />
             <Route path="/admin/teacher-school-applications" element={<TeacherSchoolApplicationsPage />} />
             <Route path="/admin/school-admin-applications" element={<SchoolAdminApplicationsPage />} />
             <Route path="/admin/school-creation-applications" element={<SchoolCreationApplicationsPage />} />

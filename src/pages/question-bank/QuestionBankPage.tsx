@@ -360,12 +360,11 @@ export default function QuestionBankPage({
   useEffect(() => {
     if (!teacher) return;
     const load = async () => {
-      const [ch, kp, bs, sc, pc, stus, chapters, points] = await Promise.all([
+      const [ch, kp, bs, allClasses, stus, chapters, points] = await Promise.all([
         knowledgeService.getChapterTree(teacher.schoolId!),
         knowledgeService.getKnowledgeTree(teacher.schoolId!),
         basketService.listBaskets(teacher.id),
-        classService.listSchoolClasses(teacher.schoolId!),
-        classService.listPersonalClasses(teacher.id),
+        classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
         knowledgeService.listChapters(teacher.schoolId!),
         knowledgeService.listKnowledgePoints(teacher.schoolId!),
@@ -373,8 +372,8 @@ export default function QuestionBankPage({
       setChapterTree(ch);
       setKnowledgeTree(kp);
       setBaskets(bs.map((b) => ({ id: b.id, name: b.name, isDefault: b.isDefault, questionIds: b.questionIds })));
-      setSchoolClasses(sc);
-      setPersonalClasses(pc);
+      setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
+      setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
       setStudents(stus);
       setChapterMap(new Map(chapters.map((c) => [c.id, c.name])));
       setKnowledgeMap(new Map(points.map((p) => [p.id, p.name])));

@@ -20,6 +20,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, uiScaleConfig, type UiScale } from "@/stores/settings";
 import { cn } from "@/lib/utils";
 import { canManageSchoolRoster } from "@/lib/roster-permissions";
+import { canManageTeachingProfiles } from "@/lib/teaching-profile-permissions";
 
 interface AdminItem {
   icon: typeof GitBranch;
@@ -31,6 +32,7 @@ interface AdminItem {
   adminOnly?: boolean;
   platformOnly?: boolean;
   rosterOnly?: boolean;
+  teachingProfileOnly?: boolean;
 }
 
 const allAdminItems: AdminItem[] = [
@@ -69,7 +71,7 @@ const allAdminItems: AdminItem[] = [
     description: "维护本校教师的任教学科、年级和班级",
     href: "/admin/teacher-profiles",
     schoolOnly: true,
-    adminOnly: true,
+    teachingProfileOnly: true,
   },
   {
     icon: UserPlus,
@@ -111,12 +113,14 @@ export function AdminPage() {
   const isAdmin = ["school_admin", "platform_admin"].includes(String(activeRole));
   const isPlatformAdmin = activeRole === "platform_admin";
   const canManageRoster = teacher ? canManageSchoolRoster(teacher, currentAffiliation) : false;
+  const canManageProfiles = teacher ? canManageTeachingProfiles(teacher, currentAffiliation) : false;
 
   const adminItems = allAdminItems.filter((item) => {
     if (item.schoolOnly && isPersonal) return false;
     if (item.adminOnly && !isAdmin) return false;
     if (item.platformOnly && !isPlatformAdmin) return false;
     if (item.rosterOnly && !canManageRoster) return false;
+    if (item.teachingProfileOnly && !canManageProfiles) return false;
     return true;
   });
 

@@ -1232,7 +1232,8 @@ export const serviceParameters = {
   },
   "studentInteraction": {
     "listByStudent": [
-      "studentId"
+      "studentId",
+      "teacher"
     ],
     "listByTeacher": [
       "teacherId"
@@ -1240,7 +1241,8 @@ export const serviceParameters = {
     "createInteraction": [
       "teacherId",
       "schoolId",
-      "input"
+      "input",
+      "teacher"
     ],
     "deleteInteraction": [
       "id"

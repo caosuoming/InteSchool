@@ -3,7 +3,7 @@ import {
   MessagesSquare, Search, Trash2,
   Smile, Meh, Frown, Star, Plus,
   Clock, MessageCircle, TrendingUp,
-  ChevronDown, ChevronRight, Users, GraduationCap,
+  GraduationCap,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -52,7 +52,6 @@ const statusTagOptions = [
 export function StudentInteractionPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { teacher } = useAuthStore();
   const [allStudents, setAllStudents] = useState<Student[]>([]);
-  const [myClassIds, setMyClassIds] = useState<Set<string>>(new Set());
   const [classMap, setClassMap] = useState<Record<string, AnyClass>>({});
   const [loading, setLoading] = useState(true);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -60,7 +59,6 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [keyword, setKeyword] = useState("");
   // 每个学生的最近互动时间
   const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
-  const [showOtherClasses, setShowOtherClasses] = useState(false);
 
   // 新建记录
   const [newType, setNewType] = useState<"chat" | "attitude" | "status">("chat");
@@ -73,15 +71,11 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     if (!teacher?.schoolId || !teacher?.id) return;
     setLoading(true);
     try {
-      const [all, myIds] = await Promise.all([
-        classService.listStudentsBySchool(teacher.schoolId),
-        classService.listMyClassIds(teacher.schoolId, teacher.id),
+      const [all, classes] = await Promise.all([
+        classService.listMyStudents(teacher.schoolId, teacher.id),
+        classService.listMyClasses(teacher.schoolId, teacher.id),
       ]);
       setAllStudents(all);
-      setMyClassIds(myIds);
-      // 加载班级信息
-      const allClassIds = Array.from(new Set(all.map((s) => s.classId).filter(Boolean)));
-      const classes = await classService.getClassesByIds(allClassIds);
       const map: Record<string, AnyClass> = {};
       classes.forEach((c) => { map[c.id] = c; });
       setClassMap(map);
@@ -96,7 +90,11 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       });
       setLastInteractionMap(lastMap);
       // 默认选中排序后第一名
-      setSelectedStudentId((current) => current ?? all[0]?.id ?? null);
+      setSelectedStudentId((current) => (
+        current && all.some((student) => student.id === current)
+          ? current
+          : all[0]?.id ?? null
+      ));
     } catch (err) {
       toast.error("加载学生列表失败");
     } finally {
@@ -147,25 +145,15 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     });
   }, [lastInteractionMap]);
 
-  // 我的班级学生 / 其他班级学生
-  const { myStudents, otherStudents } = useMemo(() => {
+  const myStudents = useMemo(() => {
     const filtered = keyword.trim()
       ? allStudents.filter((s) => {
           const kw = keyword.toLowerCase();
           return s.name.toLowerCase().includes(kw) || (s.studentNo || "").toLowerCase().includes(kw);
         })
       : allStudents;
-    const mine: Student[] = [];
-    const others: Student[] = [];
-    filtered.forEach((s) => {
-      if (myClassIds.has(s.classId)) mine.push(s);
-      else others.push(s);
-    });
-    return {
-      myStudents: sortStudentsByInteraction(mine),
-      otherStudents: sortStudentsByInteraction(others),
-    };
-  }, [allStudents, keyword, myClassIds, sortStudentsByInteraction]);
+    return sortStudentsByInteraction(filtered);
+  }, [allStudents, keyword, sortStudentsByInteraction]);
 
   const selectedStudent = allStudents.find((s) => s.id === selectedStudentId);
 
@@ -261,66 +249,28 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                   <div className="inline-block w-6 h-6 border-2 border-gold-400 border-t-transparent rounded-full animate-spin mb-2" />
                   <div>加载中...</div>
                 </div>
-              ) : myStudents.length === 0 && otherStudents.length === 0 ? (
+              ) : myStudents.length === 0 ? (
                 <div className="p-6 text-center text-xs text-ink-400">暂无学生</div>
               ) : (
-                <>
-                  {/* 我的学生（按所教班级分组显示） */}
-                  {myStudents.length > 0 && (
-                    <div className="px-3 py-2">
-                      <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-gold-700 uppercase tracking-wide">
-                        <GraduationCap className="w-3 h-3" />
-                        我的学生
-                        <span className="text-ink-400 font-normal">（{myStudents.length}）</span>
-                      </div>
-                      <div className="space-y-0.5">
-                        {myStudents.map((stu) => (
-                          <StudentListItem
-                            key={stu.id}
-                            student={stu}
-                            classNameInfo={stu.classId ? classMap[stu.classId] : undefined}
-                            isSelected={selectedStudentId === stu.id}
-                            lastInteraction={lastInteractionMap[stu.id]}
-                            onClick={() => setSelectedStudentId(stu.id)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 其他班级学生（折叠） */}
-                  {otherStudents.length > 0 && (
-                    <div className="border-t border-ink-100">
-                      <button
-                        onClick={() => setShowOtherClasses((v) => !v)}
-                        className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold text-ink-500 hover:bg-mist transition-colors"
-                      >
-                        {showOtherClasses ? (
-                          <ChevronDown className="w-3 h-3" />
-                        ) : (
-                          <ChevronRight className="w-3 h-3" />
-                        )}
-                        <Users className="w-3 h-3" />
-                        其他班级学生
-                        <span className="text-ink-400 font-normal">（{otherStudents.length}）</span>
-                      </button>
-                      {showOtherClasses && (
-                        <div className="px-3 pb-2 space-y-0.5">
-                          {otherStudents.map((stu) => (
-                            <StudentListItem
-                              key={stu.id}
-                              student={stu}
-                              classNameInfo={stu.classId ? classMap[stu.classId] : undefined}
-                              isSelected={selectedStudentId === stu.id}
-                              lastInteraction={lastInteractionMap[stu.id]}
-                              onClick={() => setSelectedStudentId(stu.id)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
+                <div className="px-3 py-2">
+                  <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-gold-700 uppercase tracking-wide">
+                    <GraduationCap className="w-3 h-3" />
+                    我的学生
+                    <span className="text-ink-400 font-normal">（{myStudents.length}）</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {myStudents.map((stu) => (
+                      <StudentListItem
+                        key={stu.id}
+                        student={stu}
+                        classNameInfo={stu.classId ? classMap[stu.classId] : undefined}
+                        isSelected={selectedStudentId === stu.id}
+                        lastInteraction={lastInteractionMap[stu.id]}
+                        onClick={() => setSelectedStudentId(stu.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </Card>

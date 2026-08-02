@@ -31,7 +31,6 @@ export default function ProfilePage() {
   const [nickname, setNickname] = useState(teacher?.nickname || "");
   const [subject, setSubject] = useState(affiliation?.subject || teacher?.subject || "数学");
   const [grades, setGrades] = useState<string[]>(affiliation?.teachingGrades || teacher?.teachingGrades || []);
-  const [classIds, setClassIds] = useState<string[]>(affiliation?.teachingClassIds || teacher?.teachingClassIds || []);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [savingProfile, setSavingProfile] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -54,13 +53,11 @@ export default function ProfilePage() {
     setNickname(teacher?.nickname || "");
     setSubject(affiliation?.subject || teacher?.subject || "数学");
     setGrades(affiliation?.teachingGrades || teacher?.teachingGrades || []);
-    setClassIds(affiliation?.teachingClassIds || teacher?.teachingClassIds || []);
   }, [
     teacher,
     affiliation?.id,
     affiliation?.subject,
     affiliation?.teachingGrades,
-    affiliation?.teachingClassIds,
   ]);
 
   useEffect(() => {
@@ -90,7 +87,7 @@ export default function ProfilePage() {
     event.preventDefault();
     setSavingProfile(true);
     try {
-      const ok = await updateProfile({ nickname: nickname.trim(), subject, teachingGrades: grades, teachingClassIds: classIds });
+      const ok = await updateProfile({ nickname: nickname.trim(), subject, teachingGrades: grades });
       if (!ok) throw new Error("资料保存失败");
       toast.success("个人与教学资料已更新");
     } catch (error) {
@@ -189,10 +186,15 @@ export default function ProfilePage() {
 
   const activeRole = affiliation?.role || teacher.role;
   const latestApplication = adminApplications[0];
+  const assignedClassIds = [...new Set([
+    ...(affiliation?.teachingClassIds || teacher.teachingClassIds || []),
+    ...(affiliation?.homeroomClassIds || teacher.homeroomClassIds || []),
+  ])];
+  const assignedClasses = classes.filter((item) => assignedClassIds.includes(item.id));
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div><h1 className="font-serif text-2xl font-bold text-ink-900">个人中心</h1><p className="text-sm text-ink-500 mt-1">维护公开资料、任教学科、年级、班级和学校身份。</p></div>
+      <div><h1 className="font-serif text-2xl font-bold text-ink-900">个人中心</h1><p className="text-sm text-ink-500 mt-1">维护公开资料、任教学科、年级和学校身份；任教班级由学校管理人员配置。</p></div>
 
       <Card className="p-6">
         <div className="flex items-center gap-4 mb-5">
@@ -214,7 +216,28 @@ export default function ProfilePage() {
             <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
           </div>
           <ChoiceGrid icon={<Building2 className="w-4 h-4" />} label="任教年级" values={GRADE_OPTIONS} selected={grades} onToggle={(value) => toggle(value, grades, setGrades)} />
-          {affiliation?.schoolId && <ChoiceGrid icon={<Users className="w-4 h-4" />} label="任教班级" values={classes.map((item) => item.id)} selected={classIds} onToggle={(value) => toggle(value, classIds, setClassIds)} labels={Object.fromEntries(classes.map((item) => [item.id, `${item.grade} · ${item.name}`]))} empty="本校尚未创建班级" />}
+          {affiliation?.schoolId && (
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-700">
+                <Users className="h-4 w-4 text-gold-600" />
+                任教班级
+              </div>
+              <div className="rounded-lg border border-ink-200 bg-ink-50 p-3">
+                {assignedClasses.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {assignedClasses.map((item) => (
+                      <span key={item.id} className="rounded-md border border-ink-200 bg-white px-2.5 py-1 text-sm text-ink-700">
+                        {item.grade} · {item.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-ink-500">尚未分配任教班级</p>
+                )}
+                <p className="mt-2 text-xs text-ink-500">任教班级只能由年级组长、教务主任、副校长、校长或学校管理员设置。</p>
+              </div>
+            </div>
+          )}
           <Button type="submit" variant="gold" loading={savingProfile}>保存资料</Button>
         </form>
       </Card>

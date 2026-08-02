@@ -9,8 +9,7 @@ import type { SchoolClass, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({
   classService: {
-    listSchoolClasses: vi.fn(),
-    listPersonalClasses: vi.fn(),
+    listMyClasses: vi.fn(),
     listStudentsByClass: vi.fn(),
   },
 }));
@@ -53,8 +52,7 @@ describe("StudentLearningPage", () => {
       error: null,
     });
 
-    vi.mocked(classService.listSchoolClasses).mockResolvedValue([schoolClass]);
-    vi.mocked(classService.listPersonalClasses).mockResolvedValue([]);
+    vi.mocked(classService.listMyClasses).mockResolvedValue([schoolClass]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([]);
     vi.mocked(settingsService.listClassTypes).mockResolvedValue([]);
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([
@@ -86,5 +84,6 @@ describe("StudentLearningPage", () => {
     expect(screen.queryByText("显示章节")).not.toBeInTheDocument();
     expect(screen.queryByText("隐藏章节")).not.toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "所属章节" })).not.toBeInTheDocument();
+    expect(classService.listMyClasses).toHaveBeenCalledWith("school-1", "teacher-1");
   });
 });

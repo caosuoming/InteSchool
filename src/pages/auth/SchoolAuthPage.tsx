@@ -141,7 +141,6 @@ export default function SchoolAuthPage() {
         subjects,
         uploaded?.id,
         teachingGrades,
-        [],
         position,
         requestSchoolAdmin,
       );

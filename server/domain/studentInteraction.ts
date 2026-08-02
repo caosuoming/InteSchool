@@ -1,6 +1,7 @@
-import type { StudentInteraction, InteractionType } from "../../src/types/index.js";
+import type { StudentInteraction, InteractionType, Teacher } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { classService } from "./class.js";
 
 export interface InteractionInput {
   studentId: string;
@@ -10,9 +11,17 @@ export interface InteractionInput {
   statusTag?: string;
 }
 
+async function requireStudentAccess(teacher: Teacher, studentId: string): Promise<void> {
+  const students = await classService.listMyStudents(teacher.schoolId, teacher.id);
+  if (!students.some((student) => student.id === studentId)) {
+    throw new Error("只能访问自己任教班级或个人教学班的学生");
+  }
+}
+
 export const studentInteractionService = {
-  async listByStudent(studentId: string): Promise<StudentInteraction[]> {
+  async listByStudent(studentId: string, teacher: Teacher): Promise<StudentInteraction[]> {
     await delay(200);
+    await requireStudentAccess(teacher, studentId);
     return db
       .read("studentInteractions")
       .filter((i) => i.studentId === studentId)
@@ -31,9 +40,11 @@ export const studentInteractionService = {
     teacherId: string,
     schoolId: string,
     input: InteractionInput,
+    teacher: Teacher,
   ): Promise<StudentInteraction> {
     await delay(300);
     maybeThrowError();
+    await requireStudentAccess(teacher, input.studentId);
     const now = new Date().toISOString();
     const interaction: StudentInteraction = {
       id: genId("si"),
