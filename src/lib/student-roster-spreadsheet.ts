@@ -6,9 +6,12 @@ const HEADER_ALIASES = {
   className: ["班级", "学生班级", "班级名称"],
   name: ["姓名", "学生姓名"],
   studentNo: ["学号", "学生学号", "学籍号"],
+  subjectSelection: ["选科", "选科组合", "科目组合", "科类", "选考科目"],
   isExternal: ["借读生", "是否借读", "借读"],
   gender: ["性别"],
 } as const;
+
+export const STUDENT_ROSTER_TEMPLATE_HEADERS = ["班级*", "姓名*", "学号", "选科", "借读生", "性别"] as const;
 
 function text(value: CellValue): string {
   if (value === null || value === undefined) return "";
@@ -17,9 +20,15 @@ function text(value: CellValue): string {
 }
 
 function findColumn(headers: string[], aliases: readonly string[], required: boolean): number {
-  const index = headers.findIndex((header) => aliases.includes(header));
+  const index = headers.findIndex((header) => aliases.includes(
+    header.replace(/\s+/g, "").replace(/[＊*]+$/, ""),
+  ));
   if (required && index < 0) throw new Error(`模板缺少“${aliases[0]}”列`);
   return index;
+}
+
+function normalizeClassName(value: string): string {
+  return /^\d+$/.test(value) ? `${value}班` : value;
 }
 
 function parseExternal(value: string): boolean {
@@ -39,22 +48,26 @@ export function parseStudentRosterTable(rows: CellValue[][]): StudentRosterImpor
   const headers = rows[firstNonEmpty].map(text);
   const classColumn = findColumn(headers, HEADER_ALIASES.className, true);
   const nameColumn = findColumn(headers, HEADER_ALIASES.name, true);
-  const studentNoColumn = findColumn(headers, HEADER_ALIASES.studentNo, true);
+  const studentNoColumn = findColumn(headers, HEADER_ALIASES.studentNo, false);
+  const subjectSelectionColumn = findColumn(headers, HEADER_ALIASES.subjectSelection, false);
   const externalColumn = findColumn(headers, HEADER_ALIASES.isExternal, false);
   const genderColumn = findColumn(headers, HEADER_ALIASES.gender, false);
 
   const parsed = rows.slice(firstNonEmpty + 1).flatMap((row, index) => {
-    const className = text(row[classColumn]);
+    if (row.every((cell) => !text(cell))) return [];
+    const className = normalizeClassName(text(row[classColumn]));
     const name = text(row[nameColumn]);
-    const studentNo = text(row[studentNoColumn]);
-    if (!className && !name && !studentNo) return [];
-    if (!className || !name || !studentNo) {
-      throw new Error(`第 ${firstNonEmpty + index + 2} 行缺少班级、姓名或学号`);
+    const studentNo = studentNoColumn >= 0 ? text(row[studentNoColumn]) : "";
+    if (!className || !name) {
+      throw new Error(`第 ${firstNonEmpty + index + 2} 行缺少班级或姓名`);
     }
     return [{
       className,
       name,
       studentNo,
+      subjectSelection: subjectSelectionColumn >= 0
+        ? text(row[subjectSelectionColumn]) || undefined
+        : undefined,
       isExternal: externalColumn >= 0 ? parseExternal(text(row[externalColumn])) : false,
       gender: genderColumn >= 0 ? parseGender(text(row[genderColumn])) : undefined,
     } satisfies StudentRosterImportRow];
@@ -90,11 +103,11 @@ export async function downloadStudentRosterTemplate(gradeName: string): Promise<
   await writeXlsxFile([{
     sheet: "学生导入模板",
     data: [
-      ["学生班级", "姓名", "学号", "借读生", "性别"].map(header),
-      ["高一（1）班", "张三", "20260001", "否", "男"].map(cell),
-      ["高一（1）班", "李四", "20260002", "是", "女"].map(cell),
+      STUDENT_ROSTER_TEMPLATE_HEADERS.map(header),
+      ["1", "张三", "20260001", "物化生", "否", "男"].map(cell),
+      ["17", "李四", "", "史政地", "是", "女"].map(cell),
     ],
     stickyRowsCount: 1,
-    columns: [{ width: 18 }, { width: 14 }, { width: 18 }, { width: 12 }, { width: 10 }],
+    columns: [{ width: 14 }, { width: 14 }, { width: 18 }, { width: 14 }, { width: 12 }, { width: 10 }],
   }]).toFile(`${gradeName.replace(/[\\/:*?"<>|]/g, "_")}_学生导入模板.xlsx`);
 }
