@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
@@ -15,7 +17,9 @@ import {
   FileQuestion,
   FileSpreadsheet,
   FileText,
+  Images,
   Lightbulb,
+  MessageSquareWarning,
   Plus,
   Presentation,
   Search,
@@ -26,6 +30,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
 import { donationService } from "@/services/donation";
+import { uploadFile } from "@/services/api";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -45,6 +50,7 @@ import type {
   Lecture,
   Material,
   MaterialType,
+  PlatformResourceCorrection,
   PlatformSaveCheckResult,
   PlatformSaveDecision,
   Question,
@@ -60,6 +66,7 @@ import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoo
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
+import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 
 type ResourceTypeFilter = "all" | ShareableResourceType;
 type LeftTab = "chapter" | "knowledge";
@@ -414,6 +421,7 @@ function resolveNames(tree: TreeNode | null, ids: string[]): string {
 
 export default function PlatformResourcesPage() {
   const { teacher } = useAuthStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
@@ -441,6 +449,13 @@ export default function PlatformResourcesPage() {
     decision: PlatformSaveDecision;
   } | null>(null);
   const [editItem, setEditItem] = useState<PlatformResourceItem | null>(null);
+  const [corrections, setCorrections] = useState<PlatformResourceCorrection[]>([]);
+  const [activeCorrectionId, setActiveCorrectionId] = useState<string | null>(null);
+  const [correctionItem, setCorrectionItem] = useState<PlatformResourceItem | null>(null);
+  const [correctionMessage, setCorrectionMessage] = useState("");
+  const [correctionImages, setCorrectionImages] = useState<File[]>([]);
+  const [submittingCorrection, setSubmittingCorrection] = useState(false);
+  const [formulaEditorOpen, setFormulaEditorOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "", description: "", grade: "", schoolYear: "", semester: "上学期" as ResourceSemester, originalFileName: "", difficulty: "", recommendation: "",
   });
@@ -461,13 +476,14 @@ export default function PlatformResourcesPage() {
     }
     setLoading(true);
     try {
-      const [donations, myDonations, contributorList, myPrivileges, chapterData, knowledgeData] = await Promise.all([
+      const [donations, myDonations, contributorList, myPrivileges, chapterData, knowledgeData, correctionList] = await Promise.all([
         shareService.listPublicDonations(teacher.id),
         shareService.listDonationStatus(teacher.id),
         shareService.listDonationContributors(teacher.id),
         shareService.getDonationPrivileges(teacher.id),
         shareService.getPlatformDirectoryTree("chapter", teacher.id),
         shareService.getPlatformDirectoryTree("knowledge", teacher.id),
+        shareService.listDonationCorrections(teacher.id),
       ]);
       const nextItems = donations.map(snapshotToItem).filter((item): item is PlatformResourceItem => Boolean(item));
       setItems(nextItems);
@@ -476,6 +492,7 @@ export default function PlatformResourcesPage() {
       setPrivileges(myPrivileges);
       setChapterTree(chapterData);
       setKnowledgeTree(knowledgeData);
+      setCorrections(correctionList);
       if (!platformAdmin) setSelectedSubject(teacherSubject);
     } catch (error) {
       console.error("加载平台资源失败", error);
@@ -728,7 +745,7 @@ export default function PlatformResourcesPage() {
     }
   };
 
-  const openEdit = (item: PlatformResourceItem) => {
+  const openEdit = useCallback((item: PlatformResourceItem, correctionId?: string | null) => {
     const difficulty = item.resourceType === "question"
       ? String(difficultyLabelText.indexOf(item.meta.find((meta) => meta.label === "难度")?.value || ""))
       : "";
@@ -745,8 +762,77 @@ export default function PlatformResourcesPage() {
       difficulty,
       recommendation,
     });
+    setActiveCorrectionId(correctionId || null);
     setEditItem(item);
+  }, []);
+
+  const closeEdit = useCallback(() => {
+    setEditItem(null);
+    setActiveCorrectionId(null);
+    setFormulaEditorOpen(false);
+    if (searchParams.has("edit") || searchParams.has("correction")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("edit");
+      next.delete("correction");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (loading || editItem) return;
+    const donationId = searchParams.get("edit");
+    if (!donationId) return;
+    const item = items.find((candidate) => candidate.shareId === donationId);
+    if (item) openEdit(item, searchParams.get("correction"));
+  }, [editItem, items, loading, openEdit, searchParams]);
+
+  const openCorrection = (item: PlatformResourceItem) => {
+    setCorrectionItem(item);
+    setCorrectionMessage("");
+    setCorrectionImages([]);
   };
+
+  const closeCorrection = () => {
+    setCorrectionItem(null);
+    setCorrectionMessage("");
+    setCorrectionImages([]);
+  };
+
+  const submitCorrection = async () => {
+    if (!teacher || !correctionItem) return;
+    if (!correctionMessage.trim() && correctionImages.length === 0) {
+      toast.warning("请填写纠错说明或上传图片");
+      return;
+    }
+    setSubmittingCorrection(true);
+    try {
+      const uploaded = await Promise.all(correctionImages.map((file) => uploadFile(file)));
+      const correction = await shareService.createDonationCorrection(teacher.id, {
+        donationId: correctionItem.shareId,
+        message: correctionMessage,
+        attachments: uploaded.map((file) => ({
+          id: file.id,
+          name: file.originalName,
+          url: file.url,
+          mimeType: file.mimeType,
+          size: file.size,
+        })),
+      });
+      setCorrections((current) => [correction, ...current]);
+      toast.success("纠错信息已提交", "已加入资源捐赠者的待办事项");
+      closeCorrection();
+    } catch (error: any) {
+      toast.error("提交纠错失败", error?.message);
+    } finally {
+      setSubmittingCorrection(false);
+    }
+  };
+
+  const pendingEditCorrections = editItem
+    ? corrections.filter((correction) =>
+      correction.donationId === editItem.shareId && correction.status === "pending",
+    )
+    : [];
 
   const saveEdit = async () => {
     if (!teacher || !editItem) return;
@@ -762,8 +848,16 @@ export default function PlatformResourcesPage() {
         difficulty: editForm.difficulty ? Number(editForm.difficulty) as 1 | 2 | 3 | 4 | 5 : undefined,
         recommendation: editForm.recommendation ? Number(editForm.recommendation) as 1 | 2 | 3 | 4 | 5 : undefined,
       });
+      const activeCorrection = pendingEditCorrections.find((correction) => correction.id === activeCorrectionId);
+      if (activeCorrection) {
+        try {
+          await shareService.resolveDonationCorrection(teacher.id, activeCorrection.id);
+        } catch (error: any) {
+          toast.warning("资源已更新，但纠错待办未完成", error?.message);
+        }
+      }
       toast.success("平台资源已更新");
-      setEditItem(null);
+      closeEdit();
       await loadAll();
     } catch (error: any) {
       toast.error("更新失败", error?.message);
@@ -1163,6 +1257,10 @@ export default function PlatformResourcesPage() {
                             </button>
                           </div>
                         )}
+                        <Button variant="outline" size="sm" onClick={() => openCorrection(item)}>
+                          <MessageSquareWarning className="w-3.5 h-3.5" />
+                          纠错
+                        </Button>
                         {canEdit && (
                           <Button variant="outline" size="sm" onClick={() => openEdit(item)}>
                             <Edit3 className="w-3.5 h-3.5" />
@@ -1350,26 +1448,86 @@ export default function PlatformResourcesPage() {
 
       <Modal
         open={Boolean(editItem)}
-        onClose={() => setEditItem(null)}
+        onClose={closeEdit}
         title="修改平台资源属性"
-        description="捐赠者可以修改自己的资源；贡献榜前十名可以协助维护其他资源。平台资源不可删除。"
+        description="捐赠者、学科版主和平台超级管理员可以维护资源。通过纠错待办进入时，保存后会自动完成该待办。"
         size="md"
         footer={(
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setEditItem(null)}>取消</Button>
+            <Button variant="ghost" onClick={closeEdit}>取消</Button>
             <Button variant="gold" loading={savingEdit} onClick={saveEdit}>保存修改</Button>
           </div>
         )}
       >
         <div className="space-y-4">
+          {pendingEditCorrections.length > 0 && (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
+                <AlertTriangle className="h-4 w-4" />
+                待处理纠错信息（{pendingEditCorrections.length}）
+              </div>
+              {pendingEditCorrections.map((correction) => (
+                <div
+                  key={correction.id}
+                  className={cn(
+                    "rounded-md border bg-paper p-3 text-sm",
+                    correction.id === activeCorrectionId ? "border-amber-400 ring-2 ring-amber-200" : "border-amber-100",
+                  )}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500">
+                    <span>{correction.reporterNickname} · {timeAgo(correction.createdAt)}</span>
+                    {correction.id === activeCorrectionId && <span className="tag-red">当前待办</span>}
+                  </div>
+                  {correction.message && (
+                    <div className="mt-2 whitespace-pre-wrap leading-6 text-ink-800">{correction.message}</div>
+                  )}
+                  {correction.attachments.length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {correction.attachments.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="overflow-hidden rounded-md border border-ink-100 bg-mist"
+                        >
+                          <img src={attachment.url} alt={attachment.name} className="h-32 w-full object-contain" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           <label className="block text-sm text-ink-700">
-            <span className="block mb-1">{editItem?.resourceType === "question" ? "题干" : "标题"}</span>
+            <span className="mb-1 flex items-center justify-between gap-2">
+              <span>{editItem?.resourceType === "question" ? "题干" : "标题"}</span>
+              {editItem?.resourceType === "question" && (
+                <button
+                  type="button"
+                  onClick={() => setFormulaEditorOpen(true)}
+                  className="flex items-center gap-1 text-xs text-gold-700 hover:text-gold-800"
+                >
+                  <Edit3 className="h-3 w-3" />
+                  在线编辑器（支持公式）
+                </button>
+              )}
+            </span>
             <textarea
               value={editForm.title}
               onChange={(event) => setEditForm((form) => ({ ...form, title: event.target.value }))}
               className="input-base min-h-20"
             />
           </label>
+          {editItem?.resourceType === "question" && (
+            <div className="rounded-md border border-ink-100 bg-mist/40 p-3">
+              <div className="mb-2 text-xs text-ink-500">题干渲染预览</div>
+              <MathHtml className="text-sm text-ink-900 whitespace-pre-wrap">
+                {editForm.title || "（题干为空）"}
+              </MathHtml>
+            </div>
+          )}
           {editItem?.resourceType !== "question" && (
             <>
               <label className="block text-sm text-ink-700">
@@ -1421,6 +1579,83 @@ export default function PlatformResourcesPage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(correctionItem)}
+        onClose={closeCorrection}
+        title="提交资源纠错"
+        description={correctionItem ? `指出“${correctionItem.title}”中的错误，信息会进入捐赠者的待办事项。` : undefined}
+        size="md"
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={closeCorrection} disabled={submittingCorrection}>取消</Button>
+            <Button variant="gold" onClick={submitCorrection} loading={submittingCorrection}>
+              <MessageSquareWarning className="h-4 w-4" />
+              提交纠错
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <label className="block text-sm text-ink-700">
+            <span className="mb-1 block">纠错说明</span>
+            <textarea
+              value={correctionMessage}
+              onChange={(event) => setCorrectionMessage(event.target.value)}
+              className="input-base min-h-32"
+              maxLength={2000}
+              placeholder="请说明错误位置、正确内容或修改建议。可只上传图片。"
+            />
+            <span className="mt-1 block text-right text-xs text-ink-400">{correctionMessage.length}/2000</span>
+          </label>
+          <label className="block cursor-pointer rounded-lg border-2 border-dashed border-ink-200 bg-mist/40 p-5 text-center hover:border-gold-300 hover:bg-gold-50/30">
+            <input
+              type="file"
+              className="sr-only"
+              accept="image/*"
+              multiple
+              onChange={(event) => setCorrectionImages(Array.from(event.target.files || []).slice(0, 4))}
+            />
+            <Images className="mx-auto h-8 w-8 text-ink-300" />
+            <div className="mt-2 text-sm font-medium text-ink-800">
+              {correctionImages.length > 0 ? `已选择 ${correctionImages.length} 张图片` : "上传纠错图片"}
+            </div>
+            <div className="mt-1 text-xs text-ink-500">最多 4 张，支持常见图片格式</div>
+          </label>
+          {correctionImages.length > 0 && (
+            <div className="space-y-2">
+              {correctionImages.map((file) => (
+                <div key={`${file.name}-${file.lastModified}`} className="flex items-center gap-2 rounded-md border border-ink-100 px-3 py-2 text-sm">
+                  <Images className="h-4 w-4 text-ink-400" />
+                  <span className="min-w-0 flex-1 truncate text-ink-700">{file.name}</span>
+                  <span className="text-xs text-ink-400">{Math.max(1, Math.round(file.size / 1024))} KB</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={formulaEditorOpen && editItem?.resourceType === "question"}
+        onClose={() => setFormulaEditorOpen(false)}
+        title="在线编辑题干"
+        description="支持富文本和 LaTeX 公式，保存后会回填到平台资源修改表单。"
+        size="lg"
+        footer={null}
+      >
+        {formulaEditorOpen && editItem?.resourceType === "question" && (
+          <WpsFormulaEditor
+            initialHtml={editForm.title}
+            onSave={(html) => {
+              setEditForm((form) => ({ ...form, title: html }));
+              setFormulaEditorOpen(false);
+              toast.success("题干内容已应用");
+            }}
+            onCancel={() => setFormulaEditorOpen(false)}
+          />
+        )}
       </Modal>
 
     </div>

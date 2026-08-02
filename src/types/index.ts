@@ -1062,6 +1062,39 @@ export interface PlatformResourceSetting {
   updatedByTeacherId?: string;
 }
 
+export interface PlatformResourceCorrectionAttachment {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  size: number;
+}
+
+export type PlatformResourceCorrectionStatus = "pending" | "resolved";
+
+/** 教师针对平台资源提交的纠错反馈。 */
+export interface PlatformResourceCorrection {
+  id: string;
+  donationId: string;
+  resourceType: ShareableResourceType;
+  resourceTitle: string;
+  reporterTeacherId: string;
+  reporterNickname: string;
+  recipientTeacherId: string;
+  message?: string;
+  attachments: PlatformResourceCorrectionAttachment[];
+  status: PlatformResourceCorrectionStatus;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedByTeacherId?: string;
+}
+
+export interface PlatformResourceCorrectionInput {
+  donationId: string;
+  message?: string;
+  attachments?: PlatformResourceCorrectionAttachment[];
+}
+
 /** 资源分享记录 */
 export interface ShareRecord {
   id: string;

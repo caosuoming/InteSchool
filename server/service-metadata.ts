@@ -1177,6 +1177,21 @@ export const serviceParameters = {
       "donationId",
       "patch"
     ],
+    "createDonationCorrection": [
+      "teacherId",
+      "input"
+    ],
+    "listDonationCorrections": [
+      "teacherId",
+      "donationId"
+    ],
+    "listCorrectionTodos": [
+      "teacherId"
+    ],
+    "resolveDonationCorrection": [
+      "teacherId",
+      "correctionId"
+    ],
     "listPlatformResourceSettings": [],
     "updatePlatformResourceSettings": [
       "teacherId",
