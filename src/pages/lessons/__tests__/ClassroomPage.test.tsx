@@ -67,6 +67,21 @@ const mathHomework: ClassroomHomework = {
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
 
+const chineseHomework: ClassroomHomework = {
+  ...mathHomework,
+  id: "homework-2",
+  subject: "语文",
+  content: "背诵《劝学》第一段",
+};
+
+const pastHomework: ClassroomHomework = {
+  ...mathHomework,
+  id: "homework-past",
+  content: "订正上一周数学周练",
+  assignedDate: "2020-01-01",
+  publishAt: "2020-01-01T00:00:00.000Z",
+};
+
 const lesson: LessonCourseware = {
   id: "lesson-1",
   teacherId: "teacher-1",
@@ -99,6 +114,8 @@ function renderPage() {
 
 describe("ClassroomPage", () => {
   beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
     useAuthStore.setState({ teacher, loading: false, error: null });
     vi.mocked(classService.listSchoolClasses).mockResolvedValue([{
       id: "class-1",
@@ -116,7 +133,7 @@ describe("ClassroomPage", () => {
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([lesson]);
   });
 
-  it("shows homework in full-screen subject cards and keeps display preferences locally", async () => {
+  it("shows the compact homework layout and keeps display preferences locally", async () => {
     const user = userEvent.setup();
     renderPage();
 
@@ -129,9 +146,27 @@ describe("ClassroomPage", () => {
       expect(localStorage.getItem("inteschool-classroom-preferences:class-1")).toContain('"fontSize":32');
     });
 
-    await user.click(screen.getByRole("button", { name: "隐藏" }));
-    expect(screen.getByRole("button", { name: /继续查看/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "将数学作业标记为已完成" }));
+    expect(screen.getByRole("button", { name: /已完成 1/ })).toBeInTheDocument();
     expect(localStorage.getItem("inteschool-classroom-preferences:class-1")).toContain("数学");
+  });
+
+  it("moves subjects with arrow controls and opens previous homework from the footer", async () => {
+    const user = userEvent.setup();
+    vi.mocked(classroomHomeworkService.listHomeworks)
+      .mockResolvedValueOnce([mathHomework, chineseHomework])
+      .mockResolvedValueOnce([pastHomework]);
+
+    renderPage();
+
+    expect(await screen.findByText("背诵《劝学》第一段")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "语文作业上移" }));
+    expect(localStorage.getItem("inteschool-classroom-preferences:class-1")).toContain(
+      '"subjectOrder":["语文","数学"]',
+    );
+
+    await user.click(screen.getByRole("button", { name: "往期作业查看" }));
+    expect(await screen.findByText("订正上一周数学周练")).toBeInTheDocument();
   });
 
   it("switches to the lesson tab and displays published courseware", async () => {
