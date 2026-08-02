@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
   FileSpreadsheet, GraduationCap, Users, Send,
@@ -30,6 +30,13 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
+import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
+import {
+  commonScoreUnderHeading,
+  questionIdsUnderHeading,
+  resolveExtractedQuestionDisplay,
+  setScoreUnderHeading,
+} from "@/pages/exam-papers/extracted-document";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
   AnyClass,
@@ -133,9 +140,9 @@ type AddSource = "basket" | "bank" | "examPaper" | "lecture";
 export default function ExamPaperEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const initialPreview = searchParams.get("preview") === "1";
-  const [isPreview, setIsPreview] = useState(initialPreview);
+  const isPreview = location.pathname.endsWith("/preview") || searchParams.get("preview") === "1";
   const [paperSize, setPaperSize] = useState<"A4" | "8K">("A4");
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
@@ -544,6 +551,15 @@ export default function ExamPaperEditorPage() {
     setPaperQuestions((prev) => prev.map((q) => q.id === pqId ? { ...q, score } : q));
   };
 
+  const handleUpdateHeadingScore = (headingId: string, score: number) => {
+    setPaperQuestions((previous) => setScoreUnderHeading(
+      contentBlocks,
+      previous,
+      headingId,
+      score,
+    ));
+  };
+
   // 添加题目确认
   const handleConfirmAdd = async () => {
     if (!addSource || selectedQuestionIds.length === 0) {
@@ -823,7 +839,7 @@ export default function ExamPaperEditorPage() {
                 <Send className="w-4 h-4" />
                 选择发布对象
               </Button>
-              <Button variant="gold" onClick={() => setIsPreview(false)}>
+              <Button variant="gold" onClick={() => navigate(`/exam-papers/${id}`)}>
                 <Edit3 className="w-4 h-4" />
                 编辑试卷
               </Button>
@@ -983,12 +999,22 @@ export default function ExamPaperEditorPage() {
                     const paperQuestion = paperQuestions.find(
                       (item) => item.id === block.examPaperQuestionId,
                     );
+                    const linkedQuestionId = paperQuestion?.questionId || block.questionId;
+                    const linkedQuestion = linkedQuestionId ? questions[linkedQuestionId] : undefined;
+                    const display = resolveExtractedQuestionDisplay(
+                      paperQuestion,
+                      linkedQuestion,
+                      block.content,
+                    );
                     return (
                       <section key={block.id} className="flex items-start gap-2 rounded-md border border-ink-100 p-4">
-                        <span className="font-mono font-bold text-ink-400">{questionNumber}.</span>
-                        <div className="flex-1 whitespace-pre-wrap text-sm leading-relaxed text-ink-900">
-                          {block.content}
-                        </div>
+                        <ExtractedQuestionContent
+                          number={questionNumber}
+                          stem={display.stem}
+                          options={display.options}
+                          answer={display.answer}
+                          analysis={display.analysis}
+                        />
                         {paperQuestion && (
                           <span className="flex-shrink-0 text-xs font-medium text-gold-700">{paperQuestion.score} 分</span>
                         )}
@@ -1096,7 +1122,7 @@ export default function ExamPaperEditorPage() {
               <Layout className="w-4 h-4" />
               制作答题卡
             </Button>
-            <Button variant="outline" onClick={() => setIsPreview(true)}>
+            <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/preview`)}>
               <Eye className="w-4 h-4" />
               预览
             </Button>
@@ -1218,11 +1244,23 @@ export default function ExamPaperEditorPage() {
                   const paperQuestionIndex = paperQuestion
                     ? paperQuestions.findIndex((question) => question.id === paperQuestion.id)
                     : -1;
+                  const linkedQuestionId = paperQuestion?.questionId || block.questionId;
+                  const linkedQuestion = linkedQuestionId ? questions[linkedQuestionId] : undefined;
+                  const questionDisplay = block.type === "question"
+                    ? resolveExtractedQuestionDisplay(paperQuestion, linkedQuestion, block.content)
+                    : undefined;
+                  const isQuestionGroup = block.type === "groupTitle" || block.type === "heading";
+                  const headingQuestionCount = isQuestionGroup
+                    ? questionIdsUnderHeading(contentBlocks, block.id).length
+                    : 0;
+                  const headingScore = isQuestionGroup
+                    ? commonScoreUnderHeading(contentBlocks, paperQuestions, block.id)
+                    : null;
                   const label = block.type === "documentTitle"
                     ? "文档标题"
                     : block.type === "documentInfo" || block.type === "text"
                       ? "文档信息"
-                      : block.type === "groupTitle" || block.type === "heading"
+                      : isQuestionGroup
                         ? "题型或项目名"
                     : block.type === "knowledge"
                       ? "知识块"
@@ -1250,7 +1288,28 @@ export default function ExamPaperEditorPage() {
                             </div>
                           </>
                         )}
-                        <div className={cn("flex items-center gap-0.5", block.type !== "question" && "ml-auto")}>
+                        {isQuestionGroup && headingQuestionCount > 0 && (
+                          <div className="ml-auto flex items-center gap-1.5">
+                            <span className="text-xs text-ink-500">下属 {headingQuestionCount} 题，每题</span>
+                            <Input
+                              aria-label={`${block.content}下属题目统一分值`}
+                              type="number"
+                              min="0"
+                              value={headingScore === null ? "" : String(headingScore)}
+                              placeholder="混合"
+                              onChange={(event) => {
+                                if (event.target.value === "") return;
+                                handleUpdateHeadingScore(block.id, Number(event.target.value));
+                              }}
+                              className="w-16 text-xs"
+                            />
+                            <span className="text-xs text-ink-500">分</span>
+                          </div>
+                        )}
+                        <div className={cn(
+                          "flex items-center gap-0.5",
+                          block.type !== "question" && !isQuestionGroup && "ml-auto",
+                        )}>
                           <button
                             onClick={() => moveContentBlock(blockIndex, "up")}
                             disabled={blockIndex === 0}
@@ -1292,13 +1351,21 @@ export default function ExamPaperEditorPage() {
                           className="mb-2"
                         />
                       )}
-                      {block.type === "documentTitle" ? (
+                      {block.type === "question" && questionDisplay ? (
+                        <ExtractedQuestionContent
+                          stem={questionDisplay.stem}
+                          options={questionDisplay.options}
+                          answer={questionDisplay.answer}
+                          analysis={questionDisplay.analysis}
+                          compact
+                        />
+                      ) : block.type === "documentTitle" ? (
                         <Input
                           label="文档标题"
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
                         />
-                      ) : block.type === "groupTitle" || block.type === "heading" ? (
+                      ) : isQuestionGroup ? (
                         <Input
                           label="题型或项目名"
                           value={block.content}
@@ -1306,14 +1373,12 @@ export default function ExamPaperEditorPage() {
                         />
                       ) : (
                         <Textarea
-                          label={block.type === "question"
-                            ? "题干"
-                            : block.type === "documentInfo" || block.type === "text"
-                              ? "文档信息"
-                              : "内容"}
+                          label={block.type === "documentInfo" || block.type === "text"
+                            ? "文档信息"
+                            : "内容"}
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
-                          rows={block.type === "question" ? 3 : 4}
+                          rows={4}
                         />
                       )}
                     </section>

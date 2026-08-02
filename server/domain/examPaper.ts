@@ -243,13 +243,17 @@ export const examPaperService = {
         .map((block) => {
           const id = genId("epq");
           block.examPaperQuestionId = id;
-          const type = block.questionType || "short";
+          const linkedQuestion = block.questionId
+            ? (db.read("questions") || []).find((question) => question.id === block.questionId)
+            : undefined;
+          const type = linkedQuestion?.type || block.questionType || "short";
           return {
             id,
             questionId: block.questionId,
-            stem: block.content,
-            answer: "",
-            analysis: "",
+            stem: block.content || linkedQuestion?.stem || "",
+            options: linkedQuestion?.options,
+            answer: linkedQuestion?.answer || "",
+            analysis: linkedQuestion?.analysis || "",
             score: type === "essay" ? 15 : type === "short" ? 5 : type === "multiple" ? 3 : 2,
             type,
           };
