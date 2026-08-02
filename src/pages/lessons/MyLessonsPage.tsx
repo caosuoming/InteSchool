@@ -3,13 +3,14 @@ import { useNavigate } from "react-router";
 import {
   BookOpen, Plus, Search, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
-  BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck,
+  BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, X,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { classroomNoticeService } from "@/services/classroomNotice";
+import { uploadFile } from "@/services/api";
 import { classService } from "@/services/class";
 import type { ClassroomHomework, ClassroomNotice, LessonCourseware, SchoolClass } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -17,6 +18,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Select, Textarea } from "@/components/ui/Input";
+import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
 
 function localDateValue(date = new Date()): string {
   const year = date.getFullYear();
@@ -48,6 +50,12 @@ function timeAgo(dateStr: string): string {
   return `${mo}个月前`;
 }
 
+function fileSizeLabel(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export function MyLessonsPage() {
   const navigate = useNavigate();
   const { teacher, getCurrentAffiliation } = useAuthStore();
@@ -62,6 +70,7 @@ export function MyLessonsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [homeworkContent, setHomeworkContent] = useState("");
+  const [homeworkFiles, setHomeworkFiles] = useState<File[]>([]);
   const [homeworkDate, setHomeworkDate] = useState(localDateValue);
   const [publishMode, setPublishMode] = useState<"now" | "scheduled">("now");
   const [scheduledAt, setScheduledAt] = useState(() => localDateTimeValue(new Date(Date.now() + 30 * 60_000)));
@@ -204,8 +213,8 @@ export function MyLessonsPage() {
 
   const handlePublishHomework = async () => {
     if (!teacher?.schoolId) return;
-    if (!homeworkContent.trim()) {
-      toast.warning("请输入作业内容");
+    if (!homeworkContent.trim() && homeworkFiles.length === 0) {
+      toast.warning("请输入作业内容或添加附件");
       return;
     }
     if (selectedClassIds.length === 0) {
@@ -219,14 +228,23 @@ export function MyLessonsPage() {
     }
     setPublishingHomework(true);
     try {
+      const uploadedFiles = await Promise.all(homeworkFiles.map((file) => uploadFile(file)));
       await classroomHomeworkService.createHomework(teacher.id, teacher.schoolId, {
         content: homeworkContent,
+        attachments: uploadedFiles.map((file) => ({
+          id: file.id,
+          name: file.originalName,
+          url: file.url,
+          mimeType: file.mimeType,
+          size: file.size,
+        })),
         classIds: selectedClassIds,
         assignedDate: homeworkDate,
         publishAt: publishAt.toISOString(),
       });
       toast.success(publishMode === "now" ? "作业已发布" : "作业已设置定时发布");
       setHomeworkContent("");
+      setHomeworkFiles([]);
       setPublishMode("now");
       setScheduledAt(localDateTimeValue(new Date(Date.now() + 30 * 60_000)));
       await loadHomeworkData();
@@ -235,6 +253,20 @@ export function MyLessonsPage() {
     } finally {
       setPublishingHomework(false);
     }
+  };
+
+  const handleHomeworkFiles = (files: FileList | null) => {
+    if (!files) return;
+    setHomeworkFiles((current) => {
+      const next = [...current];
+      for (const file of Array.from(files)) {
+        const duplicate = next.some((item) =>
+          item.name === file.name && item.size === file.size && item.lastModified === file.lastModified);
+        if (!duplicate) next.push(file);
+      }
+      if (next.length > 8) toast.warning("作业附件不能超过 8 个");
+      return next.slice(0, 8);
+    });
   };
 
   const handleDeleteHomework = async (id: string) => {
@@ -432,6 +464,53 @@ export function MyLessonsPage() {
           className="min-h-28"
         />
 
+        <div className="mt-3 rounded-lg border border-dashed border-ink-200 bg-mist/40 p-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-ink-200 bg-paper px-3 py-2 text-sm text-ink-700 hover:border-gold-400 hover:text-ink-900">
+              <Paperclip className="h-4 w-4" />
+              添加图片或文档
+              <input
+                type="file"
+                multiple
+                aria-label="选择作业附件"
+                accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.docx,.txt,.md"
+                className="sr-only"
+                disabled={publishingHomework}
+                onChange={(event) => {
+                  handleHomeworkFiles(event.currentTarget.files);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+            <span className="text-xs text-ink-400">最多 8 个，支持图片、PDF、DOCX、TXT 和 Markdown</span>
+          </div>
+          {homeworkFiles.length > 0 && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {homeworkFiles.map((file) => (
+                <div
+                  key={`${file.name}:${file.size}:${file.lastModified}`}
+                  className="flex min-w-0 items-center gap-2 rounded-lg border border-ink-100 bg-paper px-3 py-2"
+                >
+                  <FileText className="h-4 w-4 flex-shrink-0 text-gold-600" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-medium text-ink-800">{file.name}</div>
+                    <div className="text-[10px] text-ink-400">{fileSizeLabel(file.size)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`移除附件 ${file.name}`}
+                    disabled={publishingHomework}
+                    onClick={() => setHomeworkFiles((items) => items.filter((item) => item !== file))}
+                    className="rounded p-1 text-ink-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="grid xl:grid-cols-[1.4fr_0.6fr_0.7fr] gap-4 mt-4">
           <div>
             <div className="text-sm font-medium text-ink-700 mb-1.5">发布班级</div>
@@ -515,7 +594,10 @@ export function MyLessonsPage() {
                           <span>{homework.classIds.map((id) => classNames.get(id) || id).join("、")}</span>
                           <span>{new Date(homework.publishAt).toLocaleString("zh-CN", { hour12: false })}</span>
                         </div>
-                        <div className="text-sm text-ink-800 whitespace-pre-wrap mt-2">{homework.content}</div>
+                        {homework.content && (
+                          <div className="text-sm text-ink-800 whitespace-pre-wrap mt-2">{homework.content}</div>
+                        )}
+                        <HomeworkAttachments attachments={homework.attachments} className="mt-3" />
                       </div>
                       <button
                         type="button"

@@ -113,6 +113,57 @@ describe("classroomHomeworkService", () => {
     });
   });
 
+  it("publishes attachment-only homework and normalizes stored file metadata", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      const created = await classroomHomeworkService.createHomework("teacher-1", "school-1", {
+        content: "",
+        attachments: [{
+          id: "file-1",
+          name: "  函数图像.pdf  ",
+          url: "/api/files/file-1",
+          mimeType: "application/pdf",
+          size: 4096,
+        }],
+        classIds: ["class-1"],
+        assignedDate: "2026-08-02",
+        publishAt: now,
+      });
+
+      expect(created).toMatchObject({
+        content: "",
+        attachments: [{
+          id: "file-1",
+          name: "函数图像.pdf",
+          url: "/api/files/file-1",
+          mimeType: "application/pdf",
+          size: 4096,
+        }],
+      });
+    });
+  });
+
+  it("rejects mismatched attachment identifiers", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      await expect(classroomHomeworkService.createHomework("teacher-1", "school-1", {
+        content: "查看附件",
+        attachments: [{
+          id: "file-1",
+          name: "函数图像.pdf",
+          url: "/api/files/file-2",
+          mimeType: "application/pdf",
+          size: 4096,
+        }],
+        classIds: ["class-1"],
+        assignedDate: "2026-08-02",
+        publishAt: now,
+      })).rejects.toThrow("作业附件信息不完整");
+    });
+  });
+
   it("only returns scheduled homework after its publish time", async () => {
     const state = createState();
     state.classroomHomeworks = [

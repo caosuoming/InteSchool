@@ -24,6 +24,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/BrandMark";
+import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import { classService } from "@/services/class";
@@ -121,12 +122,19 @@ function HomeworkRow({
         <div className="space-y-5">
           {group.items.map((homework, index) => (
             <div key={homework.id} className={cn(index > 0 && "border-t border-neutral-800 pt-5")}>
-              <div
-                className="whitespace-pre-wrap font-medium leading-relaxed tracking-wide text-neutral-50"
-                style={{ fontSize: `${fontSize}px` }}
-              >
-                {homework.content}
-              </div>
+              {homework.content && (
+                <div
+                  className="whitespace-pre-wrap font-medium leading-relaxed tracking-wide text-neutral-50"
+                  style={{ fontSize: `${fontSize}px` }}
+                >
+                  {homework.content}
+                </div>
+              )}
+              <HomeworkAttachments
+                attachments={homework.attachments}
+                theme="dark"
+                className={cn(homework.content && "mt-4")}
+              />
               {group.items.length > 1 && (
                 <div className="mt-3 text-[10px] text-neutral-600">{homework.teacherName}</div>
               )}
@@ -686,7 +694,10 @@ export default function ClassroomPage() {
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400 font-bold text-neutral-950">{group.subject.slice(0, 1)}</div>
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-white">{group.subject}</div>
-                    <div className="mt-1 line-clamp-1 text-xs text-neutral-500">{group.items.map((item) => item.content).join("；")}</div>
+                    <div className="mt-1 line-clamp-1 text-xs text-neutral-500">
+                      {group.items.map((item) => item.content).filter(Boolean).join("；")
+                        || `包含 ${group.items.reduce((count, item) => count + (item.attachments?.length || 0), 0)} 个附件`}
+                    </div>
                   </div>
                   <span className="inline-flex items-center gap-1 text-xs text-amber-300"><RotateCcw className="h-3.5 w-3.5" />恢复</span>
                 </button>
@@ -729,7 +740,14 @@ export default function ClassroomPage() {
                               {homework.subject || "其他"}
                             </div>
                             <div className="min-w-0 px-4 py-4">
-                              <div className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-200">{homework.content}</div>
+                              {homework.content && (
+                                <div className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-200">{homework.content}</div>
+                              )}
+                              <HomeworkAttachments
+                                attachments={homework.attachments}
+                                theme="dark"
+                                className={cn(homework.content && "mt-3")}
+                              />
                               <div className="mt-2 text-[10px] text-neutral-600">{homework.teacherName}</div>
                             </div>
                           </div>
