@@ -1,4 +1,14 @@
 export const serviceParameters = {
+  "classroomNotice": {
+    "listNotices": [
+      "filter"
+    ],
+    "createNotice": [
+      "teacherId",
+      "schoolId",
+      "input"
+    ]
+  },
   "classroomHomework": {
     "listHomeworks": [
       "filter"

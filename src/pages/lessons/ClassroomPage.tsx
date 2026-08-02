@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   ArrowDown,
@@ -12,7 +12,10 @@ import {
   Clock,
   Eye,
   LogOut,
+  Maximize2,
+  Megaphone,
   Minus,
+  Minimize2,
   Play,
   Plus,
   Presentation,
@@ -25,10 +28,11 @@ import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
+import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { ClassroomHomework, LessonCourseware, SchoolClass, Student } from "@/types";
+import type { ClassroomHomework, ClassroomNotice, LessonCourseware, SchoolClass, Student } from "@/types";
 import { PresentationMode } from "./PresentationMode";
 
 const CLASSROOM_KEY = "inteschool-classroom-id";
@@ -172,6 +176,7 @@ function HomeworkRow({
 }
 
 export default function ClassroomPage() {
+  const classroomRootRef = useRef<HTMLDivElement>(null);
   const { classId: routeClassId } = useParams<{ classId?: string }>();
   const navigate = useNavigate();
   const { teacher, logout } = useAuthStore();
@@ -179,6 +184,7 @@ export default function ClassroomPage() {
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [lessons, setLessons] = useState<LessonCourseware[]>([]);
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
+  const [notices, setNotices] = useState<ClassroomNotice[]>([]);
   const [historyHomeworks, setHistoryHomeworks] = useState<ClassroomHomework[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,6 +193,7 @@ export default function ClassroomPage() {
   const [presenting, setPresenting] = useState<LessonCourseware | null>(null);
   const [preferences, setPreferences] = useState<ClassroomPreferences>(() => readPreferences(routeClassId || ""));
   const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
 
   const selectedClassId = routeClassId || sessionStorage.getItem(CLASSROOM_KEY) || "";
   const selectedClass = classes.find((item) => item.id === selectedClassId);
@@ -219,13 +226,14 @@ export default function ClassroomPage() {
     if (!teacher?.schoolId || !selectedClassId) {
       setLessons([]);
       setHomeworks([]);
+      setNotices([]);
       setStudents([]);
       setLoading(false);
       return;
     }
     if (!silent) setLoading(true);
     try {
-      const [lessonData, studentData, homeworkData] = await Promise.all([
+      const [lessonData, studentData, homeworkData, noticeData] = await Promise.all([
         lessonCoursewareService.listCoursewares({
           schoolId: teacher.schoolId,
           classId: selectedClassId,
@@ -238,10 +246,16 @@ export default function ClassroomPage() {
           assignedDate: today,
           publishedOnly: true,
         }),
+        classroomNoticeService.listNotices({
+          schoolId: teacher.schoolId,
+          classId: selectedClassId,
+          activeOnly: true,
+        }),
       ]);
       setLessons(lessonData);
       setStudents(studentData);
       setHomeworks(homeworkData);
+      setNotices(noticeData);
     } catch (error) {
       if (!silent) toast.error("教室内容加载失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -258,6 +272,12 @@ export default function ClassroomPage() {
     const timer = window.setInterval(() => void loadClassroomContent(true), 60_000);
     return () => window.clearInterval(timer);
   }, [loadClassroomContent]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
 
   const homeworkGroups = useMemo<HomeworkGroup[]>(() => {
     const grouped = new Map<string, ClassroomHomework[]>();
@@ -290,6 +310,11 @@ export default function ClassroomPage() {
     }
     return [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right, "zh-CN"));
   }, [lessons]);
+
+  const noticeText = useMemo(
+    () => notices.map((notice) => notice.content).join("　　◆　　"),
+    [notices],
+  );
 
   const handleClassChange = (classId: string) => {
     sessionStorage.setItem(CLASSROOM_KEY, classId);
@@ -368,6 +393,18 @@ export default function ClassroomPage() {
     navigate("/login", { replace: true });
   };
 
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await classroomRootRef.current?.requestFullscreen();
+      }
+    } catch (error) {
+      toast.error("全屏切换失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
   if (presenting) {
     return (
       <PresentationMode
@@ -381,7 +418,7 @@ export default function ClassroomPage() {
   }
 
   return (
-    <div className="flex h-screen min-h-[560px] overflow-hidden bg-black text-white">
+    <div ref={classroomRootRef} className="flex h-screen min-h-[560px] overflow-hidden bg-black text-white">
       <aside className="flex w-[4.75rem] flex-shrink-0 flex-col border-r border-neutral-800 bg-neutral-950 sm:w-20 lg:w-24">
         <div className="border-b border-neutral-800 p-2">
           <div className="mb-1.5 flex items-center justify-center gap-1.5">
@@ -446,7 +483,17 @@ export default function ClassroomPage() {
           </button>
         </nav>
 
-        <div className="border-t border-neutral-800 p-2">
+        <div className="space-y-1 border-t border-neutral-800 p-2">
+          <button
+            type="button"
+            onClick={() => void toggleFullscreen()}
+            className="flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-lg text-[9px] text-neutral-400 hover:bg-neutral-900 hover:text-white"
+            aria-label={isFullscreen ? "退出全屏" : "全屏"}
+            title={isFullscreen ? "退出全屏" : "全屏"}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            <span>{isFullscreen ? "退出全屏" : "全屏"}</span>
+          </button>
           <button
             type="button"
             onClick={() => void handleExit()}
@@ -460,6 +507,18 @@ export default function ClassroomPage() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col bg-neutral-950">
+        {tab !== "lesson" && notices.length > 0 && (
+          <div
+            role="status"
+            aria-label="班级通知"
+            className="flex h-11 flex-shrink-0 items-center gap-3 overflow-hidden border-b border-amber-500/30 bg-amber-400 px-4 text-neutral-950"
+          >
+            <Megaphone className="h-4 w-4 flex-shrink-0" />
+            <div className="min-w-0 flex-1 overflow-hidden whitespace-nowrap">
+              <div className="classroom-notice-track inline-block min-w-full font-semibold">{noticeText}</div>
+            </div>
+          </div>
+        )}
         <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-950/95 px-4 lg:px-5">
           <div className="min-w-0">
             <h1 className="text-base font-semibold sm:text-lg">{tab === "homework" ? "今日作业" : "上课课件"}</h1>

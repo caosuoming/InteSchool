@@ -25,7 +25,7 @@ export const COLLECTIONS = [
   "recognitions", "answerRecords", "subjectGroups", "prepGroups", "onlineResources",
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
   "shareRecords", "examPublications", "lessonCoursewares", "reflections",
-  "classroomHomeworks",
+  "classroomHomeworks", "classroomNotices",
   "studentInteractions", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
   "gradeExams", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements",

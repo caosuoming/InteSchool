@@ -5,9 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyLessonsPage from "@/pages/lessons/MyLessonsPage";
 import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
+import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { useAuthStore } from "@/stores/auth";
-import type { ClassroomHomework, Teacher } from "@/types";
+import type { ClassroomHomework, ClassroomNotice, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({
   classService: {
@@ -20,6 +21,13 @@ vi.mock("@/services/classroomHomework", () => ({
     listHomeworks: vi.fn(),
     createHomework: vi.fn(),
     deleteHomework: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/classroomNotice", () => ({
+  classroomNoticeService: {
+    listNotices: vi.fn(),
+    createNotice: vi.fn(),
   },
 }));
 
@@ -88,7 +96,20 @@ const createdHomework: ClassroomHomework = {
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
 
-describe("MyLessonsPage homework publisher", () => {
+const activeNotice: ClassroomNotice = {
+  id: "notice-1",
+  teacherId: "teacher-1",
+  teacherName: "王老师",
+  schoolId: "school-1",
+  content: "今天放学后进行卫生检查",
+  classIds: ["class-1"],
+  startsAt: "2020-01-01T00:00:00.000Z",
+  endsAt: "2999-01-01T00:00:00.000Z",
+  createdAt: "2026-08-02T00:00:00.000Z",
+  updatedAt: "2026-08-02T00:00:00.000Z",
+};
+
+describe("MyLessonsPage classroom publishing", () => {
   beforeEach(() => {
     useAuthStore.setState({ teacher, loading: false, error: null });
     vi.mocked(classService.listSchoolClasses).mockResolvedValue([{
@@ -104,6 +125,8 @@ describe("MyLessonsPage homework publisher", () => {
     }]);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([]);
     vi.mocked(classroomHomeworkService.createHomework).mockResolvedValue(createdHomework);
+    vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
+    vi.mocked(classroomNoticeService.createNotice).mockResolvedValue(activeNotice);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
   });
 
@@ -115,8 +138,9 @@ describe("MyLessonsPage homework publisher", () => {
       </MemoryRouter>,
     );
 
-    const classCheckbox = await screen.findByRole("checkbox", { name: "高一 · 高一（1）班" });
-    expect(classCheckbox).toBeChecked();
+    const classCheckboxes = await screen.findAllByRole("checkbox", { name: "高一 · 高一（1）班" });
+    expect(classCheckboxes).toHaveLength(2);
+    expect(classCheckboxes.every((checkbox) => (checkbox as HTMLInputElement).checked)).toBe(true);
 
     await user.type(screen.getByLabelText("作业内容"), "完成课本第 42 页第 1—6 题");
     await user.click(screen.getByRole("button", { name: "发布作业" }));
@@ -129,6 +153,32 @@ describe("MyLessonsPage homework publisher", () => {
           content: "完成课本第 42 页第 1—6 题",
           classIds: ["class-1"],
           publishAt: expect.any(String),
+        }),
+      );
+    });
+  });
+
+  it("publishes a timed notice and previews the current class display", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("今天放学后进行卫生检查")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("通知内容"), "明天第一节课改到实验室");
+    await user.click(screen.getByRole("button", { name: "发送通知" }));
+
+    await waitFor(() => {
+      expect(classroomNoticeService.createNotice).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          content: "明天第一节课改到实验室",
+          classIds: ["class-1"],
+          startsAt: expect.any(String),
+          endsAt: expect.any(String),
         }),
       );
     });
