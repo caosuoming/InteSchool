@@ -18,6 +18,11 @@ function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
+function normalizeClassName(value: string): string {
+  const normalized = normalizeName(value);
+  return /^\d+$/.test(normalized) ? `${normalized}班` : normalized;
+}
+
 function requireGrade(gradeId: string): SchoolGrade {
   const grade = (db.read("schoolGrades") as SchoolGrade[]).find((item) => item.id === gradeId);
   if (!grade) throw new Error("年级不存在");
@@ -189,16 +194,17 @@ export const schoolRosterService = {
     if (rows.length > 5000) throw new Error("单次最多导入 5000 名学生");
 
     const normalizedRows = rows.map((row, index) => {
-      const className = normalizeName(row.className || "");
+      const className = normalizeClassName(row.className || "");
       const name = normalizeName(row.name || "");
       const studentNo = normalizeName(row.studentNo || "");
-      if (!className || !name || !studentNo) {
-        throw new Error(`第 ${index + 2} 行缺少班级、姓名或学号`);
+      if (!className || !name) {
+        throw new Error(`第 ${index + 2} 行缺少班级或姓名`);
       }
       return {
         className,
         name,
         studentNo,
+        subjectSelection: normalizeName(row.subjectSelection || "") || undefined,
         isExternal: Boolean(row.isExternal),
         gender: row.gender,
       } satisfies StudentRosterImportRow;
@@ -215,7 +221,8 @@ export const schoolRosterService = {
     const existingNumbers = new Set(
       (db.read("students") as Student[])
         .filter((item) => item.schoolId === grade.schoolId)
-        .map((item) => item.studentNo.toLocaleLowerCase("zh-CN")),
+        .map((item) => item.studentNo.trim().toLocaleLowerCase("zh-CN"))
+        .filter(Boolean),
     );
     const seenNumbers = new Set<string>();
     const createdStudents: Student[] = [];
@@ -224,13 +231,13 @@ export const schoolRosterService = {
 
     normalizedRows.forEach((row) => {
       const numberKey = row.studentNo.toLocaleLowerCase("zh-CN");
-      if (existingNumbers.has(numberKey) || seenNumbers.has(numberKey)) {
+      if (numberKey && (existingNumbers.has(numberKey) || seenNumbers.has(numberKey))) {
         skippedStudents += 1;
         return;
       }
       const targetClass = classMap.get(row.className.toLocaleLowerCase("zh-CN"));
       if (!targetClass) throw new Error(`班级不存在：${row.className}`);
-      seenNumbers.add(numberKey);
+      if (numberKey) seenNumbers.add(numberKey);
       classIncrements.set(targetClass.id, (classIncrements.get(targetClass.id) || 0) + 1);
       createdStudents.push({
         id: genId("stu"),
@@ -240,6 +247,7 @@ export const schoolRosterService = {
         schoolId: grade.schoolId,
         grade: grade.grade,
         gender: row.gender,
+        subjectSelection: row.subjectSelection,
         isExternal: row.isExternal,
         status: "active",
       });

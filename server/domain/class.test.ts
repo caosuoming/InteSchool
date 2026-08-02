@@ -223,6 +223,26 @@ describe("class lifecycle service", () => {
     });
   });
 
+  it("imports numeric classes and students without numbers, including subject selections", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "1", name: "无学号学生甲", subjectSelection: "物化生" },
+        { className: "1", name: "无学号学生乙", subjectSelection: "史政地" },
+      ]);
+
+      expect(result).toEqual({ createdClasses: 1, createdStudents: 2, skippedStudents: 0 });
+      expect(state.schoolClasses).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "1班", studentCount: 2 }),
+      ]));
+      expect(state.students).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "无学号学生甲", studentNo: "", subjectSelection: "物化生" }),
+        expect.objectContaining({ name: "无学号学生乙", studentNo: "", subjectSelection: "史政地" }),
+      ]));
+    });
+  });
+
   it("advances a whole grade and synchronizes its classes and students", async () => {
     const state = createState();
     (state.schoolClasses as Array<Record<string, unknown>>).push({

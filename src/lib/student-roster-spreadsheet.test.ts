@@ -1,25 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { parseStudentRosterTable } from "./student-roster-spreadsheet";
+import {
+  parseStudentRosterTable,
+  STUDENT_ROSTER_TEMPLATE_HEADERS,
+} from "./student-roster-spreadsheet";
 
 describe("student roster spreadsheet", () => {
   it("parses the downloadable template columns", () => {
     expect(parseStudentRosterTable([
-      ["学生班级", "姓名", "学号", "借读生", "性别"],
-      ["高二（1）班", "张三", 20270001, "否", "男"],
-      ["高二（2）班", "李四", "20270002", "是", "女"],
-      [null, null, null, null, null],
+      [...STUDENT_ROSTER_TEMPLATE_HEADERS],
+      [1, "张三", 20270001, "物化生", "否", "男"],
+      [17, "李四", "", "史政地", "是", "女"],
+      [null, null, null, null, null, null],
     ])).toEqual([
       {
-        className: "高二（1）班",
+        className: "1班",
         name: "张三",
         studentNo: "20270001",
+        subjectSelection: "物化生",
         isExternal: false,
         gender: "male",
       },
       {
-        className: "高二（2）班",
+        className: "17班",
         name: "李四",
-        studentNo: "20270002",
+        studentNo: "",
+        subjectSelection: "史政地",
         isExternal: true,
         gender: "female",
       },
@@ -35,6 +40,7 @@ describe("student roster spreadsheet", () => {
         className: "高一(1)班",
         name: "王五",
         studentNo: "001",
+        subjectSelection: undefined,
         isExternal: false,
         gender: undefined,
       },
@@ -43,6 +49,20 @@ describe("student roster spreadsheet", () => {
     expect(() => parseStudentRosterTable([
       ["班级", "姓名", "学号"],
       ["高一(1)班", "", "002"],
-    ])).toThrow("缺少班级、姓名或学号");
+    ])).toThrow("缺少班级或姓名");
+  });
+
+  it("accepts a roster without a student number column", () => {
+    expect(parseStudentRosterTable([
+      ["班级*", "姓名*", "选科"],
+      ["3", "赵六", "物化地"],
+    ])).toEqual([{
+      className: "3班",
+      name: "赵六",
+      studentNo: "",
+      subjectSelection: "物化地",
+      isExternal: false,
+      gender: undefined,
+    }]);
   });
 });

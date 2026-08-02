@@ -314,6 +314,8 @@ export interface Student {
   schoolId: string;
   grade: string;
   gender?: "male" | "female";
+  /** 学生的选科组合，例如“物化生”。 */
+  subjectSelection?: string;
   isExternal?: boolean;
   externalSchool?: string;
   /** 学生状态：在读 / 挂起 / 已毕业 / 已转校 */
@@ -344,7 +346,8 @@ export interface Student {
 export interface StudentRosterImportRow {
   className: string;
   name: string;
-  studentNo: string;
+  studentNo?: string;
+  subjectSelection?: string;
   isExternal?: boolean;
   gender?: "male" | "female";
 }

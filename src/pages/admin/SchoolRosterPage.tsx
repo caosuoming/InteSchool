@@ -354,7 +354,7 @@ export default function SchoolRosterPage() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="font-serif text-lg font-semibold text-ink-900">{selectedClass?.name || "学生名单"}</h2>
-                <p className="mt-1 text-xs text-ink-500">Excel 模板字段：学生班级、姓名、学号、借读生、性别。</p>
+                <p className="mt-1 text-xs text-ink-500">Excel 模板字段：班级*、姓名*、学号、选科、借读生、性别；数字班级会自动补“班”。</p>
               </div>
               <Badge variant="teal">{classStudents.length} 人</Badge>
             </div>
@@ -364,11 +364,12 @@ export default function SchoolRosterPage() {
               <EmptyState icon={<Users className="h-7 w-7" />} title="暂无学生" description="下载模板并上传 Excel，可一次导入多个班级的学生。" />
             ) : (
               <div className="overflow-x-auto rounded-lg border border-ink-100">
-                <table className="min-w-[640px] w-full text-sm">
+                <table className="min-w-[720px] w-full text-sm">
                   <thead className="bg-mist text-xs text-ink-500">
                     <tr>
                       <th className="px-4 py-2.5 text-left font-medium">姓名</th>
                       <th className="px-4 py-2.5 text-left font-medium">学号</th>
+                      <th className="px-4 py-2.5 text-left font-medium">选科</th>
                       <th className="px-4 py-2.5 text-left font-medium">年级</th>
                       <th className="px-4 py-2.5 text-left font-medium">类型</th>
                       <th className="px-4 py-2.5 text-right font-medium">操作</th>
@@ -378,7 +379,8 @@ export default function SchoolRosterPage() {
                     {classStudents.map((item) => (
                       <tr key={item.id} className="hover:bg-mist/60">
                         <td className="px-4 py-3 font-medium text-ink-900">{item.name}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-ink-600">{item.studentNo}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-ink-600">{item.studentNo || "—"}</td>
+                        <td className="px-4 py-3 text-ink-600">{item.subjectSelection || "—"}</td>
                         <td className="px-4 py-3 text-ink-600">{item.grade}</td>
                         <td className="px-4 py-3">{item.isExternal ? <Badge variant="amber">借读生</Badge> : <Badge>本校生</Badge>}</td>
                         <td className="px-4 py-3 text-right">
