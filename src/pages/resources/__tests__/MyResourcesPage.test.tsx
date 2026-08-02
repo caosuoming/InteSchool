@@ -18,7 +18,7 @@ const question: Question = {
   teacherId: "teacher-1",
   schoolId: "school-1",
   type: "short",
-  stem: "这是一道需要完整显示的长题干，列表收起时也不能只展示两行内容。",
+  stem: "第一段题干需要完整显示。\n\n第二段题干也必须保持原有段落。",
   answer: "答案",
   analysis: "解析",
   chapterIds: [],
@@ -33,7 +33,7 @@ const question: Question = {
 };
 
 describe("QuestionListItem", () => {
-  it("shows the complete question stem while collapsed", () => {
+  it("shows the complete question stem and preserves paragraph breaks while collapsed", () => {
     render(
       <QuestionListItem
         question={question}
@@ -44,7 +44,11 @@ describe("QuestionListItem", () => {
       />,
     );
 
-    expect(screen.getByText(question.stem)).not.toHaveClass("line-clamp-2");
+    const stem = screen.getByText((_, element) => (
+      element?.tagName === "SPAN" && element.textContent === question.stem
+    ));
+    expect(stem).not.toHaveClass("line-clamp-2");
+    expect(stem).toHaveClass("whitespace-pre-wrap");
   });
 });
 
@@ -166,7 +170,7 @@ const imageMaterial: Material = {
 };
 
 describe("material previews", () => {
-  it("shows a three-line knowledge-block summary in the material library and opens the full content", () => {
+  it("expands a knowledge block inline in the material library without opening a modal", () => {
     render(
       <ResourceCard
         title={knowledgeMaterial.title}
@@ -177,13 +181,16 @@ describe("material previews", () => {
       />,
     );
 
-    const summary = screen.getByRole("button", { name: `预览知识块：${knowledgeMaterial.title}` });
+    const summary = screen.getByRole("button", { name: `展开知识块：${knowledgeMaterial.title}` });
+    expect(summary).toHaveAttribute("aria-expanded", "false");
     expect(summary.querySelector(".line-clamp-3")).not.toBeNull();
 
     fireEvent.click(summary);
-    expect(screen.getByTestId("material-preview-content")).toHaveTextContent(
-      "第四行知识必须在完整预览中可见。",
-    );
+    const expanded = screen.getByRole("button", { name: `收起知识块：${knowledgeMaterial.title}` });
+    expect(expanded).toHaveAttribute("aria-expanded", "true");
+    expect(expanded.querySelector(".line-clamp-3")).toBeNull();
+    expect(expanded).toHaveTextContent("第四行知识必须在完整预览中可见。");
+    expect(screen.queryByTestId("material-preview-content")).not.toBeInTheDocument();
   });
 
   it("shows image thumbnails directly in both the material library and resource basket", () => {
@@ -218,7 +225,7 @@ describe("material previews", () => {
     );
   });
 
-  it("shows a three-line knowledge-block summary in the resource basket and opens the full content", () => {
+  it("expands a knowledge block inline in the resource basket without opening a modal", () => {
     render(
       <BasketMaterialListItem
         material={knowledgeMaterial}
@@ -228,12 +235,15 @@ describe("material previews", () => {
       />,
     );
 
-    const summary = screen.getByRole("button", { name: `预览知识块：${knowledgeMaterial.title}` });
+    const summary = screen.getByRole("button", { name: `展开知识块：${knowledgeMaterial.title}` });
+    expect(summary).toHaveAttribute("aria-expanded", "false");
     expect(summary.querySelector(".line-clamp-3")).not.toBeNull();
 
     fireEvent.click(summary);
-    expect(screen.getByTestId("material-preview-content")).toHaveTextContent(
-      "第四行知识必须在完整预览中可见。",
-    );
+    const expanded = screen.getByRole("button", { name: `收起知识块：${knowledgeMaterial.title}` });
+    expect(expanded).toHaveAttribute("aria-expanded", "true");
+    expect(expanded.querySelector(".line-clamp-3")).toBeNull();
+    expect(expanded).toHaveTextContent("第四行知识必须在完整预览中可见。");
+    expect(screen.queryByTestId("material-preview-content")).not.toBeInTheDocument();
   });
 });

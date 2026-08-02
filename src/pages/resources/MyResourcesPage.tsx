@@ -2914,7 +2914,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
             onClick={onToggle}
             role="button"
           >
-            <MathHtml>{question.stem}</MathHtml>
+            <MathHtml className="whitespace-pre-wrap">{question.stem}</MathHtml>
           </div>
 
           {question.options && question.options.length > 0 && expanded && (
@@ -3018,11 +3018,14 @@ interface ResourceCardProps {
 
 export function ResourceCard({ title, titleActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const isImage = type === "image";
   const isKnowledgeBlock = type === "knowledgeBlock";
-  const isMaterialPreviewable = isImage || isKnowledgeBlock;
   const handlePreviewOpen = () => setPreviewOpen(true);
-  const primaryClick = onClick || (isMaterialPreviewable ? handlePreviewOpen : undefined);
+  const toggleKnowledge = () => setKnowledgeExpanded((expanded) => !expanded);
+  const primaryClick = isKnowledgeBlock
+    ? toggleKnowledge
+    : onClick || (isImage ? handlePreviewOpen : undefined);
   const reflectionCount = reflections?.length || 0;
   const latestReflection = reflections?.[0];
   const actionButtonPadding = compactActions ? "p-1" : "p-1.5";
@@ -3079,11 +3082,14 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
               isKnowledgeBlock ? (
                 <button
                   type="button"
-                  aria-label={`预览知识块：${title}`}
-                  onClick={handlePreviewOpen}
+                  aria-label={`${knowledgeExpanded ? "收起" : "展开"}知识块：${title}`}
+                  aria-expanded={knowledgeExpanded}
+                  onClick={toggleKnowledge}
                   className="mb-2 w-full rounded bg-mist/40 p-2 text-left text-xs leading-relaxed text-ink-600 transition-colors hover:bg-mist/70 hover:text-ink-800"
                 >
-                  <MathHtml className="line-clamp-3">{content}</MathHtml>
+                  <MathHtml className={cn("whitespace-pre-wrap", !knowledgeExpanded && "line-clamp-3")}>
+                    {content}
+                  </MathHtml>
                 </button>
               ) : (
                 <div className="mb-2 rounded bg-mist/40 p-2 text-xs leading-relaxed text-ink-600 line-clamp-2">
@@ -3154,11 +3160,11 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
                 <Eye className={actionIconSize} />
               </button>
             )}
-            {isMaterialPreviewable && (
+            {(isImage || isKnowledgeBlock) && (
               <button
-                onClick={handlePreviewOpen}
+                onClick={isImage ? handlePreviewOpen : toggleKnowledge}
                 className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600")}
-                title={isImage ? "预览图片" : "预览知识块"}
+                title={isImage ? "预览图片" : knowledgeExpanded ? "收起知识块" : "展开知识块"}
               >
                 <Eye className={actionIconSize} />
               </button>
@@ -3213,7 +3219,7 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
         </div>
       </div>
 
-      {isMaterialPreviewable && (
+      {isImage && (
         <MaterialPreviewModal
           open={previewOpen}
           onClose={() => setPreviewOpen(false)}
@@ -3241,10 +3247,12 @@ export function BasketMaterialListItem({
   onRemove,
 }: BasketMaterialListItemProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const isImage = material.type === "image";
   const isKnowledgeBlock = material.type === "knowledgeBlock";
-  const isPreviewable = isImage || isKnowledgeBlock;
   const openPreview = () => setPreviewOpen(true);
+  const toggleKnowledge = () => setKnowledgeExpanded((expanded) => !expanded);
+  const primaryClick = isKnowledgeBlock ? toggleKnowledge : isImage ? openPreview : undefined;
 
   return (
     <>
@@ -3283,9 +3291,9 @@ export function BasketMaterialListItem({
           <div
             className={cn(
               "text-sm font-medium text-ink-800",
-              isPreviewable && "cursor-pointer hover:text-gold-700",
+              (isImage || isKnowledgeBlock) && "cursor-pointer hover:text-gold-700",
             )}
-            onClick={isPreviewable ? openPreview : undefined}
+            onClick={primaryClick}
           >
             {material.title}
           </div>
@@ -3293,11 +3301,14 @@ export function BasketMaterialListItem({
             isKnowledgeBlock ? (
               <button
                 type="button"
-                aria-label={`预览知识块：${material.title}`}
-                onClick={openPreview}
+                aria-label={`${knowledgeExpanded ? "收起" : "展开"}知识块：${material.title}`}
+                aria-expanded={knowledgeExpanded}
+                onClick={toggleKnowledge}
                 className="mt-1 w-full text-left text-xs leading-relaxed text-ink-500 hover:text-ink-700"
               >
-                <MathHtml className="line-clamp-3">{material.content}</MathHtml>
+                <MathHtml className={cn("whitespace-pre-wrap", !knowledgeExpanded && "line-clamp-3")}>
+                  {material.content}
+                </MathHtml>
               </button>
             ) : (
               <div className="mt-1 text-xs text-ink-500 line-clamp-1">{material.content}</div>
@@ -3315,7 +3326,7 @@ export function BasketMaterialListItem({
         </button>
       </div>
 
-      {isPreviewable && (
+      {isImage && (
         <MaterialPreviewModal
           open={previewOpen}
           onClose={() => setPreviewOpen(false)}
