@@ -7,6 +7,7 @@ import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { uploadFile } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { ClassroomHomework, ClassroomNotice, Teacher } from "@/types";
 
@@ -38,6 +39,10 @@ vi.mock("@/services/lessonCourseware", () => ({
     publishCourseware: vi.fn(),
     unpublishCourseware: vi.fn(),
   },
+}));
+
+vi.mock("@/services/api", () => ({
+  uploadFile: vi.fn(),
 }));
 
 vi.mock("@/stores/ui", () => ({
@@ -111,6 +116,7 @@ const activeNotice: ClassroomNotice = {
 
 describe("MyLessonsPage classroom publishing", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     useAuthStore.setState({ teacher, loading: false, error: null });
     vi.mocked(classService.listSchoolClasses).mockResolvedValue([{
       id: "class-1",
@@ -128,6 +134,16 @@ describe("MyLessonsPage classroom publishing", () => {
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(classroomNoticeService.createNotice).mockResolvedValue(activeNotice);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
+    vi.mocked(uploadFile).mockResolvedValue({
+      id: "file-1",
+      ownerId: "teacher-1",
+      schoolId: "school-1",
+      originalName: "函数图像.pdf",
+      mimeType: "application/pdf",
+      size: 4096,
+      createdAt: "2026-08-02T00:00:00.000Z",
+      url: "/api/files/file-1",
+    });
   });
 
   it("defaults to the teacher's class and publishes homework immediately", async () => {
@@ -179,6 +195,41 @@ describe("MyLessonsPage classroom publishing", () => {
           classIds: ["class-1"],
           startsAt: expect.any(String),
           endsAt: expect.any(String),
+        }),
+      );
+    });
+  });
+
+  it("uploads homework attachments and passes stored metadata to the service", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findAllByRole("checkbox", { name: "高一 · 高一（1）班" })).toHaveLength(2);
+    const file = new File(["pdf"], "函数图像.pdf", { type: "application/pdf" });
+    await user.upload(screen.getByLabelText("选择作业附件"), file);
+    expect(screen.getByText("函数图像.pdf")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("作业内容"), "阅读附件并完成练习");
+    await user.click(screen.getByRole("button", { name: "发布作业" }));
+
+    await waitFor(() => {
+      expect(uploadFile).toHaveBeenCalledWith(file);
+      expect(classroomHomeworkService.createHomework).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          content: "阅读附件并完成练习",
+          attachments: [{
+            id: "file-1",
+            name: "函数图像.pdf",
+            url: "/api/files/file-1",
+            mimeType: "application/pdf",
+            size: 4096,
+          }],
         }),
       );
     });

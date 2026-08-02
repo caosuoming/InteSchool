@@ -1,5 +1,6 @@
 import type {
   ClassroomHomework,
+  ClassroomHomeworkAttachment,
   ClassroomHomeworkFilter,
   TeacherAffiliation,
 } from "../../src/types/index.js";
@@ -8,12 +9,38 @@ import { db } from "../runtime-db.js";
 
 export interface ClassroomHomeworkInput {
   content: string;
+  attachments?: ClassroomHomeworkAttachment[];
   classIds: string[];
   assignedDate: string;
   publishAt: string;
 }
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const FILE_URL_PATTERN = /^\/api\/files\/([A-Za-z0-9-]+)$/;
+const MAX_ATTACHMENTS = 8;
+
+function normalizeAttachments(
+  attachments: ClassroomHomeworkAttachment[] | undefined,
+): ClassroomHomeworkAttachment[] {
+  if (!attachments) return [];
+  if (!Array.isArray(attachments)) throw new Error("作业附件格式不正确");
+  if (attachments.length > MAX_ATTACHMENTS) throw new Error(`作业附件不能超过 ${MAX_ATTACHMENTS} 个`);
+
+  const ids = new Set<string>();
+  return attachments.map((attachment) => {
+    const id = String(attachment.id || "").trim();
+    const name = String(attachment.name || "").trim().slice(0, 200);
+    const url = String(attachment.url || "").trim();
+    const mimeType = String(attachment.mimeType || "application/octet-stream").trim().slice(0, 120);
+    const size = Number(attachment.size);
+    const match = url.match(FILE_URL_PATTERN);
+    if (!id || !name || !match || match[1] !== id) throw new Error("作业附件信息不完整");
+    if (ids.has(id)) throw new Error("作业附件不能重复");
+    if (!Number.isFinite(size) || size < 0) throw new Error("作业附件大小不正确");
+    ids.add(id);
+    return { id, name, url, mimeType, size };
+  });
+}
 
 function currentAffiliation(teacher: {
   affiliations?: TeacherAffiliation[];
@@ -45,13 +72,15 @@ function matchesFilter(item: ClassroomHomework, filter: ClassroomHomeworkFilter)
   return true;
 }
 
-function validateInput(input: ClassroomHomeworkInput): void {
-  if (!input.content.trim()) throw new Error("请输入作业内容");
+function validateInput(input: ClassroomHomeworkInput): ClassroomHomeworkAttachment[] {
+  const attachments = normalizeAttachments(input.attachments);
+  if (!input.content.trim() && attachments.length === 0) throw new Error("请输入作业内容或添加附件");
   if (input.content.trim().length > 4000) throw new Error("作业内容不能超过 4000 字");
   if (input.classIds.length === 0) throw new Error("请选择至少一个发布班级");
   if (!DATE_PATTERN.test(input.assignedDate)) throw new Error("作业日期格式不正确");
   const publishAt = new Date(input.publishAt);
   if (Number.isNaN(publishAt.getTime())) throw new Error("发布时间格式不正确");
+  return attachments;
 }
 
 export const classroomHomeworkService = {
@@ -74,7 +103,7 @@ export const classroomHomeworkService = {
   ): Promise<ClassroomHomework> {
     await delay(200);
     maybeThrowError();
-    validateInput(input);
+    const attachments = validateInput(input);
 
     const teacher = db.read("teachers").find((item: { id: string }) => item.id === teacherId);
     if (!teacher || teacher.schoolId !== schoolId) throw new Error("教师或学校信息不存在");
@@ -108,6 +137,7 @@ export const classroomHomeworkService = {
       schoolId,
       subject: affiliation?.subject || teacher.subject || "其他学科",
       content: input.content.trim(),
+      attachments,
       classIds: uniqueClassIds,
       assignedDate: input.assignedDate,
       publishAt: new Date(input.publishAt).toISOString(),

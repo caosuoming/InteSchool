@@ -1901,6 +1901,15 @@ export interface LessonCoursewareFilter {
 
 // ============ 班级作业 ============
 
+/** 班级作业中附带的图片或文档。 */
+export interface ClassroomHomeworkAttachment {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  size: number;
+}
+
 /** 教师发布到“我要上课”教室屏的作业。 */
 export interface ClassroomHomework {
   id: string;
@@ -1909,6 +1918,7 @@ export interface ClassroomHomework {
   schoolId: string;
   subject: string;
   content: string;
+  attachments?: ClassroomHomeworkAttachment[];
   classIds: string[];
   /** 作业归属日期，格式为 YYYY-MM-DD。 */
   assignedDate: string;

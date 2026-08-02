@@ -1,8 +1,13 @@
-import type { ClassroomHomework, ClassroomHomeworkFilter } from "@/types";
+import type {
+  ClassroomHomework,
+  ClassroomHomeworkAttachment,
+  ClassroomHomeworkFilter,
+} from "@/types";
 import { rpcCall } from "./api";
 
 export interface ClassroomHomeworkInput {
   content: string;
+  attachments?: ClassroomHomeworkAttachment[];
   classIds: string[];
   assignedDate: string;
   publishAt: string;

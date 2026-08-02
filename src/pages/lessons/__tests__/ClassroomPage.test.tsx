@@ -7,6 +7,7 @@ import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { extractStoredFile } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { ClassroomHomework, ClassroomNotice, LessonCourseware, Teacher } from "@/types";
 
@@ -33,6 +34,10 @@ vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
     listCoursewares: vi.fn(),
   },
+}));
+
+vi.mock("@/services/api", () => ({
+  extractStoredFile: vi.fn(),
 }));
 
 vi.mock("@/stores/ui", () => ({
@@ -102,6 +107,19 @@ const activeNotice: ClassroomNotice = {
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
 
+const attachedHomework: ClassroomHomework = {
+  ...mathHomework,
+  id: "homework-attachment",
+  content: "阅读附件中的函数定义",
+  attachments: [{
+    id: "file-1",
+    name: "函数定义.docx",
+    url: "/api/files/file-1",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 2048,
+  }],
+};
+
 const lesson: LessonCourseware = {
   id: "lesson-1",
   teacherId: "teacher-1",
@@ -136,6 +154,7 @@ describe("ClassroomPage", () => {
   let fullscreenElement: Element | null;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
     fullscreenElement = null;
@@ -174,6 +193,12 @@ describe("ClassroomPage", () => {
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([mathHomework]);
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([lesson]);
+    vi.mocked(extractStoredFile).mockResolvedValue({
+      text: "函数定义",
+      html: "<p>函数定义</p>",
+      format: "docx",
+      warnings: [],
+    });
   });
 
   it("shows the compact homework layout and keeps display preferences locally", async () => {
@@ -239,5 +264,21 @@ describe("ClassroomPage", () => {
     expect(await screen.findByRole("button", { name: "退出全屏" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "退出全屏" }));
     expect(await screen.findByRole("button", { name: "全屏" })).toBeInTheDocument();
+  });
+
+  it("opens homework documents and enlarges their page and font", async () => {
+    const user = userEvent.setup();
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([attachedHomework]);
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /函数定义\.docx/ }));
+    expect(await screen.findByText("函数定义")).toBeInTheDocument();
+    expect(extractStoredFile).toHaveBeenCalledWith("/api/files/file-1");
+
+    await user.click(screen.getByRole("button", { name: "放大附件页面" }));
+    await user.click(screen.getByRole("button", { name: "放大文档字体" }));
+
+    expect(screen.getByText("125%")).toBeInTheDocument();
+    expect(screen.getByText("字体 20")).toBeInTheDocument();
   });
 });
