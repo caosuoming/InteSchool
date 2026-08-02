@@ -5,8 +5,14 @@ import type {
   PrepTaskType,
   PrepTaskStatus,
   AssignmentStatus,
+  PrepSubmission,
+  PrepSubmissionAsset,
+  PrepSubmissionInput,
+  PrepAnnotationStroke,
   QuestionReference,
   Question,
+  Teacher,
+  LectureSection,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
@@ -39,6 +45,154 @@ export const assignmentStatusLabels: Record<AssignmentStatus, string> = {
   completed: "已完成",
   rejected: "已拒绝",
 };
+
+const PREP_MANAGER_ROLES = new Set([
+  "prepLeader",
+  "subjectLeader",
+  "dean",
+  "vicePrincipal",
+  "principal",
+  "school_admin",
+  "platform_admin",
+]);
+
+function canManageTask(task: PrepTask, teacher: Teacher): boolean {
+  return task.createdBy === teacher.id || teacher.roles.some((role) => PREP_MANAGER_ROLES.has(role));
+}
+
+function assertAssignmentAccess(
+  task: PrepTask,
+  assignment: PrepAssignment,
+  teacher: Teacher | undefined,
+): void {
+  if (!teacher) return;
+  if (assignment.teacherId !== teacher.id && !canManageTask(task, teacher)) {
+    throw new Error("只能操作分配给自己的任务");
+  }
+}
+
+function recalculateTask(task: PrepTask): PrepTask {
+  const workflows = task.workflows.map((workflow) => {
+    const assignments = task.assignments.filter((assignment) => assignment.workflowId === workflow.id);
+    let status: PrepTaskStatus = "created";
+    if (assignments.length > 0 && assignments.every((assignment) => assignment.status === "completed")) {
+      status = "completed";
+    } else if (
+      assignments.some((assignment) =>
+        ["accepted", "in_progress", "completed"].includes(assignment.status),
+      )
+    ) {
+      status = "in_progress";
+    }
+    return status === workflow.status
+      ? workflow
+      : { ...workflow, status, updatedAt: new Date().toISOString() };
+  });
+
+  let status: PrepTaskStatus = task.status === "cancelled" ? "cancelled" : "created";
+  if (status !== "cancelled") {
+    if (workflows.length > 0 && workflows.every((workflow) => workflow.status === "completed")) {
+      status = "completed";
+    } else if (workflows.some((workflow) => workflow.status === "in_progress" || workflow.status === "completed")) {
+      status = "in_progress";
+    }
+  }
+
+  return {
+    ...task,
+    workflows,
+    status,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function normalizeAsset(asset: PrepSubmissionAsset): PrepSubmissionAsset {
+  const id = String(asset.id || "").trim();
+  const name = String(asset.name || "").trim().slice(0, 200);
+  const url = String(asset.url || "").trim();
+  const mimeType = String(asset.mimeType || "application/octet-stream").trim().slice(0, 120);
+  const size = Number(asset.size);
+  if (!id || !name || !/^\/api\/files\/[A-Za-z0-9-]+$/.test(url)) {
+    throw new Error("上传文件信息不合法");
+  }
+  if (!Number.isFinite(size) || size < 0) throw new Error("上传文件大小不合法");
+  return { id, name, url, mimeType, size };
+}
+
+function plainText(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function lecturePreview(sections: LectureSection[], depth = 0): string[] {
+  return sections.flatMap((section) => [
+    `${"  ".repeat(depth)}${section.title}`,
+    section.content ? plainText(section.content) : "",
+    ...lecturePreview(section.children || [], depth + 1),
+  ].filter(Boolean));
+}
+
+function buildResourceSubmission(
+  input: Extract<PrepSubmissionInput, { kind: "resource" }>,
+  teacher: Teacher,
+): Omit<PrepSubmission, "id" | "submittedAt" | "updatedAt" | "annotations"> {
+  if (input.resourceType === "lecture") {
+    const lecture = db.read("lectures").find((item) => item.id === input.resourceId);
+    if (!lecture || lecture.teacherId !== teacher.id || lecture.schoolId !== teacher.schoolId) {
+      throw new Error("只能关联“我的资源”中的讲义");
+    }
+    return {
+      kind: "resource",
+      title: lecture.title,
+      submittedBy: teacher.id,
+      assets: [],
+      resourceType: "lecture",
+      resourceId: lecture.id,
+      resourceTitle: lecture.title,
+      resourceFileUrl: lecture.originalFileUrl,
+      resourceFileName: lecture.originalFileName,
+      resourcePreviewText: lecturePreview(lecture.sections || []).join("\n\n").slice(0, 200_000),
+    };
+  }
+
+  const paper = db.read("examPapers").find((item) => item.id === input.resourceId);
+  if (!paper || paper.teacherId !== teacher.id || paper.schoolId !== teacher.schoolId) {
+    throw new Error("只能关联“我的资源”中的试卷");
+  }
+  const preview = (paper.questions || []).flatMap((question, index) => [
+    `${index + 1}. ${plainText(question.stem || "")}`,
+    ...(question.options || []).map((option, optionIndex) =>
+      `${String.fromCharCode(65 + optionIndex)}. ${plainText(option)}`,
+    ),
+    question.answer ? `答案：${plainText(question.answer)}` : "",
+    question.analysis ? `解析：${plainText(question.analysis)}` : "",
+  ].filter(Boolean));
+  return {
+    kind: "resource",
+    title: paper.title,
+    submittedBy: teacher.id,
+    assets: [],
+    resourceType: "examPaper",
+    resourceId: paper.id,
+    resourceTitle: paper.title,
+    resourceFileUrl: paper.originalFileUrl,
+    resourceFileName: paper.originalFileName,
+    resourcePreviewText: preview.join("\n\n").slice(0, 200_000),
+  };
+}
+
+function submissionTargetIds(submission: PrepSubmission): Set<string> {
+  const ids = new Set(submission.assets.map((asset) => asset.id));
+  if (submission.resourceId) ids.add(`resource:${submission.resourceId}`);
+  return ids;
+}
 
 export const prepService = {
   // ============ 备课任务管理 ============
@@ -224,78 +378,178 @@ export const prepService = {
     return assignments;
   },
 
-  async updateAssignment(taskId: string, assignmentId: string, status: AssignmentStatus): Promise<void> {
+  async updateAssignment(
+    taskId: string,
+    assignmentId: string,
+    status: AssignmentStatus,
+    teacher?: Teacher,
+  ): Promise<void> {
     await delay(200);
-    db.update("prepTasks", (list) =>
-      list.map((t) =>
-        t.id === taskId
-          ? {
-              ...t,
-              assignments: t.assignments.map((a) =>
-                a.id === assignmentId ? { ...a, status, updatedAt: new Date().toISOString() } : a,
-              ),
-              updatedAt: new Date().toISOString(),
-            }
-          : t,
-      ),
-    );
-
-    // 更新流程状态
-    const task = db.read("prepTasks").find((t) => t.id === taskId);
-    if (task) {
-      const workflow = task.workflows.find((w) => {
-        const assignment = task.assignments.find((a) => a.id === assignmentId);
-        return assignment && w.id === assignment.workflowId;
-      });
-
-      if (workflow) {
-        const workflowAssignments = task.assignments.filter((a) => a.workflowId === workflow.id);
-        const allCompleted = workflowAssignments.every((a) => a.status === "completed");
-        const anyInProgress = workflowAssignments.some((a) => a.status === "in_progress");
-
-        let newStatus: PrepTaskStatus = workflow.status;
-        if (allCompleted) {
-          newStatus = "completed";
-        } else if (anyInProgress) {
-          newStatus = "in_progress";
-        }
-
-        if (newStatus !== workflow.status) {
-          db.update("prepTasks", (list) =>
-            list.map((t) =>
-              t.id === taskId
-                ? {
-                    ...t,
-                    workflows: t.workflows.map((w) =>
-                      w.id === workflow.id ? { ...w, status: newStatus, updatedAt: new Date().toISOString() } : w,
-                    ),
-                    updatedAt: new Date().toISOString(),
-                  }
-                : t,
-            ),
-          );
-        }
-      }
-
-      // 更新任务整体状态
-      const allWorkflowsCompleted = task.workflows.every((w) => w.status === "completed");
-      const anyWorkflowInProgress = task.workflows.some((w) => w.status === "in_progress");
-
-      let taskStatus: PrepTaskStatus = task.status;
-      if (allWorkflowsCompleted) {
-        taskStatus = "completed";
-      } else if (anyWorkflowInProgress) {
-        taskStatus = "in_progress";
-      }
-
-      if (taskStatus !== task.status) {
-        db.update("prepTasks", (list) =>
-          list.map((t) =>
-            t.id === taskId ? { ...t, status: taskStatus, updatedAt: new Date().toISOString() } : t,
-          ),
-        );
-      }
+    const task = db.read("prepTasks").find((item) => item.id === taskId);
+    if (!task) throw new Error("任务不存在");
+    const assignment = task.assignments.find((item) => item.id === assignmentId);
+    if (!assignment) throw new Error("任务分配不存在");
+    assertAssignmentAccess(task, assignment, teacher);
+    if (status === "completed" && !assignment.submission) {
+      throw new Error("请先提交文档、讲义、试卷或图片，再完成任务");
     }
+
+    db.update("prepTasks", (list) =>
+      list.map((item) => {
+        if (item.id !== taskId) return item;
+        const updated = {
+          ...item,
+          assignments: item.assignments.map((current) =>
+            current.id === assignmentId
+              ? { ...current, status, updatedAt: new Date().toISOString() }
+              : current,
+          ),
+        };
+        return recalculateTask(updated);
+      }),
+    );
+  },
+
+  async submitAssignment(
+    taskId: string,
+    assignmentId: string,
+    input: PrepSubmissionInput,
+    teacher: Teacher,
+  ): Promise<PrepSubmission> {
+    await delay(200);
+    const task = db.read("prepTasks").find((item) => item.id === taskId);
+    if (!task) throw new Error("任务不存在");
+    const assignment = task.assignments.find((item) => item.id === assignmentId);
+    if (!assignment) throw new Error("任务分配不存在");
+    assertAssignmentAccess(task, assignment, teacher);
+    if (!["accepted", "in_progress"].includes(assignment.status)) {
+      throw new Error(assignment.status === "pending" ? "请先认领任务" : "当前状态不能提交成果");
+    }
+
+    const now = new Date().toISOString();
+    let base: Omit<PrepSubmission, "id" | "submittedAt" | "updatedAt" | "annotations">;
+    if (input.kind === "resource") {
+      base = buildResourceSubmission(input, teacher);
+    } else {
+      const assets = input.assets.map(normalizeAsset);
+      if (input.kind === "document" && assets.length !== 1) {
+        throw new Error("文档成果只能上传一个文件");
+      }
+      if (input.kind === "images") {
+        if (assets.length === 0 || assets.length > 12) throw new Error("请上传 1 至 12 张图片");
+        if (assets.some((asset) => !asset.mimeType.startsWith("image/"))) {
+          throw new Error("图片成果只能包含图片文件");
+        }
+      }
+      base = {
+        kind: input.kind,
+        title: input.kind === "document" ? assets[0].name : `${assets.length} 张图片`,
+        submittedBy: teacher.id,
+        assets,
+      };
+    }
+
+    const submission: PrepSubmission = {
+      ...base,
+      id: genId("submission"),
+      submittedAt: now,
+      updatedAt: now,
+      annotations: [],
+    };
+
+    db.update("prepTasks", (list) =>
+      list.map((item) => {
+        if (item.id !== taskId) return item;
+        const updated = {
+          ...item,
+          assignments: item.assignments.map((current) =>
+            current.id === assignmentId
+              ? {
+                  ...current,
+                  submission,
+                  status: current.status === "accepted" ? "in_progress" as const : current.status,
+                  updatedAt: now,
+                }
+              : current,
+          ),
+        };
+        return recalculateTask(updated);
+      }),
+    );
+    return submission;
+  },
+
+  async saveSubmissionAnnotations(
+    taskId: string,
+    assignmentId: string,
+    targetId: string,
+    strokes: Array<Pick<PrepAnnotationStroke, "id" | "tool" | "color" | "points">>,
+    teacher: Teacher,
+  ): Promise<PrepAnnotationStroke[]> {
+    await delay(120);
+    const task = db.read("prepTasks").find((item) => item.id === taskId);
+    if (!task) throw new Error("任务不存在");
+    if (task.schoolId !== teacher.schoolId) throw new Error("无权批注其他学校的成果");
+    if (task.status !== "completed") throw new Error("看板全部完成后才可以批注");
+    const assignment = task.assignments.find((item) => item.id === assignmentId);
+    if (!assignment?.submission) throw new Error("成果不存在");
+    if (!submissionTargetIds(assignment.submission).has(targetId)) throw new Error("批注目标不存在");
+    if (strokes.length > 300) throw new Error("单个成果的批注笔迹过多");
+
+    const now = new Date().toISOString();
+    const normalized: PrepAnnotationStroke[] = strokes.map((stroke) => {
+      if (!["pen", "highlighter"].includes(stroke.tool)) throw new Error("批注工具不合法");
+      const allowedColors = stroke.tool === "pen"
+        ? ["black", "red", "blue"]
+        : ["yellow", "green"];
+      if (!allowedColors.includes(stroke.color)) throw new Error("批注颜色不合法");
+      if (!Array.isArray(stroke.points) || stroke.points.length < 2 || stroke.points.length > 2000) {
+        throw new Error("批注轨迹不合法");
+      }
+      return {
+        id: String(stroke.id || genId("stroke")).slice(0, 100),
+        targetId,
+        tool: stroke.tool,
+        color: stroke.color,
+        points: stroke.points.map((point) => ({
+          x: Math.min(1, Math.max(0, Number(point.x) || 0)),
+          y: Math.min(1, Math.max(0, Number(point.y) || 0)),
+        })),
+        createdBy: teacher.id,
+        createdAt: now,
+      };
+    });
+
+    let saved: PrepAnnotationStroke[] = [];
+    db.update("prepTasks", (list) =>
+      list.map((item) => {
+        if (item.id !== taskId) return item;
+        return {
+          ...item,
+          assignments: item.assignments.map((current) => {
+            if (current.id !== assignmentId || !current.submission) return current;
+            const annotations = [
+              ...current.submission.annotations.filter((stroke) =>
+                stroke.targetId !== targetId || stroke.createdBy !== teacher.id,
+              ),
+              ...normalized,
+            ];
+            saved = annotations;
+            return {
+              ...current,
+              submission: {
+                ...current.submission,
+                annotations,
+                updatedAt: now,
+              },
+              updatedAt: now,
+            };
+          }),
+          updatedAt: now,
+        };
+      }),
+    );
+    return saved;
   },
 
   // ============ 题目引用与查重 ============
