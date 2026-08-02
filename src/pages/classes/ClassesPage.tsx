@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   GraduationCap, Plus, Users, UserPlus, Trash2,
   School, Layers, ChevronRight, Pencil,
@@ -37,6 +37,10 @@ export default function ClassesPage() {
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState<AnyClass | null>(null);
   const [classStudents, setClassStudents] = useState<Student[]>([]);
+  const classStudentIds = useMemo(
+    () => new Set(classStudents.map((student) => student.id)),
+    [classStudents],
+  );
   const [showSuspended, setShowSuspended] = useState(false);
   const [suspendedStudents, setSuspendedStudents] = useState<Student[]>([]);
   const [showDeparted, setShowDeparted] = useState(false);
@@ -1152,7 +1156,7 @@ export default function ClassesPage() {
             />
             <div className="max-h-96 overflow-y-auto space-y-1.5">
               {filteredStudents.filter(s => !s.isExternal).map((s) => {
-                const inClass = selectedClass?.type === "personal" && selectedClass.studentIds.includes(s.id);
+                const inClass = classStudentIds.has(s.id);
                 return (
                   <div
                     key={s.id}
