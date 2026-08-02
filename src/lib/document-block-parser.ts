@@ -318,6 +318,28 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
 }
 
 const builtInTrailingAnalysisKeywords = ["详解", "【详解】"];
+const builtInAnalysisAsSummaryKeywords = ["分析", "【分析】", "分析："];
+
+function isAnalysisAsSummaryKeyword(keyword: string): boolean {
+  return keyword
+    .replace(/\s+/g, "")
+    .replace(/^[【［[(（]+/, "")
+    .replace(/[】］\])）:：]+$/, "") === "分析";
+}
+
+function categorizedQuestionFieldKeywords(config: DocumentParseConfig): {
+  analysisKeywords: string[];
+  summaryKeywords: string[];
+} {
+  return {
+    analysisKeywords: config.analysisKeywords
+      .filter((keyword) => !isAnalysisAsSummaryKeyword(keyword)),
+    summaryKeywords: [
+      ...config.summaryKeywords,
+      ...builtInAnalysisAsSummaryKeywords,
+    ],
+  };
+}
 
 function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
   const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?[、.．:：)）]\s*/g;
@@ -395,19 +417,20 @@ function parseTrailingSolutions(
   lines: string[],
   config: DocumentParseConfig,
 ): TrailingSolution[] {
+  const categorizedKeywords = categorizedQuestionFieldKeywords(config);
   const analysisKeywords = [
-    ...config.analysisKeywords,
+    ...categorizedKeywords.analysisKeywords,
     ...builtInTrailingAnalysisKeywords,
   ];
   const patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]> = [
     ["answer", fieldSearchPattern(config.answerKeywords)],
     ["analysis", fieldSearchPattern(analysisKeywords)],
-    ["summary", fieldSearchPattern(config.summaryKeywords)],
+    ["summary", fieldSearchPattern(categorizedKeywords.summaryKeywords)],
   ];
   const anchoredPatterns = [
     keywordPattern(config.answerKeywords),
     keywordPattern(analysisKeywords),
-    keywordPattern(config.summaryKeywords),
+    keywordPattern(categorizedKeywords.summaryKeywords),
   ];
   const solutions: TrailingSolution[] = [];
   let current: TrailingSolution | undefined;
@@ -555,9 +578,10 @@ function extractExplicitSolution(
 
 function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const blocks: DocumentBlock[] = [];
+  const categorizedKeywords = categorizedQuestionFieldKeywords(config);
   const answerPattern = keywordPattern(config.answerKeywords);
-  const analysisPattern = keywordPattern(config.analysisKeywords);
-  const summaryPattern = keywordPattern(config.summaryKeywords);
+  const analysisPattern = keywordPattern(categorizedKeywords.analysisKeywords);
+  const summaryPattern = keywordPattern(categorizedKeywords.summaryKeywords);
   let currentBlock: Partial<DocumentBlock> = {};
   let currentQuestionField: QuestionField = "content";
   let sectionQuestionType: QuestionType | undefined;

@@ -5,7 +5,7 @@ const config: DocumentParseConfig = {
   headingKeywords: ["一", "二", "三", "四"],
   questionKeywords: ["例", "例题", "练习", "习题", "变式", "拓展", "第"],
   answerKeywords: ["答案", "【答案】", "答案：", "答："],
-  analysisKeywords: ["解析", "【解析】", "解析："],
+  analysisKeywords: ["解析", "【解析】", "解析：", "分析", "【分析】", "分析："],
   summaryKeywords: ["总结", "【总结】", "总结："],
   singleChoiceKeywords: ["单选", "单项选择"],
   multipleChoiceKeywords: ["多选", "多项选择", "多个正确", "不止一个"],
@@ -34,6 +34,28 @@ describe("document block parser", () => {
       options: ["1", "2", "3", "4"],
       answer: "B",
       analysis: "由等式两边同乘 2 得 x=2。",
+    });
+  });
+
+  it.each([
+    "分析：注意题目中的隐含条件。",
+    "【分析】注意题目中的隐含条件。",
+    "分析 注意题目中的隐含条件。",
+  ])("classifies %s as summary instead of analysis", (analysisLine) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 计算 1+1。",
+        "答案：2",
+        "解析：直接计算即可。",
+        analysisLine,
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      answer: "2",
+      analysis: "直接计算即可。",
+      summary: "注意题目中的隐含条件。",
     });
   });
 
@@ -165,6 +187,25 @@ describe("document block parser", () => {
       options: ["仅①", "仅②", "①②", "都不正确"],
       answer: "C",
       analysis: "两项判断均成立。",
+    });
+  });
+
+  it("classifies 分析 markers in a trailing solution section as summary", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 计算 1+1 的值 A. 1 B. 2 C. 3 D. 4",
+        "答案与解析",
+        "1. 【答案】B",
+        "【解析】直接计算可得。",
+        "【分析】注意基础运算规则。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      answer: "B",
+      analysis: "直接计算可得。",
+      summary: "注意基础运算规则。",
     });
   });
 
