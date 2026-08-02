@@ -35,6 +35,56 @@ interface UpdateClassTypeData {
   enabled?: boolean;
 }
 
+interface CreateExamPaperTypeData {
+  name: string;
+  description?: string;
+  parentId?: string | null;
+  format: ExamPaperFormat;
+  sortOrder?: number;
+  enabled?: boolean;
+}
+
+interface CreateLectureTypeData {
+  name: string;
+  description?: string;
+  parentId?: string | null;
+  format: LectureFormat;
+  sortOrder?: number;
+  enabled?: boolean;
+}
+
+interface HierarchicalType {
+  id: string;
+  schoolId: string;
+  parentId?: string | null;
+  sortOrder: number;
+}
+
+function validateParentType<T extends HierarchicalType>(
+  types: T[],
+  schoolId: string,
+  parentId: string | null | undefined,
+  currentId?: string,
+): string | undefined {
+  if (!parentId) return undefined;
+  if (parentId === currentId) throw new Error("类型不能将自身设为上级类型");
+
+  const parent = types.find((type) => type.id === parentId && type.schoolId === schoolId);
+  if (!parent) throw new Error("上级类型不存在");
+  if (parent.parentId) throw new Error("仅支持二级类型，上级类型必须是一级类型");
+  return parent.id;
+}
+
+function nextSiblingOrder<T extends HierarchicalType>(
+  types: T[],
+  schoolId: string,
+  parentId: string | undefined,
+): number {
+  return types
+    .filter((type) => type.schoolId === schoolId && (type.parentId || undefined) === parentId)
+    .reduce((max, type) => Math.max(max, type.sortOrder), 0) + 1;
+}
+
 export const settingsService = {
   async listSettings(schoolId: string, type?: SettingType): Promise<SchoolSetting[]> {
     await delay(200);
@@ -198,20 +248,19 @@ export const settingsService = {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   },
 
-  async createExamPaperType(schoolId: string, data: { name: string; description?: string; format: ExamPaperFormat; sortOrder?: number; enabled?: boolean }): Promise<ExamPaperType> {
+  async createExamPaperType(schoolId: string, data: CreateExamPaperTypeData): Promise<ExamPaperType> {
     await delay(300);
     const now = new Date().toISOString();
     const all = db.read("examPaperTypes");
-    const maxOrder = all
-      .filter((t) => t.schoolId === schoolId)
-      .reduce((max, t) => Math.max(max, t.sortOrder), 0);
+    const parentId = validateParentType(all, schoolId, data.parentId);
     const newType: ExamPaperType = {
       id: genId("ept"),
       schoolId,
       name: data.name,
       description: data.description,
+      parentId,
       format: data.format,
-      sortOrder: data.sortOrder ?? maxOrder + 1,
+      sortOrder: data.sortOrder ?? nextSiblingOrder(all, schoolId, parentId),
       enabled: data.enabled ?? true,
       createdAt: now,
     };
@@ -221,11 +270,25 @@ export const settingsService = {
 
   async updateExamPaperType(id: string, patch: Partial<ExamPaperType>): Promise<ExamPaperType> {
     await delay(250);
+    const all = db.read("examPaperTypes") as ExamPaperType[];
+    const current = all.find((type) => type.id === id);
+    if (!current) throw new Error("试卷类型不存在");
+    const nextParentId = Object.prototype.hasOwnProperty.call(patch, "parentId")
+      ? validateParentType(all, current.schoolId, patch.parentId, id)
+      : current.parentId || undefined;
+    const parentChanged = nextParentId !== (current.parentId || undefined);
+    const nextSortOrder = parentChanged && patch.sortOrder === undefined
+      ? nextSiblingOrder(all.filter((type) => type.id !== id), current.schoolId, nextParentId)
+      : patch.sortOrder ?? current.sortOrder;
+    if (nextParentId && all.some((type) => type.parentId === id)) {
+      throw new Error("存在二级类型的一级类型不能再设为二级类型");
+    }
+
     let updated: ExamPaperType | null = null;
     db.update("examPaperTypes", (list) =>
       list.map((t) => {
         if (t.id !== id) return t;
-        updated = { ...t, ...patch };
+        updated = { ...t, ...patch, parentId: nextParentId, sortOrder: nextSortOrder };
         return updated;
       }),
     );
@@ -235,6 +298,10 @@ export const settingsService = {
 
   async deleteExamPaperType(id: string): Promise<void> {
     await delay(200);
+    const all = db.read("examPaperTypes") as ExamPaperType[];
+    if (all.some((type) => type.parentId === id)) {
+      throw new Error("请先删除或移动该类型下的二级类型");
+    }
     db.update("examPaperTypes", (list) => list.filter((t) => t.id !== id));
   },
 
@@ -273,20 +340,19 @@ export const settingsService = {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   },
 
-  async createLectureType(schoolId: string, data: { name: string; description?: string; format: LectureFormat; sortOrder?: number; enabled?: boolean }): Promise<LectureType> {
+  async createLectureType(schoolId: string, data: CreateLectureTypeData): Promise<LectureType> {
     await delay(300);
     const now = new Date().toISOString();
     const all = db.read("lectureTypes");
-    const maxOrder = all
-      .filter((t) => t.schoolId === schoolId)
-      .reduce((max, t) => Math.max(max, t.sortOrder), 0);
+    const parentId = validateParentType(all, schoolId, data.parentId);
     const newType: LectureType = {
       id: genId("ltt"),
       schoolId,
       name: data.name,
       description: data.description,
+      parentId,
       format: data.format,
-      sortOrder: data.sortOrder ?? maxOrder + 1,
+      sortOrder: data.sortOrder ?? nextSiblingOrder(all, schoolId, parentId),
       enabled: data.enabled ?? true,
       createdAt: now,
     };
@@ -296,11 +362,25 @@ export const settingsService = {
 
   async updateLectureType(id: string, patch: Partial<LectureType>): Promise<LectureType> {
     await delay(250);
+    const all = db.read("lectureTypes") as LectureType[];
+    const current = all.find((type) => type.id === id);
+    if (!current) throw new Error("讲义类型不存在");
+    const nextParentId = Object.prototype.hasOwnProperty.call(patch, "parentId")
+      ? validateParentType(all, current.schoolId, patch.parentId, id)
+      : current.parentId || undefined;
+    const parentChanged = nextParentId !== (current.parentId || undefined);
+    const nextSortOrder = parentChanged && patch.sortOrder === undefined
+      ? nextSiblingOrder(all.filter((type) => type.id !== id), current.schoolId, nextParentId)
+      : patch.sortOrder ?? current.sortOrder;
+    if (nextParentId && all.some((type) => type.parentId === id)) {
+      throw new Error("存在二级类型的一级类型不能再设为二级类型");
+    }
+
     let updated: LectureType | null = null;
     db.update("lectureTypes", (list) =>
       list.map((t) => {
         if (t.id !== id) return t;
-        updated = { ...t, ...patch };
+        updated = { ...t, ...patch, parentId: nextParentId, sortOrder: nextSortOrder };
         return updated;
       }),
     );
@@ -310,6 +390,10 @@ export const settingsService = {
 
   async deleteLectureType(id: string): Promise<void> {
     await delay(200);
+    const all = db.read("lectureTypes") as LectureType[];
+    if (all.some((type) => type.parentId === id)) {
+      throw new Error("请先删除或移动该类型下的二级类型");
+    }
     db.update("lectureTypes", (list) => list.filter((t) => t.id !== id));
   },
 

@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useMemo } from "react";
 import {
   DndContext,
   closestCenter,
@@ -37,6 +37,8 @@ import { useAuthStore } from "@/stores/auth";
 import { settingsService } from "@/services/settings";
 import type { SchoolSetting, ClassTypeCategory, ExamPaperType, LectureType } from "@/types";
 import { cn } from "@/lib/utils";
+import { orderedResourceTypes, siblingTypes } from "@/lib/resource-type-hierarchy";
+import { toast } from "@/stores/ui";
 
 type SettingTab = "grade" | "schoolYear" | "source" | "questionType" | "category" | "classType" | "examPaperType" | "lectureType";
 
@@ -47,8 +49,8 @@ const tabConfig: { key: SettingTab; label: string; description: string }[] = [
   { key: "questionType", label: "题型", description: "管理题目类型，拖拽可调整排序" },
   { key: "category", label: "题类", description: "管理题目题类（练习/考试/作业/复习），拖拽可调整排序" },
   { key: "classType", label: "班型", description: "管理班级类型（如强基班、实验班、普通班等），拖拽可调整排序" },
-  { key: "examPaperType", label: "试卷类型", description: "管理试卷类型（如午间练、晚间作业、考试等），拖拽可调整排序" },
-  { key: "lectureType", label: "讲义类型", description: "管理讲义类型（如教案、学案、辅导训练等），拖拽可调整排序" },
+  { key: "examPaperType", label: "试卷类型", description: "管理一级、二级试卷类型；同级类型可拖拽或使用箭头调整排序" },
+  { key: "lectureType", label: "讲义类型", description: "管理一级、二级讲义类型；同级类型可拖拽或使用箭头调整排序" },
 ];
 
 interface FormData {
@@ -84,6 +86,7 @@ const initialClassTypeFormData: ClassTypeFormData = {
 interface ExamPaperTypeFormData {
   name: string;
   description: string;
+  parentId: string;
   format: "simple" | "gaokao";
   sortOrder: string;
   enabled: boolean;
@@ -92,6 +95,7 @@ interface ExamPaperTypeFormData {
 const initialExamPaperTypeFormData: ExamPaperTypeFormData = {
   name: "",
   description: "",
+  parentId: "",
   format: "simple",
   sortOrder: "",
   enabled: true,
@@ -100,6 +104,7 @@ const initialExamPaperTypeFormData: ExamPaperTypeFormData = {
 interface LectureTypeFormData {
   name: string;
   description: string;
+  parentId: string;
   format: "table" | "mixed";
   sortOrder: string;
   enabled: boolean;
@@ -108,6 +113,7 @@ interface LectureTypeFormData {
 const initialLectureTypeFormData: LectureTypeFormData = {
   name: "",
   description: "",
+  parentId: "",
   format: "table",
   sortOrder: "",
   enabled: true,
@@ -366,6 +372,7 @@ function SortableClassTypeItem({ item, isFirst, isLast, onEdit, onDelete, onTogg
 
 interface ExamPaperTypeItemProps {
   item: ExamPaperType;
+  parentName?: string;
   isFirst: boolean;
   isLast: boolean;
   onEdit: (item: ExamPaperType) => void;
@@ -375,7 +382,7 @@ interface ExamPaperTypeItemProps {
   onMoveDown: (id: string) => void;
 }
 
-function SortableExamPaperTypeItem({ item, isFirst, isLast, onEdit, onDelete, onToggle, onMoveUp, onMoveDown }: ExamPaperTypeItemProps) {
+function SortableExamPaperTypeItem({ item, parentName, isFirst, isLast, onEdit, onDelete, onToggle, onMoveUp, onMoveDown }: ExamPaperTypeItemProps) {
   const {
     attributes,
     listeners,
@@ -401,6 +408,7 @@ function SortableExamPaperTypeItem({ item, isFirst, isLast, onEdit, onDelete, on
       style={style}
       className={cn(
         "flex items-center gap-4 py-3 first:pt-0 last:pb-0 bg-paper",
+        parentName && "pl-8",
         isDragging && "shadow-lg rounded-lg border border-gold-300",
       )}
     >
@@ -445,12 +453,15 @@ function SortableExamPaperTypeItem({ item, isFirst, isLast, onEdit, onDelete, on
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-ink-900">{item.name}</span>
+          <Badge variant={parentName ? "teal" : "default"} className="text-xs">
+            {parentName ? "二级" : "一级"}
+          </Badge>
           <Badge className={cn("text-xs", formatColor)}>
             {formatLabel}
           </Badge>
         </div>
         <div className="text-xs text-ink-400 mt-1">
-          {item.description || "暂无描述"} · 排序：{item.sortOrder}
+          {parentName ? `上级：${parentName} · ` : ""}{item.description || "暂无描述"} · 排序：{item.sortOrder}
         </div>
       </div>
 
@@ -493,6 +504,7 @@ function SortableExamPaperTypeItem({ item, isFirst, isLast, onEdit, onDelete, on
 
 interface LectureTypeItemProps {
   item: LectureType;
+  parentName?: string;
   isFirst: boolean;
   isLast: boolean;
   onEdit: (item: LectureType) => void;
@@ -502,7 +514,7 @@ interface LectureTypeItemProps {
   onMoveDown: (id: string) => void;
 }
 
-function SortableLectureTypeItem({ item, isFirst, isLast, onEdit, onDelete, onToggle, onMoveUp, onMoveDown }: LectureTypeItemProps) {
+function SortableLectureTypeItem({ item, parentName, isFirst, isLast, onEdit, onDelete, onToggle, onMoveUp, onMoveDown }: LectureTypeItemProps) {
   const {
     attributes,
     listeners,
@@ -528,6 +540,7 @@ function SortableLectureTypeItem({ item, isFirst, isLast, onEdit, onDelete, onTo
       style={style}
       className={cn(
         "flex items-center gap-4 py-3 first:pt-0 last:pb-0 bg-paper",
+        parentName && "pl-8",
         isDragging && "shadow-lg rounded-lg border border-gold-300",
       )}
     >
@@ -572,12 +585,15 @@ function SortableLectureTypeItem({ item, isFirst, isLast, onEdit, onDelete, onTo
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-ink-900">{item.name}</span>
+          <Badge variant={parentName ? "teal" : "default"} className="text-xs">
+            {parentName ? "二级" : "一级"}
+          </Badge>
           <Badge className={cn("text-xs", formatColor)}>
             {formatLabel}
           </Badge>
         </div>
         <div className="text-xs text-ink-400 mt-1">
-          {item.description || "暂无描述"} · 排序：{item.sortOrder}
+          {parentName ? `上级：${parentName} · ` : ""}{item.description || "暂无描述"} · 排序：{item.sortOrder}
         </div>
       </div>
 
@@ -646,6 +662,22 @@ export function SettingsPage() {
   const isClassTypeTab = activeTab === "classType";
   const isExamPaperTypeTab = activeTab === "examPaperType";
   const isLectureTypeTab = activeTab === "lectureType";
+  const orderedExamPaperTypes = useMemo(() => orderedResourceTypes(examPaperTypes), [examPaperTypes]);
+  const orderedLectureTypes = useMemo(() => orderedResourceTypes(lectureTypes), [lectureTypes]);
+  const examPaperRootTypes = useMemo(
+    () => orderedExamPaperTypes.filter((type) => !type.parentId && type.id !== editingExamPaperType?.id),
+    [editingExamPaperType?.id, orderedExamPaperTypes],
+  );
+  const lectureRootTypes = useMemo(
+    () => orderedLectureTypes.filter((type) => !type.parentId && type.id !== editingLectureType?.id),
+    [editingLectureType?.id, orderedLectureTypes],
+  );
+  const editingExamPaperTypeHasChildren = Boolean(
+    editingExamPaperType && examPaperTypes.some((type) => type.parentId === editingExamPaperType.id),
+  );
+  const editingLectureTypeHasChildren = Boolean(
+    editingLectureType && lectureTypes.some((type) => type.parentId === editingLectureType.id),
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -686,31 +718,72 @@ export function SettingsPage() {
     loadSettings();
   }, [loadSettings]);
 
+  const reorderTypeSiblings = async (
+    kind: "examPaper" | "lecture",
+    currentList: Array<ExamPaperType | LectureType>,
+    activeId: string,
+    targetId: string,
+  ) => {
+    const activeType = currentList.find((type) => type.id === activeId);
+    const targetType = currentList.find((type) => type.id === targetId);
+    if (!activeType || !targetType) return;
+    if ((activeType.parentId || null) !== (targetType.parentId || null)) return;
+
+    const siblings = siblingTypes(currentList, activeType);
+    const oldIndex = siblings.findIndex((type) => type.id === activeId);
+    const newIndex = siblings.findIndex((type) => type.id === targetId);
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+    const reordered = arrayMove(siblings, oldIndex, newIndex);
+    const updates = reordered.map((type, index) => ({ id: type.id, sortOrder: index + 1 }));
+    const orderMap = new Map(updates.map((item) => [item.id, item.sortOrder]));
+    const nextList = orderedResourceTypes(currentList.map((type) => ({
+      ...type,
+      sortOrder: orderMap.get(type.id) ?? type.sortOrder,
+    })));
+
+    if (kind === "examPaper") {
+      setExamPaperTypes(nextList as ExamPaperType[]);
+    } else {
+      setLectureTypes(nextList as LectureType[]);
+    }
+
+    setSavingOrder(true);
+    try {
+      if (kind === "examPaper") {
+        await settingsService.batchUpdateExamPaperTypeSortOrder(updates);
+      } else {
+        await settingsService.batchUpdateLectureTypeSortOrder(updates);
+      }
+    } catch (error) {
+      console.error("保存排序失败", error);
+      toast.error("保存排序失败", error instanceof Error ? error.message : undefined);
+      await loadSettings();
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    let currentList: Array<{ id: string; sortOrder: number }>;
     if (isExamPaperTypeTab) {
-      currentList = examPaperTypes;
-    } else if (isLectureTypeTab) {
-      currentList = lectureTypes;
-    } else if (isClassTypeTab) {
-      currentList = classTypes;
-    } else {
-      currentList = settings;
+      await reorderTypeSiblings("examPaper", examPaperTypes, String(active.id), String(over.id));
+      return;
+    }
+    if (isLectureTypeTab) {
+      await reorderTypeSiblings("lecture", lectureTypes, String(active.id), String(over.id));
+      return;
     }
 
-    const oldIndex = currentList.findIndex((s) => s.id === active.id);
-    const newIndex = currentList.findIndex((s) => s.id === over.id);
+    const currentList: Array<{ id: string; sortOrder: number }> = isClassTypeTab ? classTypes : settings;
+    const oldIndex = currentList.findIndex((item) => item.id === active.id);
+    const newIndex = currentList.findIndex((item) => item.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
     const newList = arrayMove(currentList, oldIndex, newIndex);
-    if (isExamPaperTypeTab) {
-      setExamPaperTypes(newList as ExamPaperType[]);
-    } else if (isLectureTypeTab) {
-      setLectureTypes(newList as LectureType[]);
-    } else if (isClassTypeTab) {
+    if (isClassTypeTab) {
       setClassTypes(newList as ClassTypeCategory[]);
     } else {
       setSettings(newList as SchoolSetting[]);
@@ -718,22 +791,16 @@ export function SettingsPage() {
 
     setSavingOrder(true);
     try {
-      const updates = newList.map((s, idx) => ({
-        id: s.id,
-        sortOrder: idx + 1,
-      }));
-      if (isExamPaperTypeTab) {
-        await settingsService.batchUpdateExamPaperTypeSortOrder(updates);
-      } else if (isLectureTypeTab) {
-        await settingsService.batchUpdateLectureTypeSortOrder(updates);
-      } else if (isClassTypeTab) {
+      const updates = newList.map((item, index) => ({ id: item.id, sortOrder: index + 1 }));
+      if (isClassTypeTab) {
         await settingsService.batchUpdateClassTypeSortOrder(updates);
       } else {
         await settingsService.batchUpdateSortOrder(updates);
       }
-    } catch (e: any) {
-      console.error("保存排序失败", e);
-      loadSettings();
+    } catch (error) {
+      console.error("保存排序失败", error);
+      toast.error("保存排序失败", error instanceof Error ? error.message : undefined);
+      await loadSettings();
     } finally {
       setSavingOrder(false);
     }
@@ -741,28 +808,27 @@ export function SettingsPage() {
 
   /** 通过上下箭头移动排序 */
   const handleMove = async (id: string, direction: "up" | "down") => {
-    let currentList: Array<{ id: string; sortOrder: number }>;
-    if (isExamPaperTypeTab) {
-      currentList = examPaperTypes;
-    } else if (isLectureTypeTab) {
-      currentList = lectureTypes;
-    } else if (isClassTypeTab) {
-      currentList = classTypes;
-    } else {
-      currentList = settings;
+    if (isExamPaperTypeTab || isLectureTypeTab) {
+      const kind = isExamPaperTypeTab ? "examPaper" : "lecture";
+      const currentList = isExamPaperTypeTab ? examPaperTypes : lectureTypes;
+      const current = currentList.find((type) => type.id === id);
+      if (!current) return;
+      const siblings = siblingTypes(currentList, current);
+      const index = siblings.findIndex((type) => type.id === id);
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= siblings.length) return;
+      await reorderTypeSiblings(kind, currentList, id, siblings[targetIndex].id);
+      return;
     }
 
-    const index = currentList.findIndex((s) => s.id === id);
+    const currentList: Array<{ id: string; sortOrder: number }> = isClassTypeTab ? classTypes : settings;
+    const index = currentList.findIndex((item) => item.id === id);
     if (index === -1) return;
     const targetIndex = direction === "up" ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= currentList.length) return;
 
     const newList = arrayMove(currentList, index, targetIndex);
-    if (isExamPaperTypeTab) {
-      setExamPaperTypes(newList as ExamPaperType[]);
-    } else if (isLectureTypeTab) {
-      setLectureTypes(newList as LectureType[]);
-    } else if (isClassTypeTab) {
+    if (isClassTypeTab) {
       setClassTypes(newList as ClassTypeCategory[]);
     } else {
       setSettings(newList as SchoolSetting[]);
@@ -770,22 +836,16 @@ export function SettingsPage() {
 
     setSavingOrder(true);
     try {
-      const updates = newList.map((s, idx) => ({
-        id: s.id,
-        sortOrder: idx + 1,
-      }));
-      if (isExamPaperTypeTab) {
-        await settingsService.batchUpdateExamPaperTypeSortOrder(updates);
-      } else if (isLectureTypeTab) {
-        await settingsService.batchUpdateLectureTypeSortOrder(updates);
-      } else if (isClassTypeTab) {
+      const updates = newList.map((item, itemIndex) => ({ id: item.id, sortOrder: itemIndex + 1 }));
+      if (isClassTypeTab) {
         await settingsService.batchUpdateClassTypeSortOrder(updates);
       } else {
         await settingsService.batchUpdateSortOrder(updates);
       }
-    } catch (e: any) {
-      console.error("保存排序失败", e);
-      loadSettings();
+    } catch (error) {
+      console.error("保存排序失败", error);
+      toast.error("保存排序失败", error instanceof Error ? error.message : undefined);
+      await loadSettings();
     } finally {
       setSavingOrder(false);
     }
@@ -819,6 +879,7 @@ export function SettingsPage() {
       setExamPaperTypeFormData({
         name: et.name,
         description: et.description || "",
+        parentId: et.parentId || "",
         format: et.format,
         sortOrder: String(et.sortOrder),
         enabled: et.enabled,
@@ -830,6 +891,7 @@ export function SettingsPage() {
       setLectureTypeFormData({
         name: lt.name,
         description: lt.description || "",
+        parentId: lt.parentId || "",
         format: lt.format,
         sortOrder: String(lt.sortOrder),
         enabled: lt.enabled,
@@ -935,6 +997,7 @@ export function SettingsPage() {
           await settingsService.updateExamPaperType(editingExamPaperType.id, {
             name: examPaperTypeFormData.name.trim(),
             description: examPaperTypeFormData.description.trim() || undefined,
+            parentId: examPaperTypeFormData.parentId || null,
             format: examPaperTypeFormData.format,
             sortOrder: examPaperTypeFormData.sortOrder ? Number(examPaperTypeFormData.sortOrder) : undefined,
             enabled: examPaperTypeFormData.enabled,
@@ -943,6 +1006,7 @@ export function SettingsPage() {
           await settingsService.createExamPaperType(schoolId, {
             name: examPaperTypeFormData.name.trim(),
             description: examPaperTypeFormData.description.trim() || undefined,
+            parentId: examPaperTypeFormData.parentId || null,
             format: examPaperTypeFormData.format,
             sortOrder: examPaperTypeFormData.sortOrder ? Number(examPaperTypeFormData.sortOrder) : undefined,
             enabled: examPaperTypeFormData.enabled,
@@ -953,6 +1017,7 @@ export function SettingsPage() {
           await settingsService.updateLectureType(editingLectureType.id, {
             name: lectureTypeFormData.name.trim(),
             description: lectureTypeFormData.description.trim() || undefined,
+            parentId: lectureTypeFormData.parentId || null,
             format: lectureTypeFormData.format,
             sortOrder: lectureTypeFormData.sortOrder ? Number(lectureTypeFormData.sortOrder) : undefined,
             enabled: lectureTypeFormData.enabled,
@@ -961,6 +1026,7 @@ export function SettingsPage() {
           await settingsService.createLectureType(schoolId, {
             name: lectureTypeFormData.name.trim(),
             description: lectureTypeFormData.description.trim() || undefined,
+            parentId: lectureTypeFormData.parentId || null,
             format: lectureTypeFormData.format,
             sortOrder: lectureTypeFormData.sortOrder ? Number(lectureTypeFormData.sortOrder) : undefined,
             enabled: lectureTypeFormData.enabled,
@@ -1006,6 +1072,7 @@ export function SettingsPage() {
       closeModal();
     } catch (e: any) {
       console.error("保存失败", e);
+      toast.error("保存失败", e instanceof Error ? e.message : undefined);
     } finally {
       setSubmitting(false);
     }
@@ -1025,6 +1092,7 @@ export function SettingsPage() {
       await loadSettings();
     } catch (e) {
       console.error("切换状态失败", e);
+      toast.error("切换状态失败", e instanceof Error ? e.message : undefined);
     }
   };
 
@@ -1050,6 +1118,7 @@ export function SettingsPage() {
       await loadSettings();
     } catch (e) {
       console.error("删除失败", e);
+      toast.error("删除失败", e instanceof Error ? e.message : undefined);
     }
   };
 
@@ -1124,9 +1193,9 @@ export function SettingsPage() {
               <SortableContext
                 items={
                   (isExamPaperTypeTab
-                    ? examPaperTypes
+                    ? orderedExamPaperTypes
                     : isLectureTypeTab
-                    ? lectureTypes
+                    ? orderedLectureTypes
                     : isClassTypeTab
                     ? classTypes
                     : settings
@@ -1136,9 +1205,9 @@ export function SettingsPage() {
               >
                 <div className="divide-y divide-ink-100">
                   {(isExamPaperTypeTab
-                    ? examPaperTypes
+                    ? orderedExamPaperTypes
                     : isLectureTypeTab
-                    ? lectureTypes
+                    ? orderedLectureTypes
                     : isClassTypeTab
                     ? classTypes
                     : settings
@@ -1147,8 +1216,9 @@ export function SettingsPage() {
                       <SortableExamPaperTypeItem
                         key={item.id}
                         item={item as ExamPaperType}
-                        isFirst={idx === 0}
-                        isLast={idx === arr.length - 1}
+                        parentName={examPaperTypes.find((type) => type.id === (item as ExamPaperType).parentId)?.name}
+                        isFirst={siblingTypes(examPaperTypes, item as ExamPaperType)[0]?.id === item.id}
+                        isLast={siblingTypes(examPaperTypes, item as ExamPaperType).at(-1)?.id === item.id}
                         onEdit={openEditModal}
                         onDelete={handleDelete}
                         onToggle={handleToggle}
@@ -1159,8 +1229,9 @@ export function SettingsPage() {
                       <SortableLectureTypeItem
                         key={item.id}
                         item={item as LectureType}
-                        isFirst={idx === 0}
-                        isLast={idx === arr.length - 1}
+                        parentName={lectureTypes.find((type) => type.id === (item as LectureType).parentId)?.name}
+                        isFirst={siblingTypes(lectureTypes, item as LectureType)[0]?.id === item.id}
+                        isLast={siblingTypes(lectureTypes, item as LectureType).at(-1)?.id === item.id}
                         onEdit={openEditModal}
                         onDelete={handleDelete}
                         onToggle={handleToggle}
@@ -1251,6 +1322,31 @@ export function SettingsPage() {
                 onChange={(e) => setExamPaperTypeFormData({ ...examPaperTypeFormData, description: e.target.value })}
               />
               <div>
+                <label className="block text-sm font-medium text-ink-700 mb-1.5">
+                  上级类型
+                </label>
+                <select
+                  value={examPaperTypeFormData.parentId}
+                  onChange={(e) => setExamPaperTypeFormData({
+                    ...examPaperTypeFormData,
+                    parentId: e.target.value,
+                    sortOrder: "",
+                  })}
+                  disabled={editingExamPaperTypeHasChildren}
+                  className="w-full rounded-md border border-ink-200 bg-paper px-3 py-2 text-sm text-ink-800 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/20 disabled:cursor-not-allowed disabled:bg-mist disabled:text-ink-400"
+                >
+                  <option value="">无（一级类型）</option>
+                  {examPaperRootTypes.map((type) => (
+                    <option key={type.id} value={type.id}>{type.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-ink-400">
+                  {editingExamPaperTypeHasChildren
+                    ? "该类型已有二级类型，需先移动或删除子类型后才能调整层级"
+                    : "选择一个一级类型后，当前类型将作为其二级类型"}
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-ink-700 mb-2">
                   格式类型
                 </label>
@@ -1325,6 +1421,31 @@ export function SettingsPage() {
                 value={lectureTypeFormData.description}
                 onChange={(e) => setLectureTypeFormData({ ...lectureTypeFormData, description: e.target.value })}
               />
+              <div>
+                <label className="block text-sm font-medium text-ink-700 mb-1.5">
+                  上级类型
+                </label>
+                <select
+                  value={lectureTypeFormData.parentId}
+                  onChange={(e) => setLectureTypeFormData({
+                    ...lectureTypeFormData,
+                    parentId: e.target.value,
+                    sortOrder: "",
+                  })}
+                  disabled={editingLectureTypeHasChildren}
+                  className="w-full rounded-md border border-ink-200 bg-paper px-3 py-2 text-sm text-ink-800 focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-400/20 disabled:cursor-not-allowed disabled:bg-mist disabled:text-ink-400"
+                >
+                  <option value="">无（一级类型）</option>
+                  {lectureRootTypes.map((type) => (
+                    <option key={type.id} value={type.id}>{type.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-ink-400">
+                  {editingLectureTypeHasChildren
+                    ? "该类型已有二级类型，需先移动或删除子类型后才能调整层级"
+                    : "选择一个一级类型后，当前类型将作为其二级类型"}
+                </p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-ink-700 mb-2">
                   格式类型

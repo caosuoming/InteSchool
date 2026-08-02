@@ -221,6 +221,8 @@ export interface ExamPaperType {
   schoolId: string;
   name: string;
   description?: string;
+  /** 上级类型ID；为空时为一级类型。仅支持两级。 */
+  parentId?: string | null;
   /** 格式类型：simple=无题型分组（午间练/晚间作业），gaokao=高考格式（考试） */
   format: ExamPaperFormat;
   sortOrder: number;
@@ -236,6 +238,8 @@ export interface LectureType {
   schoolId: string;
   name: string;
   description?: string;
+  /** 上级类型ID；为空时为一级类型。仅支持两级。 */
+  parentId?: string | null;
   /** 格式类型：table=表格形式（教案），mixed=知识块+题目混合（学案/辅导训练） */
   format: LectureFormat;
   sortOrder: number;

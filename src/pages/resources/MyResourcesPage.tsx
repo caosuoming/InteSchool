@@ -73,10 +73,12 @@ import {
   useExtractTasksStore,
 } from "@/stores/extractTasks";
 import { parseDocumentBlocks, type DocumentBlock } from "@/lib/document-block-parser";
+import { matchingResourceTypeIds } from "@/lib/resource-type-hierarchy";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
 type SortKey = "updated" | "created" | "title";
+type ResourceListItem = Question | ExamPaper | Lecture | Courseware | Material;
 
 interface MyResourcesPageProps {
   initialTab?: MyResourceTab;
@@ -359,6 +361,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const schoolId = teacher?.schoolId || "sch-1";
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(schoolId);
   const {
+    examPaperTypes,
+    lectureTypes,
     examPaperTypeOptions,
     lectureTypeOptions,
     defaultExamPaperTypeId,
@@ -429,16 +433,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     try {
       const [qData, lecData, examData, cwData, matData] = await Promise.all([
         questionService.listQuestions({ ...baseFilter, teacherId: teacher?.id }),
-        lectureService.listLectures({
-          ...baseFilter,
-          teacherId: teacher?.id,
-          typeId: selectedLectureTypeId || undefined,
-        }),
-        examPaperService.listPapers({
-          ...baseFilter,
-          teacherId: teacher?.id,
-          typeId: selectedExamPaperTypeId || undefined,
-        }),
+        lectureService.listLectures({ ...baseFilter, teacherId: teacher?.id }),
+        examPaperService.listPapers({ ...baseFilter, teacherId: teacher?.id }),
         coursewareService.listCoursewares({ ...baseFilter, teacherId: teacher?.id }),
         materialService.listMaterials({ ...baseFilter, teacherId: teacher?.id }),
       ]);
@@ -489,8 +485,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     selectedGrade,
     selectedYear,
     selectedSemester,
-    selectedExamPaperTypeId,
-    selectedLectureTypeId,
     teacher,
   ]);
 
@@ -926,7 +920,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, []);
 
   // 排序
-  const sortedData = useMemo(() => {
+  const sortedData = useMemo<ResourceListItem[]>(() => {
     const sortByKey = <T extends { updatedAt: string; createdAt: string; title?: string; stem?: string }>(arr: T[]) => {
       const sorted = [...arr];
       switch (sortKey) {
@@ -952,18 +946,39 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       case "examPaper": return sortByKey(examPapers);
       case "courseware": return sortByKey(coursewares);
       case "material": return sortByKey(materials);
+      case "basket": return [];
     }
   }, [activeTab, questions, lectures, examPapers, coursewares, materials, sortKey]);
 
   // 仅看未分类筛选
   const displayedData = useMemo(() => {
-    if (!onlyUncategorized || !noTreeSelection) return sortedData;
-    return sortedData.filter((item) => {
-      const chapterIds = (item as { chapterIds?: string[] }).chapterIds ?? [];
-      const knowledgePointIds = (item as { knowledgePointIds?: string[] }).knowledgePointIds ?? [];
-      return chapterIds.length === 0 && knowledgePointIds.length === 0;
-    });
-  }, [sortedData, onlyUncategorized, noTreeSelection]);
+    let result = sortedData;
+    if (onlyUncategorized && noTreeSelection) {
+      result = result.filter((item) => {
+        const chapterIds = (item as { chapterIds?: string[] }).chapterIds ?? [];
+        const knowledgePointIds = (item as { knowledgePointIds?: string[] }).knowledgePointIds ?? [];
+        return chapterIds.length === 0 && knowledgePointIds.length === 0;
+      });
+    }
+    if (activeTab === "examPaper" && selectedExamPaperTypeId) {
+      const matchingIds = matchingResourceTypeIds(selectedExamPaperTypeId, examPaperTypes);
+      result = (result as ExamPaper[]).filter((item) => Boolean(item.typeId && matchingIds.has(item.typeId)));
+    }
+    if (activeTab === "lecture" && selectedLectureTypeId) {
+      const matchingIds = matchingResourceTypeIds(selectedLectureTypeId, lectureTypes);
+      result = (result as Lecture[]).filter((item) => Boolean(item.typeId && matchingIds.has(item.typeId)));
+    }
+    return result;
+  }, [
+    activeTab,
+    examPaperTypes,
+    lectureTypes,
+    noTreeSelection,
+    onlyUncategorized,
+    selectedExamPaperTypeId,
+    selectedLectureTypeId,
+    sortedData,
+  ]);
 
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
 
@@ -1984,6 +1999,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap w-full">
+              {activeTab === "examPaper" && (
+                <FilterSelect
+                  label="试卷类型"
+                  value={selectedExamPaperTypeId}
+                  options={examPaperTypeOptions}
+                  onChange={setSelectedExamPaperTypeId}
+                />
+              )}
+              {activeTab === "lecture" && (
+                <FilterSelect
+                  label="讲义类型"
+                  value={selectedLectureTypeId}
+                  options={lectureTypeOptions}
+                  onChange={setSelectedLectureTypeId}
+                />
+              )}
               <FilterSelect
                 label="年级"
                 value={selectedGrade}
@@ -2002,22 +2033,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 options={semesterOptions}
                 onChange={setSelectedSemester}
               />
-              {activeTab === "examPaper" && (
-                <FilterSelect
-                  label="试卷类型"
-                  value={selectedExamPaperTypeId}
-                  options={examPaperTypeOptions}
-                  onChange={setSelectedExamPaperTypeId}
-                />
-              )}
-              {activeTab === "lecture" && (
-                <FilterSelect
-                  label="讲义类型"
-                  value={selectedLectureTypeId}
-                  options={lectureTypeOptions}
-                  onChange={setSelectedLectureTypeId}
-                />
-              )}
               {noTreeSelection && (
                 <button
                   onClick={() => setOnlyUncategorized((v) => !v)}
@@ -3436,7 +3451,7 @@ function FilterSelect({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 w-36 bg-paper border border-ink-100 rounded-lg shadow-lg z-20 py-1 animate-fade-in">
+          <div className="absolute top-full left-0 mt-1 min-w-40 w-max max-w-64 bg-paper border border-ink-100 rounded-lg shadow-lg z-20 py-1 animate-fade-in">
             <button
               onClick={() => { onChange(""); setOpen(false); }}
               className={cn(

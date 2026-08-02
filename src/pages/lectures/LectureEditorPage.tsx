@@ -43,6 +43,7 @@ import type {
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
+import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -117,6 +118,10 @@ export default function LectureEditorPage() {
   const [semester, setSemester] = useState<ResourceSemester>("上学期");
   const [typeId, setTypeId] = useState<string>("");
   const [lectureTypes, setLectureTypes] = useState<LectureType[]>([]);
+  const lectureTypeOptions = useMemo(
+    () => buildResourceTypeOptions(lectureTypes, { enabledOnly: true, currentId: typeId }),
+    [lectureTypes, typeId],
+  );
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [selectedChapterIds, setSelectedChapterIds] = useState<string[]>([]);
@@ -280,7 +285,7 @@ export default function LectureEditorPage() {
       ]);
       setChapterTree(chs);
       setKnowledgeTree(kps);
-      setLectureTypes(lecTypes.filter((t) => t.enabled));
+      setLectureTypes(lecTypes);
       setColumnTemplates(savedColumnTemplates);
       const allClasses = await classSvc.listAllClasses(teacher.schoolId!, teacher.id);
       setClasses(allClasses);
@@ -1683,7 +1688,7 @@ export default function LectureEditorPage() {
                 onChange={(e) => setTypeId(e.target.value)}
                 options={[
                   { value: "", label: "未设置" },
-                  ...lectureTypes.map((item) => ({ value: item.id, label: item.name })),
+                  ...lectureTypeOptions,
                 ]}
               />
               <details className="md:col-span-2 xl:col-span-4 rounded-lg border border-ink-100 bg-ink-50/40">

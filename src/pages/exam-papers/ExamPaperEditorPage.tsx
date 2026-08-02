@@ -55,6 +55,7 @@ import type {
   TreeNode,
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
+import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -161,6 +162,10 @@ export default function ExamPaperEditorPage() {
   const [semester, setSemester] = useState<ResourceSemester>("上学期");
   const [typeId, setTypeId] = useState<string>("");
   const [examPaperTypes, setExamPaperTypes] = useState<ExamPaperType[]>([]);
+  const examPaperTypeOptions = useMemo(
+    () => buildResourceTypeOptions(examPaperTypes, { enabledOnly: true, currentId: typeId }),
+    [examPaperTypes, typeId],
+  );
   const [duration, setDuration] = useState(90);
   const [paperQuestions, setPaperQuestions] = useState<ExamPaperQuestion[]>([]);
   const [contentBlocks, setContentBlocks] = useState<ExtractedDocumentBlock[]>([]);
@@ -267,9 +272,7 @@ export default function ExamPaperEditorPage() {
       classSvc.listPersonalClasses(teacher.id).then(setPersonalClasses);
       classSvc.listStudentsBySchool(schoolId).then(setStudents);
       // 加载试卷类型
-      settingsService.listExamPaperTypes(schoolId).then((types) =>
-        setExamPaperTypes(types.filter((t) => t.enabled)),
-      );
+      settingsService.listExamPaperTypes(schoolId).then(setExamPaperTypes);
       knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
     }
     // 加载发布记录
@@ -1178,7 +1181,7 @@ export default function ExamPaperEditorPage() {
               onChange={(e) => setTypeId(e.target.value)}
               options={[
                 { value: "", label: "未设置" },
-                ...examPaperTypes.map((item) => ({ value: item.id, label: item.name })),
+                ...examPaperTypeOptions,
               ]}
             />
             <Input

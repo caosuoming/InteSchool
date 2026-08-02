@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { settingsService } from "@/services/settings";
 import type { ExamPaperType, LectureType } from "@/types";
+import { buildResourceTypeOptions, resourceTypeLabel } from "@/lib/resource-type-hierarchy";
 
 export interface DocumentTypeOption {
   value: string;
@@ -38,8 +39,8 @@ export function useDocumentTypeOptions(schoolId?: string | null) {
       settingsService.listLectureTypes(schoolId),
     ]).then(([papers, lectures]) => {
       if (cancelled) return;
-      setExamPaperTypes(papers.filter((item) => item.enabled));
-      setLectureTypes(lectures.filter((item) => item.enabled));
+      setExamPaperTypes(papers);
+      setLectureTypes(lectures);
       setReady(true);
     }).catch(() => {
       if (cancelled) return;
@@ -52,28 +53,20 @@ export function useDocumentTypeOptions(schoolId?: string | null) {
   }, [schoolId]);
 
   const examPaperTypeOptions = useMemo(
-    () => examPaperTypes.map((item) => ({ value: item.id, label: item.name })),
+    () => buildResourceTypeOptions(examPaperTypes, { enabledOnly: true }),
     [examPaperTypes],
   );
   const lectureTypeOptions = useMemo(
-    () => lectureTypes.map((item) => ({ value: item.id, label: item.name })),
-    [lectureTypes],
-  );
-  const examPaperLabels = useMemo(
-    () => new Map(examPaperTypes.map((item) => [item.id, item.name])),
-    [examPaperTypes],
-  );
-  const lectureLabels = useMemo(
-    () => new Map(lectureTypes.map((item) => [item.id, item.name])),
+    () => buildResourceTypeOptions(lectureTypes, { enabledOnly: true }),
     [lectureTypes],
   );
   const getExamPaperTypeLabel = useCallback(
-    (value?: string) => value ? examPaperLabels.get(value) || value : "未指定",
-    [examPaperLabels],
+    (value?: string) => value ? resourceTypeLabel(value, examPaperTypes) : "未指定",
+    [examPaperTypes],
   );
   const getLectureTypeLabel = useCallback(
-    (value?: string) => value ? lectureLabels.get(value) || value : "未指定",
-    [lectureLabels],
+    (value?: string) => value ? resourceTypeLabel(value, lectureTypes) : "未指定",
+    [lectureTypes],
   );
 
   return useMemo(() => ({
