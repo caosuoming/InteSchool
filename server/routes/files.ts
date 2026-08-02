@@ -105,8 +105,9 @@ function canReviewApplicationProof(
   fileId: string,
 ): boolean {
   if (!["school_admin", "platform_admin"].includes(activeRole(teacher))) return false;
+  const platformAdmin = activeRole(teacher) === "platform_admin";
   return (store.loadState().applications as Array<Record<string, unknown>>).some((application) =>
-    application.proofFileId === fileId && application.schoolId === teacher.schoolId);
+    application.proofFileId === fileId && (platformAdmin || application.schoolId === teacher.schoolId));
 }
 
 function canReadFile(

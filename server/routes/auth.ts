@@ -56,11 +56,29 @@ const registrationAuthorizationSchema = z.object({
 
 const applicationSchema = z.object({
   schoolId: z.string().min(1).max(100),
-  employeeNo: z.string().trim().min(1).max(100),
-  subject: z.string().trim().min(1).max(50),
+  employeeNo: z.string().trim().max(100).optional().default(""),
+  subjects: z.array(z.string().trim().min(1).max(50)).min(1).max(20).optional(),
+  subject: z.string().trim().min(1).max(50).optional(),
   teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).default([]),
   teachingClassIds: z.array(z.string().min(1).max(100)).max(100).default([]),
-  proofFileId: z.string().uuid(),
+  position: z.string().trim().max(50).optional().default(""),
+  proofFileId: z.string().uuid().optional(),
+  requestSchoolAdmin: z.boolean().optional().default(false),
+}).superRefine((input, context) => {
+  if (!input.subjects?.length && !input.subject) {
+    context.addIssue({
+      code: "custom",
+      path: ["subjects"],
+      message: "请至少选择一个任教学科",
+    });
+  }
+}).transform((input) => {
+  const subjects = [...new Set(input.subjects?.length ? input.subjects : [input.subject!])];
+  return {
+    ...input,
+    subjects,
+    subject: subjects[0],
+  };
 });
 
 const profileSchema = z.object({
@@ -205,14 +223,18 @@ function activateAffiliation(
   teacher: TeacherRecord,
   schoolId: string,
   employeeNo: string,
-  subject: string,
+  subjects: string[],
   teachingGrades: string[] = [],
   teachingClassIds: string[] = [],
+  position = "",
+  requestSchoolAdmin = false,
 ): TeacherRecord {
+  const subject = subjects[0];
   const schools = state.schools as Array<{ id: string; name: string }>;
   const schoolName = schools.find((school) => school.id === schoolId)?.name || null;
   const existing = teacher.affiliations.find((item) => item.schoolId === schoolId);
   const affiliationId = typeof existing?.id === "string" ? existing.id : randomUUID();
+  const role = requestSchoolAdmin ? "school_admin" : existing?.role || "teacher";
   const active = {
     ...(existing || {}),
     id: affiliationId,
@@ -220,11 +242,13 @@ function activateAffiliation(
     schoolId,
     schoolName,
     subject,
+    subjects,
     teachingGrades,
     teachingClassIds,
     employeeNo,
+    position,
     status: "active",
-    role: existing?.role || "teacher",
+    role,
     roles: existing?.roles || ["teacher"],
     subjectGroupIds: existing?.subjectGroupIds || [],
     prepGroupIds: existing?.prepGroupIds || [],
@@ -242,9 +266,11 @@ function activateAffiliation(
     ...teacher,
     schoolId,
     subject,
+    subjects,
     teachingGrades,
     teachingClassIds,
     employeeNo,
+    position,
     status: "active",
     role: active.role as TeacherRecord["role"],
     roles: active.roles as string[],
@@ -624,14 +650,18 @@ export async function registerAuthRoutes(
     const session = requireSession(request, store);
     requireCsrf(request, session);
     const input = applicationSchema.parse(request.body);
-    const file = store.getFile(input.proofFileId);
-    if (!file || file.ownerId !== session.teacherId) throw new Error("证明文件不存在或无权使用");
+    const file = input.proofFileId ? store.getFile(input.proofFileId) : null;
+    if (input.proofFileId && (!file || file.ownerId !== session.teacherId)) {
+      throw new Error("证明文件不存在或无权使用");
+    }
 
     return withSerializedState(store, (state) => {
       const schools = state.schools as Array<{ id: string; name: string }>;
-      if (!schools.some((school) => school.id === input.schoolId)) throw new Error("学校不存在");
+      const school = schools.find((item) => item.id === input.schoolId);
+      if (!school) throw new Error("学校不存在");
       const applications = state.applications as Array<Record<string, unknown>>;
       const currentTeacher = state.teachers.find((teacher) => teacher.id === session.teacherId);
+      if (!currentTeacher) throw new Error("申请教师不存在");
       if (currentTeacher?.affiliations.some((affiliation) => affiliation.schoolId === input.schoolId && affiliation.status === "active")) {
         throw new Error("已加入该学校，无需重复申请");
       }
@@ -642,13 +672,18 @@ export async function registerAuthRoutes(
       const application: Record<string, unknown> = {
         id: randomUUID(),
         teacherId: session.teacherId,
+        teacherName: currentTeacher.name,
         schoolId: input.schoolId,
+        schoolName: school.name,
         employeeNo: input.employeeNo,
         subject: input.subject,
+        subjects: input.subjects,
         teachingGrades: input.teachingGrades,
         teachingClassIds: input.teachingClassIds,
-        proofFileId: input.proofFileId,
-        proofFileName: file.originalName,
+        position: input.position,
+        proofFileId: input.proofFileId || null,
+        proofFileName: file?.originalName || "",
+        requestSchoolAdmin: input.requestSchoolAdmin,
         status: config.autoApproveApplications ? "approved" : "pending",
         createdAt: now,
       };
@@ -662,9 +697,11 @@ export async function registerAuthRoutes(
           teachers[index],
           input.schoolId,
           input.employeeNo,
-          input.subject,
+          input.subjects,
           input.teachingGrades,
           input.teachingClassIds,
+          input.position,
+          input.requestSchoolAdmin,
         );
       }
       return application;
@@ -683,8 +720,20 @@ export async function registerAuthRoutes(
     const teacher = sessionTeacher(store, session);
     requireAdmin(teacher);
     const state = store.loadState();
+    const platformAdmin = activeRole(teacher) === "platform_admin";
+    const schools = state.schools as Array<{ id: string; name: string }>;
     return (state.applications as Array<Record<string, unknown>>)
-      .filter((item) => item.schoolId === teacher.schoolId && item.status === "pending");
+      .filter((item) => item.status === "pending" && (platformAdmin || item.schoolId === teacher.schoolId))
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+      .map((item) => ({
+        ...item,
+        teacherName: item.teacherName
+          || state.teachers.find((candidate) => candidate.id === item.teacherId)?.name
+          || "未知教师",
+        schoolName: item.schoolName
+          || schools.find((school) => school.id === item.schoolId)?.name
+          || "未知学校",
+      }));
   });
 
   app.post("/api/auth/applications/:id/review", async (request) => {
@@ -697,7 +746,11 @@ export async function registerAuthRoutes(
     return withSerializedState(store, (state) => {
       const applications = state.applications as Array<Record<string, unknown>>;
       const application = applications.find((item) => item.id === id);
-      if (!application || application.schoolId !== reviewer.schoolId) throw new Error("申请记录不存在");
+      const platformAdmin = activeRole(reviewer) === "platform_admin";
+      if (!application || (!platformAdmin && application.schoolId !== reviewer.schoolId)) {
+        throw new Error("申请记录不存在");
+      }
+      if (application.status !== "pending") throw new Error("申请记录不存在或已处理");
       application.status = approved ? "approved" : "rejected";
       application.reviewedAt = new Date().toISOString();
       application.reviewedBy = reviewer.id;
@@ -709,10 +762,14 @@ export async function registerAuthRoutes(
           state,
           teachers[index],
           String(application.schoolId),
-          String(application.employeeNo),
-          String(application.subject),
+          typeof application.employeeNo === "string" ? application.employeeNo : "",
+          Array.isArray(application.subjects)
+            ? application.subjects.filter((item): item is string => typeof item === "string")
+            : [String(application.subject)],
           Array.isArray(application.teachingGrades) ? application.teachingGrades as string[] : [],
           Array.isArray(application.teachingClassIds) ? application.teachingClassIds as string[] : [],
+          typeof application.position === "string" ? application.position : "",
+          application.requestSchoolAdmin === true,
         );
       }
       return { ok: true };

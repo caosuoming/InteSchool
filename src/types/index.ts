@@ -22,6 +22,7 @@ export interface TeacherAffiliation {
   /** 学校名称（冗余，用于快速展示） */
   schoolName: string | null;
   subject: string;
+  subjects?: string[];
   /** 当前单位任教年级 */
   teachingGrades?: string[];
   /** 当前单位任教班级 ID */
@@ -29,6 +30,7 @@ export interface TeacherAffiliation {
   /** 当前单位担任班主任的班级 ID */
   homeroomClassIds?: string[];
   employeeNo?: string;
+  position?: string;
   status: TeacherStatus;
   role: "teacher" | "school_admin" | "platform_admin";
   /** 教师在该单位担任的身份（可多个） */
@@ -74,6 +76,8 @@ export interface Teacher {
   /** @deprecated 使用 affiliations 代替 */
   subject: string;
   /** @deprecated 使用 affiliations 代替 */
+  subjects?: string[];
+  /** @deprecated 使用 affiliations 代替 */
   teachingGrades?: string[];
   /** @deprecated 使用 affiliations 代替 */
   teachingClassIds?: string[];
@@ -81,6 +85,8 @@ export interface Teacher {
   homeroomClassIds?: string[];
   /** @deprecated 使用 affiliations 代替 */
   employeeNo?: string;
+  /** @deprecated 使用 affiliations 代替 */
+  position?: string;
   /** @deprecated 使用 affiliations 代替 */
   status: TeacherStatus;
   /** @deprecated 使用 affiliations 代替 */
@@ -177,12 +183,21 @@ export interface SchoolCreationApplication {
 export interface SchoolApplication {
   id: string;
   teacherId: string;
+  teacherName?: string;
   schoolId: string;
-  employeeNo: string;
+  schoolName?: string;
+  employeeNo?: string;
   subject: string;
-  proofFileName: string;
+  subjects: string[];
+  teachingGrades?: string[];
+  position?: string;
+  proofFileId?: string | null;
+  proofFileName?: string;
+  requestSchoolAdmin?: boolean;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
 }
 
 export type ClassType = "school" | "personal";

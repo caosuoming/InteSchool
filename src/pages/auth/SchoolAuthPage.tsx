@@ -21,6 +21,19 @@ import { toast } from "@/stores/ui";
 import { Button, Input, Modal, Select, Textarea } from "@/components/ui";
 import type { School, SchoolCreationApplication } from "@/types";
 import { cn } from "@/lib/utils";
+import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
+
+const POSITION_OPTIONS = [
+  { value: "", label: "不填写" },
+  { value: "普通教师", label: "普通教师" },
+  { value: "班主任", label: "班主任" },
+  { value: "备课组长", label: "备课组长" },
+  { value: "学科组长", label: "学科组长" },
+  { value: "年级组长", label: "年级组长" },
+  { value: "教务主任", label: "教务主任" },
+  { value: "副校长", label: "副校长" },
+  { value: "校长", label: "校长" },
+];
 
 export default function SchoolAuthPage() {
   const navigate = useNavigate();
@@ -31,8 +44,11 @@ export default function SchoolAuthPage() {
   const [keyword, setKeyword] = useState("");
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [employeeNo, setEmployeeNo] = useState("");
-  const [subject, setSubject] = useState("数学");
+  const [subjects, setSubjects] = useState<string[]>([]);
+  const [teachingGrades, setTeachingGrades] = useState<string[]>([]);
+  const [position, setPosition] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [requestSchoolAdmin, setRequestSchoolAdmin] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creationOpen, setCreationOpen] = useState(false);
@@ -81,6 +97,10 @@ export default function SchoolAuthPage() {
     if (file) setProofFile(file);
   };
 
+  const toggleValue = (value: string, values: string[], setter: (next: string[]) => void) => {
+    setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  };
+
   const openCreationApplication = () => {
     setSchoolDraft((draft) => ({ ...draft, name: keyword.trim() || draft.name }));
     setCreationOpen(true);
@@ -107,30 +127,30 @@ export default function SchoolAuthPage() {
 
   const handleSubmit = async () => {
     if (!teacher || !selectedSchool) return;
-    if (!employeeNo.trim()) {
-      toast.error("请填写工号");
-      return;
-    }
-    if (!proofFile) {
-      toast.error("请上传教师证明");
+    if (subjects.length === 0) {
+      toast.error("请至少选择一个任教学科");
       return;
     }
     setSubmitting(true);
     try {
-      const uploaded = await uploadFile(proofFile);
+      const uploaded = proofFile ? await uploadFile(proofFile) : null;
       const application = await authService.applySchool(
         teacher.id,
         selectedSchool.id,
-        employeeNo,
-        subject,
-        uploaded.id,
+        employeeNo.trim(),
+        subjects,
+        uploaded?.id,
+        teachingGrades,
+        [],
+        position,
+        requestSchoolAdmin,
       );
       if (application.status === "approved") {
         toast.success("认证已通过", `欢迎加入 ${selectedSchool.name}`);
         await refresh();
         navigate(addingSchool ? "/profile" : "/dashboard");
       } else {
-        toast.success("申请已提交", "学校管理员审核通过后即可切换到该学校");
+        toast.success("申请已提交", "本校管理员或平台超级管理员审核通过后即可切换到该学校");
         if (addingSchool) navigate("/profile");
       }
     } catch (e) {
@@ -311,32 +331,75 @@ export default function SchoolAuthPage() {
                   </div>
 
                   <Input
-                    label="工号"
+                    label="工号（可选）"
                     placeholder="如 BJ04-MATH-018"
                     value={employeeNo}
                     onChange={(e) => setEmployeeNo(e.target.value)}
                   />
 
+                  <fieldset>
+                    <legend className="block text-sm font-medium text-ink-700 mb-1.5">
+                      任教学科 <span className="text-red-500">*</span>
+                    </legend>
+                    <div className="flex flex-wrap gap-2">
+                      {SUBJECT_OPTIONS.map((item) => (
+                        <label
+                          key={item}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors",
+                            subjects.includes(item)
+                              ? "border-gold-400 bg-gold-50 text-ink-900"
+                              : "border-ink-200 bg-white text-ink-600 hover:border-ink-300",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={subjects.includes(item)}
+                            onChange={() => toggleValue(item, subjects, setSubjects)}
+                          />
+                          {item}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-ink-400 mt-1.5">至少选择一项，可多选</p>
+                  </fieldset>
+
+                  <fieldset>
+                    <legend className="block text-sm font-medium text-ink-700 mb-1.5">
+                      任教年级（可选）
+                    </legend>
+                    <div className="flex flex-wrap gap-2">
+                      {GRADE_OPTIONS.map((item) => (
+                        <label
+                          key={item}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors",
+                            teachingGrades.includes(item)
+                              ? "border-gold-400 bg-gold-50 text-ink-900"
+                              : "border-ink-200 bg-white text-ink-600 hover:border-ink-300",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={teachingGrades.includes(item)}
+                            onChange={() => toggleValue(item, teachingGrades, setTeachingGrades)}
+                          />
+                          {item}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+
                   <Select
-                    label="任教学科"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    options={[
-                      { value: "数学", label: "数学" },
-                      { value: "物理", label: "物理" },
-                      { value: "化学", label: "化学" },
-                      { value: "生物", label: "生物" },
-                      { value: "语文", label: "语文" },
-                      { value: "英语", label: "英语" },
-                      { value: "历史", label: "历史" },
-                      { value: "地理", label: "地理" },
-                      { value: "政治", label: "政治" },
-                    ]}
+                    label="职务（可选）"
+                    value={position}
+                    onChange={(e) => setPosition(e.target.value)}
+                    options={POSITION_OPTIONS}
                   />
 
                   <div>
                     <label className="block text-sm font-medium text-ink-700 mb-1.5">
-                      教师证明材料
+                      教师证明材料（可选）
                     </label>
                     <label className="flex flex-col items-center justify-center px-4 py-6 rounded-md border border-dashed border-ink-200 hover:border-gold-400 hover:bg-gold-50/30 cursor-pointer transition-colors">
                       <Upload className="w-5 h-5 text-ink-400 mb-2" />
@@ -352,6 +415,19 @@ export default function SchoolAuthPage() {
                     </label>
                   </div>
 
+                  <label className="flex items-start gap-3 rounded-md border border-ink-200 bg-white p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={requestSchoolAdmin}
+                      onChange={(event) => setRequestSchoolAdmin(event.target.checked)}
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-ink-700">申请成为本校管理员（可选）</span>
+                      <span className="block text-xs text-ink-400 mt-0.5">审核通过后将同时获得本校管理权限</span>
+                    </span>
+                  </label>
+
                   <Button
                     variant="gold"
                     size="lg"
@@ -364,7 +440,7 @@ export default function SchoolAuthPage() {
                   </Button>
 
                   <p className="text-xs text-ink-400 text-center">
-                    提交后将由学校管理员审核
+                    提交后由本校管理员或平台超级管理员审核
                   </p>
                 </div>
               )}
