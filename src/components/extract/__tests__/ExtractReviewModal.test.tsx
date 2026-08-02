@@ -105,6 +105,7 @@ describe("ExtractReviewModal", () => {
     mocks.findSimilarQuestions.mockResolvedValue([]);
     mocks.confirmExtract.mockResolvedValue({
       createdQuestions: [{ id: "question-created" }],
+      mergedQuestions: [],
       createdMaterials: [{ id: "material-created" }],
       questionIdByItemId: { "block-question": "question-created" },
       materialIdByItemId: { "block-knowledge": "material-created" },
@@ -325,10 +326,12 @@ describe("ExtractReviewModal", () => {
     });
   });
 
-  it("requires a decision for highly similar questions before importing", async () => {
+  it("opens duplicate review and submits field-level merge choices", async () => {
     const user = userEvent.setup();
     const duplicateQuestion = {
       id: "question-existing",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
       stem: "示例题目",
       answer: "A",
       analysis: "已有解析",
@@ -356,16 +359,75 @@ describe("ExtractReviewModal", () => {
     await user.click(screen.getByRole("button", { name: "确认入库" }));
 
     expect(mocks.confirmExtract).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "重题处理" })).toBeInTheDocument();
     expect(await screen.findByText(/相似度 96\.0%/)).toBeInTheDocument();
     expect(screen.getByText(/question-existing/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("相似题 1 保留上传题答案")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "复用已有题" }));
-    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await user.click(screen.getByRole("button", { name: "相似题 1 点击上传题题干展开详情" }));
+    await user.click(screen.getByLabelText("相似题 1 选择上传题题干"));
+    await user.click(screen.getByLabelText("相似题 1 保留上传题答案"));
+    await user.click(screen.getByRole("button", { name: "相似题 1 合并" }));
+    await user.click(screen.getByRole("button", { name: "完成重题处理并入库" }));
 
     await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
     expect(mocks.confirmExtract.mock.calls[0][2].questions[0]).toMatchObject({
       status: "duplicate",
-      duplicateOf: duplicateQuestion,
+      duplicateAction: "merge",
+      duplicateTargetId: "question-existing",
+      duplicateFields: {
+        stem: "incoming",
+        answer: "both",
+        analysis: "existing",
+        summary: "existing",
+      },
+    });
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].duplicateOf).toBeUndefined();
+  });
+
+  it("disables merging another teacher's question and allows adding a new one", async () => {
+    const user = userEvent.setup();
+    mocks.findSimilarQuestions.mockResolvedValue([{
+      question: {
+        id: "question-shared",
+        teacherId: "teacher-2",
+        schoolId: "school-1",
+        stem: "示例题目",
+        answer: "A",
+        analysis: "共享解析",
+      },
+      similarity: 0.93,
+    }]);
+
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+      />,
+    );
+
+    await screen.findByText("题目 1");
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+
+    const mergeButton = await screen.findByRole("button", { name: "相似题 1 合并" });
+    expect(mergeButton).toBeDisabled();
+    expect(mergeButton).toHaveAttribute("title", "只能合并到自己的题目");
+
+    await user.click(screen.getByRole("button", { name: "相似题 1 新增" }));
+    await user.click(screen.getByRole("button", { name: "完成重题处理并入库" }));
+
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0]).toMatchObject({
+      status: "confirmed",
+      duplicateAction: "add",
     });
   });
 

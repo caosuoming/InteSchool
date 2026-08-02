@@ -23,6 +23,7 @@ export const extractService = {
     sourceResourceId: string,
   ): Promise<{
     createdQuestions: Question[];
+    mergedQuestions: Question[];
     createdMaterials: Material[];
     questionIdByItemId: Record<string, string>;
     materialIdByItemId: Record<string, string>;

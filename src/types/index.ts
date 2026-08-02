@@ -1464,6 +1464,15 @@ export interface AnswerRecord {
 
 // ============ AI 拆解类型 ============
 
+export type DuplicateQuestionFieldChoice = "existing" | "incoming" | "both";
+
+export interface DuplicateQuestionMergeFields {
+  stem: Exclude<DuplicateQuestionFieldChoice, "both">;
+  answer: DuplicateQuestionFieldChoice;
+  analysis: DuplicateQuestionFieldChoice;
+  summary: DuplicateQuestionFieldChoice;
+}
+
 /** 拆解出的题目项（用于审阅确认） */
 export interface ExtractedQuestionItem {
   id: string;
@@ -1476,6 +1485,9 @@ export interface ExtractedQuestionItem {
   difficulty: number;
   status: "new" | "duplicate" | "confirmed" | "edited";
   duplicateOf?: Question;
+  duplicateAction?: "merge" | "add";
+  duplicateTargetId?: string;
+  duplicateFields?: DuplicateQuestionMergeFields;
   createdQuestion?: Question;
 }
 
