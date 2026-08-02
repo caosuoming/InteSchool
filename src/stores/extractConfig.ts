@@ -66,6 +66,23 @@ const defaultAnswerKeywords = [
   "答：",
 ];
 
+const analysisAsSummaryKeywords = [
+  "分析",
+  "【分析】",
+  "分析：",
+];
+
+function isAnalysisAsSummaryKeyword(keyword: string): boolean {
+  return keyword
+    .replace(/\s+/g, "")
+    .replace(/^[【［[(（]+/, "")
+    .replace(/[】］\])）:：]+$/, "") === "分析";
+}
+
+function uniqueKeywords(keywords: string[]): string[] {
+  return keywords.filter((keyword, index) => keyword && keywords.indexOf(keyword) === index);
+}
+
 const defaultAnalysisKeywords = [
   "解析",
   "【解析】",
@@ -73,9 +90,6 @@ const defaultAnalysisKeywords = [
   "详解",
   "【详解】",
   "详解：",
-  "分析",
-  "【分析】",
-  "分析：",
   "解：",
   "【解】",
   "解题思路",
@@ -91,6 +105,7 @@ const defaultSummaryKeywords = [
   "点评：",
   "归纳",
   "【归纳】",
+  ...analysisAsSummaryKeywords,
 ];
 
 const defaultHeadingKeywords = [
@@ -286,6 +301,21 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
           essayKeywords: defaultEssayKeywords,
         }),
     }),
-    { name: "zhiti:extract-config" },
+    {
+      name: "zhiti:extract-config",
+      version: 1,
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<ExtractConfigState>;
+        return {
+          ...state,
+          analysisKeywords: (state.analysisKeywords || defaultAnalysisKeywords)
+            .filter((keyword) => !isAnalysisAsSummaryKeyword(keyword)),
+          summaryKeywords: uniqueKeywords([
+            ...(state.summaryKeywords || defaultSummaryKeywords),
+            ...analysisAsSummaryKeywords,
+          ]),
+        };
+      },
+    },
   ),
 );
