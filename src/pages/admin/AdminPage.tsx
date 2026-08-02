@@ -68,6 +68,14 @@ const allAdminItems: AdminItem[] = [
     adminOnly: true,
   },
   {
+    icon: UserPlus,
+    title: "教师入校审核",
+    description: "审核教师加入学校的申请及其任教学科、年级和可选管理员权限",
+    href: "/admin/teacher-school-applications",
+    schoolOnly: true,
+    adminOnly: true,
+  },
+  {
     icon: ShieldCheck,
     title: "学校管理员审核",
     description: "审核各学校教师提交的学校管理员权限申请",

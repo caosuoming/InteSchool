@@ -6,9 +6,11 @@ export interface TeacherRecord {
   avatar: string;
   schoolId: string | null;
   subject: string;
+  subjects?: string[];
   teachingGrades?: string[];
   teachingClassIds?: string[];
   homeroomClassIds?: string[];
+  position?: string;
   status: "pending" | "active" | "rejected";
   role: "teacher" | "school_admin" | "platform_admin";
   roles: string[];

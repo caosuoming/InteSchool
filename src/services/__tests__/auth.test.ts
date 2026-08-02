@@ -182,8 +182,12 @@ describe("auth service", () => {
       "ignored-teacher",
       "school-1",
       "EMP-001",
-      "数学",
+      ["数学", "物理"],
       "file-1",
+      ["高一", "高二"],
+      [],
+      "年级组长",
+      true,
     )).resolves.toEqual(application);
     await expect(authService.getApplicationsByTeacher("ignored-teacher")).resolves.toEqual([application]);
     await expect(authService.getPendingApplications("ignored-school")).resolves.toEqual([application]);
@@ -194,10 +198,12 @@ describe("auth service", () => {
       body: JSON.stringify({
         schoolId: "school-1",
         employeeNo: "EMP-001",
-        subject: "数学",
+        subjects: ["数学", "物理"],
         proofFileId: "file-1",
-        teachingGrades: [],
+        teachingGrades: ["高一", "高二"],
         teachingClassIds: [],
+        position: "年级组长",
+        requestSchoolAdmin: true,
       }),
     }, true);
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/applications/mine");

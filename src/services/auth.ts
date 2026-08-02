@@ -140,14 +140,26 @@ export const authService = {
     _teacherId: string,
     schoolId: string,
     employeeNo: string,
-    subject: string,
-    proofFileId: string,
+    subjects: string[] | string,
+    proofFileId?: string,
     teachingGrades: string[] = [],
     teachingClassIds: string[] = [],
+    position = "",
+    requestSchoolAdmin = false,
   ): Promise<SchoolApplication> {
+    const normalizedSubjects = Array.isArray(subjects) ? subjects : [subjects];
     return apiRequest<SchoolApplication>("/api/auth/applications", {
       method: "POST",
-      body: JSON.stringify({ schoolId, employeeNo, subject, proofFileId, teachingGrades, teachingClassIds }),
+      body: JSON.stringify({
+        schoolId,
+        employeeNo,
+        subjects: normalizedSubjects,
+        proofFileId,
+        teachingGrades,
+        teachingClassIds,
+        position,
+        requestSchoolAdmin,
+      }),
     }, true);
   },
 

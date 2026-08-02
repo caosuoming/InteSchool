@@ -1906,6 +1906,153 @@ describe("production backend", () => {
     expect(refreshed.json<{ teacher: { schoolId: string } }>().teacher.schoolId).toBe("sch-1");
   });
 
+  it("supports multi-subject optional applications and platform-wide review", async () => {
+    const beforeSchool = built.store.loadState();
+    const stateWithSchool = structuredClone(beforeSchool);
+    (stateWithSchool.schools as Array<Record<string, unknown>>).push({
+      id: "sch-3",
+      name: "跨校审核测试学校",
+      code: "CROSS",
+      logo: "跨",
+      description: "用于测试平台管理员跨校审核",
+      teacherCount: 0,
+      studentCount: 0,
+      city: "南京",
+    });
+    built.store.saveState(beforeSchool, stateWithSchool);
+
+    const applicant = await register(built.app, "optional-applicant@example.com");
+    const missingSubjects = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/applications",
+      headers: {
+        cookie: applicant.cookie,
+        "x-inteschool-csrf": applicant.csrfToken,
+      },
+      payload: { schoolId: "sch-3" },
+    });
+    expect(missingSubjects.statusCode).toBe(400);
+
+    const apply = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/applications",
+      headers: {
+        cookie: applicant.cookie,
+        "x-inteschool-csrf": applicant.csrfToken,
+      },
+      payload: {
+        schoolId: "sch-3",
+        subjects: ["数学", "物理"],
+        teachingGrades: ["高一", "高二"],
+        position: "年级组长",
+        requestSchoolAdmin: true,
+      },
+    });
+    expect(apply.statusCode, apply.body).toBe(200);
+    const application = apply.json<{
+      id: string;
+      employeeNo: string;
+      subjects: string[];
+      proofFileId: null;
+      requestSchoolAdmin: boolean;
+    }>();
+    expect(application).toMatchObject({
+      employeeNo: "",
+      subjects: ["数学", "物理"],
+      proofFileId: null,
+      requestSchoolAdmin: true,
+    });
+
+    const schoolAdmin = await login(built.app);
+    const schoolScopedPending = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/applications/pending",
+      headers: { cookie: schoolAdmin.cookie },
+    });
+    expect(schoolScopedPending.statusCode).toBe(200);
+    expect(schoolScopedPending.json<Array<{ id: string }>>().map((item) => item.id))
+      .not.toContain(application.id);
+
+    const schoolAdminReview = await built.app.inject({
+      method: "POST",
+      url: `/api/auth/applications/${application.id}/review`,
+      headers: {
+        cookie: schoolAdmin.cookie,
+        "x-inteschool-csrf": schoolAdmin.csrfToken,
+      },
+      payload: { approved: true },
+    });
+    expect(schoolAdminReview.statusCode).toBe(404);
+
+    const beforePromotion = built.store.loadState();
+    const promotedState = structuredClone(beforePromotion);
+    const platformTeacher = promotedState.teachers.find((item) => item.id === "tch-1")!;
+    platformTeacher.role = "platform_admin";
+    platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === platformTeacher.currentAffiliationId
+      ? { ...item, role: "platform_admin" }
+      : item);
+    built.store.saveState(beforePromotion, promotedState);
+
+    const platformAdmin = await login(built.app);
+    const platformPending = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/applications/pending",
+      headers: { cookie: platformAdmin.cookie },
+    });
+    expect(platformPending.statusCode).toBe(200);
+    expect(platformPending.json<Array<Record<string, unknown>>>()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: application.id,
+        teacherName: "测试教师",
+        schoolName: "跨校审核测试学校",
+        subjects: ["数学", "物理"],
+      }),
+    ]));
+
+    const approved = await built.app.inject({
+      method: "POST",
+      url: `/api/auth/applications/${application.id}/review`,
+      headers: {
+        cookie: platformAdmin.cookie,
+        "x-inteschool-csrf": platformAdmin.csrfToken,
+      },
+      payload: { approved: true },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    const refreshed = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/current",
+      headers: { cookie: applicant.cookie },
+    });
+    const teacher = refreshed.json<{
+      teacher: {
+        schoolId: string;
+        subject: string;
+        subjects: string[];
+        position: string;
+        role: string;
+        affiliations: Array<Record<string, unknown>>;
+      };
+    }>().teacher;
+    expect(teacher).toMatchObject({
+      schoolId: "sch-3",
+      subject: "数学",
+      subjects: ["数学", "物理"],
+      position: "年级组长",
+      role: "school_admin",
+    });
+    expect(teacher.affiliations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        schoolId: "sch-3",
+        subjects: ["数学", "物理"],
+        teachingGrades: ["高一", "高二"],
+        position: "年级组长",
+        role: "school_admin",
+      }),
+    ]));
+  });
+
   it("persists and filters resource semesters", async () => {
     const session = await login(built.app);
     const teacherId = String(session.teacher.id);
