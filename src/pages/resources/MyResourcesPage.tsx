@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { extractStoredFile } from "@/services/api";
 import { questionService } from "@/services/question";
 import { examPaperService } from "@/services/examPaper";
 import { coursewareService } from "@/services/courseware";
@@ -39,6 +40,7 @@ import type {
   CoursewareType, MaterialType, ShareableResourceType,
   Reflection, Basket, AnyClass, Student, AnswerRecord,
   DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
+  LessonDocumentBlock,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { genId } from "@/lib/service-utils";
@@ -65,9 +67,11 @@ import {
   type BatchResourceRef,
 } from "@/pages/resources/batch-resource";
 import {
+  currentParseConfig,
   isExtractTaskRunning,
   useExtractTasksStore,
 } from "@/stores/extractTasks";
+import { parseDocumentBlocks, type DocumentBlock } from "@/lib/document-block-parser";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
@@ -131,6 +135,53 @@ const materialTypeLabel: Record<MaterialType, string> = {
   file: "文件",
   knowledgeBlock: "知识块",
 };
+
+function hasLectureLessonBody(sections: Lecture["sections"]): boolean {
+  return sections.some((section) =>
+    section.type === "question"
+    || section.type === "knowledge"
+    || hasLectureLessonBody(section.children || []));
+}
+
+function lessonDocumentBlocks(blocks: DocumentBlock[]): LessonDocumentBlock[] {
+  return blocks.flatMap<LessonDocumentBlock>((block) => {
+    if (block.type === "knowledge") {
+      return [{
+        id: block.id,
+        type: "knowledge" as const,
+        title: block.knowledgeTitle,
+        content: block.content,
+      }];
+    }
+    if (block.type !== "question") return [];
+    return [{
+      id: block.id,
+      type: "question" as const,
+      content: block.content,
+      questionType: block.questionType,
+      options: block.options,
+      answer: block.answer,
+      analysis: block.analysis,
+    }];
+  });
+}
+
+async function fallbackLessonBlocks(
+  resource: ExamPaper | Lecture,
+  resourceType: "examPaper" | "lecture",
+): Promise<LessonDocumentBlock[]> {
+  const hasBody = resourceType === "examPaper"
+    ? ((resource as ExamPaper).questions.length > 0
+      || Boolean((resource as ExamPaper).contentBlocks?.some((block) =>
+        block.type === "question" || block.type === "knowledge")))
+    : hasLectureLessonBody((resource as Lecture).sections);
+  if (hasBody || !resource.originalFileUrl) return [];
+
+  const extracted = await extractStoredFile(resource.originalFileUrl);
+  const blocks = lessonDocumentBlocks(parseDocumentBlocks(extracted.text, currentParseConfig()));
+  if (blocks.length === 0) throw new Error("文档中未识别出题目或知识块，请先进行文档拆解");
+  return blocks;
+}
 
 interface OriginalFileRowProps {
   fileUrl: string;
@@ -2025,10 +2076,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       onAddToLesson={async () => {
                         if (!teacher) return;
                         try {
+                          const documentBlocks = await fallbackLessonBlocks(mainLecture, "lecture");
                           const cw = await lessonCoursewareService.createFromLecture(
                             teacher.id,
                             teacher.schoolId!,
-                            mainLecture,
+                            mainLecture.id,
+                            documentBlocks,
                           );
                           toast.success("已添加到上课", "可在「我的上课」中编辑课件");
                           navigate(`/my-lessons/${cw.id}/edit`);
@@ -2100,10 +2153,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         onAddToLesson={async () => {
                           if (!teacher) return;
                           try {
+                            const documentBlocks = await fallbackLessonBlocks(copy, "examPaper");
                             const cw = await lessonCoursewareService.createFromExamPaper(
                               teacher.id,
                               teacher.schoolId!,
-                              copy,
+                              copy.id,
+                              documentBlocks,
                             );
                             toast.success("已添加到上课", "可在「我的上课」中编辑课件");
                             navigate(`/my-lessons/${cw.id}/edit`);
@@ -2163,10 +2218,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           onAddToLesson={async () => {
                             if (!teacher) return;
                             try {
+                              const documentBlocks = await fallbackLessonBlocks(item, "examPaper");
                               const cw = await lessonCoursewareService.createFromExamPaper(
                                 teacher.id,
                                 teacher.schoolId!,
-                                item,
+                                item.id,
+                                documentBlocks,
                               );
                               toast.success("已添加到上课", "可在「我的上课」中编辑课件");
                               navigate(`/my-lessons/${cw.id}/edit`);

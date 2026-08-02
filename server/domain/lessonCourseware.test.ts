@@ -256,15 +256,23 @@ describe("courseware lesson flow", () => {
     const state = createState();
     state.questions = [question];
     const paper = sourceExamPaper(question);
+    paper.questions = Array.from({ length: 19 }, (_, index) => ({
+      ...paper.questions[0],
+      id: `paper-question-${index + 1}`,
+      questionId: index === 0 ? question.id : undefined,
+      stem: index === 0 ? paper.questions[0].stem : `第 ${index + 1} 题题干`,
+      options: index === 0 ? paper.questions[0].options : undefined,
+    }));
+    state.examPapers = [paper];
 
     await runWithState(state, async () => {
       const lesson = await lessonCoursewareService.createFromExamPaper(
         "teacher-1",
         "school-1",
-        paper,
+        paper.id,
       );
 
-      expect(lesson.slides).toHaveLength(2);
+      expect(lesson.slides).toHaveLength(20);
       expect(lesson.slides[0]).toMatchObject({
         type: "section",
         title: paper.title,
@@ -284,6 +292,104 @@ describe("courseware lesson flow", () => {
         expect.objectContaining({ kind: "image", src: "/api/files/option-b" }),
       ]);
       expect(new Set(lesson.slides[1].elements?.map((element) => element.y)).size).toBe(3);
+      expect(lesson.slides.at(-1)).toMatchObject({
+        type: "question",
+        title: "第 19 题",
+      });
+    });
+  });
+
+  it("preserves question and knowledge block order from an extracted paper", async () => {
+    const state = createState();
+    const paper = sourceExamPaper();
+    paper.contentBlocks = [
+      { id: "heading-1", type: "heading", content: "一、选择题" },
+      {
+        id: "knowledge-1",
+        type: "knowledge",
+        title: "函数定义",
+        content: "函数描述两个变量之间的对应关系。",
+      },
+      {
+        id: "question-1",
+        type: "question",
+        content: paper.questions[0].stem,
+        examPaperQuestionId: paper.questions[0].id,
+      },
+      { id: "text-1", type: "text", content: "本段不单独生成课件页。" },
+    ];
+    paper.questions.push({
+      ...paper.questions[0],
+      id: "paper-question-2",
+      questionId: undefined,
+      stem: "第二道未出现在结构块中的题目",
+    });
+    state.examPapers = [paper];
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1",
+        "school-1",
+        paper.id,
+      );
+
+      expect(lesson.slides).toHaveLength(4);
+      expect(lesson.slides.map((slide) => slide.type)).toEqual([
+        "section",
+        "knowledge",
+        "question",
+        "question",
+      ]);
+      expect(lesson.slides[1]).toMatchObject({
+        title: "函数定义",
+        content: "函数描述两个变量之间的对应关系。",
+      });
+      expect(lesson.slides[3]).toMatchObject({
+        title: "第 2 题",
+        questionSnapshot: { stem: "第二道未出现在结构块中的题目" },
+      });
+    });
+  });
+
+  it("creates one page per parsed question when an original paper has not been ingested", async () => {
+    const state = createState();
+    const paper = sourceExamPaper();
+    paper.questions = [];
+    paper.originalFileUrl = "/api/files/paper-file";
+    paper.originalFileName = "泉州一模.docx";
+    state.examPapers = [paper];
+    const documentBlocks = Array.from({ length: 19 }, (_, index) => ({
+      id: `parsed-question-${index + 1}`,
+      type: "question" as const,
+      content: `第 ${index + 1} 题题干`,
+      questionType: "short" as const,
+      answer: `${index + 1}`,
+      analysis: `第 ${index + 1} 题解析`,
+    }));
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1",
+        "school-1",
+        paper.id,
+        documentBlocks,
+      );
+
+      expect(lesson.slides).toHaveLength(20);
+      expect(lesson.slides[0]).toMatchObject({ type: "section", title: paper.title });
+      expect(lesson.slides[1]).toMatchObject({
+        type: "question",
+        title: "第 1 题",
+        questionSnapshot: {
+          stem: "第 1 题题干",
+          answer: "1",
+          analysis: "第 1 题解析",
+        },
+      });
+      expect(lesson.slides[19]).toMatchObject({
+        type: "question",
+        title: "第 19 题",
+      });
     });
   });
 
@@ -292,23 +398,40 @@ describe("courseware lesson flow", () => {
     const question = sourceQuestion();
     state.questions = [question];
     const lecture = sourceLecture();
+    lecture.sections[0].children.unshift(
+      {
+        id: "section-knowledge",
+        title: "函数定义",
+        type: "knowledge",
+        content: "函数是两个集合之间的对应关系。",
+        children: [],
+      },
+      {
+        id: "section-text",
+        title: "过渡正文",
+        type: "text",
+        content: "这段正文不单独生成课件页。",
+        children: [],
+      },
+    );
+    state.lectures = [lecture];
 
     await runWithState(state, async () => {
       const lesson = await lessonCoursewareService.createFromLecture(
         "teacher-1",
         "school-1",
-        lecture,
+        lecture.id,
       );
 
       expect(lesson.slides).toHaveLength(3);
       expect(lesson.slides[0]).toMatchObject({
         type: "section",
-        title: lecture.originalFileName,
+        title: lecture.title,
       });
       expect(lesson.slides[1]).toMatchObject({
-        type: "section",
-        title: "函数概念",
-        content: "本章介绍函数概念。",
+        type: "knowledge",
+        title: "函数定义",
+        content: "函数是两个集合之间的对应关系。",
       });
       expect(lesson.slides[2]).toMatchObject({
         type: "question",
