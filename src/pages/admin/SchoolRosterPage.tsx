@@ -1,10 +1,12 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   ArchiveRestore,
-  ChevronRight,
   Download,
   FileSpreadsheet,
   GraduationCap,
+  Layers,
+  Pencil,
   Plus,
   RotateCcw,
   Trash2,
@@ -46,6 +48,7 @@ function gradeStatusLabel(grade: SchoolGrade): string {
 }
 
 export default function SchoolRosterPage() {
+  const navigate = useNavigate();
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const affiliation = getCurrentAffiliation();
   const schoolId = affiliation?.schoolId || "";
@@ -66,6 +69,13 @@ export default function SchoolRosterPage() {
   const [gradeLevel, setGradeLevel] = useState("高一");
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [classNames, setClassNames] = useState("");
+  const [editStudentOpen, setEditStudentOpen] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [editStudentName, setEditStudentName] = useState("");
+  const [editStudentNo, setEditStudentNo] = useState("");
+  const [editStudentSubjectSelection, setEditStudentSubjectSelection] = useState("");
+  const [editStudentGrade, setEditStudentGrade] = useState("");
+  const [editStudentGender, setEditStudentGender] = useState<"male" | "female">("male");
 
   const load = useCallback(async () => {
     if (!schoolId) return;
@@ -182,6 +192,48 @@ export default function SchoolRosterPage() {
     await load();
   });
 
+  const openEditStudent = (item: Student) => {
+    setEditingStudent(item);
+    setEditStudentName(item.name);
+    setEditStudentNo(item.studentNo || "");
+    setEditStudentSubjectSelection(item.subjectSelection || "");
+    setEditStudentGrade(item.grade || selectedGrade?.grade || "");
+    setEditStudentGender(item.gender || "male");
+    setEditStudentOpen(true);
+  };
+
+  const handleEditStudent = () => run(async () => {
+    if (!editingStudent) return;
+    const name = editStudentName.trim();
+    const studentNo = editStudentNo.trim();
+    if (!name) {
+      toast.error("请填写学生姓名");
+      return;
+    }
+    if (studentNo) {
+      const duplicate = students.find((item) =>
+        item.id !== editingStudent.id
+        && item.status !== "deleted"
+        && item.studentNo === studentNo,
+      );
+      if (duplicate) {
+        toast.error("学号已存在", `与“${duplicate.name}”的学号重复`);
+        return;
+      }
+    }
+    await classService.updateStudent(editingStudent.id, {
+      name,
+      studentNo,
+      subjectSelection: editStudentSubjectSelection.trim() || undefined,
+      grade: editStudentGrade,
+      gender: editStudentGender,
+    });
+    toast.success(`已更新学生“${name}”`);
+    setEditStudentOpen(false);
+    setEditingStudent(null);
+    await load();
+  });
+
   const handleRestoreClass = (item: SchoolClass) => run(async () => {
     const result = await classService.restoreSchoolClass(item.id);
     toast.success(`已恢复班级“${result.class.name}”`, `同时恢复 ${result.restoredStudents} 名学生`);
@@ -206,6 +258,10 @@ export default function SchoolRosterPage() {
         icon={<GraduationCap className="h-5 w-5" />}
         action={
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => navigate("/classes")}>
+              <Layers className="h-4 w-4" />
+              个人教学班
+            </Button>
             <Button variant={showRecycleBin ? "ink" : "outline"} onClick={() => setShowRecycleBin((value) => !value)}>
               <ArchiveRestore className="h-4 w-4" />
               回收站 ({recycleBin.classes.length + recycleBin.students.length})
@@ -260,106 +316,123 @@ export default function SchoolRosterPage() {
           </div>
         </Card>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-[260px_300px_minmax(0,1fr)]">
-          <Card className="h-fit">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-semibold text-ink-900">年级</div>
-              <Badge>{grades.length} 个</Badge>
-            </div>
-            <div className="space-y-1.5">
-              {grades.map((item) => {
-                const count = classes.filter((classItem) => classBelongsToGrade(classItem, item)).length;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setSelectedGradeId(item.id)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-lg border px-3 py-3 text-left transition-colors",
-                      selectedGradeId === item.id
-                        ? "border-gold-300 bg-gold-50"
-                        : "border-transparent hover:bg-mist",
-                    )}
-                  >
-                    <GraduationCap className="h-4 w-4 shrink-0 text-gold-600" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-ink-900">{item.name}</div>
-                      <div className="mt-0.5 text-xs text-ink-400">{count} 个班级 · {gradeStatusLabel(item)}</div>
-                    </div>
-                    <ChevronRight className="h-3.5 w-3.5 text-ink-300" />
-                  </button>
-                );
-              })}
-              {grades.length === 0 && (
-                <EmptyState icon={<GraduationCap className="h-7 w-7" />} title="尚未创建年级" description="先创建如“2027届高二”的年级。" />
+        <div className="space-y-5">
+          <Card>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-ink-900">年级</div>
+                <Badge>{grades.length} 个</Badge>
+              </div>
+              {selectedGrade && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button size="sm" variant="outline" onClick={() => setClassModalOpen(true)} disabled={selectedGrade.status === "graduated"}>
+                    <Plus className="h-3.5 w-3.5" />批量班级
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleAdvanceGrade} disabled={selectedGrade.grade === "高三" || selectedGrade.status === "graduated"} loading={working}>
+                    <GraduationCap className="h-3.5 w-3.5" />升学年
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => downloadStudentRosterTemplate(selectedGrade.name)}>
+                    <Download className="h-3.5 w-3.5" />下载模板
+                  </Button>
+                  <Button size="sm" variant="gold" onClick={() => fileInputRef.current?.click()} disabled={selectedGrade.status === "graduated"} loading={working}>
+                    <Upload className="h-3.5 w-3.5" />导入学生
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    className="hidden"
+                    type="file"
+                    accept=".xlsx,.xlsm"
+                    onChange={(event) => void handleImportFile(event.target.files?.[0])}
+                  />
+                </div>
               )}
             </div>
-          </Card>
 
-          <Card className="h-fit">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <div className="text-sm font-semibold text-ink-900">{selectedGrade?.name || "班级"}</div>
-                <div className="mt-0.5 text-xs text-ink-400">选择班级查看学生</div>
-              </div>
-              <Badge>{gradeClasses.length} 个</Badge>
-            </div>
-            {selectedGrade && (
-              <div className="mb-4 grid grid-cols-2 gap-2">
-                <Button size="sm" variant="outline" onClick={() => setClassModalOpen(true)} disabled={selectedGrade.status === "graduated"}>
-                  <Plus className="h-3.5 w-3.5" />批量班级
-                </Button>
-                <Button size="sm" variant="outline" onClick={handleAdvanceGrade} disabled={selectedGrade.grade === "高三" || selectedGrade.status === "graduated"} loading={working}>
-                  <GraduationCap className="h-3.5 w-3.5" />升学年
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => downloadStudentRosterTemplate(selectedGrade.name)}>
-                  <Download className="h-3.5 w-3.5" />下载模板
-                </Button>
-                <Button size="sm" variant="gold" onClick={() => fileInputRef.current?.click()} disabled={selectedGrade.status === "graduated"} loading={working}>
-                  <Upload className="h-3.5 w-3.5" />导入学生
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  className="hidden"
-                  type="file"
-                  accept=".xlsx,.xlsm"
-                  onChange={(event) => void handleImportFile(event.target.files?.[0])}
-                />
+            {grades.length === 0 ? (
+              <EmptyState icon={<GraduationCap className="h-7 w-7" />} title="尚未创建年级" description="先创建如“2027届高二”的年级。" />
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {grades.map((item) => {
+                  const count = classes.filter((classItem) => classBelongsToGrade(classItem, item)).length;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setSelectedGradeId(item.id)}
+                      title={`${item.name} · ${count} 个班级 · ${gradeStatusLabel(item)}`}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                        selectedGradeId === item.id
+                          ? "border-gold-400 bg-gold-50 text-ink-900"
+                          : "border-ink-200 bg-white text-ink-600 hover:border-ink-300 hover:bg-mist",
+                      )}
+                    >
+                      <GraduationCap className="h-3.5 w-3.5 text-gold-600" />
+                      {item.name}
+                      <span className="text-[10px] text-ink-400">{count}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
-            <div className="space-y-1.5">
-              {gradeClasses.map((item) => (
-                <div
-                  key={item.id}
-                  className={cn(
-                    "group flex items-center gap-2 rounded-lg border px-3 py-2.5",
-                    selectedClassId === item.id ? "border-gold-300 bg-gold-50" : "border-ink-100",
-                  )}
-                >
-                  <button className="min-w-0 flex-1 text-left" onClick={() => setSelectedClassId(item.id)}>
-                    <div className="truncate text-sm font-medium text-ink-900">{item.name}</div>
-                    <div className="mt-0.5 text-xs text-ink-400">{item.studentCount} 名在读学生</div>
-                  </button>
-                  <button className="p-1.5 text-ink-300 hover:text-red-600" title="删除班级" onClick={() => handleDeleteClass(item)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+
+            {selectedGrade && (
+              <div className="mt-4 border-t border-ink-100 pt-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-ink-900">{selectedGrade.name}</div>
+                    <div className="mt-0.5 text-xs text-ink-400">选择班级后在下方查看和编辑学生资料</div>
+                  </div>
+                  <Badge>{gradeClasses.length} 个班级</Badge>
                 </div>
-              ))}
-              {selectedGrade && gradeClasses.length === 0 && (
-                <EmptyState icon={<Users className="h-7 w-7" />} title="该年级暂无班级" description="可批量填写班级名称，或在导入学生时自动创建。" />
-              )}
-            </div>
+                {gradeClasses.length === 0 ? (
+                  <EmptyState icon={<Users className="h-7 w-7" />} title="该年级暂无班级" description="可批量填写班级名称，或在导入学生时自动创建。" />
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-10">
+                    {gradeClasses.map((item) => (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "group relative min-w-0 rounded-md border transition-colors",
+                          selectedClassId === item.id
+                            ? "border-gold-400 bg-gold-50"
+                            : "border-ink-200 bg-white hover:border-ink-300 hover:bg-mist",
+                        )}
+                      >
+                        <button
+                          className="w-full min-w-0 px-2 py-1.5 pr-6 text-left"
+                          onClick={() => setSelectedClassId(item.id)}
+                          aria-label={`选择班级 ${item.name}`}
+                          title={`${item.name} · ${item.studentCount} 名在读学生`}
+                        >
+                          <div className="truncate text-xs font-medium text-ink-900">{item.name}</div>
+                          <div className="truncate text-[10px] text-ink-400">{item.studentCount} 人</div>
+                        </button>
+                        <button
+                          className="absolute right-1 top-1 p-1 text-ink-300 transition-opacity hover:text-red-600 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                          aria-label={`删除班级 ${item.name}`}
+                          title={`删除班级 ${item.name}`}
+                          onClick={() => handleDeleteClass(item)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </Card>
 
           <Card>
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="font-serif text-lg font-semibold text-ink-900">{selectedClass?.name || "学生名单"}</h2>
-                <p className="mt-1 text-xs text-ink-500">Excel 模板字段：班级*、姓名*、学号、选科、借读生、性别；数字班级会自动补“班”。</p>
+                <p className="mt-1 text-xs text-ink-500">选中班级后可直接编辑姓名、学号、选科、年级和性别；Excel 仍支持批量导入。</p>
               </div>
               <Badge variant="teal">{classStudents.length} 人</Badge>
             </div>
             {!selectedClass ? (
-              <EmptyState icon={<FileSpreadsheet className="h-7 w-7" />} title="请选择班级" description="从左侧选择年级和班级查看学生。" />
+              <EmptyState icon={<FileSpreadsheet className="h-7 w-7" />} title="请选择班级" description="从上方选择年级和班级查看学生。" />
             ) : classStudents.length === 0 ? (
               <EmptyState icon={<Users className="h-7 w-7" />} title="暂无学生" description="下载模板并上传 Excel，可一次导入多个班级的学生。" />
             ) : (
@@ -384,9 +457,14 @@ export default function SchoolRosterPage() {
                         <td className="px-4 py-3 text-ink-600">{item.grade}</td>
                         <td className="px-4 py-3">{item.isExternal ? <Badge variant="amber">借读生</Badge> : <Badge>本校生</Badge>}</td>
                         <td className="px-4 py-3 text-right">
-                          <Button size="sm" variant="ghost" onClick={() => handleDeleteStudent(item)} loading={working}>
-                            <Trash2 className="h-3.5 w-3.5" />删除
-                          </Button>
+                          <div className="inline-flex items-center gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => openEditStudent(item)}>
+                              <Pencil className="h-3.5 w-3.5" />编辑
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => handleDeleteStudent(item)} loading={working}>
+                              <Trash2 className="h-3.5 w-3.5" />删除
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -441,6 +519,49 @@ export default function SchoolRosterPage() {
           value={classNames}
           onChange={(event) => setClassNames(event.target.value)}
         />
+      </Modal>
+
+      <Modal
+        open={editStudentOpen}
+        onClose={() => {
+          setEditStudentOpen(false);
+          setEditingStudent(null);
+        }}
+        title="编辑学生资料"
+        description={selectedClass ? `所属班级：${selectedClass.name}` : undefined}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => {
+              setEditStudentOpen(false);
+              setEditingStudent(null);
+            }}>取消</Button>
+            <Button variant="gold" onClick={handleEditStudent} loading={working}>保存修改</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Input label="姓名" value={editStudentName} onChange={(event) => setEditStudentName(event.target.value)} autoFocus />
+          <Input label="学号" value={editStudentNo} onChange={(event) => setEditStudentNo(event.target.value)} />
+          <Input
+            label="选科"
+            placeholder="如：物化生、史政地"
+            value={editStudentSubjectSelection}
+            onChange={(event) => setEditStudentSubjectSelection(event.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="年级" value={editStudentGrade} onChange={(event) => setEditStudentGrade(event.target.value)} />
+            <Select
+              label="性别"
+              value={editStudentGender}
+              onChange={(event) => setEditStudentGender(event.target.value as "male" | "female")}
+              options={[
+                { value: "male", label: "男" },
+                { value: "female", label: "女" },
+              ]}
+            />
+          </div>
+        </div>
       </Modal>
     </div>
   );

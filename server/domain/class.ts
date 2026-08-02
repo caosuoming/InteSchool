@@ -373,7 +373,7 @@ export const classService = {
    */
   async updateStudent(
     studentId: string,
-    patch: Partial<Pick<Student, "name" | "studentNo" | "grade" | "gender" | "externalSchool">>,
+    patch: Partial<Pick<Student, "name" | "studentNo" | "grade" | "gender" | "subjectSelection" | "externalSchool">>,
   ): Promise<Student | null> {
     await delay(250);
     maybeThrowError();
