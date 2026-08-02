@@ -72,6 +72,43 @@ describe("OriginalFileRow", () => {
 });
 
 describe("ResourceCard", () => {
+  it("renders document actions beside the title without triggering the card action", () => {
+    const onClick = vi.fn();
+    const onDownload = vi.fn();
+    const onExtract = vi.fn();
+
+    render(
+      <ResourceCard
+        title="待拆解试卷"
+        titleActions={(
+          <>
+            <button type="button" onClick={onDownload}>下载</button>
+            <button type="button" onClick={onExtract}>文档拆解</button>
+          </>
+        )}
+        meta={[]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+        onClick={onClick}
+      />,
+    );
+
+    const titleRow = screen.getByTestId("resource-card-title-row");
+    const titleActions = screen.getByTestId("resource-card-title-actions");
+    const downloadButton = screen.getByRole("button", { name: "下载" });
+    const extractButton = screen.getByRole("button", { name: "文档拆解" });
+
+    expect(titleRow).toContainElement(titleActions);
+    expect(titleActions).toContainElement(downloadButton);
+    expect(titleActions).toContainElement(extractButton);
+
+    fireEvent.click(downloadButton);
+    fireEvent.click(extractButton);
+
+    expect(onDownload).toHaveBeenCalledOnce();
+    expect(onExtract).toHaveBeenCalledOnce();
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
   it("shows compact lecture actions directly and keeps conversion in the action area", () => {
     const onConvertToExamPaper = vi.fn();
 

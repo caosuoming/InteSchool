@@ -1998,6 +1998,25 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       key={mainLecture.id}
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
+                      titleActions={item.originalFileUrl && !isExtracted && !hasExtractCopy ? (
+                        <>
+                          <DocumentDownloadButton
+                            fileUrl={item.originalFileUrl}
+                            fileName={item.originalFileName}
+                            className="text-xs font-normal text-gold-600 hover:text-gold-700"
+                            iconClassName="w-3.5 h-3.5"
+                          />
+                          <Button
+                            variant="gold"
+                            size="sm"
+                            onClick={() => handleOpenExtract(item, "lecture")}
+                            loading={isExtracting}
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            {isExtracting ? "拆解中..." : "文档拆解"}
+                          </Button>
+                        </>
+                      ) : undefined}
                       description={mainLecture.description || (hasExtractCopy ? "文档拆解生成的正稿，可编辑替换其中的题目和知识块" : undefined)}
                       meta={[
                         { label: "年级", value: `${mainLecture.grade} · ${mainLecture.schoolYear} · ${mainLecture.semester || "上学期"}` },
@@ -2046,7 +2065,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         }
                       }}
                     />
-                    {item.originalFileUrl && !hasExtractCopy && (
+                    {item.originalFileUrl && !hasExtractCopy && isExtracted && (
                       <div className="flex items-center gap-3 text-xs flex-wrap pl-4">
                         <div className="flex items-center gap-2">
                           <FileText className="w-3.5 h-3.5 text-ink-400" />
@@ -2058,20 +2077,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             iconClassName="w-3 h-3"
                           />
                         </div>
-                        {!isExtracted && (
-                          <Button
-                            variant="gold"
-                            size="sm"
-                            onClick={() => handleOpenExtract(item, "lecture")}
-                            loading={isExtracting}
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            {isExtracting ? "拆解中..." : "文档拆解"}
-                          </Button>
-                        )}
-                        {isExtracted && (
-                          <Badge variant="teal">已拆解</Badge>
-                        )}
+                        <Badge variant="teal">已拆解</Badge>
                       </div>
                     )}
                     {hasExtractCopy && item.originalFileUrl && (
@@ -2140,6 +2146,25 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                           {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
+                          titleActions={item.originalFileUrl && !isExtracted ? (
+                            <>
+                              <DocumentDownloadButton
+                                fileUrl={item.originalFileUrl}
+                                fileName={item.originalFileName}
+                                className="text-xs font-normal text-gold-600 hover:text-gold-700"
+                                iconClassName="w-3.5 h-3.5"
+                              />
+                              <Button
+                                variant="gold"
+                                size="sm"
+                                onClick={() => handleOpenExtract(item, "examPaper")}
+                                loading={isExtracting}
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                {isExtracting ? "拆解中..." : "文档拆解"}
+                              </Button>
+                            </>
+                          ) : undefined}
                           description={item.description}
                           meta={[
                             { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
@@ -2178,7 +2203,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             }
                           }}
                         />
-                        {item.originalFileUrl && (
+                        {item.originalFileUrl && isExtracted && (
                           <div className="flex items-center gap-3 text-xs flex-wrap pl-1">
                             <div className="flex items-center gap-2">
                               <FileSpreadsheet className="w-3.5 h-3.5 text-ink-400" />
@@ -2190,20 +2215,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 iconClassName="w-3 h-3"
                               />
                             </div>
-                            {!isExtracted && (
-                              <Button
-                                variant="gold"
-                                size="sm"
-                                onClick={() => handleOpenExtract(item, "examPaper")}
-                                loading={isExtracting}
-                              >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                {isExtracting ? "拆解中..." : "文档拆解"}
-                              </Button>
-                            )}
-                            {isExtracted && (
-                              <Badge variant="teal">已拆解</Badge>
-                            )}
+                            <Badge variant="teal">已拆解</Badge>
                           </div>
                         )}
                         <div className="mt-2 flex gap-2 flex-wrap">
@@ -2945,6 +2957,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
 // ============ 资源卡片组件 ============
 interface ResourceCardProps {
   title: string;
+  titleActions?: React.ReactNode;
   description?: string;
   meta: { label: string; value: string }[];
   content?: string;
@@ -2974,7 +2987,7 @@ interface ResourceCardProps {
   compactActions?: boolean;
 }
 
-export function ResourceCard({ title, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
+export function ResourceCard({ title, titleActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const isImage = (type === "image");
   const reflectionCount = reflections?.length || 0;
@@ -3012,12 +3025,19 @@ export function ResourceCard({ title, description, meta, content, updatedAt, onC
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <div
-              className={cn("font-medium text-ink-900 mb-1 flex items-center gap-2", onClick && "cursor-pointer hover:text-gold-700")}
-              onClick={onClick}
-            >
-              <span>{title}</span>
-              {titleBadge && <Badge variant={titleBadge.variant}>{titleBadge.text}</Badge>}
+            <div className="mb-1 flex flex-wrap items-center gap-2" data-testid="resource-card-title-row">
+              <div
+                className={cn("font-medium text-ink-900 flex items-center gap-2", onClick && "cursor-pointer hover:text-gold-700")}
+                onClick={onClick}
+              >
+                <span>{title}</span>
+                {titleBadge && <Badge variant={titleBadge.variant}>{titleBadge.text}</Badge>}
+              </div>
+              {titleActions && (
+                <div className="flex items-center gap-2" data-testid="resource-card-title-actions">
+                  {titleActions}
+                </div>
+              )}
             </div>
             {description && (
               <div className="text-xs text-ink-500 mb-2 line-clamp-1">{description}</div>
