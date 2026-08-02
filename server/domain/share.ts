@@ -14,6 +14,9 @@ import type {
   KnowledgePoint,
   Lecture,
   Material,
+  PlatformResourceCorrection,
+  PlatformResourceCorrectionAttachment,
+  PlatformResourceCorrectionInput,
   PlatformResourceSetting,
   PlatformResourceSettingType,
   PlatformSaveCheckResult,
@@ -348,6 +351,35 @@ function platformDonationById(donationId: string): ShareRecord {
   const donation = primaryDonations().find((item) => item.id === donationId);
   if (!donation?.resourceSnapshot) throw new Error("平台资源不存在");
   return donation;
+}
+
+function platformResourceCorrections(): PlatformResourceCorrection[] {
+  return (db.read("platformResourceCorrections") || []) as PlatformResourceCorrection[];
+}
+
+function canReviewCorrection(teacherId: string, correction: PlatformResourceCorrection): boolean {
+  if (correction.recipientTeacherId === teacherId) return true;
+  const donation = primaryDonations().find((item) => item.id === correction.donationId);
+  return Boolean(donation && canManageSubject(teacherId, donationSubject(donation)));
+}
+
+function normalizeCorrectionAttachments(
+  attachments: PlatformResourceCorrectionAttachment[] | undefined,
+): PlatformResourceCorrectionAttachment[] {
+  const normalized = attachments || [];
+  if (normalized.length > 4) throw new Error("一次最多上传 4 张纠错图片");
+  return normalized.map((attachment) => {
+    if (!attachment.mimeType.startsWith("image/")) throw new Error("纠错附件只能上传图片");
+    if (!/^\/api\/files\/[^/?#]+$/.test(attachment.url)) throw new Error("纠错图片地址不合法");
+    if (attachment.url !== `/api/files/${attachment.id}`) throw new Error("纠错图片信息不一致");
+    return {
+      id: attachment.id,
+      name: attachment.name.trim().slice(0, 200) || "纠错图片",
+      url: attachment.url,
+      mimeType: attachment.mimeType,
+      size: Math.max(0, attachment.size),
+    };
+  });
 }
 
 function teacherContributedToDonation(teacherId: string, donationId: string): boolean {
@@ -1026,6 +1058,81 @@ export const shareService = {
     return updated;
   },
 
+  async createDonationCorrection(
+    teacherId: string,
+    input: PlatformResourceCorrectionInput,
+  ): Promise<PlatformResourceCorrection> {
+    await delay(100);
+    const donation = platformDonationById(input.donationId);
+    if (!canViewSubject(teacherId, donationSubject(donation))) {
+      throw new Error("无权访问其他学科的平台资源");
+    }
+    const message = input.message?.trim().slice(0, 2000) || undefined;
+    const attachments = normalizeCorrectionAttachments(input.attachments);
+    if (!message && attachments.length === 0) throw new Error("请填写纠错说明或上传图片");
+    const reporter = platformTeacher(teacherId);
+    const correction: PlatformResourceCorrection = {
+      id: genId("correction"),
+      donationId: donation.id,
+      resourceType: donation.resourceType,
+      resourceTitle: donation.resourceTitle,
+      reporterTeacherId: teacherId,
+      reporterNickname: reporter.nickname?.trim() || "匿名用户",
+      recipientTeacherId: donation.fromTeacherId,
+      message,
+      attachments,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    db.update("platformResourceCorrections", (list: PlatformResourceCorrection[] = []) => [correction, ...list]);
+    return correction;
+  },
+
+  async listDonationCorrections(
+    teacherId: string,
+    donationId?: string,
+  ): Promise<PlatformResourceCorrection[]> {
+    await delay(50);
+    platformTeacher(teacherId);
+    return platformResourceCorrections()
+      .filter((correction) => !donationId || correction.donationId === donationId)
+      .filter((correction) =>
+        correction.reporterTeacherId === teacherId || canReviewCorrection(teacherId, correction),
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  },
+
+  async listCorrectionTodos(teacherId: string): Promise<PlatformResourceCorrection[]> {
+    await delay(50);
+    platformTeacher(teacherId);
+    return platformResourceCorrections()
+      .filter((correction) =>
+        correction.recipientTeacherId === teacherId && correction.status === "pending",
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  },
+
+  async resolveDonationCorrection(
+    teacherId: string,
+    correctionId: string,
+  ): Promise<PlatformResourceCorrection> {
+    await delay(50);
+    const correction = platformResourceCorrections().find((item) => item.id === correctionId);
+    if (!correction) throw new Error("纠错信息不存在");
+    if (!canReviewCorrection(teacherId, correction)) throw new Error("无权处理该纠错信息");
+    if (correction.status === "resolved") return correction;
+    const resolved: PlatformResourceCorrection = {
+      ...correction,
+      status: "resolved",
+      resolvedAt: new Date().toISOString(),
+      resolvedByTeacherId: teacherId,
+    };
+    db.update("platformResourceCorrections", (list: PlatformResourceCorrection[] = []) =>
+      list.map((item) => item.id === correctionId ? resolved : item),
+    );
+    return resolved;
+  },
+
   async listPlatformResourceSettings(): Promise<PlatformResourceSetting[]> {
     await delay(50);
     const stored = (db.read("platformResourceSettings") || []) as PlatformResourceSetting[];
@@ -1121,6 +1228,9 @@ export const shareService = {
     db.update("shareRecords", (records: ShareRecord[]) => records.filter((record) =>
       record.id !== donationId && record.mergedIntoDonationId !== donationId,
     ));
+    db.update("platformResourceCorrections", (records: PlatformResourceCorrection[] = []) =>
+      records.filter((record) => record.donationId !== donationId),
+    );
   },
 
   async listIncomingShares(teacherId: string): Promise<ShareRecord[]> {

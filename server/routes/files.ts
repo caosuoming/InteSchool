@@ -117,6 +117,27 @@ function canReadFile(
 ): boolean {
   if (!teacher) return false;
   if (file.ownerId === teacher.id || (file.schoolId && file.schoolId === teacher.schoolId)) return true;
+  const state = store.loadState();
+  const correction = ((state.platformResourceCorrections || []) as Array<{
+    donationId: string;
+    reporterTeacherId: string;
+    recipientTeacherId: string;
+    attachments?: Array<{ id: string }>;
+  }>).find((item) => item.attachments?.some((attachment) => attachment.id === file.id));
+  if (correction) {
+    if (
+      correction.reporterTeacherId === teacher.id
+      || correction.recipientTeacherId === teacher.id
+      || activeRole(teacher) === "platform_admin"
+    ) return true;
+    const donation = ((state.shareRecords || []) as Array<{
+      id: string;
+      platformSubject?: string;
+    }>).find((item) => item.id === correction.donationId);
+    if (donation?.platformSubject && teacher.platformModeratorSubjects?.includes(donation.platformSubject)) {
+      return true;
+    }
+  }
   return canReviewApplicationProof(store, teacher, file.id);
 }
 

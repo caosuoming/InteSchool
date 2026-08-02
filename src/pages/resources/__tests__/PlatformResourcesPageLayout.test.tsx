@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PlatformResourcesPage from "@/pages/resources/PlatformResourcesPage";
 import { useAuthStore } from "@/stores/auth";
@@ -36,6 +37,9 @@ vi.mock("@/services/share", () => ({
     getDonationPrivileges: vi.fn(),
     getPlatformDirectoryTree: vi.fn(),
     listPlatformResourceSettings: vi.fn(),
+    listDonationCorrections: vi.fn(),
+    createDonationCorrection: vi.fn(),
+    resolveDonationCorrection: vi.fn(),
     updateDonationResource: vi.fn(),
     setSubjectModerator: vi.fn(),
     updateDonationOrder: vi.fn(),
@@ -155,6 +159,14 @@ const donations = [
   donationRecord("donation-material", "teacher-other", "material", material),
 ];
 
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <PlatformResourcesPage />
+    </MemoryRouter>,
+  );
+}
+
 describe("PlatformResourcesPage layout and filters", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -188,10 +200,11 @@ describe("PlatformResourcesPage layout and filters", () => {
       ...emptyTree,
       type,
     }));
+    vi.mocked(shareService.listDonationCorrections).mockResolvedValue([]);
   });
 
   it("removes standalone settings and keeps actions on the donor row", async () => {
-    render(<PlatformResourcesPage />);
+    renderPage();
 
     await screen.findByText("单选题资源");
     expect(screen.queryByText("属性选项设置")).not.toBeInTheDocument();
@@ -206,7 +219,7 @@ describe("PlatformResourcesPage layout and filters", () => {
 
   it("derives type-specific filter choices from donated resources", async () => {
     const user = userEvent.setup();
-    render(<PlatformResourcesPage />);
+    renderPage();
 
     await screen.findByText("单选题资源");
     await user.click(screen.getByRole("button", { name: "题目" }));
@@ -225,5 +238,40 @@ describe("PlatformResourcesPage layout and filters", () => {
     expect(screen.getByLabelText("素材类型筛选")).toBeInTheDocument();
     expect(screen.getByLabelText("标签筛选")).toBeInTheDocument();
     expect(screen.getByText("函数图像素材")).toBeInTheDocument();
+  });
+
+  it("submits text corrections for a platform resource", async () => {
+    const user = userEvent.setup();
+    vi.mocked(shareService.createDonationCorrection).mockResolvedValue({
+      id: "correction-1",
+      donationId: "donation-other",
+      resourceType: "question",
+      resourceTitle: "解答题资源",
+      reporterTeacherId: "teacher-self",
+      reporterNickname: "本人",
+      recipientTeacherId: "teacher-other",
+      message: "题干中的条件有误。",
+      attachments: [],
+      status: "pending",
+      createdAt: "2026-08-02T00:00:00.000Z",
+    });
+    renderPage();
+
+    const resourceTitle = await screen.findByText("解答题资源");
+    const resourceCard = resourceTitle.closest(".card-base");
+    expect(resourceCard).toBeTruthy();
+    await user.click(within(resourceCard as HTMLElement).getByRole("button", { name: "纠错" }));
+    const correctionInput = await screen.findByPlaceholderText("请说明错误位置、正确内容或修改建议。可只上传图片。");
+    await user.type(correctionInput, "题干中的条件有误。");
+    await user.click(screen.getByRole("button", { name: "提交纠错" }));
+
+    await waitFor(() => expect(shareService.createDonationCorrection).toHaveBeenCalledWith(
+      "teacher-self",
+      {
+        donationId: "donation-other",
+        message: "题干中的条件有误。",
+        attachments: [],
+      },
+    ));
   });
 });

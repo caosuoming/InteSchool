@@ -4,6 +4,8 @@ import type {
   DonationContributor,
   DonationPreview,
   DonationPrivileges,
+  PlatformResourceCorrection,
+  PlatformResourceCorrectionInput,
   DonationRequest,
   PlatformResourceSetting,
   PlatformResourceSettingType,
@@ -85,6 +87,31 @@ export const shareService = {
     }>,
   ): Promise<ShareRecord> {
     return rpcCall("share", "updateDonationResource", [teacherId, donationId, patch]) as any;
+  },
+
+  async createDonationCorrection(
+    teacherId: string,
+    input: PlatformResourceCorrectionInput,
+  ): Promise<PlatformResourceCorrection> {
+    return rpcCall("share", "createDonationCorrection", [teacherId, input]) as any;
+  },
+
+  async listDonationCorrections(
+    teacherId: string,
+    donationId?: string,
+  ): Promise<PlatformResourceCorrection[]> {
+    return rpcCall("share", "listDonationCorrections", [teacherId, donationId]) as any;
+  },
+
+  async listCorrectionTodos(teacherId: string): Promise<PlatformResourceCorrection[]> {
+    return rpcCall("share", "listCorrectionTodos", [teacherId]) as any;
+  },
+
+  async resolveDonationCorrection(
+    teacherId: string,
+    correctionId: string,
+  ): Promise<PlatformResourceCorrection> {
+    return rpcCall("share", "resolveDonationCorrection", [teacherId, correctionId]) as any;
   },
 
   async listPlatformResourceSettings(): Promise<PlatformResourceSetting[]> {

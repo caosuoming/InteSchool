@@ -100,6 +100,7 @@ function state(): AppState {
     schoolKnowledgePoints: [],
     shareRecords: [],
     platformResourceSettings: [],
+    platformResourceCorrections: [],
     schoolBackups: [],
   };
 }
@@ -400,6 +401,54 @@ describe("platform resource donations", () => {
         .rejects.toThrow("平台超级管理员");
       await shareService.deleteDonationResource("teacher-admin", donationB.id);
       expect((await shareService.listPublicDonations("teacher-admin")).some((item) => item.id === donationB.id)).toBe(false);
+    });
+  });
+
+  it("delivers resource corrections to the donor todo list and enforces resolution permissions", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const [donation] = await shareService.donateResources("teacher-b", "school-b", [
+        { resourceType: "question", resourceId: "q-b" },
+      ]);
+
+      await expect(shareService.createDonationCorrection("teacher-a", {
+        donationId: donation.id,
+      })).rejects.toThrow("纠错说明或上传图片");
+
+      const correction = await shareService.createDonationCorrection("teacher-a", {
+        donationId: donation.id,
+        message: "题干中的求导结果应改为 2x。",
+        attachments: [{
+          id: "file-correction-1",
+          name: "批注.png",
+          url: "/api/files/file-correction-1",
+          mimeType: "image/png",
+          size: 128,
+        }],
+      });
+
+      expect(correction).toMatchObject({
+        donationId: donation.id,
+        reporterTeacherId: "teacher-a",
+        reporterNickname: "甲老师昵称",
+        recipientTeacherId: "teacher-b",
+        status: "pending",
+      });
+      expect(await shareService.listCorrectionTodos("teacher-a")).toEqual([]);
+      expect(await shareService.listCorrectionTodos("teacher-b")).toEqual([correction]);
+      expect(await shareService.listDonationCorrections("teacher-a", donation.id)).toEqual([correction]);
+      expect(await shareService.listDonationCorrections("teacher-c", donation.id)).toEqual([]);
+
+      await expect(shareService.resolveDonationCorrection("teacher-c", correction.id))
+        .rejects.toThrow("无权处理");
+      const resolved = await shareService.resolveDonationCorrection("teacher-b", correction.id);
+      expect(resolved).toMatchObject({
+        id: correction.id,
+        status: "resolved",
+        resolvedByTeacherId: "teacher-b",
+      });
+      expect(resolved.resolvedAt).toBeTruthy();
+      expect(await shareService.listCorrectionTodos("teacher-b")).toEqual([]);
     });
   });
 

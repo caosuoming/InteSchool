@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import {
   Library, FileText, GraduationCap, ShoppingBasket, FileUp, Plus,
   Clock, ArrowRight, TrendingUp, BookOpen, CheckCircle2, FileQuestion,
-  Users, Calendar, X,
+  Users, Calendar, X, AlertTriangle,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
@@ -12,6 +12,7 @@ import { classService } from "@/services/class";
 import { basketService } from "@/services/basket";
 import { aiService } from "@/services/ai";
 import { prepService, taskTypeLabels, taskStatusLabels } from "@/services/prep";
+import { shareService } from "@/services/share";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -19,7 +20,15 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
 import { timeAgo } from "@/lib/service-utils";
-import type { Question, Lecture, Basket, DocumentRecord, PrepTask, PrepTaskType } from "@/types";
+import type {
+  Question,
+  Lecture,
+  Basket,
+  DocumentRecord,
+  PlatformResourceCorrection,
+  PrepTask,
+  PrepTaskType,
+} from "@/types";
 import { cn } from "@/lib/utils";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { canManageSchoolRoster } from "@/lib/roster-permissions";
@@ -38,6 +47,7 @@ export default function DashboardPage() {
   const { gradeOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [correctionTodos, setCorrectionTodos] = useState<PlatformResourceCorrection[]>([]);
   const [prepTasks, setPrepTasks] = useState<PrepTask[]>([]);
   const [prepLoading, setPrepLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -52,7 +62,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const load = async () => {
       if (!teacher) return;
-      const [questions, lectures, baskets, documents, schoolClasses, personalClasses] =
+      const [questions, lectures, baskets, documents, schoolClasses, personalClasses, corrections] =
         await Promise.all([
           questionService.listQuestions({ teacherId: teacher.id }),
           lectureService.listLectures({ teacherId: teacher.id }),
@@ -60,6 +70,7 @@ export default function DashboardPage() {
           aiService.listDocuments(teacher.id),
           classService.listSchoolClasses(teacher.schoolId!),
           classService.listPersonalClasses(teacher.id),
+          shareService.listCorrectionTodos(teacher.id),
         ]);
       setStats({
         questions,
@@ -69,6 +80,7 @@ export default function DashboardPage() {
         schoolClassCount: schoolClasses.length,
         personalClassCount: personalClasses.length,
       });
+      setCorrectionTodos(corrections);
       setLoading(false);
     };
     load();
@@ -166,6 +178,9 @@ export default function DashboardPage() {
     documents: stats?.documents.filter((item) => changedThisWeek(item.createdAt)).length ?? 0,
     baskets: stats?.baskets.filter((item) => changedThisWeek(item.updatedAt || item.createdAt)).length ?? 0,
   };
+  const pendingDocumentCount = stats?.documents.filter((document) => document.status === "recognized").length ?? 0;
+  const draftLectureCount = stats?.lectures.filter((lecture) => lecture.status === "draft").length ?? 0;
+  const todoCount = pendingDocumentCount + draftLectureCount + correctionTodos.length;
 
   const cards = [
     {
@@ -265,11 +280,29 @@ export default function DashboardPage() {
                   title="待办事项"
                   action={
                     <span className="tag-red">
-                      {stats.documents.filter((d) => d.status === "recognized").length} 项待处理
+                      {todoCount} 项待处理
                     </span>
                   }
                 />
                 <div className="space-y-2">
+                  {correctionTodos.map((correction) => (
+                    <Link
+                      key={correction.id}
+                      to={`/platform-resources?edit=${encodeURIComponent(correction.donationId)}&correction=${encodeURIComponent(correction.id)}`}
+                      className="flex items-center gap-3 p-3 rounded-md hover:bg-mist transition-colors group"
+                    >
+                      <div className="w-8 h-8 rounded-md bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0">
+                        <AlertTriangle className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-ink-900 truncate">{correction.resourceTitle}</div>
+                        <div className="text-xs text-ink-500 truncate">
+                          平台资源纠错 · {correction.reporterNickname}：{correction.message || `上传了 ${correction.attachments.length} 张图片`}
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
+                    </Link>
+                  ))}
                   {stats.documents.filter((d) => d.status === "recognized").length > 0 ? (
                     stats.documents
                       .filter((d) => d.status === "recognized")
@@ -291,12 +324,12 @@ export default function DashboardPage() {
                           <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
                         </Link>
                       ))
-                  ) : (
+                  ) : todoCount === 0 ? (
                     <div className="flex items-center gap-3 p-3 text-sm text-ink-500">
                       <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                       暂无待办事项，一切就绪
                     </div>
-                  )}
+                  ) : null}
 
                   {/* 草稿讲义提醒 */}
                   {stats.lectures.filter((l) => l.status === "draft").map((lec) => (
