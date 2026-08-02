@@ -37,6 +37,7 @@ function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
   if (filter.semester && (p.semester || "上学期") !== filter.semester) return false;
   if (filter.teacherId && p.teacherId !== filter.teacherId) return false;
   if (filter.schoolId && p.schoolId !== filter.schoolId) return false;
+  if (filter.typeId && p.typeId !== filter.typeId) return false;
   return true;
 }
 
@@ -52,6 +53,8 @@ export interface ExamPaperInput {
   totalScore: number;
   questions: ExamPaperQuestion[];
   typeId?: string;
+  questionSourceType?: string;
+  questionCategory?: string;
   layoutMode?: "grouped" | "flat";
   status?: "draft" | "published";
   originalFileUrl?: string;
@@ -97,6 +100,8 @@ export const examPaperService = {
       totalScore: input.totalScore,
       questions: input.questions,
       typeId: input.typeId,
+      questionSourceType: input.questionSourceType,
+      questionCategory: input.questionCategory,
       layoutMode: input.layoutMode || "grouped",
       status: input.status || "draft",
       originalFileUrl: input.originalFileUrl,
@@ -207,6 +212,8 @@ export const examPaperService = {
           grade: paper.grade,
           schoolYear: paper.schoolYear,
           semester: paper.semester || "上学期",
+          sourceType: paper.questionSourceType,
+          category: paper.questionCategory,
           difficulty: 3,
           recommendation: 3,
         },
@@ -333,6 +340,8 @@ export const examPaperService = {
       studentIds: [],
       sections,
       typeId: undefined,
+      questionSourceType: paper.questionSourceType,
+      questionCategory: paper.questionCategory,
       version: 1,
       status: "draft",
       createdAt: now,

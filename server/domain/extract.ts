@@ -63,6 +63,8 @@ export const extractService = {
     schoolYear: string,
     semester: ResourceSemester,
     sourceResourceId: string,
+    questionSourceType?: string,
+    questionCategory?: string,
   ): Promise<{
     createdQuestions: Question[];
     mergedQuestions: Question[];
@@ -123,6 +125,8 @@ export const extractService = {
         grade,
         schoolYear,
         semester,
+        sourceType: questionSourceType,
+        category: questionCategory,
         difficulty: item.difficulty as 1 | 2 | 3 | 4 | 5,
         recommendation: 3,
         duplicateDecision: item.status === "confirmed" ? "add" : undefined,

@@ -15,6 +15,10 @@ import { MathHtml } from "@/components/ui/MathHtml";
 import { containsMathDelimiter } from "@/lib/math-html";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import {
+  includeCurrentMetadataOption,
+  useQuestionMetadataOptions,
+} from "@/hooks/useQuestionMetadataOptions";
 import type {
   Question,
   Chapter,
@@ -38,19 +42,6 @@ const recommendationOptions = [
   { value: "3", label: "3 - 适中" },
   { value: "4", label: "4 - 推荐" },
   { value: "5", label: "5 - 强烈推荐" },
-];
-
-const categoryOptions = [
-  { value: "practice", label: "练习" },
-  { value: "exam", label: "考试" },
-  { value: "homework", label: "作业" },
-  { value: "review", label: "复习" },
-];
-
-const sourceOptions = [
-  { value: "imported", label: "导入" },
-  { value: "manual", label: "手动" },
-  { value: "shared", label: "共享" },
 ];
 
 interface QuestionEditorProps {
@@ -109,6 +100,15 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const { options: questionTypeOptions } = useQuestionTypeOptions(teacher?.schoolId);
+  const {
+    sourceOptions,
+    categoryOptions,
+    defaultSource,
+    defaultCategory,
+    getSourceLabel,
+    getCategoryLabel,
+    ready: metadataReady,
+  } = useQuestionMetadataOptions(teacher?.schoolId);
   const [form, setForm] = useState({
     type: question.type,
     stem: question.stem,
@@ -121,8 +121,8 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     difficulty: question.difficulty,
     recommendation: question.recommendation,
     remark: question.remark,
-    sourceType: question.sourceType ?? "manual",
-    category: question.category ?? "practice",
+    sourceType: question.sourceType ?? "",
+    category: question.category ?? "",
     grade: question.grade ?? "",
     schoolYear: question.schoolYear ?? "",
     semester: question.semester ?? "上学期",
@@ -141,6 +141,15 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   });
   // 公式编辑器目标字段
   const [formulaTarget, setFormulaTarget] = useState<"stem" | "answer" | "analysis" | null>(null);
+
+  useEffect(() => {
+    if (!metadataReady) return;
+    setForm((current) => ({
+      ...current,
+      sourceType: current.sourceType || defaultSource,
+      category: current.category || defaultCategory,
+    }));
+  }, [defaultCategory, defaultSource, metadataReady]);
 
   useEffect(() => {
     if (!teacher) return;
@@ -192,8 +201,8 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         difficulty: form.difficulty as any,
         recommendation: form.recommendation as any,
         remark: form.remark,
-        sourceType: form.sourceType as any,
-        category: form.category as any,
+        sourceType: form.sourceType,
+        category: form.category,
         grade: form.grade,
         schoolYear: form.schoolYear,
         semester: form.semester as ResourceSemester,
@@ -261,13 +270,21 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         <Select
           label="题类"
           value={form.category}
-          options={categoryOptions}
+          options={includeCurrentMetadataOption(
+            categoryOptions,
+            form.category,
+            getCategoryLabel(form.category),
+          )}
           onChange={(e) => update("category", e.target.value as any)}
         />
         <Select
           label="来源"
           value={form.sourceType}
-          options={sourceOptions}
+          options={includeCurrentMetadataOption(
+            sourceOptions,
+            form.sourceType,
+            getSourceLabel(form.sourceType),
+          )}
           onChange={(e) => update("sourceType", e.target.value as any)}
         />
         <Select

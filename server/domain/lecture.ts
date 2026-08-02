@@ -50,6 +50,7 @@ function matchFilter(l: Lecture, filter: LectureFilter): boolean {
   if (filter.status && l.status !== filter.status) return false;
   if (filter.teacherId && l.teacherId !== filter.teacherId) return false;
   if (filter.schoolId && l.schoolId !== filter.schoolId) return false;
+  if (filter.typeId && l.typeId !== filter.typeId) return false;
   return true;
 }
 
@@ -65,6 +66,8 @@ export interface LectureInput {
   studentIds: string[];
   sections: LectureSection[];
   typeId?: string;
+  questionSourceType?: string;
+  questionCategory?: string;
   originalFileUrl?: string;
   originalFileName?: string;
   originalFileType?: "word" | "pdf";
@@ -177,6 +180,8 @@ export const lectureService = {
       studentIds: input.studentIds,
       sections: input.sections,
       typeId: input.typeId,
+      questionSourceType: input.questionSourceType,
+      questionCategory: input.questionCategory,
       version: 1,
       status: "draft",
       originalFileUrl: input.originalFileUrl,
@@ -543,6 +548,8 @@ export const lectureService = {
       totalScore,
       questions,
       typeId: undefined,
+      questionSourceType: lecture.questionSourceType,
+      questionCategory: lecture.questionCategory,
       status: "draft",
       createdAt: now,
       updatedAt: now,

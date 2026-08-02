@@ -22,6 +22,8 @@ export interface LectureInput {
   studentIds: string[];
   sections: LectureSection[];
   typeId?: string;
+  questionSourceType?: string;
+  questionCategory?: string;
   originalFileUrl?: string;
   originalFileName?: string;
   originalFileType?: "word" | "pdf";
