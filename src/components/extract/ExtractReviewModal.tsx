@@ -46,6 +46,7 @@ import {
 import type {
   ExamPaper,
   ExtractedDocumentBlock,
+  ExtractedQuestionItem,
   Lecture,
   Material,
   Question,
@@ -53,6 +54,10 @@ import type {
   ResourceSemester,
 } from "@/types";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import {
+  QuestionDuplicateReviewModal,
+  type QuestionDuplicateResolution,
+} from "./QuestionDuplicateReviewModal";
 
 interface ExtractReviewModalProps {
   open: boolean;
@@ -71,12 +76,15 @@ interface ExtractReviewModalProps {
 
 type Phase = "extracting" | "review" | "confirming";
 type SolutionField = "answer" | "analysis" | "summary";
-type DuplicateDecision = "reuse" | "add";
 
 interface DuplicateCheck {
   candidate: Question;
   similarity: number;
-  decision?: DuplicateDecision;
+  incoming: Pick<
+    ExtractedQuestionItem,
+    "stem" | "options" | "answer" | "analysis" | "summary"
+  >;
+  resolution?: QuestionDuplicateResolution;
 }
 
 const solutionFieldOptions: Array<{ value: SolutionField; label: string }> = [
@@ -599,7 +607,9 @@ export function ExtractReviewModal({
     setBlocks(newBlocks);
   };
 
-  const handleConfirm = async () => {
+  const handleConfirm = async (
+    reviewResolutions?: Record<string, QuestionDuplicateResolution>,
+  ) => {
     if (!teacher) {
       toast.error("未获取到教师信息");
       return;
@@ -681,14 +691,16 @@ export function ExtractReviewModal({
         nextDuplicateChecks[item.id] = {
           candidate: candidate.question,
           similarity: candidate.similarity,
-          decision: previous?.candidate.id === candidate.question.id
-            ? previous.decision
-            : undefined,
+          incoming: item,
+          resolution: reviewResolutions?.[item.id]
+            || (previous?.candidate.id === candidate.question.id
+              ? previous.resolution
+              : undefined),
         };
       }
       setDuplicateChecks(nextDuplicateChecks);
-      if (Object.values(nextDuplicateChecks).some((check) => !check.decision)) {
-        toast.warning("发现高度相似题目，请逐题选择复用已有题或仍然新增");
+      if (Object.values(nextDuplicateChecks).some((check) => !check.resolution)) {
+        toast.warning("发现高度相似题目，请完成重题处理后再入库");
         setPhase("review");
         return;
       }
@@ -696,17 +708,23 @@ export function ExtractReviewModal({
       const resolvedQuestions = extractedQuestions.map((item) => {
         const check = nextDuplicateChecks[item.id];
         if (!check) return item;
-        if (check.decision === "reuse") {
+        if (check.resolution?.action === "merge") {
           return {
             ...item,
             status: "duplicate" as const,
-            duplicateOf: check.candidate,
+            duplicateOf: undefined,
+            duplicateAction: "merge" as const,
+            duplicateTargetId: check.candidate.id,
+            duplicateFields: check.resolution.fields,
           };
         }
         return {
           ...item,
           status: "confirmed" as const,
           duplicateOf: undefined,
+          duplicateAction: "add" as const,
+          duplicateTargetId: undefined,
+          duplicateFields: undefined,
         };
       });
 
@@ -720,6 +738,7 @@ export function ExtractReviewModal({
 
       const {
         createdQuestions,
+        mergedQuestions,
         createdMaterials,
         questionIdByItemId,
         materialIdByItemId,
@@ -780,7 +799,7 @@ export function ExtractReviewModal({
 
       toast.success(
         "入库成功",
-        `已添加 ${createdQuestions.length} 道题目、${createdMaterials.length} 个知识块`,
+        `已新增 ${createdQuestions.length} 道题目、合并 ${mergedQuestions.length} 道重题、添加 ${createdMaterials.length} 个知识块`,
       );
       onConfirmed?.();
       onClose();
@@ -890,7 +909,7 @@ export function ExtractReviewModal({
                 <span className="text-xs text-ink-400">#{block.order + 1}</span>
                 {block.status === "edited" && <Badge variant="gold">已编辑</Badge>}
                 {block.status === "duplicate" && <Badge variant="amber">重复</Badge>}
-                {duplicateCheck && !duplicateCheck.decision && <Badge variant="amber">待查重确认</Badge>}
+                {duplicateCheck && !duplicateCheck.resolution && <Badge variant="amber">待重题处理</Badge>}
               </div>
 
               {block.type === "heading" && (
@@ -931,48 +950,6 @@ export function ExtractReviewModal({
                   {renderSolutionField("answer")}
                   {renderSolutionField("analysis")}
                   {renderSolutionField("summary")}
-                  {duplicateCheck && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-medium">
-                          发现高度相似题目 · 相似度 {(duplicateCheck.similarity * 100).toFixed(1)}%
-                        </div>
-                        <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono">
-                          ID: {duplicateCheck.candidate.id}
-                        </code>
-                      </div>
-                      <div
-                        className="mb-3 rounded border border-amber-100 bg-white/70 p-2 text-ink-800"
-                        dangerouslySetInnerHTML={{
-                          __html: renderExtractText(duplicateCheck.candidate.stem, [], false),
-                        }}
-                      />
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={duplicateCheck.decision === "reuse" ? "gold" : "outline"}
-                          onClick={() => setDuplicateChecks((current) => ({
-                            ...current,
-                            [block.id]: { ...current[block.id], decision: "reuse" },
-                          }))}
-                        >
-                          复用已有题
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={duplicateCheck.decision === "add" ? "gold" : "outline"}
-                          onClick={() => setDuplicateChecks((current) => ({
-                            ...current,
-                            [block.id]: { ...current[block.id], decision: "add" },
-                          }))}
-                        >
-                          仍作为新题入库
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                   {scoreLabelCleanup.labels.length > 0 && (
                     <label className="flex cursor-pointer items-start gap-2 rounded border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-xs text-amber-900">
                       <input
@@ -1614,10 +1591,21 @@ export function ExtractReviewModal({
     );
   };
 
+  const duplicateReviewItems = Object.entries(duplicateChecks)
+    .filter(([, check]) => !check.resolution)
+    .map(([id, check]) => ({
+      id,
+      similarity: check.similarity,
+      existing: check.candidate,
+      canMerge: check.candidate.teacherId === teacher?.id,
+      incoming: check.incoming,
+    }));
+  const duplicateReviewOpen = open && duplicateReviewItems.length > 0;
+
   return (
     <>
       <Modal
-        open={open}
+        open={open && !duplicateReviewOpen}
         onClose={onClose}
         size="full"
         title={
@@ -1662,7 +1650,7 @@ export function ExtractReviewModal({
                 </Button>
                 <Button
                   variant="gold"
-                  onClick={handleConfirm}
+                  onClick={() => void handleConfirm()}
                   loading={phase === "confirming"}
                   disabled={stats.toStore === 0}
                 >
@@ -1681,6 +1669,22 @@ export function ExtractReviewModal({
           {phase === "extracting" ? renderExtracting() : renderReview()}
         </div>
       </Modal>
+
+      {duplicateReviewOpen && (
+        <QuestionDuplicateReviewModal
+          items={duplicateReviewItems}
+          onClose={() => setDuplicateChecks({})}
+          onConfirm={(resolutions) => {
+            setDuplicateChecks((current) => Object.fromEntries(
+              Object.entries(current).map(([id, check]) => [
+                id,
+                { ...check, resolution: resolutions[id] || check.resolution },
+              ]),
+            ));
+            void handleConfirm(resolutions);
+          }}
+        />
+      )}
       
       {/* 关键字配置弹窗 - 可拖动 */}
       {showKeywordConfig && (
