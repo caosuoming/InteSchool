@@ -41,6 +41,26 @@ describe("extract text renderer", () => {
     expect(container.textContent).toContain("![危险](javascript:alert(1))");
   });
 
+  it("uses the Word layout size for ordinary document images", () => {
+    const html = renderExtractText(
+      "![示意图](/api/files/file-1/assets/rId6?officeWidth=320.00&officeHeight=180.00)",
+      [],
+      false,
+    );
+    const image = asElement(html).querySelector("img");
+
+    expect(image).toHaveAttribute("data-office-width", "320");
+    expect(image).toHaveAttribute("data-office-height", "180");
+    expect(image).toHaveClass("office-document-image", "inline-block");
+    expect(image).toHaveStyle({
+      width: "320px",
+      maxWidth: "100%",
+      height: "auto",
+      aspectRatio: "320/180",
+      objectFit: "contain",
+    });
+  });
+
   it("preserves the Office metafile marker for extraction review conversion", () => {
     const html = renderExtractText(
       "![公式](/api/files/file-1/assets/rId5?officeMetafile=wmf)",

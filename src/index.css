@@ -100,6 +100,26 @@
   .skeleton {
     @apply bg-gradient-to-r from-ink-100 via-ink-50 to-ink-100 bg-[length:1000px_100%] animate-shimmer rounded;
   }
+
+  .question-rich-content img {
+    display: inline-block;
+    width: auto;
+    height: auto;
+    max-width: min(100%, 36rem) !important;
+    max-height: 20rem !important;
+    object-fit: contain;
+    vertical-align: middle;
+  }
+
+  .document-preview-content img {
+    display: inline-block;
+    width: auto;
+    height: auto;
+    max-width: min(100%, 48rem) !important;
+    max-height: 28rem !important;
+    object-fit: contain;
+    vertical-align: middle;
+  }
 }
 
 @layer utilities {

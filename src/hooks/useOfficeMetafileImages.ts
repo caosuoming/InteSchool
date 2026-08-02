@@ -11,7 +11,7 @@ const MIN_RENDER_DIMENSION = 64;
 const RENDER_SCALE = 2;
 
 export const officeMetafilePreviewClassName =
-  "[&_img]:max-w-full [&_img]:h-auto [&_.office-metafile-fallback]:my-1 [&_.office-metafile-fallback]:inline-flex [&_.office-metafile-fallback]:rounded-md [&_.office-metafile-fallback]:border [&_.office-metafile-fallback]:border-amber-200 [&_.office-metafile-fallback]:bg-amber-50 [&_.office-metafile-fallback]:px-2 [&_.office-metafile-fallback]:py-1 [&_.office-metafile-fallback]:text-xs [&_.office-metafile-fallback]:text-amber-800";
+  "[&_img]:max-w-full [&_img]:h-auto [&_img]:object-contain [&_.office-metafile-fallback]:my-1 [&_.office-metafile-fallback]:inline-flex [&_.office-metafile-fallback]:rounded-md [&_.office-metafile-fallback]:border [&_.office-metafile-fallback]:border-amber-200 [&_.office-metafile-fallback]:bg-amber-50 [&_.office-metafile-fallback]:px-2 [&_.office-metafile-fallback]:py-1 [&_.office-metafile-fallback]:text-xs [&_.office-metafile-fallback]:text-amber-800";
 
 function readDisplaySize(image: HTMLImageElement): OfficeMetafileDisplaySize | null {
   return parseOfficeMetafileDisplaySize(

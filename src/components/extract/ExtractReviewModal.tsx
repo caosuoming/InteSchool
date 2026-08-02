@@ -1674,7 +1674,10 @@ export function ExtractReviewModal({
           )
         }
       >
-        <div ref={previewRootRef} className={officeMetafilePreviewClassName}>
+        <div
+          ref={previewRootRef}
+          className={cn("question-rich-content", officeMetafilePreviewClassName)}
+        >
           {phase === "extracting" ? renderExtracting() : renderReview()}
         </div>
       </Modal>

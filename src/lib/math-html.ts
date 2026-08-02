@@ -1,6 +1,10 @@
 import katex from "katex";
 import sanitizeHtml from "sanitize-html";
 import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
+import {
+  documentImageInlineStyle,
+  parseDocumentImageDisplaySize,
+} from "@/lib/office-metafile";
 
 const ESCAPED_DOLLAR = "\uE000INTESCHOOL_DOLLAR\uE001";
 const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea";
@@ -58,6 +62,7 @@ export function renderMathHtml(content: string): string {
   }
 
   replaceMarkdownImages(template.content);
+  applyDocumentImageLayouts(template.content);
 
   const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
@@ -93,6 +98,18 @@ export function renderMathHtml(content: string): string {
   return template.innerHTML;
 }
 
+function applyDocumentImageLayouts(root: DocumentFragment): void {
+  const images = root.querySelectorAll<HTMLImageElement>("img");
+  for (const image of images) {
+    image.setAttribute("loading", "lazy");
+    const source = image.getAttribute("src");
+    if (!source) continue;
+    const displaySize = parseDocumentImageDisplaySize(source);
+    if (!displaySize) continue;
+    image.style.cssText = documentImageInlineStyle(displaySize);
+  }
+}
+
 function replaceMarkdownImages(root: DocumentFragment): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
@@ -123,7 +140,6 @@ function replaceMarkdownImages(root: DocumentFragment): void {
         const image = document.createElement("img");
         image.src = source;
         image.alt = match[1] || "题目图片";
-        image.loading = "lazy";
         fragment.append(image);
       }
       cursor = MARKDOWN_IMAGE_PATTERN.lastIndex;
