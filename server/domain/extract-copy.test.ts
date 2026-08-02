@@ -64,7 +64,9 @@ function sourceLecture(): Lecture {
 
 function blocks(): ExtractedDocumentBlock[] {
   return [
-    { id: "heading-1", type: "heading", content: "一、选择题" },
+    { id: "title-1", type: "documentTitle", content: "阶段检测" },
+    { id: "info-1", type: "documentInfo", content: "考试时间：90 分钟" },
+    { id: "group-1", type: "groupTitle", content: "一、选择题" },
     {
       id: "question-1",
       type: "question",
@@ -79,7 +81,6 @@ function blocks(): ExtractedDocumentBlock[] {
       content: "集合的基本概念",
       materialId: "material-1",
     },
-    { id: "text-1", type: "text", content: "请认真作答。" },
     {
       id: "question-2",
       type: "question",
@@ -117,10 +118,11 @@ describe("document extract copies", () => {
       ]);
       expect(copy.totalScore).toBe(17);
       expect(copy.contentBlocks?.map((block) => block.type)).toEqual([
-        "heading",
+        "documentTitle",
+        "documentInfo",
+        "groupTitle",
         "question",
         "knowledge",
-        "text",
         "question",
       ]);
       expect(copy.contentBlocks?.filter((block) => block.type === "question"))
@@ -145,26 +147,37 @@ describe("document extract copies", () => {
 
       expect(copy.sections.map((section) => section.type)).toEqual([
         "chapter",
+        "text",
+        "chapter",
         "question",
         "knowledge",
-        "text",
         "question",
       ]);
-      expect(copy.sections[0]).toMatchObject({ title: "一、选择题", content: "" });
-      expect(copy.sections[1]).toMatchObject({
+      expect(copy.sections[0]).toMatchObject({ title: "阶段检测", content: "" });
+      expect(copy.sections[1]).toMatchObject({ content: "考试时间：90 分钟" });
+      expect(copy.sections[2]).toMatchObject({ title: "一、选择题", content: "" });
+      expect(copy.sections[3]).toMatchObject({
         content: "第一道题题干",
         questionId: "bank-question-1",
         displayMode: "stem-only",
       });
-      expect(copy.sections[2]).toMatchObject({
+      expect(copy.sections[4]).toMatchObject({
         title: "知识提示",
         content: "集合的基本概念",
       });
-      expect(copy.sections[4]).toMatchObject({
+      expect(copy.sections[5]).toMatchObject({
         content: "第二道题题干",
         questionId: "bank-question-2",
         displayMode: "stem-only",
       });
+      expect(copy.contentBlocks?.map((block) => block.type)).toEqual([
+        "documentTitle",
+        "documentInfo",
+        "groupTitle",
+        "question",
+        "knowledge",
+        "question",
+      ]);
       expect(copy).toMatchObject({
         isExtractCopy: true,
         sourceResourceId: "lecture-source",

@@ -157,8 +157,15 @@ describe("ExtractReviewModal", () => {
     });
 
     expect(screen.queryByText("切块列表")).not.toBeInTheDocument();
-    expect(screen.getByText("知识库 1")).toBeInTheDocument();
-    expect(screen.getByText("未分类 0")).toBeInTheDocument();
+    expect(screen.getByText("文档标题 0")).toBeInTheDocument();
+    expect(screen.getByText("文档信息 0")).toBeInTheDocument();
+    expect(screen.getByText("知识块 1")).toBeInTheDocument();
+    expect(screen.getByText("题型或项目名 0")).toBeInTheDocument();
+
+    const regionTypeSelect = screen.getAllByLabelText("调整区域属性")[0];
+    for (const label of ["文档标题", "文档信息", "知识块", "题型或项目名", "题目"]) {
+      expect(within(regionTypeSelect).getByRole("option", { name: label })).toBeInTheDocument();
+    }
 
     const questionTypeSelect = screen.getByLabelText("题型选择");
     for (const label of ["单选题", "多选题", "判断题", "填空题", "解答题"]) {
@@ -434,17 +441,31 @@ describe("ExtractReviewModal", () => {
   it("creates the lecture manuscript from all reviewed blocks in their original order", async () => {
     mocks.parseDocumentBlocks.mockReturnValue([
       {
-        id: "block-heading",
-        type: "heading",
-        content: "一、选择题",
+        id: "block-title",
+        type: "documentTitle",
+        content: "测试讲义标题",
         order: 0,
+        status: "new",
+      },
+      {
+        id: "block-info",
+        type: "documentInfo",
+        content: "适用年级：高一",
+        order: 1,
+        status: "new",
+      },
+      {
+        id: "block-group",
+        type: "groupTitle",
+        content: "一、选择题",
+        order: 2,
         status: "new",
       },
       {
         id: "block-question",
         type: "question",
         content: "题目：示例题目",
-        order: 1,
+        order: 3,
         status: "new",
         questionType: "single",
         options: ["选项 A", "选项 B"],
@@ -457,14 +478,7 @@ describe("ExtractReviewModal", () => {
         type: "knowledge",
         content: "示例知识内容",
         knowledgeTitle: "示例知识",
-        order: 2,
-        status: "new",
-      },
-      {
-        id: "block-unused",
-        type: "unused",
-        content: "请认真作答",
-        order: 3,
+        order: 4,
         status: "new",
       },
     ]);
@@ -484,14 +498,24 @@ describe("ExtractReviewModal", () => {
       />,
     );
 
-    await screen.findByText("标题 1");
+    await screen.findByText("文档标题 1");
     fireEvent.click(screen.getByRole("button", { name: /确认入库/ }));
 
     await waitFor(() => expect(mocks.createLectureExtractCopy).toHaveBeenCalledTimes(1));
     expect(mocks.createLectureExtractCopy).toHaveBeenCalledWith("lecture-1", [
       {
-        id: "block-heading",
-        type: "heading",
+        id: "block-title",
+        type: "documentTitle",
+        content: "测试讲义标题",
+      },
+      {
+        id: "block-info",
+        type: "documentInfo",
+        content: "适用年级：高一",
+      },
+      {
+        id: "block-group",
+        type: "groupTitle",
         content: "一、选择题",
       },
       {
@@ -507,11 +531,6 @@ describe("ExtractReviewModal", () => {
         title: "示例知识",
         content: "示例知识内容",
         materialId: "material-created",
-      },
-      {
-        id: "block-unused",
-        type: "text",
-        content: "请认真作答",
       },
     ]);
   });

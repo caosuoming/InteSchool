@@ -388,8 +388,21 @@ export const lectureService = {
         id: genId("sec"),
         children: copySections(s.children || []),
       }));
-    const extractedSections: LectureSection[] = contentBlocks.map((block, index) => {
-      if (block.type === "heading") {
+    const normalizedBlocks = contentBlocks.map((block) => ({
+      ...block,
+      id: genId("doc-block"),
+    }));
+    const extractedSections: LectureSection[] = normalizedBlocks.map((block, index) => {
+      if (block.type === "documentTitle") {
+        return {
+          id: genId("sec"),
+          title: block.content,
+          type: "chapter",
+          content: "",
+          children: [],
+        };
+      }
+      if (block.type === "groupTitle" || block.type === "heading") {
         return {
           id: genId("sec"),
           title: block.content,
@@ -431,6 +444,7 @@ export const lectureService = {
       id: genId("lec"),
       title: `${source.title}（拆解版）`,
       sections: extractedSections.length > 0 ? extractedSections : copySections(source.sections),
+      contentBlocks: normalizedBlocks.length > 0 ? normalizedBlocks : source.contentBlocks,
       isExtractCopy: true,
       sourceResourceId: sourceId,
       extractStatus: "done",

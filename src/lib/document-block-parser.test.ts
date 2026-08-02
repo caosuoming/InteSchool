@@ -26,7 +26,7 @@ describe("document block parser", () => {
     );
 
     expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toMatchObject({ type: "heading", content: "一、单项选择题" });
+    expect(blocks[0]).toMatchObject({ type: "groupTitle", content: "一、单项选择题" });
     expect(blocks[1]).toMatchObject({
       type: "question",
       questionType: "single",
@@ -333,6 +333,29 @@ describe("document block parser", () => {
       type: "knowledge",
       content: "集合是由确定对象组成的整体。\n集合中的对象称为元素。",
     });
+  });
+
+  it("separates document title and information before structured content", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "2026 年春季学期数学阶段检测",
+        "考试时间：90 分钟",
+        "满分：100 分",
+        "一、单项选择题",
+        "1. 计算 1+1 的值 A. 1 B. 2 C. 3 D. 4",
+        "答案：B",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual([
+      "documentTitle",
+      "documentInfo",
+      "groupTitle",
+      "question",
+    ]);
+    expect(blocks[0].content).toBe("2026 年春季学期数学阶段检测");
+    expect(blocks[1].content).toBe("考试时间：90 分钟\n满分：100 分");
   });
 
   it("keeps unlabelled essay solution steps out of the question stem", () => {

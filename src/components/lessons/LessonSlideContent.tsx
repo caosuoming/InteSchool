@@ -21,7 +21,7 @@ export function LessonSlideContent({ slide, showAnswer = true, className }: Less
 
   if (slide.type === "section") {
     return (
-      <div className={cn("flex h-full flex-col items-center justify-center p-12 text-center", className)}>
+      <div className={cn("flex h-full flex-col items-center justify-start px-12 pt-[16%] text-center", className)}>
         <div className="mb-5 h-1 w-20 rounded-full bg-gold-400" />
         <h2 className="max-w-4xl font-serif text-4xl font-bold leading-tight text-ink-900">
           {slide.title}

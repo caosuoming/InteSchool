@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
-import type { Courseware, ExamPaper, Lecture, Question } from "../../src/types/index.js";
+import type {
+  Courseware,
+  ExamPaper,
+  Lecture,
+  LessonDocumentBlock,
+  Question,
+} from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { coursewareService } from "./courseware.js";
 import { lessonCoursewareService } from "./lessonCourseware.js";
@@ -303,7 +309,9 @@ describe("courseware lesson flow", () => {
     const state = createState();
     const paper = sourceExamPaper();
     paper.contentBlocks = [
-      { id: "heading-1", type: "heading", content: "一、选择题" },
+      { id: "title-1", type: "documentTitle", content: "审阅后的函数检测" },
+      { id: "info-1", type: "documentInfo", content: "考试时间：45 分钟" },
+      { id: "group-1", type: "groupTitle", content: "一、选择题" },
       {
         id: "knowledge-1",
         type: "knowledge",
@@ -316,7 +324,6 @@ describe("courseware lesson flow", () => {
         content: paper.questions[0].stem,
         examPaperQuestionId: paper.questions[0].id,
       },
-      { id: "text-1", type: "text", content: "本段不单独生成课件页。" },
     ];
     paper.questions.push({
       ...paper.questions[0],
@@ -334,6 +341,10 @@ describe("courseware lesson flow", () => {
       );
 
       expect(lesson.slides).toHaveLength(4);
+      expect(lesson.slides[0]).toMatchObject({
+        type: "section",
+        title: "审阅后的函数检测",
+      });
       expect(lesson.slides.map((slide) => slide.type)).toEqual([
         "section",
         "knowledge",
@@ -358,14 +369,31 @@ describe("courseware lesson flow", () => {
     paper.originalFileUrl = "/api/files/paper-file";
     paper.originalFileName = "泉州一模.docx";
     state.examPapers = [paper];
-    const documentBlocks = Array.from({ length: 19 }, (_, index) => ({
-      id: `parsed-question-${index + 1}`,
-      type: "question" as const,
-      content: `第 ${index + 1} 题题干`,
-      questionType: "short" as const,
-      answer: `${index + 1}`,
-      analysis: `第 ${index + 1} 题解析`,
-    }));
+    const documentBlocks: LessonDocumentBlock[] = [
+      {
+        id: "parsed-title",
+        type: "documentTitle",
+        content: "泉州一模数学试卷",
+      },
+      {
+        id: "parsed-info",
+        type: "documentInfo",
+        content: "考试时间：120 分钟",
+      },
+      {
+        id: "parsed-group",
+        type: "groupTitle",
+        content: "一、选择题",
+      },
+      ...Array.from({ length: 19 }, (_, index) => ({
+        id: `parsed-question-${index + 1}`,
+        type: "question" as const,
+        content: `第 ${index + 1} 题题干`,
+        questionType: "short" as const,
+        answer: `${index + 1}`,
+        analysis: `第 ${index + 1} 题解析`,
+      })),
+    ];
 
     await runWithState(state, async () => {
       const lesson = await lessonCoursewareService.createFromExamPaper(
@@ -376,7 +404,10 @@ describe("courseware lesson flow", () => {
       );
 
       expect(lesson.slides).toHaveLength(20);
-      expect(lesson.slides[0]).toMatchObject({ type: "section", title: paper.title });
+      expect(lesson.slides[0]).toMatchObject({
+        type: "section",
+        title: "泉州一模数学试卷",
+      });
       expect(lesson.slides[1]).toMatchObject({
         type: "question",
         title: "第 1 题",
@@ -398,6 +429,10 @@ describe("courseware lesson flow", () => {
     const question = sourceQuestion();
     state.questions = [question];
     const lecture = sourceLecture();
+    lecture.contentBlocks = [
+      { id: "lecture-title", type: "documentTitle", content: "审阅后的函数专题" },
+      { id: "lecture-info", type: "documentInfo", content: "适用年级：高一" },
+    ];
     lecture.sections[0].children.unshift(
       {
         id: "section-knowledge",
@@ -426,7 +461,7 @@ describe("courseware lesson flow", () => {
       expect(lesson.slides).toHaveLength(3);
       expect(lesson.slides[0]).toMatchObject({
         type: "section",
-        title: lecture.title,
+        title: "审阅后的函数专题",
       });
       expect(lesson.slides[1]).toMatchObject({
         type: "knowledge",
