@@ -668,12 +668,14 @@ export const serviceParameters = {
     "createFromExamPaper": [
       "teacherId",
       "schoolId",
-      "examPaper"
+      "sourceId",
+      "documentBlocks"
     ],
     "createFromLecture": [
       "teacherId",
       "schoolId",
-      "lecture"
+      "sourceId",
+      "documentBlocks"
     ],
     "createFromCourseware": [
       "teacherId",

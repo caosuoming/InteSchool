@@ -1,6 +1,7 @@
 import type {
   LessonCourseware,
   LessonCoursewareFilter,
+  LessonDocumentBlock,
   LessonSlide,
   LessonSlideElement,
   ExamPaper,
@@ -141,6 +142,93 @@ function titleSlide(title: string, subtitle: string): LessonSlide {
   };
 }
 
+function knowledgeSlide(title: string, content: string): LessonSlide {
+  return {
+    id: genId("slide"),
+    type: "knowledge",
+    title,
+    content,
+    relatedQuestionIds: [],
+    askableStudentIds: [],
+  };
+}
+
+function examPaperSlides(examPaper: ExamPaper): LessonSlide[] {
+  let questionNumber = 0;
+  let knowledgeNumber = 0;
+  const usedQuestionIds = new Set<string>();
+  const structuredSlides = (examPaper.contentBlocks || []).flatMap((block) => {
+    if (block.type === "knowledge") {
+      knowledgeNumber += 1;
+      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content)];
+    }
+    if (block.type !== "question") return [];
+
+    questionNumber += 1;
+    const sourceQuestion = examPaper.questions.find((question) =>
+      question.id === block.examPaperQuestionId
+      || question.questionId === block.questionId
+      || question.id === block.questionId
+      || question.stem === block.content,
+    );
+    if (sourceQuestion) usedQuestionIds.add(sourceQuestion.id);
+    return [questionSlide({
+      id: sourceQuestion?.questionId || sourceQuestion?.id || block.questionId || block.id,
+      stem: sourceQuestion?.stem || block.content,
+      type: sourceQuestion?.type || block.questionType || "essay",
+      options: sourceQuestion?.options,
+      answer: sourceQuestion?.answer || "",
+      analysis: sourceQuestion?.analysis || "",
+    }, block.title || `第 ${questionNumber} 题`)];
+  });
+
+  if (structuredSlides.length > 0) {
+    const remainingQuestions = examPaper.questions
+      .filter((question) => !usedQuestionIds.has(question.id))
+      .map((question) => {
+        questionNumber += 1;
+        return questionSlide({
+          id: question.questionId || question.id,
+          stem: question.stem,
+          type: question.type,
+          options: question.options,
+          answer: question.answer,
+          analysis: question.analysis,
+        }, `第 ${questionNumber} 题`);
+      });
+    return [...structuredSlides, ...remainingQuestions];
+  }
+  return examPaper.questions.map((question, index) => questionSlide({
+    id: question.questionId || question.id,
+    stem: question.stem,
+    type: question.type,
+    options: question.options,
+    answer: question.answer,
+    analysis: question.analysis,
+  }, `第 ${index + 1} 题`));
+}
+
+function documentBlockSlides(blocks: LessonDocumentBlock[]): LessonSlide[] {
+  let questionNumber = 0;
+  let knowledgeNumber = 0;
+  return blocks.map((block) => {
+    if (block.type === "knowledge") {
+      knowledgeNumber += 1;
+      return knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content);
+    }
+
+    questionNumber += 1;
+    return questionSlide({
+      id: block.id,
+      stem: block.content,
+      type: block.questionType || "essay",
+      options: block.options,
+      answer: block.answer || "",
+      analysis: block.analysis || "",
+    }, block.title || `第 ${questionNumber} 题`);
+  });
+}
+
 function flattenLectureSections(sections: LectureSection[]): LectureSection[] {
   return sections.flatMap((section) => [section, ...flattenLectureSections(section.children || [])]);
 }
@@ -263,18 +351,18 @@ export const lessonCoursewareService = {
   async createFromExamPaper(
     teacherId: string,
     schoolId: string,
-    examPaper: ExamPaper,
+    source: string | Pick<ExamPaper, "id">,
+    documentBlocks: LessonDocumentBlock[] = [],
   ): Promise<LessonCourseware> {
+    const sourceId = typeof source === "string" ? source : source.id;
+    const examPaper = db.read("examPapers").find((item) =>
+      item.id === sourceId && item.teacherId === teacherId && item.schoolId === schoolId);
+    if (!examPaper) throw new Error("试卷不存在或无权访问");
+
+    const bodySlides = examPaperSlides(examPaper);
     const slides: LessonSlide[] = [
       titleSlide(examPaper.title, `${examPaper.grade} · ${examPaper.schoolYear}`),
-      ...examPaper.questions.map((q, i) => questionSlide({
-        id: q.questionId || q.id,
-        stem: q.stem,
-        type: q.type,
-        options: q.options,
-        answer: q.answer,
-        analysis: q.analysis,
-      }, `第 ${i + 1} 题`)),
+      ...(bodySlides.length > 0 ? bodySlides : documentBlockSlides(documentBlocks)),
     ];
 
     return this.createCourseware(teacherId, schoolId, {
@@ -298,11 +386,17 @@ export const lessonCoursewareService = {
   async createFromLecture(
     teacherId: string,
     schoolId: string,
-    lecture: Lecture,
+    source: string | Pick<Lecture, "id">,
+    documentBlocks: LessonDocumentBlock[] = [],
   ): Promise<LessonCourseware> {
+    const sourceId = typeof source === "string" ? source : source.id;
+    const lecture = db.read("lectures").find((item) =>
+      item.id === sourceId && item.teacherId === teacherId && item.schoolId === schoolId);
+    if (!lecture) throw new Error("讲义不存在或无权访问");
+
     const questions = db.read("questions");
     const slides: LessonSlide[] = [
-      titleSlide(lecture.originalFileName || lecture.title, lecture.description || `${lecture.grade} · ${lecture.schoolYear}`),
+      titleSlide(lecture.title, lecture.description || `${lecture.grade} · ${lecture.schoolYear}`),
     ];
 
     flattenLectureSections(lecture.sections).forEach((sec) => {
@@ -328,17 +422,11 @@ export const lessonCoursewareService = {
             askableStudentIds: [],
           });
         }
-      } else {
-        slides.push({
-          id: genId("slide"),
-          type: sec.type === "chapter" ? "section" : "knowledge",
-          title: sec.title,
-          content: sec.content,
-          relatedQuestionIds: [],
-          askableStudentIds: [],
-        });
+      } else if (sec.type === "knowledge") {
+        slides.push(knowledgeSlide(sec.title, sec.content));
       }
     });
+    if (slides.length === 1) slides.push(...documentBlockSlides(documentBlocks));
 
     return this.createCourseware(teacherId, schoolId, {
       title: `${lecture.title}（上课课件）`,

@@ -1,6 +1,13 @@
 import { rpcCall } from "./api";
 
-import type { LessonCourseware, LessonCoursewareFilter, LessonSlide, ExamPaper, Lecture, Courseware, ResourceSemester } from "@/types";
+import type {
+  Courseware,
+  LessonCourseware,
+  LessonCoursewareFilter,
+  LessonDocumentBlock,
+  LessonSlide,
+  ResourceSemester,
+} from "@/types";
 
 export interface LessonCoursewareInput {
   title: string;
@@ -46,12 +53,32 @@ export const lessonCoursewareService = {
     return rpcCall("lessonCourseware", "unpublishCourseware", [id]) as any;
   },
 
-  async createFromExamPaper(teacherId: string, schoolId: string, examPaper: ExamPaper): Promise<LessonCourseware> {
-    return rpcCall("lessonCourseware", "createFromExamPaper", [teacherId, schoolId, examPaper]) as any;
+  async createFromExamPaper(
+    teacherId: string,
+    schoolId: string,
+    examPaperId: string,
+    documentBlocks: LessonDocumentBlock[] = [],
+  ): Promise<LessonCourseware> {
+    return rpcCall("lessonCourseware", "createFromExamPaper", [
+      teacherId,
+      schoolId,
+      examPaperId,
+      documentBlocks,
+    ]) as any;
   },
 
-  async createFromLecture(teacherId: string, schoolId: string, lecture: Lecture): Promise<LessonCourseware> {
-    return rpcCall("lessonCourseware", "createFromLecture", [teacherId, schoolId, lecture]) as any;
+  async createFromLecture(
+    teacherId: string,
+    schoolId: string,
+    lectureId: string,
+    documentBlocks: LessonDocumentBlock[] = [],
+  ): Promise<LessonCourseware> {
+    return rpcCall("lessonCourseware", "createFromLecture", [
+      teacherId,
+      schoolId,
+      lectureId,
+      documentBlocks,
+    ]) as any;
   },
 
   async createFromCourseware(teacherId: string, schoolId: string, courseware: Courseware): Promise<LessonCourseware> {

@@ -55,7 +55,7 @@ function taskId(input: Pick<ExtractTaskInput, "resourceId" | "resourceType">): s
   return `${input.resourceType}:${input.resourceId}`;
 }
 
-function currentParseConfig(): DocumentParseConfig {
+export function currentParseConfig(): DocumentParseConfig {
   const config = useExtractConfigStore.getState();
   return {
     headingKeywords: [...config.headingKeywords],

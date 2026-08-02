@@ -1607,6 +1607,18 @@ export interface QuestionReference {
 /** 课件页类型 */
 export type LessonSlideType = "question" | "knowledge" | "section" | "courseware";
 
+/** 从尚未入库的原始文档直接生成上课页面时使用的有序内容块。 */
+export interface LessonDocumentBlock {
+  id: string;
+  type: "question" | "knowledge";
+  title?: string;
+  content: string;
+  questionType?: QuestionType;
+  options?: string[];
+  answer?: string;
+  analysis?: string;
+}
+
 /** 课件元素入场动画 */
 export type LessonElementAnimation = "none" | "fade" | "rise" | "zoom";
 
