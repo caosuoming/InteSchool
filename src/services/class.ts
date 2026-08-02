@@ -142,7 +142,7 @@ export const classService = {
     return rpcCall("class", "getStudent", [studentId]) as any;
   },
 
-  async updateStudent(studentId: string, patch: Partial<Pick<Student, "name" | "studentNo" | "grade" | "gender" | "externalSchool">>): Promise<Student | null> {
+  async updateStudent(studentId: string, patch: Partial<Pick<Student, "name" | "studentNo" | "grade" | "gender" | "subjectSelection" | "externalSchool">>): Promise<Student | null> {
     return rpcCall("class", "updateStudent", [studentId, patch]) as any;
   },
 

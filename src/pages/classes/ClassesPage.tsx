@@ -24,13 +24,13 @@ import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoo
 
 type Tab = "school" | "personal";
 
-export default function ClassesPage() {
+export default function ClassesPage({ personalOnly = false }: { personalOnly?: boolean }) {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const currentAffiliation = getCurrentAffiliation();
   const isPersonal = !currentAffiliation?.schoolId;
   const schoolId = currentAffiliation?.schoolId || null;
   const { gradeOptions, defaultGrade } = useSchoolResourceOptions(schoolId);
-  const [tab, setTab] = useState<Tab>(isPersonal ? "personal" : "school");
+  const [tab, setTab] = useState<Tab>(isPersonal || personalOnly ? "personal" : "school");
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -112,6 +112,10 @@ export default function ClassesPage() {
     setExtStudentGrade((value) => value || defaultGrade);
   }, [defaultGrade]);
 
+  useEffect(() => {
+    if (isPersonal || personalOnly) setTab("personal");
+  }, [isPersonal, personalOnly]);
+
   const load = useCallback(async () => {
     if (!teacher) return;
     setLoading(true);
@@ -122,8 +126,8 @@ export default function ClassesPage() {
         classService.listSchoolClasses(schoolId),
         classService.listStudentsBySchool(schoolId),
         settingsService.listClassTypes(schoolId),
-        classService.listSuspendedStudents(schoolId, "school"),
-        classService.listDepartedStudents(schoolId, "school"),
+        classService.listSuspendedStudents(personalOnly ? teacher.id : schoolId, personalOnly ? "personal" : "school"),
+        classService.listDepartedStudents(personalOnly ? teacher.id : schoolId, personalOnly ? "personal" : "school"),
       ]);
       setSchoolClasses(sc);
       setStudents(sts);
@@ -142,7 +146,7 @@ export default function ClassesPage() {
       setDepartedStudents(departed);
     }
     setLoading(false);
-  }, [schoolId, teacher]);
+  }, [personalOnly, schoolId, teacher]);
 
   useEffect(() => {
     load();
@@ -445,9 +449,11 @@ export default function ClassesPage() {
   return (
     <div>
       <PageHeader
-        title="班级与学生"
+        title={personalOnly ? "个人教学班" : "班级与学生"}
         description={
-          isPersonal
+          personalOnly
+            ? "管理教师私有的个人教学班和学生档案"
+            : isPersonal
             ? "管理个人教学班级和学生档案（个人身份，学生为校外）"
             : "本校班级共享，每位教师都可维护；个人教学班为教师私有"
         }
@@ -455,7 +461,7 @@ export default function ClassesPage() {
         action={
           <Button variant="gold" onClick={() => setCreateClassOpen(true)}>
             <Plus className="w-4 h-4" />
-            {isPersonal ? "新建教学班" : tab === "school" ? "新建班级" : "新建教学班"}
+            {isPersonal || personalOnly ? "新建教学班" : tab === "school" ? "新建班级" : "新建教学班"}
           </Button>
         }
       />
@@ -464,7 +470,7 @@ export default function ClassesPage() {
         {/* 左：班级列表 */}
         <div className="lg:col-span-1">
           <Card className="sticky top-6">
-            <div className="flex items-center gap-1 p-1 mb-3 rounded-md bg-ink-100">
+            {!personalOnly && <div className="flex items-center gap-1 p-1 mb-3 rounded-md bg-ink-100">
               {!isPersonal && (
                 <button
                   onClick={() => setTab("school")}
@@ -487,7 +493,7 @@ export default function ClassesPage() {
                 <Layers className="w-3.5 h-3.5" />
                 个人教学班 ({personalClasses.length})
               </button>
-            </div>
+            </div>}
 
             {loading ? (
               <div className="flex justify-center py-8">
@@ -964,7 +970,7 @@ export default function ClassesPage() {
         open={createClassOpen}
         onClose={() => setCreateClassOpen(false)}
         size="sm"
-        title={isPersonal ? "新建个人教学班" : tab === "school" ? "新建本校班级" : "新建个人教学班"}
+        title={isPersonal || personalOnly ? "新建个人教学班" : tab === "school" ? "新建本校班级" : "新建个人教学班"}
         footer={
           <>
             <Button variant="ghost" onClick={() => setCreateClassOpen(false)}>取消</Button>
