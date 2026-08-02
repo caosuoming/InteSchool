@@ -787,13 +787,15 @@ export interface Question {
   /** 属性区块显示顺序：chapter=章节目录，knowledge=知识点目录，remark=备注 */
   sectionOrder?: string[];
   sourceDocId?: string;
-  sourceType?: "imported" | "manual" | "shared";
+  /** 学校“来源”设置中的值。 */
+  sourceType?: string;
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
-  category?: "practice" | "exam" | "homework" | "review";
+  /** 学校“题类”设置中的值。 */
+  category?: string;
   isShared: boolean;
   /** 查重哈希：基于题干+选项+答案计算，用于入库查重 */
   duplicateHash?: string;
@@ -876,6 +878,10 @@ export interface ExamPaper {
   status: ExamPaperStatus;
   /** 试卷类型ID */
   typeId?: string;
+  /** 上传文档拆解为题目时使用的来源。 */
+  questionSourceType?: string;
+  /** 上传文档拆解为题目时使用的题类。 */
+  questionCategory?: string;
   /** 题目编排方式：按题型分组或不分题型 */
   layoutMode?: "grouped" | "flat";
   /** 适用学生 ID（空表示不限定） */
@@ -970,6 +976,8 @@ export interface ResourceFilter {
   semester?: ResourceSemester;
   teacherId?: string;
   schoolId?: string;
+  /** 试卷等资源的学校配置类型 ID。 */
+  typeId?: string;
   /** 按ID列表筛选 */
   ids?: string[];
 }
@@ -1376,6 +1384,10 @@ export interface Lecture {
   status: LectureStatus;
   /** 讲义类型ID */
   typeId?: string;
+  /** 上传文档拆解为题目时使用的来源。 */
+  questionSourceType?: string;
+  /** 上传文档拆解为题目时使用的题类。 */
+  questionCategory?: string;
   /** 原稿文件信息（Word/PDF上传的原件） */
   originalFileUrl?: string;
   originalFileName?: string;
@@ -1425,6 +1437,7 @@ export interface LectureFilter {
   status?: LectureStatus;
   teacherId?: string;
   schoolId?: string;
+  typeId?: string;
 }
 
 export interface Basket {

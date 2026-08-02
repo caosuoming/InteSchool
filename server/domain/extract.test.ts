@@ -35,6 +35,8 @@ describe("extractService", () => {
         "2026-2027",
         "上学期",
         "lecture-1",
+        "document-import",
+        "mock-exam",
       );
 
       expect(result.createdQuestions).toHaveLength(1);
@@ -42,12 +44,16 @@ describe("extractService", () => {
         answer: "略",
         analysis: "略",
         summary: "略",
+        sourceType: "document-import",
+        category: "mock-exam",
       });
       expect(state.questions).toEqual([
         expect.objectContaining({
           answer: "略",
           analysis: "略",
           summary: "略",
+          sourceType: "document-import",
+          category: "mock-exam",
         }),
       ]);
     });

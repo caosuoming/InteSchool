@@ -555,7 +555,9 @@ export const serviceParameters = {
       "grade",
       "schoolYear",
       "semester",
-      "sourceResourceId"
+      "sourceResourceId",
+      "questionSourceType",
+      "questionCategory"
     ]
   },
   "knowledge": {

@@ -21,6 +21,8 @@ export const extractService = {
     schoolYear: string,
     semester: ResourceSemester,
     sourceResourceId: string,
+    questionSourceType?: string,
+    questionCategory?: string,
   ): Promise<{
     createdQuestions: Question[];
     mergedQuestions: Question[];
@@ -38,6 +40,8 @@ export const extractService = {
       schoolYear,
       semester,
       sourceResourceId,
+      questionSourceType,
+      questionCategory,
     ]);
   },
 };

@@ -24,6 +24,8 @@ export interface ExtractTaskInput {
   grade: string;
   schoolYear: string;
   semester: ResourceSemester;
+  questionSourceType?: string;
+  questionCategory?: string;
 }
 
 export interface ExtractTask extends ExtractTaskInput {
