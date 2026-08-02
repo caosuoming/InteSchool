@@ -26,6 +26,7 @@ import { reflectionService } from "@/services/reflection";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
 import { analyticsService, type KnowledgeMastery } from "@/services/analytics";
+import { settingsService } from "@/services/settings";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -40,7 +41,7 @@ import type {
   CoursewareType, MaterialType, ShareableResourceType,
   Reflection, Basket, AnyClass, Student, AnswerRecord,
   DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
-  LessonDocumentBlock,
+  LessonDocumentBlock, ExamPaperType, LectureType,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { genId } from "@/lib/service-utils";
@@ -72,10 +73,16 @@ import {
   useExtractTasksStore,
 } from "@/stores/extractTasks";
 import { parseDocumentBlocks, type DocumentBlock } from "@/lib/document-block-parser";
+import {
+  buildResourceTypeOptions,
+  matchingResourceTypeIds,
+  resourceTypeLabel,
+} from "@/lib/resource-type-hierarchy";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
 type SortKey = "updated" | "created" | "title";
+type ResourceListItem = Question | ExamPaper | Lecture | Courseware | Material;
 
 interface MyResourcesPageProps {
   initialTab?: MyResourceTab;
@@ -257,12 +264,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [selectedGrade, setSelectedGrade] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
   const [selectedSemester, setSelectedSemester] = useState("");
+  const [selectedExamPaperType, setSelectedExamPaperType] = useState("");
+  const [selectedLectureType, setSelectedLectureType] = useState("");
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [examPapers, setExamPapers] = useState<ExamPaper[]>([]);
   const [coursewares, setCoursewares] = useState<Courseware[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [examPaperTypes, setExamPaperTypes] = useState<ExamPaperType[]>([]);
+  const [lectureTypes, setLectureTypes] = useState<LectureType[]>([]);
 
   // 所有试卷/讲义（含拆解副本），用于查找源资源的拆解副本
   const [allExamPapers, setAllExamPapers] = useState<ExamPaper[]>([]);
@@ -356,6 +367,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const questionTypeConfig = useQuestionTypeOptions(schoolId);
   const getQuestionTypeLabel = questionTypeConfig.getLabel;
   const questionTypeOptions = questionTypeConfig.options ?? [];
+  const examPaperTypeOptions = useMemo(
+    () => buildResourceTypeOptions(examPaperTypes),
+    [examPaperTypes],
+  );
+  const lectureTypeOptions = useMemo(
+    () => buildResourceTypeOptions(lectureTypes),
+    [lectureTypes],
+  );
   const selectedBasket = useMemo(
     () => baskets.find((basket) => basket.id === selectedBasketId) || null,
     [baskets, selectedBasketId],
@@ -464,6 +483,24 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     knowledgeService.getChapterTree(schoolId).then(setChapterTree);
     knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
   }, [schoolId]);
+
+  useEffect(() => {
+    if (activeTab === "examPaper") {
+      settingsService.listExamPaperTypes(schoolId)
+        .then(setExamPaperTypes)
+        .catch((error) => {
+          console.error("加载试卷类型失败", error);
+          setExamPaperTypes([]);
+        });
+    } else if (activeTab === "lecture") {
+      settingsService.listLectureTypes(schoolId)
+        .then(setLectureTypes)
+        .catch((error) => {
+          console.error("加载讲义类型失败", error);
+          setLectureTypes([]);
+        });
+    }
+  }, [activeTab, schoolId]);
 
   useEffect(() => {
     const timer = setTimeout(() => loadAll(), 300);
@@ -890,7 +927,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, []);
 
   // 排序
-  const sortedData = useMemo(() => {
+  const sortedData = useMemo<ResourceListItem[]>(() => {
     const sortByKey = <T extends { updatedAt: string; createdAt: string; title?: string; stem?: string }>(arr: T[]) => {
       const sorted = [...arr];
       switch (sortKey) {
@@ -916,18 +953,39 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       case "examPaper": return sortByKey(examPapers);
       case "courseware": return sortByKey(coursewares);
       case "material": return sortByKey(materials);
+      case "basket": return [];
     }
   }, [activeTab, questions, lectures, examPapers, coursewares, materials, sortKey]);
 
   // 仅看未分类筛选
   const displayedData = useMemo(() => {
-    if (!onlyUncategorized || !noTreeSelection) return sortedData;
-    return sortedData.filter((item) => {
-      const chapterIds = (item as { chapterIds?: string[] }).chapterIds ?? [];
-      const knowledgePointIds = (item as { knowledgePointIds?: string[] }).knowledgePointIds ?? [];
-      return chapterIds.length === 0 && knowledgePointIds.length === 0;
-    });
-  }, [sortedData, onlyUncategorized, noTreeSelection]);
+    let result = sortedData;
+    if (onlyUncategorized && noTreeSelection) {
+      result = result.filter((item) => {
+        const chapterIds = (item as { chapterIds?: string[] }).chapterIds ?? [];
+        const knowledgePointIds = (item as { knowledgePointIds?: string[] }).knowledgePointIds ?? [];
+        return chapterIds.length === 0 && knowledgePointIds.length === 0;
+      });
+    }
+    if (activeTab === "examPaper" && selectedExamPaperType) {
+      const matchingIds = matchingResourceTypeIds(selectedExamPaperType, examPaperTypes);
+      result = (result as ExamPaper[]).filter((item) => Boolean(item.typeId && matchingIds.has(item.typeId)));
+    }
+    if (activeTab === "lecture" && selectedLectureType) {
+      const matchingIds = matchingResourceTypeIds(selectedLectureType, lectureTypes);
+      result = (result as Lecture[]).filter((item) => Boolean(item.typeId && matchingIds.has(item.typeId)));
+    }
+    return result;
+  }, [
+    activeTab,
+    examPaperTypes,
+    lectureTypes,
+    noTreeSelection,
+    onlyUncategorized,
+    selectedExamPaperType,
+    selectedLectureType,
+    sortedData,
+  ]);
 
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
 
@@ -1948,6 +2006,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap w-full">
+              {activeTab === "examPaper" && (
+                <FilterSelect
+                  label="试卷类型"
+                  value={selectedExamPaperType}
+                  options={examPaperTypeOptions}
+                  onChange={setSelectedExamPaperType}
+                />
+              )}
+              {activeTab === "lecture" && (
+                <FilterSelect
+                  label="讲义类型"
+                  value={selectedLectureType}
+                  options={lectureTypeOptions}
+                  onChange={setSelectedLectureType}
+                />
+              )}
               <FilterSelect
                 label="年级"
                 value={selectedGrade}
@@ -2055,6 +2129,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       ) : undefined}
                       description={mainLecture.description || (hasExtractCopy ? "文档拆解生成的正稿，可编辑替换其中的题目和知识块" : undefined)}
                       meta={[
+                        { label: "类型", value: resourceTypeLabel(mainLecture.typeId, lectureTypes) },
                         { label: "年级", value: `${mainLecture.grade} · ${mainLecture.schoolYear} · ${mainLecture.semester || "上学期"}` },
                         { label: "内容", value: `${mainLecture.sections.length} 节` },
                         { label: "状态", value: mainLecture.status === "published" ? "已发布" : "草稿" },
@@ -2148,6 +2223,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         title={copy.title}
                         description={copy.description || "文档拆解生成的副本，可编辑替换其中的题目和知识块"}
                         meta={[
+                          { label: "类型", value: resourceTypeLabel(copy.typeId, examPaperTypes) },
                           { label: "年级", value: `${copy.grade} · ${copy.schoolYear} · ${copy.semester || "上学期"}` },
                           { label: "题目", value: `${copy.questions.length} 题` },
                           { label: "总分", value: `${copy.totalScore} 分` },
@@ -2207,6 +2283,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           ) : undefined}
                           description={item.description}
                           meta={[
+                            { label: "类型", value: resourceTypeLabel(item.typeId, examPaperTypes) },
                             { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
                             { label: "题目", value: `${item.questions.length} 题` },
                             { label: "总分", value: `${item.totalScore} 分` },
@@ -3381,7 +3458,7 @@ function FilterSelect({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 w-36 bg-paper border border-ink-100 rounded-lg shadow-lg z-20 py-1 animate-fade-in">
+          <div className="absolute top-full left-0 mt-1 min-w-40 w-max max-w-64 bg-paper border border-ink-100 rounded-lg shadow-lg z-20 py-1 animate-fade-in">
             <button
               onClick={() => { onChange(""); setOpen(false); }}
               className={cn(

@@ -88,7 +88,7 @@ export const settingsService = {
     return rpcCall("settings", "listExamPaperTypes", [schoolId]) as any;
   },
 
-  async createExamPaperType(schoolId: string, data: { name: string; description?: string; format: ExamPaperFormat; sortOrder?: number; enabled?: boolean }): Promise<ExamPaperType> {
+  async createExamPaperType(schoolId: string, data: { name: string; description?: string; parentId?: string | null; format: ExamPaperFormat; sortOrder?: number; enabled?: boolean }): Promise<ExamPaperType> {
     return rpcCall("settings", "createExamPaperType", [schoolId, data]) as any;
   },
 
@@ -112,7 +112,7 @@ export const settingsService = {
     return rpcCall("settings", "listLectureTypes", [schoolId]) as any;
   },
 
-  async createLectureType(schoolId: string, data: { name: string; description?: string; format: LectureFormat; sortOrder?: number; enabled?: boolean }): Promise<LectureType> {
+  async createLectureType(schoolId: string, data: { name: string; description?: string; parentId?: string | null; format: LectureFormat; sortOrder?: number; enabled?: boolean }): Promise<LectureType> {
     return rpcCall("settings", "createLectureType", [schoolId, data]) as any;
   },
 
