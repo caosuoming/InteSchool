@@ -117,13 +117,12 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   useEffect(() => {
     const load = async () => {
       setLoadingList(true);
-      const [sc, pc, ct] = await Promise.all([
-        classService.listSchoolClasses(schoolId),
-        classService.listPersonalClasses(teacher?.id || ""),
+      const [allClasses, ct] = await Promise.all([
+        classService.listMyClasses(schoolId, teacher?.id || ""),
         settingsService.listClassTypes(schoolId),
       ]);
-      setSchoolClasses(sc);
-      setPersonalClasses(pc);
+      setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
+      setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
       setClassTypes(ct);
       setLoadingList(false);
     };

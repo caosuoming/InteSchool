@@ -326,12 +326,7 @@ function buildQueryData(teacher: Teacher): GradeQueryData {
   const configuredTeachingClassIds = affiliation
     ? affiliation.teachingClassIds || []
     : teacher.teachingClassIds || [];
-  const legacyTeachingClassIds = allClasses
-    .filter((item) => item.createdBy === teacher.id)
-    .map((item) => item.id);
-  const teachingClassIds = unique((configuredTeachingClassIds.length > 0
-    ? configuredTeachingClassIds
-    : legacyTeachingClassIds).filter((id) => classMap.has(id)));
+  const teachingClassIds = unique(configuredTeachingClassIds.filter((id) => classMap.has(id)));
   const configuredHomeroomClassIds = affiliation
     ? affiliation.homeroomClassIds || []
     : teacher.homeroomClassIds || [];

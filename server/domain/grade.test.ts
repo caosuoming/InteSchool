@@ -377,6 +377,19 @@ describe("grade service", () => {
       const schoolQuery = await gradeService.getQueryData(teacher);
       expect(schoolQuery.scope).toBe("school");
       expect(schoolQuery.scopeLabel).toBe("全校");
+
+      teacher.role = "teacher";
+      teacher.roles = ["teacher"];
+      teacher.teachingClassIds = [];
+      teacher.homeroomClassIds = [];
+      teacher.affiliations[0].role = "teacher";
+      teacher.affiliations[0].roles = ["teacher"];
+      teacher.affiliations[0].teachingClassIds = [];
+      teacher.affiliations[0].homeroomClassIds = [];
+      teacher.affiliations[0].teachingGrades = [];
+      const unassignedQuery = await gradeService.getQueryData(teacher);
+      expect(unassignedQuery.teachingClassIds).toEqual([]);
+      expect(unassignedQuery.exams).toEqual([]);
     });
   });
   it("shares cohort preprocessing across imports and recalculates existing exams", async () => {

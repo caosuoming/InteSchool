@@ -598,7 +598,7 @@ describe("production backend", () => {
     ]));
   });
 
-  it("lets teachers edit their teaching profile and restricts school-wide edits to administrators", async () => {
+  it("keeps class assignments manager-only and allows authorized school leaders to maintain them", async () => {
     const manager = await register(built.app, "manager-candidate@example.com");
     const target = await register(built.app, "managed-teacher@example.com");
 
@@ -606,19 +606,21 @@ describe("production backend", () => {
       method: "PATCH",
       url: "/api/auth/profile",
       headers: { cookie: target.cookie, "x-inteschool-csrf": target.csrfToken },
-      payload: { subject: "英语", teachingGrades: ["高二"], teachingClassIds: [] },
+      payload: { subject: "英语", teachingGrades: ["高二"] },
     });
     expect(selfUpdate.statusCode).toBe(200);
     expect(selfUpdate.json()).toMatchObject({ subject: "英语", teachingGrades: ["高二"] });
 
-    const invalidClass = await built.app.inject({
+    const selfAssignedClass = await built.app.inject({
       method: "PATCH",
       url: "/api/auth/profile",
       headers: { cookie: target.cookie, "x-inteschool-csrf": target.csrfToken },
       payload: { teachingClassIds: ["class-from-another-school"] },
     });
-    expect(invalidClass.statusCode).toBe(400);
-    expect(invalidClass.json()).toEqual({ error: "任教班级不属于当前学校" });
+    expect(selfAssignedClass.statusCode).toBe(400);
+    expect(selfAssignedClass.json()).toEqual({
+      error: "任教班级只能由年级组长、教务主任、副校长、校长或学校管理员设置",
+    });
 
     const forbidden = await built.app.inject({
       method: "PATCH",
@@ -627,6 +629,33 @@ describe("production backend", () => {
       payload: { subject: "语文" },
     });
     expect(forbidden.statusCode).toBe(403);
+
+    const beforeLeaderGrant = built.store.loadState();
+    const leaderState = structuredClone(beforeLeaderGrant);
+    const leaderTeacher = leaderState.teachers.find((item) => item.id === manager.teacher.id)!;
+    leaderTeacher.roles = ["teacher", "gradeLeader"];
+    leaderTeacher.affiliations = leaderTeacher.affiliations.map((item) => item.id === leaderTeacher.currentAffiliationId
+      ? { ...item, roles: ["teacher", "gradeLeader"] }
+      : item);
+    built.store.saveState(beforeLeaderGrant, leaderState);
+
+    const leaderManaged = await built.app.inject({
+      method: "PATCH",
+      url: `/api/auth/teachers/${String(target.teacher.id)}/teaching-profile`,
+      headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
+      payload: { subject: "物理" },
+    });
+    expect(leaderManaged.statusCode, leaderManaged.body).toBe(200);
+    expect(leaderManaged.json()).toMatchObject({ subject: "物理" });
+
+    const afterLeaderGrant = built.store.loadState();
+    const ordinaryState = structuredClone(afterLeaderGrant);
+    const ordinaryManager = ordinaryState.teachers.find((item) => item.id === manager.teacher.id)!;
+    ordinaryManager.roles = ["teacher"];
+    ordinaryManager.affiliations = ordinaryManager.affiliations.map((item) => item.id === ordinaryManager.currentAffiliationId
+      ? { ...item, roles: ["teacher"] }
+      : item);
+    built.store.saveState(afterLeaderGrant, ordinaryState);
 
     const application = await built.app.inject({
       method: "POST",

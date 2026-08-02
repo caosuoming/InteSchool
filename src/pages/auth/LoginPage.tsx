@@ -68,7 +68,6 @@ export default function LoginPage() {
       phone,
       subject,
       teachingGrades: [],
-      teachingClassIds: [],
       ...(createSchool
         ? { newSchool: { name: schoolName, code: schoolCode, city: schoolCity, description: schoolDescription } }
         : { schoolId }),

@@ -59,7 +59,7 @@ export default function TeacherProfilesPage() {
   };
 
   return <div>
-    <PageHeader title="教师教学资料" description="学校管理员可维护本校教师的任教学科、年级和班级" icon={<Users className="w-5 h-5" />} />
+    <PageHeader title="教师教学资料" description="维护本校教师的任教学科、年级、任教班级和班主任班级" icon={<Users className="w-5 h-5" />} />
     <Card className="max-w-4xl p-6 space-y-5">
       <Select label="选择教师" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} options={teachers.map((teacher) => ({ value: teacher.id, label: `${teacher.name} · ${teacher.subject || "未设置学科"}` }))} />
       {selected && <>

@@ -5,6 +5,7 @@ import type { DatabaseStore } from "../database.js";
 import type { ServerConfig } from "../config.js";
 import type { AppState, SessionUser, TeacherRecord } from "../types.js";
 import { withSerializedState } from "../rpc.js";
+import { canManageTeachingProfiles } from "../../src/lib/teaching-profile-permissions.js";
 
 export const SESSION_COOKIE = "inteschool_session";
 
@@ -124,6 +125,17 @@ function requireAdmin(teacher: TeacherRecord): void {
     throw new Error("该操作需要学校管理员权限");
   }
 }
+
+function requireTeachingProfileManager(teacher: TeacherRecord): void {
+  const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent)
+    || null;
+  if (!canManageTeachingProfiles(teacher, affiliation)) {
+    throw new Error("该操作需要年级组长、教务主任、副校长、校长或学校管理员权限");
+  }
+}
+
+const TEACHING_CLASS_ASSIGNMENT_ERROR = "任教班级只能由年级组长、教务主任、副校长、校长或学校管理员设置";
 
 function requirePlatformAdmin(teacher: TeacherRecord): void {
   if (activeRole(teacher) !== "platform_admin") {
@@ -310,6 +322,7 @@ export async function registerAuthRoutes(
 
   app.post("/api/auth/register", { config: { rateLimit: { max: 8, timeWindow: "15 minutes" } } }, async (request, reply) => {
     const input = registerSchema.parse(request.body);
+    if (input.teachingClassIds.length > 0) throw new Error(TEACHING_CLASS_ASSIGNMENT_ERROR);
     if (store.getUserByPhone(input.phone)) {
       const error = new Error("该手机号已注册") as Error & { statusCode: number };
       error.statusCode = 409;
@@ -519,19 +532,18 @@ export async function registerAuthRoutes(
     const session = requireSession(request, store);
     requireCsrf(request, session);
     const input = profileSchema.parse(request.body);
+    if (input.teachingClassIds !== undefined) throw new Error(TEACHING_CLASS_ASSIGNMENT_ERROR);
     return withSerializedState(store, (state) => {
       const index = state.teachers.findIndex((teacher) => teacher.id === session.teacherId);
       if (index < 0) throw new Error("教师不存在");
       let teacher = state.teachers[index];
       const current = teacher.affiliations.find((item) => item.id === teacher.currentAffiliationId)
         || teacher.affiliations.find((item) => item.isCurrent);
-      const classIds = input.teachingClassIds ?? (current?.teachingClassIds as string[] | undefined) ?? [];
-      validateTeachingClassIds(state, (current?.schoolId as string | null | undefined) ?? null, classIds);
-      if (input.subject !== undefined || input.teachingGrades !== undefined || input.teachingClassIds !== undefined) {
+      if (input.subject !== undefined || input.teachingGrades !== undefined) {
         teacher = updateTeacherTeachingProfile(
           teacher,
           (current?.schoolId as string | null | undefined) ?? null,
-          input,
+          { subject: input.subject, teachingGrades: input.teachingGrades },
         );
       }
       if (input.nickname !== undefined) teacher = { ...teacher, nickname: input.nickname };
@@ -624,7 +636,7 @@ export async function registerAuthRoutes(
     const session = requireSession(request, store);
     requireCsrf(request, session);
     const manager = sessionTeacher(store, session);
-    requireAdmin(manager);
+    requireTeachingProfileManager(manager);
     if (!manager.schoolId) throw new Error("当前管理员没有学校身份");
     const teacherId = z.string().min(1).max(100).parse((request.params as { id?: string }).id);
     const input = managedTeachingProfileSchema.parse(request.body);
@@ -650,6 +662,7 @@ export async function registerAuthRoutes(
     const session = requireSession(request, store);
     requireCsrf(request, session);
     const input = applicationSchema.parse(request.body);
+    if (input.teachingClassIds.length > 0) throw new Error(TEACHING_CLASS_ASSIGNMENT_ERROR);
     const file = input.proofFileId ? store.getFile(input.proofFileId) : null;
     if (input.proofFileId && (!file || file.ownerId !== session.teacherId)) {
       throw new Error("证明文件不存在或无权使用");

@@ -185,7 +185,6 @@ describe("auth service", () => {
       ["数学", "物理"],
       "file-1",
       ["高一", "高二"],
-      [],
       "年级组长",
       true,
     )).resolves.toEqual(application);
@@ -201,7 +200,6 @@ describe("auth service", () => {
         subjects: ["数学", "物理"],
         proofFileId: "file-1",
         teachingGrades: ["高一", "高二"],
-        teachingClassIds: [],
         position: "年级组长",
         requestSchoolAdmin: true,
       }),
