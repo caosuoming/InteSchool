@@ -19,7 +19,7 @@ import { DEFAULT_QUESTION_TYPES } from "../src/types/index.js";
 
 export const COLLECTIONS = [
   "schools", "teachers", "applications", "schoolClasses", "personalClasses",
-  "classTypeCategories", "students", "chapters", "knowledgePoints",
+  "schoolGrades", "classTypeCategories", "students", "chapters", "knowledgePoints",
   "schoolChapters", "schoolKnowledgePoints", "questions",
   "lectures", "lectureColumnTemplates", "examPapers", "coursewares", "materials", "baskets", "documents",
   "recognitions", "answerRecords", "subjectGroups", "prepGroups", "onlineResources",
@@ -349,6 +349,138 @@ export class DatabaseStore {
           this.ensureDefaultQuestionTypes(school.id, now);
         }
         this.sqlite.prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '3')").run();
+      })();
+      version = 3;
+    }
+
+    if (version < 4) {
+      const now = new Date().toISOString();
+      const classRows = this.sqlite.prepare(
+        "SELECT id, data_json FROM app_records WHERE collection = 'schoolClasses'",
+      ).all() as Array<{ id: string; data_json: string }>;
+      const gradeRows = this.sqlite.prepare(
+        "SELECT id, data_json FROM app_records WHERE collection = 'schoolGrades'",
+      ).all() as Array<{ id: string; data_json: string }>;
+      const gradesByCohort = new Map<string, JsonRecord>();
+      gradeRows.forEach((row) => {
+        const grade = JSON.parse(row.data_json) as JsonRecord;
+        gradesByCohort.set(`${grade.schoolId}:${grade.gradYear}`, grade);
+      });
+      const insertRecord = this.sqlite.prepare(`
+        INSERT INTO app_records(collection, id, school_id, owner_id, data_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const updateRecord = this.sqlite.prepare(`
+        UPDATE app_records
+        SET school_id = ?, owner_id = ?, data_json = ?, updated_at = ?
+        WHERE collection = ? AND id = ?
+      `);
+
+      this.sqlite.transaction(() => {
+        for (const row of classRows) {
+          const schoolClass = JSON.parse(row.data_json) as JsonRecord;
+          if (typeof schoolClass.gradeId === "string" && schoolClass.gradeId) continue;
+          const schoolId = String(schoolClass.schoolId || "");
+          const gradeLabel = String(schoolClass.grade || "高一");
+          const explicitGradYear = Number(schoolClass.gradYear);
+          const gradeYear = Number(schoolClass.gradeYear);
+          const fallbackOffset = gradeLabel === "高三" ? 0 : gradeLabel === "高二" ? 1 : 2;
+          const gradYear = Number.isInteger(explicitGradYear) && explicitGradYear > 0
+            ? explicitGradYear
+            : Number.isInteger(gradeYear) && gradeYear > 0
+              ? gradeYear + 3
+              : new Date().getFullYear() + fallbackOffset;
+          const cohortKey = `${schoolId}:${gradYear}`;
+          let grade = gradesByCohort.get(cohortKey);
+          if (!grade) {
+            grade = {
+              id: `grade-${randomUUID()}`,
+              schoolId,
+              name: `${gradYear}届${gradeLabel}`,
+              grade: gradeLabel,
+              gradYear,
+              status: schoolClass.status === "graduated" ? "graduated" : "active",
+              createdBy: String(schoolClass.createdBy || "migration"),
+              createdAt: String(schoolClass.createdAt || now),
+              updatedAt: now,
+            };
+            gradesByCohort.set(cohortKey, grade);
+            insertRecord.run(
+              "schoolGrades",
+              grade.id,
+              schoolId,
+              grade.createdBy,
+              JSON.stringify(grade),
+              grade.createdAt,
+              now,
+            );
+          }
+          schoolClass.gradeId = grade.id;
+          schoolClass.gradYear = gradYear;
+          if (!schoolClass.gradeYear) schoolClass.gradeYear = gradYear - 3;
+          updateRecord.run(
+            schoolId,
+            typeof schoolClass.createdBy === "string" ? schoolClass.createdBy : null,
+            JSON.stringify(schoolClass),
+            now,
+            "schoolClasses",
+            row.id,
+          );
+        }
+
+        const targetEmail = "104848931@qq.com";
+        const teacherRow = this.sqlite.prepare(
+          "SELECT id, data_json FROM app_records WHERE collection = 'teachers' AND lower(json_extract(data_json, '$.email')) = lower(?) LIMIT 1",
+        ).get(targetEmail) as { id: string; data_json: string } | undefined;
+        const schoolRow = this.sqlite.prepare(
+          "SELECT id, data_json FROM app_records WHERE collection = 'schools' AND json_extract(data_json, '$.name') = ? LIMIT 1",
+        ).get("江苏省前黄高级中学") as { id: string; data_json: string } | undefined;
+        if (teacherRow && schoolRow) {
+          const teacher = JSON.parse(teacherRow.data_json) as TeacherRecord;
+          const school = JSON.parse(schoolRow.data_json) as { id: string; name: string };
+          const affiliations: Array<Record<string, unknown>> = Array.isArray(teacher.affiliations)
+            ? teacher.affiliations.map((item) => ({ ...item, isCurrent: false }))
+            : [];
+          const existingIndex = affiliations.findIndex((item) => item.schoolId === school.id);
+          const current: Record<string, unknown> = existingIndex >= 0 ? affiliations[existingIndex] : {};
+          const affiliationId = typeof current.id === "string" ? current.id : `aff-${randomUUID()}`;
+          const promotedAffiliation = {
+            ...current,
+            id: affiliationId,
+            teacherId: teacher.id,
+            schoolId: school.id,
+            schoolName: school.name,
+            subject: typeof current.subject === "string" ? current.subject : "管理",
+            status: "active",
+            role: "platform_admin",
+            roles: Array.from(new Set([...(Array.isArray(current.roles) ? current.roles : []), "principal"])),
+            subjectGroupIds: Array.isArray(current.subjectGroupIds) ? current.subjectGroupIds : [],
+            prepGroupIds: Array.isArray(current.prepGroupIds) ? current.prepGroupIds : [],
+            isCurrent: true,
+            joinedAt: typeof current.joinedAt === "string" ? current.joinedAt : now,
+          };
+          if (existingIndex >= 0) affiliations[existingIndex] = promotedAffiliation;
+          else affiliations.push(promotedAffiliation);
+          const promotedTeacher: TeacherRecord = {
+            ...teacher,
+            schoolId: school.id,
+            status: "active",
+            role: "platform_admin",
+            roles: Array.from(new Set([...(Array.isArray(teacher.roles) ? teacher.roles : []), "principal"])),
+            affiliations,
+            currentAffiliationId: affiliationId,
+          };
+          updateRecord.run(
+            school.id,
+            teacher.id,
+            JSON.stringify(promotedTeacher),
+            now,
+            "teachers",
+            teacherRow.id,
+          );
+        }
+
+        this.sqlite.prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '4')").run();
       })();
     }
   }

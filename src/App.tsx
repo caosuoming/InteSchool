@@ -4,6 +4,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, applyUiScale } from "@/stores/settings";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { RequireExamManager } from "@/components/auth/RequireExamManager";
+import { RequireSchoolRosterManager } from "@/components/auth/RequireSchoolRosterManager";
 
 const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
 const ClassroomLoginPage = lazy(() => import("@/pages/auth/ClassroomLoginPage"));
@@ -21,7 +22,6 @@ const ResourcePreviewPage = lazy(() => import("@/pages/resources/ResourcePreview
 const CoursewarePreviewPage = lazy(() => import("@/pages/resources/CoursewarePreviewPage"));
 const BatchSharePage = lazy(() => import("@/pages/resources/BatchSharePage"));
 const KnowledgeTreePage = lazy(() => import("@/pages/knowledge-tree/KnowledgeTreePage"));
-const ClassesPage = lazy(() => import("@/pages/classes/ClassesPage"));
 const BasketsPage = lazy(() => import("@/pages/baskets/BasketsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/analytics/AnalyticsPage"));
 const OnlineResourcesPage = lazy(() => import("@/pages/online-resources/OnlineResourcesPage"));
@@ -33,6 +33,7 @@ const TeacherProfilesPage = lazy(() => import("@/pages/admin/TeacherProfilesPage
 const TeacherSchoolApplicationsPage = lazy(() => import("@/pages/admin/TeacherSchoolApplicationsPage"));
 const SchoolAdminApplicationsPage = lazy(() => import("@/pages/admin/SchoolAdminApplicationsPage"));
 const SchoolCreationApplicationsPage = lazy(() => import("@/pages/admin/SchoolCreationApplicationsPage"));
+const SchoolRosterPage = lazy(() => import("@/pages/admin/SchoolRosterPage"));
 const PrepWorkspacePage = lazy(() => import("@/pages/prep/PrepWorkspacePage"));
 const PrepTaskDetailPage = lazy(() => import("@/pages/prep/PrepTaskDetailPage"));
 const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
@@ -112,6 +113,7 @@ export default function App() {
             <Route path="/admin/teacher-school-applications" element={<TeacherSchoolApplicationsPage />} />
             <Route path="/admin/school-admin-applications" element={<SchoolAdminApplicationsPage />} />
             <Route path="/admin/school-creation-applications" element={<SchoolCreationApplicationsPage />} />
+            <Route path="/admin/classes" element={<RequireSchoolRosterManager><SchoolRosterPage /></RequireSchoolRosterManager>} />
 
             <Route path="/question-bank" element={<Navigate to="/my-resources/questions" replace />} />
             <Route path="/question-bank/:id" element={<Navigate to="/my-resources/questions" replace />} />
@@ -131,7 +133,7 @@ export default function App() {
             <Route path="/baskets" element={<BasketsPage />} />
             <Route path="/baskets/:id" element={<BasketsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/classes" element={<ClassesPage />} />
+            <Route path="/classes" element={<Navigate to="/admin/classes" replace />} />
             <Route path="/knowledge-tree" element={<KnowledgeTreePage />} />
             <Route path="/online-resources" element={<OnlineResourcesPage />} />
             <Route path="/organization" element={<OrganizationPage />} />

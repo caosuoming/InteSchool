@@ -1,6 +1,7 @@
 import type { SchoolClass, PersonalClass, Student, AnyClass, ClassroomChoice } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { schoolRosterService } from "./school-roster.js";
 
 export interface StudentInput {
   name: string;
@@ -33,7 +34,7 @@ export const classService = {
     await delay(100);
     const schoolNames = new Map(db.read("schools").map((school) => [school.id, school.name]));
     return db.read("schoolClasses")
-      .filter((item) => item.status !== "graduated")
+      .filter((item) => item.status !== "graduated" && item.status !== "deleted")
       .map((item) => ({
         id: item.id,
         schoolId: item.schoolId,
@@ -46,7 +47,7 @@ export const classService = {
 
   async listSchoolClasses(schoolId: string): Promise<SchoolClass[]> {
     await delay(200);
-    return db.read("schoolClasses").filter((c) => c.schoolId === schoolId);
+    return db.read("schoolClasses").filter((c) => c.schoolId === schoolId && c.status !== "deleted");
   },
 
   async listPersonalClasses(teacherId: string): Promise<PersonalClass[]> {
@@ -56,7 +57,7 @@ export const classService = {
 
   async listAllClasses(schoolId: string, teacherId: string): Promise<AnyClass[]> {
     await delay(250);
-    const school = db.read("schoolClasses").filter((c) => c.schoolId === schoolId);
+    const school = db.read("schoolClasses").filter((c) => c.schoolId === schoolId && c.status !== "deleted");
     const personal = db.read("personalClasses").filter((c) => c.teacherId === teacherId);
     return [...school, ...personal];
   },
@@ -66,7 +67,7 @@ export const classService = {
     teacherId: string,
     name: string,
     grade: string,
-    options?: { classTypeId?: string; gradeYear?: number },
+    options?: { classTypeId?: string; gradeYear?: number; gradeId?: string },
   ): Promise<SchoolClass> {
     await delay(400);
     maybeThrowError();
@@ -75,6 +76,7 @@ export const classService = {
       id: genId("cls"),
       type: "school",
       schoolId,
+      gradeId: options?.gradeId,
       name,
       grade,
       gradeYear,
@@ -118,6 +120,7 @@ export const classService = {
     maybeThrowError();
     const schoolClass = db.read("schoolClasses").find((item) => item.id === classId);
     if (schoolClass?.status === "graduated") throw new Error("已毕业班级不能新增学生");
+    if (schoolClass?.status === "deleted") throw new Error("回收站中的班级不能新增学生");
     const student: Student = {
       id: genId("stu"),
       name: input.name,
@@ -197,7 +200,7 @@ export const classService = {
 
   async listStudentsBySchool(schoolId: string): Promise<Student[]> {
     await delay(200);
-    return db.read("students").filter((s) => s.schoolId === schoolId);
+    return db.read("students").filter((s) => s.schoolId === schoolId && s.status !== "deleted");
   },
 
   /** 获取已毕业或已转校学生档案。 */
@@ -623,4 +626,5 @@ export const classService = {
     }
     return updated;
   },
+  ...schoolRosterService,
 };

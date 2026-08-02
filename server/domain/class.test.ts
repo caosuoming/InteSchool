@@ -7,11 +7,36 @@ function createState(): AppState {
   return {
     teachers: [],
     currentTeacherId: null,
+    schoolGrades: [
+      {
+        id: "grade-2026",
+        schoolId: "school-1",
+        name: "2026届高三",
+        grade: "高三",
+        gradYear: 2026,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+        updatedAt: "2025-09-01T00:00:00.000Z",
+      },
+      {
+        id: "grade-2027",
+        schoolId: "school-1",
+        name: "2027届高二",
+        grade: "高二",
+        gradYear: 2027,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+        updatedAt: "2025-09-01T00:00:00.000Z",
+      },
+    ],
     schoolClasses: [
       {
         id: "class-1",
         type: "school",
         schoolId: "school-1",
+        gradeId: "grade-2026",
         name: "高三(1)班",
         grade: "高三",
         studentCount: 2,
@@ -23,6 +48,7 @@ function createState(): AppState {
         id: "class-2",
         type: "school",
         schoolId: "school-1",
+        gradeId: "grade-2026",
         name: "高三(2)班",
         grade: "高三",
         studentCount: 1,
@@ -34,6 +60,7 @@ function createState(): AppState {
         id: "class-graduated",
         type: "school",
         schoolId: "school-1",
+        gradeId: "grade-2026",
         name: "往届班级",
         grade: "高三",
         studentCount: 0,
@@ -170,6 +197,88 @@ describe("class lifecycle service", () => {
         "student-suspended",
         "class-graduated",
       )).rejects.toThrow("不能恢复到已毕业班级");
+    });
+  });
+
+  it("imports a roster, creates missing classes, and skips duplicate student numbers", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(3)班", name: "新学生甲", studentNo: "101", isExternal: false },
+        { className: "高二(3)班", name: "重复学号", studentNo: "101", isExternal: true },
+        { className: "高二(4)班", name: "新学生乙", studentNo: "102", isExternal: true },
+      ]);
+
+      expect(result).toEqual({ createdClasses: 2, createdStudents: 2, skippedStudents: 1 });
+      const classes = state.schoolClasses as Array<Record<string, unknown>>;
+      expect(classes.filter((item) => item.gradeId === "grade-2027")).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "高二(3)班", studentCount: 1 }),
+        expect.objectContaining({ name: "高二(4)班", studentCount: 1 }),
+      ]));
+      expect(state.students).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "新学生甲", studentNo: "101", grade: "高二" }),
+        expect.objectContaining({ name: "新学生乙", studentNo: "102", isExternal: true }),
+      ]));
+    });
+  });
+
+  it("advances a whole grade and synchronizes its classes and students", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "class-2027",
+      type: "school",
+      schoolId: "school-1",
+      gradeId: "grade-2027",
+      name: "高二(1)班",
+      grade: "高二",
+      gradYear: 2027,
+      studentCount: 1,
+      status: "active",
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    });
+    (state.students as Array<Record<string, unknown>>).push({
+      id: "student-2027",
+      name: "待升学学生",
+      studentNo: "201",
+      classId: "class-2027",
+      schoolId: "school-1",
+      grade: "高二",
+      status: "active",
+    });
+
+    await runWithState(state, async () => {
+      const result = await classService.advanceSchoolGrade("grade-2027");
+
+      expect(result).toMatchObject({ updatedClasses: 1, updatedStudents: 1 });
+      expect(result.grade).toMatchObject({ name: "2027届高三", grade: "高三" });
+      expect(getClass(state, "class-2027")).toMatchObject({ name: "高三(1)班", grade: "高三" });
+      expect(getStudent(state, "student-2027")).toMatchObject({ grade: "高三" });
+    });
+  });
+
+  it("moves a school class and its students into the recycle bin and restores both", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      await classService.deleteClass("class-1", false);
+      const recycleBin = await classService.listSchoolRosterRecycleBin("school-1");
+
+      expect(recycleBin.classes.map((item) => item.id)).toContain("class-1");
+      expect(recycleBin.students.map((item) => item.id)).toEqual(expect.arrayContaining([
+        "student-early",
+        "student-transfer",
+        "student-suspended",
+      ]));
+      expect(await classService.listSchoolClasses("school-1")).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "class-1" }),
+      ]));
+
+      const restored = await classService.restoreSchoolClass("class-1");
+      expect(restored).toMatchObject({ restoredStudents: 3 });
+      expect(restored.class).toMatchObject({ status: "active", studentCount: 2 });
+      expect(getStudent(state, "student-suspended")).toMatchObject({ status: "suspended" });
     });
   });
 });

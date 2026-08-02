@@ -2237,7 +2237,7 @@ describe("production backend", () => {
     });
     expect(built.store.sqlite.prepare(
       "SELECT value FROM metadata WHERE key = 'schema_version'",
-    ).get()).toEqual({ value: "3" });
+    ).get()).toEqual({ value: "4" });
   });
 
 });
