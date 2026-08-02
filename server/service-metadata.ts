@@ -256,6 +256,40 @@ export const serviceParameters = {
     ]
   },
   "class": {
+    "listSchoolGrades": [
+      "schoolId"
+    ],
+    "createSchoolGrade": [
+      "schoolId",
+      "teacherId",
+      "gradYear",
+      "grade"
+    ],
+    "advanceSchoolGrade": [
+      "gradeId"
+    ],
+    "bulkCreateSchoolClasses": [
+      "gradeId",
+      "teacherId",
+      "names"
+    ],
+    "bulkImportStudents": [
+      "gradeId",
+      "teacherId",
+      "rows"
+    ],
+    "listSchoolRosterRecycleBin": [
+      "schoolId"
+    ],
+    "deleteStudent": [
+      "studentId"
+    ],
+    "restoreStudent": [
+      "studentId"
+    ],
+    "restoreSchoolClass": [
+      "classId"
+    ],
     "listClassroomChoices": [],
     "listSchoolClasses": [
       "schoolId"

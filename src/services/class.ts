@@ -1,6 +1,16 @@
 import { rpcCall } from "./api";
 
-import type { SchoolClass, PersonalClass, Student, AnyClass, ClassroomChoice } from "@/types";
+import type {
+  SchoolClass,
+  SchoolGrade,
+  PersonalClass,
+  Student,
+  AnyClass,
+  ClassroomChoice,
+  StudentRosterImportRow,
+  StudentRosterImportResult,
+  SchoolRosterRecycleBin,
+} from "@/types";
 
 export interface StudentInput {
   name: string;
@@ -12,6 +22,42 @@ export interface StudentInput {
 }
 
 export const classService = {
+  async listSchoolGrades(schoolId: string): Promise<SchoolGrade[]> {
+    return rpcCall("class", "listSchoolGrades", [schoolId]) as any;
+  },
+
+  async createSchoolGrade(schoolId: string, teacherId: string, gradYear: number, grade: string): Promise<SchoolGrade> {
+    return rpcCall("class", "createSchoolGrade", [schoolId, teacherId, gradYear, grade]) as any;
+  },
+
+  async advanceSchoolGrade(gradeId: string): Promise<{ grade: SchoolGrade; updatedClasses: number; updatedStudents: number }> {
+    return rpcCall("class", "advanceSchoolGrade", [gradeId]) as any;
+  },
+
+  async bulkCreateSchoolClasses(gradeId: string, teacherId: string, names: string[]): Promise<SchoolClass[]> {
+    return rpcCall("class", "bulkCreateSchoolClasses", [gradeId, teacherId, names]) as any;
+  },
+
+  async bulkImportStudents(gradeId: string, teacherId: string, rows: StudentRosterImportRow[]): Promise<StudentRosterImportResult> {
+    return rpcCall("class", "bulkImportStudents", [gradeId, teacherId, rows]) as any;
+  },
+
+  async listSchoolRosterRecycleBin(schoolId: string): Promise<SchoolRosterRecycleBin> {
+    return rpcCall("class", "listSchoolRosterRecycleBin", [schoolId]) as any;
+  },
+
+  async deleteStudent(studentId: string): Promise<Student | null> {
+    return rpcCall("class", "deleteStudent", [studentId]) as any;
+  },
+
+  async restoreStudent(studentId: string): Promise<Student | null> {
+    return rpcCall("class", "restoreStudent", [studentId]) as any;
+  },
+
+  async restoreSchoolClass(classId: string): Promise<{ class: SchoolClass; restoredStudents: number }> {
+    return rpcCall("class", "restoreSchoolClass", [classId]) as any;
+  },
+
   async listClassroomChoices(): Promise<ClassroomChoice[]> {
     return rpcCall("class", "listClassroomChoices", []) as any;
   },
@@ -28,7 +74,7 @@ export const classService = {
     return rpcCall("class", "listAllClasses", [schoolId, teacherId]) as any;
   },
 
-  async createSchoolClass(schoolId: string, teacherId: string, name: string, grade: string, options?: { classTypeId?: string; gradeYear?: number }): Promise<SchoolClass> {
+  async createSchoolClass(schoolId: string, teacherId: string, name: string, grade: string, options?: { classTypeId?: string; gradeYear?: number; gradeId?: string }): Promise<SchoolClass> {
     return rpcCall("class", "createSchoolClass", [schoolId, teacherId, name, grade, options]) as any;
   },
 

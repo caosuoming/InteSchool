@@ -21,6 +21,27 @@ const EXAM_MANAGER_MUTATIONS = new Set([
   "updateExamSettings",
   "deleteExam",
 ]);
+const SCHOOL_ROSTER_MUTATIONS = new Set([
+  "createSchoolGrade",
+  "advanceSchoolGrade",
+  "bulkCreateSchoolClasses",
+  "bulkImportStudents",
+  "createSchoolClass",
+  "addStudent",
+  "deleteClass",
+  "updateSchoolClass",
+  "updateStudent",
+  "transferStudent",
+  "suspendStudent",
+  "graduateStudent",
+  "transferOutStudent",
+  "graduateClass",
+  "resumeStudent",
+  "deleteStudent",
+  "restoreStudent",
+  "restoreSchoolClass",
+]);
+const SCHOOL_ROSTER_MANAGER_ROLES = new Set(["gradeLeader", "vicePrincipal", "principal"]);
 const READ_PREFIXES = ["list", "get", "search", "check", "is", "verify", "annotate"];
 const READ_METHODS = new Set([
   "webAnalyzeQuestion",
@@ -125,6 +146,14 @@ function canManageExams(teacher: TeacherRecord): boolean {
     || teacher.affiliations?.find((item) => item.isCurrent);
   const roles = Array.isArray(affiliation?.roles) ? affiliation.roles : teacher.roles;
   return roles.some((role) => EXAM_MANAGER_ROLES.includes(role as (typeof EXAM_MANAGER_ROLES)[number]));
+}
+
+function canManageSchoolRoster(teacher: TeacherRecord): boolean {
+  if (isAdmin(teacher)) return true;
+  const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent);
+  const roles = Array.isArray(affiliation?.roles) ? affiliation.roles : teacher.roles;
+  return roles.some((role) => SCHOOL_ROSTER_MANAGER_ROLES.has(String(role)));
 }
 
 function findRecord(state: AppState, id: string): Record<string, unknown> | null {
@@ -291,8 +320,16 @@ function authorize(
   if (service === "examArrangement" && !canManageExams(teacher)) {
     throw new Error("该操作需要年级组长或学校管理员权限");
   }
-  if (service === "class" && ["createSchoolClass", "updateSchoolClass"].includes(method) && !admin) {
-    throw new Error("该操作需要学校管理员权限");
+  if (
+    service === "class"
+    && SCHOOL_ROSTER_MUTATIONS.has(method)
+    && !(method === "deleteClass" && normalizedArgs[1] === true)
+    && !canManageSchoolRoster(teacher)
+  ) {
+    throw new Error("该操作需要年级组长、副校长、校长或学校管理员权限");
+  }
+  if (service === "class" && method === "listSchoolRosterRecycleBin" && !canManageSchoolRoster(teacher)) {
+    throw new Error("该操作需要年级组长、副校长、校长或学校管理员权限");
   }
   if (service === "ai" && typeof normalizedArgs[0] === "string") {
     const firstId = normalizedArgs[0];

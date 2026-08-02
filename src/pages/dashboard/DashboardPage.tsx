@@ -22,6 +22,7 @@ import { timeAgo } from "@/lib/service-utils";
 import type { Question, Lecture, Basket, DocumentRecord, PrepTask, PrepTaskType } from "@/types";
 import { cn } from "@/lib/utils";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { canManageSchoolRoster } from "@/lib/roster-permissions";
 
 interface Stats {
   questions: Question[];
@@ -152,6 +153,7 @@ export default function DashboardPage() {
     (item) => item.id === teacher.currentAffiliationId,
   ) || teacher.affiliations.find((item) => item.isCurrent);
   const schoolName = activeAffiliation?.schoolName || "未认证学校";
+  const canManageRoster = canManageSchoolRoster(teacher, activeAffiliation);
   const weekStart = new Date();
   const daysSinceMonday = (weekStart.getDay() + 6) % 7;
   weekStart.setDate(weekStart.getDate() - daysSinceMonday);
@@ -196,7 +198,7 @@ export default function DashboardPage() {
       icon: GraduationCap,
       color: "text-emerald-600",
       bg: "bg-emerald-50",
-      link: "/classes",
+      link: canManageRoster ? "/admin/classes" : "/my-students",
     },
   ];
 

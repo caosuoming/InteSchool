@@ -243,10 +243,27 @@ export interface LectureType {
   createdAt: string;
 }
 
+export interface SchoolGrade {
+  id: string;
+  schoolId: string;
+  /** 展示名称，例如“2027届高二”。 */
+  name: string;
+  /** 当前学段年级，例如“高一”“高二”“高三”。 */
+  grade: string;
+  /** 毕业年份届，例如 2027。 */
+  gradYear: number;
+  status: "active" | "graduated";
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SchoolClass {
   id: string;
   type: "school";
   schoolId: string;
+  /** 所属年级实体；旧数据可能暂时缺失，由迁移自动补齐。 */
+  gradeId?: string;
   name: string;
   grade: string;
   /** 入学年份级（如2026级） */
@@ -256,9 +273,13 @@ export interface SchoolClass {
   classTypeId?: string;
   studentCount: number;
   /** 班级状态；旧数据未设置时按在读班级处理。 */
-  status?: "active" | "graduated";
+  status?: "active" | "graduated" | "deleted";
   /** 整班毕业时间 */
   graduatedAt?: string;
+  /** 移入回收站时间。 */
+  deletedAt?: string;
+  /** 从回收站恢复时使用的原状态。 */
+  deletedFromStatus?: "active" | "graduated";
   createdBy: string;
   createdAt: string;
 }
@@ -283,7 +304,7 @@ export interface ClassroomChoice {
   grade: string;
 }
 
-export type StudentStatus = "active" | "suspended" | "graduated" | "transferred";
+export type StudentStatus = "active" | "suspended" | "graduated" | "transferred" | "deleted";
 
 export interface Student {
   id: string;
@@ -307,6 +328,10 @@ export interface Student {
   graduationType?: "regular" | "early";
   /** 转校时间 */
   transferredAt?: string;
+  /** 移入回收站时间。 */
+  deletedAt?: string;
+  /** 从回收站恢复时使用的原状态。 */
+  deletedFromStatus?: Exclude<StudentStatus, "deleted">;
   /** 历史班级记录（换班时追加） */
   classHistory?: Array<{
     fromClassId: string;
@@ -314,6 +339,25 @@ export interface Student {
     changedAt: string;
     studentNoChanged: boolean;
   }>;
+}
+
+export interface StudentRosterImportRow {
+  className: string;
+  name: string;
+  studentNo: string;
+  isExternal?: boolean;
+  gender?: "male" | "female";
+}
+
+export interface StudentRosterImportResult {
+  createdClasses: number;
+  createdStudents: number;
+  skippedStudents: number;
+}
+
+export interface SchoolRosterRecycleBin {
+  classes: SchoolClass[];
+  students: Student[];
 }
 
 // ============ 学生成绩 ============

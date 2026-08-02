@@ -19,6 +19,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, uiScaleConfig, type UiScale } from "@/stores/settings";
 import { cn } from "@/lib/utils";
+import { canManageSchoolRoster } from "@/lib/roster-permissions";
 
 interface AdminItem {
   icon: typeof GitBranch;
@@ -29,6 +30,7 @@ interface AdminItem {
   schoolOnly?: boolean;
   adminOnly?: boolean;
   platformOnly?: boolean;
+  rosterOnly?: boolean;
 }
 
 const allAdminItems: AdminItem[] = [
@@ -41,9 +43,11 @@ const allAdminItems: AdminItem[] = [
   },
   {
     icon: GraduationCap,
-    title: "班级学生管理",
-    description: "管理班级信息、学生档案、成绩记录和学习进度追踪",
-    href: "/classes",
+    title: "班级与学生",
+    description: "按年级管理班级与学生，支持 Excel 批量导入、升学年和回收站",
+    href: "/admin/classes",
+    schoolOnly: true,
+    rosterOnly: true,
   },
   {
     icon: Network,
@@ -99,18 +103,20 @@ const allAdminItems: AdminItem[] = [
 ];
 
 export function AdminPage() {
-  const { getCurrentAffiliation } = useAuthStore();
+  const { teacher, getCurrentAffiliation } = useAuthStore();
   const currentAffiliation = getCurrentAffiliation();
   const isPersonal = !currentAffiliation?.schoolId;
   const { uiScale, setUiScale } = useSettingsStore();
   const activeRole = currentAffiliation?.role;
   const isAdmin = ["school_admin", "platform_admin"].includes(String(activeRole));
   const isPlatformAdmin = activeRole === "platform_admin";
+  const canManageRoster = teacher ? canManageSchoolRoster(teacher, currentAffiliation) : false;
 
   const adminItems = allAdminItems.filter((item) => {
     if (item.schoolOnly && isPersonal) return false;
     if (item.adminOnly && !isAdmin) return false;
     if (item.platformOnly && !isPlatformAdmin) return false;
+    if (item.rosterOnly && !canManageRoster) return false;
     return true;
   });
 
