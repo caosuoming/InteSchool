@@ -105,7 +105,7 @@ export const useExtractTasksStore = create<ExtractTaskState>((set, get) => {
         progress: 35,
         progressMessage: "正在由服务端解析文档...",
       });
-      const extracted = await extractStoredFile(resource.originalFileUrl);
+      const extracted = await extractStoredFile(resource.originalFileUrl, { textOnly: true });
 
       updateTask(id, {
         progress: 75,

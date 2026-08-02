@@ -90,11 +90,15 @@ export interface ExtractedFileContent {
   warnings: string[];
 }
 
-export async function extractStoredFile(fileUrl: string): Promise<ExtractedFileContent> {
+export async function extractStoredFile(
+  fileUrl: string,
+  options: { textOnly?: boolean } = {},
+): Promise<ExtractedFileContent> {
   if (!fileUrl.startsWith("/api/files/")) {
     throw new Error("该资源不是服务端托管文件");
   }
-  return apiRequest<ExtractedFileContent>(`${fileUrl}/content`);
+  const suffix = options.textOnly ? "?textOnly=1" : "";
+  return apiRequest<ExtractedFileContent>(`${fileUrl}/content${suffix}`);
 }
 
 export async function importStoredFile<T>(fileId: string): Promise<T> {

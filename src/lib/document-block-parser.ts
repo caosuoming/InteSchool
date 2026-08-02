@@ -264,6 +264,28 @@ function extractLeadingQuestionNumber(text: string): { number: string; rest: str
   return null;
 }
 
+const nestedQuestionMarkerPattern = /^(?:[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]|[①-⑳])\s*/i;
+
+function isNestedTrailingAnswerLine(
+  line: string,
+  entry: { number: string },
+  current: TrailingSolution | undefined,
+): boolean {
+  if (!current || !nestedQuestionMarkerPattern.test(line)) return false;
+
+  const currentNumber = Number(current.number);
+  const candidateNumber = Number(entry.number);
+  if (
+    Number.isFinite(currentNumber)
+    && Number.isFinite(candidateNumber)
+    && candidateNumber <= currentNumber
+  ) {
+    return true;
+  }
+
+  return Boolean(current.answer && nestedQuestionMarkerPattern.test(current.answer));
+}
+
 function extractQuestionNumber(text: string, config: DocumentParseConfig): string | undefined {
   const direct = extractLeadingQuestionNumber(text);
   if (direct) return direct.number;
@@ -414,6 +436,11 @@ function parseTrailingSolutions(
     }
 
     let entry = extractLeadingQuestionNumber(line);
+    if (entry && isNestedTrailingAnswerLine(line, entry, current)) {
+      currentField = appendTrailingSolutionLine(current!, line, currentField, patterns)
+        || currentField;
+      continue;
+    }
     if (!entry) {
       const bareNumber = /^([\d０-９]{1,4})\s+(.+)$/.exec(line);
       if (bareNumber && anchoredPatterns.some((pattern) => pattern?.test(bareNumber[2]))) {
@@ -558,17 +585,21 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   };
 
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
-  const hasFutureStructuredField = (index: number): boolean => lines
-    .slice(index + 1)
-    .some((futureLine) => {
-      const trimmed = futureLine.trim();
-      return Boolean(
-        trimmed
-        && (answerPattern?.test(trimmed)
-          || analysisPattern?.test(trimmed)
-          || summaryPattern?.test(trimmed)),
-      );
-    });
+  const structuredFieldAhead = new Array<boolean>(lines.length).fill(false);
+  let hasSeenStructuredField = false;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    structuredFieldAhead[index] = hasSeenStructuredField;
+    const trimmed = lines[index].trim();
+    if (
+      trimmed
+      && (answerPattern?.test(trimmed)
+        || analysisPattern?.test(trimmed)
+        || summaryPattern?.test(trimmed))
+    ) {
+      hasSeenStructuredField = true;
+    }
+  }
+  const hasFutureStructuredField = (index: number): boolean => structuredFieldAhead[index] || false;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const originalLine = lines[lineIndex];

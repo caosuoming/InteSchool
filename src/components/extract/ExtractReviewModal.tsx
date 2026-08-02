@@ -301,7 +301,7 @@ export function ExtractReviewModal({
         throw new Error("暂不支持该格式文档的文档拆解");
       }
 
-      const extracted = await extractStoredFile(resource.originalFileUrl);
+      const extracted = await extractStoredFile(resource.originalFileUrl, { textOnly: true });
       setProgress(60);
       setProgressMsg("正在分析文档结构...");
       let blocks: DocBlock[] = parseDocumentBlocks(extracted.text, extractConfig);

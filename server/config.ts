@@ -42,6 +42,7 @@ export interface ServerConfig {
   logger: boolean;
   serveStatic: boolean;
   maxUploadBytes: number;
+  documentExtractionConcurrency: number;
 }
 
 export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
@@ -77,6 +78,10 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     logger: booleanEnv(process.env.INTESCHOOL_LOGGER, true),
     serveStatic: booleanEnv(process.env.INTESCHOOL_SERVE_STATIC, true),
     maxUploadBytes: integerEnv(process.env.INTESCHOOL_MAX_UPLOAD_BYTES, 50 * 1024 * 1024),
+    documentExtractionConcurrency: Math.max(
+      1,
+      integerEnv(process.env.INTESCHOOL_DOCUMENT_EXTRACTION_CONCURRENCY, 3),
+    ),
     ...overrides,
   };
 }
