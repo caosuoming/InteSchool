@@ -87,9 +87,6 @@ export default function App() {
             {/* 我的上课 */}
             <Route path="/my-lessons" element={<MyLessonsPage />} />
             <Route path="/my-lessons/:id/edit" element={<LessonEditorPage />} />
-            <Route path="/classroom" element={<ClassroomPage />} />
-            <Route path="/classroom/:classId" element={<ClassroomPage />} />
-
             {/* 我的学生 */}
             <Route path="/my-students" element={<MyStudentsPage />} />
             <Route path="/my-students/interaction" element={<MyStudentsPage />} />
@@ -154,6 +151,14 @@ export default function App() {
             element={teacher ? <Navigate to={teacher.schoolId ? "/dashboard" : "/school-auth"} replace /> : <LoginPage />}
           />
           <Route path="/classroom-login" element={<ClassroomLoginPage />} />
+          <Route
+            path="/classroom"
+            element={teacher ? (teacher.schoolId ? <ClassroomPage /> : <Navigate to="/school-auth" replace />) : <Navigate to="/classroom-login" replace />}
+          />
+          <Route
+            path="/classroom/:classId"
+            element={teacher ? (teacher.schoolId ? <ClassroomPage /> : <Navigate to="/school-auth" replace />) : <Navigate to="/classroom-login" replace />}
+          />
           <Route
             path="/school-auth"
             element={teacher ? <SchoolAuthPage /> : <Navigate to="/login" replace />}

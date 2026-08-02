@@ -1,4 +1,17 @@
 export const serviceParameters = {
+  "classroomHomework": {
+    "listHomeworks": [
+      "filter"
+    ],
+    "createHomework": [
+      "teacherId",
+      "schoolId",
+      "input"
+    ],
+    "deleteHomework": [
+      "id"
+    ]
+  },
   "examArrangement": {
     "listCohorts": [
       "schoolId"

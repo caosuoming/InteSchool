@@ -5,7 +5,7 @@ import {
   ChevronLeft, School, User, Settings, Users,
   FolderOpen, Download,
   ChevronDown, ChevronRight, Building2, Cloud,
-  BookOpen, Check, Crown, ClipboardList, MapPinned, FileSpreadsheet, MonitorPlay,
+  BookOpen, Check, Crown, ClipboardList, MapPinned, FileSpreadsheet,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -39,7 +39,6 @@ const allNavItems: NavItem[] = [
     label: "我的上课",
     icon: BookOpen,
   },
-  { path: "/classroom", label: "我要上课", icon: MonitorPlay },
   { path: "/my-students", label: "我的学生", icon: Users },
   {
     path: "/my-exams",

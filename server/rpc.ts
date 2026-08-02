@@ -31,6 +31,7 @@ const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   ai: "documents",
   basket: "baskets",
   class: "schoolClasses",
+  classroomHomework: "classroomHomeworks",
   courseware: "coursewares",
   examArrangement: "examArrangements",
   examPaper: "examPapers",

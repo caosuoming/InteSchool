@@ -1704,6 +1704,34 @@ export interface LessonCoursewareFilter {
   schoolId?: string;
 }
 
+// ============ 班级作业 ============
+
+/** 教师发布到“我要上课”教室屏的作业。 */
+export interface ClassroomHomework {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  schoolId: string;
+  subject: string;
+  content: string;
+  classIds: string[];
+  /** 作业归属日期，格式为 YYYY-MM-DD。 */
+  assignedDate: string;
+  /** 到达该时间后才会在教室屏显示。 */
+  publishAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClassroomHomeworkFilter {
+  schoolId?: string;
+  teacherId?: string;
+  classId?: string;
+  assignedDate?: string;
+  /** 为 true 时仅返回已经到达发布时间的作业。 */
+  publishedOnly?: boolean;
+}
+
 // ============ 课后反思 ============
 
 /** 反思关联的资源类型 */
