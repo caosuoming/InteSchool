@@ -7,8 +7,12 @@ import type {
   PrepTaskType,
   PrepTaskStatus,
   AssignmentStatus,
+  PrepSubmission,
+  PrepSubmissionInput,
+  PrepAnnotationStroke,
   QuestionReference,
   Question,
+  Teacher,
 } from "@/types";
 
 export const taskTypeLabels: Record<PrepTaskType, string> = {
@@ -83,6 +87,31 @@ export const prepService = {
 
   async updateAssignment(taskId: string, assignmentId: string, status: AssignmentStatus): Promise<void> {
     return rpcCall("prep", "updateAssignment", [taskId, assignmentId, status]) as any;
+  },
+
+  async submitAssignment(
+    taskId: string,
+    assignmentId: string,
+    input: PrepSubmissionInput,
+    teacher: Teacher,
+  ): Promise<PrepSubmission> {
+    return rpcCall("prep", "submitAssignment", [taskId, assignmentId, input, teacher]) as any;
+  },
+
+  async saveSubmissionAnnotations(
+    taskId: string,
+    assignmentId: string,
+    targetId: string,
+    strokes: Array<Pick<PrepAnnotationStroke, "id" | "tool" | "color" | "points">>,
+    teacher: Teacher,
+  ): Promise<PrepAnnotationStroke[]> {
+    return rpcCall("prep", "saveSubmissionAnnotations", [
+      taskId,
+      assignmentId,
+      targetId,
+      strokes,
+      teacher,
+    ]) as any;
   },
 
   async addQuestionReference(questionId: string, teacherId: string, studentIds: string[], sourceTaskId?: string, sourceType: "personal" | "prep" | "subject" = "personal"): Promise<QuestionReference> {

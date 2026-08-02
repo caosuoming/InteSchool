@@ -1548,6 +1548,72 @@ export type PrepTaskStatus = "created" | "in_progress" | "completed" | "cancelle
 /** 任务分配状态 */
 export type AssignmentStatus = "pending" | "accepted" | "in_progress" | "completed" | "rejected";
 
+/** 集体备课任务成果类型 */
+export type PrepSubmissionKind = "document" | "resource" | "images";
+
+/** 可关联的“我的资源”类型 */
+export type PrepSubmissionResourceType = "lecture" | "examPaper";
+
+/** 上传成果中的单个文件 */
+export interface PrepSubmissionAsset {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  size: number;
+}
+
+/** 批注点坐标使用相对预览容器的 0-1 比例。 */
+export interface PrepAnnotationPoint {
+  x: number;
+  y: number;
+}
+
+/** 集体备课成果批注笔迹 */
+export interface PrepAnnotationStroke {
+  id: string;
+  targetId: string;
+  tool: "pen" | "highlighter";
+  color: "black" | "red" | "blue" | "yellow" | "green";
+  points: PrepAnnotationPoint[];
+  createdBy: string;
+  createdAt: string;
+}
+
+/** 已提交的任务成果。资源关联会保存标题、原稿地址和文本快照，避免源资源后续变更影响看板。 */
+export interface PrepSubmission {
+  id: string;
+  kind: PrepSubmissionKind;
+  title: string;
+  submittedBy: string;
+  submittedAt: string;
+  updatedAt: string;
+  assets: PrepSubmissionAsset[];
+  resourceType?: PrepSubmissionResourceType;
+  resourceId?: string;
+  resourceTitle?: string;
+  resourceFileUrl?: string;
+  resourceFileName?: string;
+  resourcePreviewText?: string;
+  annotations: PrepAnnotationStroke[];
+}
+
+/** 提交成果时由前端传给服务端的输入。 */
+export type PrepSubmissionInput =
+  | {
+      kind: "document";
+      assets: PrepSubmissionAsset[];
+    }
+  | {
+      kind: "images";
+      assets: PrepSubmissionAsset[];
+    }
+  | {
+      kind: "resource";
+      resourceType: PrepSubmissionResourceType;
+      resourceId: string;
+    };
+
 /** 备课流程节点 */
 export interface PrepWorkflow {
   id: string;
@@ -1568,6 +1634,7 @@ export interface PrepAssignment {
   workflowId: string;
   teacherId: string;
   status: AssignmentStatus;
+  submission?: PrepSubmission;
   createdAt: string;
   updatedAt: string;
 }

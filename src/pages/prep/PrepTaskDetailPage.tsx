@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
   Plus,
@@ -12,6 +12,9 @@ import {
   Calendar,
   User,
   ChevronRight,
+  Eye,
+  FileCheck2,
+  UploadCloud,
 } from "lucide-react";
 import {
   prepService,
@@ -29,8 +32,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
+import { PrepSubmissionModal } from "@/pages/prep/PrepSubmissionModal";
+import { PrepBoardReviewModal } from "@/pages/prep/PrepBoardReviewModal";
 import { cn } from "@/lib/utils";
 import type {
+  PrepAssignment,
   PrepTask,
   PrepWorkflow,
   PrepTaskType,
@@ -55,6 +61,11 @@ export default function PrepTaskDetailPage() {
     description: "",
   });
   const [actionLoading, setActionLoading] = useState(false);
+  const [submissionTarget, setSubmissionTarget] = useState<{
+    assignment: PrepAssignment;
+    workflow: PrepWorkflow;
+  } | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -85,6 +96,11 @@ export default function PrepTaskDetailPage() {
   const getTeacherById = (id: string) => {
     return teachers.find((t) => t.id === id);
   };
+
+  const teacherNames = useMemo(
+    () => new Map(teachers.map((item) => [item.id, item.name])),
+    [teachers],
+  );
 
   const getWorkflowAssignments = (workflowId: string) => {
     return task?.assignments.filter((a) => a.workflowId === workflowId) || [];
@@ -191,7 +207,7 @@ export default function PrepTaskDetailPage() {
       await loadData();
       toast.success("成功", "状态更新成功");
     } catch (error) {
-      toast.error("失败", "状态更新失败");
+      toast.error("失败", error instanceof Error ? error.message : "状态更新失败");
     } finally {
       setActionLoading(false);
     }
@@ -260,6 +276,7 @@ export default function PrepTaskDetailPage() {
     teacher.roles.includes("dean") ||
     teacher.roles.includes("vicePrincipal") ||
     teacher.roles.includes("principal");
+  const hasSubmissions = task.assignments.some((assignment) => assignment.submission);
 
   return (
     <div>
@@ -268,12 +285,20 @@ export default function PrepTaskDetailPage() {
         description={task.description || "暂无描述"}
         icon={<BookOpen className="w-5 h-5" />}
         action={
-          canManage ? (
-            <Button variant="gold" onClick={() => setShowAddWorkflowModal(true)}>
-              <Plus className="w-4 h-4" />
-              添加流程
-            </Button>
-          ) : null
+          <div className="flex items-center gap-2">
+            {task.status === "completed" && hasSubmissions && (
+              <Button variant="gold" onClick={() => setShowReviewModal(true)}>
+                <Eye className="w-4 h-4" />
+                预览成果
+              </Button>
+            )}
+            {canManage && task.status !== "completed" && (
+              <Button variant="gold" onClick={() => setShowAddWorkflowModal(true)}>
+                <Plus className="w-4 h-4" />
+                添加流程
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -348,6 +373,7 @@ export default function PrepTaskDetailPage() {
           <div className="p-4 space-y-4">
             {task.workflows.length > 0 ? (
               task.workflows
+                .slice()
                 .sort((a, b) => a.order - b.order)
                 .map((workflow, index) => {
                   const assignments = getWorkflowAssignments(workflow.id);
@@ -422,6 +448,36 @@ export default function PrepTaskDetailPage() {
                         </div>
                       </div>
 
+                      {assignments.some((assignment) => assignment.submission) && (
+                        <div className="mb-3 space-y-2">
+                          {assignments
+                            .filter((assignment) => assignment.submission)
+                            .map((assignment) => (
+                              <div
+                                key={`${assignment.id}-submission`}
+                                className="flex items-center gap-3 rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2.5"
+                              >
+                                <FileCheck2 className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-xs font-medium text-emerald-900">
+                                    {assignment.submission?.title}
+                                  </div>
+                                  <div className="mt-0.5 text-[11px] text-emerald-700">
+                                    {getTeacherName(assignment.teacherId)} · 已提交成果
+                                  </div>
+                                </div>
+                                <Badge variant="green">
+                                  {assignment.submission?.kind === "resource"
+                                    ? "我的资源"
+                                    : assignment.submission?.kind === "images"
+                                      ? "图片"
+                                      : "文档"}
+                                </Badge>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Users className="w-4 h-4 text-ink-400" />
@@ -472,28 +528,52 @@ export default function PrepTaskDetailPage() {
                                 </Button>
                               )}
                               {myAssignment.status === "accepted" && (
-                                <Button
-                                  variant="gold"
-                                  size="sm"
-                                  onClick={() =>
-                                    handleUpdateAssignment(myAssignment.id, "in_progress")
-                                  }
-                                  loading={actionLoading}
-                                >
-                                  开始执行
-                                </Button>
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setSubmissionTarget({ assignment: myAssignment, workflow })}
+                                  >
+                                    <UploadCloud className="h-4 w-4" />
+                                    {myAssignment.submission ? "重新提交" : "提交成果"}
+                                  </Button>
+                                  <Button
+                                    variant="gold"
+                                    size="sm"
+                                    disabled={!myAssignment.submission}
+                                    title={!myAssignment.submission ? "请先提交成果" : undefined}
+                                    onClick={() =>
+                                      handleUpdateAssignment(myAssignment.id, "completed")
+                                    }
+                                    loading={actionLoading}
+                                  >
+                                    完成任务
+                                  </Button>
+                                </>
                               )}
                               {myAssignment.status === "in_progress" && (
-                                <Button
-                                  variant="gold"
-                                  size="sm"
-                                  onClick={() =>
-                                    handleUpdateAssignment(myAssignment.id, "completed")
-                                  }
-                                  loading={actionLoading}
-                                >
-                                  完成任务
-                                </Button>
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setSubmissionTarget({ assignment: myAssignment, workflow })}
+                                  >
+                                    <UploadCloud className="h-4 w-4" />
+                                    {myAssignment.submission ? "重新提交" : "提交成果"}
+                                  </Button>
+                                  <Button
+                                    variant="gold"
+                                    size="sm"
+                                    disabled={!myAssignment.submission}
+                                    title={!myAssignment.submission ? "请先提交成果" : undefined}
+                                    onClick={() =>
+                                      handleUpdateAssignment(myAssignment.id, "completed")
+                                    }
+                                    loading={actionLoading}
+                                  >
+                                    完成任务
+                                  </Button>
+                                </>
                               )}
                             </div>
                           )}
@@ -718,6 +798,25 @@ export default function PrepTaskDetailPage() {
           </div>
         </div>
       </Modal>
+
+      <PrepSubmissionModal
+        open={Boolean(submissionTarget)}
+        onClose={() => setSubmissionTarget(null)}
+        taskId={task.id}
+        assignment={submissionTarget?.assignment || null}
+        workflow={submissionTarget?.workflow || null}
+        teacher={teacher}
+        onSubmitted={loadData}
+      />
+
+      <PrepBoardReviewModal
+        open={showReviewModal}
+        onClose={() => setShowReviewModal(false)}
+        task={task}
+        teacher={teacher}
+        teacherNames={teacherNames}
+        onAnnotationsSaved={loadData}
+      />
     </div>
   );
 }

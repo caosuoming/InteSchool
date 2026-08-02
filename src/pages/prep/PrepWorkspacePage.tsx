@@ -184,10 +184,6 @@ function nextAssignmentAction(
   switch (status) {
     case "pending":
       return { label: "认领", status: "accepted" };
-    case "accepted":
-      return { label: "开始", status: "in_progress" };
-    case "in_progress":
-      return { label: "完成", status: "completed" };
     default:
       return null;
   }

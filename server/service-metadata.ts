@@ -838,7 +838,21 @@ export const serviceParameters = {
     "updateAssignment": [
       "taskId",
       "assignmentId",
-      "status"
+      "status",
+      "teacher"
+    ],
+    "submitAssignment": [
+      "taskId",
+      "assignmentId",
+      "input",
+      "teacher"
+    ],
+    "saveSubmissionAnnotations": [
+      "taskId",
+      "assignmentId",
+      "targetId",
+      "strokes",
+      "teacher"
     ],
     "addQuestionReference": [
       "questionId",

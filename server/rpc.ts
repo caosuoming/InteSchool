@@ -316,6 +316,7 @@ function authorize(
     const record = targetRecord || findRecord(state, firstArg);
     if (record) {
       let authorizedShareMutation = false;
+      let authorizedPrepMutation = false;
       if (service === "share" && ["acceptShare", "rejectShare", "revokeShare"].includes(method)) {
         if (record.status !== "pending") throw new Error("该分享已处理");
         if (typeof record.expiresAt === "string" && new Date(record.expiresAt) <= new Date()) {
@@ -332,16 +333,49 @@ function authorize(
         }
         authorizedShareMutation = true;
       }
+      if (
+        service === "prep"
+        && ["updateAssignment", "submitAssignment", "saveSubmissionAnnotations"].includes(method)
+      ) {
+        const assignments = Array.isArray(record.assignments)
+          ? record.assignments as Array<Record<string, unknown>>
+          : [];
+        const assignmentId = normalizedArgs[1];
+        const assignment = assignments.find((item) => item.id === assignmentId);
+        if (!assignment) throw new Error("任务分配不存在");
+        const owner = recordOwner(record);
+        if (method === "saveSubmissionAnnotations") {
+          if (recordSchool(record) !== teacher.schoolId) throw new Error("无权批注其他学校的成果");
+          if (record.status !== "completed") throw new Error("看板全部完成后才可以批注");
+        } else if (assignment.teacherId !== teacher.id && owner !== teacher.id && !admin) {
+          throw new Error("只能操作分配给自己的任务");
+        }
+        authorizedPrepMutation = true;
+      }
       const owner = recordOwner(record);
       const school = recordSchool(record);
       const shared = record.isShared === true || record.scope === "platform" || record.scope === "school";
       if (service === "question" && targetRecord && !canReadQuestion(record, teacher)) {
         throw new Error("无权访问该资源");
       }
-      if (!authorizedShareMutation && school && school !== teacher.schoolId && owner !== teacher.id && !shared) {
+      if (
+        !authorizedShareMutation
+        && !authorizedPrepMutation
+        && school
+        && school !== teacher.schoolId
+        && owner !== teacher.id
+        && !shared
+      ) {
         throw new Error("无权访问该资源");
       }
-      if (!authorizedShareMutation && !isReadOnly(method) && owner && owner !== teacher.id && !admin) {
+      if (
+        !authorizedShareMutation
+        && !authorizedPrepMutation
+        && !isReadOnly(method)
+        && owner
+        && owner !== teacher.id
+        && !admin
+      ) {
         const allowedSharedMutation = service === "question" && method === "incrementUsage";
         if (!allowedSharedMutation) throw new Error("无权修改其他教师的资源");
       }
