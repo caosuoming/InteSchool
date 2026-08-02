@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { FileText } from "lucide-react";
-import { OriginalFileRow, QuestionListItem, ResourceCard } from "@/pages/resources/MyResourcesPage";
-import type { Question } from "@/types";
+import { BasketMaterialListItem, OriginalFileRow, QuestionListItem, ResourceCard } from "@/pages/resources/MyResourcesPage";
+import type { Material, Question } from "@/types";
 
 vi.mock("@/components/ui/MathHtml", () => ({
   MathHtml: ({ children, className }: { children: string; className?: string }) => (
@@ -136,5 +136,104 @@ describe("ResourceCard", () => {
 
     fireEvent.click(convertButton);
     expect(onConvertToExamPaper).toHaveBeenCalledOnce();
+  });
+});
+
+const knowledgeMaterial: Material = {
+  id: "material-knowledge-1",
+  teacherId: "teacher-1",
+  schoolId: "school-1",
+  title: "二次函数知识块",
+  chapterIds: [],
+  knowledgePointIds: [],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  type: "knowledgeBlock",
+  content: "第一行知识。\n第二行知识。\n第三行知识。\n第四行知识必须在完整预览中可见。",
+  tags: [],
+  createdAt: "2026-07-30T00:00:00.000Z",
+  updatedAt: "2026-07-30T00:00:00.000Z",
+};
+
+const imageMaterial: Material = {
+  ...knowledgeMaterial,
+  id: "material-image-1",
+  title: "函数图像",
+  type: "image",
+  content: "函数图像.png",
+  fileUrl: "/api/files/function-image",
+};
+
+describe("material previews", () => {
+  it("shows a three-line knowledge-block summary in the material library and opens the full content", () => {
+    render(
+      <ResourceCard
+        title={knowledgeMaterial.title}
+        meta={[]}
+        content={knowledgeMaterial.content}
+        updatedAt={knowledgeMaterial.updatedAt}
+        type={knowledgeMaterial.type}
+      />,
+    );
+
+    const summary = screen.getByRole("button", { name: `预览知识块：${knowledgeMaterial.title}` });
+    expect(summary.querySelector(".line-clamp-3")).not.toBeNull();
+
+    fireEvent.click(summary);
+    expect(screen.getByTestId("material-preview-content")).toHaveTextContent(
+      "第四行知识必须在完整预览中可见。",
+    );
+  });
+
+  it("shows image thumbnails directly in both the material library and resource basket", () => {
+    const { rerender } = render(
+      <ResourceCard
+        title={imageMaterial.title}
+        meta={[]}
+        content={imageMaterial.content}
+        updatedAt={imageMaterial.updatedAt}
+        type={imageMaterial.type}
+        fileUrl={imageMaterial.fileUrl}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: `预览图片：${imageMaterial.title}` }))
+      .toContainElement(screen.getByRole("img", { name: imageMaterial.title }));
+
+    rerender(
+      <BasketMaterialListItem
+        material={imageMaterial}
+        selected={false}
+        onToggleSelection={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    const thumbnail = screen.getByRole("button", { name: `预览图片：${imageMaterial.title}` });
+    expect(thumbnail).toContainElement(screen.getByRole("img", { name: imageMaterial.title }));
+    expect(screen.getByRole("img", { name: imageMaterial.title })).toHaveAttribute(
+      "src",
+      imageMaterial.fileUrl,
+    );
+  });
+
+  it("shows a three-line knowledge-block summary in the resource basket and opens the full content", () => {
+    render(
+      <BasketMaterialListItem
+        material={knowledgeMaterial}
+        selected={false}
+        onToggleSelection={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    const summary = screen.getByRole("button", { name: `预览知识块：${knowledgeMaterial.title}` });
+    expect(summary.querySelector(".line-clamp-3")).not.toBeNull();
+
+    fireEvent.click(summary);
+    expect(screen.getByTestId("material-preview-content")).toHaveTextContent(
+      "第四行知识必须在完整预览中可见。",
+    );
   });
 });

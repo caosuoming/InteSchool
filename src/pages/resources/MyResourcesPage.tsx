@@ -47,6 +47,7 @@ import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
+import { MaterialImageThumbnail, MaterialPreviewModal } from "@/components/resource/MaterialPreviewModal";
 import { Badge } from "@/components/ui/Badge";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
@@ -1720,43 +1721,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       </button>
                     </div>
                     <div className="space-y-2">
-                      {basketMaterials.map((m) => (
-                        <div
-                          key={m.id}
-                          className={cn(
-                            "p-3 rounded-md border transition-all flex items-start gap-2",
-                            selectedMaterialIds.has(m.id)
-                              ? "border-gold-300 bg-gold-50/50"
-                              : "border-ink-100 hover:border-ink-200",
-                          )}
-                        >
-                          <button
-                            onClick={() => toggleMaterialSelection(m.id)}
-                            className="mt-0.5 flex-shrink-0"
-                          >
-                            {selectedMaterialIds.has(m.id) ? (
-                              <CheckSquare className="w-4 h-4 text-gold-600" />
-                            ) : (
-                              <Square className="w-4 h-4 text-ink-300" />
-                            )}
-                          </button>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="tag-teal">{materialTypeLabel[m.type]}</span>
-                            </div>
-                            <div className="text-sm text-ink-800 font-medium">{m.title}</div>
-                            <div className="text-xs text-ink-500 line-clamp-1">{m.content}</div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveBasketMaterial(m.id)}
-                            className="p-1 rounded text-ink-300 hover:text-red-500 hover:bg-red-50 flex-shrink-0"
-                            title="从资源篮移除"
-                            aria-label="从资源篮移除素材"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
+                      {basketMaterials.map((material) => (
+                        <BasketMaterialListItem
+                          key={material.id}
+                          material={material}
+                          selected={selectedMaterialIds.has(material.id)}
+                          onToggleSelection={() => toggleMaterialSelection(material.id)}
+                          onRemove={() => handleRemoveBasketMaterial(material.id)}
+                        />
                       ))}
                     </div>
                   </Card>
@@ -2989,7 +2961,11 @@ interface ResourceCardProps {
 
 export function ResourceCard({ title, titleActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
-  const isImage = (type === "image");
+  const isImage = type === "image";
+  const isKnowledgeBlock = type === "knowledgeBlock";
+  const isMaterialPreviewable = isImage || isKnowledgeBlock;
+  const handlePreviewOpen = () => setPreviewOpen(true);
+  const primaryClick = onClick || (isMaterialPreviewable ? handlePreviewOpen : undefined);
   const reflectionCount = reflections?.length || 0;
   const latestReflection = reflections?.[0];
   const actionButtonPadding = compactActions ? "p-1" : "p-1.5";
@@ -3017,18 +2993,18 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
             </button>
           )}
           {isImage && fileUrl && (
-            <div
-              onClick={() => setPreviewOpen(true)}
-              className="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-ink-100 cursor-pointer hover:border-gold-300 transition-colors"
-            >
-              <img src={fileUrl} alt={title} className="w-full h-full object-cover" />
-            </div>
+            <MaterialImageThumbnail
+              title={title}
+              fileUrl={fileUrl}
+              onOpen={handlePreviewOpen}
+              className="h-20 w-20"
+            />
           )}
           <div className="flex-1 min-w-0">
             <div className="mb-1 flex flex-wrap items-center gap-2" data-testid="resource-card-title-row">
               <div
-                className={cn("font-medium text-ink-900 flex items-center gap-2", onClick && "cursor-pointer hover:text-gold-700")}
-                onClick={onClick}
+                className={cn("font-medium text-ink-900 flex items-center gap-2", primaryClick && "cursor-pointer hover:text-gold-700")}
+                onClick={primaryClick}
               >
                 <span>{title}</span>
                 {titleBadge && <Badge variant={titleBadge.variant}>{titleBadge.text}</Badge>}
@@ -3043,9 +3019,20 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
               <div className="text-xs text-ink-500 mb-2 line-clamp-1">{description}</div>
             )}
             {content && !isImage && (
-              <div className="text-xs text-ink-600 mb-2 line-clamp-2 leading-relaxed bg-mist/40 p-2 rounded">
-                {content}
-              </div>
+              isKnowledgeBlock ? (
+                <button
+                  type="button"
+                  aria-label={`预览知识块：${title}`}
+                  onClick={handlePreviewOpen}
+                  className="mb-2 w-full rounded bg-mist/40 p-2 text-left text-xs leading-relaxed text-ink-600 transition-colors hover:bg-mist/70 hover:text-ink-800"
+                >
+                  <MathHtml className="line-clamp-3">{content}</MathHtml>
+                </button>
+              ) : (
+                <div className="mb-2 rounded bg-mist/40 p-2 text-xs leading-relaxed text-ink-600 line-clamp-2">
+                  {content}
+                </div>
+              )
             )}
             {/* 关联课后反思预览 */}
             {reflectionCount > 0 && (
@@ -3110,11 +3097,11 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
                 <Eye className={actionIconSize} />
               </button>
             )}
-            {isImage && (
+            {isMaterialPreviewable && (
               <button
-                onClick={() => setPreviewOpen(true)}
+                onClick={handlePreviewOpen}
                 className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600")}
-                title="预览图片"
+                title={isImage ? "预览图片" : "预览知识块"}
               >
                 <Eye className={actionIconSize} />
               </button>
@@ -3169,22 +3156,118 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
         </div>
       </div>
 
-      {/* 图片预览弹窗 */}
-      <Modal
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        title={title}
-        size="lg"
-        footer={null}
+      {isMaterialPreviewable && (
+        <MaterialPreviewModal
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title={title}
+          type={type as MaterialType}
+          content={content}
+          fileUrl={fileUrl}
+        />
+      )}
+    </>
+  );
+}
+
+interface BasketMaterialListItemProps {
+  material: Material;
+  selected: boolean;
+  onToggleSelection: () => void;
+  onRemove: () => void;
+}
+
+export function BasketMaterialListItem({
+  material,
+  selected,
+  onToggleSelection,
+  onRemove,
+}: BasketMaterialListItemProps) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const isImage = material.type === "image";
+  const isKnowledgeBlock = material.type === "knowledgeBlock";
+  const isPreviewable = isImage || isKnowledgeBlock;
+  const openPreview = () => setPreviewOpen(true);
+
+  return (
+    <>
+      <div
+        className={cn(
+          "flex items-start gap-3 rounded-md border p-3 transition-all",
+          selected
+            ? "border-gold-300 bg-gold-50/50"
+            : "border-ink-100 hover:border-ink-200",
+        )}
       >
-        <div className="flex items-center justify-center py-4">
-          <img
-            src={fileUrl}
-            alt={title}
-            className="max-w-full max-h-[70vh] object-contain rounded-lg"
+        <button
+          type="button"
+          onClick={onToggleSelection}
+          className="mt-0.5 flex-shrink-0"
+          aria-label={selected ? `取消选择素材：${material.title}` : `选择素材：${material.title}`}
+        >
+          {selected ? (
+            <CheckSquare className="h-4 w-4 text-gold-600" />
+          ) : (
+            <Square className="h-4 w-4 text-ink-300" />
+          )}
+        </button>
+        {isImage && material.fileUrl && (
+          <MaterialImageThumbnail
+            title={material.title}
+            fileUrl={material.fileUrl}
+            onOpen={openPreview}
+            className="h-20 w-20"
           />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="tag-teal">{materialTypeLabel[material.type]}</span>
+          </div>
+          <div
+            className={cn(
+              "text-sm font-medium text-ink-800",
+              isPreviewable && "cursor-pointer hover:text-gold-700",
+            )}
+            onClick={isPreviewable ? openPreview : undefined}
+          >
+            {material.title}
+          </div>
+          {material.content && (
+            isKnowledgeBlock ? (
+              <button
+                type="button"
+                aria-label={`预览知识块：${material.title}`}
+                onClick={openPreview}
+                className="mt-1 w-full text-left text-xs leading-relaxed text-ink-500 hover:text-ink-700"
+              >
+                <MathHtml className="line-clamp-3">{material.content}</MathHtml>
+              </button>
+            ) : (
+              <div className="mt-1 text-xs text-ink-500 line-clamp-1">{material.content}</div>
+            )
+          )}
         </div>
-      </Modal>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex-shrink-0 rounded p-1 text-ink-300 hover:bg-red-50 hover:text-red-500"
+          title="从资源篮移除"
+          aria-label="从资源篮移除素材"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {isPreviewable && (
+        <MaterialPreviewModal
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title={material.title}
+          type={material.type}
+          content={material.content}
+          fileUrl={material.fileUrl}
+        />
+      )}
     </>
   );
 }
