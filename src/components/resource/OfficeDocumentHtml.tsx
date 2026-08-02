@@ -15,7 +15,7 @@ export function OfficeDocumentHtml({ html, className }: OfficeDocumentHtmlProps)
   return (
     <div
       ref={rootRef}
-      className={cn(officeMetafilePreviewClassName, className)}
+      className={cn("document-preview-content", officeMetafilePreviewClassName, className)}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

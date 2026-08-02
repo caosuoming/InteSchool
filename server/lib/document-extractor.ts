@@ -7,10 +7,11 @@ import sanitizeHtml from "sanitize-html";
 import { extractDocxStructuredText } from "./docx-structured-text.js";
 import { convertMathTypeDocxToOmml } from "./mathtype-docx.js";
 import {
+  documentImageInlineStyle,
   officeMetafileInlineStyle,
+  parseDocumentImageDisplaySize,
   parseOfficeMetafileDisplaySize,
   parseOfficeMetafileLayout,
-  type OfficeMetafileDisplaySize,
   type OfficeMetafileLayout,
 } from "../../src/lib/office-metafile.js";
 
@@ -79,24 +80,11 @@ function officeMetafileAttributes(layout: OfficeMetafileLayout): string {
   return ` data-office-metafile="${layout.format}"${dimensions} style="${officeMetafileInlineStyle(layout)}" class="office-metafile-image"`;
 }
 
-function documentImageInlineStyle(
-  displaySize: OfficeMetafileDisplaySize | null,
-): string {
-  if (displaySize) {
-    return `width:${displaySize.width}px;max-width:100%;height:auto;aspect-ratio:${displaySize.width}/${displaySize.height};object-fit:contain;vertical-align:middle`;
-  }
-  return "max-width:100%;height:auto;object-fit:contain;vertical-align:middle";
-}
-
 function documentImageAttributes(source: string): string {
   const metafile = parseOfficeMetafileLayout(source);
   if (metafile) return officeMetafileAttributes(metafile);
 
-  const url = new URL(source, "https://inteschool.invalid");
-  const displaySize = parseOfficeMetafileDisplaySize(
-    url.searchParams.get("officeWidth"),
-    url.searchParams.get("officeHeight"),
-  );
+  const displaySize = parseDocumentImageDisplaySize(source);
   const dimensions = displaySize
     ? ` data-office-width="${displaySize.width}" data-office-height="${displaySize.height}"`
     : "";

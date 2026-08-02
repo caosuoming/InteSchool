@@ -76,6 +76,28 @@ describe("renderMathHtml", () => {
       "/api/files/file-1/assets/rId7?officeWidth=320&officeHeight=180",
     );
     expect(container.querySelector("img")).toHaveAttribute("alt", "文档图片");
+    expect(container.querySelector("img")).toHaveAttribute("loading", "lazy");
+    expect(container.querySelector("img")).toHaveStyle({
+      width: "320px",
+      maxWidth: "100%",
+      height: "auto",
+      aspectRatio: "320/180",
+      objectFit: "contain",
+    });
+  });
+
+  it("restores document image dimensions in stored rich HTML", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '<img src="/api/files/file-1/assets/rId8?officeWidth=240&officeHeight=135" alt="几何图">',
+    );
+
+    expect(container.querySelector("img")).toHaveStyle({
+      width: "240px",
+      maxWidth: "100%",
+      height: "auto",
+      aspectRatio: "240/135",
+    });
   });
 
   it("leaves unsafe markdown image sources as text", () => {

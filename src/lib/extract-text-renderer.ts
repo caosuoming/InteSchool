@@ -1,7 +1,9 @@
 import katex from "katex";
 import { normalizeLegacyOmmlMathText } from "./legacy-omml-formulas";
 import {
+  documentImageInlineStyle,
   officeMetafileInlineStyle,
+  parseDocumentImageDisplaySize,
   parseOfficeMetafileLayout,
   type OfficeMetafileLayout,
 } from "./office-metafile";
@@ -71,7 +73,11 @@ function renderImage(alt: string, source: string): string {
   if (metafile) {
     return `<img src="${escapeHtml(safeSource)}" alt="${escapeHtml(alt)}"${officeMetafileAttributes(metafile)} class="office-metafile-image inline-block max-w-full h-auto align-middle object-contain" />`;
   }
-  return `<img src="${escapeHtml(safeSource)}" alt="${escapeHtml(alt)}" class="max-w-full h-auto rounded-lg border border-ink-200" />`;
+  const displaySize = parseDocumentImageDisplaySize(safeSource);
+  const dimensions = displaySize
+    ? ` data-office-width="${displaySize.width}" data-office-height="${displaySize.height}"`
+    : "";
+  return `<img src="${escapeHtml(safeSource)}" alt="${escapeHtml(alt)}"${dimensions} style="${documentImageInlineStyle(displaySize)}" class="office-document-image inline-block rounded-lg border border-ink-200" />`;
 }
 
 function renderTextWithKeywords(text: string, keywords: string[]): string {

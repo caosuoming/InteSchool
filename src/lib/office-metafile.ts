@@ -32,6 +32,29 @@ export function parseOfficeMetafileDisplaySize(
     : null;
 }
 
+export function parseDocumentImageDisplaySize(
+  source: string,
+): OfficeMetafileDisplaySize | null {
+  try {
+    const url = new URL(source, "https://inteschool.invalid");
+    return parseOfficeMetafileDisplaySize(
+      url.searchParams.get("officeWidth"),
+      url.searchParams.get("officeHeight"),
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function documentImageInlineStyle(
+  displaySize: OfficeMetafileDisplaySize | null,
+): string {
+  if (displaySize) {
+    return `width:${displaySize.width}px;max-width:100%;height:auto;aspect-ratio:${displaySize.width}/${displaySize.height};object-fit:contain;vertical-align:middle`;
+  }
+  return "max-width:100%;height:auto;object-fit:contain;vertical-align:middle";
+}
+
 export function parseOfficeMetafileLayout(source: string): OfficeMetafileLayout | null {
   try {
     const url = new URL(source, "https://inteschool.invalid");
@@ -49,7 +72,7 @@ export function parseOfficeMetafileLayout(source: string): OfficeMetafileLayout 
 
 export function officeMetafileInlineStyle(layout: OfficeMetafileLayout): string {
   if (layout.width && layout.height) {
-    return `width:${layout.width}px;max-width:100%;height:auto;aspect-ratio:${layout.width}/${layout.height};object-fit:contain;vertical-align:middle`;
+    return documentImageInlineStyle({ width: layout.width, height: layout.height });
   }
   return "max-width:100%;max-height:12rem;width:auto;height:auto;object-fit:contain;vertical-align:middle";
 }

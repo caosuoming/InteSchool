@@ -23,6 +23,16 @@ afterEach(() => {
 });
 
 describe("OfficeDocumentHtml", () => {
+  it("applies bounded document preview image styling", () => {
+    const { container } = render(
+      <OfficeDocumentHtml
+        html={'<img src="/api/files/file-1/assets/rIdImage" alt="文档图片">'}
+      />,
+    );
+
+    expect(container.firstElementChild).toHaveClass("document-preview-content");
+  });
+
   it("converts a legacy WMF preview to a browser-safe PNG", async () => {
     fetchMock.mockResolvedValue(
       new Response(Uint8Array.from([1, 2, 3]), { status: 200 }),
