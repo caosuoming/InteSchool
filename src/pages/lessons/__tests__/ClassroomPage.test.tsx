@@ -5,9 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ClassroomPage from "@/pages/lessons/ClassroomPage";
 import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
+import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { useAuthStore } from "@/stores/auth";
-import type { ClassroomHomework, LessonCourseware, Teacher } from "@/types";
+import type { ClassroomHomework, ClassroomNotice, LessonCourseware, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({
   classService: {
@@ -19,6 +20,12 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/classroomHomework", () => ({
   classroomHomeworkService: {
     listHomeworks: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/classroomNotice", () => ({
+  classroomNoticeService: {
+    listNotices: vi.fn(),
   },
 }));
 
@@ -82,6 +89,19 @@ const pastHomework: ClassroomHomework = {
   publishAt: "2020-01-01T00:00:00.000Z",
 };
 
+const activeNotice: ClassroomNotice = {
+  id: "notice-1",
+  teacherId: "teacher-1",
+  teacherName: "王老师",
+  schoolId: "school-1",
+  content: "今天放学后进行卫生检查",
+  classIds: ["class-1"],
+  startsAt: "2020-01-01T00:00:00.000Z",
+  endsAt: "2999-01-01T00:00:00.000Z",
+  createdAt: "2026-08-02T00:00:00.000Z",
+  updatedAt: "2026-08-02T00:00:00.000Z",
+};
+
 const lesson: LessonCourseware = {
   id: "lesson-1",
   teacherId: "teacher-1",
@@ -113,9 +133,31 @@ function renderPage() {
 }
 
 describe("ClassroomPage", () => {
+  let fullscreenElement: Element | null;
+
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    fullscreenElement = null;
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: vi.fn(async () => {
+        fullscreenElement = document.documentElement;
+        document.dispatchEvent(new Event("fullscreenchange"));
+      }),
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      value: vi.fn(async () => {
+        fullscreenElement = null;
+        document.dispatchEvent(new Event("fullscreenchange"));
+      }),
+    });
+
     useAuthStore.setState({ teacher, loading: false, error: null });
     vi.mocked(classService.listSchoolClasses).mockResolvedValue([{
       id: "class-1",
@@ -130,6 +172,7 @@ describe("ClassroomPage", () => {
     }]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([]);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([mathHomework]);
+    vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([lesson]);
   });
 
@@ -178,5 +221,23 @@ describe("ClassroomPage", () => {
 
     expect(await screen.findByText("函数图像")).toBeInTheDocument();
     expect(screen.getByText("全屏上课")).toBeInTheDocument();
+  });
+
+  it("scrolls active notices outside lesson mode and toggles page fullscreen", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByRole("status", { name: "班级通知" })).toHaveTextContent("今天放学后进行卫生检查");
+
+    await user.click(screen.getByRole("button", { name: /^上课/ }));
+    expect(screen.queryByRole("status", { name: "班级通知" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^作业/ }));
+    expect(screen.getByRole("status", { name: "班级通知" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "全屏" }));
+    expect(await screen.findByRole("button", { name: "退出全屏" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "退出全屏" }));
+    expect(await screen.findByRole("button", { name: "全屏" })).toBeInTheDocument();
   });
 });

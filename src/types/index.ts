@@ -1927,6 +1927,30 @@ export interface ClassroomHomeworkFilter {
   publishedOnly?: boolean;
 }
 
+// ============ 教室通知 ============
+
+/** 教师发布到“我要上课”页面顶部的滚动通知。 */
+export interface ClassroomNotice {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  schoolId: string;
+  content: string;
+  classIds: string[];
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClassroomNoticeFilter {
+  schoolId?: string;
+  teacherId?: string;
+  classId?: string;
+  /** 为 true 时仅返回当前处于起止时间范围内的通知。 */
+  activeOnly?: boolean;
+}
+
 // ============ 课后反思 ============
 
 /** 反思关联的资源类型 */
