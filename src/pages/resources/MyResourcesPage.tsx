@@ -2065,7 +2065,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         if (item.originalFileUrl && !isExtracted && !hasExtractCopy) {
                           navigate(`/resources/preview/${item.id}?type=lecture`);
                         } else {
-                          navigate(`/lectures/${mainLecture.id}/edit`);
+                          navigate(`/lectures/${mainLecture.id}/preview`);
                         }
                       }}
                       onShare={() => handleOpenShare("lecture", mainLecture.id, mainLecture.title)}
@@ -2156,7 +2156,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         ]}
                         updatedAt={copy.updatedAt}
                         reflections={reflectionsMap[copy.id]}
-                        onClick={() => navigate(`/exam-papers/${copy.id}`)}
+                        onClick={() => navigate(`/exam-papers/${copy.id}/preview`)}
                         onShare={() => handleOpenShare("examPaper", copy.id, copy.title)}
                         onDelete={() => handleDelete(copy.id)}
                         onViewReflections={() => setViewingReflections({ title: copy.title, list: reflectionsMap[copy.id] || [] })}

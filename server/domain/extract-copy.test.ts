@@ -3,6 +3,7 @@ import type {
   ExamPaper,
   ExtractedDocumentBlock,
   Lecture,
+  Question,
 } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import type { AppState } from "../types.js";
@@ -92,9 +93,49 @@ function blocks(): ExtractedDocumentBlock[] {
 }
 
 function state(): AppState {
+  const questions: Question[] = [
+    {
+      id: "bank-question-1",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      type: "single",
+      stem: "题库中的第一道题",
+      options: ["A 选项", "B 选项"],
+      answer: "A",
+      analysis: "第一题解析",
+      chapterIds: [],
+      knowledgePointIds: [],
+      difficulty: 3,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "bank-question-2",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      type: "essay",
+      stem: "题库中的第二道题",
+      answer: "证明过程",
+      analysis: "第二题解析",
+      chapterIds: [],
+      knowledgePointIds: [],
+      difficulty: 4,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
   return {
     teachers: [],
     currentTeacherId: null,
+    questions,
     examPapers: [sourcePaper()],
     lectures: [sourceLecture()],
   };
@@ -116,6 +157,15 @@ describe("document extract copies", () => {
         "bank-question-1",
         "bank-question-2",
       ]);
+      expect(copy.questions[0]).toMatchObject({
+        options: ["A 选项", "B 选项"],
+        answer: "A",
+        analysis: "第一题解析",
+      });
+      expect(copy.questions[1]).toMatchObject({
+        answer: "证明过程",
+        analysis: "第二题解析",
+      });
       expect(copy.totalScore).toBe(17);
       expect(copy.contentBlocks?.map((block) => block.type)).toEqual([
         "documentTitle",
