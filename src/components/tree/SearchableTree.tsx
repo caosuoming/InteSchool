@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { Search, X, RotateCcw } from "lucide-react";
 import { TreeView } from "./TreeView";
 import type { TreeNode, FilterLogic } from "@/types";
@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 interface SearchableTreeProps {
   data: TreeNode;
-  title: string;
+  title: ReactNode;
   accent?: "gold" | "teal";
   checkable?: boolean;
   checkedIds?: string[];
@@ -24,6 +24,14 @@ interface SearchableTreeProps {
   onLogicChange?: (logic: FilterLogic) => void;
   /** 自定义重置行为；未提供时仅清空当前树的勾选 */
   onReset?: () => void;
+  /** 标题栏右侧的附加内容 */
+  headerActions?: ReactNode;
+  /** 是否显示标题栏 */
+  showHeader?: boolean;
+  /** 是否显示重置按钮 */
+  showResetButton?: boolean;
+  /** 目录滚动区域的高度类名 */
+  treeMaxHeightClassName?: string;
 }
 
 function findMatchingNodeIds(node: TreeNode, keyword: string): string[] {
@@ -63,6 +71,10 @@ export function SearchableTree({
   logic = "or",
   onLogicChange,
   onReset,
+  headerActions,
+  showHeader = true,
+  showResetButton = true,
+  treeMaxHeightClassName,
 }: SearchableTreeProps) {
   const [keyword, setKeyword] = useState("");
   const normalizedKeyword = keyword.trim();
@@ -99,52 +111,57 @@ export function SearchableTree({
 
   return (
     <div className={cn("flex flex-col", className)}>
-      <div className={cn("px-3 py-2 border-b", accentClass)}>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            {showLogicSelector && checkable && (
-              <div className="flex items-center gap-0.5 text-[10px]">
+      {showHeader && (
+        <div className={cn("px-3 py-2 border-b", accentClass)}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              {showLogicSelector && checkable && (
+                <div className="flex items-center gap-0.5 text-[10px]">
+                  <button
+                    onClick={() => onLogicChange?.("or")}
+                    className={cn(
+                      "px-1.5 py-0.5 rounded border transition-colors",
+                      logic === "or"
+                        ? logicAccentClass
+                        : "bg-paper/60 text-ink-500 border-ink-200 hover:text-ink-700",
+                    )}
+                    title="或：满足任一选中目录的题目"
+                  >
+                    或
+                  </button>
+                  <button
+                    onClick={() => onLogicChange?.("and")}
+                    className={cn(
+                      "px-1.5 py-0.5 rounded border transition-colors",
+                      logic === "and"
+                        ? logicAccentClass
+                        : "bg-paper/60 text-ink-500 border-ink-200 hover:text-ink-700",
+                    )}
+                    title="且：同时满足所有选中目录的题目"
+                  >
+                    且
+                  </button>
+                </div>
+              )}
+              <div className="min-w-0 font-serif text-sm font-semibold">{title}</div>
+            </div>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              {headerActions}
+              {showResetButton && checkable && (
                 <button
-                  onClick={() => onLogicChange?.("or")}
-                  className={cn(
-                    "px-1.5 py-0.5 rounded border transition-colors",
-                    logic === "or"
-                      ? logicAccentClass
-                      : "bg-paper/60 text-ink-500 border-ink-200 hover:text-ink-700",
-                  )}
-                  title="或：满足任一选中目录的题目"
+                  onClick={handleReset}
+                  className="flex items-center gap-1 text-[11px] text-ink-500 hover:text-ink-800 transition-colors"
+                  title="重置搜索和勾选"
                 >
-                  或
+                  <RotateCcw className="w-3 h-3" />
+                  重置
                 </button>
-                <button
-                  onClick={() => onLogicChange?.("and")}
-                  className={cn(
-                    "px-1.5 py-0.5 rounded border transition-colors",
-                    logic === "and"
-                      ? logicAccentClass
-                      : "bg-paper/60 text-ink-500 border-ink-200 hover:text-ink-700",
-                  )}
-                  title="且：同时满足所有选中目录的题目"
-                >
-                  且
-                </button>
-              </div>
-            )}
-            <div className="font-serif font-semibold text-sm">{title}</div>
+              )}
+            </div>
           </div>
-          {checkable && (
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-1 text-[11px] text-ink-500 hover:text-ink-800 transition-colors"
-              title="重置搜索和勾选"
-            >
-              <RotateCcw className="w-3 h-3" />
-              重置
-            </button>
-          )}
         </div>
-      </div>
-      <div className="p-3 space-y-2">
+      )}
+      <div className={cn("space-y-2", showHeader ? "p-3" : "p-0")}>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-400" />
           <input
@@ -165,7 +182,7 @@ export function SearchableTree({
           )}
         </div>
 
-        <div className="max-h-[500px] overflow-auto -mx-1 px-1">
+        <div className={cn("max-h-[500px] overflow-auto -mx-1 px-1", treeMaxHeightClassName)}>
           {isSearching && !hasSearchResults ? (
             <div className="py-6 text-center text-xs text-ink-400">未匹配到节点</div>
           ) : (
