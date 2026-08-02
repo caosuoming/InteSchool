@@ -840,7 +840,14 @@ export interface ExamPaperQuestion {
 /** 拆解正稿中的有序文档块，用于保留原文标题、知识块和题目位置。 */
 export interface ExtractedDocumentBlock {
   id: string;
-  type: "question" | "knowledge" | "heading" | "text";
+  type:
+    | "question"
+    | "knowledge"
+    | "documentTitle"
+    | "documentInfo"
+    | "groupTitle"
+    | "heading"
+    | "text";
   content: string;
   title?: string;
   questionType?: QuestionType;
@@ -1330,6 +1337,8 @@ export interface Lecture {
   classIds: string[];
   studentIds: string[];
   sections: LectureSection[];
+  /** 文档拆解生成的有序正文结构，供正稿预览和上课课件生成使用。 */
+  contentBlocks?: ExtractedDocumentBlock[];
   version: number;
   status: LectureStatus;
   /** 讲义类型ID */
@@ -1736,7 +1745,7 @@ export type LessonSlideType = "question" | "knowledge" | "section" | "courseware
 /** 从尚未入库的原始文档直接生成上课页面时使用的有序内容块。 */
 export interface LessonDocumentBlock {
   id: string;
-  type: "question" | "knowledge";
+  type: "documentTitle" | "documentInfo" | "knowledge" | "groupTitle" | "question";
   title?: string;
   content: string;
   questionType?: QuestionType;

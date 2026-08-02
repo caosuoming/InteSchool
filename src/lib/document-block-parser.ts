@@ -1,6 +1,11 @@
 import type { Material, Question, QuestionType } from "@/types";
 
-export type DocumentBlockType = "question" | "knowledge" | "heading" | "unused";
+export type DocumentBlockType =
+  | "documentTitle"
+  | "documentInfo"
+  | "knowledge"
+  | "groupTitle"
+  | "question";
 
 export interface DocumentBlock {
   id: string;
@@ -611,7 +616,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       sectionQuestionType = detectSectionQuestionType(line);
       blocks.push({
         id: createBlockId(),
-        type: "heading",
+        type: "groupTitle",
         content: line,
         order: order++,
         status: "new",
@@ -711,6 +716,36 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   }
 
   submitCurrent();
+  const firstStructuredIndex = blocks.findIndex((block) =>
+    block.type === "groupTitle" || block.type === "question");
+  if (firstStructuredIndex > 0 && blocks[0]?.type === "knowledge") {
+    const preambleLines = blocks[0].content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (preambleLines.length > 0) {
+      const original = blocks[0];
+      const preambleBlocks: DocumentBlock[] = [{
+        ...original,
+        type: "documentTitle",
+        content: preambleLines[0],
+      }];
+      if (preambleLines.length > 1) {
+        preambleBlocks.push({
+          id: createBlockId(),
+          type: "documentInfo",
+          content: preambleLines.slice(1).join("\n"),
+          order: original.order + 1,
+          status: "new",
+        });
+      }
+      const next = [...preambleBlocks, ...blocks.slice(1)];
+      next.forEach((block, index) => {
+        block.order = index;
+      });
+      return next;
+    }
+  }
   return blocks;
 }
 

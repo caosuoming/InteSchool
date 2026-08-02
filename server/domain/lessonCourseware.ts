@@ -153,6 +153,14 @@ function knowledgeSlide(title: string, content: string): LessonSlide {
   };
 }
 
+function reviewedDocumentTitle(
+  blocks: Array<{ type: string; content: string }> | undefined,
+): string | undefined {
+  return blocks
+    ?.find((block) => block.type === "documentTitle")
+    ?.content.trim() || undefined;
+}
+
 function examPaperSlides(examPaper: ExamPaper): LessonSlide[] {
   let questionNumber = 0;
   let knowledgeNumber = 0;
@@ -211,21 +219,22 @@ function examPaperSlides(examPaper: ExamPaper): LessonSlide[] {
 function documentBlockSlides(blocks: LessonDocumentBlock[]): LessonSlide[] {
   let questionNumber = 0;
   let knowledgeNumber = 0;
-  return blocks.map((block) => {
+  return blocks.flatMap((block) => {
     if (block.type === "knowledge") {
       knowledgeNumber += 1;
-      return knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content);
+      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content)];
     }
+    if (block.type !== "question") return [];
 
     questionNumber += 1;
-    return questionSlide({
+    return [questionSlide({
       id: block.id,
       stem: block.content,
       type: block.questionType || "essay",
       options: block.options,
       answer: block.answer || "",
       analysis: block.analysis || "",
-    }, block.title || `第 ${questionNumber} 题`);
+    }, block.title || `第 ${questionNumber} 题`)];
   });
 }
 
@@ -360,8 +369,11 @@ export const lessonCoursewareService = {
     if (!examPaper) throw new Error("试卷不存在或无权访问");
 
     const bodySlides = examPaperSlides(examPaper);
+    const coverTitle = reviewedDocumentTitle(examPaper.contentBlocks)
+      || reviewedDocumentTitle(documentBlocks)
+      || examPaper.title;
     const slides: LessonSlide[] = [
-      titleSlide(examPaper.title, `${examPaper.grade} · ${examPaper.schoolYear}`),
+      titleSlide(coverTitle, `${examPaper.grade} · ${examPaper.schoolYear}`),
       ...(bodySlides.length > 0 ? bodySlides : documentBlockSlides(documentBlocks)),
     ];
 
@@ -395,8 +407,11 @@ export const lessonCoursewareService = {
     if (!lecture) throw new Error("讲义不存在或无权访问");
 
     const questions = db.read("questions");
+    const coverTitle = reviewedDocumentTitle(lecture.contentBlocks)
+      || reviewedDocumentTitle(documentBlocks)
+      || lecture.title;
     const slides: LessonSlide[] = [
-      titleSlide(lecture.title, lecture.description || `${lecture.grade} · ${lecture.schoolYear}`),
+      titleSlide(coverTitle, lecture.description || `${lecture.grade} · ${lecture.schoolYear}`),
     ];
 
     flattenLectureSections(lecture.sections).forEach((sec) => {

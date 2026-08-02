@@ -952,7 +952,14 @@ export default function ExamPaperEditorPage() {
             {isStructuredExtract ? (
               <div className="space-y-4">
                 {contentBlocks.map((block, blockIndex) => {
-                  if (block.type === "heading") {
+                  if (block.type === "documentTitle") {
+                    return (
+                      <h1 key={block.id} className="py-4 text-center font-serif text-2xl font-bold text-ink-900">
+                        {block.content}
+                      </h1>
+                    );
+                  }
+                  if (block.type === "groupTitle" || block.type === "heading") {
                     return (
                       <h2 key={block.id} className="font-serif text-lg font-bold text-ink-900 pt-3 pb-2 border-b border-ink-200">
                         {block.content}
@@ -1211,13 +1218,17 @@ export default function ExamPaperEditorPage() {
                   const paperQuestionIndex = paperQuestion
                     ? paperQuestions.findIndex((question) => question.id === paperQuestion.id)
                     : -1;
-                  const label = block.type === "heading"
-                    ? "标题"
+                  const label = block.type === "documentTitle"
+                    ? "文档标题"
+                    : block.type === "documentInfo" || block.type === "text"
+                      ? "文档信息"
+                      : block.type === "groupTitle" || block.type === "heading"
+                        ? "题型或项目名"
                     : block.type === "knowledge"
                       ? "知识块"
                       : block.type === "question"
                         ? "题目"
-                        : "正文";
+                        : "文档信息";
                   return (
                     <section key={block.id} className="rounded-md border border-ink-100 bg-paper p-3">
                       <div className="mb-2 flex items-center gap-2">
@@ -1281,15 +1292,25 @@ export default function ExamPaperEditorPage() {
                           className="mb-2"
                         />
                       )}
-                      {block.type === "heading" ? (
+                      {block.type === "documentTitle" ? (
                         <Input
-                          label="标题内容"
+                          label="文档标题"
+                          value={block.content}
+                          onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
+                        />
+                      ) : block.type === "groupTitle" || block.type === "heading" ? (
+                        <Input
+                          label="题型或项目名"
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
                         />
                       ) : (
                         <Textarea
-                          label={block.type === "question" ? "题干" : "内容"}
+                          label={block.type === "question"
+                            ? "题干"
+                            : block.type === "documentInfo" || block.type === "text"
+                              ? "文档信息"
+                              : "内容"}
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
                           rows={block.type === "question" ? 3 : 4}

@@ -145,6 +145,17 @@ function hasLectureLessonBody(sections: Lecture["sections"]): boolean {
 
 function lessonDocumentBlocks(blocks: DocumentBlock[]): LessonDocumentBlock[] {
   return blocks.flatMap<LessonDocumentBlock>((block) => {
+    if (
+      block.type === "documentTitle"
+      || block.type === "documentInfo"
+      || block.type === "groupTitle"
+    ) {
+      return [{
+        id: block.id,
+        type: block.type,
+        content: block.content,
+      }];
+    }
     if (block.type === "knowledge") {
       return [{
         id: block.id,
@@ -179,7 +190,9 @@ async function fallbackLessonBlocks(
 
   const extracted = await extractStoredFile(resource.originalFileUrl);
   const blocks = lessonDocumentBlocks(parseDocumentBlocks(extracted.text, currentParseConfig()));
-  if (blocks.length === 0) throw new Error("文档中未识别出题目或知识块，请先进行文档拆解");
+  if (!blocks.some((block) => block.type === "question" || block.type === "knowledge")) {
+    throw new Error("文档中未识别出题目或知识块，请先进行文档拆解");
+  }
   return blocks;
 }
 

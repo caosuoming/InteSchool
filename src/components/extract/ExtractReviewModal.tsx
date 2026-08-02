@@ -116,10 +116,11 @@ const solutionFieldStyles: Record<SolutionField, {
 };
 
 const blockTypeLabel: Record<BlockType, string> = {
+  documentTitle: "文档标题",
+  documentInfo: "文档信息",
+  groupTitle: "题型或项目名",
   question: "题目",
-  knowledge: "知识库",
-  heading: "标题",
-  unused: "未分类",
+  knowledge: "知识块",
 };
 
 const optionLetter = (idx: number) => String.fromCharCode(65 + idx);
@@ -128,42 +129,48 @@ function genBlockId() {
   return `doc-block-${crypto.randomUUID()}`;
 }
 
-function blockTypeBadgeVariant(type: BlockType): "green" | "teal" | "ink" | "default" {
+function blockTypeBadgeVariant(type: BlockType): "green" | "teal" | "ink" | "gold" | "default" {
   switch (type) {
+    case "documentTitle":
+      return "gold";
+    case "documentInfo":
+      return "default";
+    case "groupTitle":
+      return "ink";
     case "question":
       return "green";
     case "knowledge":
       return "teal";
-    case "heading":
-      return "ink";
-    case "unused":
-      return "default";
   }
 }
 
 function blockBorderClass(type: BlockType): string {
   switch (type) {
+    case "documentTitle":
+      return "border-gold-200 hover:border-gold-300";
+    case "documentInfo":
+      return "border-slate-200 hover:border-slate-300";
+    case "groupTitle":
+      return "border-ink-200 hover:border-ink-300";
     case "question":
       return "border-emerald-200 hover:border-emerald-300";
     case "knowledge":
       return "border-teal-200 hover:border-teal-300";
-    case "heading":
-      return "border-ink-200 hover:border-ink-300";
-    case "unused":
-      return "border-gray-200 hover:border-gray-300 opacity-70";
   }
 }
 
 function blockBgClass(type: BlockType): string {
   switch (type) {
+    case "documentTitle":
+      return "bg-gold-50/50";
+    case "documentInfo":
+      return "bg-slate-50/50";
+    case "groupTitle":
+      return "bg-ink-50/50";
     case "question":
       return "bg-emerald-50/50";
     case "knowledge":
       return "bg-teal-50/50";
-    case "heading":
-      return "bg-ink-50/50";
-    case "unused":
-      return "bg-gray-50/50";
   }
 }
 
@@ -385,32 +392,37 @@ export function ExtractReviewModal({
   }, [isDragging, dragOffset]);
 
   const stats = (() => {
+    let documentTitleCount = 0;
+    let documentInfoCount = 0;
+    let groupTitleCount = 0;
     let questionCount = 0;
     let knowledgeCount = 0;
-    let headingCount = 0;
-    let unusedCount = 0;
     for (const b of blocks) {
       switch (b.type) {
+        case "documentTitle":
+          documentTitleCount++;
+          break;
+        case "documentInfo":
+          documentInfoCount++;
+          break;
+        case "groupTitle":
+          groupTitleCount++;
+          break;
         case "question":
           questionCount++;
           break;
         case "knowledge":
           knowledgeCount++;
           break;
-        case "heading":
-          headingCount++;
-          break;
-        case "unused":
-          unusedCount++;
-          break;
       }
     }
     return {
       total: blocks.length,
+      documentTitle: documentTitleCount,
+      documentInfo: documentInfoCount,
+      groupTitle: groupTitleCount,
       question: questionCount,
       knowledge: knowledgeCount,
-      heading: headingCount,
-      unused: unusedCount,
       toStore: questionCount + knowledgeCount,
     };
   })();
@@ -596,7 +608,7 @@ export function ExtractReviewModal({
     };
     const newBlock2: DocBlock = {
       id: genBlockId(),
-      type: "unused",
+      type: "documentInfo",
       content: secondPart,
       order: idx + 1,
       status: "new",
@@ -777,16 +789,23 @@ export function ExtractReviewModal({
             materialId: materialIdByItemId[block.id],
           };
         }
-        if (block.type === "heading") {
+        if (block.type === "documentTitle") {
           return {
             id: block.id,
-            type: "heading",
+            type: "documentTitle",
+            content: block.content,
+          };
+        }
+        if (block.type === "groupTitle") {
+          return {
+            id: block.id,
+            type: "groupTitle",
             content: block.content,
           };
         }
         return {
           id: block.id,
-          type: "text",
+          type: "documentInfo",
           content: block.content,
         };
       });
@@ -912,8 +931,19 @@ export function ExtractReviewModal({
                 {duplicateCheck && !duplicateCheck.resolution && <Badge variant="amber">待重题处理</Badge>}
               </div>
 
-              {block.type === "heading" && (
+              {block.type === "documentTitle" && (
+                <div className="font-serif text-xl font-bold text-ink-900">{block.content}</div>
+              )}
+
+              {block.type === "groupTitle" && (
                 <div className="font-serif text-lg font-bold text-ink-900">{block.content}</div>
+              )}
+
+              {block.type === "documentInfo" && (
+                <div
+                  className="whitespace-pre-wrap text-sm leading-relaxed text-ink-600"
+                  dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
+                />
               )}
 
               {block.type === "knowledge" && (
@@ -967,12 +997,6 @@ export function ExtractReviewModal({
                 </div>
               )}
 
-              {block.type === "unused" && (
-                <div
-                  className="whitespace-pre-wrap text-sm italic text-ink-500"
-                  dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
-                />
-              )}
             </div>
 
             <div className="w-full flex-shrink-0 space-y-3 rounded-lg border border-ink-100 bg-paper/90 p-3 lg:w-56">
@@ -982,10 +1006,11 @@ export function ExtractReviewModal({
                 onChange={(e) => handleChangeBlockType(block.id, e.target.value as BlockType)}
                 className="h-9 py-0 text-sm"
                 options={[
-                  { value: "heading", label: "标题" },
+                  { value: "documentTitle", label: "文档标题" },
+                  { value: "documentInfo", label: "文档信息" },
+                  { value: "knowledge", label: "知识块" },
+                  { value: "groupTitle", label: "题型或项目名" },
                   { value: "question", label: "题目" },
-                  { value: "knowledge", label: "知识库" },
-                  { value: "unused", label: "未分类" },
                 ]}
               />
               {block.type === "question" && (
@@ -1042,7 +1067,7 @@ export function ExtractReviewModal({
               <ChevronDown className="h-3.5 w-3.5" />
               下移
             </Button>
-            {block.type === "unused" && (
+            {block.type !== "question" && (
               <Button size="sm" variant="outline" onClick={() => splitBlock(block.id)}>
                 <Split className="h-3.5 w-3.5" />
                 拆分
@@ -1145,24 +1170,33 @@ export function ExtractReviewModal({
               </>
             )}
 
-            {block.type === "heading" && (
+            {block.type === "documentTitle" && (
               <Textarea
-                label="标题文本"
+                label="文档标题"
                 value={block.content}
                 onChange={(e) => updateBlockField(block.id, { content: e.target.value })}
                 rows={2}
               />
             )}
 
-            {block.type === "unused" && (
+            {block.type === "groupTitle" && (
+              <Textarea
+                label="题型或项目名"
+                value={block.content}
+                onChange={(e) => updateBlockField(block.id, { content: e.target.value })}
+                rows={2}
+              />
+            )}
+
+            {block.type === "documentInfo" && (
               <>
                 <Textarea
-                  label="未分类内容"
+                  label="文档信息"
                   value={block.content}
                   onChange={(e) => updateBlockField(block.id, { content: e.target.value })}
                   rows={4}
                 />
-                <div className="text-sm text-ink-500">未分类块不会入库，仅保留在文档原始结构中。</div>
+                <div className="text-sm text-ink-500">文档信息不会入库，仅保留在文档原始结构中。</div>
               </>
             )}
 
@@ -1564,9 +1598,10 @@ export function ExtractReviewModal({
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
             <Badge variant="default">共 {stats.total} 块</Badge>
             <Badge variant="green">题目 {stats.question}</Badge>
-            <Badge variant="teal">知识库 {stats.knowledge}</Badge>
-            <Badge variant="ink">标题 {stats.heading}</Badge>
-            <Badge variant="default">未分类 {stats.unused}</Badge>
+            <Badge variant="gold">文档标题 {stats.documentTitle}</Badge>
+            <Badge variant="default">文档信息 {stats.documentInfo}</Badge>
+            <Badge variant="teal">知识块 {stats.knowledge}</Badge>
+            <Badge variant="ink">题型或项目名 {stats.groupTitle}</Badge>
           </div>
         </div>
 
@@ -1637,11 +1672,11 @@ export function ExtractReviewModal({
                 </span>
                 <span className="inline-flex items-center gap-1 text-ink-500">
                   <FileText className="w-3.5 h-3.5" />
-                  题目 {stats.question} + 知识库 {stats.knowledge}
+                  题目 {stats.question} + 知识块 {stats.knowledge}
                 </span>
                 <span className="inline-flex items-center gap-1 text-ink-400">
                   <Ban className="w-3.5 h-3.5" />
-                  未入库 {stats.unused + stats.heading}
+                  未入库 {stats.documentTitle + stats.documentInfo + stats.groupTitle}
                 </span>
               </div>
               <div className="flex items-center gap-2">
