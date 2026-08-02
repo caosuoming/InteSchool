@@ -21,6 +21,8 @@ export interface QuestionInput {
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
+  sourceType?: string;
+  category?: string;
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
   remark?: string;

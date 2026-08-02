@@ -1,4 +1,14 @@
 export const serviceParameters = {
+  "classroomNotice": {
+    "listNotices": [
+      "filter"
+    ],
+    "createNotice": [
+      "teacherId",
+      "schoolId",
+      "input"
+    ]
+  },
   "classroomHomework": {
     "listHomeworks": [
       "filter"
@@ -545,7 +555,9 @@ export const serviceParameters = {
       "grade",
       "schoolYear",
       "semester",
-      "sourceResourceId"
+      "sourceResourceId",
+      "questionSourceType",
+      "questionCategory"
     ]
   },
   "knowledge": {

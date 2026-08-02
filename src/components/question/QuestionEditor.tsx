@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { Save, BookOpen, Lightbulb, X, Plus, Edit3 } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  Save, BookOpen, Lightbulb, X, Plus, Edit3, ChevronDown, ChevronUp,
+} from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
@@ -7,12 +9,16 @@ import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
 import { Textarea, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { TreeView } from "@/components/tree/TreeView";
+import { SearchableTree } from "@/components/tree/SearchableTree";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { containsMathDelimiter } from "@/lib/math-html";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import {
+  includeCurrentMetadataOption,
+  useQuestionMetadataOptions,
+} from "@/hooks/useQuestionMetadataOptions";
 import type {
   Question,
   Chapter,
@@ -38,29 +44,71 @@ const recommendationOptions = [
   { value: "5", label: "5 - 强烈推荐" },
 ];
 
-const categoryOptions = [
-  { value: "practice", label: "练习" },
-  { value: "exam", label: "考试" },
-  { value: "homework", label: "作业" },
-  { value: "review", label: "复习" },
-];
-
-const sourceOptions = [
-  { value: "imported", label: "导入" },
-  { value: "manual", label: "手动" },
-  { value: "shared", label: "共享" },
-];
-
 interface QuestionEditorProps {
   question: Question;
   onSaved: (q: Question) => void;
   onCancel: () => void;
 }
 
+type CollapsibleSectionKey = "answer" | "analysis" | "summary";
+
+interface CollapsibleEditorSectionProps {
+  title: string;
+  expanded: boolean;
+  preview: string;
+  onToggle: () => void;
+  action?: ReactNode;
+  children: ReactNode;
+}
+
+function CollapsibleEditorSection({
+  title,
+  expanded,
+  preview,
+  onToggle,
+  action,
+  children,
+}: CollapsibleEditorSectionProps) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-ink-150 bg-paper">
+      <div className="flex items-center gap-2 bg-mist/35 px-3 py-2.5">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "收起" : "展开"}${title}`}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          {expanded ? (
+            <ChevronUp className="h-4 w-4 flex-shrink-0 text-ink-400" />
+          ) : (
+            <ChevronDown className="h-4 w-4 flex-shrink-0 text-ink-400" />
+          )}
+          <span className="flex-shrink-0 text-sm font-medium text-ink-700">{title}</span>
+          {!expanded && (
+            <span className="min-w-0 truncate text-xs text-ink-400">{preview}</span>
+          )}
+        </button>
+        {expanded && action}
+      </div>
+      {expanded && <div className="border-t border-ink-100 p-3">{children}</div>}
+    </section>
+  );
+}
+
 export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorProps) {
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const { options: questionTypeOptions } = useQuestionTypeOptions(teacher?.schoolId);
+  const {
+    sourceOptions,
+    categoryOptions,
+    defaultSource,
+    defaultCategory,
+    getSourceLabel,
+    getCategoryLabel,
+    ready: metadataReady,
+  } = useQuestionMetadataOptions(teacher?.schoolId);
   const [form, setForm] = useState({
     type: question.type,
     stem: question.stem,
@@ -73,8 +121,8 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     difficulty: question.difficulty,
     recommendation: question.recommendation,
     remark: question.remark,
-    sourceType: question.sourceType ?? "manual",
-    category: question.category ?? "practice",
+    sourceType: question.sourceType ?? "",
+    category: question.category ?? "",
     grade: question.grade ?? "",
     schoolYear: question.schoolYear ?? "",
     semester: question.semester ?? "上学期",
@@ -86,8 +134,22 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [saving, setSaving] = useState(false);
   const [duplicateConflict, setDuplicateConflict] = useState<SimilarQuestionCandidate | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Record<CollapsibleSectionKey, boolean>>({
+    answer: false,
+    analysis: false,
+    summary: false,
+  });
   // 公式编辑器目标字段
   const [formulaTarget, setFormulaTarget] = useState<"stem" | "answer" | "analysis" | null>(null);
+
+  useEffect(() => {
+    if (!metadataReady) return;
+    setForm((current) => ({
+      ...current,
+      sourceType: current.sourceType || defaultSource,
+      category: current.category || defaultCategory,
+    }));
+  }, [defaultCategory, defaultSource, metadataReady]);
 
   useEffect(() => {
     if (!teacher) return;
@@ -115,6 +177,15 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     .filter((p) => form.knowledgePointIds.includes(p.id))
     .map((p) => p.name);
 
+  const allDetailsExpanded = Object.values(expandedSections).every(Boolean);
+  const toggleSection = (section: CollapsibleSectionKey) => {
+    setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
+  };
+  const toggleAllDetails = () => {
+    const expanded = !allDetailsExpanded;
+    setExpandedSections({ answer: expanded, analysis: expanded, summary: expanded });
+  };
+
   const persistQuestion = async (duplicateDecision?: "add") => {
     setSaving(true);
     try {
@@ -130,8 +201,8 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         difficulty: form.difficulty as any,
         recommendation: form.recommendation as any,
         remark: form.remark,
-        sourceType: form.sourceType as any,
-        category: form.category as any,
+        sourceType: form.sourceType,
+        category: form.category,
         grade: form.grade,
         schoolYear: form.schoolYear,
         semester: form.semester as ResourceSemester,
@@ -199,13 +270,21 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         <Select
           label="题类"
           value={form.category}
-          options={categoryOptions}
+          options={includeCurrentMetadataOption(
+            categoryOptions,
+            form.category,
+            getCategoryLabel(form.category),
+          )}
           onChange={(e) => update("category", e.target.value as any)}
         />
         <Select
           label="来源"
           value={form.sourceType}
-          options={sourceOptions}
+          options={includeCurrentMetadataOption(
+            sourceOptions,
+            form.sourceType,
+            getSourceLabel(form.sourceType),
+          )}
           onChange={(e) => update("sourceType", e.target.value as any)}
         />
         <Select
@@ -241,7 +320,10 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
       </div>
 
       {/* 题干 */}
-      <div>
+      <div
+        data-testid="question-stem-section"
+        className="sticky top-0 z-20 -mx-2 border-b border-ink-100 bg-paper/95 px-2 py-2 shadow-sm backdrop-blur"
+      >
         <div className="flex items-center justify-between mb-1.5">
           <label className="block text-sm font-medium text-ink-700">题干</label>
           <button
@@ -320,144 +402,183 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         </div>
       )}
 
-      {/* 答案 */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="block text-sm font-medium text-ink-700">答案</label>
-          <button
-            onClick={() => setFormulaTarget("answer")}
-            className="text-xs text-gold-600 hover:text-gold-700 flex items-center gap-1"
-          >
-            <Edit3 className="w-3 h-3" />
-            在线编辑器（支持公式）
-          </button>
-        </div>
-        <Textarea
-          value={form.answer}
-          onChange={(e) => update("answer", e.target.value)}
-          rows={2}
-          placeholder="请输入答案（选择题可填选项字母，如 A 或 ABC）"
-        />
-        {needsRichPreview(form.answer) && (
-          <div className="mt-2 p-2 rounded-md bg-emerald-50/40 border border-emerald-100">
-            <div className="text-[11px] text-emerald-700 mb-1">答案预览：</div>
-            <MathHtml className="text-sm text-emerald-800 prose-sm whitespace-pre-wrap">
-              {form.answer}
-            </MathHtml>
-          </div>
-        )}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={toggleAllDetails}
+          className="text-xs text-gold-600 hover:text-gold-700"
+        >
+          {allDetailsExpanded ? "全部收起" : "一键展开答案、解析与总结"}
+        </button>
       </div>
 
-      {/* 解析 */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="block text-sm font-medium text-ink-700">解析</label>
-          <button
-            onClick={() => setFormulaTarget("analysis")}
-            className="text-xs text-gold-600 hover:text-gold-700 flex items-center gap-1"
-          >
-            <Edit3 className="w-3 h-3" />
-            在线编辑器（支持公式）
-          </button>
-        </div>
-        <Textarea
-          value={form.analysis}
-          onChange={(e) => update("analysis", e.target.value)}
-          rows={3}
-          placeholder="请输入解析（也可使用在线编辑器插入公式）"
-        />
-        {needsRichPreview(form.analysis) && (
-          <div className="mt-2 p-2 rounded-md bg-mist/40 border border-ink-100">
-            <div className="text-[11px] text-ink-500 mb-1">解析预览：</div>
-            <MathHtml className="text-sm text-ink-800 prose-sm whitespace-pre-wrap">
-              {form.analysis}
-            </MathHtml>
-          </div>
-        )}
-      </div>
+      <div className="space-y-2">
+        <CollapsibleEditorSection
+          title="答案"
+          expanded={expandedSections.answer}
+          preview={collapsedPreview(form.answer)}
+          onToggle={() => toggleSection("answer")}
+          action={(
+            <button
+              type="button"
+              onClick={() => setFormulaTarget("answer")}
+              className="flex items-center gap-1 text-xs text-gold-600 hover:text-gold-700"
+            >
+              <Edit3 className="h-3 w-3" />
+              在线编辑器（支持公式）
+            </button>
+          )}
+        >
+          <Textarea
+            value={form.answer}
+            onChange={(e) => update("answer", e.target.value)}
+            rows={2}
+            placeholder="请输入答案（选择题可填选项字母，如 A 或 ABC）"
+          />
+          {needsRichPreview(form.answer) && (
+            <div className="mt-2 rounded-md border border-emerald-100 bg-emerald-50/40 p-2">
+              <div className="mb-1 text-[11px] text-emerald-700">答案预览：</div>
+              <MathHtml className="prose-sm whitespace-pre-wrap text-sm text-emerald-800">
+                {form.answer}
+              </MathHtml>
+            </div>
+          )}
+        </CollapsibleEditorSection>
 
-      {/* 总结 */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="block text-sm font-medium text-ink-700">总结</label>
-        </div>
-        <Textarea
-          value={form.summary}
-          onChange={(e) => update("summary", e.target.value)}
-          rows={2}
-          placeholder="请输入本题总结（如考点、易错点、解题方法等）"
-        />
-        {needsRichPreview(form.summary) && (
-          <div className="mt-2 p-2 rounded-md bg-amber-50/40 border border-amber-100">
-            <div className="text-[11px] text-amber-700 mb-1">总结预览：</div>
-            <MathHtml className="text-sm text-amber-800 prose-sm whitespace-pre-wrap">
-              {form.summary}
-            </MathHtml>
-          </div>
-        )}
+        <CollapsibleEditorSection
+          title="解析"
+          expanded={expandedSections.analysis}
+          preview={collapsedPreview(form.analysis)}
+          onToggle={() => toggleSection("analysis")}
+          action={(
+            <button
+              type="button"
+              onClick={() => setFormulaTarget("analysis")}
+              className="flex items-center gap-1 text-xs text-gold-600 hover:text-gold-700"
+            >
+              <Edit3 className="h-3 w-3" />
+              在线编辑器（支持公式）
+            </button>
+          )}
+        >
+          <Textarea
+            value={form.analysis}
+            onChange={(e) => update("analysis", e.target.value)}
+            rows={3}
+            placeholder="请输入解析（也可使用在线编辑器插入公式）"
+          />
+          {needsRichPreview(form.analysis) && (
+            <div className="mt-2 rounded-md border border-ink-100 bg-mist/40 p-2">
+              <div className="mb-1 text-[11px] text-ink-500">解析预览：</div>
+              <MathHtml className="prose-sm whitespace-pre-wrap text-sm text-ink-800">
+                {form.analysis}
+              </MathHtml>
+            </div>
+          )}
+        </CollapsibleEditorSection>
+
+        <CollapsibleEditorSection
+          title="总结"
+          expanded={expandedSections.summary}
+          preview={collapsedPreview(form.summary)}
+          onToggle={() => toggleSection("summary")}
+        >
+          <Textarea
+            value={form.summary}
+            onChange={(e) => update("summary", e.target.value)}
+            rows={2}
+            placeholder="请输入本题总结（如考点、易错点、解题方法等）"
+          />
+          {needsRichPreview(form.summary) && (
+            <div className="mt-2 rounded-md border border-amber-100 bg-amber-50/40 p-2">
+              <div className="mb-1 text-[11px] text-amber-700">总结预览：</div>
+              <MathHtml className="prose-sm whitespace-pre-wrap text-sm text-amber-800">
+                {form.summary}
+              </MathHtml>
+            </div>
+          )}
+        </CollapsibleEditorSection>
       </div>
 
       {/* 章节与知识点选择 */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="border border-gold-200 rounded-lg overflow-hidden bg-gold-50/20">
-          <div className="px-3 py-2 bg-gold-50 border-b border-gold-200 flex items-center gap-1.5">
-            <BookOpen className="w-3.5 h-3.5 text-gold-700" />
-            <span className="font-serif font-semibold text-sm text-gold-800">章节目录</span>
-            <span className="ml-auto text-xs text-gold-700">
-              已选 {form.chapterIds.length}
-            </span>
-            {form.chapterIds.length > 0 && (
-              <button
-                onClick={() => update("chapterIds", [])}
-                className="text-xs text-gold-700 hover:text-red-600"
-              >
-                清除
-              </button>
+      <div className="grid gap-4 md:grid-cols-2">
+        {chapterTree ? (
+          <SearchableTree
+            data={chapterTree}
+            title={(
+              <span className="flex items-center gap-1.5 text-gold-800">
+                <BookOpen className="h-3.5 w-3.5 text-gold-700" />
+                章节目录
+              </span>
             )}
-          </div>
-          <div className="p-2 max-h-[260px] overflow-y-auto">
-            {chapterTree && (
-              <TreeView
-                data={chapterTree}
-                checkable
-                checkedIds={form.chapterIds}
-                onCheck={(ids) => update("chapterIds", ids)}
-                expandLevel={2}
-                className="text-xs"
-              />
+            accent="gold"
+            checkable
+            checkedIds={form.chapterIds}
+            onCheck={(ids) => update("chapterIds", ids)}
+            expandLevel={2}
+            searchPlaceholder="搜索章节目录..."
+            showResetButton={false}
+            treeMaxHeightClassName="max-h-[260px]"
+            className="overflow-hidden rounded-lg border border-gold-200 bg-gold-50/20"
+            headerActions={(
+              <>
+                <span className="text-xs text-gold-700">已选 {form.chapterIds.length}</span>
+                {form.chapterIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => update("chapterIds", [])}
+                    className="text-xs text-gold-700 hover:text-red-600"
+                  >
+                    清除
+                  </button>
+                )}
+              </>
             )}
+          />
+        ) : (
+          <div className="rounded-lg border border-gold-200 py-12 text-center text-xs text-ink-400">
+            加载中...
           </div>
-        </div>
+        )}
 
-        <div className="border border-teal-200 rounded-lg overflow-hidden bg-teal-50/20">
-          <div className="px-3 py-2 bg-teal-50 border-b border-teal-200 flex items-center gap-1.5">
-            <Lightbulb className="w-3.5 h-3.5 text-teal-700" />
-            <span className="font-serif font-semibold text-sm text-teal-800">知识点目录</span>
-            <span className="ml-auto text-xs text-teal-700">
-              已选 {form.knowledgePointIds.length}
-            </span>
-            {form.knowledgePointIds.length > 0 && (
-              <button
-                onClick={() => update("knowledgePointIds", [])}
-                className="text-xs text-teal-700 hover:text-red-600"
-              >
-                清除
-              </button>
+        {knowledgeTree ? (
+          <SearchableTree
+            data={knowledgeTree}
+            title={(
+              <span className="flex items-center gap-1.5 text-teal-800">
+                <Lightbulb className="h-3.5 w-3.5 text-teal-700" />
+                知识点目录
+              </span>
             )}
-          </div>
-          <div className="p-2 max-h-[260px] overflow-y-auto">
-            {knowledgeTree && (
-              <TreeView
-                data={knowledgeTree}
-                checkable
-                checkedIds={form.knowledgePointIds}
-                onCheck={(ids) => update("knowledgePointIds", ids)}
-                expandLevel={2}
-                className="text-xs"
-              />
+            accent="teal"
+            checkable
+            checkedIds={form.knowledgePointIds}
+            onCheck={(ids) => update("knowledgePointIds", ids)}
+            expandLevel={2}
+            searchPlaceholder="搜索知识点目录..."
+            showResetButton={false}
+            treeMaxHeightClassName="max-h-[260px]"
+            className="overflow-hidden rounded-lg border border-teal-200 bg-teal-50/20"
+            headerActions={(
+              <>
+                <span className="text-xs text-teal-700">已选 {form.knowledgePointIds.length}</span>
+                {form.knowledgePointIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => update("knowledgePointIds", [])}
+                    className="text-xs text-teal-700 hover:text-red-600"
+                  >
+                    清除
+                  </button>
+                )}
+              </>
             )}
+          />
+        ) : (
+          <div className="rounded-lg border border-teal-200 py-12 text-center text-xs text-ink-400">
+            加载中...
           </div>
-        </div>
+        )}
       </div>
 
       {/* 已选章节与知识点快速预览 */}
@@ -581,6 +702,16 @@ function needsRichPreview(s: string): boolean {
   return /<[a-z][\s\S]*?>/i.test(s)
     || /!\[[^\]]*\]\([^)]+\)/.test(s)
     || containsMathDelimiter(s);
+}
+
+function collapsedPreview(value: string): string {
+  const text = value
+    .replace(/<[^>]+>/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "[图片]")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "未填写";
+  return text.length > 48 ? `${text.slice(0, 48)}…` : text;
 }
 
 export default QuestionEditor;

@@ -70,6 +70,8 @@ interface ExtractReviewModalProps {
   grade: string;
   schoolYear: string;
   semester: ResourceSemester;
+  questionSourceType?: string;
+  questionCategory?: string;
   initialBlocks?: DocBlock[];
   onConfirmed?: () => void;
 }
@@ -249,6 +251,8 @@ export function ExtractReviewModal({
   grade,
   schoolYear,
   semester,
+  questionSourceType,
+  questionCategory,
   initialBlocks,
   onConfirmed,
 }: ExtractReviewModalProps) {
@@ -764,6 +768,8 @@ export function ExtractReviewModal({
         schoolYear,
         semester,
         resourceId,
+        questionSourceType,
+        questionCategory,
       );
 
       const extractedQuestionById = new Map(extractedQuestions.map((item) => [item.id, item]));

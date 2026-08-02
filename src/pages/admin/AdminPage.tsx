@@ -98,7 +98,7 @@ const allAdminItems: AdminItem[] = [
   {
     icon: SlidersHorizontal,
     title: "系统设置",
-    description: "管理年级、学年、题源、题类、分类等基础数据配置",
+    description: "管理年级、学年、来源、题型、题类等基础数据配置",
     href: "/admin/settings",
     schoolOnly: true,
   },

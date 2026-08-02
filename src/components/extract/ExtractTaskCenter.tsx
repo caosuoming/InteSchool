@@ -185,6 +185,8 @@ export function ExtractTaskCenter() {
           grade={activeTask.grade}
           schoolYear={activeTask.schoolYear}
           semester={activeTask.semester}
+          questionSourceType={activeTask.questionSourceType}
+          questionCategory={activeTask.questionCategory}
           initialBlocks={activeTask.blocks}
           onConfirmed={handleConfirmed}
         />

@@ -26,6 +26,8 @@ export interface QuestionInput {
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
+  sourceType?: string;
+  category?: string;
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
   remark?: string;
@@ -208,6 +210,8 @@ export const questionService = {
       grade: input.grade,
       schoolYear: input.schoolYear,
       semester: input.semester || "上学期",
+      sourceType: input.sourceType,
+      category: input.category,
       difficulty: input.difficulty,
       recommendation: input.recommendation,
       usageCount: 0,
@@ -381,6 +385,8 @@ export const questionService = {
       grade: input.grade,
       schoolYear: input.schoolYear,
       semester: input.semester || "上学期",
+      sourceType: input.sourceType,
+      category: input.category,
       difficulty: input.difficulty,
       recommendation: input.recommendation,
       usageCount: 0,

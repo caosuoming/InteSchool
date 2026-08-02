@@ -3,6 +3,7 @@ import { analyticsService } from "./domain/analytics.js";
 import { basketService } from "./domain/basket.js";
 import { classService } from "./domain/class.js";
 import { classroomHomeworkService } from "./domain/classroomHomework.js";
+import { classroomNoticeService } from "./domain/classroomNotice.js";
 import { coursewareService } from "./domain/courseware.js";
 import { donationService } from "./domain/donation.js";
 import { examPaperService } from "./domain/examPaper.js";
@@ -31,6 +32,7 @@ export const serviceRegistry = {
   basket: basketService,
   class: classService,
   classroomHomework: classroomHomeworkService,
+  classroomNotice: classroomNoticeService,
   courseware: coursewareService,
   donation: donationService,
   examArrangement: examArrangementService,

@@ -38,6 +38,7 @@ import { TagSettings } from "@/components/question/TagSettings";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import { useQuestionMetadataOptions } from "@/hooks/useQuestionMetadataOptions";
 import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester, QuestionSearchField } from "@/types";
 import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
@@ -56,38 +57,12 @@ const difficultyOptions = [
   { value: 5, label: "困难" },
 ];
 
-const sourceOptions = [
-  { value: "imported", label: "导入" },
-  { value: "manual", label: "手动" },
-  { value: "shared", label: "共享" },
-];
-
-const categoryOptions = [
-  { value: "practice", label: "练习" },
-  { value: "exam", label: "考试" },
-  { value: "homework", label: "作业" },
-  { value: "review", label: "复习" },
-];
-
 const searchFieldOptions: { value: QuestionSearchField; label: string }[] = [
   { value: "stem", label: "题干" },
   { value: "analysis", label: "解析" },
   { value: "summary", label: "总结" },
   { value: "remark", label: "备注" },
 ];
-
-const sourceLabel: Record<string, string> = {
-  imported: "导入",
-  manual: "手动",
-  shared: "共享",
-};
-
-const categoryLabel: Record<string, string> = {
-  practice: "练习",
-  exam: "考试",
-  homework: "作业",
-  review: "复习",
-};
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -158,6 +133,12 @@ export default function QuestionBankPage({
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const { options: questionTypeOptions, getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
+  const {
+    sourceOptions,
+    categoryOptions,
+    getSourceLabel,
+    getCategoryLabel,
+  } = useQuestionMetadataOptions(teacher?.schoolId);
   const tagPrefs = useTagPrefsStore((state) => state.prefs);
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
   const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
@@ -1146,6 +1127,8 @@ export default function QuestionBankPage({
                   donationLocked={donationLockedQuestionIds?.has(q.id) || false}
                   onToggleSelection={onToggleSelection}
                   getQuestionTypeLabel={getQuestionTypeLabel}
+                  getSourceLabel={getSourceLabel}
+                  getCategoryLabel={getCategoryLabel}
                 />
               ))}
             </div>
@@ -1847,6 +1830,8 @@ function QuestionRow({
   donationLocked,
   onToggleSelection,
   getQuestionTypeLabel,
+  getSourceLabel,
+  getCategoryLabel,
 }: {
   question: Question;
   mode: Mode;
@@ -1886,6 +1871,8 @@ function QuestionRow({
   donationLocked?: boolean;
   onToggleSelection?: (q: Question) => void;
   getQuestionTypeLabel: (type: Question["type"]) => string;
+  getSourceLabel: (value?: string) => string;
+  getCategoryLabel: (value?: string) => string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingAnswers, setEditingAnswers] = useState(false);
@@ -2085,13 +2072,13 @@ function QuestionRow({
                 case "source":
                   return question.sourceType ? (
                     <span key="source" className="text-xs text-ink-400">
-                      来源：{sourceLabel[question.sourceType] || question.sourceType}
+                      来源：{getSourceLabel(question.sourceType)}
                     </span>
                   ) : null;
                 case "category":
                   return question.category ? (
                     <span key="category" className="text-xs text-ink-400">
-                      · {categoryLabel[question.category] || question.category}
+                      · {getCategoryLabel(question.category)}
                     </span>
                   ) : null;
                 case "grade":

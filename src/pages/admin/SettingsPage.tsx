@@ -47,7 +47,7 @@ const tabConfig: { key: SettingTab; label: string; description: string }[] = [
   { key: "schoolYear", label: "学年", description: "管理学年设置，拖拽可调整排序" },
   { key: "source", label: "来源", description: "管理题目来源类型，拖拽可调整排序" },
   { key: "questionType", label: "题型", description: "管理题目类型，拖拽可调整排序" },
-  { key: "category", label: "分类", description: "管理题目分类（练习/考试/作业/复习），拖拽可调整排序" },
+  { key: "category", label: "题类", description: "管理题目题类（练习/考试/作业/复习），拖拽可调整排序" },
   { key: "classType", label: "班型", description: "管理班级类型（如强基班、实验班、普通班等），拖拽可调整排序" },
   { key: "examPaperType", label: "试卷类型", description: "管理一级、二级试卷类型；同级类型可拖拽或使用箭头调整排序" },
   { key: "lectureType", label: "讲义类型", description: "管理一级、二级讲义类型；同级类型可拖拽或使用箭头调整排序" },
@@ -1129,7 +1129,7 @@ export function SettingsPage() {
       <div className="max-w-5xl mx-auto px-4 py-6">
         <PageHeader
           title="系统设置"
-          description="管理学校的年级、学年、来源、题类和分类等基础配置，支持拖拽或上下箭头排序"
+          description="管理学校的年级、学年、来源、题型和题类等基础配置，支持拖拽或上下箭头排序"
           icon={<Settings className="w-5 h-5" />}
           action={
             <div className="flex items-center gap-2">

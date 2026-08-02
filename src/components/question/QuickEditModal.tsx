@@ -10,7 +10,7 @@ import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
 import { MathHtml } from "@/components/ui/MathHtml";
-import { TreeView } from "@/components/tree/TreeView";
+import { SearchableTree } from "@/components/tree/SearchableTree";
 import type { Question, TreeNode, QuestionRemark } from "@/types";
 import { cn } from "@/lib/utils";
 import { genId } from "@/lib/service-utils";
@@ -241,37 +241,40 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
 
         <div className="p-3">
           {key === "chapter" && (
-            <div className="max-h-[200px] overflow-y-auto">
-              {chapterTree ? (
-                <TreeView
-                  data={chapterTree}
-                  checkable
-                  checkedIds={chapterIds}
-                  onCheck={setChapterIds}
-                  expandLevel={2}
-                  className="text-xs"
-                />
-              ) : (
-                <div className="py-6 text-center text-xs text-ink-400">加载中...</div>
-              )}
-            </div>
+            chapterTree ? (
+              <SearchableTree
+                data={chapterTree}
+                title="章节目录"
+                checkable
+                checkedIds={chapterIds}
+                onCheck={setChapterIds}
+                expandLevel={2}
+                searchPlaceholder="搜索章节目录..."
+                showHeader={false}
+                treeMaxHeightClassName="max-h-[160px]"
+              />
+            ) : (
+              <div className="py-6 text-center text-xs text-ink-400">加载中...</div>
+            )
           )}
 
           {key === "knowledge" && (
-            <div className="max-h-[200px] overflow-y-auto">
-              {knowledgeTree ? (
-                <TreeView
-                  data={knowledgeTree}
-                  checkable
-                  checkedIds={knowledgePointIds}
-                  onCheck={setKnowledgePointIds}
-                  expandLevel={2}
-                  className="text-xs"
-                />
-              ) : (
-                <div className="py-6 text-center text-xs text-ink-400">加载中...</div>
-              )}
-            </div>
+            knowledgeTree ? (
+              <SearchableTree
+                data={knowledgeTree}
+                title="知识点目录"
+                accent="teal"
+                checkable
+                checkedIds={knowledgePointIds}
+                onCheck={setKnowledgePointIds}
+                expandLevel={2}
+                searchPlaceholder="搜索知识点目录..."
+                showHeader={false}
+                treeMaxHeightClassName="max-h-[160px]"
+              />
+            ) : (
+              <div className="py-6 text-center text-xs text-ink-400">加载中...</div>
+            )
           )}
 
           {key === "remark" && (

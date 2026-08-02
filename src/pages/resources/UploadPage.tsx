@@ -24,6 +24,8 @@ import { Input, Textarea, Select } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import { useDocumentTypeOptions } from "@/hooks/useDocumentTypeOptions";
+import { useQuestionMetadataOptions } from "@/hooks/useQuestionMetadataOptions";
 import type {
   TreeNode, FilterLogic, CoursewareType, MaterialType,
   ShareRecord, ResourceSemester,
@@ -140,6 +142,20 @@ export function UploadPage() {
   const { teacher } = useAuthStore();
   const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(teacher?.schoolId);
+  const {
+    examPaperTypeOptions,
+    lectureTypeOptions,
+    defaultExamPaperTypeId,
+    defaultLectureTypeId,
+    ready: documentTypesReady,
+  } = useDocumentTypeOptions(teacher?.schoolId);
+  const {
+    sourceOptions,
+    categoryOptions,
+    defaultSource,
+    defaultCategory,
+    ready: metadataReady,
+  } = useQuestionMetadataOptions(teacher?.schoolId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("upload");
 
@@ -160,6 +176,10 @@ export function UploadPage() {
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
   const [coursewareType, setCoursewareType] = useState<string>("ppt");
   const [materialType, setMaterialType] = useState<string>("text");
+  const [examPaperTypeId, setExamPaperTypeId] = useState("");
+  const [lectureTypeId, setLectureTypeId] = useState("");
+  const [questionSourceType, setQuestionSourceType] = useState("");
+  const [questionCategory, setQuestionCategory] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
 
@@ -180,6 +200,42 @@ export function UploadPage() {
     if (!schoolYear && defaultSchoolYear) setSchoolYear(defaultSchoolYear);
     if (!semester) setSemester(defaultSemester);
   }, [grade, schoolYear, semester, defaultGrade, defaultSchoolYear, defaultSemester]);
+
+  useEffect(() => {
+    if (!documentTypesReady) return;
+    setExamPaperTypeId((current) =>
+      examPaperTypeOptions.some((option) => option.value === current)
+        ? current
+        : defaultExamPaperTypeId,
+    );
+    setLectureTypeId((current) =>
+      lectureTypeOptions.some((option) => option.value === current)
+        ? current
+        : defaultLectureTypeId,
+    );
+  }, [
+    documentTypesReady,
+    examPaperTypeOptions,
+    lectureTypeOptions,
+    defaultExamPaperTypeId,
+    defaultLectureTypeId,
+  ]);
+
+  useEffect(() => {
+    if (!metadataReady) return;
+    setQuestionSourceType((current) =>
+      sourceOptions.some((option) => option.value === current) ? current : defaultSource,
+    );
+    setQuestionCategory((current) =>
+      categoryOptions.some((option) => option.value === current) ? current : defaultCategory,
+    );
+  }, [
+    metadataReady,
+    sourceOptions,
+    categoryOptions,
+    defaultSource,
+    defaultCategory,
+  ]);
 
   useEffect(() => {
     if (teacher?.schoolId) {
@@ -317,6 +373,9 @@ export function UploadPage() {
               duration: 90,
               totalScore: 100,
               questions: [],
+              typeId: examPaperTypeId || undefined,
+              questionSourceType: questionSourceType || undefined,
+              questionCategory: questionCategory || undefined,
               status: "draft",
               originalFileUrl: uploaded.url,
               originalFileName: item.file.name,
@@ -332,6 +391,9 @@ export function UploadPage() {
               ...baseInput,
               classIds: [],
               studentIds: [],
+              typeId: lectureTypeId || undefined,
+              questionSourceType: questionSourceType || undefined,
+              questionCategory: questionCategory || undefined,
               sections: [{
                 id: `sec-${Date.now()}-${item.id}`,
                 title: item.title.trim(),
@@ -553,6 +615,38 @@ export function UploadPage() {
                       options={semesterOptions}
                     />
                   </div>
+
+                  {(selectedType === "examPaper" || selectedType === "lecture") && (
+                    <div className="grid md:grid-cols-3 gap-4">
+                      {selectedType === "examPaper" ? (
+                        <Select
+                          label="试卷类型"
+                          value={examPaperTypeId}
+                          onChange={(e) => setExamPaperTypeId(e.target.value)}
+                          options={examPaperTypeOptions}
+                        />
+                      ) : (
+                        <Select
+                          label="讲义类型"
+                          value={lectureTypeId}
+                          onChange={(e) => setLectureTypeId(e.target.value)}
+                          options={lectureTypeOptions}
+                        />
+                      )}
+                      <Select
+                        label="来源"
+                        value={questionSourceType}
+                        onChange={(e) => setQuestionSourceType(e.target.value)}
+                        options={sourceOptions}
+                      />
+                      <Select
+                        label="题类"
+                        value={questionCategory}
+                        onChange={(e) => setQuestionCategory(e.target.value)}
+                        options={categoryOptions}
+                      />
+                    </div>
+                  )}
 
                   {selectedType === "courseware" && (
                     <Select
