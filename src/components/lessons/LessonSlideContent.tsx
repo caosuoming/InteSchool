@@ -55,7 +55,7 @@ export function LessonSlideContent({
             textRegionProps("title").className,
           )}
         >
-          {slide.title}
+          <MathHtml>{slide.title}</MathHtml>
         </h2>
         {slide.content && (
           <div
@@ -154,7 +154,7 @@ export function LessonSlideContent({
           textRegionProps("title").className,
         )}
       >
-        {slide.title}
+        <MathHtml>{slide.title}</MathHtml>
       </div>
       <div
         {...textRegionProps("content")}

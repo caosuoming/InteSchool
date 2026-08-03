@@ -3351,7 +3351,7 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
         selected && "ring-2 ring-gold-300/60 bg-gold-50/20",
         className,
       )}>
-        <div className="flex items-start gap-3">
+        <div data-testid="resource-card-main-row" className="flex items-start gap-3">
           {onToggleSelection && (
             <button
               onClick={onToggleSelection}
@@ -3455,11 +3455,6 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
             )}
           </div>
           <div className={cn("flex items-start flex-shrink-0", compactActions ? "gap-1" : "gap-2")}>
-            {primaryActions && (
-              <div className="flex max-w-[520px] flex-wrap items-center justify-end gap-2">
-                {primaryActions}
-              </div>
-            )}
             {donated && <Badge variant="teal">已捐赠</Badge>}
             {donationLocked && <Badge variant="ink">平台副本</Badge>}
             <div
@@ -3554,6 +3549,14 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
             </div>
           </div>
         </div>
+        {primaryActions && (
+          <div
+            data-testid="resource-card-primary-actions"
+            className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-ink-50 pt-3"
+          >
+            {primaryActions}
+          </div>
+        )}
       </div>
 
       {isImage && (

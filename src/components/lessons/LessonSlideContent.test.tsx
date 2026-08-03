@@ -29,6 +29,22 @@ const slide: LessonSlide = {
 };
 
 describe("LessonSlideContent", () => {
+  it("renders formulas in an imported PPT page title and body", () => {
+    const pptSlide: LessonSlide = {
+      id: "slide-ppt-1",
+      type: "knowledge",
+      title: "数列 $a_n$",
+      content: "通项为 $a_n=(-1)^n$。",
+      pptSlideNumber: 1,
+    };
+
+    const { container } = render(<LessonSlideContent slide={pptSlide} />);
+
+    expect(container.querySelectorAll(".katex")).toHaveLength(2);
+    expect(container.querySelector('[data-latex="a_n"]')).not.toBeNull();
+    expect(container.querySelector('[data-latex="a_n=(-1)^n"]')).not.toBeNull();
+  });
+
   it("shows only the full question stem by default", () => {
     render(<LessonSlideContent slide={slide} />);
 
