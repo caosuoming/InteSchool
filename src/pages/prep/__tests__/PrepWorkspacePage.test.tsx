@@ -253,41 +253,59 @@ describe("PrepWorkspacePage", () => {
     });
   });
 
-  it("shows group tasks with progress and previews completed results from the list", async () => {
+  it("shows group tasks with progress and previews completed results before the board finishes", async () => {
     const user = userEvent.setup();
-    const completedBoard: PrepTask = {
+    const partialBoard: PrepTask = {
       ...existingBoard,
-      id: "board-completed",
-      title: "已完成函数集体备课",
-      workflows: [{
-        ...existingBoard.workflows[0],
-        id: "workflow-completed",
-        status: "completed",
-      }],
-      assignments: [{
-        ...existingBoard.assignments[0],
-        id: "assignment-completed",
-        taskId: "board-completed",
-        workflowId: "workflow-completed",
-        status: "completed",
-        submission: {
-          id: "submission-1",
-          kind: "document",
-          title: "函数备课成果",
-          submittedBy: "teacher-1",
-          submittedAt: "2026-08-02T00:00:00.000Z",
-          updatedAt: "2026-08-02T00:00:00.000Z",
-          assets: [{
-            id: "asset-1",
-            name: "函数备课成果.pdf",
-            url: "/api/files/asset-1",
-            mimeType: "application/pdf",
-            size: 1024,
-          }],
-          annotations: [],
+      id: "board-partial",
+      title: "函数专题集体研讨",
+      workflows: [
+        {
+          ...existingBoard.workflows[0],
+          id: "workflow-completed",
+          status: "completed",
         },
-      }],
-      status: "completed",
+        {
+          ...existingBoard.workflows[0],
+          id: "workflow-pending",
+          name: "完善课堂练习",
+          order: 2,
+          status: "created",
+        },
+      ],
+      assignments: [
+        {
+          ...existingBoard.assignments[0],
+          id: "assignment-completed",
+          taskId: "board-partial",
+          workflowId: "workflow-completed",
+          status: "completed",
+          submission: {
+            id: "submission-1",
+            kind: "document",
+            title: "函数备课成果",
+            submittedBy: "teacher-1",
+            submittedAt: "2026-08-02T00:00:00.000Z",
+            updatedAt: "2026-08-02T00:00:00.000Z",
+            assets: [{
+              id: "asset-1",
+              name: "函数备课成果.pdf",
+              url: "/api/files/asset-1",
+              mimeType: "application/pdf",
+              size: 1024,
+            }],
+            annotations: [],
+          },
+        },
+        {
+          ...existingBoard.assignments[0],
+          id: "assignment-pending",
+          taskId: "board-partial",
+          workflowId: "workflow-pending",
+          status: "pending",
+        },
+      ],
+      status: "in_progress",
     };
     const otherGroupBoard: PrepTask = {
       ...existingBoard,
@@ -305,18 +323,20 @@ describe("PrepWorkspacePage", () => {
     };
     vi.mocked(prepService.listTasks).mockResolvedValue([
       existingBoard,
-      completedBoard,
+      partialBoard,
       otherGroupBoard,
     ]);
 
     renderPage("/prep?entry=collective");
 
-    expect(await screen.findByText("已完成函数集体备课")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "集体研讨" })).toBeInTheDocument();
+    expect(screen.getByText("备课组任务列表")).toBeInTheDocument();
+    expect(screen.getAllByText("函数专题集体研讨").length).toBeGreaterThan(0);
     expect(screen.getByText("0/1 · 0%")).toBeInTheDocument();
-    expect(screen.getByText("1/1 · 100%")).toBeInTheDocument();
+    expect(screen.getByText("1/2 · 50%")).toBeInTheDocument();
     expect(screen.queryByText("其他备课组任务")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "预览成果" }));
-    expect(screen.getByText("成果预览：已完成函数集体备课")).toBeInTheDocument();
+    expect(screen.getByText("成果预览：函数专题集体研讨")).toBeInTheDocument();
   });
 });

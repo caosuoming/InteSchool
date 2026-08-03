@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { BookOpen, GraduationCap, Lock, Mail, School, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
+import { ArrowLeft, BookOpen, GraduationCap, Lock, Mail, School, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 import { authService } from "@/services/auth";
 import { SUBJECT_OPTIONS } from "@/lib/education";
@@ -106,8 +106,18 @@ export default function LoginPage({
       <div className="flex items-center justify-center p-6 lg:p-10 overflow-y-auto">
         <div className="w-full max-w-lg py-6">
           <div className="mb-6">
+            {collectiveEntry && (
+              <button
+                type="button"
+                onClick={() => navigate("/login")}
+                className="mb-5 inline-flex items-center gap-1 text-xs text-ink-500 transition-colors hover:text-ink-900"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                返回个人登录
+              </button>
+            )}
             <h2 className="font-serif text-2xl font-bold text-ink-900">
-              {mode === "register" ? "创建教师账号" : collectiveEntry ? "进入集体备课" : "欢迎回来"}
+              {mode === "register" ? "创建教师账号" : collectiveEntry ? "进入集体研讨" : "欢迎回来"}
             </h2>
             <p className="text-sm text-ink-500 mt-1">
               {mode === "register"
@@ -192,7 +202,7 @@ export default function LoginPage({
             <div className="relative"><Lock className="absolute left-3 top-9 w-4 h-4 text-ink-400" /><Input label="密码" type="password" minLength={mode === "register" ? 10 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} required className="pl-10" /></div>
             {error && <div className="px-3 py-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700">{error}</div>}
             <Button type="submit" variant="gold" size="lg" loading={loading} className="w-full" disabled={mode === "register" && !context}>
-              {mode === "register" ? "注册并进入学校" : collectiveEntry ? "登录并进入集体备课" : "登录"}
+              {mode === "register" ? "注册并进入学校" : collectiveEntry ? "登录并进入集体研讨" : "登录"}
             </Button>
           </form>
 
@@ -212,18 +222,20 @@ export default function LoginPage({
                   请使用注册时绑定的邮箱联系学校管理员，完成身份验证后重置密码。
                 </div>
               )}
-              <div className="mt-4 grid grid-cols-2 gap-3" aria-label="快捷登录入口">
-                <Button type="button" variant="outline" onClick={() => navigate("/classroom-login")}>
-                  <BookOpen className="w-4 h-4" />我要上课
-                </Button>
-                <Button
-                  type="button"
-                  variant={collectiveEntry ? "gold" : "outline"}
-                  onClick={() => navigate("/prep-login")}
-                >
-                  <Users className="w-4 h-4" />集体备课
-                </Button>
-              </div>
+              {!loginOnly && (
+                <div className="mt-4 grid grid-cols-2 gap-3" aria-label="快捷登录入口">
+                  <Button type="button" variant="outline" onClick={() => navigate("/classroom-login")}>
+                    <BookOpen className="w-4 h-4" />我要上课
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={collectiveEntry ? "gold" : "outline"}
+                    onClick={() => navigate("/prep-login")}
+                  >
+                    <Users className="w-4 h-4" />集体研讨
+                  </Button>
+                </div>
+              )}
             </>
           )}
 

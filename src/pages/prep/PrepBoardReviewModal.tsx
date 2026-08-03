@@ -84,7 +84,11 @@ function createItems(task: PrepTask, teacherNames: Map<string, string>): ReviewI
     .sort((a, b) => a.order - b.order)
     .flatMap((workflow): ReviewItem[] =>
       task.assignments
-        .filter((assignment) => assignment.workflowId === workflow.id && assignment.submission)
+        .filter((assignment) => (
+          assignment.workflowId === workflow.id
+          && assignment.status === "completed"
+          && assignment.submission
+        ))
         .flatMap((assignment): ReviewItem[] => {
           const submission = assignment.submission!;
           const submitter = teacherNames.get(assignment.teacherId) || "未知教师";
@@ -401,7 +405,7 @@ export function PrepBoardReviewModal({
       size="full"
       className="h-[92vh]"
       title="集体备课成果预览"
-      description={`全部任务已完成，共 ${items.length} 份成果。可顺次查看并使用批注工具。`}
+      description={`共 ${items.length} 份已完成成果。可顺次查看、批注并全屏展示。`}
     >
       {item ? (
         <div
