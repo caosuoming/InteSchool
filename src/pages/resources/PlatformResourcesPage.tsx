@@ -64,6 +64,7 @@ import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
+import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
@@ -387,13 +388,19 @@ export function PlatformQuestionContent({
       </div>
 
       {question.options && question.options.length > 0 && (
-        <div className="ml-5 mt-2 space-y-1 rounded-md bg-mist/40 p-2 text-xs text-ink-700">
+        <div
+          data-testid="platform-question-options"
+          className={cn(
+            "ml-5 mt-2 grid gap-x-4 gap-y-1.5 text-xs text-ink-700",
+            getQuestionOptionGridColumns(question.options),
+          )}
+        >
           {question.options.map((option, index) => (
             <div key={index} className="flex items-start gap-1.5">
               <span className="flex-shrink-0 font-mono font-semibold">
                 {String.fromCharCode(65 + index)}.
               </span>
-              <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{option}</MathHtml>
+              <MathHtml className="min-w-0 flex-1 break-all whitespace-pre-wrap">{option}</MathHtml>
             </div>
           ))}
         </div>

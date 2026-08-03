@@ -42,8 +42,32 @@ describe("PlatformQuestionContent", () => {
     expect(screen.getByText(/这里是必须完整显示的后续题干内容/)).not.toHaveClass("line-clamp-2");
     expect(screen.getByText("A.")).toBeInTheDocument();
     expect(screen.getByText("B.")).toBeInTheDocument();
+    expect(screen.getByTestId("platform-question-options")).toHaveClass("grid", "grid-cols-4");
     expect(container.querySelectorAll('[data-math-rendered="true"]').length).toBeGreaterThanOrEqual(3);
     expect(screen.queryByText("答案")).not.toBeInTheDocument();
+  });
+
+  it("uses the shared option layout rules for longer choices", () => {
+    const mediumOptions = ["甲".repeat(31), "乙".repeat(31)];
+    const { rerender } = render(
+      <PlatformQuestionContent
+        question={{ ...question, options: mediumOptions }}
+        expanded={false}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("platform-question-options")).toHaveClass("grid-cols-2");
+
+    rerender(
+      <PlatformQuestionContent
+        question={{ ...question, options: ["甲".repeat(61), "乙".repeat(61)] }}
+        expanded={false}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("platform-question-options")).toHaveClass("grid-cols-1");
   });
 
   it("reveals answer, analysis, and summary when the stem is clicked", async () => {
