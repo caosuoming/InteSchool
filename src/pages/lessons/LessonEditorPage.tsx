@@ -31,6 +31,7 @@ import type {
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
+import { MathHtml } from "@/components/ui/MathHtml";
 import { cn } from "@/lib/utils";
 import { genId } from "@/lib/service-utils";
 import { PresentationMode } from "./PresentationMode";
@@ -694,13 +695,15 @@ export function LessonEditorPage() {
                             ) : (
                               <Blocks className="h-3 w-3 text-ink-400" />
                             )}
-                            <span className="truncate text-xs font-medium text-ink-700">{slide.title}</span>
+                            <MathHtml className="block truncate text-xs font-medium text-ink-700">
+                              {slide.title}
+                            </MathHtml>
                           </div>
-                          <div className="line-clamp-2 text-[10px] text-ink-400">
+                          <MathHtml className="line-clamp-2 text-[10px] text-ink-400">
                             {isQuestion
-                              ? slide.questionSnapshot?.stem?.slice(0, 40) || "题目"
-                              : slide.content?.slice(0, 40) || "知识块"}
-                          </div>
+                              ? slide.questionSnapshot?.stem || "题目"
+                              : slide.content || "知识块"}
+                          </MathHtml>
                         </div>
                       </div>
                       <div className="absolute right-1 top-1 hidden items-center gap-0.5 rounded bg-paper/90 group-hover:flex">

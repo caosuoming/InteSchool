@@ -141,6 +141,37 @@ describe("ResourceCard", () => {
     fireEvent.click(convertButton);
     expect(onConvertToExamPaper).toHaveBeenCalledOnce();
   });
+
+  it("places prominent PPT push actions below the resource details", () => {
+    render(
+      <ResourceCard
+        title="数列课件"
+        meta={[{ label: "类型", value: "PPT" }]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+        primaryActions={(
+          <>
+            <button type="button">推送到我的上课（二次编辑）</button>
+            <button type="button">直接推送我要上课（PPT上课）</button>
+          </>
+        )}
+        onClick={vi.fn()}
+        onShare={vi.fn()}
+        onDelete={vi.fn()}
+        alwaysShowActions
+      />,
+    );
+
+    const primaryActions = screen.getByTestId("resource-card-primary-actions");
+    const mainRow = screen.getByTestId("resource-card-main-row");
+    const iconActions = screen.getByTestId("resource-card-actions");
+    const editableButton = screen.getByRole("button", { name: "推送到我的上课（二次编辑）" });
+
+    expect(primaryActions).toHaveClass("mt-3", "justify-end", "border-t", "pt-3");
+    expect(mainRow.compareDocumentPosition(primaryActions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(primaryActions).toContainElement(editableButton);
+    expect(primaryActions).toContainElement(screen.getByRole("button", { name: "直接推送我要上课（PPT上课）" }));
+    expect(iconActions).not.toContainElement(editableButton);
+  });
 });
 
 const knowledgeMaterial: Material = {
