@@ -118,6 +118,32 @@ function createImageElement(
   };
 }
 
+function createTextElement(
+  content: string,
+  position: Pick<LessonSlideElement, "x" | "y" | "width" | "height">,
+  options: {
+    fontSize?: number;
+    textAlign?: "left" | "center" | "right";
+    questionSection?: LessonQuestionContentSection;
+    animationOrder?: number;
+  } = {},
+): LessonSlideElement {
+  return {
+    id: genId("element"),
+    kind: "text",
+    content,
+    ...position,
+    fontSize: options.fontSize || 24,
+    textAlign: options.textAlign || "left",
+    animation: "rise",
+    enterAnimation: "rise",
+    actionAnimation: "none",
+    exitAnimation: "none",
+    animationOrder: options.animationOrder,
+    questionSection: options.questionSection,
+  };
+}
+
 function extractFloatingImages(
   content: string,
   questionSection: LessonQuestionContentSection,
@@ -180,10 +206,93 @@ function questionSlide(
     stem.elements.length + optionImageCount + answer.elements.length,
   );
 
+  const textElements: LessonSlideElement[] = [];
+  if (stem.content) {
+    textElements.push(createTextElement(stem.content, {
+      x: 5,
+      y: 5,
+      width: 90,
+      height: options?.length ? 24 : 42,
+    }, {
+      fontSize: 26,
+      questionSection: "stem",
+      animationOrder: 1,
+    }));
+  }
+  options?.forEach((option, index) => {
+    if (!option.content) return;
+    const label = String.fromCharCode(65 + index);
+    const content = new RegExp(`^${label}[.、:：)]\\s*`, "i").test(option.content)
+      ? option.content
+      : `${label}. ${option.content}`;
+    textElements.push(createTextElement(
+      content,
+      {
+        x: index % 2 === 0 ? 6 : 52,
+        y: 34 + Math.floor(index / 2) * 15,
+        width: 42,
+        height: 12,
+      },
+      {
+        fontSize: 20,
+        questionSection: "options",
+        animationOrder: textElements.length + 1,
+      },
+    ));
+  });
+  if (answer.content) {
+    textElements.push(createTextElement(`参考答案\n${answer.content}`, {
+      x: 5,
+      y: 68,
+      width: 42,
+      height: 24,
+    }, {
+      fontSize: 18,
+      questionSection: "answer",
+      animationOrder: textElements.length + 1,
+    }));
+  }
+  if (analysis.content || question.summary) {
+    textElements.push(createTextElement(
+      ["解析", analysis.content, question.summary ? `总结：${question.summary}` : ""]
+        .filter(Boolean)
+        .join("\n"),
+      {
+        x: 53,
+        y: 68,
+        width: 42,
+        height: 24,
+      },
+      {
+        fontSize: 18,
+        questionSection: "analysis",
+        animationOrder: textElements.length + 1,
+      },
+    ));
+  }
+
+  const boardElements: LessonSlideElement[] = question.board ? [{
+    id: genId("element"),
+    kind: "image",
+    src: question.board,
+    alt: "题目板书",
+    x: 58,
+    y: 38,
+    width: 34,
+    height: 26,
+    animation: "fade",
+    enterAnimation: "fade",
+    actionAnimation: "none",
+    exitAnimation: "none",
+    animationOrder: textElements.length + 1,
+    questionSection: "analysis",
+  }] : [];
+
   return {
     id: genId("slide"),
     type: "question",
     title,
+    freeformLayout: true,
     questionId: question.id,
     questionSnapshot: {
       stem: stem.content,
@@ -197,10 +306,12 @@ function questionSlide(
       explanationVideo: question.explanationVideo ? { ...question.explanationVideo } : null,
     },
     elements: [
+      ...textElements,
       ...stem.elements,
       ...(options?.flatMap((item) => item.elements) || []),
       ...answer.elements,
       ...analysis.elements,
+      ...boardElements,
     ],
     relatedQuestionIds: [],
     askableStudentIds: [],
@@ -213,6 +324,29 @@ function titleSlide(title: string, subtitle: string): LessonSlide {
     type: "section",
     title,
     content: subtitle,
+    freeformLayout: true,
+    elements: [
+      createTextElement(title, {
+        x: 10,
+        y: 24,
+        width: 80,
+        height: 18,
+      }, {
+        fontSize: 42,
+        textAlign: "center",
+        animationOrder: 1,
+      }),
+      ...(subtitle ? [createTextElement(subtitle, {
+        x: 15,
+        y: 50,
+        width: 70,
+        height: 10,
+      }, {
+        fontSize: 22,
+        textAlign: "center",
+        animationOrder: 2,
+      })] : []),
+    ],
     relatedQuestionIds: [],
     askableStudentIds: [],
   };
@@ -224,6 +358,16 @@ function knowledgeSlide(title: string, content: string): LessonSlide {
     type: "knowledge",
     title,
     content,
+    freeformLayout: true,
+    elements: content ? [createTextElement(content, {
+      x: 6,
+      y: 6,
+      width: 88,
+      height: 88,
+    }, {
+      fontSize: 24,
+      animationOrder: 1,
+    })] : [],
     relatedQuestionIds: [],
     askableStudentIds: [],
   };
@@ -557,20 +701,13 @@ export const lessonCoursewareService = {
         if (question) {
           slides.push(questionSlide(question, sec.title));
         } else {
-          slides.push({
-            id: genId("slide"),
-            type: "question",
-            title: sec.title,
-            questionId: sec.questionId,
-            questionSnapshot: {
-              stem: sec.content,
-              type: "essay",
-              answer: "",
-              analysis: "",
-            },
-            relatedQuestionIds: [],
-            askableStudentIds: [],
-          });
+          slides.push(questionSlide({
+            id: sec.questionId || sec.id,
+            stem: sec.content,
+            type: "essay",
+            answer: "",
+            analysis: "",
+          }, sec.title));
         }
       } else if (sec.type === "knowledge") {
         slides.push(knowledgeSlide(sec.title, sec.content));

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  X, ChevronLeft, ChevronRight, Pen, Eraser, Trash2,
-  Palette, FileQuestion, Blocks, Users, Link2, Eye, EyeOff, Presentation, Save,
+  X, ChevronLeft, ChevronRight, PenLine, Highlighter, Eraser, Trash2,
+  ChevronUp, Users, Link2, Eye, EyeOff, Save,
 } from "lucide-react";
 import type { LessonSlide, Question } from "@/types";
 import { cn } from "@/lib/utils";
@@ -25,15 +25,32 @@ interface PresentationModeProps {
   onExit: () => void;
 }
 
-type Tool = "none" | "pen" | "eraser";
+type DrawingToolId =
+  | "pen-red"
+  | "pen-blue"
+  | "pen-black"
+  | "highlighter-yellow"
+  | "highlighter-green";
 
-const penColors = [
-  { value: "#dc2626", label: "红" },
-  { value: "#2563eb", label: "蓝" },
-  { value: "#16a34a", label: "绿" },
-  { value: "#ca8a04", label: "黄" },
-  { value: "#1f2937", label: "黑" },
+type Tool = "none" | "eraser" | DrawingToolId;
+
+interface DrawingPreset {
+  id: DrawingToolId;
+  kind: "pen" | "highlighter";
+  label: string;
+  color: string;
+  width: number;
+}
+
+const INITIAL_DRAWING_PRESETS: DrawingPreset[] = [
+  { id: "pen-red", kind: "pen", label: "红色画笔", color: "#dc2626", width: 3 },
+  { id: "pen-blue", kind: "pen", label: "蓝色画笔", color: "#2563eb", width: 3 },
+  { id: "pen-black", kind: "pen", label: "黑色画笔", color: "#111827", width: 3 },
+  { id: "highlighter-yellow", kind: "highlighter", label: "黄色荧光笔", color: "#facc15", width: 18 },
+  { id: "highlighter-green", kind: "highlighter", label: "绿色荧光笔", color: "#4ade80", width: 18 },
 ];
+
+const DRAWING_COLORS = ["#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#7c3aed", "#111827"];
 
 const questionTypeLabel: Record<string, string> = {
   single: "单选", multiple: "多选", judge: "判断", short: "填空", essay: "解答",
@@ -44,8 +61,8 @@ export function PresentationMode({
 }: PresentationModeProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [tool, setTool] = useState<Tool>("none");
-  const [penColor, setPenColor] = useState("#dc2626");
-  const [penWidth, setPenWidth] = useState(3);
+  const [drawingPresets, setDrawingPresets] = useState(INITIAL_DRAWING_PRESETS);
+  const [colorMenuToolId, setColorMenuToolId] = useState<string | null>(null);
   const [questionVisibility, setQuestionVisibility] = useState<LessonQuestionContentVisibility>({
     ...STEM_ONLY_QUESTION_VISIBILITY,
   });
@@ -60,8 +77,22 @@ export function PresentationMode({
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
   const pathsRef = useRef<{ x: number; y: number }[][]>([]);
+  const enteredFullscreenRef = useRef(Boolean(document.fullscreenElement));
 
   const currentSlide = slides[currentIndex];
+  const selectedDrawingPreset = drawingPresets.find((preset) => preset.id === tool);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (document.fullscreenElement) {
+        enteredFullscreenRef.current = true;
+      } else if (enteredFullscreenRef.current) {
+        onExit();
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [onExit]);
 
   // 切换页面时清空画板
   useEffect(() => {
@@ -134,14 +165,17 @@ export function PresentationMode({
     ctx.lineJoin = "round";
     if (tool === "eraser") {
       ctx.globalCompositeOperation = "destination-out";
-      ctx.lineWidth = penWidth * 6;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 24;
       ctx.strokeStyle = "rgba(0,0,0,1)";
-    } else {
+    } else if (selectedDrawingPreset) {
       ctx.globalCompositeOperation = "source-over";
-      ctx.lineWidth = penWidth;
-      ctx.strokeStyle = penColor;
+      ctx.globalAlpha = selectedDrawingPreset.kind === "highlighter" ? 0.3 : 1;
+      ctx.lineWidth = selectedDrawingPreset.width;
+      ctx.strokeStyle = selectedDrawingPreset.color;
     }
     ctx.stroke();
+    ctx.globalAlpha = 1;
     setHasDrawing(true);
     lastPointRef.current = pos;
     pathsRef.current[pathsRef.current.length - 1].push(pos);
@@ -274,78 +308,17 @@ export function PresentationMode({
           {currentSlide?.title}
         </div>
         <div className="flex-1" />
-        {/* 画笔工具组 */}
-        <div className="flex items-center gap-1 mr-2">
+        {currentSlide?.type === "question" && (
           <button
-            onClick={() => setTool(tool === "pen" ? "none" : "pen")}
-            className={cn(
-              "p-1.5 rounded-md transition-colors",
-              tool === "pen" ? "bg-gold-400 text-ink-900" : "hover:bg-ink-800 text-ink-200",
-            )}
-            title="画笔"
+            onClick={handleSaveBoard}
+            disabled={!hasDrawing || savingBoard || !currentSlide.questionId}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-ink-100 hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
+            title="保存板书到当前题目"
           >
-            <Pen className="w-4 h-4" />
+            <Save className="h-4 w-4" />
+            {savingBoard ? "保存中" : "保存板书"}
           </button>
-          <button
-            onClick={() => setTool(tool === "eraser" ? "none" : "eraser")}
-            className={cn(
-              "p-1.5 rounded-md transition-colors",
-              tool === "eraser" ? "bg-gold-400 text-ink-900" : "hover:bg-ink-800 text-ink-200",
-            )}
-            title="橡皮擦"
-          >
-            <Eraser className="w-4 h-4" />
-          </button>
-          {tool === "pen" && (
-            <div className="flex items-center gap-1 ml-1 pl-2 border-l border-ink-700">
-              <Palette className="w-3.5 h-3.5 text-ink-400" />
-              {penColors.map((c) => (
-                <button
-                  key={c.value}
-                  onClick={() => setPenColor(c.value)}
-                  className={cn(
-                    "w-5 h-5 rounded-full border-2 transition-transform",
-                    penColor === c.value ? "border-paper scale-110" : "border-transparent",
-                  )}
-                  style={{ backgroundColor: c.value }}
-                  title={c.label}
-                />
-              ))}
-              <select
-                value={penWidth}
-                onChange={(e) => setPenWidth(parseInt(e.target.value))}
-                className="ml-1 bg-ink-800 text-paper text-xs rounded px-1 py-0.5 border border-ink-700"
-              >
-                <option value={2}>细</option>
-                <option value={3}>中</option>
-                <option value={5}>粗</option>
-                <option value={8}>特粗</option>
-              </select>
-            </div>
-          )}
-          <button
-            onClick={clearCanvas}
-            className="p-1.5 rounded-md hover:bg-ink-800 text-ink-200 ml-1"
-            title="清空画板"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-          {currentSlide?.type === "question" && (
-            <button
-              onClick={handleSaveBoard}
-              disabled={!hasDrawing || savingBoard || !currentSlide.questionId}
-              className="ml-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-ink-100 hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
-              title="保存板书到当前题目"
-            >
-              <Save className="h-4 w-4" />
-              {savingBoard ? "保存中" : "保存板书"}
-            </button>
-          )}
-        </div>
-        <div className="h-5 w-px bg-ink-700" />
-        <div className="text-sm text-ink-200">
-          {currentIndex + 1} / {slides.length}
-        </div>
+        )}
       </div>
 
       {/* 主显示区 */}
@@ -391,20 +364,22 @@ export function PresentationMode({
         <button
           onClick={goPrev}
           disabled={currentIndex === 0}
-          className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-ink-900/60 text-paper flex items-center justify-center hover:bg-ink-900 disabled:opacity-30 disabled:cursor-not-allowed z-20"
+          aria-label="上一页"
+          className="absolute bottom-4 left-4 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-ink-900/70 text-paper shadow-lg backdrop-blur hover:bg-ink-900 disabled:cursor-not-allowed disabled:opacity-30"
         >
           <ChevronLeft className="w-6 h-6" />
         </button>
         <button
           onClick={goNext}
           disabled={currentIndex === slides.length - 1}
-          className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-ink-900/60 text-paper flex items-center justify-center hover:bg-ink-900 disabled:opacity-30 disabled:cursor-not-allowed z-20"
+          aria-label="下一页"
+          className="absolute bottom-4 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-ink-900/70 text-paper shadow-lg backdrop-blur hover:bg-ink-900 disabled:cursor-not-allowed disabled:opacity-30"
         >
           <ChevronRight className="w-6 h-6" />
         </button>
 
         {/* 右下角：相关题和提问学生 */}
-        <div className="absolute bottom-6 right-6 z-30 flex items-end gap-3">
+        <div className="absolute bottom-20 right-6 z-30 flex items-end gap-3">
           {/* 提问学生 */}
           <div className="relative">
             <button
@@ -501,7 +476,7 @@ export function PresentationMode({
 
         {/* 左下角：题目内容按需显示 */}
         {currentSlide?.type === "question" && questionContentControls.length > 0 && (
-          <div className="absolute bottom-6 left-6 z-30 flex items-center gap-1.5 rounded-xl bg-paper/95 p-1.5 shadow-lg backdrop-blur">
+          <div className="absolute bottom-20 left-6 z-30 flex items-center gap-1.5 rounded-xl bg-paper/95 p-1.5 shadow-lg backdrop-blur">
             <span className="px-2 text-xs font-medium text-ink-500">显示内容</span>
             {questionContentControls.map(({ key, label }) => {
               const visible = questionVisibility[key];
@@ -525,33 +500,108 @@ export function PresentationMode({
             })}
           </div>
         )}
-      </div>
 
-      {/* 底部页面缩略图 */}
-      <div className="h-20 bg-ink-900 border-t border-ink-700 flex items-center gap-2 px-4 overflow-x-auto">
-        {slides.map((slide, idx) => (
+        {/* 底部居中的书写工具 */}
+        <div
+          className="absolute bottom-3 left-1/2 z-40 flex -translate-x-1/2 items-end gap-1.5 rounded-2xl border border-white/60 bg-paper/95 px-2.5 py-2 shadow-2xl backdrop-blur"
+          onMouseDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          aria-label="书写工具"
+        >
+          {drawingPresets.map((preset) => {
+            const selected = tool === preset.id;
+            const Icon = preset.kind === "pen" ? PenLine : Highlighter;
+            return (
+              <div key={preset.id} className="relative">
+                {colorMenuToolId === preset.id && (
+                  <div className="absolute bottom-full left-1/2 mb-2 flex -translate-x-1/2 gap-1 rounded-xl border border-ink-100 bg-paper p-2 shadow-xl">
+                    {DRAWING_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        aria-label={`${preset.label}改为${color}`}
+                        className={cn(
+                          "h-6 w-6 rounded-full border-2",
+                          preset.color === color ? "border-ink-900" : "border-paper",
+                        )}
+                        style={{ backgroundColor: color }}
+                        onClick={() => {
+                          setDrawingPresets((current) => current.map((item) => (
+                            item.id === preset.id ? { ...item, color } : item
+                          )));
+                          setColorMenuToolId(null);
+                          setTool(preset.id);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  aria-label={preset.label}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setTool(selected ? "none" : preset.id);
+                    setColorMenuToolId(null);
+                  }}
+                  className={cn(
+                    "relative flex h-12 w-11 items-center justify-center rounded-xl transition-all",
+                    selected
+                      ? "-translate-y-1 bg-gold-100 shadow-md ring-2 ring-gold-400"
+                      : "bg-mist text-ink-600 hover:-translate-y-0.5 hover:bg-ink-100",
+                  )}
+                  title={preset.label}
+                >
+                  <Icon
+                    className="h-7 w-7 rotate-180"
+                    style={{ color: preset.color }}
+                  />
+                </button>
+                {selected && (
+                  <button
+                    type="button"
+                    aria-label={`更改${preset.label}颜色`}
+                    className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink-800 text-paper shadow"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setColorMenuToolId((current) => current === preset.id ? null : preset.id);
+                    }}
+                  >
+                    <ChevronUp className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <div className="mx-1 h-9 w-px self-center bg-ink-200" />
           <button
-            key={slide.id}
-            onClick={() => setCurrentIndex(idx)}
+            type="button"
+            aria-label="橡皮擦"
+            aria-pressed={tool === "eraser"}
+            onClick={() => {
+              setTool(tool === "eraser" ? "none" : "eraser");
+              setColorMenuToolId(null);
+            }}
             className={cn(
-              "flex-shrink-0 w-24 h-14 rounded-md border-2 flex items-center justify-center text-xs transition-all",
-              idx === currentIndex
-                ? "border-gold-400 bg-gold-400/20 text-gold-300"
-                : "border-ink-700 bg-ink-800 text-ink-400 hover:border-ink-500",
+              "flex h-12 w-11 items-center justify-center rounded-xl transition-all",
+              tool === "eraser"
+                ? "-translate-y-1 bg-gold-100 text-ink-900 shadow-md ring-2 ring-gold-400"
+                : "bg-mist text-ink-600 hover:bg-ink-100",
             )}
+            title="橡皮擦"
           >
-            <div className="flex flex-col items-center">
-              {slide.type === "question" ? (
-                <FileQuestion className="w-3 h-3 mb-0.5" />
-              ) : slide.type === "courseware" ? (
-                <Presentation className="w-3 h-3 mb-0.5" />
-              ) : (
-                <Blocks className="w-3 h-3 mb-0.5" />
-              )}
-              <span className="text-[10px]">{idx + 1}</span>
-            </div>
+            <Eraser className="h-6 w-6" />
           </button>
-        ))}
+          <button
+            type="button"
+            aria-label="清空批注"
+            onClick={clearCanvas}
+            className="flex h-12 w-11 items-center justify-center rounded-xl bg-mist text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
+            title="清空批注"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
+        </div>
       </div>
     </div>
   );

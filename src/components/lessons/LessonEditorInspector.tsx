@@ -220,6 +220,7 @@ export function LessonEditorInspector({
               <div className="space-y-1.5">
                 {(["title", "content", "stem", "options"] as LessonSlideTextRegion[])
                   .filter((region) => {
+                    if (slide.freeformLayout) return false;
                     if (region === "stem" || region === "options") return slide.type === "question";
                     if (region === "content") return slide.type !== "question" && Boolean(slide.content);
                     return slide.type !== "question";

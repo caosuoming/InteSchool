@@ -41,11 +41,6 @@ import { getCoursewareEditorUrl } from "@/lib/courseware-online";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { LessonEditorInspector } from "@/components/lessons/LessonEditorInspector";
-import {
-  getVisibleLessonSlideElements,
-  mergeVisibleLessonSlideElements,
-  STEM_ONLY_QUESTION_VISIBILITY,
-} from "@/lib/lesson-slide-visibility";
 
 const INSPECTOR_MIN_WIDTH = 220;
 const INSPECTOR_MAX_WIDTH = 420;
@@ -169,19 +164,11 @@ export function LessonEditorPage() {
       index === currentIndex ? { ...slide, elements } : slide));
   };
 
-  const visibleCurrentElements = currentSlide
-    ? getVisibleLessonSlideElements(currentSlide, {
-      ...STEM_ONLY_QUESTION_VISIBILITY,
-      options: true,
-    })
-    : [];
+  const visibleCurrentElements = currentSlide?.elements || [];
 
   const updateVisibleCurrentElements = (elements: LessonSlideElement[]) => {
     if (!currentSlide) return;
-    updateCurrentElements(mergeVisibleLessonSlideElements(
-      currentSlide.elements || [],
-      elements,
-    ));
+    updateCurrentElements(elements);
   };
 
   const resizeSlideNavigator = (nextWidth: number) => {
@@ -281,7 +268,7 @@ export function LessonEditorPage() {
     const element: LessonSlideElement = {
       id: genId("element"),
       kind: "text",
-      content: "在右侧属性中编辑文本",
+      content: "",
       x: 12,
       y: 4,
       width: 38,
@@ -579,6 +566,8 @@ export function LessonEditorPage() {
       type: "knowledge",
       title: "新页面",
       content: "",
+      freeformLayout: true,
+      elements: [],
       relatedQuestionIds: [],
       askableStudentIds: [],
     };
@@ -586,6 +575,20 @@ export function LessonEditorPage() {
     next.splice(currentIndex + 1, 0, newSlide);
     setSlides(next);
     setCurrentIndex(currentIndex + 1);
+  };
+
+  const openPreview = () => {
+    setPreviewMode(true);
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      void document.documentElement.requestFullscreen().catch(() => undefined);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewMode(false);
+    if (document.fullscreenElement && document.exitFullscreen) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
   };
 
   if (loading) {
@@ -625,7 +628,7 @@ export function LessonEditorPage() {
           <Save className="w-4 h-4" />
           保存
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setPreviewMode(true)}>
+        <Button variant="outline" size="sm" onClick={openPreview}>
           <Play className="w-4 h-4" />
           预览上课
         </Button>
@@ -777,7 +780,7 @@ export function LessonEditorPage() {
             <div className="flex-1 p-4 lg:p-6">
               <div className="mx-auto w-full max-w-[1120px]">
                 <div className="mb-3 text-xs text-ink-500">
-                  点击页面文字或自由元素后，可在右侧调整属性；文本内容可直接选中复制。
+                  页面内容均为自由元素，可拖动或缩放；单击文本即可直接输入。
                 </div>
 
                 {currentSlide.type === "courseware" ? (
@@ -1012,7 +1015,7 @@ export function LessonEditorPage() {
           initialIndex={currentIndex}
           students={students}
           relatedQuestionsById={relatedQuestionsMap}
-          onExit={() => setPreviewMode(false)}
+          onExit={closePreview}
         />
       )}
     </div>

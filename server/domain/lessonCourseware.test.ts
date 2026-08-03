@@ -393,17 +393,32 @@ describe("courseware lesson flow", () => {
       expect(lesson.slides[0]).toMatchObject({
         type: "section",
         title: paper.title,
+        freeformLayout: true,
       });
+      expect(lesson.slides[0].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: paper.title }),
+      ]));
       expect(lesson.slides[1]).toMatchObject({
         type: "question",
         title: "第 1 题",
+        freeformLayout: true,
         questionId: question.id,
         questionSnapshot: {
           stem: "<p>观察图像并选择答案。</p>",
           options: ["A. 递增", "B. 递减"],
         },
       });
-      expect(lesson.slides[1].elements).toEqual([
+      expect(lesson.slides[1].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "text",
+          content: "<p>观察图像并选择答案。</p>",
+          questionSection: "stem",
+        }),
+        expect.objectContaining({
+          kind: "text",
+          content: "A. 递增",
+          questionSection: "options",
+        }),
         expect.objectContaining({
           kind: "image",
           src: "/api/files/question-image",
@@ -419,8 +434,12 @@ describe("courseware lesson flow", () => {
           src: "/api/files/option-b",
           questionSection: "options",
         }),
-      ]);
-      expect(new Set(lesson.slides[1].elements?.map((element) => element.y)).size).toBe(3);
+      ]));
+      expect(new Set(
+        lesson.slides[1].elements
+          ?.filter((element) => element.kind === "image")
+          .map((element) => element.y),
+      ).size).toBe(3);
       expect(lesson.slides.at(-1)).toMatchObject({
         type: "question",
         title: "第 19 题",
@@ -477,7 +496,17 @@ describe("courseware lesson flow", () => {
       expect(lesson.slides[1]).toMatchObject({
         title: "函数定义",
         content: "函数描述两个变量之间的对应关系。",
+        freeformLayout: true,
       });
+      expect(lesson.slides[1].elements).toEqual([
+        expect.objectContaining({
+          kind: "text",
+          content: "函数描述两个变量之间的对应关系。",
+        }),
+      ]);
+      expect(lesson.slides[1].elements).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ content: "函数定义" }),
+      ]));
       expect(lesson.slides[3]).toMatchObject({
         title: "第 2 题",
         questionSnapshot: { stem: "第二道未出现在结构块中的题目" },
@@ -585,15 +614,18 @@ describe("courseware lesson flow", () => {
       expect(lesson.slides[0]).toMatchObject({
         type: "section",
         title: "审阅后的函数专题",
+        freeformLayout: true,
       });
       expect(lesson.slides[1]).toMatchObject({
         type: "knowledge",
         title: "函数定义",
         content: "函数是两个集合之间的对应关系。",
+        freeformLayout: true,
       });
       expect(lesson.slides[2]).toMatchObject({
         type: "question",
         title: "例题 1",
+        freeformLayout: true,
         questionId: question.id,
         questionSnapshot: {
           type: question.type,
@@ -601,9 +633,14 @@ describe("courseware lesson flow", () => {
           analysis: question.analysis,
         },
       });
-      expect(lesson.slides[2].elements).toEqual([
+      expect(lesson.slides[2].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "text",
+          content: "<p>观察图像并选择答案。</p>",
+          questionSection: "stem",
+        }),
         expect.objectContaining({ kind: "image", src: "/api/files/question-image" }),
-      ]);
+      ]));
     });
   });
 });

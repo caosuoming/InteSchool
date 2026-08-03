@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { LessonSlideElement } from "@/types";
@@ -114,5 +114,32 @@ describe("LessonSlideCanvas", () => {
     await user.click(screen.getByText("拓展资料"));
     expect(onSelectElement).toHaveBeenCalledWith("link-1");
     expect(screen.getByText("拓展资料").closest(".absolute")).toHaveClass("select-text");
+  });
+
+  it("edits text directly on the canvas and commits it on blur", () => {
+    const onElementsChange = vi.fn();
+    render(
+      <LessonSlideCanvas
+        elements={elements}
+        editable
+        selectedElementId="text-1"
+        onSelectElement={vi.fn()}
+        onElementsChange={onElementsChange}
+      >
+        <div>基础课件内容</div>
+      </LessonSlideCanvas>,
+    );
+
+    const editor = screen.getByText("课堂重点");
+    expect(editor).toHaveAttribute("contenteditable", "true");
+    editor.innerHTML = "直接输入的新内容";
+    fireEvent.blur(editor);
+
+    expect(onElementsChange).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({
+        id: "text-1",
+        content: "直接输入的新内容",
+      }),
+    ]));
   });
 });
