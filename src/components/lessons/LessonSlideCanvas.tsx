@@ -1,5 +1,5 @@
 import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { Maximize2 } from "lucide-react";
+import { GripVertical, Maximize2 } from "lucide-react";
 import type { LessonSlideElement } from "@/types";
 import { cn } from "@/lib/utils";
 import { MathHtml } from "@/components/ui/MathHtml";
@@ -29,13 +29,17 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function animationStyle(element: LessonSlideElement, editable: boolean): CSSProperties | undefined {
-  if (editable || !element.animation || element.animation === "none") return undefined;
+  const enterAnimation = element.enterAnimation || element.animation;
+  if (editable || !enterAnimation || enterAnimation === "none") return undefined;
   const animation = {
     fade: "lessonElementFade 420ms ease-out both",
     rise: "lessonElementRise 460ms cubic-bezier(0.16, 1, 0.3, 1) both",
     zoom: "lessonElementZoom 380ms ease-out both",
-  }[element.animation];
-  return animation ? { animation } : undefined;
+  }[enterAnimation];
+  return animation ? {
+    animation,
+    animationDelay: `${Math.max(0, (element.animationOrder || 1) - 1) * 160}ms`,
+  } : undefined;
 }
 
 export function LessonSlideCanvas({
@@ -113,15 +117,27 @@ export function LessonSlideCanvas({
         if (event.target === event.currentTarget) onSelectElement?.(null);
       }}
     >
-      <div className="absolute inset-0 overflow-hidden">{children}</div>
+      <div
+        className="absolute inset-0 overflow-hidden"
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) onSelectElement?.(null);
+        }}
+      >
+        {children}
+      </div>
       {elements.map((element) => {
         const selected = editable && selectedElementId === element.id;
+        const textStyle: CSSProperties = {
+          fontSize: `${element.kind === "text" ? element.fontSize || 24 : 24}px`,
+          textAlign: element.kind === "text" ? element.textAlign || "left" : "left",
+        };
         return (
           <div
             key={element.id}
             className={cn(
-              "absolute touch-none select-none",
-              editable && "cursor-move",
+              "absolute touch-none",
+              element.kind === "text" ? "select-text" : "select-none",
+              editable && element.kind === "image" && "cursor-move",
               selected && "ring-2 ring-gold-400 ring-offset-1",
             )}
             style={{
@@ -131,7 +147,14 @@ export function LessonSlideCanvas({
               height: `${element.height}%`,
               ...animationStyle(element, editable),
             }}
-            onPointerDown={(event) => startInteraction(event, element, "move")}
+            onPointerDown={element.kind === "image"
+              ? (event) => startInteraction(event, element, "move")
+              : undefined}
+            onClick={(event) => {
+              if (!editable || element.kind !== "text") return;
+              event.stopPropagation();
+              onSelectElement?.(element.id);
+            }}
             onPointerMove={moveInteraction}
             onPointerUp={endInteraction}
             onPointerCancel={endInteraction}
@@ -144,27 +167,53 @@ export function LessonSlideCanvas({
                 className="h-full w-full rounded-md object-contain"
               />
             ) : (
-              <div
-                className="h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900"
-                style={{
-                  fontSize: `${element.fontSize || 24}px`,
-                  textAlign: element.textAlign || "left",
-                }}
-              >
-                <MathHtml className="leading-snug">{element.content || "文本"}</MathHtml>
-              </div>
+              element.href && !editable ? (
+                <a
+                  href={element.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-gold-700 underline decoration-gold-300 underline-offset-4"
+                  style={textStyle}
+                >
+                  <MathHtml className="leading-snug">{element.content || element.href}</MathHtml>
+                </a>
+              ) : (
+                <div
+                  className={cn(
+                    "h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900",
+                    element.href && "text-gold-700 underline decoration-gold-300 underline-offset-4",
+                  )}
+                  style={textStyle}
+                >
+                  <MathHtml className="leading-snug">{element.content || "文本"}</MathHtml>
+                </div>
+              )
             )}
             {selected && (
-              <div
-                className="absolute -bottom-2 -right-2 flex h-5 w-5 cursor-nwse-resize items-center justify-center rounded bg-gold-400 text-ink-900 shadow"
-                title="拖动调整大小"
-                onPointerDown={(event) => startInteraction(event, element, "resize")}
-                onPointerMove={moveInteraction}
-                onPointerUp={endInteraction}
-                onPointerCancel={endInteraction}
-              >
-                <Maximize2 className="h-3 w-3" />
-              </div>
+              <>
+                {element.kind === "text" && (
+                  <div
+                    className="absolute -left-2 -top-2 flex h-5 w-5 cursor-move items-center justify-center rounded bg-ink-800 text-paper shadow"
+                    title="拖动移动文本"
+                    onPointerDown={(event) => startInteraction(event, element, "move")}
+                    onPointerMove={moveInteraction}
+                    onPointerUp={endInteraction}
+                    onPointerCancel={endInteraction}
+                  >
+                    <GripVertical className="h-3 w-3" />
+                  </div>
+                )}
+                <div
+                  className="absolute -bottom-2 -right-2 flex h-5 w-5 cursor-nwse-resize items-center justify-center rounded bg-gold-400 text-ink-900 shadow"
+                  title="拖动调整大小"
+                  onPointerDown={(event) => startInteraction(event, element, "resize")}
+                  onPointerMove={moveInteraction}
+                  onPointerUp={endInteraction}
+                  onPointerCancel={endInteraction}
+                >
+                  <Maximize2 className="h-3 w-3" />
+                </div>
+              </>
             )}
           </div>
         );
