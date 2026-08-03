@@ -3,7 +3,7 @@ import {
   MessagesSquare, Search, Trash2,
   Smile, Meh, Frown, Star, Plus,
   Clock, MessageCircle, TrendingUp,
-  GraduationCap,
+  GraduationCap, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -58,6 +58,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [interactions, setInteractions] = useState<StudentInteractionView[]>([]);
   const [keyword, setKeyword] = useState("");
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set());
   // 每个学生的最近互动时间
   const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
 
@@ -176,6 +177,15 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     return groups;
   }, [filteredStudents, myClasses, sortStudentsByInteraction]);
 
+  const toggleStudentGroup = useCallback((groupId: string) => {
+    setExpandedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }, []);
+
   const classMap = useMemo(() => {
     const map: Record<string, AnyClass> = {};
     myClasses.forEach((classInfo) => { map[classInfo.id] = classInfo; });
@@ -285,26 +295,41 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                 <div className="p-6 text-center text-xs text-ink-400">暂无学生</div>
               ) : (
                 <div className="px-3 py-2 space-y-3">
-                  {studentGroups.map((group) => (
-                    <section key={group.id}>
-                      <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-gold-700 tracking-wide">
-                        <GraduationCap className="w-3 h-3" />
-                        <span className="truncate">{group.name}</span>
-                        <span className="text-ink-400 font-normal">（{group.students.length}）</span>
-                      </div>
-                      <div className="space-y-0.5">
-                        {group.students.map((student) => (
-                          <StudentListItem
-                            key={`${group.id}-${student.id}`}
-                            student={student}
-                            isSelected={selectedStudentId === student.id}
-                            lastInteraction={lastInteractionMap[student.id]}
-                            onClick={() => setSelectedStudentId(student.id)}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  ))}
+                  {studentGroups.map((group) => {
+                    const expanded = expandedGroupIds.has(group.id);
+                    const groupContentId = `student-group-${group.id}`;
+                    return (
+                      <section key={group.id}>
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          aria-controls={groupContentId}
+                          onClick={() => toggleStudentGroup(group.id)}
+                          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] font-semibold text-gold-700 tracking-wide transition-colors hover:bg-gold-400/10"
+                        >
+                          {expanded
+                            ? <ChevronDown className="w-3 h-3 flex-shrink-0" />
+                            : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
+                          <GraduationCap className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{group.name}</span>
+                          <span className="text-ink-400 font-normal">（{group.students.length}）</span>
+                        </button>
+                        {expanded && (
+                          <div id={groupContentId} className="mt-1 space-y-0.5">
+                            {group.students.map((student) => (
+                              <StudentListItem
+                                key={`${group.id}-${student.id}`}
+                                student={student}
+                                isSelected={selectedStudentId === student.id}
+                                lastInteraction={lastInteractionMap[student.id]}
+                                onClick={() => setSelectedStudentId(student.id)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })}
                 </div>
               )}
             </div>
