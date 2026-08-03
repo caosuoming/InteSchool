@@ -274,7 +274,7 @@ export interface SchoolClass {
   gradeYear?: number;
   /** 毕业年份届（如2029届），由gradeYear+3自动计算 */
   gradYear?: number;
-  classTypeId?: string;
+  classTypeId?: string | null;
   studentCount: number;
   /** 班级状态；旧数据未设置时按在读班级处理。 */
   status?: "active" | "graduated" | "deleted";
