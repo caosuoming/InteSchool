@@ -102,6 +102,7 @@ export default function App() {
             {/* 我的考试（年级组长及学校管理身份） */}
             <Route path="/my-exams" element={<RequireExamManager><MyExamsPage /></RequireExamManager>} />
             <Route path="/my-exams/rooms" element={<RequireExamManager><MyExamsPage section="rooms" /></RequireExamManager>} />
+            <Route path="/my-exams/invigilation" element={<RequireExamManager><MyExamsPage section="invigilation" /></RequireExamManager>} />
             <Route path="/my-exams/grades" element={<RequireExamManager><MyExamsPage section="grades" /></RequireExamManager>} />
 
             <Route path="/school-resources" element={<SchoolResourcesPage />} />

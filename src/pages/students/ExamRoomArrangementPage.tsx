@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
+import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
@@ -157,6 +158,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [saving, setSaving] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState("");
   const [studentClassFilter, setStudentClassFilter] = useState("");
+  const [newPlanOpen, setNewPlanOpen] = useState(false);
+  const [newPlanName, setNewPlanName] = useState("");
 
   const selectedArrangement = arrangements.find((item) => item.id === selectedArrangementId) || null;
   const assignments = useMemo(
@@ -235,20 +238,32 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
   const handleNew = () => {
     if (!context) return;
-    const next = createDefaultDraft(context);
+    setNewPlanName(createDefaultDraft(context).name);
+    setNewPlanOpen(true);
+  };
+
+  const createNewPlan = () => {
+    if (!context) return;
+    const name = newPlanName.trim();
+    if (!name) return;
+    const next = {
+      ...createDefaultDraft(context),
+      name,
+    };
     setSelectedArrangementId("");
     setDraft(next);
     setSubjectText(next.subjects.join("、"));
     setView("settings");
+    setNewPlanOpen(false);
   };
 
   const handleSelectArrangement = (id: string) => {
-    setSelectedArrangementId(id);
     const arrangement = arrangements.find((item) => item.id === id);
     if (!arrangement) {
       handleNew();
       return;
     }
+    setSelectedArrangementId(id);
     setDraft(cloneDraft(arrangement));
     setSubjectText(arrangement.subjects.join("、"));
     setView("result");
@@ -451,8 +466,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   <Input label="考试名称" value={draft.name} onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))} />
                   <Input label="考试日期" type="date" value={draft.examDate || ""} onChange={(event) => updateDraft((current) => ({ ...current, examDate: event.target.value }))} />
                   <Select label="编排方式" value={draft.mode} onChange={(event) => updateDraft((current) => ({ ...current, mode: event.target.value as ExamArrangementInput["mode"] }))} options={[
-                    { value: "combination", label: "按学生选科组合编排" },
-                    { value: "subject", label: "按单科分别编排" },
+                    { value: "combination", label: "学生固定一个座位" },
+                    { value: "subject", label: "部分单科单独排列" },
                   ]} />
                   <Input label="考试科目" value={subjectText} onChange={(event) => setSubjectText(event.target.value)} onBlur={applySubjects} hint="使用顿号、逗号或空格分隔" />
                 </div>
@@ -572,6 +587,43 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           )}
         </>
       )}
+
+      <Modal
+        open={newPlanOpen}
+        onClose={() => setNewPlanOpen(false)}
+        title="新建考场方案"
+        description="输入方案名称后进入考场配置。"
+        size="sm"
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => setNewPlanOpen(false)}>取消</Button>
+            <Button
+              variant="gold"
+              type="submit"
+              form="new-exam-plan-form"
+              disabled={!newPlanName.trim()}
+            >
+              创建方案
+            </Button>
+          </>
+        )}
+      >
+        <form
+          id="new-exam-plan-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createNewPlan();
+          }}
+        >
+          <Input
+            autoFocus
+            label="方案名称"
+            value={newPlanName}
+            onChange={(event) => setNewPlanName(event.target.value)}
+            placeholder="例如：高三第一次模拟考试"
+          />
+        </form>
+      </Modal>
     </div>
   );
 }

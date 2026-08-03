@@ -734,7 +734,7 @@ export default function StudentGradesPage() {
           <EmptyState
             icon={<BarChart3 className="h-8 w-8" />}
             title="当前范围暂无可查询成绩"
-            description="成绩导入、模板和统计设置已移至成绩处理模块；完成处理后，这里只提供查询与比较。"
+            description="成绩导入、模板和统计设置已移至成绩统计模块；完成处理后，这里只提供查询与比较。"
           />
         </Card>
       ) : (
