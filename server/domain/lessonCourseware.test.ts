@@ -293,9 +293,21 @@ describe("courseware lesson flow", () => {
         },
       });
       expect(lesson.slides[1].elements).toEqual([
-        expect.objectContaining({ kind: "image", src: "/api/files/question-image" }),
-        expect.objectContaining({ kind: "image", src: "/api/files/option-a" }),
-        expect.objectContaining({ kind: "image", src: "/api/files/option-b" }),
+        expect.objectContaining({
+          kind: "image",
+          src: "/api/files/question-image",
+          questionSection: "stem",
+        }),
+        expect.objectContaining({
+          kind: "image",
+          src: "/api/files/option-a",
+          questionSection: "options",
+        }),
+        expect.objectContaining({
+          kind: "image",
+          src: "/api/files/option-b",
+          questionSection: "options",
+        }),
       ]);
       expect(new Set(lesson.slides[1].elements?.map((element) => element.y)).size).toBe(3);
       expect(lesson.slides.at(-1)).toMatchObject({

@@ -1860,6 +1860,9 @@ export interface LessonDocumentBlock {
 /** 课件元素入场动画 */
 export type LessonElementAnimation = "none" | "fade" | "rise" | "zoom";
 
+/** 题目页中可在上课时按需显示的内容区域。 */
+export type LessonQuestionContentSection = "stem" | "options" | "answer" | "analysis" | "supplementary";
+
 interface LessonSlideElementBase {
   id: string;
   /** 坐标和尺寸均使用相对课件画布的百分比，便于不同屏幕等比展示。 */
@@ -1868,6 +1871,8 @@ interface LessonSlideElementBase {
   width: number;
   height: number;
   animation?: LessonElementAnimation;
+  /** 从题目内容抽取出的元素所属区域；手工添加的元素不设置该字段。 */
+  questionSection?: LessonQuestionContentSection;
 }
 
 export interface LessonSlideTextElement extends LessonSlideElementBase {

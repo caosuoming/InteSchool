@@ -1,10 +1,18 @@
-import { useCallback, useState, useEffect } from "react";
+import {
+  useCallback,
+  useState,
+  useEffect,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Send, Save,
   FileQuestion, Blocks, SplitSquareHorizontal,
   Merge, Edit3, Check, X, MessageSquareText, Star,
   Play, School, ExternalLink, Type, Image as ImageIcon,
+  GripVertical, PanelRightClose, PanelRightOpen,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -33,6 +41,20 @@ import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { getCoursewareEditorUrl } from "@/lib/courseware-online";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
+import {
+  getVisibleLessonSlideElements,
+  mergeVisibleLessonSlideElements,
+  STEM_ONLY_QUESTION_VISIBILITY,
+} from "@/lib/lesson-slide-visibility";
+
+const INSPECTOR_MIN_WIDTH = 220;
+const INSPECTOR_MAX_WIDTH = 420;
+const INSPECTOR_DEFAULT_WIDTH = 248;
+
+interface InspectorResizeState {
+  startX: number;
+  startWidth: number;
+}
 
 export function LessonEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -73,6 +95,9 @@ export function LessonEditorPage() {
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const inspectorResizeRef = useRef<InspectorResizeState | null>(null);
 
   const loadCourseware = useCallback(async () => {
     if (!id) return;
@@ -142,6 +167,64 @@ export function LessonEditorPage() {
   const updateCurrentElements = (elements: LessonSlideElement[]) => {
     setSlides((previous) => previous.map((slide, index) =>
       index === currentIndex ? { ...slide, elements } : slide));
+  };
+
+  const visibleCurrentElements = currentSlide
+    ? getVisibleLessonSlideElements(currentSlide, STEM_ONLY_QUESTION_VISIBILITY)
+    : [];
+
+  const updateVisibleCurrentElements = (elements: LessonSlideElement[]) => {
+    if (!currentSlide) return;
+    updateCurrentElements(mergeVisibleLessonSlideElements(
+      currentSlide.elements || [],
+      elements,
+    ));
+  };
+
+  const resizeInspector = (nextWidth: number) => {
+    setInspectorWidth(Math.min(
+      INSPECTOR_MAX_WIDTH,
+      Math.max(INSPECTOR_MIN_WIDTH, nextWidth),
+    ));
+  };
+
+  const startInspectorResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    inspectorResizeRef.current = {
+      startX: event.clientX,
+      startWidth: inspectorWidth,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveInspectorResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resize = inspectorResizeRef.current;
+    if (!resize) return;
+    resizeInspector(resize.startWidth + resize.startX - event.clientX);
+  };
+
+  const endInspectorResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!inspectorResizeRef.current) return;
+    inspectorResizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleInspectorResizeKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      resizeInspector(inspectorWidth + 16);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      resizeInspector(inspectorWidth - 16);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      resizeInspector(INSPECTOR_MIN_WIDTH);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      resizeInspector(INSPECTOR_MAX_WIDTH);
+    }
   };
 
   const addTextElement = () => {
@@ -558,17 +641,17 @@ export function LessonEditorPage() {
         </div>
 
         {/* 中间：主编辑区 */}
-        <div className="flex-1 flex flex-col bg-mist/30 overflow-auto">
+        <div className="min-w-0 flex-1 flex flex-col bg-mist/30 overflow-auto">
           {currentSlide && (
-            <div className="flex-1 p-6">
-              <div className="mx-auto max-w-5xl">
+            <div className="flex-1 p-4 lg:p-6">
+              <div className="mx-auto w-full max-w-[1120px]">
                 <div className="mb-3 flex items-center gap-2">
                   <Button variant="outline" size="sm" onClick={addTextElement} disabled={currentSlide.type === "courseware"}>
                     <Type className="w-4 h-4" />
                     新增文本
                   </Button>
                   <span className="text-xs text-ink-500">
-                    页面元素 {(currentSlide.elements || []).length} 个
+                    可见元素 {visibleCurrentElements.length} 个
                     {selectedElement ? " · 可拖动元素并从右侧调整属性" : " · 点击元素后可拖动和缩放"}
                   </span>
                 </div>
@@ -591,13 +674,13 @@ export function LessonEditorPage() {
                   </div>
                 ) : (
                   <LessonSlideCanvas
-                    elements={currentSlide.elements}
+                    elements={visibleCurrentElements}
                     editable
                     selectedElementId={selectedElementId}
                     onSelectElement={setSelectedElementId}
-                    onElementsChange={updateCurrentElements}
+                    onElementsChange={updateVisibleCurrentElements}
                   >
-                    <LessonSlideContent slide={currentSlide} showAnswer />
+                    <LessonSlideContent slide={currentSlide} />
                   </LessonSlideCanvas>
                 )}
 
@@ -630,9 +713,35 @@ export function LessonEditorPage() {
         </div>
 
         {/* 右侧：属性面板 */}
-        <div className="w-72 border-l border-ink-200 bg-paper flex flex-col">
-          {/* 标签切换 */}
-          <div className="grid grid-cols-4 border-b border-ink-200">
+        <div
+          className="relative flex shrink-0 flex-col border-l border-ink-200 bg-paper"
+          style={{ width: inspectorCollapsed ? 40 : inspectorWidth }}
+        >
+          {!inspectorCollapsed && (
+            <>
+              <div
+                role="separator"
+                aria-label="调整编辑控制区宽度"
+                aria-orientation="vertical"
+                aria-valuemin={INSPECTOR_MIN_WIDTH}
+                aria-valuemax={INSPECTOR_MAX_WIDTH}
+                aria-valuenow={inspectorWidth}
+                tabIndex={0}
+                className="group absolute -left-1.5 top-0 z-20 flex h-full w-3 cursor-col-resize touch-none items-center justify-center outline-none"
+                onPointerDown={startInspectorResize}
+                onPointerMove={moveInspectorResize}
+                onPointerUp={endInspectorResize}
+                onPointerCancel={endInspectorResize}
+                onKeyDown={handleInspectorResizeKey}
+              >
+                <span className="flex h-10 w-3 items-center justify-center rounded-full border border-ink-200 bg-paper text-ink-300 shadow-sm transition-colors group-hover:text-ink-600 group-focus-visible:ring-2 group-focus-visible:ring-gold-400">
+                  <GripVertical className="h-3 w-3" />
+                </span>
+              </div>
+
+              {/* 标签切换 */}
+              <div className="flex border-b border-ink-200">
+                <div className="grid min-w-0 flex-1 grid-cols-4">
             <button
               onClick={() => { setShowStudentPanel(false); setShowRelatedPanel(false); setShowReflectionPanel(false); }}
               className={cn(
@@ -677,6 +786,16 @@ export function LessonEditorPage() {
             >
               课后反思
             </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInspectorCollapsed(true)}
+                  className="flex w-8 shrink-0 items-center justify-center text-ink-400 transition-colors hover:bg-mist hover:text-ink-700"
+                  aria-label="折叠编辑控制区"
+                  title="折叠到右侧"
+                >
+                  <PanelRightClose className="h-4 w-4" />
+                </button>
           </div>
 
           <div className="flex-1 overflow-auto p-3">
@@ -1050,6 +1169,19 @@ export function LessonEditorPage() {
               </div>
             )}
           </div>
+            </>
+          )}
+          {inspectorCollapsed && (
+            <button
+              type="button"
+              onClick={() => setInspectorCollapsed(false)}
+              className="flex h-12 w-full items-center justify-center text-ink-500 transition-colors hover:bg-mist hover:text-ink-800"
+              aria-label="展开编辑控制区"
+              title="展开编辑控制区"
+            >
+              <PanelRightOpen className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
