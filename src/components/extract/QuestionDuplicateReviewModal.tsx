@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, Merge, Plus } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { renderMathHtml } from "@/lib/math-html";
 import { cn } from "@/lib/utils";
 import type {
   DuplicateQuestionMergeFields,
@@ -64,6 +65,38 @@ interface DifferenceParts {
   suffix: string;
 }
 
+interface TextRange {
+  start: number;
+  end: number;
+}
+
+function mathRanges(value: string): TextRange[] {
+  const ranges: TextRange[] = [];
+  const pattern = /\$\$[\s\S]+?\$\$|\$(?:\\.|[^$])+?\$/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return ranges;
+}
+
+function keepMathDelimitersIntact(value: string, start: number, end: number): TextRange {
+  let expandedStart = start;
+  let expandedEnd = end;
+
+  for (const range of mathRanges(value)) {
+    const touchesRange = expandedStart < range.end && expandedEnd > range.start;
+    const startsInsideRange = expandedStart > range.start && expandedStart < range.end;
+    const endsInsideRange = expandedEnd > range.start && expandedEnd < range.end;
+    if (touchesRange || startsInsideRange || endsInsideRange) {
+      expandedStart = Math.min(expandedStart, range.start);
+      expandedEnd = Math.max(expandedEnd, range.end);
+    }
+  }
+
+  return { start: expandedStart, end: expandedEnd };
+}
+
 function differenceParts(value: string, peer: string): DifferenceParts {
   const chars = Array.from(value);
   const peerChars = Array.from(peer);
@@ -85,27 +118,52 @@ function differenceParts(value: string, peer: string): DifferenceParts {
     suffixLength += 1;
   }
 
+  const changedEnd = chars.length - suffixLength;
+  const range = keepMathDelimitersIntact(value, prefixLength, changedEnd);
+
   return {
-    prefix: chars.slice(0, prefixLength).join(""),
-    changed: chars.slice(prefixLength, chars.length - suffixLength).join(""),
-    suffix: suffixLength ? chars.slice(chars.length - suffixLength).join("") : "",
+    prefix: chars.slice(0, range.start).join(""),
+    changed: chars.slice(range.start, range.end).join(""),
+    suffix: chars.slice(range.end).join(""),
   };
 }
 
-function DifferenceText({ value, peer }: { value: string; peer: string }) {
+function RenderedText({ value }: { value: string }) {
+  return (
+    <span
+      className="question-rich-content whitespace-pre-wrap break-words"
+      dangerouslySetInnerHTML={{ __html: renderMathHtml(value) }}
+    />
+  );
+}
+
+function IncomingDifferenceText({ value, peer }: { value: string; peer: string }) {
+  const containsRichHtml = /<[a-z][\s\S]*>/i.test(value) || /<[a-z][\s\S]*>/i.test(peer);
+  if (containsRichHtml) {
+    return value === peer ? (
+      <RenderedText value={value} />
+    ) : (
+      <mark className="rounded bg-amber-200/80 px-0.5 text-inherit">
+        <RenderedText value={value} />
+      </mark>
+    );
+  }
+
   const parts = differenceParts(value, peer);
   if (!parts.changed && value === peer) {
-    return <span className="whitespace-pre-wrap break-words">{value}</span>;
+    return <RenderedText value={value} />;
   }
   return (
     <span className="whitespace-pre-wrap break-words">
-      {parts.prefix}
+      <RenderedText value={parts.prefix} />
       {parts.changed ? (
-        <mark className="rounded bg-amber-200/80 px-0.5 text-inherit">{parts.changed}</mark>
+        <mark className="rounded bg-amber-200/80 px-0.5 text-inherit">
+          <RenderedText value={parts.changed} />
+        </mark>
       ) : (
         <mark className="rounded bg-amber-200/80 px-1 text-amber-900">此处缺失</mark>
       )}
-      {parts.suffix}
+      <RenderedText value={parts.suffix} />
     </span>
   );
 }
@@ -237,22 +295,59 @@ export function QuestionDuplicateReviewModal({
 
           return (
             <section key={item.id} className="overflow-hidden rounded-xl border border-ink-200 bg-paper shadow-sm">
-              <div className="flex items-center justify-between gap-4 border-b border-ink-100 bg-mist/40 px-4 py-3">
+              <div className="flex flex-col gap-3 border-b border-ink-100 bg-mist/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-sm font-semibold text-ink-900">相似题 {index + 1}</div>
                   <div className="mt-0.5 text-xs text-ink-500">
                     相似度 {(item.similarity * 100).toFixed(1)}% · 题库 ID：{item.existing.id}
                   </div>
                 </div>
-                {!resolution.action && (
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                    待选择操作
-                  </span>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {!resolution.action && (
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                      待选择操作
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`相似题 ${index + 1} 合并`}
+                    title={item.canMerge ? "合并到库中题" : "只能合并到自己的题目"}
+                    disabled={!item.canMerge}
+                    onClick={() => setAction(item.id, "merge")}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                      resolution.action === "merge"
+                        ? "border-gold-400 bg-gold-400 text-ink-950"
+                        : "border-ink-200 bg-paper text-ink-700 hover:border-gold-300 hover:bg-gold-50",
+                      !item.canMerge && "cursor-not-allowed opacity-45 hover:border-ink-200 hover:bg-paper",
+                    )}
+                  >
+                    <Merge className="h-4 w-4" />
+                    合并
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`相似题 ${index + 1} 新增`}
+                    onClick={() => setAction(item.id, "add")}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                      resolution.action === "add"
+                        ? "border-ink-700 bg-ink-800 text-white"
+                        : "border-ink-200 bg-paper text-ink-700 hover:border-ink-400 hover:bg-mist",
+                    )}
+                  >
+                    <Plus className="h-4 w-4" />
+                    新增
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_108px]">
-                <div className="border-b border-ink-100 p-4 xl:border-b-0 xl:border-r">
+              <div className="grid grid-cols-1 md:grid-cols-2">
+                <div
+                  role="group"
+                  aria-label={`相似题 ${index + 1} 库中题`}
+                  className="border-b border-ink-100 p-4 md:border-b-0 md:border-r"
+                >
                   <div className="mb-3 text-sm font-semibold text-ink-800">库中题</div>
                   <div className={cn(
                     "rounded-lg border p-3",
@@ -279,12 +374,16 @@ export function QuestionDuplicateReviewModal({
                       onClick={() => toggleExpanded(item.id)}
                       className="block w-full text-left text-sm leading-relaxed text-ink-800"
                     >
-                      <DifferenceText value={existingStem} peer={incomingStem} />
+                      <RenderedText value={existingStem} />
                     </button>
                   </div>
                 </div>
 
-                <div className="border-b border-ink-100 p-4 xl:border-b-0 xl:border-r">
+                <div
+                  role="group"
+                  aria-label={`相似题 ${index + 1} 上传题`}
+                  className="p-4"
+                >
                   <div className="mb-3 text-sm font-semibold text-ink-800">上传题</div>
                   <div className={cn(
                     "rounded-lg border p-3",
@@ -311,43 +410,9 @@ export function QuestionDuplicateReviewModal({
                       onClick={() => toggleExpanded(item.id)}
                       className="block w-full text-left text-sm leading-relaxed text-ink-800"
                     >
-                      <DifferenceText value={incomingStem} peer={existingStem} />
+                      <IncomingDifferenceText value={incomingStem} peer={existingStem} />
                     </button>
                   </div>
-                </div>
-
-                <div className="flex flex-row gap-2 bg-mist/20 p-3 xl:flex-col xl:justify-center">
-                  <button
-                    type="button"
-                    aria-label={`相似题 ${index + 1} 合并`}
-                    title={item.canMerge ? "合并到库中题" : "只能合并到自己的题目"}
-                    disabled={!item.canMerge}
-                    onClick={() => setAction(item.id, "merge")}
-                    className={cn(
-                      "flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-3 text-sm font-medium transition-colors xl:flex-none xl:flex-col",
-                      resolution.action === "merge"
-                        ? "border-gold-400 bg-gold-400 text-ink-950"
-                        : "border-ink-200 bg-paper text-ink-700 hover:border-gold-300 hover:bg-gold-50",
-                      !item.canMerge && "cursor-not-allowed opacity-45 hover:border-ink-200 hover:bg-paper",
-                    )}
-                  >
-                    <Merge className="h-4 w-4" />
-                    合并
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`相似题 ${index + 1} 新增`}
-                    onClick={() => setAction(item.id, "add")}
-                    className={cn(
-                      "flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-3 text-sm font-medium transition-colors xl:flex-none xl:flex-col",
-                      resolution.action === "add"
-                        ? "border-ink-700 bg-ink-800 text-white"
-                        : "border-ink-200 bg-paper text-ink-700 hover:border-ink-400 hover:bg-mist",
-                    )}
-                  >
-                    <Plus className="h-4 w-4" />
-                    新增
-                  </button>
                 </div>
               </div>
 
@@ -367,9 +432,9 @@ export function QuestionDuplicateReviewModal({
                     const incomingValue = displayValue(item.incoming[key]);
                     const selected = resolution.fields[key];
                     return (
-                      <div key={key} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_108px]">
+                      <div key={key} className="grid grid-cols-1 md:grid-cols-2">
                         <div className={cn(
-                          "p-4 xl:border-r",
+                          "p-4 md:border-r",
                           selectedOnSide(selected, "existing") ? "bg-gold-50/40" : "bg-paper",
                         )}>
                           <FieldHeading
@@ -389,10 +454,10 @@ export function QuestionDuplicateReviewModal({
                               </label>
                             )}
                           />
-                          <DifferenceText value={existingValue} peer={incomingValue} />
+                          <RenderedText value={existingValue} />
                         </div>
                         <div className={cn(
-                          "border-t border-ink-100 p-4 xl:border-l-0 xl:border-r xl:border-t-0",
+                          "border-t border-ink-100 p-4 md:border-t-0",
                           selectedOnSide(selected, "incoming") ? "bg-gold-50/40" : "bg-paper",
                         )}>
                           <FieldHeading
@@ -412,9 +477,8 @@ export function QuestionDuplicateReviewModal({
                               </label>
                             )}
                           />
-                          <DifferenceText value={incomingValue} peer={existingValue} />
+                          <IncomingDifferenceText value={incomingValue} peer={existingValue} />
                         </div>
-                        <div className="hidden bg-mist/20 xl:block" />
                       </div>
                     );
                   })}
