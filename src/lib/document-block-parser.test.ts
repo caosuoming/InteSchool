@@ -38,6 +38,23 @@ describe("document block parser", () => {
   });
 
   it.each([
+    "一、选择题",
+    "一、单选题",
+    "二、多选题",
+    "三、填空题",
+    "四、解答题",
+  ])("recognizes %s as a question-section title", (heading) => {
+    const blocks = parseDocumentBlocks(
+      [heading, "1. 示例题目。"].join("\n"),
+      { ...config, headingKeywords: [] },
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: "groupTitle", content: heading });
+    expect(blocks[1]).toMatchObject({ type: "question" });
+  });
+
+  it.each([
     "分析：注意题目中的隐含条件。",
     "【分析】注意题目中的隐含条件。",
     "分析 注意题目中的隐含条件。",
@@ -282,9 +299,9 @@ describe("document block parser", () => {
     expect(blocks[0]).toMatchObject({
       answer: "（1）命题成立；（2）x=2。",
       analysis: [
-        "先证明函数在区间上单调。",
-        "再代入边界条件求得 x=2。",
-        "最后检验结果满足原条件。",
+        "【小问1详解】先证明函数在区间上单调。",
+        "小问2详解：再代入边界条件求得 x=2。",
+        "【小问３详解】最后检验结果满足原条件。",
       ].join("\n"),
     });
   });
@@ -303,7 +320,7 @@ describe("document block parser", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]).toMatchObject({
       answer: "（1）递增；（2）最小值为 0。",
-      analysis: "由导数恒正可知函数递增。\n根据单调性可得最小值为 0。",
+      analysis: "【小问1详解】由导数恒正可知函数递增。\n小问2详解 根据单调性可得最小值为 0。",
     });
   });
 

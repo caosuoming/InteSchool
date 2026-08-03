@@ -1040,10 +1040,6 @@ export function ExtractReviewModal({
               <Edit3 className="h-3.5 w-3.5" />
               {isEditing ? "收起编辑" : "编辑内容"}
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setShowKeywordConfig(true)}>
-              <Settings className="h-3.5 w-3.5" />
-              关键字与重新拆解
-            </Button>
             <Button
               size="sm"
               variant="outline"
