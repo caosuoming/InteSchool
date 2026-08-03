@@ -24,6 +24,8 @@ vi.mock("@/services/class", () => ({
     listDepartedStudents: vi.fn(),
     listStudentsByClass: vi.fn(),
     addStudentToPersonalClass: vi.fn(),
+    updatePersonalClass: vi.fn(),
+    removeStudentFromPersonalClass: vi.fn(),
   },
 }));
 
@@ -72,6 +74,18 @@ const student: Student = {
   status: "active",
 };
 
+const externalStudent: Student = {
+  id: "external-student-1",
+  name: "李同学",
+  studentNo: "EXT-001",
+  classId: "",
+  schoolId: "",
+  grade: "高一",
+  status: "active",
+  isExternal: true,
+  externalSchool: "外校",
+};
+
 describe("ClassesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -89,6 +103,7 @@ describe("ClassesPage", () => {
     vi.mocked(classService.listDepartedStudents).mockResolvedValue([]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([student]);
     vi.mocked(settingsService.listClassTypes).mockResolvedValue([]);
+    vi.mocked(classService.updatePersonalClass).mockResolvedValue(personalClass);
   });
 
   it("marks a student from the loaded class roster as already added", async () => {
@@ -125,5 +140,58 @@ describe("ClassesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "返回班级与学生" }));
 
     expect(await screen.findByText("班级与学生页面")).toBeInTheDocument();
+  });
+
+  it("renames a selected personal class", async () => {
+    vi.mocked(classService.updatePersonalClass).mockResolvedValue({
+      ...personalClass,
+      name: "竞赛冲刺班",
+    });
+
+    render(
+      <MemoryRouter>
+        <ClassesPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "个人教学班 (1)" }));
+    fireEvent.click(await screen.findByText("竞赛辅导班"));
+    fireEvent.click(await screen.findByRole("button", { name: "改名" }));
+
+    fireEvent.change(screen.getByLabelText("班级名称"), { target: { value: "竞赛冲刺班" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => {
+      expect(classService.updatePersonalClass).toHaveBeenCalledWith(personalClass.id, {
+        name: "竞赛冲刺班",
+      });
+    });
+  });
+
+  it("marks external students and limits personal-class actions by student source", async () => {
+    vi.mocked(classService.listStudentsByClass).mockResolvedValue([student, externalStudent]);
+
+    render(
+      <MemoryRouter>
+        <ClassesPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "个人教学班 (1)" }));
+    fireEvent.click(await screen.findByText("竞赛辅导班"));
+
+    expect((await screen.findAllByText("外校")).length).toBeGreaterThanOrEqual(2);
+
+    const actionButtons = screen.getAllByTitle("更多操作");
+    fireEvent.click(actionButtons[0]);
+    expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "编辑信息" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "挂起（休学）" })).not.toBeInTheDocument();
+
+    fireEvent.click(actionButtons[0]);
+    fireEvent.click(actionButtons[1]);
+    expect(screen.getByRole("button", { name: "编辑信息" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "挂起（休学）" })).not.toBeInTheDocument();
   });
 });

@@ -377,6 +377,10 @@ export const serviceParameters = {
       "classId",
       "patch"
     ],
+    "updatePersonalClass": [
+      "classId",
+      "patch"
+    ],
     "getStudent": [
       "studentId"
     ],

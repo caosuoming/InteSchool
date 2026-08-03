@@ -157,6 +157,24 @@ function canManageSchoolRoster(teacher: TeacherRecord): boolean {
   return roles.some((role) => SCHOOL_ROSTER_MANAGER_ROLES.has(String(role)));
 }
 
+function canManagePersonalExternalStudent(
+  state: AppState,
+  teacher: TeacherRecord,
+  studentId: unknown,
+): boolean {
+  if (typeof studentId !== "string") return false;
+  const students = state.students as Array<{ id: string; isExternal?: boolean }>;
+  const personalClasses = state.personalClasses as Array<{
+    teacherId: string;
+    studentIds: string[];
+  }>;
+  const student = students.find((item) => item.id === studentId);
+  if (!student?.isExternal) return false;
+  return personalClasses.some((personalClass) =>
+    personalClass.teacherId === teacher.id && personalClass.studentIds.includes(studentId),
+  );
+}
+
 function findRecord(state: AppState, id: string): Record<string, unknown> | null {
   for (const value of Object.values(state)) {
     if (!Array.isArray(value)) continue;
@@ -325,6 +343,7 @@ function authorize(
     service === "class"
     && SCHOOL_ROSTER_MUTATIONS.has(method)
     && !(method === "deleteClass" && normalizedArgs[1] === true)
+    && !(method === "updateStudent" && canManagePersonalExternalStudent(state, teacher, normalizedArgs[0]))
     && !canManageSchoolRoster(teacher)
   ) {
     throw new Error("该操作需要年级组长、副校长、校长或学校管理员权限");

@@ -138,6 +138,10 @@ export const classService = {
     return rpcCall("class", "updateSchoolClass", [classId, patch]) as any;
   },
 
+  async updatePersonalClass(classId: string, patch: Pick<PersonalClass, "name">): Promise<PersonalClass | null> {
+    return rpcCall("class", "updatePersonalClass", [classId, patch]) as any;
+  },
+
   async getStudent(studentId: string): Promise<Student | null> {
     return rpcCall("class", "getStudent", [studentId]) as any;
   },

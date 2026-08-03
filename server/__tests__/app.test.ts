@@ -1132,6 +1132,76 @@ describe("production backend", () => {
     );
   });
 
+  it("allows a teacher to rename a personal class and edit its external student", async () => {
+    const session = await register(built.app, "issue206@example.com");
+    const teacherId = String(session.teacher.id);
+    const headers = {
+      cookie: session.cookie,
+      "x-inteschool-csrf": session.csrfToken,
+    };
+
+    const personalClassResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "createPersonalClass",
+        args: [teacherId, "原教学班", "Issue 206"],
+      },
+    });
+    expect(personalClassResponse.statusCode).toBe(200);
+    const personalClass = personalClassResponse.json<{ result: { id: string } }>().result;
+
+    const renameResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "updatePersonalClass",
+        args: [personalClass.id, { name: "新教学班" }],
+      },
+    });
+    expect(renameResponse.statusCode).toBe(200);
+    expect(renameResponse.json()).toEqual({
+      result: expect.objectContaining({ id: personalClass.id, name: "新教学班" }),
+    });
+
+    const studentResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "addExternalStudentToPersonalClass",
+        args: [personalClass.id, {
+          name: "外校学生",
+          studentNo: "EXT-206",
+          grade: "高一",
+          externalSchool: "外校",
+        }],
+      },
+    });
+    expect(studentResponse.statusCode).toBe(200);
+    const student = studentResponse.json<{ result: { id: string } }>().result;
+
+    const updateStudentResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "class",
+        method: "updateStudent",
+        args: [student.id, { name: "已编辑外校学生" }],
+      },
+    });
+    expect(updateStudentResponse.statusCode).toBe(200);
+    expect(updateStudentResponse.json()).toEqual({
+      result: expect.objectContaining({ id: student.id, name: "已编辑外校学生" }),
+    });
+  });
+
   it("excludes suspended school-class members from the current teacher's student list", async () => {
     const session = await login(built.app);
     const schoolId = String(session.teacher.schoolId);
