@@ -9,7 +9,7 @@ import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { uploadFile } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type { ClassroomHomework, ClassroomNotice, Teacher } from "@/types";
+import type { ClassroomHomework, ClassroomNotice, LessonCourseware, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({
   classService: {
@@ -38,6 +38,8 @@ vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
     listCoursewares: vi.fn(),
     deleteCourseware: vi.fn(),
+    completeCourseware: vi.fn(),
+    restoreCourseware: vi.fn(),
     publishCourseware: vi.fn(),
     unpublishCourseware: vi.fn(),
   },
@@ -116,6 +118,39 @@ const activeNotice: ClassroomNotice = {
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
 
+function courseware(
+  id: string,
+  lifecycleStatus: "active" | "completed" | "trashed" = "active",
+): LessonCourseware {
+  return {
+    id,
+    teacherId: "teacher-1",
+    schoolId: "school-1",
+    title: `函数课件 ${id}`,
+    chapterIds: [],
+    knowledgePointIds: [],
+    grade: "高一",
+    schoolYear: "2026-2027",
+    semester: "上学期",
+    sourceType: "manual",
+    slides: [{
+      id: `${id}-slide`,
+      type: "knowledge",
+      title: "函数",
+      content: "函数基础",
+      relatedQuestionIds: [],
+      askableStudentIds: [],
+    }],
+    classIds: ["class-1"],
+    status: "draft",
+    lifecycleStatus,
+    completedAt: lifecycleStatus === "completed" ? "2026-08-02T12:00:00.000Z" : null,
+    deletedAt: lifecycleStatus === "trashed" ? "2026-08-02T12:00:00.000Z" : null,
+    createdAt: "2026-08-02T00:00:00.000Z",
+    updatedAt: "2026-08-02T12:00:00.000Z",
+  };
+}
+
 describe("MyLessonsPage classroom publishing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -138,6 +173,9 @@ describe("MyLessonsPage classroom publishing", () => {
     vi.mocked(classroomNoticeService.createNotice).mockResolvedValue(activeNotice);
     vi.mocked(classroomNoticeService.updateNotice).mockResolvedValue(activeNotice);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
+    vi.mocked(lessonCoursewareService.deleteCourseware).mockResolvedValue(undefined);
+    vi.mocked(lessonCoursewareService.completeCourseware).mockImplementation(async (id) => courseware(id, "completed"));
+    vi.mocked(lessonCoursewareService.restoreCourseware).mockImplementation(async (id) => courseware(id, "active"));
     vi.mocked(uploadFile).mockResolvedValue({
       id: "file-1",
       ownerId: "teacher-1",
@@ -307,5 +345,59 @@ describe("MyLessonsPage classroom publishing", () => {
       );
     });
     expect(classroomHomeworkService.createHomework).not.toHaveBeenCalled();
+  });
+
+  it("shows assigned class names and moves an active courseware to the completed list", async () => {
+    const user = userEvent.setup();
+    const activeCourseware = courseware("active-1");
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) => {
+      if (filter.lifecycleStatus === "active") return [activeCourseware];
+      return [];
+    });
+
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "我的课件" }));
+    expect(await screen.findByText("授课班级：高一 · 高一（1）班")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "已上完 函数课件 active-1" }));
+
+    await waitFor(() => {
+      expect(lessonCoursewareService.completeCourseware).toHaveBeenCalledWith("active-1");
+    });
+  });
+
+  it("shows six completed coursewares by default and restores a trashed courseware", async () => {
+    const user = userEvent.setup();
+    const completed = Array.from({ length: 7 }, (_, index) => courseware(`completed-${index + 1}`, "completed"));
+    const trashed = courseware("trashed-1", "trashed");
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) => {
+      if (filter.lifecycleStatus === "completed") return completed;
+      if (filter.lifecycleStatus === "trashed") return [trashed];
+      return [];
+    });
+
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "我的课件" }));
+    expect(await screen.findByText("已上完课件列表")).toBeInTheDocument();
+    expect(screen.getByText("函数课件 completed-6")).toBeInTheDocument();
+    expect(screen.queryByText("函数课件 completed-7")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "更多" }));
+    expect(await screen.findByText("函数课件 completed-7")).toBeInTheDocument();
+    expect(screen.getByText("课件回收站")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "恢复课件 函数课件 trashed-1" }));
+
+    await waitFor(() => {
+      expect(lessonCoursewareService.restoreCourseware).toHaveBeenCalledWith("trashed-1");
+    });
   });
 });

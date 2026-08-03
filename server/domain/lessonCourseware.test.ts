@@ -201,7 +201,8 @@ describe("courseware lesson flow", () => {
         subject: "数学",
         teacherName: "张老师",
         status: "draft",
-        classIds: [],
+        lifecycleStatus: "active",
+        classIds: ["class-1"],
       });
       expect(lesson.slides).toEqual([
         expect.objectContaining({
@@ -287,6 +288,7 @@ describe("courseware lesson flow", () => {
 
   it("requires a class before publishing and lists published lessons by class", async () => {
     const state = createState(sourceCourseware({ onlineAccessToken: "preview-token" }));
+    state.teachers[0].teachingClassIds = [];
 
     await runWithState(state, async () => {
       const lesson = await lessonCoursewareService.createFromCourseware(
@@ -314,6 +316,50 @@ describe("courseware lesson flow", () => {
       });
       expect(classroomLessons.map((item) => item.id)).toEqual([lesson.id]);
       expect(await lessonCoursewareService.listCoursewares({ classId: "class-2" })).toEqual([]);
+    });
+  });
+
+  it("moves completed and deleted lessons out of the active classroom list and restores them as drafts", async () => {
+    const state = createState(sourceCourseware({ onlineAccessToken: "preview-token" }));
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromCourseware(
+        "teacher-1",
+        "school-1",
+        "courseware-1",
+      );
+      await lessonCoursewareService.publishCourseware(lesson.id);
+
+      const completed = await lessonCoursewareService.completeCourseware(lesson.id);
+      expect(completed).toMatchObject({
+        lifecycleStatus: "completed",
+        status: "draft",
+        completedAt: expect.any(String),
+      });
+      expect(await lessonCoursewareService.listCoursewares({ classId: "class-1" })).toEqual([]);
+      expect(await lessonCoursewareService.listCoursewares({
+        lifecycleStatus: "completed",
+        teacherId: "teacher-1",
+      })).toHaveLength(1);
+
+      await lessonCoursewareService.deleteCourseware(lesson.id);
+      expect(await lessonCoursewareService.listCoursewares({ lifecycleStatus: "completed" })).toEqual([]);
+      expect(await lessonCoursewareService.listCoursewares({ lifecycleStatus: "trashed" })).toEqual([
+        expect.objectContaining({
+          id: lesson.id,
+          lifecycleStatus: "trashed",
+          deletedAt: expect.any(String),
+        }),
+      ]);
+
+      const restored = await lessonCoursewareService.restoreCourseware(lesson.id);
+      expect(restored).toMatchObject({
+        lifecycleStatus: "active",
+        status: "draft",
+        completedAt: null,
+        deletedAt: null,
+      });
+      expect(await lessonCoursewareService.listCoursewares({ teacherId: "teacher-1" })).toHaveLength(1);
     });
   });
 

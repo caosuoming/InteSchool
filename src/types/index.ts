@@ -1963,6 +1963,9 @@ export interface LessonSlide {
 /** 课件来源类型 */
 export type LessonSourceType = "examPaper" | "lecture" | "courseware" | "manual";
 
+/** 上课课件在“我的上课”中的生命周期状态。 */
+export type LessonCoursewareLifecycleStatus = "active" | "completed" | "trashed";
+
 /** 上课课件 */
 export interface LessonCourseware {
   id: string;
@@ -1992,8 +1995,14 @@ export interface LessonCourseware {
   teacherName?: string;
   /** 发布状态 */
   status: "draft" | "published";
+  /** 列表生命周期；旧数据未设置时按 active 处理。 */
+  lifecycleStatus?: LessonCoursewareLifecycleStatus;
   /** 发布时间 */
   publishedAt?: string;
+  /** 标记“已上完”的时间。 */
+  completedAt?: string | null;
+  /** 移入课件回收站的时间。 */
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2007,6 +2016,7 @@ export interface LessonCoursewareFilter {
   chapterIds?: string[];
   knowledgePointIds?: string[];
   status?: "draft" | "published";
+  lifecycleStatus?: LessonCoursewareLifecycleStatus;
   classId?: string;
   teacherId?: string;
   schoolId?: string;

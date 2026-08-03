@@ -46,6 +46,14 @@ export const lessonCoursewareService = {
     return rpcCall("lessonCourseware", "deleteCourseware", [id]) as any;
   },
 
+  async completeCourseware(id: string): Promise<LessonCourseware> {
+    return rpcCall("lessonCourseware", "completeCourseware", [id]) as any;
+  },
+
+  async restoreCourseware(id: string): Promise<LessonCourseware> {
+    return rpcCall("lessonCourseware", "restoreCourseware", [id]) as any;
+  },
+
   async publishCourseware(id: string): Promise<LessonCourseware> {
     return rpcCall("lessonCourseware", "publishCourseware", [id]) as any;
   },

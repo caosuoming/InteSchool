@@ -4,6 +4,7 @@ import {
   BookOpen, Plus, Search, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
   BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, X, MonitorPlay,
+  CheckCircle2, RotateCcw,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -73,6 +74,10 @@ export function MyLessonsPage() {
   const navigate = useNavigate();
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const [coursewares, setCoursewares] = useState<LessonCourseware[]>([]);
+  const [completedCoursewares, setCompletedCoursewares] = useState<LessonCourseware[]>([]);
+  const [trashedCoursewares, setTrashedCoursewares] = useState<LessonCourseware[]>([]);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
+  const [trashExpanded, setTrashExpanded] = useState(false);
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
   const [notices, setNotices] = useState<ClassroomNotice[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -114,16 +119,33 @@ export function MyLessonsPage() {
     if (!teacher?.schoolId) return;
     setLoading(true);
     try {
-      const data = await lessonCoursewareService.listCoursewares({
+      const commonFilter = {
         schoolId: teacher.schoolId,
         teacherId: teacher.id,
         keyword: keyword || undefined,
-        status: statusFilter === "all" ? undefined : (statusFilter as "draft" | "published"),
-      });
-      setCoursewares(data.filter((c) => {
+      };
+      const [activeItems, completedItems, trashedItems] = await Promise.all([
+        lessonCoursewareService.listCoursewares({
+          ...commonFilter,
+          status: statusFilter === "all" ? undefined : (statusFilter as "draft" | "published"),
+          lifecycleStatus: "active",
+        }),
+        lessonCoursewareService.listCoursewares({
+          ...commonFilter,
+          lifecycleStatus: "completed",
+        }),
+        lessonCoursewareService.listCoursewares({
+          ...commonFilter,
+          lifecycleStatus: "trashed",
+        }),
+      ]);
+      const matchesSource = (c: LessonCourseware) => {
         if (sourceFilter === "all") return true;
         return c.sourceType === sourceFilter;
-      }));
+      };
+      setCoursewares(activeItems.filter(matchesSource));
+      setCompletedCoursewares(completedItems.filter(matchesSource));
+      setTrashedCoursewares(trashedItems.filter(matchesSource));
     } catch (err) {
       toast.error("加载失败", err instanceof Error ? err.message : undefined);
     } finally {
@@ -361,13 +383,33 @@ export function MyLessonsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定删除此课件？")) return;
+    if (!confirm("确定将此课件移入回收站？")) return;
     try {
       await lessonCoursewareService.deleteCourseware(id);
-      toast.success("已删除");
-      loadData();
+      toast.success("已移入课件回收站");
+      await loadData();
     } catch (err) {
       toast.error("删除失败", err instanceof Error ? err.message : undefined);
+    }
+  };
+
+  const handleComplete = async (cw: LessonCourseware) => {
+    try {
+      await lessonCoursewareService.completeCourseware(cw.id);
+      toast.success("已标记为上完", "课件已移入已上完课件列表");
+      await loadData();
+    } catch (err) {
+      toast.error("操作失败", err instanceof Error ? err.message : undefined);
+    }
+  };
+
+  const handleRestore = async (cw: LessonCourseware) => {
+    try {
+      await lessonCoursewareService.restoreCourseware(cw.id);
+      toast.success("课件已恢复", "已恢复为草稿课件");
+      await loadData();
+    } catch (err) {
+      toast.error("恢复失败", err instanceof Error ? err.message : undefined);
     }
   };
 
@@ -375,7 +417,7 @@ export function MyLessonsPage() {
     try {
       await lessonCoursewareService.publishCourseware(cw.id);
       toast.success("已发布", "课件已推送到上课应用");
-      loadData();
+      await loadData();
     } catch (err) {
       toast.error("发布失败", err instanceof Error ? err.message : undefined);
     }
@@ -385,7 +427,7 @@ export function MyLessonsPage() {
     try {
       await lessonCoursewareService.unpublishCourseware(cw.id);
       toast.success("已撤回");
-      loadData();
+      await loadData();
     } catch (err) {
       toast.error("操作失败", err instanceof Error ? err.message : undefined);
     }
@@ -891,6 +933,7 @@ export function MyLessonsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {coursewares.map((cw) => {
             const Icon = SourceIcon(cw);
+            const selectedClassNames = cw.classIds.map((id) => classNames.get(id) || id);
             const directPptSlide = cw.coursewareMode === "direct"
               && cw.slides[0]?.coursewareType === "ppt"
               ? cw.slides[0]
@@ -935,11 +978,15 @@ export function MyLessonsPage() {
                   )}
                   <div className="flex items-center gap-1.5">
                     <Users className="w-3 h-3" />
-                    {cw.classIds.length > 0 ? `已选择 ${cw.classIds.length} 个班级` : "尚未选择授课班级"}
+                    <span className="truncate">
+                      {selectedClassNames.length > 0
+                        ? `授课班级：${selectedClassNames.join("、")}`
+                        : "尚未选择授课班级"}
+                    </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 pt-3 border-t border-ink-100">
+                <div className="flex flex-wrap items-center gap-1 pt-3 border-t border-ink-100">
                   <Button
                     variant="outline"
                     size="sm"
@@ -971,8 +1018,17 @@ export function MyLessonsPage() {
                       撤回
                     </Button>
                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleComplete(cw)}
+                    aria-label={`已上完 ${cw.title}`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    已上完
+                  </Button>
                   <button
-                    onClick={() => handleDelete(cw.id)}
+                    onClick={() => void handleDelete(cw.id)}
                     className="p-1.5 rounded text-ink-400 hover:bg-red-50 hover:text-red-600 transition-colors"
                     title="删除"
                   >
@@ -983,6 +1039,164 @@ export function MyLessonsPage() {
             );
           })}
         </div>
+      )}
+
+      {!loading && (
+        <section className="mt-8" aria-labelledby="completed-coursewares-heading">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 id="completed-coursewares-heading" className="font-semibold text-ink-900">
+                已上完课件列表
+              </h2>
+              <p className="mt-1 text-xs text-ink-400">已结束授课的课件，可恢复后再次编制和发布</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="ink">{completedCoursewares.length} 个</Badge>
+              {completedCoursewares.length > 6 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCompletedExpanded((value) => !value)}
+                  aria-expanded={completedExpanded}
+                >
+                  {completedExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  {completedExpanded ? "收起" : "更多"}
+                </Button>
+              )}
+            </div>
+          </div>
+          {completedCoursewares.length === 0 ? (
+            <Card className="p-6 text-center text-sm text-ink-400">暂无已上完课件</Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {(completedExpanded ? completedCoursewares : completedCoursewares.slice(0, 6)).map((cw) => {
+                const Icon = SourceIcon(cw);
+                const selectedClassNames = cw.classIds.map((id) => classNames.get(id) || id);
+                return (
+                  <Card key={cw.id} className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-mist">
+                        <Icon className="h-5 w-5 text-ink-500" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-ink-900">{cw.title}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <Badge variant="ink">{sourceLabel[cw.sourceType]}</Badge>
+                          <Badge variant="green">已上完</Badge>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-1 text-xs text-ink-500">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="h-3 w-3" />
+                        <span className="truncate">
+                          {selectedClassNames.length > 0 ? selectedClassNames.join("、") : "未选择授课班级"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3 w-3" />
+                        {cw.completedAt ? `上完于 ${timeAgo(cw.completedAt)}` : `更新于 ${timeAgo(cw.updatedAt)}`}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 border-t border-ink-100 pt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => void handleRestore(cw)}
+                        aria-label={`恢复课件 ${cw.title}`}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />恢复课件
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(cw.id)}
+                        className="rounded p-1.5 text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                        title="移入回收站"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {!loading && (
+        <section className="mt-8 pb-4" aria-labelledby="trashed-coursewares-heading">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 id="trashed-coursewares-heading" className="font-semibold text-ink-900">课件回收站</h2>
+              <p className="mt-1 text-xs text-ink-400">删除的课件会保留在这里，可随时恢复为草稿</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="ink">{trashedCoursewares.length} 个</Badge>
+              {trashedCoursewares.length > 6 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTrashExpanded((value) => !value)}
+                  aria-expanded={trashExpanded}
+                >
+                  {trashExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  {trashExpanded ? "收起" : "更多"}
+                </Button>
+              )}
+            </div>
+          </div>
+          {trashedCoursewares.length === 0 ? (
+            <Card className="p-6 text-center text-sm text-ink-400">课件回收站为空</Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {(trashExpanded ? trashedCoursewares : trashedCoursewares.slice(0, 6)).map((cw) => {
+                const Icon = SourceIcon(cw);
+                const selectedClassNames = cw.classIds.map((id) => classNames.get(id) || id);
+                return (
+                  <Card key={cw.id} className="p-4 opacity-80">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-mist">
+                        <Icon className="h-5 w-5 text-ink-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-ink-700">{cw.title}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <Badge variant="ink">{sourceLabel[cw.sourceType]}</Badge>
+                          <Badge variant="amber">回收站</Badge>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-1 text-xs text-ink-500">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="h-3 w-3" />
+                        <span className="truncate">
+                          {selectedClassNames.length > 0 ? selectedClassNames.join("、") : "未选择授课班级"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3 w-3" />
+                        {cw.deletedAt ? `删除于 ${timeAgo(cw.deletedAt)}` : `更新于 ${timeAgo(cw.updatedAt)}`}
+                      </div>
+                    </div>
+                    <div className="mt-3 border-t border-ink-100 pt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => void handleRestore(cw)}
+                        aria-label={`恢复课件 ${cw.title}`}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />恢复课件
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </section>
       )}
       </>}
     </div>
