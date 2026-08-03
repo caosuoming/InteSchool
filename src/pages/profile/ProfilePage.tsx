@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { BookOpen, Building2, FolderOpen, HardDrive, KeyRound, Mail, RefreshCw, School, ShieldCheck, Users } from "lucide-react";
+import { BookOpen, Building2, FolderOpen, HardDrive, KeyRound, Mail, RefreshCw, School, ShieldCheck } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
-import { classService } from "@/services/class";
 import { authService } from "@/services/auth";
 import {
   ensureLocalBackupPermission,
@@ -20,7 +19,7 @@ import {
 import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { SchoolAdminApplication, SchoolClass } from "@/types";
+import type { SchoolAdminApplication } from "@/types";
 
 export default function ProfilePage() {
   const teacher = useAuthStore((state) => state.teacher);
@@ -31,7 +30,6 @@ export default function ProfilePage() {
   const [nickname, setNickname] = useState(teacher?.nickname || "");
   const [subject, setSubject] = useState(affiliation?.subject || teacher?.subject || "数学");
   const [grades, setGrades] = useState<string[]>(affiliation?.teachingGrades || teacher?.teachingGrades || []);
-  const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [savingProfile, setSavingProfile] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -62,10 +60,9 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!affiliation?.schoolId) {
-      setClasses([]);
+      setAdminApplications([]);
       return;
     }
-    void classService.listSchoolClasses(affiliation.schoolId).then(setClasses);
     void authService.getMySchoolAdminApplications().then(setAdminApplications);
   }, [affiliation?.schoolId]);
 
@@ -186,15 +183,10 @@ export default function ProfilePage() {
 
   const activeRole = affiliation?.role || teacher.role;
   const latestApplication = adminApplications[0];
-  const assignedClassIds = [...new Set([
-    ...(affiliation?.teachingClassIds || teacher.teachingClassIds || []),
-    ...(affiliation?.homeroomClassIds || teacher.homeroomClassIds || []),
-  ])];
-  const assignedClasses = classes.filter((item) => assignedClassIds.includes(item.id));
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div><h1 className="font-serif text-2xl font-bold text-ink-900">个人中心</h1><p className="text-sm text-ink-500 mt-1">维护公开资料、任教学科、年级和学校身份；任教班级由学校管理人员配置。</p></div>
+      <div><h1 className="font-serif text-2xl font-bold text-ink-900">个人中心</h1><p className="text-sm text-ink-500 mt-1">维护公开资料、任教学科、年级和学校身份。</p></div>
 
       <Card className="p-6">
         <div className="flex items-center gap-4 mb-5">
@@ -216,28 +208,6 @@ export default function ProfilePage() {
             <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
           </div>
           <ChoiceGrid icon={<Building2 className="w-4 h-4" />} label="任教年级" values={GRADE_OPTIONS} selected={grades} onToggle={(value) => toggle(value, grades, setGrades)} />
-          {affiliation?.schoolId && (
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-700">
-                <Users className="h-4 w-4 text-gold-600" />
-                任教班级
-              </div>
-              <div className="rounded-lg border border-ink-200 bg-ink-50 p-3">
-                {assignedClasses.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {assignedClasses.map((item) => (
-                      <span key={item.id} className="rounded-md border border-ink-200 bg-white px-2.5 py-1 text-sm text-ink-700">
-                        {item.grade} · {item.name}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-ink-500">尚未分配任教班级</p>
-                )}
-                <p className="mt-2 text-xs text-ink-500">任教班级只能由年级组长、教务主任、副校长、校长或学校管理员设置。</p>
-              </div>
-            </div>
-          )}
           <Button type="submit" variant="gold" loading={savingProfile}>保存资料</Button>
         </form>
       </Card>
