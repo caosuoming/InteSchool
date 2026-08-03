@@ -107,6 +107,12 @@ const activeNotice: ClassroomNotice = {
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
 
+const secondNotice: ClassroomNotice = {
+  ...activeNotice,
+  id: "notice-2",
+  content: "下午第三节课调整到实验楼",
+};
+
 const attachedHomework: ClassroomHomework = {
   ...mathHomework,
   id: "homework-attachment",
@@ -203,9 +209,14 @@ describe("ClassroomPage", () => {
 
   it("shows the compact homework layout and keeps display preferences locally", async () => {
     const user = userEvent.setup();
-    renderPage();
+    const { unmount } = renderPage();
 
-    expect(await screen.findByText("完成课本第 42 页第 1—6 题")).toBeInTheDocument();
+    const homeworkContent = await screen.findByText("完成课本第 42 页第 1—6 题");
+    expect(homeworkContent).toBeInTheDocument();
+    expect(homeworkContent.closest("article")).not.toHaveClass("min-h-40");
+    expect(homeworkContent.closest("article")).toHaveClass("grid-cols-[2.75rem_minmax(0,1fr)_4.25rem]");
+    expect(screen.queryByText(/任课教师/)).not.toBeInTheDocument();
+    expect(screen.queryByText("王老师")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^作业/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^上课/ })).toBeInTheDocument();
 
@@ -213,6 +224,10 @@ describe("ClassroomPage", () => {
     await waitFor(() => {
       expect(localStorage.getItem("inteschool-classroom-preferences:class-1")).toContain('"fontSize":32');
     });
+
+    unmount();
+    renderPage();
+    expect(await screen.findByText("完成课本第 42 页第 1—6 题")).toHaveStyle({ fontSize: "32px" });
 
     await user.click(screen.getByRole("button", { name: "将数学作业标记为已完成" }));
     expect(screen.getByRole("button", { name: /已完成 1/ })).toBeInTheDocument();
@@ -250,9 +265,14 @@ describe("ClassroomPage", () => {
 
   it("scrolls active notices outside lesson mode and toggles page fullscreen", async () => {
     const user = userEvent.setup();
+    vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice, secondNotice]);
     renderPage();
 
-    expect(await screen.findByRole("status", { name: "班级通知" })).toHaveTextContent("今天放学后进行卫生检查");
+    const noticeBar = await screen.findByRole("status", { name: "班级通知" });
+    expect(noticeBar).toHaveTextContent("今天放学后进行卫生检查");
+    expect(noticeBar).toHaveTextContent("下午第三节课调整到实验楼");
+    expect(noticeBar).toHaveClass("bg-black", "text-amber-300");
+    expect(noticeBar.querySelector(".classroom-notice-track")?.children).toHaveLength(2);
 
     await user.click(screen.getByRole("button", { name: /^上课/ }));
     expect(screen.queryByRole("status", { name: "班级通知" })).not.toBeInTheDocument();

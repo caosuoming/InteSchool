@@ -106,11 +106,9 @@ function HomeworkRow({
   onComplete: (subject: string) => void;
   onMove: (subject: string, direction: -1 | 1) => void;
 }) {
-  const teacherNames = [...new Set(group.items.map((item) => item.teacherName))];
-
   return (
-    <article className="grid min-h-40 grid-cols-[3.25rem_minmax(0,1fr)_4.25rem] border-b border-neutral-800 last:border-b-0 sm:grid-cols-[4rem_minmax(0,1fr)_5rem] lg:grid-cols-[4.75rem_minmax(0,1fr)_5.5rem]">
-      <header className="flex items-center justify-center border-r border-neutral-800 bg-amber-400 px-2 py-4 text-neutral-950">
+    <article className="grid grid-cols-[2.75rem_minmax(0,1fr)_4.25rem] border-b border-neutral-800 last:border-b-0 sm:grid-cols-[3rem_minmax(0,1fr)_5rem] lg:grid-cols-[3.25rem_minmax(0,1fr)_5.5rem]">
+      <header className="flex items-center justify-center border-r border-neutral-800 bg-amber-400 px-1 py-3 text-neutral-950">
         <h2 className="flex flex-col items-center gap-1 text-base font-bold sm:text-lg" aria-label={group.subject}>
           {Array.from(group.subject).map((character, index) => (
             <span key={`${character}-${index}`} aria-hidden="true">{character}</span>
@@ -118,7 +116,7 @@ function HomeworkRow({
         </h2>
       </header>
 
-      <div className="min-w-0 bg-neutral-950 px-4 py-5 sm:px-6">
+      <div className="min-w-0 bg-neutral-950 px-4 py-3 sm:px-5 sm:py-4">
         <div className="space-y-5">
           {group.items.map((homework, index) => (
             <div key={homework.id} className={cn(index > 0 && "border-t border-neutral-800 pt-5")}>
@@ -135,15 +133,9 @@ function HomeworkRow({
                 theme="dark"
                 className={cn(homework.content && "mt-4")}
               />
-              {group.items.length > 1 && (
-                <div className="mt-3 text-[10px] text-neutral-600">{homework.teacherName}</div>
-              )}
             </div>
           ))}
         </div>
-        {teacherNames.length > 0 && (
-          <div className="mt-3 text-[10px] text-neutral-600">任课教师：{teacherNames.join("、")}</div>
-        )}
       </div>
 
       <div className="flex flex-col items-stretch justify-center gap-1.5 border-l border-neutral-800 bg-neutral-900/70 p-1.5 sm:p-2">
@@ -318,11 +310,6 @@ export default function ClassroomPage() {
     }
     return [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right, "zh-CN"));
   }, [lessons]);
-
-  const noticeText = useMemo(
-    () => notices.map((notice) => notice.content).join("　　◆　　"),
-    [notices],
-  );
 
   const handleClassChange = (classId: string) => {
     sessionStorage.setItem(CLASSROOM_KEY, classId);
@@ -519,11 +506,26 @@ export default function ClassroomPage() {
           <div
             role="status"
             aria-label="班级通知"
-            className="flex h-11 flex-shrink-0 items-center gap-3 overflow-hidden border-b border-amber-500/30 bg-amber-400 px-4 text-neutral-950"
+            className="flex h-11 flex-shrink-0 items-center gap-3 overflow-hidden border-b border-amber-400/40 bg-black px-4 text-amber-300"
           >
             <Megaphone className="h-4 w-4 flex-shrink-0" />
             <div className="min-w-0 flex-1 overflow-hidden whitespace-nowrap">
-              <div className="classroom-notice-track inline-block min-w-full font-semibold">{noticeText}</div>
+              <div className="classroom-notice-track flex w-max font-semibold">
+                {[0, 1].map((copyIndex) => (
+                  <span
+                    key={copyIndex}
+                    aria-hidden={copyIndex === 1}
+                    className="flex shrink-0 items-center pr-12"
+                  >
+                    {notices.map((notice, noticeIndex) => (
+                      <span key={`${copyIndex}-${notice.id}`} className="flex shrink-0 items-center">
+                        {noticeIndex > 0 && <span className="px-8 text-amber-500">◆</span>}
+                        <span>{notice.content}</span>
+                      </span>
+                    ))}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         )}
