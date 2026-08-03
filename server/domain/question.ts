@@ -1,5 +1,6 @@
 import type {
   Question,
+  QuestionAdaptationInput,
   QuestionFilter,
   QuestionLink,
   QuestionType,
@@ -234,23 +235,46 @@ export const questionService = {
     return question;
   },
 
-  async adaptQuestion(id: string, stem: string): Promise<Question> {
+  async adaptQuestion(id: string, input: QuestionAdaptationInput): Promise<Question> {
     await delay(300);
     maybeThrowError();
     const source = db.read("questions").find((question) => question.id === id);
     if (!source) throw new Error("题目不存在");
-    const nextStem = stem.trim();
-    if (!nextStem) throw new Error("题干不能为空");
-    if (nextStem === source.stem.trim()) throw new Error("请先修改题干再确认改编");
+
+    const adaptedFields: QuestionAdaptationInput = {
+      stem: input.stem.trim(),
+      answer: input.answer.trim(),
+      analysis: input.analysis.trim(),
+      summary: input.summary.trim(),
+    };
+    const fieldLabels: Record<keyof QuestionAdaptationInput, string> = {
+      stem: "题干",
+      answer: "答案",
+      analysis: "解析",
+      summary: "总结",
+    };
+    const emptyField = (Object.keys(adaptedFields) as Array<keyof QuestionAdaptationInput>)
+      .find((field) => !adaptedFields[field]);
+    if (emptyField) throw new Error(`${fieldLabels[emptyField]}不能为空`);
+
+    const unchangedFields = (Object.keys(adaptedFields) as Array<keyof QuestionAdaptationInput>)
+      .filter((field) => adaptedFields[field] === String(source[field] ?? "").trim());
+    if (unchangedFields.length > 0) {
+      throw new Error(`请同步修改${unchangedFields.map((field) => fieldLabels[field]).join("、")}`);
+    }
 
     const now = new Date().toISOString();
     const adapted: Question = {
       ...structuredClone(source),
       id: genId("q"),
-      stem: nextStem,
+      ...adaptedFields,
       usageCount: 0,
       lastUsedAt: undefined,
-      duplicateHash: computeDuplicateHash(nextStem, source.answer, source.options),
+      duplicateHash: computeDuplicateHash(
+        adaptedFields.stem,
+        adaptedFields.answer,
+        source.options,
+      ),
       hiddenByExamIds: [],
       createdAt: now,
       updatedAt: now,

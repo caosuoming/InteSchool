@@ -978,7 +978,7 @@ export const serviceParameters = {
     ],
     "adaptQuestion": [
       "id",
-      "stem"
+      "input"
     ],
     "updateQuestion": [
       "id",

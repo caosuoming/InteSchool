@@ -1,4 +1,10 @@
-import type { Material, MaterialType, ResourceFilter, ResourceSemester } from "../../src/types/index.js";
+import type {
+  Material,
+  MaterialType,
+  QuestionVideoReference,
+  ResourceFilter,
+  ResourceSemester,
+} from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
@@ -45,6 +51,7 @@ export interface MaterialInput {
   content: string;
   fileUrl?: string;
   fileSize?: number;
+  explanationVideo?: QuestionVideoReference | null;
   tags: string[];
 }
 
@@ -85,6 +92,7 @@ export const materialService = {
       content: input.content,
       fileUrl: input.fileUrl,
       fileSize: input.fileSize,
+      explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
       tags: input.tags,
       duplicateHash: input.type === "knowledgeBlock"
         ? computeKnowledgeHash(input.title, input.content)

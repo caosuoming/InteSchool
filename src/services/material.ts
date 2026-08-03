@@ -1,6 +1,12 @@
 import { rpcCall } from "./api";
 
-import type { Material, MaterialType, ResourceFilter, ResourceSemester } from "@/types";
+import type {
+  Material,
+  MaterialType,
+  QuestionVideoReference,
+  ResourceFilter,
+  ResourceSemester,
+} from "@/types";
 
 export interface MaterialInput {
   title: string;
@@ -14,6 +20,7 @@ export interface MaterialInput {
   content: string;
   fileUrl?: string;
   fileSize?: number;
+  explanationVideo?: QuestionVideoReference | null;
   tags: string[];
 }
 
