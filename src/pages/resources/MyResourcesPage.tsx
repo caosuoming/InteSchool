@@ -79,6 +79,8 @@ import {
 import { parseDocumentBlocks, type DocumentBlock } from "@/lib/document-block-parser";
 import { matchingResourceTypeIds } from "@/lib/resource-type-hierarchy";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
+import { loadCoursewarePptSlides } from "@/lib/pptx";
+import { openCoursewareInWps } from "@/lib/wps";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
@@ -274,6 +276,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [examPapers, setExamPapers] = useState<ExamPaper[]>([]);
   const [coursewares, setCoursewares] = useState<Courseware[]>([]);
+  const [coursewarePushKey, setCoursewarePushKey] = useState("");
   const [materials, setMaterials] = useState<Material[]>([]);
   const [knowledgeVideoTarget, setKnowledgeVideoTarget] = useState<Material | null>(null);
 
@@ -345,6 +348,58 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       questionSourceType: resource.questionSourceType,
       questionCategory: resource.questionCategory,
     });
+  };
+
+  const handlePushCoursewareForEditing = async (item: Courseware) => {
+    if (!teacher?.schoolId) return;
+    setCoursewarePushKey(`${item.id}:editable`);
+    try {
+      let pptSlides: Array<{ title: string; content: string }> = [];
+      if (item.type === "ppt") {
+        try {
+          pptSlides = await loadCoursewarePptSlides(item);
+        } catch {
+          toast.warning("PPT 页面内容读取失败，将按已记录页数创建编辑页");
+        }
+      }
+
+      let source = item;
+      if (pptSlides.length > 0 && item.pageCount !== pptSlides.length) {
+        source = await coursewareService.updateCourseware(item.id, { pageCount: pptSlides.length });
+        setCoursewares((items) => items.map((courseware) => courseware.id === source.id ? source : courseware));
+      }
+
+      const lesson = await lessonCoursewareService.createFromCourseware(
+        teacher.id,
+        teacher.schoolId,
+        source,
+        pptSlides,
+      );
+      toast.success("已生成二次编辑课件", `共 ${lesson.slides.length} 页`);
+      navigate(`/my-lessons/${lesson.id}/edit`);
+    } catch (error) {
+      toast.error("推送失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setCoursewarePushKey("");
+    }
+  };
+
+  const handlePushCoursewareDirect = async (item: Courseware) => {
+    if (!teacher?.schoolId) return;
+    setCoursewarePushKey(`${item.id}:direct`);
+    try {
+      await lessonCoursewareService.createDirectFromCourseware(
+        teacher.id,
+        teacher.schoolId,
+        item,
+      );
+      toast.success("已直接推送到我的上课", "预览、编辑和上课时将使用本机 WPS");
+      navigate("/my-lessons");
+    } catch (error) {
+      toast.error("推送失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setCoursewarePushKey("");
+    }
   };
 
   // 资源篮相关状态
@@ -2491,8 +2546,35 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   basketResourceType="courseware"
                   basketResourceId={item.id}
                   onBasketChanged={loadAll}
-                  onClick={() => navigate(`/coursewares/${item.id}`)}
-                  showAddToLesson
+                  onClick={() => item.type === "ppt"
+                    ? void openCoursewareInWps(item)
+                    : navigate(`/coursewares/${item.id}`)}
+                  primaryActions={item.type === "ppt" ? (
+                    <>
+                      <Button
+                        variant="gold"
+                        size="sm"
+                        loading={coursewarePushKey === `${item.id}:editable`}
+                        disabled={Boolean(coursewarePushKey)}
+                        onClick={() => void handlePushCoursewareForEditing(item)}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        推送到我的上课（二次编辑）
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        loading={coursewarePushKey === `${item.id}:direct`}
+                        disabled={Boolean(coursewarePushKey)}
+                        onClick={() => void handlePushCoursewareDirect(item)}
+                      >
+                        <PlayCircle className="w-3.5 h-3.5" />
+                        直接推送我要上课（PPT上课）
+                      </Button>
+                    </>
+                  ) : undefined}
+                  alwaysShowActions
+                  showAddToLesson={item.type !== "ppt"}
                   onAddToLesson={async () => {
                     if (!teacher) return;
                     try {
@@ -3216,6 +3298,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
 interface ResourceCardProps {
   title: string;
   titleActions?: React.ReactNode;
+  primaryActions?: React.ReactNode;
   description?: string;
   meta: { label: string; value: string }[];
   content?: string;
@@ -3247,7 +3330,7 @@ interface ResourceCardProps {
   compactActions?: boolean;
 }
 
-export function ResourceCard({ title, titleActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
+export function ResourceCard({ title, titleActions, primaryActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const isImage = type === "image";
@@ -3372,6 +3455,11 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
             )}
           </div>
           <div className={cn("flex items-start flex-shrink-0", compactActions ? "gap-1" : "gap-2")}>
+            {primaryActions && (
+              <div className="flex max-w-[520px] flex-wrap items-center justify-end gap-2">
+                {primaryActions}
+              </div>
+            )}
             {donated && <Badge variant="teal">已捐赠</Badge>}
             {donationLocked && <Badge variant="ink">平台副本</Badge>}
             <div

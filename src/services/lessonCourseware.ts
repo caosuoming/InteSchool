@@ -20,6 +20,7 @@ export interface LessonCoursewareInput {
   sourceType: "examPaper" | "lecture" | "courseware" | "manual";
   sourceId?: string;
   sourceTitle?: string;
+  coursewareMode?: "editable" | "direct";
   slides: LessonSlide[];
   classIds: string[];
 }
@@ -81,7 +82,26 @@ export const lessonCoursewareService = {
     ]) as any;
   },
 
-  async createFromCourseware(teacherId: string, schoolId: string, courseware: Courseware): Promise<LessonCourseware> {
-    return rpcCall("lessonCourseware", "createFromCourseware", [teacherId, schoolId, courseware.id]) as any;
+  async createFromCourseware(
+    teacherId: string,
+    schoolId: string,
+    courseware: Courseware,
+    pptSlides: Array<{ title: string; content: string }> = [],
+  ): Promise<LessonCourseware> {
+    return rpcCall("lessonCourseware", "createFromCourseware", [teacherId, schoolId, courseware.id, {
+      mode: "editable",
+      pageCount: courseware.pageCount,
+      pptSlides,
+    }]) as any;
+  },
+
+  async createDirectFromCourseware(
+    teacherId: string,
+    schoolId: string,
+    courseware: Courseware,
+  ): Promise<LessonCourseware> {
+    return rpcCall("lessonCourseware", "createFromCourseware", [teacherId, schoolId, courseware.id, {
+      mode: "direct",
+    }]) as any;
   }
 };

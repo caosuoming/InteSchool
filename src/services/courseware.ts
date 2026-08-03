@@ -15,6 +15,7 @@ export interface CoursewareInput {
   fileUrl?: string;
   fileName?: string;
   fileSize?: number;
+  pageCount?: number;
   editorUrl?: string;
   tags: string[];
 }

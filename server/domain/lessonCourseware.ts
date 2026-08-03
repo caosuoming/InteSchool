@@ -303,6 +303,7 @@ export interface LessonCoursewareInput {
   sourceType: "examPaper" | "lecture" | "courseware" | "manual";
   sourceId?: string;
   sourceTitle?: string;
+  coursewareMode?: "editable" | "direct";
   slides: LessonSlide[];
   classIds: string[];
 }
@@ -344,6 +345,7 @@ export const lessonCoursewareService = {
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       sourceTitle: input.sourceTitle,
+      coursewareMode: input.coursewareMode,
       slides: input.slides,
       classIds: input.classIds,
       subject: teacher?.subject,
@@ -512,23 +514,63 @@ export const lessonCoursewareService = {
     teacherId: string,
     schoolId: string,
     sourceId: string,
+    options: {
+      mode?: "editable" | "direct";
+      pageCount?: number;
+      pptSlides?: Array<{ title?: string; content?: string }>;
+    } = {},
   ): Promise<LessonCourseware> {
     const source = db.read("coursewares").find((item) =>
       item.id === sourceId && item.teacherId === teacherId && item.schoolId === schoolId);
     if (!source) throw new Error("课件不存在或无权访问");
-    const slide: LessonSlide = {
-      id: genId("slide"),
-      type: "courseware",
-      title: source.title,
-      content: source.description || source.content,
+    const mode = options.mode === "direct" ? "direct" : "editable";
+    const baseExternalFields = {
       coursewareType: source.type,
       fileUrl: source.fileUrl,
       fileName: source.fileName,
       onlineAccessToken: source.onlineAccessToken,
       editorUrl: source.editorUrl,
-      relatedQuestionIds: [],
-      askableStudentIds: [],
+      relatedQuestionIds: [] as string[],
+      askableStudentIds: [] as string[],
     };
+
+    let slides: LessonSlide[];
+    if (source.type === "ppt" && mode === "editable") {
+      const suppliedSlides = Array.isArray(options.pptSlides)
+        ? options.pptSlides.slice(0, 500)
+        : [];
+      const requestedCount = Number.isFinite(options.pageCount)
+        ? Math.floor(options.pageCount as number)
+        : source.pageCount;
+      const pageCount = suppliedSlides.length > 0
+        ? suppliedSlides.length
+        : Math.min(Math.max(requestedCount || 1, 1), 500);
+      slides = Array.from({ length: pageCount }, (_, index) => {
+        const page = suppliedSlides[index];
+        const pageNumber = index + 1;
+        const title = page?.title?.trim().slice(0, 300)
+          || `${source.title} · 第 ${pageNumber} 页`;
+        const content = page?.content?.trim().slice(0, 20_000)
+          || `原 PPT 第 ${pageNumber} 页。可在此页继续编辑文字与课堂内容。`;
+        return {
+          id: genId("slide"),
+          type: "knowledge",
+          title,
+          content,
+          pptSlideNumber: pageNumber,
+          ...baseExternalFields,
+        };
+      });
+    } else {
+      slides = [{
+        id: genId("slide"),
+        type: "courseware",
+        title: source.title,
+        content: source.description || source.content,
+        openInWps: source.type === "ppt" && mode === "direct",
+        ...baseExternalFields,
+      }];
+    }
     return this.createCourseware(teacherId, schoolId, {
       title: `${source.title}（上课课件）`,
       description: source.description,
@@ -540,7 +582,8 @@ export const lessonCoursewareService = {
       sourceType: "courseware",
       sourceId: source.id,
       sourceTitle: source.title,
-      slides: [slide],
+      coursewareMode: mode,
+      slides,
       classIds: [],
     });
   },

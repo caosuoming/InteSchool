@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import {
   BookOpen, Plus, Search, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
-  BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, X,
+  BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, X, MonitorPlay,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
+import { openCoursewareInWps } from "@/lib/wps";
 
 function localDateValue(date = new Date()): string {
   const year = date.getFullYear();
@@ -890,6 +891,13 @@ export function MyLessonsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {coursewares.map((cw) => {
             const Icon = SourceIcon(cw);
+            const directPptSlide = cw.coursewareMode === "direct"
+              && cw.slides[0]?.coursewareType === "ppt"
+              ? cw.slides[0]
+              : null;
+            const handleOpen = () => directPptSlide
+              ? void openCoursewareInWps(directPptSlide)
+              : navigate(`/my-lessons/${cw.id}/edit`);
             return (
               <Card key={cw.id} className="p-4 hover:shadow-cardHover transition-all group">
                 <div className="flex items-start gap-3 mb-3">
@@ -899,7 +907,7 @@ export function MyLessonsPage() {
                   <div className="flex-1 min-w-0">
                     <div
                       className="font-medium text-ink-900 truncate cursor-pointer hover:text-gold-700"
-                      onClick={() => navigate(`/my-lessons/${cw.id}/edit`)}
+                      onClick={handleOpen}
                     >
                       {cw.title}
                     </div>
@@ -910,6 +918,7 @@ export function MyLessonsPage() {
                       >
                         {cw.status === "published" ? "已发布" : "草稿"}
                       </Badge>
+                      {directPptSlide && <Badge variant="gold">WPS 上课</Badge>}
                     </div>
                   </div>
                 </div>
@@ -935,10 +944,12 @@ export function MyLessonsPage() {
                     variant="outline"
                     size="sm"
                     className="flex-1"
-                    onClick={() => navigate(`/my-lessons/${cw.id}/edit`)}
+                    onClick={handleOpen}
                   >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    编辑课件
+                    {directPptSlide
+                      ? <MonitorPlay className="w-3.5 h-3.5" />
+                      : <Edit3 className="w-3.5 h-3.5" />}
+                    {directPptSlide ? "WPS 编辑/上课" : "编辑课件"}
                   </Button>
                   {cw.status === "draft" ? (
                     <Button

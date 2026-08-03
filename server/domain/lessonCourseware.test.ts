@@ -220,6 +220,71 @@ describe("courseware lesson flow", () => {
     });
   });
 
+  it("splits an uploaded PPT into one editable lesson page per source slide", async () => {
+    const state = createState(sourceCourseware({
+      type: "ppt",
+      fileName: "function.pptx",
+      pageCount: 20,
+      onlineAccessToken: "preview-token",
+    }));
+    const pptSlides = Array.from({ length: 20 }, (_, index) => ({
+      title: `函数课件第 ${index + 1} 页`,
+      content: `第 ${index + 1} 页正文`,
+    }));
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromCourseware(
+        "teacher-1",
+        "school-1",
+        "courseware-1",
+        { mode: "editable", pageCount: 20, pptSlides },
+      );
+
+      expect(lesson.coursewareMode).toBe("editable");
+      expect(lesson.slides).toHaveLength(20);
+      expect(lesson.slides[0]).toMatchObject({
+        type: "knowledge",
+        title: "函数课件第 1 页",
+        content: "第 1 页正文",
+        pptSlideNumber: 1,
+        coursewareType: "ppt",
+        fileName: "function.pptx",
+      });
+      expect(lesson.slides[19]).toMatchObject({
+        title: "函数课件第 20 页",
+        pptSlideNumber: 20,
+      });
+    });
+  });
+
+  it("keeps a direct PPT as one WPS-backed lesson slide", async () => {
+    const state = createState(sourceCourseware({
+      type: "ppt",
+      fileName: "function.pptx",
+      pageCount: 20,
+      onlineAccessToken: "preview-token",
+    }));
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromCourseware(
+        "teacher-1",
+        "school-1",
+        "courseware-1",
+        { mode: "direct" },
+      );
+
+      expect(lesson.coursewareMode).toBe("direct");
+      expect(lesson.slides).toEqual([
+        expect.objectContaining({
+          type: "courseware",
+          coursewareType: "ppt",
+          fileName: "function.pptx",
+          openInWps: true,
+        }),
+      ]);
+    });
+  });
+
   it("requires a class before publishing and lists published lessons by class", async () => {
     const state = createState(sourceCourseware({ onlineAccessToken: "preview-token" }));
 
