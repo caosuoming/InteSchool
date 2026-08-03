@@ -721,6 +721,12 @@ export const serviceParameters = {
     "deleteCourseware": [
       "id"
     ],
+    "completeCourseware": [
+      "id"
+    ],
+    "restoreCourseware": [
+      "id"
+    ],
     "publishCourseware": [
       "id"
     ],

@@ -10,11 +10,18 @@ import type {
   LectureSection,
   Question,
   ResourceSemester,
+  TeacherAffiliation,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
 function matchFilter(c: LessonCourseware, filter: LessonCoursewareFilter): boolean {
+  const lifecycleStatus = c.lifecycleStatus || "active";
+  if (filter.lifecycleStatus) {
+    if (lifecycleStatus !== filter.lifecycleStatus) return false;
+  } else if (lifecycleStatus !== "active") {
+    return false;
+  }
   if (filter.keyword) {
     const kw = filter.keyword.toLowerCase();
     const haystack = `${c.title} ${c.description || ""}`.toLowerCase();
@@ -34,6 +41,44 @@ function matchFilter(c: LessonCourseware, filter: LessonCoursewareFilter): boole
     if (!filter.knowledgePointIds.some((k) => c.knowledgePointIds.includes(k))) return false;
   }
   return true;
+}
+
+function currentAffiliation(
+  teacher: {
+    affiliations?: TeacherAffiliation[];
+    currentAffiliationId?: string | null;
+  },
+  schoolId: string,
+): TeacherAffiliation | undefined {
+  return teacher.affiliations?.find((item) => (
+    item.schoolId === schoolId && item.id === teacher.currentAffiliationId
+  )) || teacher.affiliations?.find((item) => (
+    item.schoolId === schoolId && item.isCurrent
+  )) || teacher.affiliations?.find((item) => item.schoolId === schoolId);
+}
+
+function defaultClassIds(
+  teacher: {
+    teachingClassIds?: string[];
+    homeroomClassIds?: string[];
+    affiliations?: TeacherAffiliation[];
+    currentAffiliationId?: string | null;
+  } | undefined,
+  schoolId: string,
+): string[] {
+  if (!teacher) return [];
+  const affiliation = currentAffiliation(teacher, schoolId);
+  const assignedIds = new Set([
+    ...(affiliation?.teachingClassIds || teacher.teachingClassIds || []),
+    ...(affiliation?.homeroomClassIds || teacher.homeroomClassIds || []),
+  ]);
+  return db.read("schoolClasses")
+    .filter((item) => (
+      item.schoolId === schoolId
+      && item.status !== "graduated"
+      && assignedIds.has(item.id)
+    ))
+    .map((item) => item.id);
 }
 
 const HTML_IMAGE_PATTERN = /<img\b[^>]*\bsrc=(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>/gi;
@@ -331,6 +376,9 @@ export const lessonCoursewareService = {
     maybeThrowError();
     const now = new Date().toISOString();
     const teacher = db.read("teachers").find((item) => item.id === teacherId);
+    const classIds = input.classIds.length > 0
+      ? [...new Set(input.classIds)]
+      : defaultClassIds(teacher, schoolId);
     const courseware: LessonCourseware = {
       id: genId("lc"),
       teacherId,
@@ -347,10 +395,11 @@ export const lessonCoursewareService = {
       sourceTitle: input.sourceTitle,
       coursewareMode: input.coursewareMode,
       slides: input.slides,
-      classIds: input.classIds,
+      classIds,
       subject: teacher?.subject,
       teacherName: teacher?.name,
       status: "draft",
+      lifecycleStatus: "active",
       createdAt: now,
       updatedAt: now,
     };
@@ -381,7 +430,41 @@ export const lessonCoursewareService = {
 
   async deleteCourseware(id: string): Promise<void> {
     await delay(300);
-    db.update("lessonCoursewares", (list) => list.filter((c) => c.id !== id));
+    const courseware = db.read("lessonCoursewares").find((item) => item.id === id);
+    if (!courseware) throw new Error("课件不存在");
+    await this.updateCourseware(id, {
+      lifecycleStatus: "trashed",
+      deletedAt: new Date().toISOString(),
+      completedAt: null,
+      status: "draft",
+      publishedAt: undefined,
+    });
+  },
+
+  async completeCourseware(id: string): Promise<LessonCourseware> {
+    await delay(300);
+    const courseware = db.read("lessonCoursewares").find((item) => item.id === id);
+    if (!courseware) throw new Error("课件不存在");
+    return this.updateCourseware(id, {
+      lifecycleStatus: "completed",
+      completedAt: new Date().toISOString(),
+      deletedAt: null,
+      status: "draft",
+      publishedAt: undefined,
+    });
+  },
+
+  async restoreCourseware(id: string): Promise<LessonCourseware> {
+    await delay(300);
+    const courseware = db.read("lessonCoursewares").find((item) => item.id === id);
+    if (!courseware) throw new Error("课件不存在");
+    return this.updateCourseware(id, {
+      lifecycleStatus: "active",
+      completedAt: null,
+      deletedAt: null,
+      status: "draft",
+      publishedAt: undefined,
+    });
   },
 
   async publishCourseware(id: string): Promise<LessonCourseware> {
