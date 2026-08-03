@@ -172,7 +172,7 @@ describe("ExtractReviewModal", () => {
       expect(within(questionTypeSelect).getByRole("option", { name: label })).toBeInTheDocument();
     }
 
-    expect(screen.getAllByRole("button", { name: /关键字与重新拆解/ })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /关键字与重新拆解/ })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: /与上一块合并/ })).toHaveLength(2);
   });
 

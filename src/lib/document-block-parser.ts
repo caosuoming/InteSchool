@@ -199,6 +199,7 @@ function inferQuestionType(
 }
 
 function isHeading(text: string, config: DocumentParseConfig): boolean {
+  const builtInQuestionSectionPattern = /^(?:[一二三四五六七八九十百]{1,3})\s*[、.．:：)）]\s*(?:单项选择题|多项选择题|选择题|单选题|多选题|判断题|填空题|解答题|计算题|证明题)(?:\s|[（(:：]|$)/;
   const configured = [...new Set(config.headingKeywords.map((keyword) => keyword.trim()).filter(Boolean))]
     .sort((left, right) => right.length - left.length)
     .map(escapeRegex);
@@ -206,7 +207,8 @@ function isHeading(text: string, config: DocumentParseConfig): boolean {
     ? new RegExp(`^(?:${configured.join("|")})[、.．)）]\\s*`)
     : null;
   return Boolean(
-    configuredPattern?.test(text)
+    builtInQuestionSectionPattern.test(text)
+    || configuredPattern?.test(text)
     || /^第[一二三四五六七八九十百\d]+[章节部分单元]\s*/.test(text)
     || /^#{1,6}\s+/.test(text),
   );
@@ -238,7 +240,14 @@ interface QuestionFieldMarker {
   field: Exclude<QuestionField, "content">;
   start: number;
   end: number;
+  contentStart: number;
 }
+
+type QuestionFieldPattern = [
+  Exclude<QuestionField, "content">,
+  RegExp | null,
+  { preserveMarker?: boolean }?,
+];
 
 const solutionMarkerPattern = /^(?:【\s*)?(解答|解|证明)(?:\s*】)?\s*[:：]\s*/;
 const implicitSolutionLeadPattern = /^(?:由|因为|由于|根据|联立|解得|可得|所以|故|从而|于是|设|令|作|易知|显然|不妨|将|把|代入|整理|消去|同理|又由|证明如下)/;
@@ -379,10 +388,10 @@ function fieldSearchPattern(
 
 function scanQuestionFieldMarkers(
   text: string,
-  patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]>,
+  patterns: QuestionFieldPattern[],
 ): QuestionFieldMarker[] {
   const candidates: QuestionFieldMarker[] = [];
-  for (const [field, pattern] of patterns) {
+  for (const [field, pattern, options] of patterns) {
     if (!pattern) continue;
     pattern.lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -390,7 +399,12 @@ function scanQuestionFieldMarkers(
       const previous = text[match.index - 1];
       const bracketed = /^[【［[(（]/.test(match[0]);
       if (match.index > 0 && !/[\s\u3000；;]/.test(previous) && !bracketed) continue;
-      candidates.push({ field, start: match.index, end: pattern.lastIndex });
+      candidates.push({
+        field,
+        start: match.index,
+        end: pattern.lastIndex,
+        contentStart: options?.preserveMarker ? match.index : pattern.lastIndex,
+      });
     }
   }
 
@@ -408,7 +422,7 @@ function appendTrailingSolutionLine(
   solution: TrailingSolution,
   line: string,
   currentField: Exclude<QuestionField, "content"> | undefined,
-  patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]>,
+  patterns: QuestionFieldPattern[],
 ): Exclude<QuestionField, "content"> | undefined {
   const markers = scanQuestionFieldMarkers(line, patterns);
   if (markers.length === 0) {
@@ -420,7 +434,7 @@ function appendTrailingSolutionLine(
   if (leading && currentField) appendQuestionField(solution, currentField, leading);
   for (let index = 0; index < markers.length; index += 1) {
     const marker = markers[index];
-    const value = line.slice(marker.end, markers[index + 1]?.start ?? line.length).trim();
+    const value = line.slice(marker.contentStart, markers[index + 1]?.start ?? line.length).trim();
     appendQuestionField(solution, marker.field, value);
   }
   return markers.at(-1)?.field;
@@ -435,12 +449,14 @@ function parseTrailingSolutions(
     ...categorizedKeywords.analysisKeywords,
     ...builtInTrailingAnalysisKeywords,
   ];
-  const patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]> = [
+  const patterns: QuestionFieldPattern[] = [
     ["answer", fieldSearchPattern(config.answerKeywords)],
     [
       "analysis",
-      fieldSearchPattern(analysisKeywords, [numberedSubQuestionAnalysisMarkerSource]),
+      fieldSearchPattern([], [numberedSubQuestionAnalysisMarkerSource]),
+      { preserveMarker: true },
     ],
+    ["analysis", fieldSearchPattern(analysisKeywords)],
     ["summary", fieldSearchPattern(categorizedKeywords.summaryKeywords)],
   ];
   const anchoredPatterns = [
@@ -600,6 +616,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     [...categorizedKeywords.analysisKeywords, ...builtInTrailingAnalysisKeywords],
     [numberedSubQuestionAnalysisMarkerSource],
   );
+  const numberedSubQuestionAnalysisPattern = keywordPattern(
+    [],
+    [numberedSubQuestionAnalysisMarkerSource],
+  );
   const summaryPattern = keywordPattern(categorizedKeywords.summaryKeywords);
   let currentBlock: Partial<DocumentBlock> = {};
   let currentQuestionField: QuestionField = "content";
@@ -696,6 +716,11 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     if (currentBlock.type === "question" && answerPattern?.test(line)) {
       appendQuestionField(currentBlock, "answer", stripPrefix(line, answerPattern));
       currentQuestionField = "answer";
+      continue;
+    }
+    if (currentBlock.type === "question" && numberedSubQuestionAnalysisPattern?.test(line)) {
+      appendQuestionField(currentBlock, "analysis", line);
+      currentQuestionField = "analysis";
       continue;
     }
     if (currentBlock.type === "question" && analysisPattern?.test(line)) {
