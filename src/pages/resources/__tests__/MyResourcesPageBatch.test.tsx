@@ -242,16 +242,16 @@ describe("MyResourcesPage batch actions", () => {
   it("marks selected directory tabs and resets both directory selections together", async () => {
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "勾选章节目录" }));
-    expect(screen.getByLabelText("章节目录已有勾选")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "勾选章节课目录" }));
+    expect(screen.getByLabelText("章节课目录已有勾选")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "知识点" }));
+    fireEvent.click(screen.getByRole("button", { name: "知识点目录" }));
     fireEvent.click(screen.getByRole("button", { name: "勾选知识点目录" }));
-    expect(screen.getByLabelText("章节目录已有勾选")).toBeInTheDocument();
+    expect(screen.getByLabelText("章节课目录已有勾选")).toBeInTheDocument();
     expect(screen.getByLabelText("知识点目录已有勾选")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重置知识点目录" }));
-    expect(screen.queryByLabelText("章节目录已有勾选")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("章节课目录已有勾选")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("知识点目录已有勾选")).not.toBeInTheDocument();
   });
 
