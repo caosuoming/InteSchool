@@ -309,7 +309,39 @@ describe("production backend", () => {
       payload: { email: "duplicate@example.com", password: "wrong" },
     });
     expect(invalidLogin.statusCode).toBe(401);
-    expect(invalidLogin.json()).toEqual({ error: "邮箱或密码错误" });
+    expect(invalidLogin.json()).toEqual({ error: "邮箱、手机号或密码错误" });
+  });
+
+  it("logs in with either the bound email or a formatted mobile number", async () => {
+    const phone = nextPhone();
+    await register(
+      built.app,
+      "phone-login@example.com",
+      "StrongPass123",
+      "手机号教师",
+      phone,
+    );
+
+    const emailLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { identifier: "PHONE-LOGIN@example.com", password: "StrongPass123" },
+    });
+    expect(emailLogin.statusCode).toBe(200);
+    expect(emailLogin.json<{ teacher: { email: string } }>().teacher.email)
+      .toBe("phone-login@example.com");
+
+    const phoneLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        identifier: `+86 ${phone.slice(0, 3)}-${phone.slice(3, 7)}-${phone.slice(7)}`,
+        password: "StrongPass123",
+      },
+    });
+    expect(phoneLogin.statusCode).toBe(200);
+    expect(phoneLogin.json<{ teacher: { email: string } }>().teacher.email)
+      .toBe("phone-login@example.com");
   });
 
   it("does not trust forwarded client IPs unless a proxy is configured", async () => {

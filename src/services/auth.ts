@@ -62,10 +62,10 @@ export const authService = {
     }));
   },
 
-  async login(email: string, password: string): Promise<Teacher> {
+  async login(identifier: string, password: string): Promise<Teacher> {
     return storeAuth(await apiRequest<AuthPayload>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, password }),
     }));
   },
 
