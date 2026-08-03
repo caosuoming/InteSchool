@@ -8,7 +8,7 @@ import {
   FileText, ExternalLink,
   Download, RefreshCw, ShoppingBasket,
   PanelLeftClose, PanelLeftOpen,
-  CheckSquare, Square,
+  CheckSquare, Square, WandSparkles, Link2, Video,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
@@ -34,6 +34,9 @@ import { RelatedQuestionsModal } from "@/components/question/RelatedQuestionsMod
 import { QuickEditModal } from "@/components/question/QuickEditModal";
 import { ShareModal } from "@/components/question/ShareModal";
 import { QuestionActionsBar } from "@/components/question/QuestionActionsBar";
+import { QuestionAdaptationModal } from "@/components/question/QuestionAdaptationModal";
+import { QuestionLinksModal } from "@/components/question/QuestionLinksModal";
+import { QuestionVideoModal } from "@/components/question/QuestionVideoModal";
 import { TagSettings } from "@/components/question/TagSettings";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
@@ -210,6 +213,10 @@ export default function QuestionBankPage({
 
   // 分享弹窗
   const [shareQuestion, setShareQuestion] = useState<Question | null>(null);
+
+  const [adaptingQuestion, setAdaptingQuestion] = useState<Question | null>(null);
+  const [linksQuestion, setLinksQuestion] = useState<Question | null>(null);
+  const [videoQuestion, setVideoQuestion] = useState<Question | null>(null);
 
   // 替换题目弹窗
   const [replaceQuestion, setReplaceQuestion] = useState<Question | null>(null);
@@ -1106,6 +1113,9 @@ export default function QuestionBankPage({
                   onNavigateToLecture={(lectureId) => navigate(`/lectures/${lectureId}/edit?preview=1`)}
                   onQuickEdit={setQuickEditQuestion}
                   onShare={setShareQuestion}
+                  onAdapt={setAdaptingQuestion}
+                  onInsertLinks={setLinksQuestion}
+                  onExplanationVideo={setVideoQuestion}
                   onDelete={handleDeleteQuestion}
                   onShowRelated={(type, value, title, desc) =>
                     setRelatedModal({
@@ -1185,6 +1195,41 @@ export default function QuestionBankPage({
           />
         )}
       </Modal>
+
+      <QuestionAdaptationModal
+        open={Boolean(adaptingQuestion)}
+        question={adaptingQuestion}
+        onClose={() => setAdaptingQuestion(null)}
+        onCreated={(created) => {
+          setAdaptingQuestion(null);
+          setDetailQuestion(created);
+          loadQuestions();
+        }}
+      />
+
+      <QuestionLinksModal
+        open={Boolean(linksQuestion)}
+        question={linksQuestion}
+        onClose={() => setLinksQuestion(null)}
+        onSaved={(updated) => {
+          setLinksQuestion(null);
+          setDetailQuestion((current) => current?.id === updated.id ? updated : current);
+          loadQuestions();
+        }}
+      />
+
+      <QuestionVideoModal
+        open={Boolean(videoQuestion)}
+        question={videoQuestion}
+        teacherId={teacher?.id}
+        schoolId={teacher?.schoolId}
+        onClose={() => setVideoQuestion(null)}
+        onSaved={(updated) => {
+          setVideoQuestion(null);
+          setDetailQuestion((current) => current?.id === updated.id ? updated : current);
+          loadQuestions();
+        }}
+      />
 
       {/* 加入试题篮 */}
       <Modal
@@ -1820,7 +1865,7 @@ function QuestionRow({
   isUsedBySelectedStudents, lecturesUsingQuestion,
   onView, onEdit, onAddToBasket, onQuickAddToDefault, onRemoveFromDefault, isInDefaultBasket,
   onShowUsageDetail, onNavigateToLecture,
-  onQuickEdit, onShare, onDelete, onShowRelated,
+  onQuickEdit, onShare, onAdapt, onInsertLinks, onExplanationVideo, onDelete, onShowRelated,
   onDownload, onReplace, onUpdateStudentAnswer,
   tagOrder,
   hiddenTags,
@@ -1858,6 +1903,9 @@ function QuestionRow({
   onNavigateToLecture: (lectureId: string) => void;
   onQuickEdit: (q: Question) => void;
   onShare: (q: Question) => void;
+  onAdapt: (q: Question) => void;
+  onInsertLinks: (q: Question) => void;
+  onExplanationVideo: (q: Question) => void;
   onDelete: (q: Question) => void;
   onShowRelated: (type: "chapter" | "knowledge" | "keyword", value: string, title: string, desc?: string) => void;
   onDownload: (q: Question) => void;
@@ -2342,6 +2390,27 @@ function QuestionRow({
                     icon: <Edit3 className="w-3.5 h-3.5" />,
                     variant: "ghost",
                     onClick: () => onEdit?.(question),
+                  },
+                  {
+                    key: "adapt",
+                    label: "题目改编",
+                    icon: <WandSparkles className="w-3.5 h-3.5" />,
+                    variant: "gold",
+                    onClick: () => onAdapt(question),
+                  },
+                  {
+                    key: "links",
+                    label: "插入链接",
+                    icon: <Link2 className="w-3.5 h-3.5" />,
+                    variant: "ghost",
+                    onClick: () => onInsertLinks(question),
+                  },
+                  {
+                    key: "video",
+                    label: "讲解视频",
+                    icon: <Video className="w-3.5 h-3.5" />,
+                    variant: "ghost",
+                    onClick: () => onExplanationVideo(question),
                   },
                   {
                     key: "download",

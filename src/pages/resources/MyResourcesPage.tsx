@@ -55,6 +55,7 @@ import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { useDocumentTypeOptions } from "@/hooks/useDocumentTypeOptions";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 import { BasketAudiencePicker } from "@/components/basket/BasketAudiencePicker";
 import {
   basketAudienceLabel,
@@ -1698,7 +1699,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 role="button"
                                 tabIndex={0}
                                 aria-expanded={expanded}
-                                title="查看完整答案、解析和总结"
+                                title="查看完整答案、解析、总结和板书"
                                 className="group cursor-pointer rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/50"
                                 onClick={() => toggleBasketQuestionExpanded(q.id)}
                                 onKeyDown={(event) => {
@@ -1752,6 +1753,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                     <div className="text-xs font-medium text-ink-500 mb-1">总结</div>
                                     <MathHtml className="text-sm text-ink-800">{q.summary || "暂无总结"}</MathHtml>
                                   </div>
+                                  <QuestionSupplementaryDetails
+                                    board={q.board}
+                                    links={q.links}
+                                    explanationVideo={q.explanationVideo}
+                                    compact
+                                  />
                                 </div>
                               )}
 

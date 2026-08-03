@@ -1,6 +1,7 @@
 import type { LessonSlide } from "@/types";
 import { cn } from "@/lib/utils";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 
 interface LessonSlideContentProps {
   slide: LessonSlide;
@@ -58,20 +59,34 @@ export function LessonSlideContent({ slide, showAnswer = true, className }: Less
               ))}
             </div>
           )}
+          <QuestionSupplementaryDetails
+            links={slide.questionSnapshot.links}
+            explanationVideo={slide.questionSnapshot.explanationVideo}
+            compact
+          />
           {showAnswer && (
-            <div className="grid grid-cols-2 gap-4 border-t border-ink-100 pt-4">
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                <div className="mb-1 text-xs font-medium text-emerald-700">参考答案</div>
-                <MathHtml className="text-sm font-medium text-emerald-900">
-                  {slide.questionSnapshot.answer || "暂无答案"}
-                </MathHtml>
+            <div className="space-y-4 border-t border-ink-100 pt-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="mb-1 text-xs font-medium text-emerald-700">参考答案</div>
+                  <MathHtml className="text-sm font-medium text-emerald-900">
+                    {slide.questionSnapshot.answer || "暂无答案"}
+                  </MathHtml>
+                </div>
+                <div className="rounded-lg border border-gold-200 bg-gold-50 p-3">
+                  <div className="mb-1 text-xs font-medium text-gold-700">解析</div>
+                  <MathHtml className="text-sm text-ink-800">
+                    {slide.questionSnapshot.analysis || "暂无解析"}
+                  </MathHtml>
+                </div>
               </div>
-              <div className="rounded-lg border border-gold-200 bg-gold-50 p-3">
-                <div className="mb-1 text-xs font-medium text-gold-700">解析</div>
-                <MathHtml className="text-sm text-ink-800">
-                  {slide.questionSnapshot.analysis || "暂无解析"}
-                </MathHtml>
-              </div>
+              {slide.questionSnapshot.summary && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div className="mb-1 text-xs font-medium text-amber-700">总结</div>
+                  <MathHtml className="text-sm text-ink-800">{slide.questionSnapshot.summary}</MathHtml>
+                </div>
+              )}
+              <QuestionSupplementaryDetails board={slide.questionSnapshot.board} compact />
             </div>
           )}
         </div>

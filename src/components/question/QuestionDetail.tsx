@@ -12,6 +12,7 @@ import type { Question, Chapter, KnowledgePoint, QuestionRemark } from "@/types"
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
@@ -185,6 +186,12 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
           </div>
         </div>
       )}
+
+      <QuestionSupplementaryDetails
+        board={question.board}
+        links={question.links}
+        explanationVideo={question.explanationVideo}
+      />
 
       {/* 知识点 */}
       <div className="grid sm:grid-cols-2 gap-4">

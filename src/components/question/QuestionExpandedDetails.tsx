@@ -1,9 +1,10 @@
 import { MathHtml } from "@/components/ui/MathHtml";
 import { cn } from "@/lib/utils";
 import type { Question } from "@/types";
+import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 
 type QuestionExpandedDetailsProps = {
-  question: Pick<Question, "id" | "answer" | "analysis" | "summary">;
+  question: Pick<Question, "id" | "answer" | "analysis" | "summary" | "board" | "links" | "explanationVideo">;
   wideLayout?: boolean;
 };
 
@@ -56,6 +57,12 @@ export function QuestionExpandedDetails({
           </div>
         </div>
       )}
+
+      <QuestionSupplementaryDetails
+        board={question.board}
+        links={question.links}
+        explanationVideo={question.explanationVideo}
+      />
     </div>
   );
 }

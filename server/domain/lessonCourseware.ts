@@ -91,7 +91,8 @@ function extractFloatingImages(content: string, offset = 0): {
 }
 
 function questionSlide(
-  question: Pick<Question, "id" | "stem" | "type" | "options" | "answer" | "analysis">,
+  question: Pick<Question, "id" | "stem" | "type" | "options" | "answer" | "analysis">
+    & Partial<Pick<Question, "summary" | "board" | "links" | "explanationVideo">>,
   title: string,
 ): LessonSlide {
   const stem = extractFloatingImages(question.stem);
@@ -119,6 +120,10 @@ function questionSlide(
       options: options?.map((item) => item.content),
       answer: answer.content,
       analysis: analysis.content,
+      summary: question.summary,
+      board: question.board,
+      links: question.links?.map((link) => ({ ...link })),
+      explanationVideo: question.explanationVideo ? { ...question.explanationVideo } : null,
     },
     elements: [
       ...stem.elements,
@@ -161,7 +166,7 @@ function reviewedDocumentTitle(
     ?.content.trim() || undefined;
 }
 
-function examPaperSlides(examPaper: ExamPaper): LessonSlide[] {
+function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): LessonSlide[] {
   let questionNumber = 0;
   let knowledgeNumber = 0;
   const usedQuestionIds = new Set<string>();
@@ -179,14 +184,21 @@ function examPaperSlides(examPaper: ExamPaper): LessonSlide[] {
       || question.id === block.questionId
       || question.stem === block.content,
     );
+    const canonicalQuestion = canonicalQuestions.find((question) =>
+      question.id === sourceQuestion?.questionId || question.id === block.questionId,
+    );
     if (sourceQuestion) usedQuestionIds.add(sourceQuestion.id);
     return [questionSlide({
-      id: sourceQuestion?.questionId || sourceQuestion?.id || block.questionId || block.id,
-      stem: sourceQuestion?.stem || block.content,
-      type: sourceQuestion?.type || block.questionType || "essay",
-      options: sourceQuestion?.options,
-      answer: sourceQuestion?.answer || "",
-      analysis: sourceQuestion?.analysis || "",
+      id: canonicalQuestion?.id || sourceQuestion?.questionId || sourceQuestion?.id || block.questionId || block.id,
+      stem: canonicalQuestion?.stem || sourceQuestion?.stem || block.content,
+      type: canonicalQuestion?.type || sourceQuestion?.type || block.questionType || "essay",
+      options: canonicalQuestion?.options || sourceQuestion?.options,
+      answer: canonicalQuestion?.answer || sourceQuestion?.answer || "",
+      analysis: canonicalQuestion?.analysis || sourceQuestion?.analysis || "",
+      summary: canonicalQuestion?.summary,
+      board: canonicalQuestion?.board,
+      links: canonicalQuestion?.links,
+      explanationVideo: canonicalQuestion?.explanationVideo,
     }, block.title || `第 ${questionNumber} 题`)];
   });
 
@@ -195,25 +207,37 @@ function examPaperSlides(examPaper: ExamPaper): LessonSlide[] {
       .filter((question) => !usedQuestionIds.has(question.id))
       .map((question) => {
         questionNumber += 1;
+        const canonicalQuestion = canonicalQuestions.find((item) => item.id === question.questionId);
         return questionSlide({
-          id: question.questionId || question.id,
-          stem: question.stem,
-          type: question.type,
-          options: question.options,
-          answer: question.answer,
-          analysis: question.analysis,
+          id: canonicalQuestion?.id || question.questionId || question.id,
+          stem: canonicalQuestion?.stem || question.stem,
+          type: canonicalQuestion?.type || question.type,
+          options: canonicalQuestion?.options || question.options,
+          answer: canonicalQuestion?.answer || question.answer,
+          analysis: canonicalQuestion?.analysis || question.analysis,
+          summary: canonicalQuestion?.summary,
+          board: canonicalQuestion?.board,
+          links: canonicalQuestion?.links,
+          explanationVideo: canonicalQuestion?.explanationVideo,
         }, `第 ${questionNumber} 题`);
       });
     return [...structuredSlides, ...remainingQuestions];
   }
-  return examPaper.questions.map((question, index) => questionSlide({
-    id: question.questionId || question.id,
-    stem: question.stem,
-    type: question.type,
-    options: question.options,
-    answer: question.answer,
-    analysis: question.analysis,
-  }, `第 ${index + 1} 题`));
+  return examPaper.questions.map((question, index) => {
+    const canonicalQuestion = canonicalQuestions.find((item) => item.id === question.questionId);
+    return questionSlide({
+      id: canonicalQuestion?.id || question.questionId || question.id,
+      stem: canonicalQuestion?.stem || question.stem,
+      type: canonicalQuestion?.type || question.type,
+      options: canonicalQuestion?.options || question.options,
+      answer: canonicalQuestion?.answer || question.answer,
+      analysis: canonicalQuestion?.analysis || question.analysis,
+      summary: canonicalQuestion?.summary,
+      board: canonicalQuestion?.board,
+      links: canonicalQuestion?.links,
+      explanationVideo: canonicalQuestion?.explanationVideo,
+    }, `第 ${index + 1} 题`);
+  });
 }
 
 function documentBlockSlides(blocks: LessonDocumentBlock[]): LessonSlide[] {
@@ -368,7 +392,7 @@ export const lessonCoursewareService = {
       item.id === sourceId && item.teacherId === teacherId && item.schoolId === schoolId);
     if (!examPaper) throw new Error("试卷不存在或无权访问");
 
-    const bodySlides = examPaperSlides(examPaper);
+    const bodySlides = examPaperSlides(examPaper, db.read("questions"));
     const coverTitle = reviewedDocumentTitle(examPaper.contentBlocks)
       || reviewedDocumentTitle(documentBlocks)
       || examPaper.title;

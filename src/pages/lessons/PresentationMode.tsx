@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   X, ChevronLeft, ChevronRight, Pen, Eraser, Trash2,
-  Palette, FileQuestion, Blocks, Users, Link2, Eye, EyeOff, Presentation,
+  Palette, FileQuestion, Blocks, Users, Link2, Eye, EyeOff, Presentation, Save,
 } from "lucide-react";
 import type { LessonSlide, Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
+import { uploadFile } from "@/services/api";
+import { questionService } from "@/services/question";
+import { toast } from "@/stores/ui";
 
 interface PresentationModeProps {
   slides: LessonSlide[];
@@ -41,6 +44,9 @@ export function PresentationMode({
   const [showAnswer, setShowAnswer] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
   const [showAskable, setShowAskable] = useState(false);
+  const [hasDrawing, setHasDrawing] = useState(false);
+  const [savingBoard, setSavingBoard] = useState(false);
+  const [savedBoardByQuestionId, setSavedBoardByQuestionId] = useState<Record<string, string>>({});
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -87,6 +93,7 @@ export function PresentationMode({
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     pathsRef.current = [];
+    setHasDrawing(false);
   };
 
   const getPos = (e: React.MouseEvent | React.TouchEvent) => {
@@ -128,6 +135,7 @@ export function PresentationMode({
       ctx.strokeStyle = penColor;
     }
     ctx.stroke();
+    setHasDrawing(true);
     lastPointRef.current = pos;
     pathsRef.current[pathsRef.current.length - 1].push(pos);
   };
@@ -159,6 +167,39 @@ export function PresentationMode({
     () => setCurrentIndex((i) => Math.min(slides.length - 1, i + 1)),
     [slides.length],
   );
+
+  const handleSaveBoard = async () => {
+    const canvas = canvasRef.current;
+    const questionId = currentSlide?.questionId;
+    if (!canvas || !questionId || !hasDrawing) return;
+
+    setSavingBoard(true);
+    try {
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((value) => value ? resolve(value) : reject(new Error("板书图片生成失败")), "image/png");
+      });
+      const file = new File([blob], `板书-${questionId}.png`, { type: "image/png" });
+      const uploaded = await uploadFile(file);
+      await questionService.updateQuestion(questionId, { board: uploaded.url });
+      setSavedBoardByQuestionId((current) => ({ ...current, [questionId]: uploaded.url }));
+      toast.success("板书已保存到题目");
+    } catch (error) {
+      toast.error("板书保存失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingBoard(false);
+    }
+  };
+
+  const displayedSlide = currentSlide?.questionSnapshot && currentSlide.questionId
+    && savedBoardByQuestionId[currentSlide.questionId]
+    ? {
+        ...currentSlide,
+        questionSnapshot: {
+          ...currentSlide.questionSnapshot,
+          board: savedBoardByQuestionId[currentSlide.questionId],
+        },
+      }
+    : currentSlide;
 
   const askableStudents = (currentSlide?.askableStudentIds || [])
     .map((id) => students.find((s) => s.id === id))
@@ -240,6 +281,17 @@ export function PresentationMode({
           >
             <Trash2 className="w-4 h-4" />
           </button>
+          {currentSlide?.type === "question" && (
+            <button
+              onClick={handleSaveBoard}
+              disabled={!hasDrawing || savingBoard || !currentSlide.questionId}
+              className="ml-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-ink-100 hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
+              title="保存板书到当前题目"
+            >
+              <Save className="h-4 w-4" />
+              {savingBoard ? "保存中" : "保存板书"}
+            </button>
+          )}
         </div>
         <div className="h-5 w-px bg-ink-700" />
         <div className="text-sm text-ink-200">
@@ -261,14 +313,14 @@ export function PresentationMode({
       >
         {/* 幻灯片内容 */}
         <div className="absolute inset-0 flex items-center justify-center p-8">
-          {currentSlide?.type === "courseware" ? (
+          {displayedSlide?.type === "courseware" ? (
             <div className="h-full w-full max-w-6xl overflow-hidden rounded-xl bg-paper shadow-2xl">
-              <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-full min-h-[60vh]" />
+              <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-[60vh]" />
             </div>
-          ) : currentSlide ? (
+          ) : displayedSlide ? (
             <div className="w-full max-w-6xl">
-              <LessonSlideCanvas key={currentSlide.id} elements={currentSlide.elements} className="shadow-2xl">
-                <LessonSlideContent slide={currentSlide} showAnswer={showAnswer} />
+              <LessonSlideCanvas key={displayedSlide.id} elements={displayedSlide.elements} className="shadow-2xl">
+                <LessonSlideContent slide={displayedSlide} showAnswer={showAnswer} />
               </LessonSlideCanvas>
             </div>
           ) : null}
