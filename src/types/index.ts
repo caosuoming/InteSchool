@@ -474,6 +474,7 @@ export interface GradeTeacherOption {
   name: string;
   subject: string;
   teachingClassIds?: string[];
+  homeroomClassIds?: string[];
 }
 
 export interface GradeImportContext {
@@ -540,6 +541,25 @@ export interface GradeTemplateColumn {
   width?: number;
 }
 
+export interface GradeClassAverageOptions {
+  /** 报表标题；为空时根据年级和考试名称自动生成。 */
+  title?: string;
+  /** 报表日期，格式为 YYYY-MM-DD。 */
+  reportDate?: string;
+  /** 班级展示顺序。未列出的新班级会自动追加。 */
+  classOrder?: string[];
+  /** 不在报表中展示的班级。 */
+  hiddenClassIds?: string[];
+  /** 可由用户调整的班级类别。 */
+  classCategories?: Record<string, string>;
+  /** 可由用户调整的班级简称。 */
+  classLabels?: Record<string, string>;
+  showTeacherRows?: boolean;
+  showGroupDifference?: boolean;
+  showGroupAverage?: boolean;
+  showOverallAverage?: boolean;
+}
+
 export interface GradeStatisticsTemplate {
   id: string;
   kind: GradeTemplateKind;
@@ -553,6 +573,8 @@ export interface GradeStatisticsTemplate {
   bestElectiveCount?: number;
   /** 自定义在线表格列，仅 customTable 模板使用。 */
   columns?: GradeTemplateColumn[];
+  /** 班级平均分表的布局和汇总选项。 */
+  classAverageOptions?: GradeClassAverageOptions;
 }
 
 export interface GradeTemplateProfile {
