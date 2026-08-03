@@ -113,6 +113,71 @@ function addSecondCohort(appState: AppState): void {
 }
 
 describe("grade service", () => {
+  it("builds sorted class profiles from roster and latest imported scores", async () => {
+    const appState = state();
+    (appState.classTypeCategories as any[]) = [{
+      id: "class-type-1",
+      schoolId: "school-1",
+      name: "实验班",
+      sortOrder: 1,
+      enabled: true,
+      createdAt: "2025-09-01T00:00:00.000Z",
+    }];
+    (appState.schoolClasses as any[])[0].classTypeId = "class-type-1";
+    (appState.students as any[])[0].subjectSelection = "物化生";
+    (appState.schoolClasses as any[]).push({
+      id: "class-10",
+      type: "school",
+      schoolId: "school-1",
+      name: "高三(10)班",
+      grade: "高三",
+      gradeYear: 2023,
+      gradYear: 2026,
+      studentCount: 0,
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    });
+
+    await runWithState(appState, async () => {
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "最近联考",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects: ["数学", "化学"],
+        rows: [{
+          rowKey: "row-profile",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          studentId: "student-1",
+          subjectSelection: "物化生",
+          classType: "实验班",
+          scores: { 数学: 95, 化学: null },
+        }],
+      });
+      const context = await gradeService.getImportContext("school-1", "grad-2026");
+
+      expect(context.classes.map((item) => item.name)).toEqual([
+        "高三(1)班",
+        "高三(2)班",
+        "高三(10)班",
+      ]);
+      expect(context.classProfiles?.["class-1"]).toEqual({
+        classTypeName: "实验班",
+        subjectSelections: ["物化生"],
+        scoreSubjects: ["数学"],
+        hasImportedScores: true,
+      });
+      expect(context.sampleRecords).toEqual([exam.records[0]]);
+      expect(exam.settings.classSubjects.find((item) => item.classId === "class-1")).toMatchObject({
+        examSubjects: ["数学"],
+        statisticSubjects: ["数学"],
+      });
+    });
+  });
+
   it("discovers cohorts and imports matched, renamed, and new students", async () => {
     const appState = state();
 

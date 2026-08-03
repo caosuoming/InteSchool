@@ -38,6 +38,7 @@ import { autoMatchGradeRows, gradeRowResolutionError } from "@/lib/grade-matchin
 import {
   buildDefaultGradeSettings,
   DEFAULT_ASSIGNMENT_RULES,
+  inferClassSubjectAvailability,
   normalizeGradeSettings,
 } from "@/lib/grade-statistics";
 import {
@@ -240,10 +241,28 @@ export function GradeImportWizard({
       const matched = autoMatchGradeRows(parsed, context);
       setRows(matched);
       const importedSubjects = mappedSubjects(mappings);
+      const studentClassIds = new Map<string, string>(
+        context.students.map((student): [string, string] => [student.id, student.classId]),
+      );
+      const classStudentCounts = Object.fromEntries(context.classes.map((classItem) => [
+        classItem.id,
+        context.students.filter((student) => student.classId === classItem.id).length
+          + matched.filter((row) => row.createStudent?.classId === classItem.id).length,
+      ]));
+      const classSubjectAvailability = inferClassSubjectAvailability(
+        matched.flatMap((row) => {
+          const classId: string | undefined = row.createStudent?.classId
+            || (row.studentId ? studentClassIds.get(row.studentId) : undefined);
+          return classId ? [{ classId, scores: row.scores, assignedScores: row.assignedScores }] : [];
+        }),
+        importedSubjects,
+        classStudentCounts,
+      );
       const defaults = buildDefaultGradeSettings(
         importedSubjects,
         context.classes.map((item) => item.id),
         context.teachers,
+        classSubjectAvailability,
       );
       const formulaDefaults = context.templateProfile
         ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }

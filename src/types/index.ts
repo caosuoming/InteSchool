@@ -481,6 +481,15 @@ export interface GradeImportContext {
   classes: SchoolClass[];
   students: Student[];
   teachers: GradeTeacherOption[];
+  /** 班级在成绩统计页面展示的班型、选科与最近一次完整成绩科目。 */
+  classProfiles?: Record<string, {
+    classTypeName?: string;
+    subjectSelections: string[];
+    scoreSubjects: string[];
+    hasImportedScores: boolean;
+  }>;
+  /** 最近一次已导入考试的少量记录，用于在线公式表实时预览。 */
+  sampleRecords?: GradeScoreRecord[];
   /** 年级管理员发布的默认输出模板；新导入考试会自动继承。 */
   templateProfile?: GradeTemplateProfile;
 }
@@ -561,6 +570,8 @@ export interface GradeExamSettings {
   subjectTeacherIds: Record<string, string[]>;
   /** 班级和学科对应的任课教师；旧数据缺失时从 subjectTeacherIds 迁移。 */
   classSubjectTeacherIds?: Record<string, Record<string, string[]>>;
+  /** 无平台账号或尚未维护教学关系的任课教师姓名，可按班级和学科手动补录。 */
+  classSubjectTeacherNames?: Record<string, Record<string, string[]>>;
   /** 仅需要赋分的学科配置规则；未配置的科目沿用原始分。 */
   assignmentRules: Record<string, GradeBandRule[]>;
   classSubjects: GradeClassSubjectSetting[];

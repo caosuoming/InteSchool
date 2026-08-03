@@ -110,6 +110,13 @@ function addSubject(
         .map((teacher) => teacher.id),
     },
   ]));
+  const classSubjectTeacherNames = Object.fromEntries(context.classes.map((classItem) => [
+    classItem.id,
+    {
+      ...current.classSubjectTeacherNames?.[classItem.id],
+      [subject]: current.classSubjectTeacherNames?.[classItem.id]?.[subject] || [],
+    },
+  ]));
   const usesAssignment = ASSIGNMENT_GRADE_SUBJECTS.includes(
     subject as (typeof ASSIGNMENT_GRADE_SUBJECTS)[number],
   );
@@ -120,6 +127,7 @@ function addSubject(
       [subject]: teacherIds,
     },
     classSubjectTeacherIds,
+    classSubjectTeacherNames,
     assignmentRules: usesAssignment
       ? {
           ...current.assignmentRules,
@@ -180,10 +188,16 @@ function GradePreprocessing({
       const nextSubjects = nextRecord?.subjects?.length
         ? nextRecord.subjects
         : DEFAULT_COHORT_SUBJECTS;
+      const classSubjectAvailability = Object.fromEntries(
+        Object.entries(nextContext.classProfiles || {})
+          .filter(([, profile]) => profile.hasImportedScores)
+          .map(([classId, profile]) => [classId, profile.scoreSubjects]),
+      );
       const baseSettings = nextRecord?.settings || buildDefaultGradeSettings(
         nextSubjects,
         nextContext.classes.map((item) => item.id),
         nextContext.teachers,
+        classSubjectAvailability,
       );
       const nextSettings = normalizeGradeSettings(
         nextContext.templateProfile
@@ -360,7 +374,7 @@ function GradePreprocessing({
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="p-4"><UsersRound className="mb-2 h-5 w-5 text-teal-600" /><div className="font-medium text-sm">班级任课教师</div><div className="mt-1 text-xs text-ink-500">{Object.values(draft.classSubjectTeacherIds || {}).flatMap((item) => Object.values(item)).flat().length} 个班级科目关联</div></Card>
+        <Card className="p-4"><UsersRound className="mb-2 h-5 w-5 text-teal-600" /><div className="font-medium text-sm">班级任课教师</div><div className="mt-1 text-xs text-ink-500">{Object.values(draft.classSubjectTeacherIds || {}).flatMap((item) => Object.values(item)).flat().length + Object.values(draft.classSubjectTeacherNames || {}).flatMap((item) => Object.values(item)).flat().length} 个教师关联</div></Card>
         <Card className="p-4"><Settings2 className="mb-2 h-5 w-5 text-gold-600" /><div className="font-medium text-sm">选修课赋分表</div><div className="mt-1 text-xs text-ink-500">{Object.keys(draft.assignmentRules).length} 个赋分科目</div></Card>
         <Card className="p-4"><TableProperties className="mb-2 h-5 w-5 text-purple-600" /><div className="font-medium text-sm">成绩模板</div><div className="mt-1 text-xs text-ink-500">{draft.templates.filter((item) => item.enabled).length} 个启用模板</div></Card>
       </div>

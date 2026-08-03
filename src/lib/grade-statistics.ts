@@ -27,8 +27,42 @@ export const DEFAULT_ASSIGNMENT_RULES: GradeBandRule[] = [
   { label: "E", percentileFrom: 98, percentileTo: 100, assignedMin: 30, assignedMax: 40 },
 ];
 
+export type GradeClassSubjectAvailability = Record<string, string[]>;
+
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+export function inferClassSubjectAvailability(
+  records: Array<{
+    classId: string;
+    scores: Record<string, number | null>;
+    assignedScores?: Record<string, number | null>;
+    sourceAssignedScores?: Record<string, number | null>;
+  }>,
+  subjects: string[],
+  expectedClassCounts: Record<string, number> = {},
+): GradeClassSubjectAvailability {
+  const normalizedSubjects = unique(subjects);
+  const grouped = new Map<string, typeof records>();
+  records.forEach((record) => {
+    const current = grouped.get(record.classId) || [];
+    current.push(record);
+    grouped.set(record.classId, current);
+  });
+  return Object.fromEntries([...grouped.entries()].map(([classId, classRecords]) => [
+    classId,
+    classRecords.length < (expectedClassCounts[classId] || 0)
+      ? []
+      : normalizedSubjects.filter((subject) => classRecords.every((record) => {
+        const values = [
+          record.scores[subject],
+          record.assignedScores?.[subject],
+          record.sourceAssignedScores?.[subject],
+        ];
+        return values.some((value) => typeof value === "number" && Number.isFinite(value));
+      })),
+  ]));
 }
 
 function template(
@@ -54,6 +88,7 @@ export function buildDefaultGradeSettings(
   subjects: string[],
   classIds: string[],
   teachers: GradeTeacherOption[] = [],
+  classSubjectAvailability: GradeClassSubjectAvailability = {},
 ): GradeExamSettings {
   const normalizedSubjects = unique(subjects);
   const electiveSubjects = normalizedSubjects.filter((subject) =>
@@ -83,22 +118,36 @@ export function buildDefaultGradeSettings(
       ])),
     ]),
   );
+  const classSubjectTeacherNames = Object.fromEntries(
+    unique(classIds).map((classId) => [
+      classId,
+      Object.fromEntries(normalizedSubjects.map((subject) => [subject, []])),
+    ]),
+  );
   const assignmentRules = Object.fromEntries(
     assignableSubjects.map((subject) => [
       subject,
       DEFAULT_ASSIGNMENT_RULES.map((rule) => ({ ...rule })),
     ]),
   );
-  const classSubjects: GradeClassSubjectSetting[] = unique(classIds).map((classId) => ({
-    classId,
-    examSubjects: [...normalizedSubjects],
-    statisticSubjects: [...normalizedSubjects],
-    separateRankSubjects: [],
-  }));
+  const classSubjects: GradeClassSubjectSetting[] = unique(classIds).map((classId) => {
+    const hasObservedSubjects = Object.prototype.hasOwnProperty.call(classSubjectAvailability, classId);
+    const observedSubjects = new Set(classSubjectAvailability[classId] || []);
+    const defaultSubjects = hasObservedSubjects
+      ? normalizedSubjects.filter((subject) => observedSubjects.has(subject))
+      : normalizedSubjects;
+    return {
+      classId,
+      examSubjects: [...defaultSubjects],
+      statisticSubjects: [...defaultSubjects],
+      separateRankSubjects: [],
+    };
+  });
 
   return {
     subjectTeacherIds,
     classSubjectTeacherIds,
+    classSubjectTeacherNames,
     assignmentRules,
     classSubjects,
     templates: [
@@ -199,6 +248,18 @@ export function normalizeGradeSettings(
       ])),
     ]),
   );
+  const classSubjectTeacherNames = Object.fromEntries(
+    [...classSet].map((classId) => [
+      classId,
+      Object.fromEntries([...subjectSet].map((subject) => [
+        subject,
+        unique((settings.classSubjectTeacherNames?.[classId]?.[subject] || [])
+          .map((name) => name.trim()))
+          .filter(Boolean)
+          .slice(0, 10),
+      ])),
+    ]),
+  );
 
   const byClass = new Map(
     (settings.classSubjects || [])
@@ -254,6 +315,7 @@ export function normalizeGradeSettings(
   return {
     subjectTeacherIds,
     classSubjectTeacherIds,
+    classSubjectTeacherNames,
     assignmentRules,
     classSubjects,
     templates,

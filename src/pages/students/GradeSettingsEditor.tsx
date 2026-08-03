@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import {
   Braces,
   Calculator,
@@ -17,7 +18,11 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Select } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
-import { buildDefaultCustomGradeColumns } from "@/lib/grade-formula";
+import {
+  buildDefaultCustomGradeColumns,
+  displayGradeFormulaValue,
+  evaluateGradeFormula,
+} from "@/lib/grade-formula";
 import { ASSIGNMENT_GRADE_SUBJECTS, DEFAULT_ASSIGNMENT_RULES } from "@/lib/grade-statistics";
 
 interface GradeSettingsEditorProps {
@@ -65,6 +70,86 @@ function CheckboxPill({
   );
 }
 
+function orderedClasses(context: GradeImportContext) {
+  return [...context.classes].sort((left, right) =>
+    left.name.localeCompare(right.name, "zh-CN", { numeric: true, sensitivity: "base" }),
+  );
+}
+
+function ClassSummary({
+  classItem,
+  context,
+}: {
+  classItem: GradeImportContext["classes"][number];
+  context: GradeImportContext;
+}) {
+  const profile = context.classProfiles?.[classItem.id];
+  return (
+    <div className="min-w-40">
+      <div className="font-medium text-ink-800">{classItem.name}</div>
+      <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-normal text-ink-500">
+        <span className="rounded bg-ink-50 px-1.5 py-0.5">
+          班型：{profile?.classTypeName || "未设置"}
+        </span>
+        <span className="rounded bg-ink-50 px-1.5 py-0.5">
+          选科：{profile?.subjectSelections.length ? profile.subjectSelections.join("、") : "未设置"}
+        </span>
+      </div>
+      <div className="mt-1 text-[11px] font-normal text-ink-400">{classItem.studentCount} 人</div>
+    </div>
+  );
+}
+
+function parseTeacherNames(value: string): string[] {
+  return [...new Set(value
+    .split(/[、,，;；\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean))]
+    .slice(0, 10);
+}
+
+function ManualTeacherInput({
+  names,
+  label,
+  hasLinkedTeacher,
+  onCommit,
+}: {
+  names: string[];
+  label: string;
+  hasLinkedTeacher: boolean;
+  onCommit: (names: string[]) => void;
+}) {
+  const normalized = names.join("、");
+  const [value, setValue] = useState(normalized);
+
+  useEffect(() => {
+    setValue(normalized);
+  }, [normalized]);
+
+  const commit = () => {
+    const next = parseTeacherNames(value);
+    setValue(next.join("、"));
+    onCommit(next);
+  };
+
+  return (
+    <input
+      aria-label={label}
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        }
+      }}
+      placeholder={hasLinkedTeacher ? "可补充其他教师" : "手动输入教师姓名"}
+      className="mt-2 w-full min-w-40 rounded border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-800 outline-none focus:border-teal-400"
+    />
+  );
+}
+
 function updateClassTeacherSelection(
   settings: GradeExamSettings,
   classId: string,
@@ -94,12 +179,31 @@ function updateClassTeacherSelection(
   };
 }
 
+function updateClassTeacherNames(
+  settings: GradeExamSettings,
+  classId: string,
+  subject: string,
+  teacherNames: string[],
+): GradeExamSettings {
+  return {
+    ...settings,
+    classSubjectTeacherNames: {
+      ...settings.classSubjectTeacherNames,
+      [classId]: {
+        ...settings.classSubjectTeacherNames?.[classId],
+        [subject]: teacherNames,
+      },
+    },
+  };
+}
+
 function TeacherSettings({
   settings,
   subjects,
   context,
   onChange,
 }: GradeSettingsEditorProps) {
+  const classes = useMemo(() => orderedClasses(context), [context]);
   return (
     <Card className="p-0 overflow-hidden">
       <div className="flex items-start gap-3 border-b border-ink-100 px-5 py-4">
@@ -108,7 +212,7 @@ function TeacherSettings({
         </div>
         <div>
           <div className="font-medium text-ink-900">班级任课教师</div>
-          <div className="mt-0.5 text-xs text-ink-500">按班级和科目维护任课教师，可为同一班级同一科目选择多人。</div>
+          <div className="mt-0.5 text-xs text-ink-500">已维护教学关系的教师可直接勾选；未关联账号时可在对应单元格手动输入姓名，多个姓名使用顿号分隔。</div>
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -122,16 +226,17 @@ function TeacherSettings({
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100">
-            {context.classes.map((classItem) => (
+            {classes.map((classItem) => (
               <tr key={classItem.id} className="align-top">
                 <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-4 py-3 font-medium text-ink-800">
-                  {classItem.name}
+                  <ClassSummary classItem={classItem} context={context} />
                 </td>
                 {subjects.map((subject) => {
                   const teachers = context.teachers.filter((teacher) => teacher.subject === subject);
                   const selected = settings.classSubjectTeacherIds?.[classItem.id]?.[subject]
                     || settings.subjectTeacherIds[subject]
                     || [];
+                  const manualNames = settings.classSubjectTeacherNames?.[classItem.id]?.[subject] || [];
                   return (
                     <td key={subject} className="px-4 py-3">
                       <div className="flex max-w-64 flex-wrap gap-1.5">
@@ -151,6 +256,17 @@ function TeacherSettings({
                           />
                         ))}
                       </div>
+                      <ManualTeacherInput
+                        names={manualNames}
+                        label={`${classItem.name}${subject}手动任课教师`}
+                        hasLinkedTeacher={selected.length > 0}
+                        onCommit={(teacherNames) => onChange(updateClassTeacherNames(
+                          settings,
+                          classItem.id,
+                          subject,
+                          teacherNames,
+                        ))}
+                      />
                     </td>
                   );
                 })}
@@ -314,6 +430,8 @@ function ClassSubjectSettings({
   context,
   onChange,
 }: GradeSettingsEditorProps) {
+  const classes = useMemo(() => orderedClasses(context), [context]);
+
   return (
     <Card className="p-0 overflow-hidden">
       <div className="flex items-start gap-3 border-b border-ink-100 px-5 py-4">
@@ -321,94 +439,90 @@ function ClassSubjectSettings({
           <SlidersHorizontal className="h-4 w-4" />
         </div>
         <div>
-          <div className="font-medium text-ink-900">各班统考与单独排名科目</div>
-          <div className="mt-0.5 text-xs text-ink-500">非统考科目使用本班试卷，自动退出年级统一总分与科目排名，并在班内单独排名。</div>
+          <div className="font-medium text-ink-900">各班统一排名与单独排名科目</div>
+          <div className="mt-0.5 text-xs text-ink-500">
+            每个科目最多选择一列；切换列时会自动取消另一列。尚未保存配置时，系统按最近一次导入成绩中整班均有分数的科目默认勾选。
+          </div>
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-[980px] w-full text-xs">
+        <table className="min-w-[840px] w-full text-xs">
           <thead className="bg-ink-50 text-ink-500">
             <tr>
-              <th className="px-4 py-2.5 text-left font-medium">班级</th>
-              <th className="px-4 py-2.5 text-left font-medium">考试科目</th>
-              <th className="px-4 py-2.5 text-left font-medium">非统考（班内单独排名）</th>
-              <th className="px-4 py-2.5 text-left font-medium">纳入统一总分</th>
+              <th className="w-64 px-4 py-2.5 text-left font-medium">班级</th>
+              <th className="px-4 py-2.5 text-left font-medium">纳入统一排名</th>
+              <th className="px-4 py-2.5 text-left font-medium">单独排名科目</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100">
-            {context.classes.map((classItem) => {
+            {classes.map((classItem) => {
+              const profile = context.classProfiles?.[classItem.id];
+              const inferredSubjects = profile?.hasImportedScores
+                ? subjects.filter((subject) => profile.scoreSubjects.includes(subject))
+                : subjects;
               const current = settings.classSubjects.find((item) => item.classId === classItem.id) || {
                 classId: classItem.id,
-                examSubjects: subjects,
-                statisticSubjects: subjects,
+                examSubjects: inferredSubjects,
+                statisticSubjects: inferredSubjects,
                 separateRankSubjects: [],
               };
-              const replace = (patch: Partial<typeof current>) => onChange({
-                ...settings,
-                classSubjects: settings.classSubjects.map((item) => item.classId === classItem.id
-                  ? { ...item, ...patch }
-                  : item),
-              });
+              const replace = (patch: Partial<typeof current>) => {
+                const next = { ...current, ...patch };
+                onChange({
+                  ...settings,
+                  classSubjects: settings.classSubjects.some((item) => item.classId === classItem.id)
+                    ? settings.classSubjects.map((item) => item.classId === classItem.id ? next : item)
+                    : [...settings.classSubjects, next],
+                });
+              };
+              const setMode = (subject: string, mode: "cohort" | "class" | "none") => {
+                const statisticSubjects = current.statisticSubjects.filter((item) => item !== subject);
+                const separateRankSubjects = (current.separateRankSubjects || []).filter((item) => item !== subject);
+                if (mode === "cohort") statisticSubjects.push(subject);
+                if (mode === "class") separateRankSubjects.push(subject);
+                replace({
+                  examSubjects: [...new Set([...statisticSubjects, ...separateRankSubjects])],
+                  statisticSubjects,
+                  separateRankSubjects,
+                });
+              };
+
               return (
                 <tr key={classItem.id} className="align-top">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-ink-800">{classItem.name}</div>
-                    <div className="mt-0.5 text-ink-400">{classItem.studentCount} 人</div>
+                    <ClassSummary classItem={classItem} context={context} />
+                    {profile?.hasImportedScores && (
+                      <div className="mt-1.5 text-[11px] text-blue-600">已参考最近一次整班成绩</div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex max-w-xl flex-wrap gap-1.5">
-                      {subjects.map((subject) => (
-                        <CheckboxPill
-                          key={subject}
-                          checked={current.examSubjects.includes(subject)}
-                          label={subject}
-                          onChange={() => {
-                            const examSubjects = toggleValue(current.examSubjects, subject);
-                            replace({
-                              examSubjects,
-                              statisticSubjects: current.statisticSubjects.filter((item) => examSubjects.includes(item)),
-                              separateRankSubjects: (current.separateRankSubjects || []).filter((item) => examSubjects.includes(item)),
-                            });
-                          }}
-                        />
-                      ))}
+                    <div className="flex max-w-2xl flex-wrap gap-1.5">
+                      {subjects.map((subject) => {
+                        const checked = current.statisticSubjects.includes(subject);
+                        return (
+                          <CheckboxPill
+                            key={subject}
+                            checked={checked}
+                            label={subject}
+                            onChange={() => setMode(subject, checked ? "none" : "cohort")}
+                          />
+                        );
+                      })}
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex max-w-xl flex-wrap gap-1.5">
-                      {subjects.map((subject) => (
-                        <CheckboxPill
-                          key={subject}
-                          checked={(current.separateRankSubjects || []).includes(subject)}
-                          label={subject}
-                          onChange={() => {
-                            if (!current.examSubjects.includes(subject)) return;
-                            const separateRankSubjects = toggleValue(current.separateRankSubjects || [], subject);
-                            replace({
-                              separateRankSubjects,
-                              statisticSubjects: separateRankSubjects.includes(subject)
-                                ? current.statisticSubjects.filter((item) => item !== subject)
-                                : current.statisticSubjects,
-                            });
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex max-w-xl flex-wrap gap-1.5">
-                      {subjects.map((subject) => (
-                        <CheckboxPill
-                          key={subject}
-                          checked={current.statisticSubjects.includes(subject)}
-                          label={subject}
-                          onChange={() => {
-                            if (!current.examSubjects.includes(subject)) return;
-                            if ((current.separateRankSubjects || []).includes(subject)) return;
-                            replace({ statisticSubjects: toggleValue(current.statisticSubjects, subject) });
-                          }}
-                        />
-                      ))}
+                    <div className="flex max-w-2xl flex-wrap gap-1.5">
+                      {subjects.map((subject) => {
+                        const checked = (current.separateRankSubjects || []).includes(subject);
+                        return (
+                          <CheckboxPill
+                            key={subject}
+                            checked={checked}
+                            label={subject}
+                            onChange={() => setMode(subject, checked ? "none" : "class")}
+                          />
+                        );
+                      })}
                     </div>
                   </td>
                 </tr>
@@ -463,13 +577,18 @@ const templateKindLabels: Record<GradeStatisticsTemplate["kind"], string> = {
 function FormulaColumnEditor({
   settings,
   template,
+  subjects,
+  context,
   onChange,
 }: {
   settings: GradeExamSettings;
   template: GradeStatisticsTemplate;
+  subjects: string[];
+  context: GradeImportContext;
   onChange: (settings: GradeExamSettings) => void;
 }) {
   const columns = template.columns || [];
+  const previewRecords = context.sampleRecords || [];
   return (
     <div className="mt-4 overflow-hidden rounded-lg border border-ink-200">
       <div className="flex flex-col gap-2 border-b border-ink-100 bg-purple-50/50 px-3 py-2.5 text-xs text-ink-600 lg:flex-row lg:items-center lg:justify-between">
@@ -567,6 +686,67 @@ function FormulaColumnEditor({
         <Plus className="h-3.5 w-3.5" />
         添加一列
       </button>
+      <div className="border-t border-ink-100">
+        <div className="flex items-center justify-between bg-ink-50/70 px-3 py-2 text-xs">
+          <div className="font-medium text-ink-700">在线表格实时预览</div>
+          <div className="text-ink-400">列公式会自动填充整列；SCORES、BEST 等数组函数可直接参与计算</div>
+        </div>
+        {previewRecords.length === 0 ? (
+          <div className="px-4 py-6 text-center text-xs text-ink-400">
+            导入一次成绩后，这里会使用最近成绩实时预览公式结果。
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-max w-full border-collapse text-xs">
+              <thead>
+                <tr className="bg-paper text-ink-500">
+                  <th className="w-12 border-b border-r border-ink-100 px-2 py-2 text-center font-mono font-normal">#</th>
+                  {columns.map((column, index) => (
+                    <th key={column.id} className="min-w-32 border-b border-r border-ink-100 px-3 py-2 text-left font-medium last:border-r-0">
+                      <span className="mr-2 font-mono text-ink-300">{String.fromCharCode(65 + index)}</span>
+                      {column.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRecords.map((record, rowIndex) => (
+                  <tr key={record.id} className="odd:bg-paper even:bg-ink-50/40">
+                    <td className="border-b border-r border-ink-100 px-2 py-2 text-center font-mono text-ink-300">{rowIndex + 1}</td>
+                    {columns.map((column) => {
+                      let value: string | number;
+                      let failed = false;
+                      try {
+                        value = displayGradeFormulaValue(evaluateGradeFormula(
+                          column.formula,
+                          record,
+                          template.scoreMode,
+                          subjects,
+                        ));
+                      } catch (error) {
+                        failed = true;
+                        value = error instanceof Error ? error.message : "公式错误";
+                      }
+                      return (
+                        <td
+                          key={column.id}
+                          title={String(value)}
+                          className={cn(
+                            "max-w-64 truncate border-b border-r border-ink-100 px-3 py-2 last:border-r-0",
+                            failed ? "bg-red-50 text-red-600" : "text-ink-700",
+                          )}
+                        >
+                          {value}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -574,6 +754,7 @@ function FormulaColumnEditor({
 function TemplateSettings({
   settings,
   subjects,
+  context,
   onChange,
 }: GradeSettingsEditorProps) {
   return (
@@ -703,7 +884,13 @@ function TemplateSettings({
             )}
 
             {item.kind === "customTable" && (
-              <FormulaColumnEditor settings={settings} template={item} onChange={onChange} />
+              <FormulaColumnEditor
+                settings={settings}
+                template={item}
+                subjects={subjects}
+                context={context}
+                onChange={onChange}
+              />
             )}
           </div>
         ))}
