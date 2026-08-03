@@ -2,6 +2,7 @@ import type {
   ExamArrangement,
   ExamArrangementContext,
   ExamArrangementInput,
+  GradeExam,
   GradeImportContext,
 } from "../../src/types/index.js";
 import { generateExamAssignments } from "../../src/lib/exam-arrangement.js";
@@ -11,7 +12,39 @@ import { gradeService } from "./grade.js";
 
 function readArrangements(): ExamArrangement[] {
   const value = db.read("examArrangements");
-  return Array.isArray(value) ? value as ExamArrangement[] : [];
+  if (!Array.isArray(value)) return [];
+  return (value as ExamArrangement[]).map((item) => {
+    const rooms = item.rooms.map((room) => ({
+      ...room,
+      name: room.number || room.name,
+      number: room.number || room.name,
+      location: room.location || room.name,
+    }));
+    const roomMap = new Map(rooms.map((room) => [room.id, room]));
+    return {
+      ...item,
+      subjectSetupMode: item.subjectSetupMode || "all",
+      selectionSubjects: structuredClone(item.selectionSubjects || {}),
+      separateSubjects: structuredClone(
+        item.separateSubjects ?? (item.mode === "subject" ? item.subjects : []),
+      ),
+      seatOrder: item.seatOrder || "random",
+      rooms,
+      studentSubjects: item.studentSubjects.map((selection) => ({
+        ...selection,
+        absent: Boolean(selection.absent),
+      })),
+      assignments: item.assignments.map((assignment) => {
+        const room = roomMap.get(assignment.roomId);
+        return {
+          ...assignment,
+          roomName: assignment.roomNumber || assignment.roomName,
+          roomNumber: assignment.roomNumber || assignment.roomName,
+          roomLocation: assignment.roomLocation || room?.location || assignment.roomName,
+        };
+      }),
+    };
+  });
 }
 
 function toArrangementContext(context: GradeImportContext): ExamArrangementContext {
@@ -29,7 +62,20 @@ export const examArrangementService = {
 
   async getContext(schoolId: string, cohortKey: string): Promise<ExamArrangementContext> {
     const context = await gradeService.getImportContext(schoolId, cohortKey);
-    return toArrangementContext(context);
+    const exams = db.read("gradeExams");
+    const latestExam = (Array.isArray(exams) ? exams as GradeExam[] : [])
+      .filter((exam) => exam.schoolId === schoolId && exam.cohortKey === cohortKey)
+      .sort((left, right) => {
+        const leftTime = left.examDate || left.updatedAt || left.createdAt;
+        const rightTime = right.examDate || right.updatedAt || right.createdAt;
+        return rightTime.localeCompare(leftTime);
+      })[0];
+    return {
+      ...toArrangementContext(context),
+      previousGradeRanks: latestExam
+        ? Object.fromEntries(latestExam.records.map((record) => [record.studentId, record.gradeRank]))
+        : undefined,
+    };
   },
 
   async listArrangements(schoolId: string, cohortKey?: string): Promise<ExamArrangement[]> {
@@ -47,7 +93,25 @@ export const examArrangementService = {
     await delay(180);
     maybeThrowError();
     const context = await this.getContext(schoolId, input.cohortKey);
-    const assignments = generateExamAssignments(input, context);
+    const separateSubjects = input.separateSubjects ?? (input.mode === "subject" ? input.subjects : []);
+    const preparedInput: ExamArrangementInput = {
+      ...input,
+      subjectSetupMode: input.subjectSetupMode || "all",
+      selectionSubjects: structuredClone(input.selectionSubjects || {}),
+      separateSubjects: structuredClone(separateSubjects),
+      seatOrder: input.seatOrder || "random",
+      rooms: input.rooms.map((room) => ({
+        ...room,
+        name: room.number || room.name,
+        number: room.number || room.name,
+        location: room.location || room.name,
+      })),
+      studentSubjects: input.studentSubjects.map((selection) => ({
+        ...selection,
+        absent: Boolean(selection.absent),
+      })),
+    };
+    const assignments = generateExamAssignments(preparedInput, context);
     const existing = input.id
       ? readArrangements().find((item) => item.id === input.id)
       : undefined;
@@ -63,13 +127,17 @@ export const examArrangementService = {
       teacherId,
       cohortKey: context.cohort.key,
       cohortLabel: context.cohort.label,
-      name: input.name.trim(),
-      examDate: input.examDate || undefined,
-      mode: input.mode,
-      subjects: [...input.subjects],
-      rooms: structuredClone(input.rooms),
-      classRules: structuredClone(input.classRules),
-      studentSubjects: structuredClone(input.studentSubjects),
+      name: preparedInput.name.trim(),
+      examDate: preparedInput.examDate || undefined,
+      mode: preparedInput.mode,
+      subjectSetupMode: preparedInput.subjectSetupMode,
+      subjects: [...preparedInput.subjects],
+      selectionSubjects: structuredClone(preparedInput.selectionSubjects),
+      separateSubjects: structuredClone(preparedInput.separateSubjects),
+      seatOrder: preparedInput.seatOrder,
+      rooms: structuredClone(preparedInput.rooms),
+      classRules: structuredClone(preparedInput.classRules),
+      studentSubjects: structuredClone(preparedInput.studentSubjects),
       assignments,
       createdAt: existing?.createdAt || now,
       updatedAt: now,

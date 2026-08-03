@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
+  Copy,
+  Download,
   LayoutGrid,
   Plus,
   Printer,
@@ -18,6 +20,8 @@ import type {
   ExamArrangementInput,
   ExamClassRoomRule,
   ExamRoomConfig,
+  ExamSeatOrder,
+  ExamSubjectSetupMode,
   GradeCohort,
 } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -30,74 +34,151 @@ import { Input, Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
+import {
+  downloadClassArrangement,
+  downloadDeskLabels,
+  groupDeskLabels,
+} from "@/lib/exam-arrangement-export";
 
 const DEFAULT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+const CORE_SUBJECTS = ["语文", "数学", "英语"];
 
 type ViewMode = "settings" | "result";
 
-function uniqueSubjects(value: string): string[] {
-  return [...new Set(value.split(/[、,，;；\s]+/).map((item) => item.trim()).filter(Boolean))];
+function uniqueSubjects(values: string[]): string[] {
+  const selected = new Set(values.map((item) => item.trim()).filter(Boolean));
+  return [
+    ...DEFAULT_SUBJECTS.filter((subject) => selected.has(subject)),
+    ...[...selected].filter((subject) => !DEFAULT_SUBJECTS.includes(subject)),
+  ];
+}
+
+function subjectSelectionNames(context: ExamArrangementContext): string[] {
+  return [...new Set(context.students.map((student) => student.subjectSelection?.trim()).filter((value): value is string => Boolean(value)))]
+    .sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+function inferSelectionSubjects(name: string): string[] {
+  const aliases: Array<[string, string]> = [
+    ["物", "物理"],
+    ["化", "化学"],
+    ["生", "生物"],
+    ["政", "政治"],
+    ["史", "历史"],
+    ["地", "地理"],
+  ];
+  return uniqueSubjects([
+    ...CORE_SUBJECTS,
+    ...aliases.filter(([alias, subject]) => name.includes(alias) || name.includes(subject)).map(([, subject]) => subject),
+  ]);
+}
+
+function createRules(context: ExamArrangementContext, subjects: string[], rooms: ExamRoomConfig[]): ExamClassRoomRule[] {
+  const roomIds = rooms.map((room) => room.id);
+  return context.classes.map((classItem) => ({
+    classId: classItem.id,
+    defaultSubjects: [...subjects],
+    subjectRoomIds: Object.fromEntries(subjects.map((subject) => [subject, [...roomIds]])),
+  }));
+}
+
+function createDefaultRooms(context: ExamArrangementContext): ExamRoomConfig[] {
+  if (context.classes.length === 0) {
+    return [{ id: "room-1", name: "第 01 考场", number: "第 01 考场", location: "待填写", capacity: 30 }];
+  }
+  return context.classes.map((classItem) => {
+    const studentCount = context.students.filter((student) => student.classId === classItem.id).length;
+    return {
+      id: `room-${classItem.id}`,
+      name: classItem.name,
+      number: classItem.name,
+      location: classItem.name,
+      capacity: Math.max(1, studentCount),
+    };
+  });
 }
 
 function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInput {
-  const roomCount = Math.max(1, Math.ceil(context.students.length / 30));
-  const rooms: ExamRoomConfig[] = Array.from({ length: roomCount }, (_, index) => ({
-    id: `room-${index + 1}`,
-    name: `第 ${String(index + 1).padStart(2, "0")} 考场`,
-    capacity: 30,
-  }));
-  const roomIds = rooms.map((room) => room.id);
-  const classRules: ExamClassRoomRule[] = context.classes.map((classItem) => ({
-    classId: classItem.id,
-    defaultSubjects: [...DEFAULT_SUBJECTS],
-    subjectRoomIds: Object.fromEntries(DEFAULT_SUBJECTS.map((subject) => [subject, [...roomIds]])),
+  const rooms = createDefaultRooms(context);
+  const selectionNames = subjectSelectionNames(context);
+  const selectionSubjects = Object.fromEntries(selectionNames.map((name) => [name, inferSelectionSubjects(name)]));
+  const subjectSetupMode: ExamSubjectSetupMode = selectionNames.length > 0 ? "selection" : "all";
+  const studentSubjects = context.students.map((student) => ({
+    studentId: student.id,
+    subjects: subjectSetupMode === "selection" && student.subjectSelection
+      ? [...(selectionSubjects[student.subjectSelection] || DEFAULT_SUBJECTS)]
+      : [...DEFAULT_SUBJECTS],
+    absent: false,
   }));
   return {
     cohortKey: context.cohort.key,
     name: `${context.cohort.label}考试`,
     examDate: new Date().toISOString().slice(0, 10),
     mode: "combination",
+    subjectSetupMode,
     subjects: [...DEFAULT_SUBJECTS],
+    selectionSubjects,
+    separateSubjects: [],
+    seatOrder: "random",
     rooms,
-    classRules,
-    studentSubjects: context.students.map((student) => ({
-      studentId: student.id,
-      subjects: [...DEFAULT_SUBJECTS],
-    })),
+    classRules: createRules(context, DEFAULT_SUBJECTS, rooms),
+    studentSubjects,
   };
 }
 
-function withSubjects(
-  current: ExamArrangementInput,
-  context: ExamArrangementContext,
-  subjects: string[],
-): ExamArrangementInput {
-  const roomIds = current.rooms.map((room) => room.id);
-  const classRules = current.classRules.map((rule) => {
-    const defaultSubjects = rule.defaultSubjects.filter((subject) => subjects.includes(subject));
-    return {
-      ...rule,
-      defaultSubjects: defaultSubjects.length > 0 ? defaultSubjects : [...subjects],
-      subjectRoomIds: Object.fromEntries(subjects.map((subject) => [
-        subject,
-        (rule.subjectRoomIds[subject] || roomIds).filter((roomId) => roomIds.includes(roomId)),
-      ])),
-    };
-  });
+function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementContext): ExamArrangementInput {
+  const subjects = uniqueSubjects(current.subjects);
+  const rooms = current.rooms.map((room) => ({
+    ...room,
+    name: room.number || room.name,
+    number: room.number || room.name,
+    location: room.location || room.name,
+  }));
+  const selectionSubjects = Object.fromEntries(Object.entries(current.selectionSubjects || {}).map(([name, items]) => [
+    name,
+    uniqueSubjects(items).filter((subject) => subjects.includes(subject)),
+  ]));
   return {
     ...current,
+    mode: current.mode || "combination",
+    subjectSetupMode: current.subjectSetupMode || "all",
     subjects,
-    classRules,
-    studentSubjects: current.studentSubjects.map((selection) => {
-      const selected = selection.subjects.filter((subject) => subjects.includes(subject));
-      const student = context.students.find((item) => item.id === selection.studentId);
-      const defaults = classRules.find((rule) => rule.classId === student?.classId)?.defaultSubjects || subjects;
+    selectionSubjects,
+    separateSubjects: uniqueSubjects(current.separateSubjects || []).filter((subject) => subjects.includes(subject)),
+    seatOrder: current.seatOrder || "random",
+    rooms,
+    classRules: createRules(context, subjects, rooms),
+    studentSubjects: context.students.map((student) => {
+      const existing = current.studentSubjects.find((item) => item.studentId === student.id);
+      const defaults = current.subjectSetupMode === "selection" && student.subjectSelection
+        ? selectionSubjects[student.subjectSelection] || subjects
+        : subjects;
+      const selected = uniqueSubjects(existing?.subjects || defaults).filter((subject) => subjects.includes(subject));
       return {
-        ...selection,
-        subjects: selected.length > 0 ? selected : defaults.filter((subject) => subjects.includes(subject)),
+        studentId: student.id,
+        subjects: selected.length > 0 || existing?.absent ? selected : [...defaults],
+        absent: Boolean(existing?.absent),
       };
     }),
   };
+}
+
+function cloneDraft(arrangement: ExamArrangement, context: ExamArrangementContext): ExamArrangementInput {
+  return normalizeDraft({
+    id: arrangement.id,
+    cohortKey: arrangement.cohortKey,
+    name: arrangement.name,
+    examDate: arrangement.examDate,
+    mode: arrangement.mode,
+    subjectSetupMode: arrangement.subjectSetupMode,
+    subjects: structuredClone(arrangement.subjects),
+    selectionSubjects: structuredClone(arrangement.selectionSubjects || {}),
+    separateSubjects: structuredClone(arrangement.separateSubjects || []),
+    seatOrder: arrangement.seatOrder,
+    rooms: structuredClone(arrangement.rooms),
+    classRules: structuredClone(arrangement.classRules),
+    studentSubjects: structuredClone(arrangement.studentSubjects),
+  }, context);
 }
 
 function CheckboxPill({ checked, label, onClick, disabled = false }: {
@@ -129,18 +210,32 @@ function CheckboxPill({ checked, label, onClick, disabled = false }: {
   );
 }
 
-function cloneDraft(arrangement: ExamArrangement): ExamArrangementInput {
-  return {
-    id: arrangement.id,
-    cohortKey: arrangement.cohortKey,
-    name: arrangement.name,
-    examDate: arrangement.examDate,
-    mode: arrangement.mode,
-    subjects: structuredClone(arrangement.subjects),
-    rooms: structuredClone(arrangement.rooms),
-    classRules: structuredClone(arrangement.classRules),
-    studentSubjects: structuredClone(arrangement.studentSubjects),
-  };
+function ChoiceCard({ checked, title, description, onClick }: {
+  checked: boolean;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      onClick={onClick}
+      className={cn(
+        "rounded-lg border p-3 text-left transition-colors",
+        checked ? "border-gold-400 bg-gold-50" : "border-ink-200 bg-paper hover:border-ink-300",
+      )}
+    >
+      <div className="flex items-center gap-2 text-sm font-medium text-ink-900">
+        <span className={cn("flex h-4 w-4 items-center justify-center rounded-full border", checked ? "border-gold-500" : "border-ink-300")}>
+          {checked && <span className="h-2 w-2 rounded-full bg-gold-500" />}
+        </span>
+        {title}
+      </div>
+      <div className="mt-1 pl-6 text-xs text-ink-500">{description}</div>
+    </button>
+  );
 }
 
 export default function ExamRoomArrangementPage({ embedded = false }: { embedded?: boolean }) {
@@ -152,7 +247,6 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [arrangements, setArrangements] = useState<ExamArrangement[]>([]);
   const [selectedArrangementId, setSelectedArrangementId] = useState("");
   const [draft, setDraft] = useState<ExamArrangementInput | null>(null);
-  const [subjectText, setSubjectText] = useState(DEFAULT_SUBJECTS.join("、"));
   const [view, setView] = useState<ViewMode>("settings");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -162,12 +256,12 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [newPlanName, setNewPlanName] = useState("");
 
   const selectedArrangement = arrangements.find((item) => item.id === selectedArrangementId) || null;
-  const assignments = useMemo(
-    () => selectedArrangement && selectedArrangement.id === draft?.id
+  const assignments = useMemo(() => (
+    selectedArrangement && selectedArrangement.id === draft?.id
       ? selectedArrangement.assignments
-      : [],
-    [draft?.id, selectedArrangement],
-  );
+      : []
+  ), [draft?.id, selectedArrangement]);
+  const deskLabels = useMemo(() => groupDeskLabels(assignments), [assignments]);
 
   useEffect(() => {
     if (!schoolId) {
@@ -180,10 +274,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       .then((next) => {
         if (!active) return;
         setCohorts(next);
-        setCohortKey((current) => {
-          if (next.some((item) => item.key === current)) return current;
-          return next.find((item) => item.studentCount > 0)?.key || next[0]?.key || "";
-        });
+        setCohortKey((current) => next.some((item) => item.key === current)
+          ? current
+          : next.find((item) => item.studentCount > 0)?.key || next[0]?.key || "");
       })
       .catch((error) => toast.error("加载年级失败", error instanceof Error ? error.message : undefined))
       .finally(() => {
@@ -202,17 +295,14 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       ]);
       setContext(nextContext);
       setArrangements(nextArrangements);
-      const selected = nextArrangements.find((item) => item.id === preferredId) || nextArrangements[0] || null;
+      const selected = preferredId ? nextArrangements.find((item) => item.id === preferredId) || null : null;
       if (selected) {
         setSelectedArrangementId(selected.id);
-        setDraft(cloneDraft(selected));
-        setSubjectText(selected.subjects.join("、"));
+        setDraft(cloneDraft(selected, nextContext));
         setView("result");
       } else {
-        const nextDraft = createDefaultDraft(nextContext);
         setSelectedArrangementId("");
-        setDraft(nextDraft);
-        setSubjectText(nextDraft.subjects.join("、"));
+        setDraft(createDefaultDraft(nextContext));
         setView("settings");
       }
     } catch (error) {
@@ -227,13 +317,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   }, [cohortKey, loadCohort]);
 
   const updateDraft = (updater: (current: ExamArrangementInput) => ExamArrangementInput) => {
-    setDraft((current) => current ? updater(current) : current);
-  };
-
-  const applySubjects = () => {
-    const subjects = uniqueSubjects(subjectText);
-    if (subjects.length === 0 || !draft || !context) return;
-    updateDraft((current) => withSubjects(current, context, subjects));
+    setDraft((current) => current && context ? normalizeDraft(updater(current), context) : current);
   };
 
   const handleNew = () => {
@@ -246,44 +330,50 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     if (!context) return;
     const name = newPlanName.trim();
     if (!name) return;
-    const next = {
-      ...createDefaultDraft(context),
-      name,
-    };
     setSelectedArrangementId("");
-    setDraft(next);
-    setSubjectText(next.subjects.join("、"));
+    setDraft({ ...createDefaultDraft(context), name });
     setView("settings");
     setNewPlanOpen(false);
   };
 
   const handleSelectArrangement = (id: string) => {
-    const arrangement = arrangements.find((item) => item.id === id);
-    if (!arrangement) {
+    if (id === "new") {
       handleNew();
       return;
     }
+    if (!context) return;
+    const arrangement = arrangements.find((item) => item.id === id);
+    if (!arrangement) return;
     setSelectedArrangementId(id);
-    setDraft(cloneDraft(arrangement));
-    setSubjectText(arrangement.subjects.join("、"));
+    setDraft(cloneDraft(arrangement, context));
     setView("result");
+  };
+
+  const handleReuse = () => {
+    if (!selectedArrangement || !context) return;
+    const next = cloneDraft(selectedArrangement, context);
+    delete next.id;
+    next.name = `${selectedArrangement.name}（复用）`;
+    setSelectedArrangementId("");
+    setDraft(next);
+    setView("settings");
+    toast.success("已复用考场安排", "修改考试名称和时间后即可重新生成");
   };
 
   const handleSave = async () => {
     if (!draft || !context || !schoolId || !teacher) return;
-    const subjects = uniqueSubjects(subjectText);
-    const preparedDraft = subjects.length > 0
-      ? withSubjects(draft, context, subjects)
-      : { ...draft, subjects };
+    const preparedDraft = normalizeDraft({
+      ...draft,
+      mode: draft.separateSubjects?.length === draft.subjects.length ? "subject" : "combination",
+    }, context);
     setSaving(true);
     try {
       const saved = await examArrangementService.saveArrangement(schoolId, teacher.id, preparedDraft);
       setArrangements((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setSelectedArrangementId(saved.id);
-      setDraft(cloneDraft(saved));
-      setSubjectText(saved.subjects.join("、"));
+      setDraft(cloneDraft(saved, context));
       setView("result");
-      toast.success("考场安排已生成", `共生成 ${saved.assignments.length} 张桌贴`);
+      toast.success("考场安排已生成", `共安排 ${saved.assignments.length} 个考试座位，生成 ${groupDeskLabels(saved.assignments).length} 张桌贴`);
     } catch (error) {
       toast.error("生成考场安排失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -302,83 +392,98 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     }
   };
 
-  const addRoom = () => {
+  const setSubjectSetupMode = (mode: ExamSubjectSetupMode) => {
+    if (!context) return;
+    updateDraft((current) => ({
+      ...current,
+      subjectSetupMode: mode,
+      studentSubjects: context.students.map((student) => {
+        const existing = current.studentSubjects.find((item) => item.studentId === student.id);
+        const subjects = mode === "selection" && student.subjectSelection
+          ? current.selectionSubjects?.[student.subjectSelection] || current.subjects
+          : current.subjects;
+        return { studentId: student.id, subjects: [...subjects], absent: Boolean(existing?.absent) };
+      }),
+    }));
+  };
+
+  const toggleSubject = (subject: string) => {
     updateDraft((current) => {
-      const id = `room-${Date.now()}`;
+      const enabled = current.subjects.includes(subject);
+      const subjects = enabled
+        ? current.subjects.filter((item) => item !== subject)
+        : uniqueSubjects([...current.subjects, subject]);
       return {
         ...current,
-        rooms: [...current.rooms, { id, name: `第 ${String(current.rooms.length + 1).padStart(2, "0")} 考场`, capacity: 30 }],
-        classRules: current.classRules.map((rule) => ({
-          ...rule,
-          subjectRoomIds: Object.fromEntries(current.subjects.map((subject) => [
-            subject,
-            [...(rule.subjectRoomIds[subject] || []), id],
-          ])),
+        subjects,
+        separateSubjects: current.separateSubjects?.filter((item) => item !== subject),
+        selectionSubjects: Object.fromEntries(Object.entries(current.selectionSubjects || {}).map(([name, items]) => [
+          name,
+          enabled ? items.filter((item) => item !== subject) : items,
+        ])),
+        studentSubjects: current.studentSubjects.map((selection) => ({
+          ...selection,
+          subjects: enabled
+            ? selection.subjects.filter((item) => item !== subject)
+            : selection.subjects,
         })),
       };
     });
   };
 
-  const removeRoom = (roomId: string) => {
-    updateDraft((current) => {
-      if (current.rooms.length <= 1) return current;
-      const remaining = current.rooms.filter((room) => room.id !== roomId);
-      const remainingIds = remaining.map((room) => room.id);
-      return {
-        ...current,
-        rooms: remaining,
-        classRules: current.classRules.map((rule) => ({
-          ...rule,
-          subjectRoomIds: Object.fromEntries(current.subjects.map((subject) => {
-            const roomIds = (rule.subjectRoomIds[subject] || []).filter((id) => id !== roomId);
-            return [subject, roomIds.length > 0 ? roomIds : [...remainingIds]];
-          })),
-        })),
-      };
-    });
-  };
-
-  const toggleClassSubject = (classId: string, subject: string) => {
+  const toggleSelectionSubject = (selectionName: string, subject: string) => {
     if (!context) return;
     updateDraft((current) => {
-      const classStudentIds = new Set(context.students.filter((student) => student.classId === classId).map((student) => student.id));
-      const currentRule = current.classRules.find((rule) => rule.classId === classId);
-      const enabled = currentRule?.defaultSubjects.includes(subject) || false;
+      const currentSubjects = current.selectionSubjects?.[selectionName] || [];
+      const enabled = currentSubjects.includes(subject);
+      const nextSubjects = enabled
+        ? currentSubjects.filter((item) => item !== subject)
+        : uniqueSubjects([...currentSubjects, subject]);
+      const matchingStudentIds = new Set(context.students
+        .filter((student) => student.subjectSelection === selectionName)
+        .map((student) => student.id));
       return {
         ...current,
-        classRules: current.classRules.map((rule) => rule.classId === classId
-          ? { ...rule, defaultSubjects: enabled ? rule.defaultSubjects.filter((item) => item !== subject) : [...rule.defaultSubjects, subject] }
-          : rule),
-        studentSubjects: current.studentSubjects.map((selection) => classStudentIds.has(selection.studentId)
-          ? {
-            ...selection,
-            subjects: enabled
-              ? selection.subjects.filter((item) => item !== subject)
-              : [...new Set([...selection.subjects, subject])],
-          }
+        selectionSubjects: { ...current.selectionSubjects, [selectionName]: nextSubjects },
+        studentSubjects: current.studentSubjects.map((selection) => matchingStudentIds.has(selection.studentId)
+          ? { ...selection, subjects: [...nextSubjects] }
           : selection),
       };
     });
   };
 
-  const toggleRuleRoom = (classId: string, subject: string, roomId: string) => {
-    updateDraft((current) => ({
-      ...current,
-      classRules: current.classRules.map((rule) => {
-        if (rule.classId !== classId) return rule;
-        const selected = rule.subjectRoomIds[subject] || [];
-        if (selected.includes(roomId) && selected.length === 1) return rule;
-        return {
-          ...rule,
-          subjectRoomIds: {
-            ...rule.subjectRoomIds,
-            [subject]: selected.includes(roomId)
-              ? selected.filter((id) => id !== roomId)
-              : [...selected, roomId],
-          },
-        };
-      }),
-    }));
+  const toggleSeparateSubject = (subject: string) => {
+    updateDraft((current) => {
+      const selected = current.separateSubjects || [];
+      return {
+        ...current,
+        separateSubjects: selected.includes(subject)
+          ? selected.filter((item) => item !== subject)
+          : uniqueSubjects([...selected, subject]),
+      };
+    });
+  };
+
+  const addRoom = () => {
+    updateDraft((current) => {
+      const index = current.rooms.length + 1;
+      return {
+        ...current,
+        rooms: [...current.rooms, {
+          id: `room-${Date.now()}`,
+          name: `第 ${String(index).padStart(2, "0")} 考场`,
+          number: `第 ${String(index).padStart(2, "0")} 考场`,
+          location: "待填写",
+          capacity: 30,
+        }],
+      };
+    });
+  };
+
+  const removeRoom = (roomId: string) => {
+    updateDraft((current) => current.rooms.length <= 1
+      ? current
+      : { ...current, rooms: current.rooms.filter((room) => room.id !== roomId) });
   };
 
   const toggleStudentSubject = (studentId: string, subject: string) => {
@@ -389,8 +494,17 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           ...selection,
           subjects: selection.subjects.includes(subject)
             ? selection.subjects.filter((item) => item !== subject)
-            : [...selection.subjects, subject],
+            : uniqueSubjects([...selection.subjects, subject]),
         }
+        : selection),
+    }));
+  };
+
+  const toggleStudentAbsent = (studentId: string) => {
+    updateDraft((current) => ({
+      ...current,
+      studentSubjects: current.studentSubjects.map((selection) => selection.studentId === studentId
+        ? { ...selection, absent: !selection.absent }
         : selection),
     }));
   };
@@ -404,24 +518,44 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     });
   }, [context, studentClassFilter, studentKeyword]);
 
-  const assignmentGroups = useMemo(() => {
-    const groups = new Map<string, Map<string, typeof assignments>>();
-    assignments.forEach((assignment) => {
-      const sessions = groups.get(assignment.sessionKey) || new Map<string, typeof assignments>();
-      const roomAssignments = sessions.get(assignment.roomName) || [];
-      roomAssignments.push(assignment);
-      sessions.set(assignment.roomName, roomAssignments);
-      groups.set(assignment.sessionKey, sessions);
-    });
-    return groups;
-  }, [assignments]);
+  const classAssignmentGroups = useMemo(() => {
+    if (!context) return [];
+    return context.classes.map((classItem) => ({
+      classItem,
+      assignments: assignments
+        .filter((item) => item.classId === classItem.id)
+        .sort((left, right) => left.studentNo.localeCompare(right.studentNo, "zh-CN")
+          || left.sessionKey.localeCompare(right.sessionKey, "zh-CN")),
+    })).filter((group) => group.assignments.length > 0);
+  }, [assignments, context]);
+
+  const downloadClass = async (classId: string, className: string) => {
+    if (!selectedArrangement) return;
+    try {
+      await downloadClassArrangement(selectedArrangement, classId, className);
+    } catch (error) {
+      toast.error("下载班级安排失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const downloadLabels = async () => {
+    if (!selectedArrangement) return;
+    try {
+      await downloadDeskLabels(selectedArrangement);
+    } catch (error) {
+      toast.error("下载桌贴失败", error instanceof Error ? error.message : undefined);
+    }
+  };
 
   const pageActions = draft ? (
     <>
       <Button variant="outline" onClick={handleNew}><RotateCcw className="h-4 w-4" />新建方案</Button>
-      <Button variant="gold" onClick={handleSave} loading={saving}><Save className="h-4 w-4" />生成并保存</Button>
-      <Button variant="outline" disabled={assignments.length === 0} onClick={() => window.print()}>
+      <Button variant="gold" onClick={handleSave} loading={saving}><Save className="h-4 w-4" />预览并保存</Button>
+      <Button variant="outline" disabled={deskLabels.length === 0} onClick={() => window.print()}>
         <Printer className="h-4 w-4" />打印桌贴
+      </Button>
+      <Button variant="outline" disabled={deskLabels.length === 0} onClick={() => void downloadLabels()}>
+        <Download className="h-4 w-4" />下载桌贴
       </Button>
     </>
   ) : undefined;
@@ -433,8 +567,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       ) : (
         <div className="no-print">
           <PageHeader
-            title="考场安排"
-            description="按年级配置考场容量、班级与科目限制，自动生成座位表和高考式桌贴"
+            title="考场布置"
+            description="新建或复用考试方案，配置科目、考场、弃考学生和座位规则，再按班级预览与下载"
             icon={<LayoutGrid className="h-5 w-5" />}
             action={pageActions}
           />
@@ -443,7 +577,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       )}
 
       {!schoolId ? (
-        <Card className="no-print"><EmptyState icon={<Users className="h-8 w-8" />} title="个人身份暂不支持考场安排" description="请切换到已认证学校身份后使用。" /></Card>
+        <Card className="no-print"><EmptyState icon={<Users className="h-8 w-8" />} title="个人身份暂不支持考场布置" description="请切换到已认证学校身份后使用。" /></Card>
       ) : loading ? (
         <div className="flex justify-center py-24"><Spinner size={32} /></div>
       ) : !draft || !context ? (
@@ -452,92 +586,152 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
         <>
           <div className="no-print mb-5 grid gap-3 rounded-xl border border-ink-100 bg-paper p-4 shadow-sm lg:grid-cols-[1fr_1fr_auto] lg:items-end">
             <Select label="所属年级" value={cohortKey} onChange={(event) => setCohortKey(event.target.value)} options={cohorts.map((item) => ({ value: item.key, label: `${item.label} · ${item.studentCount} 人` }))} />
-            <Select label="已保存方案" value={selectedArrangementId} onChange={(event) => handleSelectArrangement(event.target.value)} placeholder="新建方案" options={arrangements.map((item) => ({ value: item.id, label: `${item.name} · ${item.assignments.length} 张桌贴` }))} />
+            <Select
+              label="选择考场安排"
+              value={selectedArrangementId || "new"}
+              onChange={(event) => handleSelectArrangement(event.target.value)}
+              options={[
+                { value: "new", label: "新建考场安排" },
+                ...arrangements.map((item) => ({ value: item.id, label: `${item.name} · ${item.examDate || "日期待定"}` })),
+              ]}
+            />
             <div className="flex gap-2">
               <Button variant={view === "settings" ? "ink" : "outline"} onClick={() => setView("settings")}>配置</Button>
-              <Button variant={view === "result" ? "ink" : "outline"} onClick={() => setView("result")} disabled={assignments.length === 0}>安排结果</Button>
+              <Button variant={view === "result" ? "ink" : "outline"} onClick={() => setView("result")} disabled={assignments.length === 0}>预览</Button>
             </div>
           </div>
+
+          {selectedArrangement && (
+            <Card className="no-print mb-5 border-gold-200 bg-gold-50/50">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="font-medium text-ink-900">{selectedArrangement.name}</div>
+                    <Badge>{selectedArrangement.examDate || "日期待定"}</Badge>
+                    <Badge>{selectedArrangement.seatOrder === "previousRank" ? "按上次名次排" : "随机排"}</Badge>
+                  </div>
+                  <div className="mt-2 text-sm text-ink-600">学生考试科目：{selectedArrangement.subjects.join("、")}</div>
+                  <div className="mt-1 text-xs text-ink-500">
+                    单独排考：{selectedArrangement.separateSubjects?.join("、") || "无"}；弃考 {selectedArrangement.studentSubjects.filter((item) => item.absent).length} 人；{selectedArrangement.rooms.length} 个考场
+                  </div>
+                </div>
+                <Button variant="gold" onClick={handleReuse}><Copy className="h-4 w-4" />复用此考场安排</Button>
+              </div>
+            </Card>
+          )}
 
           {view === "settings" ? (
             <div className="no-print space-y-5">
               <Card>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-3">
                   <Input label="考试名称" value={draft.name} onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))} />
-                  <Input label="考试日期" type="date" value={draft.examDate || ""} onChange={(event) => updateDraft((current) => ({ ...current, examDate: event.target.value }))} />
-                  <Select label="编排方式" value={draft.mode} onChange={(event) => updateDraft((current) => ({ ...current, mode: event.target.value as ExamArrangementInput["mode"] }))} options={[
-                    { value: "combination", label: "学生固定一个座位" },
-                    { value: "subject", label: "部分单科单独排列" },
-                  ]} />
-                  <Input label="考试科目" value={subjectText} onChange={(event) => setSubjectText(event.target.value)} onBlur={applySubjects} hint="使用顿号、逗号或空格分隔" />
+                  <Input label="考试时间" type="date" value={draft.examDate || ""} onChange={(event) => updateDraft((current) => ({ ...current, examDate: event.target.value }))} />
+                  <Select
+                    label="座位排列规则"
+                    value={draft.seatOrder || "random"}
+                    onChange={(event) => updateDraft((current) => ({ ...current, seatOrder: event.target.value as ExamSeatOrder }))}
+                    options={[
+                      { value: "random", label: "随机排" },
+                      { value: "previousRank", label: "按上次名次排" },
+                    ]}
+                  />
                 </div>
-                <div className="mt-4 rounded-lg bg-ink-50 px-4 py-3 text-xs text-ink-500">
-                  {draft.mode === "combination"
-                    ? "每名学生只安排一个座位；可用考场取其全部选考科目允许考场的交集。"
-                    : "每个科目独立安排座位和考场容量；同一学生会按参加科目生成多张桌贴。"}
-                </div>
+                {draft.seatOrder === "previousRank" && !context.previousGradeRanks && (
+                  <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">该年级暂无历史成绩名次，将按班级和学号稳定排列。</div>
+                )}
               </Card>
 
-              <Card className="p-0 overflow-hidden">
-                <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
-                  <div><div className="font-medium text-ink-900">考场与容量</div><div className="mt-0.5 text-xs text-ink-500">座位号在每个考场内从 1 开始连续生成。</div></div>
-                  <Button variant="outline" size="sm" onClick={addRoom}><Plus className="h-4 w-4" />增加考场</Button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-[620px] w-full text-sm">
-                    <thead className="bg-ink-50 text-xs text-ink-500"><tr><th className="px-5 py-2.5 text-left font-medium">考场名称</th><th className="px-5 py-2.5 text-left font-medium">最多人数</th><th className="px-5 py-2.5 text-right font-medium">操作</th></tr></thead>
-                    <tbody className="divide-y divide-ink-100">
-                      {draft.rooms.map((room) => (
-                        <tr key={room.id}>
-                          <td className="px-5 py-3"><Input aria-label="考场名称" value={room.name} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, name: event.target.value } : item) }))} /></td>
-                          <td className="px-5 py-3"><Input aria-label="考场容量" type="number" min={1} max={1000} value={room.capacity} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, capacity: Number(event.target.value) } : item) }))} /></td>
-                          <td className="px-5 py-3 text-right"><Button variant="ghost" size="icon" aria-label={`删除${room.name}`} disabled={draft.rooms.length === 1} onClick={() => removeRoom(room.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-
-              <Card className="p-0 overflow-hidden">
-                <div className="border-b border-ink-100 px-5 py-4"><div className="font-medium text-ink-900">班级、科目与可用考场</div><div className="mt-0.5 text-xs text-ink-500">班级科目开关会同步到本班全部学生；每个科目至少保留一个可用考场。</div></div>
-                <div className="divide-y divide-ink-100">
-                  {context.classes.map((classItem) => {
-                    const rule = draft.classRules.find((item) => item.classId === classItem.id);
-                    if (!rule) return null;
-                    return (
-                      <div key={classItem.id} className="space-y-4 px-5 py-4">
-                        <div className="flex flex-wrap items-center gap-2"><span className="font-medium text-ink-900">{classItem.name}</span><Badge>{context.students.filter((student) => student.classId === classItem.id).length} 人</Badge></div>
-                        <div><div className="mb-2 text-xs font-medium text-ink-500">参加科目</div><div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={rule.defaultSubjects.includes(subject)} label={subject} onClick={() => toggleClassSubject(classItem.id, subject)} />)}</div></div>
-                        <div className="overflow-x-auto">
-                          <table className="min-w-[680px] w-full text-xs">
-                            <tbody className="divide-y divide-ink-100 rounded-lg border border-ink-100">
-                              {draft.subjects.filter((subject) => rule.defaultSubjects.includes(subject)).map((subject) => (
-                                <tr key={subject}><td className="w-24 px-3 py-2 font-medium text-ink-700">{subject}</td><td className="px-3 py-2"><div className="flex flex-wrap gap-1.5">{draft.rooms.map((room) => <CheckboxPill key={room.id} checked={(rule.subjectRoomIds[subject] || []).includes(room.id)} label={room.name} onClick={() => toggleRuleRoom(classItem.id, subject, room.id)} />)}</div></td></tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+                <Card>
+                  <div className="font-medium text-ink-900">考试科目</div>
+                  <div className="mt-1 text-xs text-ink-500">选择全部学科，或按“语数外 + 选科”配置各选科组合。</div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2" role="radiogroup" aria-label="考试科目配置方式">
+                    <ChoiceCard checked={draft.subjectSetupMode === "all"} title="所有学科" description="所有学生默认参加勾选的学科。" onClick={() => setSubjectSetupMode("all")} />
+                    <ChoiceCard checked={draft.subjectSetupMode === "selection"} title="语数外 + 选科" description="根据学生档案中的选科名称分配考试科目。" onClick={() => setSubjectSetupMode("selection")} />
+                  </div>
+                  <div className="mt-4">
+                    <div className="mb-2 text-xs font-medium text-ink-500">勾选本次考试包含的学科</div>
+                    <div className="flex flex-wrap gap-2">{DEFAULT_SUBJECTS.map((subject) => (
+                      <CheckboxPill key={subject} checked={draft.subjects.includes(subject)} label={subject} onClick={() => toggleSubject(subject)} />
+                    ))}</div>
+                  </div>
+                  {draft.subjectSetupMode === "selection" && (
+                    <div className="mt-5 space-y-3 border-t border-ink-100 pt-4">
+                      <div>
+                        <div className="text-sm font-medium text-ink-800">各选科对应的考试科目确认</div>
+                        <div className="mt-0.5 text-xs text-ink-500">修改后会同步到该选科下的学生，之后仍可逐个学生调整。</div>
                       </div>
-                    );
-                  })}
+                      {subjectSelectionNames(context).length === 0 ? (
+                        <div className="rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">学生档案中暂无选科名称，暂按全部勾选科目处理。</div>
+                      ) : subjectSelectionNames(context).map((selectionName) => (
+                        <div key={selectionName} className="rounded-lg border border-ink-100 p-3">
+                          <div className="mb-2 text-sm font-medium text-ink-800">{selectionName}</div>
+                          <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => (
+                            <CheckboxPill
+                              key={subject}
+                              checked={(draft.selectionSubjects?.[selectionName] || []).includes(subject)}
+                              label={subject}
+                              onClick={() => toggleSelectionSubject(selectionName, subject)}
+                            />
+                          ))}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+
+                <Card className="p-0 overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+                    <div><div className="font-medium text-ink-900">考场列表</div><div className="mt-0.5 text-xs text-ink-500">默认以班级名称作为考场号和位置，所有位置均可编辑。</div></div>
+                    <Button variant="outline" size="sm" onClick={addRoom}><Plus className="h-4 w-4" />增加考场</Button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[680px] w-full text-sm">
+                      <thead className="bg-ink-50 text-xs text-ink-500"><tr><th className="px-4 py-2.5 text-left font-medium">考场号</th><th className="px-4 py-2.5 text-left font-medium">考场位置</th><th className="px-4 py-2.5 text-left font-medium">可安排人数</th><th className="px-4 py-2.5 text-right font-medium">操作</th></tr></thead>
+                      <tbody className="divide-y divide-ink-100">
+                        {draft.rooms.map((room) => (
+                          <tr key={room.id}>
+                            <td className="px-4 py-3"><Input aria-label="考场号" value={room.number || room.name} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, name: event.target.value, number: event.target.value } : item) }))} /></td>
+                            <td className="px-4 py-3"><Input aria-label="考场位置" value={room.location || ""} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, location: event.target.value } : item) }))} /></td>
+                            <td className="px-4 py-3"><Input aria-label="考场可安排人数" type="number" min={1} max={1000} value={room.capacity} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, capacity: Number(event.target.value) } : item) }))} /></td>
+                            <td className="px-4 py-3 text-right"><Button variant="ghost" size="icon" aria-label={`删除${room.number || room.name}`} disabled={draft.rooms.length === 1} onClick={() => removeRoom(room.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </div>
+
+              <Card>
+                <div className="font-medium text-ink-900">排考场规则</div>
+                <div className="mt-1 text-xs text-ink-500">勾选的科目每个学科单独排考场；未勾选的科目合并安排，同一学生只占一个座位。</div>
+                <div className="mt-4 flex flex-wrap gap-2">{draft.subjects.map((subject) => (
+                  <CheckboxPill key={subject} checked={(draft.separateSubjects || []).includes(subject)} label={`${subject}单独排`} onClick={() => toggleSeparateSubject(subject)} />
+                ))}</div>
+                <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
+                  合并安排：{draft.subjects.filter((subject) => !(draft.separateSubjects || []).includes(subject)).join("、") || "无"}
                 </div>
               </Card>
 
               <Card className="p-0 overflow-hidden">
-                <div className="border-b border-ink-100 px-5 py-4"><div className="font-medium text-ink-900">学生选科</div><div className="mt-0.5 text-xs text-ink-500">班级默认设置后，可继续修改个别学生的实际考试科目。</div></div>
+                <div className="border-b border-ink-100 px-5 py-4"><div className="font-medium text-ink-900">学生考试科目</div><div className="mt-0.5 text-xs text-ink-500">按班级列出学生，可再次修改科目，并对个别学生标记弃考。</div></div>
                 <div className="grid gap-3 border-b border-ink-100 p-4 md:grid-cols-2">
                   <Input value={studentKeyword} onChange={(event) => setStudentKeyword(event.target.value)} placeholder="搜索姓名或学号" aria-label="搜索学生" />
                   <Select value={studentClassFilter} onChange={(event) => setStudentClassFilter(event.target.value)} placeholder="全部班级" options={context.classes.map((item) => ({ value: item.id, label: item.name }))} />
                 </div>
-                <div className="max-h-[520px] overflow-auto divide-y divide-ink-100">
+                <div className="max-h-[560px] overflow-auto divide-y divide-ink-100">
                   {filteredStudents.map((student) => {
                     const selection = draft.studentSubjects.find((item) => item.studentId === student.id);
                     const className = context.classes.find((item) => item.id === student.classId)?.name || "未分班";
                     return (
-                      <div key={student.id} className="grid gap-3 px-5 py-3 lg:grid-cols-[12rem_1fr] lg:items-center">
-                        <div><div className="text-sm font-medium text-ink-900">{student.name} <span className="font-normal text-ink-400">{student.studentNo}</span></div><div className="text-xs text-ink-400">{className}</div></div>
-                        <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
+                      <div key={student.id} className={cn("grid gap-3 px-5 py-3 xl:grid-cols-[14rem_1fr_auto] xl:items-center", selection?.absent && "bg-red-50/60")}>
+                        <div><div className="text-sm font-medium text-ink-900">{student.name} <span className="font-normal text-ink-400">{student.studentNo}</span></div><div className="text-xs text-ink-400">{className}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div></div>
+                        <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-red-700">
+                          <input aria-label={`${student.name}弃考`} type="checkbox" checked={Boolean(selection?.absent)} onChange={() => toggleStudentAbsent(student.id)} />
+                          弃考
+                        </label>
                       </div>
                     );
                   })}
@@ -545,44 +739,53 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
               </Card>
             </div>
           ) : assignments.length === 0 ? (
-            <Card className="no-print"><EmptyState icon={<LayoutGrid className="h-8 w-8" />} title="尚未生成安排" description="完成配置后点击“生成并保存”。" /></Card>
+            <Card className="no-print"><EmptyState icon={<LayoutGrid className="h-8 w-8" />} title="尚未生成安排" description="完成配置后点击“预览并保存”。" /></Card>
           ) : (
             <div className="no-print space-y-5">
               <div className="grid gap-4 sm:grid-cols-3">
-                <Card><div className="text-xs text-ink-400">桌贴数量</div><div className="mt-1 text-2xl font-semibold text-ink-900">{assignments.length}</div></Card>
-                <Card><div className="text-xs text-ink-400">考试场次</div><div className="mt-1 text-2xl font-semibold text-ink-900">{assignmentGroups.size}</div></Card>
-                <Card><div className="text-xs text-ink-400">实际使用考场</div><div className="mt-1 text-2xl font-semibold text-ink-900">{new Set(assignments.map((item) => `${item.sessionKey}:${item.roomId}`)).size}</div></Card>
+                <Card><div className="text-xs text-ink-400">考试座位记录</div><div className="mt-1 text-2xl font-semibold text-ink-900">{assignments.length}</div></Card>
+                <Card><div className="text-xs text-ink-400">实际桌贴</div><div className="mt-1 text-2xl font-semibold text-ink-900">{deskLabels.length}</div></Card>
+                <Card><div className="text-xs text-ink-400">弃考学生</div><div className="mt-1 text-2xl font-semibold text-ink-900">{draft.studentSubjects.filter((item) => item.absent).length}</div></Card>
               </div>
-              {[...assignmentGroups.entries()].map(([sessionKey, rooms]) => (
-                <Card key={sessionKey} className="p-0 overflow-hidden">
-                  <div className="border-b border-ink-100 px-5 py-4"><div className="font-medium text-ink-900">{sessionKey === "combination" ? "选科组合统一编排" : sessionKey.replace("subject:", "")}</div><div className="mt-0.5 text-xs text-ink-500">{[...rooms.values()].reduce((sum, items) => sum + items.length, 0)} 个座位</div></div>
-                  {[...rooms.entries()].map(([roomName, items]) => (
-                    <div key={roomName} className="border-b border-ink-100 last:border-0">
-                      <div className="flex items-center justify-between bg-ink-50 px-5 py-2.5 text-xs"><span className="font-medium text-ink-700">{roomName}</span><span className="text-ink-400">{items.length} 人</span></div>
-                      <div className="overflow-x-auto"><table className="min-w-[760px] w-full text-xs"><thead className="text-ink-400"><tr><th className="px-4 py-2 text-left font-medium">座位</th><th className="px-4 py-2 text-left font-medium">准考证号</th><th className="px-4 py-2 text-left font-medium">班级</th><th className="px-4 py-2 text-left font-medium">姓名</th><th className="px-4 py-2 text-left font-medium">学号</th><th className="px-4 py-2 text-left font-medium">科目/组合</th></tr></thead><tbody className="divide-y divide-ink-100">{items.sort((left, right) => left.seatNo - right.seatNo).map((item) => <tr key={item.id}><td className="px-4 py-2.5 font-medium">{item.seatNo}</td><td className="px-4 py-2.5 font-mono">{item.admissionNo}</td><td className="px-4 py-2.5">{item.className}</td><td className="px-4 py-2.5 font-medium text-ink-900">{item.studentName}</td><td className="px-4 py-2.5">{item.studentNo}</td><td className="px-4 py-2.5">{item.subjectLabel}</td></tr>)}</tbody></table></div>
-                    </div>
-                  ))}
+
+              {classAssignmentGroups.map(({ classItem, assignments: classAssignments }) => (
+                <Card key={classItem.id} className="p-0 overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
+                    <div><div className="font-medium text-ink-900">{classItem.name}</div><div className="mt-0.5 text-xs text-ink-500">按学生展示每门学科的考场号和位置；一起考试的科目已合并。</div></div>
+                    <Button variant="outline" size="sm" onClick={() => void downloadClass(classItem.id, classItem.name)}><Download className="h-4 w-4" />下载本班</Button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-[920px] w-full text-xs">
+                      <thead className="bg-ink-50 text-ink-500"><tr><th className="px-4 py-2.5 text-left font-medium">姓名</th><th className="px-4 py-2.5 text-left font-medium">学号</th><th className="px-4 py-2.5 text-left font-medium">考试科目</th><th className="px-4 py-2.5 text-left font-medium">考场号</th><th className="px-4 py-2.5 text-left font-medium">考场位置</th><th className="px-4 py-2.5 text-left font-medium">座位号</th><th className="px-4 py-2.5 text-left font-medium">准考证号</th></tr></thead>
+                      <tbody className="divide-y divide-ink-100">{classAssignments.map((item) => (
+                        <tr key={item.id}><td className="px-4 py-2.5 font-medium text-ink-900">{item.studentName}</td><td className="px-4 py-2.5">{item.studentNo}</td><td className="px-4 py-2.5">{item.subjectLabel}</td><td className="px-4 py-2.5 font-medium">{item.roomNumber || item.roomName}</td><td className="px-4 py-2.5">{item.roomLocation || item.roomName}</td><td className="px-4 py-2.5">{item.seatNo}</td><td className="px-4 py-2.5 font-mono">{item.admissionNo}</td></tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
                 </Card>
               ))}
+
               {selectedArrangement && <Button variant="ghost" onClick={handleDelete}><Trash2 className="h-4 w-4 text-red-500" />删除当前方案</Button>}
             </div>
           )}
 
-          {assignments.length > 0 && selectedArrangement && (
+          {deskLabels.length > 0 && selectedArrangement && (
             <div className="print-only exam-desk-label-sheet">
-              {assignments
-                .slice()
-                .sort((left, right) => left.sessionKey.localeCompare(right.sessionKey, "zh-CN") || left.roomName.localeCompare(right.roomName, "zh-CN") || left.seatNo - right.seatNo)
-                .map((assignment) => (
-                  <section key={assignment.id} className="exam-desk-label">
-                    <div className="exam-desk-label-title">{selectedArrangement.name}</div>
-                    <div className="exam-desk-label-meta"><span>{selectedArrangement.examDate || "考试日期待定"}</span><span>{assignment.subjectLabel}</span></div>
-                    <div className="exam-desk-label-seat"><span>{assignment.roomName}</span><strong>{assignment.seatNo} 号</strong></div>
-                    <div className="exam-desk-label-name">{assignment.studentName}</div>
-                    <div className="exam-desk-label-row"><span>班级：{assignment.className}</span><span>学号：{assignment.studentNo}</span></div>
-                    <div className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</div>
-                  </section>
-                ))}
+              {deskLabels.map((group) => (
+                <section key={group.key} className="exam-desk-label">
+                  <div className="exam-desk-label-title">{selectedArrangement.name}</div>
+                  <div className="exam-desk-label-meta"><span>{selectedArrangement.examDate || "考试日期待定"}</span><span>{group.roomLocation}</span></div>
+                  <div className="exam-desk-label-seat"><span>{group.roomNumber}</span><strong>{group.seatNo} 号</strong></div>
+                  {group.assignments.map((assignment) => (
+                    <div key={assignment.id} className="mt-2 border-t border-black/20 pt-2 first:mt-0 first:border-0 first:pt-0">
+                      <div className="exam-desk-label-name">{assignment.studentName}</div>
+                      <div className="text-center text-sm font-medium">{assignment.subjectLabel}</div>
+                      <div className="exam-desk-label-row"><span>班级：{assignment.className}</span><span>学号：{assignment.studentNo}</span></div>
+                      <div className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</div>
+                    </div>
+                  ))}
+                </section>
+              ))}
             </div>
           )}
         </>
@@ -591,37 +794,18 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       <Modal
         open={newPlanOpen}
         onClose={() => setNewPlanOpen(false)}
-        title="新建考场方案"
-        description="输入方案名称后进入考场配置。"
+        title="新建考场安排"
+        description="输入考试名称后进入配置。"
         size="sm"
         footer={(
           <>
             <Button variant="ghost" onClick={() => setNewPlanOpen(false)}>取消</Button>
-            <Button
-              variant="gold"
-              type="submit"
-              form="new-exam-plan-form"
-              disabled={!newPlanName.trim()}
-            >
-              创建方案
-            </Button>
+            <Button variant="gold" type="submit" form="new-exam-plan-form" disabled={!newPlanName.trim()}>创建方案</Button>
           </>
         )}
       >
-        <form
-          id="new-exam-plan-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            createNewPlan();
-          }}
-        >
-          <Input
-            autoFocus
-            label="方案名称"
-            value={newPlanName}
-            onChange={(event) => setNewPlanName(event.target.value)}
-            placeholder="例如：高三第一次模拟考试"
-          />
+        <form id="new-exam-plan-form" onSubmit={(event) => { event.preventDefault(); createNewPlan(); }}>
+          <Input autoFocus label="考试名称" value={newPlanName} onChange={(event) => setNewPlanName(event.target.value)} placeholder="例如：高三第一次模拟考试" />
         </form>
       </Modal>
     </div>

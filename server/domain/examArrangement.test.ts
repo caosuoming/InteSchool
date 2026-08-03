@@ -91,4 +91,105 @@ describe("exam arrangement service", () => {
       })).rejects.toThrow("无权修改");
     });
   });
+
+  it("exposes grade ranks from the latest exam in the same cohort", async () => {
+    const appState = state();
+    appState.gradeExams = [
+      {
+        id: "exam-old",
+        schoolId: "school-1",
+        teacherId: "teacher-1",
+        cohortKey: "grad-2026",
+        cohortLabel: "2026届高三",
+        name: "期中考试",
+        examDate: "2026-03-01",
+        sourceFileName: "old.xlsx",
+        sourceSheetName: "成绩",
+        subjects: ["物理"],
+        records: [
+          {
+            id: "record-old-1",
+            studentId: "student-1",
+            studentName: "甲",
+            studentNo: "001",
+            classId: "class-1",
+            className: "高三（1）班",
+            scores: { 物理: 90 },
+            assignedScores: { 物理: 90 },
+            rawTotal: 90,
+            assignedTotal: 90,
+            gradeRank: 2,
+            classRank: 2,
+          },
+          {
+            id: "record-old-2",
+            studentId: "student-2",
+            studentName: "乙",
+            studentNo: "002",
+            classId: "class-1",
+            className: "高三（1）班",
+            scores: { 物理: 95 },
+            assignedScores: { 物理: 95 },
+            rawTotal: 95,
+            assignedTotal: 95,
+            gradeRank: 1,
+            classRank: 1,
+          },
+        ],
+        settings: { subjectTeacherIds: {}, assignmentRules: {}, classSubjects: [], templates: [] },
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      },
+      {
+        id: "exam-latest",
+        schoolId: "school-1",
+        teacherId: "teacher-1",
+        cohortKey: "grad-2026",
+        cohortLabel: "2026届高三",
+        name: "第一次模拟",
+        examDate: "2026-05-01",
+        sourceFileName: "latest.xlsx",
+        sourceSheetName: "成绩",
+        subjects: ["物理"],
+        records: [
+          {
+            id: "record-latest-1",
+            studentId: "student-1",
+            studentName: "甲",
+            studentNo: "001",
+            classId: "class-1",
+            className: "高三（1）班",
+            scores: { 物理: 98 },
+            assignedScores: { 物理: 98 },
+            rawTotal: 98,
+            assignedTotal: 98,
+            gradeRank: 1,
+            classRank: 1,
+          },
+          {
+            id: "record-latest-2",
+            studentId: "student-2",
+            studentName: "乙",
+            studentNo: "002",
+            classId: "class-1",
+            className: "高三（1）班",
+            scores: { 物理: 88 },
+            assignedScores: { 物理: 88 },
+            rawTotal: 88,
+            assignedTotal: 88,
+            gradeRank: 2,
+            classRank: 2,
+          },
+        ],
+        settings: { subjectTeacherIds: {}, assignmentRules: {}, classSubjects: [], templates: [] },
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z",
+      },
+    ];
+
+    await runWithState(appState, async () => {
+      const context = await examArrangementService.getContext("school-1", "grad-2026");
+      expect(context.previousGradeRanks).toEqual({ "student-1": 1, "student-2": 2 });
+    });
+  });
 });

@@ -4,6 +4,7 @@ import type {
   ExamClassRoomRule,
   ExamRoomConfig,
   ExamSeatAssignment,
+  ExamSeatOrder,
   ExamStudentSubjectSelection,
   Student,
 } from "../types/index.js";
@@ -20,25 +21,36 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function stableHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 function normalizeRooms(rooms: ExamRoomConfig[]): ExamRoomConfig[] {
   if (!Array.isArray(rooms) || rooms.length === 0) throw new Error("请至少配置一个考场");
   if (rooms.length > 200) throw new Error("单个方案最多配置 200 个考场");
   const ids = new Set<string>();
-  const names = new Set<string>();
+  const numbers = new Set<string>();
   return rooms.map((room, index) => {
     const id = room.id?.trim();
-    const name = room.name?.trim();
+    const number = (room.number || room.name)?.trim();
+    const location = (room.location || room.name || room.number)?.trim();
     const capacity = Math.floor(Number(room.capacity));
     if (!id) throw new Error(`第 ${index + 1} 个考场缺少标识`);
-    if (!name) throw new Error(`第 ${index + 1} 个考场名称不能为空`);
+    if (!number) throw new Error(`第 ${index + 1} 个考场号不能为空`);
+    if (!location) throw new Error(`考场「${number}」的位置不能为空`);
     if (ids.has(id)) throw new Error(`考场标识「${id}」重复`);
-    if (names.has(name)) throw new Error(`考场名称「${name}」重复`);
+    if (numbers.has(number)) throw new Error(`考场号「${number}」重复`);
     if (!Number.isFinite(capacity) || capacity < 1 || capacity > 1000) {
-      throw new Error(`考场「${name}」容量应为 1 至 1000 人`);
+      throw new Error(`考场「${number}」容量应为 1 至 1000 人`);
     }
     ids.add(id);
-    names.add(name);
-    return { id, name, capacity };
+    numbers.add(number);
+    return { id, name: number, number, location, capacity };
   });
 }
 
@@ -96,6 +108,7 @@ function normalizeSelections(
     selections.set(source.studentId, {
       studentId: source.studentId,
       subjects: uniqueStrings(source.subjects || []).filter((subject) => subjectSet.has(subject)),
+      absent: Boolean(source.absent),
     });
   }
   for (const student of context.students) {
@@ -103,6 +116,7 @@ function normalizeSelections(
       selections.set(student.id, {
         studentId: student.id,
         subjects: [...(rules.get(student.classId)?.defaultSubjects || [])],
+        absent: false,
       });
     }
   }
@@ -112,6 +126,26 @@ function normalizeSelections(
 function roomIntersection(roomLists: string[][], fallback: string[]): string[] {
   if (roomLists.length === 0) return fallback;
   return fallback.filter((roomId) => roomLists.every((list) => list.includes(roomId)));
+}
+
+function createTask(
+  student: Student,
+  className: string,
+  sessionKey: string,
+  selectedSubjects: string[],
+  rules: Map<string, ExamClassRoomRule>,
+  allRoomIds: string[],
+): SeatTask {
+  const classRule = rules.get(student.classId);
+  const eligibleRoomIds = roomIntersection(
+    selectedSubjects.map((subject) => classRule?.subjectRoomIds[subject] || allRoomIds),
+    allRoomIds,
+  );
+  const subjectLabel = selectedSubjects.join(" / ");
+  if (eligibleRoomIds.length === 0) {
+    throw new Error(`「${className}」学生 ${student.name} 的「${subjectLabel}」没有共同可用考场`);
+  }
+  return { student, className, subjectLabel, sessionKey, eligibleRoomIds };
 }
 
 function buildTasks(
@@ -124,72 +158,67 @@ function buildTasks(
 ): SeatTask[] {
   const classMap = new Map(context.classes.map((item) => [item.id, item]));
   const allRoomIds = rooms.map((room) => room.id);
-  const students = [...context.students].sort((left, right) =>
-    left.classId.localeCompare(right.classId) || left.studentNo.localeCompare(right.studentNo, "zh-CN"),
-  );
+  const separateSubjects = new Set(uniqueStrings(
+    input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
+  ).filter((subject) => subjects.includes(subject)));
   const tasks: SeatTask[] = [];
 
-  if (input.mode === "subject") {
-    for (const subject of subjects) {
-      for (const student of students) {
-        const selected = selections.get(student.id)?.subjects || [];
-        if (!selected.includes(subject)) continue;
-        const classItem = classMap.get(student.classId);
-        if (!classItem) continue;
-        const eligibleRoomIds = rules.get(student.classId)?.subjectRoomIds[subject] || allRoomIds;
-        if (eligibleRoomIds.length === 0) {
-          throw new Error(`「${classItem.name}」的「${subject}」未配置可用考场`);
-        }
-        tasks.push({
-          student,
-          className: classItem.name,
-          subjectLabel: subject,
-          sessionKey: `subject:${subject}`,
-          eligibleRoomIds,
-        });
-      }
-    }
-    return tasks;
-  }
-
-  for (const student of students) {
-    const selected = subjects.filter((subject) => selections.get(student.id)?.subjects.includes(subject));
+  for (const student of context.students) {
+    const selection = selections.get(student.id);
+    if (!selection || selection.absent) continue;
+    const selected = subjects.filter((subject) => selection.subjects.includes(subject));
     if (selected.length === 0) continue;
     const classItem = classMap.get(student.classId);
     if (!classItem) continue;
-    const classRule = rules.get(student.classId);
-    const eligibleRoomIds = roomIntersection(
-      selected.map((subject) => classRule?.subjectRoomIds[subject] || allRoomIds),
-      allRoomIds,
-    );
-    if (eligibleRoomIds.length === 0) {
-      throw new Error(`「${classItem.name}」学生 ${student.name} 的选科组合没有共同可用考场`);
+
+    const combined = selected.filter((subject) => !separateSubjects.has(subject));
+    if (combined.length > 0) {
+      tasks.push(createTask(student, classItem.name, "combined", combined, rules, allRoomIds));
     }
-    tasks.push({
-      student,
-      className: classItem.name,
-      subjectLabel: selected.join(" / "),
-      sessionKey: "combination",
-      eligibleRoomIds,
-    });
+    for (const subject of selected.filter((item) => separateSubjects.has(item))) {
+      tasks.push(createTask(student, classItem.name, `subject:${subject}`, [subject], rules, allRoomIds));
+    }
   }
   return tasks;
+}
+
+function compareTasks(
+  left: SeatTask,
+  right: SeatTask,
+  seatOrder: ExamSeatOrder,
+  context: ExamArrangementContext,
+  seed: string,
+): number {
+  if (seatOrder === "previousRank") {
+    const leftRank = context.previousGradeRanks?.[left.student.id] ?? Number.POSITIVE_INFINITY;
+    const rightRank = context.previousGradeRanks?.[right.student.id] ?? Number.POSITIVE_INFINITY;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+  } else {
+    const leftHash = stableHash(`${seed}:${left.student.id}`);
+    const rightHash = stableHash(`${seed}:${right.student.id}`);
+    if (leftHash !== rightHash) return leftHash - rightHash;
+  }
+  return left.className.localeCompare(right.className, "zh-CN")
+    || left.student.studentNo.localeCompare(right.student.studentNo, "zh-CN")
+    || left.student.id.localeCompare(right.student.id);
 }
 
 function allocateSession(
   tasks: SeatTask[],
   rooms: ExamRoomConfig[],
   sessionIndex: number,
-  examDate?: string,
+  input: ExamArrangementInput,
+  context: ExamArrangementContext,
 ): ExamSeatAssignment[] {
   const roomMap = new Map(rooms.map((room) => [room.id, room]));
   const used = new Map(rooms.map((room) => [room.id, 0]));
+  const seatOrder = input.seatOrder || "random";
+  const seed = `${input.name}:${input.examDate || ""}:${tasks[0]?.sessionKey || sessionIndex}`;
   const sorted = [...tasks].sort((left, right) =>
     left.eligibleRoomIds.length - right.eligibleRoomIds.length
-    || left.className.localeCompare(right.className, "zh-CN")
-    || left.student.studentNo.localeCompare(right.student.studentNo, "zh-CN"),
+    || compareTasks(left, right, seatOrder, context, seed),
   );
-  const datePrefix = examDate?.replace(/\D/g, "").slice(0, 8) || "00000000";
+  const datePrefix = input.examDate?.replace(/\D/g, "").slice(0, 8) || "00000000";
 
   return sorted.map((task, index) => {
     const candidates = task.eligibleRoomIds
@@ -200,7 +229,7 @@ function allocateSession(
         const leftUsed = used.get(left.id) || 0;
         const rightUsed = used.get(right.id) || 0;
         const ratio = leftUsed / left.capacity - rightUsed / right.capacity;
-        return ratio || left.name.localeCompare(right.name, "zh-CN");
+        return ratio || (left.number || left.name).localeCompare(right.number || right.name, "zh-CN");
       });
     const room = candidates[0];
     if (!room) {
@@ -208,6 +237,8 @@ function allocateSession(
     }
     const seatNo = (used.get(room.id) || 0) + 1;
     used.set(room.id, seatNo);
+    const roomNumber = room.number || room.name;
+    const roomLocation = room.location || room.name;
     return {
       id: `${task.sessionKey}:${task.student.id}`,
       studentId: task.student.id,
@@ -218,7 +249,9 @@ function allocateSession(
       subjectLabel: task.subjectLabel,
       sessionKey: task.sessionKey,
       roomId: room.id,
-      roomName: room.name,
+      roomName: roomNumber,
+      roomNumber,
+      roomLocation,
       seatNo,
       admissionNo: `${datePrefix}${String(sessionIndex + 1).padStart(2, "0")}${String(index + 1).padStart(4, "0")}`,
     };
@@ -235,17 +268,20 @@ export function generateExamAssignments(
   const subjects = uniqueStrings(input.subjects || []);
   if (subjects.length === 0) throw new Error("请至少配置一个考试科目");
   if (subjects.length > 30) throw new Error("考试科目不能超过 30 个");
+  const invalidSeparate = uniqueStrings(input.separateSubjects || []).filter((subject) => !subjects.includes(subject));
+  if (invalidSeparate.length > 0) throw new Error(`独立排考科目不存在：${invalidSeparate.join("、")}`);
   const rooms = normalizeRooms(input.rooms || []);
   const rules = normalizeRules(input, context, subjects, rooms);
   const selections = normalizeSelections(input, context, rules, subjects);
   const tasks = buildTasks(input, context, subjects, rooms, rules, selections);
-  if (tasks.length === 0) throw new Error("当前选科设置没有需要安排的学生");
+  if (tasks.length === 0) throw new Error("当前设置没有需要安排的考生");
 
   const sessions = [...new Set(tasks.map((task) => task.sessionKey))];
   return sessions.flatMap((sessionKey, sessionIndex) => allocateSession(
     tasks.filter((task) => task.sessionKey === sessionKey),
     rooms,
     sessionIndex,
-    input.examDate,
+    input,
+    context,
   ));
 }
