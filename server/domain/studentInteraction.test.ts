@@ -36,10 +36,29 @@ const teacher = {
   createdAt: "2026-01-01T00:00:00.000Z",
 } as any;
 
+const homeroomTeacher = {
+  ...teacher,
+  id: "teacher-homeroom",
+  email: "homeroom@example.com",
+  name: "班主任",
+  subject: "语文",
+  teachingClassIds: [],
+  homeroomClassIds: ["class-1"],
+  affiliations: [{
+    ...teacher.affiliations[0],
+    id: "aff-homeroom",
+    teacherId: "teacher-homeroom",
+    subject: "语文",
+    teachingClassIds: [],
+    homeroomClassIds: ["class-1"],
+  }],
+  currentAffiliationId: "aff-homeroom",
+} as any;
+
 function state(): AppState {
   return {
     currentTeacherId: null,
-    teachers: [teacher],
+    teachers: [teacher, homeroomTeacher],
     schoolClasses: [
       {
         id: "class-1",
@@ -95,23 +114,53 @@ function state(): AppState {
         teacherId: "teacher-2",
         schoolId: "school-1",
         type: "chat",
-        content: "其他教师记录",
+        content: "其他教师私密记录",
         createdAt: "2026-01-03T00:00:00.000Z",
         updatedAt: "2026-01-03T00:00:00.000Z",
+      },
+      {
+        id: "interaction-shared",
+        studentId: "student-1",
+        teacherId: "teacher-2",
+        schoolId: "school-1",
+        type: "status",
+        content: "需要班主任共同关注",
+        sharedWithHomeroom: true,
+        createdAt: "2026-01-04T00:00:00.000Z",
+        updatedAt: "2026-01-04T00:00:00.000Z",
       },
     ],
   } as AppState;
 }
 
 describe("student interaction scope", () => {
-  it("allows assigned and personal students but rejects other school classes", async () => {
+  it("keeps records private by default and shares selected records anonymously with the homeroom teacher", async () => {
     const appState = state();
     await runWithState(appState, async () => {
       await expect(studentInteractionService.listByStudent("student-1", teacher))
         .resolves.toEqual([
-          expect.objectContaining({ id: "interaction-other" }),
-          expect.objectContaining({ id: "interaction-own" }),
+          expect.objectContaining({
+            id: "interaction-own",
+            teacherId: "teacher-1",
+            isAnonymous: false,
+            canDelete: true,
+          }),
         ]);
+
+      const homeroomRecords = await studentInteractionService.listByStudent("student-1", homeroomTeacher);
+      expect(homeroomRecords).toEqual([
+        expect.objectContaining({
+          id: "interaction-shared",
+          isAnonymous: true,
+          canDelete: false,
+        }),
+      ]);
+      expect(homeroomRecords[0]).not.toHaveProperty("teacherId");
+      await expect(studentInteractionService.listByTeacher("teacher-homeroom", homeroomTeacher))
+        .resolves.toEqual([
+          expect.objectContaining({ id: "interaction-shared", isAnonymous: true }),
+        ]);
+
       await expect(studentInteractionService.listByStudent("student-2", teacher))
         .rejects.toThrow("只能访问自己任教班级或个人教学班的学生");
       await expect(studentInteractionService.createInteraction(
@@ -126,6 +175,21 @@ describe("student interaction scope", () => {
         { studentId: "student-personal", type: "chat", content: "辅导记录" },
         teacher,
       )).resolves.toMatchObject({ studentId: "student-personal", teacherId: "teacher-1" });
+
+      await expect(studentInteractionService.createInteraction(
+        "teacher-1",
+        "school-1",
+        {
+          studentId: "student-1",
+          type: "chat",
+          content: "请班主任关注",
+          shareWithHomeroom: true,
+        },
+        teacher,
+      )).resolves.toMatchObject({ sharedWithHomeroom: true });
+
+      await expect(studentInteractionService.deleteInteraction("interaction-shared", homeroomTeacher))
+        .rejects.toThrow("不能删除其他教师的互动记录");
     });
   });
 });

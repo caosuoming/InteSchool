@@ -9,7 +9,7 @@ import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { classService } from "@/services/class";
 import { studentInteractionService } from "@/services/studentInteraction";
-import type { Student, StudentInteraction, AnyClass } from "@/types";
+import type { Student, StudentInteractionView, AnyClass } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -52,10 +52,10 @@ const statusTagOptions = [
 export function StudentInteractionPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { teacher } = useAuthStore();
   const [allStudents, setAllStudents] = useState<Student[]>([]);
-  const [classMap, setClassMap] = useState<Record<string, AnyClass>>({});
+  const [myClasses, setMyClasses] = useState<AnyClass[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [interactions, setInteractions] = useState<StudentInteraction[]>([]);
+  const [interactions, setInteractions] = useState<StudentInteractionView[]>([]);
   const [keyword, setKeyword] = useState("");
   // 每个学生的最近互动时间
   const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
@@ -65,6 +65,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [newContent, setNewContent] = useState("");
   const [newAttitude, setNewAttitude] = useState("3");
   const [newStatusTag, setNewStatusTag] = useState(statusTagOptions[0]);
+  const [shareWithHomeroom, setShareWithHomeroom] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const loadStudents = useCallback(async () => {
@@ -76,9 +77,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
         classService.listMyClasses(teacher.schoolId, teacher.id),
       ]);
       setAllStudents(all);
-      const map: Record<string, AnyClass> = {};
-      classes.forEach((c) => { map[c.id] = c; });
-      setClassMap(map);
+      setMyClasses(classes);
       // 加载所有学生的最近互动时间
       const teacherInteractions = await studentInteractionService.listByTeacher(teacher.id);
       const lastMap: Record<string, string> = {};
@@ -145,15 +144,42 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     });
   }, [lastInteractionMap]);
 
-  const myStudents = useMemo(() => {
-    const filtered = keyword.trim()
+  const filteredStudents = useMemo(() => {
+    return keyword.trim()
       ? allStudents.filter((s) => {
           const kw = keyword.toLowerCase();
           return s.name.toLowerCase().includes(kw) || (s.studentNo || "").toLowerCase().includes(kw);
         })
       : allStudents;
-    return sortStudentsByInteraction(filtered);
-  }, [allStudents, keyword, sortStudentsByInteraction]);
+  }, [allStudents, keyword]);
+
+  const studentGroups = useMemo(() => {
+    const groupedStudentIds = new Set<string>();
+    const groups = myClasses.flatMap((classInfo) => {
+      const members = filteredStudents.filter((student) => {
+        if (classInfo.type === "school") return student.classId === classInfo.id;
+        return classInfo.studentIds.includes(student.id);
+      });
+      members.forEach((student) => groupedStudentIds.add(student.id));
+      const sortedMembers = sortStudentsByInteraction(members);
+      return sortedMembers.length > 0
+        ? [{ id: classInfo.id, name: classInfo.name, students: sortedMembers }]
+        : [];
+    });
+    const ungrouped = sortStudentsByInteraction(
+      filteredStudents.filter((student) => !groupedStudentIds.has(student.id)),
+    );
+    if (ungrouped.length > 0) {
+      groups.push({ id: "ungrouped", name: "其他学生", students: ungrouped });
+    }
+    return groups;
+  }, [filteredStudents, myClasses, sortStudentsByInteraction]);
+
+  const classMap = useMemo(() => {
+    const map: Record<string, AnyClass> = {};
+    myClasses.forEach((classInfo) => { map[classInfo.id] = classInfo; });
+    return map;
+  }, [myClasses]);
 
   const selectedStudent = allStudents.find((s) => s.id === selectedStudentId);
 
@@ -191,9 +217,11 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
           content: newContent.trim(),
           attitude: newType === "attitude" ? parseInt(newAttitude) : undefined,
           statusTag: newType === "status" ? newStatusTag : undefined,
+          shareWithHomeroom,
         },
       );
       setNewContent("");
+      setShareWithHomeroom(false);
       toast.success("记录已添加");
       loadInteractions();
     } catch (err) {
@@ -249,27 +277,30 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                   <div className="inline-block w-6 h-6 border-2 border-gold-400 border-t-transparent rounded-full animate-spin mb-2" />
                   <div>加载中...</div>
                 </div>
-              ) : myStudents.length === 0 ? (
+              ) : filteredStudents.length === 0 ? (
                 <div className="p-6 text-center text-xs text-ink-400">暂无学生</div>
               ) : (
-                <div className="px-3 py-2">
-                  <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-gold-700 uppercase tracking-wide">
-                    <GraduationCap className="w-3 h-3" />
-                    我的学生
-                    <span className="text-ink-400 font-normal">（{myStudents.length}）</span>
-                  </div>
-                  <div className="space-y-0.5">
-                    {myStudents.map((stu) => (
-                      <StudentListItem
-                        key={stu.id}
-                        student={stu}
-                        classNameInfo={stu.classId ? classMap[stu.classId] : undefined}
-                        isSelected={selectedStudentId === stu.id}
-                        lastInteraction={lastInteractionMap[stu.id]}
-                        onClick={() => setSelectedStudentId(stu.id)}
-                      />
-                    ))}
-                  </div>
+                <div className="px-3 py-2 space-y-3">
+                  {studentGroups.map((group) => (
+                    <section key={group.id}>
+                      <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-gold-700 tracking-wide">
+                        <GraduationCap className="w-3 h-3" />
+                        <span className="truncate">{group.name}</span>
+                        <span className="text-ink-400 font-normal">（{group.students.length}）</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {group.students.map((student) => (
+                          <StudentListItem
+                            key={`${group.id}-${student.id}`}
+                            student={student}
+                            isSelected={selectedStudentId === student.id}
+                            lastInteraction={lastInteractionMap[student.id]}
+                            onClick={() => setSelectedStudentId(student.id)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
                 </div>
               )}
             </div>
@@ -401,7 +432,21 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                     rows={3}
                   />
 
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-between gap-4">
+                    <label className="inline-flex items-start gap-2 text-xs text-ink-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={shareWithHomeroom}
+                        onChange={(event) => setShareWithHomeroom(event.target.checked)}
+                        className="mt-0.5 rounded border-ink-300 text-gold-600 focus:ring-gold-400"
+                      />
+                      <span>
+                        <span className="font-medium text-ink-700">分享记录</span>
+                        <span className="block text-[11px] text-ink-400 mt-0.5">
+                          勾选后匿名同步给该学生的班主任
+                        </span>
+                      </span>
+                    </label>
                     <Button
                       variant="gold"
                       size="sm"
@@ -460,14 +505,21 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                             {it.type === "status" && it.statusTag && (
                               <span className="text-xs text-emerald-600">{it.statusTag}</span>
                             )}
+                            {it.isAnonymous ? (
+                              <Badge variant="ink">匿名分享</Badge>
+                            ) : it.sharedWithHomeroom ? (
+                              <Badge variant="amber">已分享给班主任</Badge>
+                            ) : null}
                             <span className="text-[11px] text-ink-400 ml-auto">{timeAgo(it.createdAt)}</span>
-                            <button
-                              onClick={() => handleDelete(it.id)}
-                              className="p-1 rounded text-ink-300 hover:text-red-500"
-                              title="删除"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {it.canDelete && (
+                              <button
+                                onClick={() => handleDelete(it.id)}
+                                className="p-1 rounded text-ink-300 hover:text-red-500"
+                                title="删除"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                           <div className="text-sm text-ink-700 leading-relaxed bg-mist/40 p-2 rounded">
                             {it.content}
@@ -496,13 +548,11 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
 // 学生列表项
 function StudentListItem({
   student,
-  classNameInfo,
   isSelected,
   lastInteraction,
   onClick,
 }: {
   student: Student;
-  classNameInfo?: AnyClass;
   isSelected: boolean;
   lastInteraction?: string;
   onClick: () => void;
@@ -526,11 +576,6 @@ function StudentListItem({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-medium text-ink-900 truncate">{student.name}</span>
-          {classNameInfo && (
-            <span className="text-[10px] text-ink-400 truncate">
-              {classNameInfo.name}
-            </span>
-          )}
         </div>
         <div className="text-[10px] text-ink-400 flex items-center gap-1">
           {lastInteraction ? (
