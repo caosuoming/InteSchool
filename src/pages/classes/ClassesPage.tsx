@@ -66,7 +66,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
 
   // 编辑班级
   const [editClassOpen, setEditClassOpen] = useState(false);
-  const [editingClass, setEditingClass] = useState<SchoolClass | null>(null);
+  const [editingClass, setEditingClass] = useState<AnyClass | null>(null);
   const [editClassName, setEditClassName] = useState("");
   const [editClassGrade, setEditClassGrade] = useState("");
   const [editClassType, setEditClassType] = useState("");
@@ -188,12 +188,12 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
     await load();
   };
 
-  const openEditClass = (cls: SchoolClass) => {
+  const openEditClass = (cls: AnyClass) => {
     setEditingClass(cls);
     setEditClassName(cls.name);
-    setEditClassGrade(cls.grade);
-    setEditClassType(cls.classTypeId || "");
-    setEditClassGradeYear(cls.gradeYear ? String(cls.gradeYear) : "");
+    setEditClassGrade(cls.type === "school" ? cls.grade : "");
+    setEditClassType(cls.type === "school" ? cls.classTypeId || "" : "");
+    setEditClassGradeYear(cls.type === "school" && cls.gradeYear ? String(cls.gradeYear) : "");
     setEditClassOpen(true);
   };
 
@@ -203,13 +203,16 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
       toast.error("请填写班级名称");
       return;
     }
-    await classService.updateSchoolClass(editingClass.id, {
-      name: editClassName.trim(),
-      grade: editClassGrade,
-      classTypeId: editClassType || undefined,
-      gradeYear: editClassGradeYear ? Number(editClassGradeYear) : undefined,
-    });
-    toast.success("班级信息已更新");
+    const updated = editingClass.type === "personal"
+      ? await classService.updatePersonalClass(editingClass.id, { name: editClassName.trim() })
+      : await classService.updateSchoolClass(editingClass.id, {
+          name: editClassName.trim(),
+          grade: editClassGrade,
+          classTypeId: editClassType || undefined,
+          gradeYear: editClassGradeYear ? Number(editClassGradeYear) : undefined,
+        });
+    toast.success(editingClass.type === "personal" ? "个人教学班已改名" : "班级信息已更新");
+    if (updated && selectedClass?.id === updated.id) setSelectedClass(updated);
     setEditClassOpen(false);
     setEditingClass(null);
     await load();
@@ -761,6 +764,16 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {selectedClass.type === "personal" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditClass(selectedClass)}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      改名
+                    </Button>
+                  )}
                   {selectedClass.type === "school" && (
                     <div className="relative">
                       <Button
@@ -878,7 +891,12 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                           <div className="col-span-3 text-ink-600 font-mono text-xs">{s.studentNo || "—"}</div>
                           <div className="col-span-2 text-ink-600">{s.grade || "—"}</div>
                           <div className="col-span-2">
-                            {isSuspended ? (
+                            {selectedClass.type === "personal" && s.isExternal ? (
+                              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                <School className="w-3 h-3" />
+                                外校
+                              </span>
+                            ) : isSuspended ? (
                               <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                                 <PauseCircle className="w-3 h-3" />
                                 挂起
@@ -908,13 +926,15 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                                   "absolute right-0 z-50 bg-white border border-ink-200 rounded-md shadow-lg py-1 min-w-[160px] text-left",
                                   isNearBottom ? "bottom-full mb-1" : "top-full mt-1",
                                 )}>
-                                  <button
-                                    onClick={() => openEditStudent(s)}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-700 hover:bg-mist"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                    编辑信息
-                                  </button>
+                                  {(selectedClass.type === "school" || s.isExternal) && (
+                                    <button
+                                      onClick={() => openEditStudent(s)}
+                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-700 hover:bg-mist"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                      编辑信息
+                                    </button>
+                                  )}
                                   {selectedClass?.type === "school" && (
                                     <button
                                       onClick={() => openTransfer(s)}
@@ -924,15 +944,15 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                                       换班
                                     </button>
                                   )}
-                                  <button
-                                    onClick={() => handleSuspend(s)}
-                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-mist"
-                                  >
-                                    <PauseCircle className="w-3.5 h-3.5" />
-                                    挂起（休学）
-                                  </button>
                                   {selectedClass.type === "school" && (
                                     <>
+                                      <button
+                                        onClick={() => handleSuspend(s)}
+                                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-mist"
+                                      >
+                                        <PauseCircle className="w-3.5 h-3.5" />
+                                        挂起（休学）
+                                      </button>
                                       <button
                                         onClick={() => handleGraduateStudent(s)}
                                         className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gold-700 hover:bg-gold-50"
@@ -961,7 +981,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-mist"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
-                                      移出班级
+                                      删除
                                     </button>
                                   )}
                                 </div>
@@ -1045,7 +1065,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
         open={editClassOpen}
         onClose={() => { setEditClassOpen(false); setEditingClass(null); }}
         size="sm"
-        title="编辑班级信息"
+        title={editingClass?.type === "personal" ? "个人教学班改名" : "编辑班级信息"}
         footer={
           <>
             <Button variant="ghost" onClick={() => { setEditClassOpen(false); setEditingClass(null); }}>取消</Button>
@@ -1058,34 +1078,38 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
         <div className="space-y-3">
           <Input
             label="班级名称"
-            placeholder="如：高一(3)班"
+            placeholder={editingClass?.type === "personal" ? "如：竞赛冲刺班" : "如：高一(3)班"}
             value={editClassName}
             onChange={(e) => setEditClassName(e.target.value)}
             autoFocus
           />
-          <Select
-            label="年级"
-            value={editClassGrade}
-            onChange={(e) => setEditClassGrade(e.target.value)}
+          {editingClass?.type === "school" && (
+            <>
+              <Select
+                label="年级"
+                value={editClassGrade}
+                onChange={(e) => setEditClassGrade(e.target.value)}
                 options={includeCurrentOption(gradeOptions, editClassGrade)}
-          />
-          <Select
-            label="班型"
-            value={editClassType}
-            onChange={(e) => setEditClassType(e.target.value)}
-            options={[
-              { value: "", label: "不设置" },
-              ...classTypes.map((ct) => ({ value: ct.id, label: ct.name })),
-            ]}
-          />
-          <Input
-            label="入学年份（级）"
-            type="number"
-            placeholder="如：2025"
-            value={editClassGradeYear}
-            onChange={(e) => setEditClassGradeYear(e.target.value)}
-            hint={`毕业年份（届）将自动计算为 ${editClassGradeYear ? Number(editClassGradeYear) + 3 : "—"}`}
-          />
+              />
+              <Select
+                label="班型"
+                value={editClassType}
+                onChange={(e) => setEditClassType(e.target.value)}
+                options={[
+                  { value: "", label: "不设置" },
+                  ...classTypes.map((ct) => ({ value: ct.id, label: ct.name })),
+                ]}
+              />
+              <Input
+                label="入学年份（级）"
+                type="number"
+                placeholder="如：2025"
+                value={editClassGradeYear}
+                onChange={(e) => setEditClassGradeYear(e.target.value)}
+                hint={`毕业年份（届）将自动计算为 ${editClassGradeYear ? Number(editClassGradeYear) + 3 : "—"}`}
+              />
+            </>
+          )}
         </div>
       </Modal>
 

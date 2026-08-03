@@ -362,6 +362,26 @@ export const classService = {
     return updated;
   },
 
+  async updatePersonalClass(
+    classId: string,
+    patch: Pick<PersonalClass, "name">,
+  ): Promise<PersonalClass | null> {
+    await delay(250);
+    maybeThrowError();
+    const name = patch.name.trim();
+    if (!name) throw new Error("个人教学班名称不能为空");
+
+    let updated: PersonalClass | null = null;
+    db.update("personalClasses", (list) =>
+      list.map((personalClass) => {
+        if (personalClass.id !== classId) return personalClass;
+        updated = { ...personalClass, name };
+        return updated;
+      }),
+    );
+    return updated;
+  },
+
   async getStudent(studentId: string): Promise<Student | null> {
     await delay(100);
     return db.read("students").find((s) => s.id === studentId) || null;
