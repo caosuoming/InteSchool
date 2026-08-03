@@ -33,6 +33,7 @@ import type {
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { inferMaterialTypeFromFile } from "@/lib/material-media";
+import { countPptxSlides } from "@/lib/pptx";
 
 type TabKey = "upload" | "share" | "ai";
 
@@ -411,14 +412,19 @@ export function UploadPage() {
           );
           resourceId = lecture.id;
         } else if (currentType === "courseware") {
+          const resolvedCoursewareType = (item.coursewareType || coursewareType) as CoursewareType;
+          const pageCount = resolvedCoursewareType === "ppt"
+            ? await countPptxSlides(item.file)
+            : undefined;
           const cw = await coursewareService.createCourseware(
             teacher.id, teacher.schoolId, {
               ...baseInput,
-              type: (item.coursewareType || coursewareType) as CoursewareType,
+              type: resolvedCoursewareType,
               content: item.description.trim() || item.file.name,
               fileUrl: uploaded.url,
               fileName: item.file.name,
               fileSize: item.file.size,
+              pageCount,
               tags: [],
             },
           );

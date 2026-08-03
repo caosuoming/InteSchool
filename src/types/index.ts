@@ -953,6 +953,8 @@ export interface Courseware {
   fileUrl?: string; // 文件地址（如有上传）
   fileName?: string;
   fileSize?: number;
+  /** PPT/PPTX 的页面数；上传时解析，旧数据可在首次推送时补齐。 */
+  pageCount?: number;
   /** 可公开访问的高熵文件令牌，供外部在线预览器读取。 */
   onlineAccessToken?: string;
   /** 绑定后的在线编辑地址，例如 WPS 在线文档共享链接。 */
@@ -1933,6 +1935,10 @@ export interface LessonSlide {
   fileName?: string;
   onlineAccessToken?: string;
   editorUrl?: string;
+  /** 从 PPT 拆页生成的原始页码（从 1 开始）。 */
+  pptSlideNumber?: number;
+  /** 该页应交由本机 WPS 打开，而不是在网页中嵌入。 */
+  openInWps?: boolean;
   /** 页面上额外添加的文本框、题图等自由布局元素。 */
   elements?: LessonSlideElement[];
 }
@@ -1958,6 +1964,8 @@ export interface LessonCourseware {
   sourceId?: string;
   /** 来源资源标题（冗余） */
   sourceTitle?: string;
+  /** 课件库 PPT 的导入方式。 */
+  coursewareMode?: "editable" | "direct";
   /** 课件页面列表 */
   slides: LessonSlide[];
   /** 班级ID */

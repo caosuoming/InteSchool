@@ -730,7 +730,8 @@ export const serviceParameters = {
     "createFromCourseware": [
       "teacherId",
       "schoolId",
-      "sourceId"
+      "sourceId",
+      "options"
     ]
   },
   "material": {

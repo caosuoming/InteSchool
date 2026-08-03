@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, ExternalLink, Link2, PlayCircle, Presentation, Save } from "lucide-react";
+import { ArrowLeft, ExternalLink, Link2, MonitorPlay, Pencil, PlayCircle, Presentation, Save } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -14,6 +14,8 @@ import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import type { Courseware, CoursewareType } from "@/types";
 import { getCoursewareEditorUrl, getCoursewareFileUrl } from "@/lib/courseware-online";
+import { loadCoursewarePptSlides } from "@/lib/pptx";
+import { openCoursewareInWps } from "@/lib/wps";
 
 const typeLabel: Record<CoursewareType, string> = {
   ppt: "PPT",
@@ -30,7 +32,7 @@ export default function CoursewarePreviewPage() {
   const { teacher } = useAuthStore();
   const [courseware, setCourseware] = useState<Courseware | null>(null);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
+  const [addingMode, setAddingMode] = useState<"" | "editable" | "direct">("");
   const [bindingEditor, setBindingEditor] = useState(false);
   const [editorUrl, setEditorUrl] = useState("");
   const [savingEditor, setSavingEditor] = useState(false);
@@ -58,19 +60,51 @@ export default function CoursewarePreviewPage() {
 
   const handleAddToLesson = async () => {
     if (!courseware || !teacher?.schoolId) return;
-    setAdding(true);
+    setAddingMode("editable");
     try {
+      let pptSlides: Array<{ title: string; content: string }> = [];
+      if (courseware.type === "ppt") {
+        try {
+          pptSlides = await loadCoursewarePptSlides(courseware);
+        } catch {
+          toast.warning("PPT 页面内容读取失败，将按已记录页数创建编辑页");
+        }
+      }
+      let source = courseware;
+      if (pptSlides.length > 0 && courseware.pageCount !== pptSlides.length) {
+        source = await coursewareService.updateCourseware(courseware.id, { pageCount: pptSlides.length });
+        setCourseware(source);
+      }
       const lesson = await lessonCoursewareService.createFromCourseware(
         teacher.id,
         teacher.schoolId,
-        courseware,
+        source,
+        pptSlides,
       );
-      toast.success("已添加到我的上课", "请选择班级并完成发布");
+      toast.success("已生成二次编辑课件", `共 ${lesson.slides.length} 页`);
       navigate(`/my-lessons/${lesson.id}/edit`);
     } catch (error) {
       toast.error("添加失败", error instanceof Error ? error.message : undefined);
     } finally {
-      setAdding(false);
+      setAddingMode("");
+    }
+  };
+
+  const handleAddDirectly = async () => {
+    if (!courseware || !teacher?.schoolId) return;
+    setAddingMode("direct");
+    try {
+      await lessonCoursewareService.createDirectFromCourseware(
+        teacher.id,
+        teacher.schoolId,
+        courseware,
+      );
+      toast.success("已直接推送到我的上课", "预览、编辑和上课时将使用本机 WPS");
+      navigate("/my-lessons");
+    } catch (error) {
+      toast.error("添加失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setAddingMode("");
     }
   };
 
@@ -131,9 +165,20 @@ export default function CoursewarePreviewPage() {
               <ExternalLink className="w-4 h-4" />在线编辑
             </Button>
           )}
-          <Button variant="gold" onClick={handleAddToLesson} loading={adding}>
-            <PlayCircle className="w-4 h-4" />推送到我的上课
+          {courseware.type === "ppt" && (
+            <Button variant="outline" onClick={() => void openCoursewareInWps(courseware)}>
+              <MonitorPlay className="w-4 h-4" />本机 WPS 打开
+            </Button>
+          )}
+          <Button variant="gold" onClick={handleAddToLesson} loading={addingMode === "editable"} disabled={Boolean(addingMode)}>
+            {courseware.type === "ppt" ? <Pencil className="w-4 h-4" /> : <PlayCircle className="w-4 h-4" />}
+            {courseware.type === "ppt" ? "推送到我的上课（二次编辑）" : "推送到我的上课"}
           </Button>
+          {courseware.type === "ppt" && (
+            <Button variant="outline" onClick={handleAddDirectly} loading={addingMode === "direct"} disabled={Boolean(addingMode)}>
+              <PlayCircle className="w-4 h-4" />直接推送我要上课（PPT上课）
+            </Button>
+          )}
         </div>
       </div>
 
@@ -144,7 +189,7 @@ export default function CoursewarePreviewPage() {
             <span className="text-xs text-amber-700">绑定 WPS 在线文档共享地址后可一键编辑</span>
           )}
         </div>
-        <CoursewareEmbed courseware={courseware} title={courseware.title} />
+        <CoursewareEmbed courseware={courseware} title={courseware.title} preferWps={courseware.type === "ppt"} />
       </Card>
 
       <Modal

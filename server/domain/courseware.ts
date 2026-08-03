@@ -68,6 +68,7 @@ export interface CoursewareInput {
   fileUrl?: string;
   fileName?: string;
   fileSize?: number;
+  pageCount?: number;
   editorUrl?: string;
   tags: string[];
 }
@@ -112,6 +113,9 @@ export const coursewareService = {
       fileUrl: input.fileUrl,
       fileName: input.fileName,
       fileSize: input.fileSize,
+      pageCount: input.pageCount && input.pageCount > 0
+        ? Math.min(Math.floor(input.pageCount), 500)
+        : undefined,
       onlineAccessToken: input.fileUrl ? randomUUID() : undefined,
       editorUrl: normalizeEditorUrl(input.editorUrl),
       tags: input.tags,
