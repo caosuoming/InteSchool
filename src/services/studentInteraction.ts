@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { StudentInteraction, InteractionType } from "@/types";
+import type { StudentInteraction, StudentInteractionView, InteractionType } from "@/types";
 
 export interface InteractionInput {
   studentId: string;
@@ -8,14 +8,15 @@ export interface InteractionInput {
   content: string;
   attitude?: number;
   statusTag?: string;
+  shareWithHomeroom?: boolean;
 }
 
 export const studentInteractionService = {
-  async listByStudent(studentId: string): Promise<StudentInteraction[]> {
+  async listByStudent(studentId: string): Promise<StudentInteractionView[]> {
     return rpcCall("studentInteraction", "listByStudent", [studentId]) as any;
   },
 
-  async listByTeacher(teacherId: string): Promise<StudentInteraction[]> {
+  async listByTeacher(teacherId: string): Promise<StudentInteractionView[]> {
     return rpcCall("studentInteraction", "listByTeacher", [teacherId]) as any;
   },
 

@@ -1286,7 +1286,8 @@ export const serviceParameters = {
       "teacher"
     ],
     "listByTeacher": [
-      "teacherId"
+      "teacherId",
+      "teacher"
     ],
     "createInteraction": [
       "teacherId",
@@ -1295,7 +1296,8 @@ export const serviceParameters = {
       "teacher"
     ],
     "deleteInteraction": [
-      "id"
+      "id",
+      "teacher"
     ]
   }
 } as const;

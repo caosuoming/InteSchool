@@ -2090,7 +2090,16 @@ export interface StudentInteraction {
   attitude?: number;
   /** 学习状态标签 */
   statusTag?: string;
+  /** 是否匿名分享给该学生所在班级的班主任。旧记录默认不分享。 */
+  sharedWithHomeroom?: boolean;
   createdAt: string;
+}
+
+/** 师生互动页面使用的可见记录；匿名分享不会暴露来源教师 ID。 */
+export interface StudentInteractionView extends Omit<StudentInteraction, "teacherId"> {
+  teacherId?: string;
+  isAnonymous: boolean;
+  canDelete: boolean;
 }
 
 // ============ 校本资源备份 ============
