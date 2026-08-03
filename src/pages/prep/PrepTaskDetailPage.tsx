@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import {
   Plus,
   Edit3,
@@ -46,6 +46,7 @@ import type {
 
 export default function PrepTaskDetailPage() {
   const { id: taskId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { teacher } = useAuthStore();
   const [task, setTask] = useState<PrepTask | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,22 +67,41 @@ export default function PrepTaskDetailPage() {
     workflow: PrepWorkflow;
   } | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [taskPassword, setTaskPassword] = useState(() =>
+    taskId ? sessionStorage.getItem(`prep-resource-password:${taskId}`) || "" : "",
+  );
+  const [taskPasswordInput, setTaskPasswordInput] = useState("");
+  const [taskPasswordOpen, setTaskPasswordOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [taskData, teacherList] = await Promise.all([
-        prepService.getTask(taskId!),
+        prepService.getTask(taskId!, taskPassword || undefined),
         organizationService.listTeachers(teacher!.schoolId!),
       ]);
       setTask(taskData);
       setTeachers(teacherList);
+      setTaskPasswordOpen(false);
     } catch (error) {
-      toast.error("加载失败", "任务详情加载失败");
+      const message = error instanceof Error ? error.message : "任务详情加载失败";
+      if (message.includes("密码")) setTaskPasswordOpen(true);
+      else toast.error("加载失败", message);
     } finally {
       setLoading(false);
     }
-  }, [taskId, teacher]);
+  }, [taskId, taskPassword, teacher]);
+
+  const handleTaskPasswordSubmit = () => {
+    if (!taskId || !taskPasswordInput.trim()) {
+      toast.warning("请输入访问密码");
+      return;
+    }
+    const password = taskPasswordInput.trim();
+    sessionStorage.setItem(`prep-resource-password:${taskId}`, password);
+    setTaskPassword(password);
+    setTaskPasswordOpen(false);
+  };
 
   useEffect(() => {
     if (!taskId || !teacher) return;
@@ -261,6 +281,35 @@ export default function PrepTaskDetailPage() {
 
   if (!teacher) return null;
 
+  if (taskPasswordOpen && !task) {
+    return (
+      <Modal
+        open
+        onClose={() => navigate("/prep")}
+        title="输入协作文档密码"
+        description="验证后可查看任务详情并进入共同编辑。"
+        size="sm"
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => navigate("/prep")}>返回</Button>
+            <Button variant="gold" onClick={handleTaskPasswordSubmit}>验证</Button>
+          </>
+        )}
+      >
+        <Input
+          label="访问密码"
+          type="password"
+          autoFocus
+          value={taskPasswordInput}
+          onChange={(event) => setTaskPasswordInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") handleTaskPasswordSubmit();
+          }}
+        />
+      </Modal>
+    );
+  }
+
   if (loading || !task) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -277,6 +326,11 @@ export default function PrepTaskDetailPage() {
     teacher.roles.includes("vicePrincipal") ||
     teacher.roles.includes("principal");
   const hasSubmissions = task.assignments.some((assignment) => assignment.submission);
+  const linkedEditorPath = task.linkedResource
+    ? task.linkedResource.type === "examPaper"
+      ? `/exam-papers/${task.linkedResource.id}?prepTask=${task.id}`
+      : `/lectures/${task.linkedResource.id}/edit?prepTask=${task.id}`
+    : null;
 
   return (
     <div>
@@ -286,13 +340,19 @@ export default function PrepTaskDetailPage() {
         icon={<BookOpen className="w-5 h-5" />}
         action={
           <div className="flex items-center gap-2">
+            {linkedEditorPath && (
+              <Button variant="gold" onClick={() => navigate(linkedEditorPath)}>
+                <Edit3 className="w-4 h-4" />
+                编辑协作文档
+              </Button>
+            )}
             {task.status === "completed" && hasSubmissions && (
               <Button variant="gold" onClick={() => setShowReviewModal(true)}>
                 <Eye className="w-4 h-4" />
                 预览成果
               </Button>
             )}
-            {canManage && task.status !== "completed" && (
+            {canManage && !task.linkedResource && task.status !== "completed" && (
               <Button variant="gold" onClick={() => setShowAddWorkflowModal(true)}>
                 <Plus className="w-4 h-4" />
                 添加流程
@@ -408,7 +468,7 @@ export default function PrepTaskDetailPage() {
                             )}
                           </div>
                         </div>
-                        {canManage && (
+                        {canManage && !task.linkedResource && (
                           <div className="flex items-center gap-2">
                             <Button
                               variant="ghost"
@@ -513,7 +573,7 @@ export default function PrepTaskDetailPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          {myAssignment && (
+                          {myAssignment && !task.linkedResource && (
                             <div className="flex items-center gap-2">
                               {myAssignment.status === "pending" && (
                                 <Button
@@ -577,7 +637,7 @@ export default function PrepTaskDetailPage() {
                               )}
                             </div>
                           )}
-                          {canManage && (
+                          {canManage && !task.linkedResource && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -595,7 +655,7 @@ export default function PrepTaskDetailPage() {
               <div className="text-center py-8">
                 <BookOpen className="w-12 h-12 text-ink-200 mx-auto mb-3" />
                 <p className="text-ink-400 mb-4">暂无任务流程</p>
-                {canManage && (
+                {canManage && !task.linkedResource && (
                   <Button variant="gold" onClick={() => setShowAddWorkflowModal(true)}>
                     <Plus className="w-4 h-4" />
                     添加流程

@@ -75,6 +75,7 @@ import {
 } from "@/stores/extractTasks";
 import { parseDocumentBlocks, type DocumentBlock } from "@/lib/document-block-parser";
 import { matchingResourceTypeIds } from "@/lib/resource-type-hierarchy";
+import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type LeftTab = "chapter" | "knowledge";
@@ -286,6 +287,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [shareScope, setShareScope] = useState<ShareScope>("school");
   const [shareMessage, setShareMessage] = useState("");
   const [sharing, setSharing] = useState(false);
+  const [prepTarget, setPrepTarget] = useState<{
+    resourceType: "examPaper" | "lecture";
+    resourceId: string;
+    resourceTitle: string;
+  } | null>(null);
 
   // 批量操作选择可跨资源类型和 Tab 保留。
   const [resourceSelections, setResourceSelections] = useState<Set<string>>(new Set());
@@ -2144,6 +2150,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         }
                       }}
                       onShare={() => handleOpenShare("lecture", mainLecture.id, mainLecture.title)}
+                      onAddToPrep={() => setPrepTarget({
+                        resourceType: "lecture",
+                        resourceId: mainLecture.id,
+                        resourceTitle: mainLecture.title,
+                      })}
                       onDelete={() => handleDelete(mainLecture.id)}
                       onViewReflections={() => setViewingReflections({ title: mainLecture.title, list: reflectionsMap[mainLecture.id] || [] })}
                       onDuplicate={() => openDuplicate("lecture", mainLecture.id, mainLecture.title)}
@@ -2234,6 +2245,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         reflections={reflectionsMap[copy.id]}
                         onClick={() => navigate(`/exam-papers/${copy.id}/preview`)}
                         onShare={() => handleOpenShare("examPaper", copy.id, copy.title)}
+                        onAddToPrep={() => setPrepTarget({
+                          resourceType: "examPaper",
+                          resourceId: copy.id,
+                          resourceTitle: copy.title,
+                        })}
                         onDelete={() => handleDelete(copy.id)}
                         onViewReflections={() => setViewingReflections({ title: copy.title, list: reflectionsMap[copy.id] || [] })}
                         onDuplicate={() => openDuplicate("examPaper", copy.id, copy.title)}
@@ -2300,6 +2316,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             }
                           }}
                           onShare={() => handleOpenShare("examPaper", item.id, item.title)}
+                          onAddToPrep={() => setPrepTarget({
+                            resourceType: "examPaper",
+                            resourceId: item.id,
+                            resourceTitle: item.title,
+                          })}
                           onDelete={() => handleDelete(item.id)}
                           onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                           onDuplicate={() => openDuplicate("examPaper", item.id, item.title)}
@@ -2628,6 +2649,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           />
         </div>
       </Modal>
+
+      {prepTarget && (
+        <AddResourceToPrepModal
+          open
+          onClose={() => setPrepTarget(null)}
+          resourceType={prepTarget.resourceType}
+          resourceId={prepTarget.resourceId}
+          resourceTitle={prepTarget.resourceTitle}
+        />
+      )}
 
       {/* 捐赠题目查重与合并 */}
       <Modal
@@ -3085,6 +3116,7 @@ interface ResourceCardProps {
   onShare?: () => void;
   onDelete?: () => void;
   onAddToLesson?: () => void;
+  onAddToPrep?: () => void;
   onDuplicate?: () => void;
   onConvertToExamPaper?: () => void;
   onViewReflections?: () => void;
@@ -3106,7 +3138,7 @@ interface ResourceCardProps {
   compactActions?: boolean;
 }
 
-export function ResourceCard({ title, titleActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onDuplicate, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
+export function ResourceCard({ title, titleActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const isImage = type === "image";
@@ -3266,6 +3298,15 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
                 title="分享"
               >
                 <Share2 className={actionIconSize} />
+              </button>
+            )}
+            {onAddToPrep && (
+              <button
+                onClick={onAddToPrep}
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-amber-50 hover:text-amber-700")}
+                title="添加到集体备课"
+              >
+                <Users className={actionIconSize} />
               </button>
             )}
             {showAddToLesson && onAddToLesson && (

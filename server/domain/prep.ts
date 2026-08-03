@@ -9,13 +9,18 @@ import type {
   PrepSubmissionAsset,
   PrepSubmissionInput,
   PrepAnnotationStroke,
+  PrepResourceComment,
+  PrepResourceTaskInput,
   QuestionReference,
   Question,
   Teacher,
   LectureSection,
+  ExamPaper,
+  Lecture,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
+import { hashPassword, verifyPassword } from "../lib/password.js";
 
 /** 流程类型中文标签 */
 export const taskTypeLabels: Record<PrepTaskType, string> = {
@@ -194,12 +199,90 @@ function submissionTargetIds(submission: PrepSubmission): Set<string> {
   return ids;
 }
 
+function publicTask(task: PrepTask): PrepTask {
+  const { viewPasswordHash, ...visible } = task;
+  return {
+    ...visible,
+    accessProtected: Boolean(viewPasswordHash),
+    resourceComments: task.resourceComments || [],
+  };
+}
+
+function isTaskParticipant(task: PrepTask, teacherId: string): boolean {
+  return task.createdBy === teacherId
+    || task.assignments.some((assignment) => assignment.teacherId === teacherId);
+}
+
+function assertLinkedResourceAccess(
+  task: PrepTask,
+  teacher: Teacher,
+  password?: string,
+): void {
+  if (!task.linkedResource) throw new Error("该任务未关联协作文档");
+  if (task.schoolId !== teacher.schoolId || !isTaskParticipant(task, teacher.id)) {
+    throw new Error("无权访问该协作文档");
+  }
+  if (task.createdBy === teacher.id || !task.viewPasswordHash) return;
+  if (task.passwordExpiresAt && new Date(task.passwordExpiresAt) <= new Date()) {
+    throw new Error("访问密码已过期，请联系创建人更新");
+  }
+  if (!password) throw new Error("需要访问密码");
+  if (!verifyPassword(password, task.viewPasswordHash)) throw new Error("访问密码错误");
+}
+
+function linkedResource(task: PrepTask): ExamPaper | Lecture {
+  if (!task.linkedResource) throw new Error("该任务未关联协作文档");
+  const collection = task.linkedResource.type === "examPaper" ? "examPapers" : "lectures";
+  const resource = db.read(collection).find((item) => item.id === task.linkedResource?.id);
+  if (!resource) throw new Error("协作文档不存在");
+  return resource;
+}
+
+function lectureTargetIds(sections: LectureSection[]): string[] {
+  return sections.flatMap((section) => [section.id, ...lectureTargetIds(section.children || [])]);
+}
+
+function linkedResourceTargetIds(resource: ExamPaper | Lecture): Set<string> {
+  if ("questions" in resource) {
+    return new Set([
+      ...resource.questions.map((question) => question.id),
+      ...(resource.contentBlocks || []).map((block) => block.id),
+    ]);
+  }
+  return new Set(lectureTargetIds(resource.sections));
+}
+
+function normalizePasswordSettings(input: PrepResourceTaskInput): {
+  viewPasswordHash?: string;
+  passwordExpiresAt?: string;
+} {
+  const password = input.password?.trim() || "";
+  if (password.length > 128) throw new Error("访问密码过长");
+  if (input.passwordExpiresAt && !password) throw new Error("设置失效时间前请先设置访问密码");
+  if (!input.passwordExpiresAt) {
+    return password ? { viewPasswordHash: hashPassword(password) } : {};
+  }
+  const expiresAt = new Date(input.passwordExpiresAt);
+  if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) {
+    throw new Error("密码失效时间必须晚于当前时间");
+  }
+  return {
+    viewPasswordHash: hashPassword(password),
+    passwordExpiresAt: expiresAt.toISOString(),
+  };
+}
+
 export const prepService = {
   // ============ 备课任务管理 ============
 
-  async listTasks(schoolId: string, teacherId?: string): Promise<PrepTask[]> {
+  async listTasks(schoolId: string, teacherId?: string, teacher?: Teacher): Promise<PrepTask[]> {
     await delay(200);
     let tasks = db.read("prepTasks").filter((t) => t.schoolId === schoolId);
+
+    const viewerId = teacher?.id || teacherId;
+    if (viewerId) {
+      tasks = tasks.filter((task) => !task.linkedResource || isTaskParticipant(task, viewerId));
+    }
 
     if (teacherId) {
       tasks = tasks.filter(
@@ -209,12 +292,231 @@ export const prepService = {
       );
     }
 
-    return tasks.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return tasks
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map(publicTask);
   },
 
-  async getTask(taskId: string): Promise<PrepTask | null> {
+  async getTask(taskId: string, password?: string, teacher?: Teacher): Promise<PrepTask | null> {
     await delay(150);
-    return db.read("prepTasks").find((t) => t.id === taskId) || null;
+    const task = db.read("prepTasks").find((t) => t.id === taskId) || null;
+    if (!task) return null;
+    if (task.linkedResource && teacher) assertLinkedResourceAccess(task, teacher, password);
+    return publicTask(task);
+  },
+
+  async createResourceTask(input: PrepResourceTaskInput, teacher: Teacher): Promise<PrepTask> {
+    await delay(250);
+    const collection = input.resourceType === "examPaper" ? "examPapers" : "lectures";
+    const resource = db.read(collection).find((item) => item.id === input.resourceId);
+    if (!resource) throw new Error("资源不存在");
+    if (resource.teacherId !== teacher.id || resource.schoolId !== teacher.schoolId) {
+      throw new Error("只能将自己的试卷或讲义添加到集体备课");
+    }
+
+    const collaboratorIds = [...new Set(input.collaboratorIds.filter(Boolean))]
+      .filter((id) => id !== teacher.id);
+    if (collaboratorIds.length === 0) throw new Error("请至少选择一位协作教师");
+    const schoolTeacherIds = new Set(
+      db.read("teachers")
+        .filter((item) => item.schoolId === teacher.schoolId)
+        .map((item) => item.id),
+    );
+    if (collaboratorIds.some((id) => !schoolTeacherIds.has(id))) {
+      throw new Error("协作对象必须是本校教师");
+    }
+
+    const existing = db.read("prepTasks").find((task) =>
+      task.linkedResource?.type === input.resourceType
+      && task.linkedResource.id === input.resourceId
+      && task.status !== "cancelled",
+    );
+    if (existing) throw new Error("该文档已经加入集体备课");
+
+    const now = new Date().toISOString();
+    const taskId = genId("pt");
+    const workflowId = genId("wf");
+    const participantIds = [teacher.id, ...collaboratorIds];
+    const workflow: PrepWorkflow = {
+      id: workflowId,
+      type: input.resourceType === "examPaper" ? "paper" : "lecture",
+      name: input.resourceType === "examPaper" ? "协作编辑试卷" : "协作编辑讲义",
+      description: "共同编辑文档并在段落旁添加批注",
+      order: 1,
+      status: "in_progress",
+      assigneeIds: participantIds,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const assignments: PrepAssignment[] = participantIds.map((teacherId) => ({
+      id: genId("as"),
+      taskId,
+      workflowId,
+      teacherId,
+      status: "in_progress",
+      createdAt: now,
+      updatedAt: now,
+    }));
+    const passwordSettings = normalizePasswordSettings(input);
+    const task: PrepTask = {
+      id: taskId,
+      schoolId: teacher.schoolId!,
+      subjectGroupId: teacher.subjectGroupIds?.[0] || "",
+      prepGroupId: teacher.prepGroupIds?.[0],
+      title: resource.title,
+      description: input.resourceType === "examPaper"
+        ? "试卷协作编辑"
+        : "讲义协作编辑",
+      grade: resource.grade,
+      subject: teacher.subject || "未设置学科",
+      workflows: [workflow],
+      assignments,
+      status: "in_progress",
+      createdBy: teacher.id,
+      linkedResource: {
+        type: input.resourceType,
+        id: resource.id,
+        title: resource.title,
+      },
+      resourceComments: [],
+      ...passwordSettings,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.update("prepTasks", (list) => [task, ...list]);
+    return publicTask(task);
+  },
+
+  async getLinkedResource(
+    taskId: string,
+    password: string | undefined,
+    teacher: Teacher,
+  ): Promise<{ task: PrepTask; resource: ExamPaper | Lecture; comments: PrepResourceComment[] }> {
+    await delay(120);
+    const task = db.read("prepTasks").find((item) => item.id === taskId);
+    if (!task) throw new Error("集体备课任务不存在");
+    assertLinkedResourceAccess(task, teacher, password);
+    return {
+      task: publicTask(task),
+      resource: linkedResource(task),
+      comments: task.resourceComments || [],
+    };
+  },
+
+  async updateLinkedResource(
+    taskId: string,
+    patch: Partial<ExamPaper> | Partial<Lecture>,
+    password: string | undefined,
+    teacher: Teacher,
+  ): Promise<ExamPaper | Lecture> {
+    await delay(180);
+    const task = db.read("prepTasks").find((item) => item.id === taskId);
+    if (!task) throw new Error("集体备课任务不存在");
+    assertLinkedResourceAccess(task, teacher, password);
+    const now = new Date().toISOString();
+    const { id: _id, teacherId: _teacherId, schoolId: _schoolId, createdAt: _createdAt, ...safePatch } = patch;
+
+    let updated: ExamPaper | Lecture | null = null;
+    if (task.linkedResource!.type === "examPaper") {
+      db.update("examPapers", (list) => list.map((paper) => {
+        if (paper.id !== task.linkedResource!.id) return paper;
+        updated = { ...paper, ...(safePatch as Partial<ExamPaper>), updatedAt: now };
+        return updated as ExamPaper;
+      }));
+    } else {
+      db.update("lectures", (list) => list.map((lecture) => {
+        if (lecture.id !== task.linkedResource!.id) return lecture;
+        const lecturePatch = safePatch as Partial<Lecture>;
+        updated = {
+          ...lecture,
+          ...lecturePatch,
+          version: lecturePatch.sections ? lecture.version + 1 : lecture.version,
+          updatedAt: now,
+        };
+        return updated as Lecture;
+      }));
+    }
+    if (!updated) throw new Error("协作文档不存在");
+
+    const updatedTitle = updated.title;
+    db.update("prepTasks", (list) => list.map((item) =>
+      item.id === taskId
+        ? {
+            ...item,
+            title: updatedTitle,
+            linkedResource: item.linkedResource
+              ? { ...item.linkedResource, title: updatedTitle }
+              : item.linkedResource,
+            updatedAt: now,
+          }
+        : item,
+    ));
+    return updated;
+  },
+
+  async addResourceComment(
+    taskId: string,
+    input: { targetId: string; content: string },
+    password: string | undefined,
+    teacher: Teacher,
+  ): Promise<PrepResourceComment> {
+    await delay(100);
+    const task = db.read("prepTasks").find((item) => item.id === taskId);
+    if (!task) throw new Error("集体备课任务不存在");
+    assertLinkedResourceAccess(task, teacher, password);
+    const targetId = input.targetId.trim();
+    const content = input.content.trim();
+    if (!targetId || !linkedResourceTargetIds(linkedResource(task)).has(targetId)) {
+      throw new Error("批注段落不存在");
+    }
+    if (!content) throw new Error("请输入批注内容");
+    if (content.length > 2000) throw new Error("批注内容不能超过 2000 字");
+
+    const now = new Date().toISOString();
+    const comment: PrepResourceComment = {
+      id: genId("comment"),
+      targetId,
+      content,
+      createdBy: teacher.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.update("prepTasks", (list) => list.map((item) =>
+      item.id === taskId
+        ? {
+            ...item,
+            resourceComments: [...(item.resourceComments || []), comment],
+            updatedAt: now,
+          }
+        : item,
+    ));
+    return comment;
+  },
+
+  async deleteResourceComment(
+    taskId: string,
+    commentId: string,
+    password: string | undefined,
+    teacher: Teacher,
+  ): Promise<void> {
+    await delay(80);
+    const task = db.read("prepTasks").find((item) => item.id === taskId);
+    if (!task) throw new Error("集体备课任务不存在");
+    assertLinkedResourceAccess(task, teacher, password);
+    const comment = (task.resourceComments || []).find((item) => item.id === commentId);
+    if (!comment) return;
+    if (comment.createdBy !== teacher.id && task.createdBy !== teacher.id) {
+      throw new Error("只能删除自己的批注");
+    }
+    db.update("prepTasks", (list) => list.map((item) =>
+      item.id === taskId
+        ? {
+            ...item,
+            resourceComments: (item.resourceComments || []).filter((current) => current.id !== commentId),
+            updatedAt: new Date().toISOString(),
+          }
+        : item,
+    ));
   },
 
   async createTask(

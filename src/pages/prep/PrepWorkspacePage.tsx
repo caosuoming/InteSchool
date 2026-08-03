@@ -512,7 +512,14 @@ export default function PrepWorkspacePage() {
               <div className="space-y-2.5">
                 {myTodos.length > 0 ? (
                   myTodos.map(({ board, workflow, assignment }) => {
-                    const action = nextAssignmentAction(assignment.status);
+                    const action = board.linkedResource
+                      ? null
+                      : nextAssignmentAction(assignment.status);
+                    const linkedEditorPath = board.linkedResource
+                      ? board.linkedResource.type === "examPaper"
+                        ? `/exam-papers/${board.linkedResource.id}?prepTask=${board.id}`
+                        : `/lectures/${board.linkedResource.id}/edit?prepTask=${board.id}`
+                      : null;
                     const template = taskTemplates.find(
                       (item) => item.type === workflow.type,
                     );
@@ -551,6 +558,13 @@ export default function PrepWorkspacePage() {
                                 查看
                               </Button>
                             </Link>
+                            {linkedEditorPath && (
+                              <Link to={linkedEditorPath}>
+                                <Button variant="gold" size="sm">
+                                  共同编辑
+                                </Button>
+                              </Link>
+                            )}
                             {action && (
                               <Button
                                 variant="gold"
