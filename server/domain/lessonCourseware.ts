@@ -2,6 +2,7 @@ import type {
   LessonCourseware,
   LessonCoursewareFilter,
   LessonDocumentBlock,
+  LessonQuestionContentSection,
   LessonSlide,
   LessonSlideElement,
   ExamPaper,
@@ -50,7 +51,12 @@ function imageAlt(html: string): string {
   return (match?.[1] || match?.[2] || "题目图片").trim() || "题目图片";
 }
 
-function createImageElement(src: string, alt: string, index: number): LessonSlideElement {
+function createImageElement(
+  src: string,
+  alt: string,
+  index: number,
+  questionSection: LessonQuestionContentSection,
+): LessonSlideElement {
   const row = index % 3;
   const column = Math.floor(index / 3);
   return {
@@ -63,10 +69,15 @@ function createImageElement(src: string, alt: string, index: number): LessonSlid
     width: 30,
     height: 20,
     animation: "fade",
+    questionSection,
   };
 }
 
-function extractFloatingImages(content: string, offset = 0): {
+function extractFloatingImages(
+  content: string,
+  questionSection: LessonQuestionContentSection,
+  offset = 0,
+): {
   content: string;
   elements: LessonSlideElement[];
 } {
@@ -76,14 +87,24 @@ function extractFloatingImages(content: string, offset = 0): {
   cleaned = cleaned.replace(HTML_IMAGE_PATTERN, (match, doubleQuoted, singleQuoted, unquoted) => {
     const src = safeImageSource(doubleQuoted || singleQuoted || unquoted || "");
     if (!src) return match;
-    elements.push(createImageElement(src, imageAlt(match), offset + elements.length));
+    elements.push(createImageElement(
+      src,
+      imageAlt(match),
+      offset + elements.length,
+      questionSection,
+    ));
     return "";
   });
 
   cleaned = cleaned.replace(MARKDOWN_IMAGE_PATTERN, (match, alt, rawSource) => {
     const src = safeImageSource(rawSource);
     if (!src) return match;
-    elements.push(createImageElement(src, alt || "题目图片", offset + elements.length));
+    elements.push(createImageElement(
+      src,
+      alt || "题目图片",
+      offset + elements.length,
+      questionSection,
+    ));
     return "";
   });
 
@@ -95,17 +116,22 @@ function questionSlide(
     & Partial<Pick<Question, "summary" | "board" | "links" | "explanationVideo">>,
   title: string,
 ): LessonSlide {
-  const stem = extractFloatingImages(question.stem);
+  const stem = extractFloatingImages(question.stem, "stem");
   let imageOffset = stem.elements.length;
   const options = question.options?.map((option) => {
-    const extracted = extractFloatingImages(option, imageOffset);
+    const extracted = extractFloatingImages(option, "options", imageOffset);
     imageOffset += extracted.elements.length;
     return extracted;
   });
   const optionImageCount = options?.reduce((sum, item) => sum + item.elements.length, 0) || 0;
-  const answer = extractFloatingImages(question.answer, stem.elements.length + optionImageCount);
+  const answer = extractFloatingImages(
+    question.answer,
+    "answer",
+    stem.elements.length + optionImageCount,
+  );
   const analysis = extractFloatingImages(
     question.analysis,
+    "analysis",
     stem.elements.length + optionImageCount + answer.elements.length,
   );
 

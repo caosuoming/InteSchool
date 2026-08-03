@@ -2,23 +2,26 @@ import type { LessonSlide } from "@/types";
 import { cn } from "@/lib/utils";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
+import {
+  STEM_ONLY_QUESTION_VISIBILITY,
+  type LessonQuestionContentVisibility,
+} from "@/lib/lesson-slide-visibility";
 
 interface LessonSlideContentProps {
   slide: LessonSlide;
-  showAnswer?: boolean;
+  questionVisibility?: Partial<LessonQuestionContentVisibility>;
   className?: string;
 }
 
-const questionTypeLabel: Record<string, string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
-
-export function LessonSlideContent({ slide, showAnswer = true, className }: LessonSlideContentProps) {
-  const hasFloatingImages = slide.elements?.some((element) => element.kind === "image") || false;
+export function LessonSlideContent({
+  slide,
+  questionVisibility,
+  className,
+}: LessonSlideContentProps) {
+  const visibility = {
+    ...STEM_ONLY_QUESTION_VISIBILITY,
+    ...questionVisibility,
+  };
 
   if (slide.type === "section") {
     return (
@@ -35,59 +38,67 @@ export function LessonSlideContent({ slide, showAnswer = true, className }: Less
   }
 
   if (slide.type === "question" && slide.questionSnapshot) {
+    const question = slide.questionSnapshot;
     return (
-      <div className={cn("h-full overflow-auto p-8", className)}>
-        <div className={cn("space-y-5", hasFloatingImages && "max-w-[60%]") }>
-          <div className="flex items-center gap-2 border-b border-ink-100 pb-3">
-            <span className="rounded bg-gold-100 px-2 py-0.5 text-xs font-medium text-gold-800">
-              {questionTypeLabel[slide.questionSnapshot.type] || "题目"}
-            </span>
-            <span className="font-serif text-xl font-semibold text-ink-900">{slide.title}</span>
-          </div>
-          <MathHtml className="text-lg leading-relaxed text-ink-900">
-            {slide.questionSnapshot.stem}
+      <div className={cn("h-full overflow-hidden p-[5%]", className)}>
+        <div className="w-full space-y-5">
+          <MathHtml className="w-full text-2xl leading-relaxed text-ink-900">
+            {question.stem}
           </MathHtml>
-          {slide.questionSnapshot.options && slide.questionSnapshot.options.length > 0 && (
-            <div className="space-y-2">
-              {slide.questionSnapshot.options.map((option, index) => (
-                <div key={`${slide.id}-option-${index}`} className="flex items-start gap-3 rounded-lg border border-ink-100 bg-mist/40 p-3">
+
+          {visibility.options && question.options && question.options.length > 0 && (
+            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+              {question.options.map((option, index) => (
+                <div
+                  key={`${slide.id}-option-${index}`}
+                  className="flex items-start gap-3 rounded-lg border border-ink-100 bg-mist/40 p-3"
+                >
                   <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-ink-900 font-mono text-sm text-paper">
                     {String.fromCharCode(65 + index)}
                   </span>
-                  <MathHtml className="flex-1 text-base text-ink-800">{option}</MathHtml>
+                  <MathHtml className="min-w-0 flex-1 text-base text-ink-800">{option}</MathHtml>
                 </div>
               ))}
             </div>
           )}
-          <QuestionSupplementaryDetails
-            links={slide.questionSnapshot.links}
-            explanationVideo={slide.questionSnapshot.explanationVideo}
-            compact
-          />
-          {showAnswer && (
-            <div className="space-y-4 border-t border-ink-100 pt-4">
-              <div className="grid grid-cols-2 gap-4">
+
+          {visibility.supplementary && (
+            <QuestionSupplementaryDetails
+              links={question.links}
+              explanationVideo={question.explanationVideo}
+              compact
+            />
+          )}
+
+          {(visibility.answer || visibility.analysis) && (
+            <div className="grid w-full grid-cols-1 gap-4 border-t border-ink-100 pt-4 sm:grid-cols-2">
+              {visibility.answer && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                   <div className="mb-1 text-xs font-medium text-emerald-700">参考答案</div>
                   <MathHtml className="text-sm font-medium text-emerald-900">
-                    {slide.questionSnapshot.answer || "暂无答案"}
+                    {question.answer || "暂无答案"}
                   </MathHtml>
                 </div>
+              )}
+              {visibility.analysis && (
                 <div className="rounded-lg border border-gold-200 bg-gold-50 p-3">
                   <div className="mb-1 text-xs font-medium text-gold-700">解析</div>
                   <MathHtml className="text-sm text-ink-800">
-                    {slide.questionSnapshot.analysis || "暂无解析"}
+                    {question.analysis || "暂无解析"}
                   </MathHtml>
                 </div>
-              </div>
-              {slide.questionSnapshot.summary && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <div className="mb-1 text-xs font-medium text-amber-700">总结</div>
-                  <MathHtml className="text-sm text-ink-800">{slide.questionSnapshot.summary}</MathHtml>
-                </div>
               )}
-              <QuestionSupplementaryDetails board={slide.questionSnapshot.board} compact />
             </div>
+          )}
+
+          {visibility.analysis && question.summary && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="mb-1 text-xs font-medium text-amber-700">总结</div>
+              <MathHtml className="text-sm text-ink-800">{question.summary}</MathHtml>
+            </div>
+          )}
+          {visibility.analysis && (
+            <QuestionSupplementaryDetails board={question.board} compact />
           )}
         </div>
       </div>
@@ -95,7 +106,7 @@ export function LessonSlideContent({ slide, showAnswer = true, className }: Less
   }
 
   return (
-    <div className={cn("h-full overflow-auto p-10", className)}>
+    <div className={cn("h-full overflow-hidden p-10", className)}>
       <div className="mb-5 border-b border-ink-100 pb-4 font-serif text-2xl font-bold text-ink-900">
         {slide.title}
       </div>

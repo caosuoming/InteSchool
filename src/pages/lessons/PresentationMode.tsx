@@ -8,6 +8,11 @@ import { cn } from "@/lib/utils";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
+import {
+  getVisibleLessonSlideElements,
+  STEM_ONLY_QUESTION_VISIBILITY,
+  type LessonQuestionContentVisibility,
+} from "@/lib/lesson-slide-visibility";
 import { uploadFile } from "@/services/api";
 import { questionService } from "@/services/question";
 import { toast } from "@/stores/ui";
@@ -41,7 +46,9 @@ export function PresentationMode({
   const [tool, setTool] = useState<Tool>("none");
   const [penColor, setPenColor] = useState("#dc2626");
   const [penWidth, setPenWidth] = useState(3);
-  const [showAnswer, setShowAnswer] = useState(false);
+  const [questionVisibility, setQuestionVisibility] = useState<LessonQuestionContentVisibility>({
+    ...STEM_ONLY_QUESTION_VISIBILITY,
+  });
   const [showRelated, setShowRelated] = useState(false);
   const [showAskable, setShowAskable] = useState(false);
   const [hasDrawing, setHasDrawing] = useState(false);
@@ -59,7 +66,7 @@ export function PresentationMode({
   // 切换页面时清空画板
   useEffect(() => {
     clearCanvas();
-    setShowAnswer(false);
+    setQuestionVisibility({ ...STEM_ONLY_QUESTION_VISIBILITY });
   }, [currentIndex]);
 
   // 调整 canvas 尺寸
@@ -209,6 +216,48 @@ export function PresentationMode({
     .map((id) => relatedQuestionsById[id])
     .filter((q): q is Question => !!q);
 
+  const visibleSlideElements = displayedSlide
+    ? getVisibleLessonSlideElements(displayedSlide, questionVisibility)
+    : [];
+  const questionContentControls = currentSlide?.questionSnapshot
+    ? [
+        {
+          key: "options" as const,
+          label: "选项",
+          available: Boolean(currentSlide.questionSnapshot.options?.length),
+        },
+        {
+          key: "answer" as const,
+          label: "答案",
+          available: Boolean(currentSlide.questionSnapshot.answer),
+        },
+        {
+          key: "analysis" as const,
+          label: "解析",
+          available: Boolean(
+            currentSlide.questionSnapshot.analysis
+            || currentSlide.questionSnapshot.summary
+            || currentSlide.questionSnapshot.board,
+          ),
+        },
+        {
+          key: "supplementary" as const,
+          label: "补充",
+          available: Boolean(
+            currentSlide.questionSnapshot.links?.length
+            || currentSlide.questionSnapshot.explanationVideo,
+          ),
+        },
+      ].filter((item) => item.available)
+    : [];
+
+  const toggleQuestionContent = (section: keyof LessonQuestionContentVisibility) => {
+    setQuestionVisibility((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-ink-900 flex flex-col">
       {/* 顶部工具栏 */}
@@ -319,8 +368,11 @@ export function PresentationMode({
             </div>
           ) : displayedSlide ? (
             <div className="w-full max-w-6xl">
-              <LessonSlideCanvas key={displayedSlide.id} elements={displayedSlide.elements} className="shadow-2xl">
-                <LessonSlideContent slide={displayedSlide} showAnswer={showAnswer} />
+              <LessonSlideCanvas key={displayedSlide.id} elements={visibleSlideElements} className="shadow-2xl">
+                <LessonSlideContent
+                  slide={displayedSlide}
+                  questionVisibility={questionVisibility}
+                />
               </LessonSlideCanvas>
             </div>
           ) : null}
@@ -447,23 +499,30 @@ export function PresentationMode({
           </div>
         </div>
 
-        {/* 左下角：显示/隐藏答案按钮（仅题目页） */}
-        {currentSlide?.type === "question" && (
-          <div className="absolute bottom-6 left-6 z-30">
-            <button
-              onClick={() => setShowAnswer((v) => !v)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-2 rounded-lg shadow-lg transition-colors",
-                showAnswer
-                  ? "bg-emerald-500 text-paper"
-                  : "bg-paper text-ink-700 hover:bg-emerald-50",
-              )}
-            >
-              {showAnswer ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-              <span className="text-sm font-medium">
-                {showAnswer ? "隐藏答案" : "显示答案"}
-              </span>
-            </button>
+        {/* 左下角：题目内容按需显示 */}
+        {currentSlide?.type === "question" && questionContentControls.length > 0 && (
+          <div className="absolute bottom-6 left-6 z-30 flex items-center gap-1.5 rounded-xl bg-paper/95 p-1.5 shadow-lg backdrop-blur">
+            <span className="px-2 text-xs font-medium text-ink-500">显示内容</span>
+            {questionContentControls.map(({ key, label }) => {
+              const visible = questionVisibility[key];
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={visible}
+                  onClick={() => toggleQuestionContent(key)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
+                    visible
+                      ? "bg-emerald-500 text-paper"
+                      : "text-ink-700 hover:bg-emerald-50",
+                  )}
+                >
+                  {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  {label}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

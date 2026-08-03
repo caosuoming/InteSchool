@@ -11,6 +11,7 @@ const slide: LessonSlide = {
   questionSnapshot: {
     stem: "题干内容",
     type: "short",
+    options: ["选项 A", "选项 B"],
     answer: "参考答案",
     analysis: "详细解析",
     summary: "题目总结",
@@ -27,17 +28,38 @@ const slide: LessonSlide = {
 };
 
 describe("LessonSlideContent", () => {
-  it("shows links and video before revealing answer details", () => {
-    render(<LessonSlideContent slide={slide} showAnswer={false} />);
+  it("shows only the full question stem by default", () => {
+    render(<LessonSlideContent slide={slide} />);
 
+    expect(screen.getByText("题干内容")).toBeInTheDocument();
+    expect(screen.queryByText("课堂题目")).not.toBeInTheDocument();
+    expect(screen.queryByText("选项 A")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /拓展链接/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("参考答案")).not.toBeInTheDocument();
+    expect(screen.queryByText("详细解析")).not.toBeInTheDocument();
+  });
+
+  it("reveals options and supplementary resources independently", () => {
+    render(
+      <LessonSlideContent
+        slide={slide}
+        questionVisibility={{ options: true, supplementary: true }}
+      />,
+    );
+
+    expect(screen.getByText("选项 A")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /拓展链接/ })).toHaveAttribute("href", "https://example.com");
     expect(screen.getByText("视频讲解")).toBeInTheDocument();
     expect(screen.queryByText("参考答案")).not.toBeInTheDocument();
-    expect(screen.queryByAltText("题目板书")).not.toBeInTheDocument();
   });
 
-  it("shows summary and board with answer and analysis", () => {
-    render(<LessonSlideContent slide={slide} showAnswer />);
+  it("reveals answer, analysis, summary, and board on demand", () => {
+    render(
+      <LessonSlideContent
+        slide={slide}
+        questionVisibility={{ answer: true, analysis: true }}
+      />,
+    );
 
     expect(screen.getAllByText("参考答案")).toHaveLength(2);
     expect(screen.getByText("详细解析")).toBeInTheDocument();
