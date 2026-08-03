@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { FileText } from "lucide-react";
 import { BasketMaterialListItem, OriginalFileRow, QuestionListItem, ResourceCard } from "@/pages/resources/MyResourcesPage";
@@ -140,6 +140,56 @@ describe("ResourceCard", () => {
 
     fireEvent.click(convertButton);
     expect(onConvertToExamPaper).toHaveBeenCalledOnce();
+  });
+
+  it("renames a document inline from the always-visible action area", async () => {
+    const onRename = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ResourceCard
+        title="原试卷名称"
+        meta={[{ label: "类型", value: "月考" }]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+        onRename={onRename}
+        alwaysShowActions
+      />,
+    );
+
+    const actionArea = screen.getByTestId("resource-card-actions");
+    expect(actionArea).toHaveClass("opacity-100");
+
+    fireEvent.click(screen.getByRole("button", { name: "修改名称：原试卷名称" }));
+    const input = screen.getByRole("textbox", { name: "修改文档名称：原试卷名称" });
+    fireEvent.change(input, { target: { value: "  新试卷名称  " } });
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+
+    await waitFor(() => expect(onRename).toHaveBeenCalledWith("新试卷名称"));
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "修改文档名称：原试卷名称" })).not.toBeInTheDocument());
+  });
+
+  it("renders document metadata below the main row at full card width", () => {
+    render(
+      <ResourceCard
+        title="函数试卷"
+        meta={[
+          { label: "类型", value: "周练" },
+          { label: "题目", value: "20 题" },
+        ]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+        onClick={vi.fn()}
+        onDelete={vi.fn()}
+        alwaysShowActions
+      />,
+    );
+
+    const mainRow = screen.getByTestId("resource-card-main-row");
+    const details = screen.getByTestId("resource-card-details");
+
+    expect(details).toHaveClass("w-full");
+    expect(mainRow).not.toContainElement(details);
+    expect(mainRow.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(details).toHaveTextContent("类型：周练");
+    expect(details).toHaveTextContent("题目：20 题");
   });
 
   it("places prominent PPT push actions below the resource details", () => {
