@@ -7,6 +7,12 @@ export const serviceParameters = {
       "teacherId",
       "schoolId",
       "input"
+    ],
+    "updateNotice": [
+      "id",
+      "teacherId",
+      "schoolId",
+      "input"
     ]
   },
   "classroomHomework": {
@@ -14,6 +20,12 @@ export const serviceParameters = {
       "filter"
     ],
     "createHomework": [
+      "teacherId",
+      "schoolId",
+      "input"
+    ],
+    "updateHomework": [
+      "id",
       "teacherId",
       "schoolId",
       "input"

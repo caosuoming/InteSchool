@@ -149,6 +149,62 @@ export const classroomHomeworkService = {
     return homework;
   },
 
+  async updateHomework(
+    id: string,
+    teacherId: string,
+    schoolId: string,
+    input: ClassroomHomeworkInput,
+  ): Promise<ClassroomHomework> {
+    await delay(200);
+    maybeThrowError();
+    const attachments = validateInput(input);
+
+    const existing = db.read("classroomHomeworks")
+      .find((item: ClassroomHomework) => item.id === id) as ClassroomHomework | undefined;
+    if (!existing) throw new Error("作业不存在");
+    if (existing.teacherId !== teacherId || existing.schoolId !== schoolId) {
+      throw new Error("无权修改该作业");
+    }
+
+    const teacher = db.read("teachers").find((item: { id: string }) => item.id === teacherId);
+    if (!teacher || teacher.schoolId !== schoolId) throw new Error("教师或学校信息不存在");
+
+    const uniqueClassIds = [...new Set(input.classIds)];
+    const schoolClasses = db.read("schoolClasses") as Array<{
+      id: string;
+      schoolId: string;
+      status?: "active" | "graduated";
+    }>;
+    const validSchoolClassIds = new Set(
+      schoolClasses
+        .filter((item) => item.schoolId === schoolId && item.status !== "graduated")
+        .map((item) => item.id),
+    );
+    if (uniqueClassIds.some((classId) => !validSchoolClassIds.has(classId))) {
+      throw new Error("发布班级不存在或已毕业");
+    }
+    const teacherClassIds = allowedClassIds(teacher);
+    if (teacherClassIds.size > 0 && uniqueClassIds.some((classId) => !teacherClassIds.has(classId))) {
+      throw new Error("只能向自己的任教班级发布作业");
+    }
+
+    const affiliation = currentAffiliation(teacher);
+    const updated: ClassroomHomework = {
+      ...existing,
+      subject: affiliation?.subject || teacher.subject || "其他学科",
+      content: input.content.trim(),
+      attachments,
+      classIds: uniqueClassIds,
+      assignedDate: input.assignedDate,
+      publishAt: new Date(input.publishAt).toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    db.update("classroomHomeworks", (items: ClassroomHomework[]) => items.map((item) => (
+      item.id === id ? updated : item
+    )));
+    return updated;
+  },
+
   async deleteHomework(id: string): Promise<void> {
     await delay(150);
     maybeThrowError();

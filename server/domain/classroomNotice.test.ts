@@ -143,4 +143,30 @@ describe("classroomNoticeService", () => {
       })).rejects.toThrow("通知结束时间必须晚于开始时间");
     });
   });
+
+  it("updates an existing notice owned by the teacher", async () => {
+    const state = createState();
+    state.classroomNotices = [notice({})];
+
+    await runWithState(state, async () => {
+      const updated = await classroomNoticeService.updateNotice(
+        "notice-1",
+        "teacher-1",
+        "school-1",
+        {
+          content: "明天第一节课改到实验室",
+          classIds: ["class-1"],
+          startsAt: "2026-08-03T00:00:00.000Z",
+          endsAt: "2026-08-03T12:00:00.000Z",
+        },
+      );
+
+      expect(updated).toMatchObject({
+        id: "notice-1",
+        content: "明天第一节课改到实验室",
+        classIds: ["class-1"],
+      });
+      expect(state.classroomNotices).toEqual([updated]);
+    });
+  });
 });
