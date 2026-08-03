@@ -12,7 +12,13 @@ import { classroomHomeworkService } from "@/services/classroomHomework";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { uploadFile } from "@/services/api";
 import { classService } from "@/services/class";
-import type { ClassroomHomework, ClassroomNotice, LessonCourseware, SchoolClass } from "@/types";
+import type {
+  ClassroomHomework,
+  ClassroomHomeworkAttachment,
+  ClassroomNotice,
+  LessonCourseware,
+  SchoolClass,
+} from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -36,6 +42,10 @@ function localDateTimeValue(date = new Date()): string {
   return `${year}-${month}-${day}T${hour}:${minute}`;
 }
 
+function localDateTimeFromIso(value: string): string {
+  return localDateTimeValue(new Date(value));
+}
+
 function timeAgo(dateStr: string): string {
   const now = Date.now();
   const diff = now - new Date(dateStr).getTime();
@@ -55,6 +65,8 @@ function fileSizeLabel(size: number): string {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
+
+type LessonTab = "notice" | "homework" | "courseware";
 
 export function MyLessonsPage() {
   const navigate = useNavigate();
@@ -81,11 +93,21 @@ export function MyLessonsPage() {
   const [noticeEndsAt, setNoticeEndsAt] = useState(() => localDateTimeValue(new Date(Date.now() + 24 * 60 * 60_000)));
   const [selectedNoticeClassIds, setSelectedNoticeClassIds] = useState<string[]>([]);
   const [publishingNotice, setPublishingNotice] = useState(false);
+  const [activeTab, setActiveTab] = useState<LessonTab>("notice");
+  const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null);
+  const [editingHomeworkId, setEditingHomeworkId] = useState<string | null>(null);
+  const [homeworkAttachments, setHomeworkAttachments] = useState<ClassroomHomeworkAttachment[]>([]);
 
   const classNames = useMemo(
     () => new Map(classes.map((item) => [item.id, `${item.grade} · ${item.name}`])),
     [classes],
   );
+
+  const currentNotice = useMemo(() => [...notices].sort((left, right) => (
+    new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  ))[0], [notices]);
+
+  const currentHomework = useMemo(() => homeworks[0], [homeworks]);
 
   const loadData = useCallback(async () => {
     if (!teacher?.schoolId) return;
@@ -124,6 +146,7 @@ export function MyLessonsPage() {
         }),
         classroomNoticeService.listNotices({
           schoolId: teacher.schoolId,
+          teacherId: teacher.id,
           activeOnly: true,
         }),
       ]);
@@ -172,6 +195,47 @@ export function MyLessonsPage() {
       : [...current, classId]);
   };
 
+  const resetNoticeForm = () => {
+    setEditingNoticeId(null);
+    setNoticeContent("");
+    setNoticeStartsAt(localDateTimeValue());
+    setNoticeEndsAt(localDateTimeValue(new Date(Date.now() + 24 * 60 * 60_000)));
+    setSelectedNoticeClassIds(classes.map((item) => item.id));
+  };
+
+  const resetHomeworkForm = () => {
+    setEditingHomeworkId(null);
+    setHomeworkContent("");
+    setHomeworkFiles([]);
+    setHomeworkAttachments([]);
+    setHomeworkDate(localDateValue());
+    setPublishMode("now");
+    setScheduledAt(localDateTimeValue(new Date(Date.now() + 30 * 60_000)));
+    setSelectedClassIds(classes.map((item) => item.id));
+  };
+
+  const handleEditNotice = (notice: ClassroomNotice) => {
+    setEditingNoticeId(notice.id);
+    setNoticeContent(notice.content);
+    setNoticeStartsAt(localDateTimeFromIso(notice.startsAt));
+    setNoticeEndsAt(localDateTimeFromIso(notice.endsAt));
+    setSelectedNoticeClassIds(notice.classIds);
+    setActiveTab("notice");
+  };
+
+  const handleEditHomework = (homework: ClassroomHomework) => {
+    const scheduled = new Date(homework.publishAt).getTime() > Date.now();
+    setEditingHomeworkId(homework.id);
+    setHomeworkContent(homework.content);
+    setHomeworkFiles([]);
+    setHomeworkAttachments(homework.attachments || []);
+    setHomeworkDate(homework.assignedDate);
+    setPublishMode(scheduled ? "scheduled" : "now");
+    setScheduledAt(localDateTimeFromIso(homework.publishAt));
+    setSelectedClassIds(homework.classIds);
+    setActiveTab("homework");
+  };
+
   const handlePublishNotice = async () => {
     if (!teacher?.schoolId) return;
     if (!noticeContent.trim()) {
@@ -195,14 +259,20 @@ export function MyLessonsPage() {
 
     setPublishingNotice(true);
     try {
-      await classroomNoticeService.createNotice(teacher.id, teacher.schoolId, {
+      const input = {
         content: noticeContent,
         classIds: selectedNoticeClassIds,
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
-      });
-      toast.success("通知已发送");
-      setNoticeContent("");
+      };
+      if (editingNoticeId) {
+        await classroomNoticeService.updateNotice(editingNoticeId, teacher.id, teacher.schoolId, input);
+        toast.success("通知已更新");
+      } else {
+        await classroomNoticeService.createNotice(teacher.id, teacher.schoolId, input);
+        toast.success("通知已发送");
+      }
+      resetNoticeForm();
       await loadHomeworkData();
     } catch (err) {
       toast.error("通知发送失败", err instanceof Error ? err.message : undefined);
@@ -213,7 +283,7 @@ export function MyLessonsPage() {
 
   const handlePublishHomework = async () => {
     if (!teacher?.schoolId) return;
-    if (!homeworkContent.trim() && homeworkFiles.length === 0) {
+    if (!homeworkContent.trim() && homeworkFiles.length === 0 && homeworkAttachments.length === 0) {
       toast.warning("请输入作业内容或添加附件");
       return;
     }
@@ -221,7 +291,12 @@ export function MyLessonsPage() {
       toast.warning("请选择至少一个发布班级");
       return;
     }
-    const publishAt = publishMode === "now" ? new Date() : new Date(scheduledAt);
+    const existingHomework = editingHomeworkId
+      ? homeworks.find((item) => item.id === editingHomeworkId)
+      : undefined;
+    const publishAt = publishMode === "now"
+      ? new Date(existingHomework?.publishAt || Date.now())
+      : new Date(scheduledAt);
     if (Number.isNaN(publishAt.getTime())) {
       toast.warning("请选择有效的发布时间");
       return;
@@ -229,24 +304,27 @@ export function MyLessonsPage() {
     setPublishingHomework(true);
     try {
       const uploadedFiles = await Promise.all(homeworkFiles.map((file) => uploadFile(file)));
-      await classroomHomeworkService.createHomework(teacher.id, teacher.schoolId, {
+      const input = {
         content: homeworkContent,
-        attachments: uploadedFiles.map((file) => ({
+        attachments: [...homeworkAttachments, ...uploadedFiles.map((file) => ({
           id: file.id,
           name: file.originalName,
           url: file.url,
           mimeType: file.mimeType,
           size: file.size,
-        })),
+        }))],
         classIds: selectedClassIds,
         assignedDate: homeworkDate,
         publishAt: publishAt.toISOString(),
-      });
-      toast.success(publishMode === "now" ? "作业已发布" : "作业已设置定时发布");
-      setHomeworkContent("");
-      setHomeworkFiles([]);
-      setPublishMode("now");
-      setScheduledAt(localDateTimeValue(new Date(Date.now() + 30 * 60_000)));
+      };
+      if (editingHomeworkId) {
+        await classroomHomeworkService.updateHomework(editingHomeworkId, teacher.id, teacher.schoolId, input);
+        toast.success("作业已更新");
+      } else {
+        await classroomHomeworkService.createHomework(teacher.id, teacher.schoolId, input);
+        toast.success(publishMode === "now" ? "作业已发布" : "作业已设置定时发布");
+      }
+      resetHomeworkForm();
       await loadHomeworkData();
     } catch (err) {
       toast.error("作业发布失败", err instanceof Error ? err.message : undefined);
@@ -264,8 +342,9 @@ export function MyLessonsPage() {
           item.name === file.name && item.size === file.size && item.lastModified === file.lastModified);
         if (!duplicate) next.push(file);
       }
-      if (next.length > 8) toast.warning("作业附件不能超过 8 个");
-      return next.slice(0, 8);
+      const available = Math.max(0, 8 - homeworkAttachments.length);
+      if (next.length > available) toast.warning("作业附件不能超过 8 个");
+      return next.slice(0, available);
     });
   };
 
@@ -334,7 +413,104 @@ export function MyLessonsPage() {
         icon={<BookOpen className="w-5 h-5" />}
       />
 
-      <Card className="p-5 mb-4">
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <Card className="flex min-h-52 flex-col p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold-50 text-gold-700">
+              <BellRing className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="font-semibold text-ink-900">当前班级通知</div>
+              <div className="text-xs text-ink-400">当前正在班级上课页展示</div>
+            </div>
+          </div>
+          {currentNotice ? (
+            <>
+              <div className="mt-4 flex-1 whitespace-pre-wrap text-sm leading-6 text-ink-800">
+                {currentNotice.content}
+              </div>
+              <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-ink-100 pt-4">
+                <div className="text-xs text-ink-500">
+                  <div>{currentNotice.classIds.map((id) => classNames.get(id) || id).join("、")}</div>
+                  <div className="mt-1">展示至 {new Date(currentNotice.endsAt).toLocaleString("zh-CN", { hour12: false })}</div>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => handleEditNotice(currentNotice)}>
+                  <Edit3 className="h-3.5 w-3.5" />编辑通知
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
+              <div className="text-sm text-ink-500">当前没有正在展示的班级通知</div>
+              <Button className="mt-3" size="sm" variant="outline" onClick={() => setActiveTab("notice")}>
+                <Plus className="h-3.5 w-3.5" />发布通知
+              </Button>
+            </div>
+          )}
+        </Card>
+
+        <Card className="flex min-h-52 flex-col p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold-50 text-gold-700">
+              <ClipboardCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="font-semibold text-ink-900">当前班级作业</div>
+              <div className="text-xs text-ink-400">最近一次发布或安排的作业</div>
+            </div>
+          </div>
+          {currentHomework ? (
+            <>
+              <div className="mt-4 flex-1 whitespace-pre-wrap text-sm leading-6 text-ink-800">
+                {currentHomework.content || `包含 ${currentHomework.attachments?.length || 0} 个附件`}
+              </div>
+              <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-ink-100 pt-4">
+                <div className="text-xs text-ink-500">
+                  <div>{currentHomework.classIds.map((id) => classNames.get(id) || id).join("、")}</div>
+                  <div className="mt-1">作业日期 {currentHomework.assignedDate}</div>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => handleEditHomework(currentHomework)}>
+                  <Edit3 className="h-3.5 w-3.5" />编辑作业
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
+              <div className="text-sm text-ink-500">尚未发布班级作业</div>
+              <Button className="mt-3" size="sm" variant="outline" onClick={() => setActiveTab("homework")}>
+                <Plus className="h-3.5 w-3.5" />布置作业
+              </Button>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <Card className="mb-4 p-2">
+        <div className="grid grid-cols-3 gap-2" role="tablist" aria-label="我的上课内容">
+          {([
+            ["notice", "班级通知", BellRing],
+            ["homework", "布置作业", ClipboardCheck],
+            ["courseware", "我的课件", Presentation],
+          ] as const).map(([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === value}
+              onClick={() => setActiveTab(value)}
+              className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                activeTab === value
+                  ? "bg-ink-900 text-white shadow-sm"
+                  : "text-ink-600 hover:bg-mist hover:text-ink-900"
+              }`}
+            >
+              <Icon className="h-4 w-4" />{label}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {activeTab === "notice" && <Card className="p-5 mb-4">
         <div className="flex items-start gap-3 mb-4">
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gold-50 text-gold-700">
             <BellRing className="h-5 w-5" />
@@ -392,7 +568,12 @@ export function MyLessonsPage() {
           />
         </div>
 
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex justify-end gap-2">
+          {editingNoticeId && (
+            <Button type="button" variant="outline" onClick={resetNoticeForm}>
+              取消编辑
+            </Button>
+          )}
           <Button
             type="button"
             variant="gold"
@@ -400,7 +581,7 @@ export function MyLessonsPage() {
             disabled={homeworkLoading || classes.length === 0}
             onClick={() => void handlePublishNotice()}
           >
-            <Send className="h-4 w-4" />发送通知
+            <Send className="h-4 w-4" />{editingNoticeId ? "保存通知修改" : "发送通知"}
           </Button>
         </div>
 
@@ -437,9 +618,9 @@ export function MyLessonsPage() {
             </div>
           )}
         </div>
-      </Card>
+      </Card>}
 
-      <Card className="p-5 mb-4">
+      {activeTab === "homework" && <Card className="p-5 mb-4">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <div className="flex items-center gap-2 text-ink-900 font-semibold">
@@ -484,6 +665,28 @@ export function MyLessonsPage() {
             </label>
             <span className="text-xs text-ink-400">最多 8 个，支持图片、PDF、DOCX、TXT 和 Markdown</span>
           </div>
+          {homeworkAttachments.length > 0 && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {homeworkAttachments.map((attachment) => (
+                <div key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-ink-100 bg-paper px-3 py-2">
+                  <FileText className="h-4 w-4 flex-shrink-0 text-gold-600" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-medium text-ink-800">{attachment.name}</div>
+                    <div className="text-[10px] text-ink-400">{fileSizeLabel(attachment.size)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`移除附件 ${attachment.name}`}
+                    disabled={publishingHomework}
+                    onClick={() => setHomeworkAttachments((items) => items.filter((item) => item.id !== attachment.id))}
+                    className="rounded p-1 text-ink-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {homeworkFiles.length > 0 && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {homeworkFiles.map((file) => (
@@ -562,7 +765,12 @@ export function MyLessonsPage() {
           </div>
         </div>
 
-        <div className="flex justify-end mt-4">
+        <div className="flex justify-end gap-2 mt-4">
+          {editingHomeworkId && (
+            <Button type="button" variant="outline" onClick={resetHomeworkForm}>
+              取消编辑
+            </Button>
+          )}
           <Button
             type="button"
             variant="gold"
@@ -570,7 +778,7 @@ export function MyLessonsPage() {
             disabled={homeworkLoading || classes.length === 0}
             onClick={() => void handlePublishHomework()}
           >
-            <Send className="w-4 h-4" />发布作业
+            <Send className="w-4 h-4" />{editingHomeworkId ? "保存作业修改" : "发布作业"}
           </Button>
         </div>
 
@@ -614,8 +822,9 @@ export function MyLessonsPage() {
             )}
           </div>
         )}
-      </Card>
+      </Card>}
 
+      {activeTab === "courseware" && <>
       {/* 筛选栏 */}
       <Card className="p-4 mb-4">
         <div className="flex items-center gap-3 flex-wrap">
@@ -764,6 +973,7 @@ export function MyLessonsPage() {
           })}
         </div>
       )}
+      </>}
     </div>
   );
 }

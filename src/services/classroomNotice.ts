@@ -20,4 +20,13 @@ export const classroomNoticeService = {
   ): Promise<ClassroomNotice> {
     return rpcCall("classroomNotice", "createNotice", [teacherId, schoolId, input]) as any;
   },
+
+  async updateNotice(
+    id: string,
+    teacherId: string,
+    schoolId: string,
+    input: ClassroomNoticeInput,
+  ): Promise<ClassroomNotice> {
+    return rpcCall("classroomNotice", "updateNotice", [id, teacherId, schoolId, input]) as any;
+  },
 };

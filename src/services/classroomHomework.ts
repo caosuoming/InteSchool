@@ -26,6 +26,15 @@ export const classroomHomeworkService = {
     return rpcCall("classroomHomework", "createHomework", [teacherId, schoolId, input]) as any;
   },
 
+  async updateHomework(
+    id: string,
+    teacherId: string,
+    schoolId: string,
+    input: ClassroomHomeworkInput,
+  ): Promise<ClassroomHomework> {
+    return rpcCall("classroomHomework", "updateHomework", [id, teacherId, schoolId, input]) as any;
+  },
+
   async deleteHomework(id: string): Promise<void> {
     return rpcCall("classroomHomework", "deleteHomework", [id]) as any;
   },

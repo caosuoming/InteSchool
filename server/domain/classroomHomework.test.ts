@@ -204,4 +204,38 @@ describe("classroomHomeworkService", () => {
       await expect(classroomHomeworkService.deleteHomework("missing")).rejects.toThrow("作业不存在");
     });
   });
+
+  it("updates an existing homework and keeps normalized attachments", async () => {
+    const state = createState();
+    state.classroomHomeworks = [homework({})];
+
+    await runWithState(state, async () => {
+      const updated = await classroomHomeworkService.updateHomework(
+        "homework-1",
+        "teacher-1",
+        "school-1",
+        {
+          content: "订正课堂练习",
+          attachments: [{
+            id: "file-1",
+            name: "  课堂练习.pdf  ",
+            url: "/api/files/file-1",
+            mimeType: "application/pdf",
+            size: 1024,
+          }],
+          classIds: ["class-1"],
+          assignedDate: "2026-08-03",
+          publishAt: now,
+        },
+      );
+
+      expect(updated).toMatchObject({
+        id: "homework-1",
+        content: "订正课堂练习",
+        assignedDate: "2026-08-03",
+        attachments: [expect.objectContaining({ name: "课堂练习.pdf" })],
+      });
+      expect(state.classroomHomeworks).toEqual([updated]);
+    });
+  });
 });

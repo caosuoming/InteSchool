@@ -21,6 +21,7 @@ vi.mock("@/services/classroomHomework", () => ({
   classroomHomeworkService: {
     listHomeworks: vi.fn(),
     createHomework: vi.fn(),
+    updateHomework: vi.fn(),
     deleteHomework: vi.fn(),
   },
 }));
@@ -29,6 +30,7 @@ vi.mock("@/services/classroomNotice", () => ({
   classroomNoticeService: {
     listNotices: vi.fn(),
     createNotice: vi.fn(),
+    updateNotice: vi.fn(),
   },
 }));
 
@@ -131,8 +133,10 @@ describe("MyLessonsPage classroom publishing", () => {
     }]);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([]);
     vi.mocked(classroomHomeworkService.createHomework).mockResolvedValue(createdHomework);
+    vi.mocked(classroomHomeworkService.updateHomework).mockResolvedValue(createdHomework);
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(classroomNoticeService.createNotice).mockResolvedValue(activeNotice);
+    vi.mocked(classroomNoticeService.updateNotice).mockResolvedValue(activeNotice);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
     vi.mocked(uploadFile).mockResolvedValue({
       id: "file-1",
@@ -154,9 +158,8 @@ describe("MyLessonsPage classroom publishing", () => {
       </MemoryRouter>,
     );
 
-    const classCheckboxes = await screen.findAllByRole("checkbox", { name: "高一 · 高一（1）班" });
-    expect(classCheckboxes).toHaveLength(2);
-    expect(classCheckboxes.every((checkbox) => (checkbox as HTMLInputElement).checked)).toBe(true);
+    await user.click(await screen.findByRole("tab", { name: "布置作业" }));
+    expect(await screen.findByRole("checkbox", { name: "高一 · 高一（1）班" })).toBeChecked();
 
     await user.type(screen.getByLabelText("作业内容"), "完成课本第 42 页第 1—6 题");
     await user.click(screen.getByRole("button", { name: "发布作业" }));
@@ -182,7 +185,7 @@ describe("MyLessonsPage classroom publishing", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("今天放学后进行卫生检查")).toBeInTheDocument();
+    expect((await screen.findAllByText("今天放学后进行卫生检查")).length).toBeGreaterThan(0);
     await user.type(screen.getByLabelText("通知内容"), "明天第一节课改到实验室");
     await user.click(screen.getByRole("button", { name: "发送通知" }));
 
@@ -208,7 +211,8 @@ describe("MyLessonsPage classroom publishing", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findAllByRole("checkbox", { name: "高一 · 高一（1）班" })).toHaveLength(2);
+    await user.click(await screen.findByRole("tab", { name: "布置作业" }));
+    expect(await screen.findByRole("checkbox", { name: "高一 · 高一（1）班" })).toBeChecked();
     const file = new File(["pdf"], "函数图像.pdf", { type: "application/pdf" });
     await user.upload(screen.getByLabelText("选择作业附件"), file);
     expect(screen.getByText("函数图像.pdf")).toBeInTheDocument();
@@ -233,5 +237,75 @@ describe("MyLessonsPage classroom publishing", () => {
         }),
       );
     });
+  });
+
+  it("edits the current notice instead of creating a duplicate", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "编辑通知" }));
+    const textarea = screen.getByLabelText("通知内容");
+    expect(textarea).toHaveValue(activeNotice.content);
+    await user.clear(textarea);
+    await user.type(textarea, "明天第一节课改到实验室");
+    await user.click(screen.getByRole("button", { name: "保存通知修改" }));
+
+    await waitFor(() => {
+      expect(classroomNoticeService.updateNotice).toHaveBeenCalledWith(
+        "notice-1",
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          content: "明天第一节课改到实验室",
+          classIds: ["class-1"],
+        }),
+      );
+    });
+    expect(classroomNoticeService.createNotice).not.toHaveBeenCalled();
+  });
+
+  it("edits the current homework and preserves its stored attachments", async () => {
+    const user = userEvent.setup();
+    const homeworkWithAttachment: ClassroomHomework = {
+      ...createdHomework,
+      attachments: [{
+        id: "file-existing",
+        name: "原作业.pdf",
+        url: "/api/files/file-existing",
+        mimeType: "application/pdf",
+        size: 2048,
+      }],
+    };
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([homeworkWithAttachment]);
+    vi.mocked(classroomHomeworkService.updateHomework).mockResolvedValue(homeworkWithAttachment);
+
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "编辑作业" }));
+    expect(screen.getByRole("tab", { name: "布置作业" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("作业内容")).toHaveValue(createdHomework.content);
+    expect(screen.getByText("原作业.pdf")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保存作业修改" }));
+
+    await waitFor(() => {
+      expect(classroomHomeworkService.updateHomework).toHaveBeenCalledWith(
+        "homework-1",
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          attachments: [expect.objectContaining({ id: "file-existing" })],
+          classIds: ["class-1"],
+        }),
+      );
+    });
+    expect(classroomHomeworkService.createHomework).not.toHaveBeenCalled();
   });
 });

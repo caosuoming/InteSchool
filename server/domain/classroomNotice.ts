@@ -121,4 +121,57 @@ export const classroomNoticeService = {
     db.update("classroomNotices", (items: ClassroomNotice[]) => [notice, ...items]);
     return notice;
   },
+
+  async updateNotice(
+    id: string,
+    teacherId: string,
+    schoolId: string,
+    input: ClassroomNoticeInput,
+  ): Promise<ClassroomNotice> {
+    await delay(150);
+    maybeThrowError();
+    validateInput(input);
+
+    const existing = db.read("classroomNotices")
+      .find((item: ClassroomNotice) => item.id === id) as ClassroomNotice | undefined;
+    if (!existing) throw new Error("通知不存在");
+    if (existing.teacherId !== teacherId || existing.schoolId !== schoolId) {
+      throw new Error("无权修改该通知");
+    }
+
+    const teacher = db.read("teachers").find((item: { id: string }) => item.id === teacherId);
+    if (!teacher || teacher.schoolId !== schoolId) throw new Error("教师或学校信息不存在");
+
+    const uniqueClassIds = [...new Set(input.classIds)];
+    const schoolClasses = db.read("schoolClasses") as Array<{
+      id: string;
+      schoolId: string;
+      status?: "active" | "graduated";
+    }>;
+    const validSchoolClassIds = new Set(
+      schoolClasses
+        .filter((item) => item.schoolId === schoolId && item.status !== "graduated")
+        .map((item) => item.id),
+    );
+    if (uniqueClassIds.some((classId) => !validSchoolClassIds.has(classId))) {
+      throw new Error("通知班级不存在或已毕业");
+    }
+    const teacherClassIds = allowedClassIds(teacher);
+    if (uniqueClassIds.some((classId) => !teacherClassIds.has(classId))) {
+      throw new Error("只能向自己的任教班级发布通知");
+    }
+
+    const updated: ClassroomNotice = {
+      ...existing,
+      content: input.content.trim(),
+      classIds: uniqueClassIds,
+      startsAt: new Date(input.startsAt).toISOString(),
+      endsAt: new Date(input.endsAt).toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    db.update("classroomNotices", (items: ClassroomNotice[]) => items.map((item) => (
+      item.id === id ? updated : item
+    )));
+    return updated;
+  },
 };
