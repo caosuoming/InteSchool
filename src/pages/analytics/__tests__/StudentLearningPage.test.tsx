@@ -59,6 +59,7 @@ describe("StudentLearningPage", () => {
       {
         knowledgePointId: "point-1",
         knowledgePointName: "集合的概念",
+        knowledgePointPath: ["集合", "集合的概念"],
         totalAttempts: 2,
         correctCount: 1,
         partialCount: 0,
@@ -73,17 +74,26 @@ describe("StudentLearningPage", () => {
     vi.mocked(analyticsService.getClassAverageMastery).mockResolvedValue([]);
   });
 
-  it("shows knowledge mastery without a chapter toggle or chapter column", async () => {
+  it("supports resizable navigation, parent paths, and floating row actions", async () => {
     render(<StudentLearningPage />);
 
+    expect(screen.getByRole("separator", { name: "调整左侧列表宽度" })).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "高一（1）班" }));
 
     await waitFor(() => {
       expect(screen.getByText("集合的概念")).toBeInTheDocument();
     });
-    expect(screen.queryByText("显示章节")).not.toBeInTheDocument();
-    expect(screen.queryByText("隐藏章节")).not.toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "所属章节" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "显示知识点的父节点" }));
+    expect(await screen.findByText("集合\\集合的概念")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择知识点 集合\\集合的概念" }));
+    expect(screen.getByRole("toolbar", { name: "知识点排序操作" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "置顶" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "沉底" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "置顶" }));
+    expect(screen.queryByRole("toolbar", { name: "知识点排序操作" })).not.toBeInTheDocument();
     expect(classService.listMyClasses).toHaveBeenCalledWith("school-1", "teacher-1");
   });
 });

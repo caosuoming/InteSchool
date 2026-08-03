@@ -64,6 +64,15 @@ function state(): AppState {
     level: 0,
     questionCount: 2,
   };
+  const childPoint: KnowledgePoint = {
+    id: "point-child",
+    schoolId: "school-1",
+    parentId: point.id,
+    name: "子集",
+    order: 2,
+    level: 1,
+    questionCount: 0,
+  };
   const existing: AnswerRecord = {
     id: "answer-correct",
     studentId: student.id,
@@ -80,7 +89,7 @@ function state(): AppState {
     currentTeacherId: null,
     students: [student],
     chapters: [chapter],
-    knowledgePoints: [point],
+    knowledgePoints: [point, childPoint],
     questions: [question("question-scored"), question("question-done")],
     answerRecords: [existing],
   };
@@ -122,13 +131,17 @@ describe("neutral completed answer records", () => {
       );
       expect(weakness.get("question-done")).toBe(0.5);
 
-      const [mastery] = await analyticsService.getKnowledgeMastery(["student-1"], "school-1");
-      expect(mastery).toMatchObject({
+      const mastery = await analyticsService.getKnowledgeMastery(["student-1"], "school-1");
+      expect(mastery[0]).toMatchObject({
+        knowledgePointPath: ["集合的概念"],
         totalAttempts: 1,
         correctCount: 1,
         partialCount: 0,
         wrongCount: 0,
         correctRate: 1,
+      });
+      expect(mastery.find((item) => item.knowledgePointId === "point-child")).toMatchObject({
+        knowledgePointPath: ["集合的概念", "子集"],
       });
     });
   });

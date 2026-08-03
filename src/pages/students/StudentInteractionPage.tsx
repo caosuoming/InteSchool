@@ -11,6 +11,7 @@ import { classService } from "@/services/class";
 import { studentInteractionService } from "@/services/studentInteraction";
 import type { Student, StudentInteractionView, AnyClass } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -255,9 +256,12 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
         />
       )}
 
-      <div className="grid grid-cols-12 gap-4 h-[calc(100vh-12rem)]">
-        {/* 左侧：学生列表 */}
-        <div className="col-span-3">
+      <ResizableSplitPane
+        storageKey="inteschool:my-students-sidebar-width"
+        className="h-[calc(100vh-12rem)]"
+        sidebarClassName="h-full"
+        contentClassName="h-full"
+        sidebar={
           <Card className="h-full flex flex-col">
             <div className="p-3 border-b border-ink-100">
               <div className="relative">
@@ -305,10 +309,8 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
               )}
             </div>
           </Card>
-        </div>
-
-        {/* 右侧：互动详情 */}
-        <div className="col-span-9">
+        }
+      >
           {selectedStudent ? (
             <div className="h-full flex flex-col gap-4">
               {/* 学生信息卡片 */}
@@ -539,8 +541,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
               </div>
             </Card>
           )}
-        </div>
-      </div>
+      </ResizableSplitPane>
     </div>
   );
 }
