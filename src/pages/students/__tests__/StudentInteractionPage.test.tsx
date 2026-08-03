@@ -111,14 +111,33 @@ describe("StudentInteractionPage", () => {
     vi.mocked(studentInteractionService.deleteInteraction).mockResolvedValue(undefined);
   });
 
-  it("groups the student list by class", async () => {
+  it("groups students by class and toggles groups from a collapsed state", async () => {
+    const user = userEvent.setup();
     render(<StudentInteractionPage embedded />);
 
-    expect(await screen.findByText("高一（2）班")).toBeInTheDocument();
-    expect(screen.getAllByText("高一（1）班").length).toBeGreaterThanOrEqual(1);
+    const classOneToggle = await screen.findByRole("button", { name: /高一（1）班/ });
+    const classTwoToggle = screen.getByRole("button", { name: /高一（2）班/ });
+
+    expect(classOneToggle).toHaveAttribute("aria-expanded", "false");
+    expect(classTwoToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /甲同学/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /丙同学/ })).not.toBeInTheDocument();
+
+    await user.click(classOneToggle);
+
+    expect(classOneToggle).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: /甲同学/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /乙同学/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /丙同学/ })).not.toBeInTheDocument();
+
+    await user.click(classTwoToggle);
+
     expect(screen.getByRole("button", { name: /丙同学/ })).toBeInTheDocument();
+
+    await user.click(classOneToggle);
+
+    expect(classOneToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /甲同学/ })).not.toBeInTheDocument();
   });
 
   it("keeps sharing off by default and resets it after submission", async () => {
