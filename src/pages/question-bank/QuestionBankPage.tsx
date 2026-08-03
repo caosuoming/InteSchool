@@ -26,6 +26,8 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
+import { PaginationBar } from "@/components/ui/PaginationBar";
+import { ResizableSidebarLayout } from "@/components/layout/ResizableSidebarLayout";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDetail } from "@/components/question/QuestionDetail";
 import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
@@ -252,7 +254,7 @@ export default function QuestionBankPage({
 
   // 分页状态
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(20);
 
   const navigate = useNavigate();
 
@@ -826,11 +828,13 @@ export default function QuestionBankPage({
             </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
-        {/* 左侧：章节/知识点目录 Tab 切换 */}
-        {!directoryCollapsed && (
-          <div className="col-span-12 lg:col-span-4">
-            <Card className="p-0 overflow-hidden sticky top-4 h-fit">
+      <ResizableSidebarLayout
+        storageKey="inteschool.question-bank.directory-width"
+        defaultWidth={360}
+        collapsed={directoryCollapsed}
+        separatorLabel="调整题库章节课与知识点目录宽度"
+        sidebar={(
+          <Card className="p-0 overflow-hidden sticky top-4 h-fit">
               {/* Tab 头 */}
               <div className="flex border-b border-ink-100">
                 <div className="flex flex-1 min-w-0">
@@ -897,12 +901,11 @@ export default function QuestionBankPage({
                   }}
                 />
               </div>
-            </Card>
-          </div>
+          </Card>
         )}
-
+      >
         {/* 右侧：筛选 + 题目列表 */}
-        <div className={cn("col-span-12", directoryCollapsed ? "lg:col-span-12" : "lg:col-span-8")}>
+        <div>
           {directoryCollapsed && (
             <div className="mb-3">
               <Button
@@ -1054,6 +1057,7 @@ export default function QuestionBankPage({
               totalItems={totalQuestions}
               pageSize={pageSize}
               pageSizeOptions={pageSizeOptions}
+              itemLabel="题"
               onPageChange={handlePageChange}
               onPageSizeChange={(size) => {
                 setPageSize(size);
@@ -1153,6 +1157,7 @@ export default function QuestionBankPage({
                 totalItems={totalQuestions}
                 pageSize={pageSize}
                 pageSizeOptions={pageSizeOptions}
+                itemLabel="题"
                 onPageChange={handlePageChange}
                 onPageSizeChange={(size) => {
                   setPageSize(size);
@@ -1162,7 +1167,7 @@ export default function QuestionBankPage({
             </div>
           )}
         </div>
-      </div>
+      </ResizableSidebarLayout>
 
       {/* 题目详情 */}
       <Modal
@@ -2168,7 +2173,7 @@ function QuestionRow({
               "text-ink-900 leading-relaxed mb-2",
               wideLayout ? "text-base" : "text-sm",
             )}>
-              <MathHtml>{question.stem}</MathHtml>
+              <MathHtml className="whitespace-pre-wrap">{question.stem}</MathHtml>
             </div>
 
             {/* 选项（网格布局，根据选项长度动态调整列数；答案高亮仅在展开时显示） */}
@@ -2218,7 +2223,7 @@ function QuestionRow({
                           e.stopPropagation();
                           onShowRelated("chapter", question.chapterIds.find((id) => chapterMap.get(id) === n) || "", `章节：${n}`, `查看同章节「${n}」下的所有题目`);
                         }}
-                        className="tag-gold text-[10px] py-0.5 cursor-pointer hover:bg-gold-200 transition-colors"
+                        className="tag-gold text-xs py-0.5 cursor-pointer hover:bg-gold-200 transition-colors"
                         title="点击查看同章节题目"
                       >
                         {n}
@@ -2230,7 +2235,7 @@ function QuestionRow({
                         e.stopPropagation();
                         onQuickEdit(question);
                       }}
-                      className="text-[10px] text-ink-400 italic hover:text-gold-600 cursor-pointer"
+                      className="text-xs text-ink-400 italic hover:text-gold-600 cursor-pointer"
                       title="点击编辑章节"
                     >
                       未关联章节
@@ -2249,7 +2254,7 @@ function QuestionRow({
                           e.stopPropagation();
                           onShowRelated("knowledge", question.knowledgePointIds.find((id) => knowledgeMap.get(id) === n) || "", `知识点：${n}`, `查看同知识点「${n}」下的所有题目`);
                         }}
-                        className="tag-teal text-[10px] py-0.5 cursor-pointer hover:bg-teal-200 transition-colors"
+                        className="tag-teal text-xs py-0.5 cursor-pointer hover:bg-teal-200 transition-colors"
                         title="点击查看同知识点题目"
                       >
                         {n}
@@ -2261,7 +2266,7 @@ function QuestionRow({
                         e.stopPropagation();
                         onQuickEdit(question);
                       }}
-                      className="text-[10px] text-ink-400 italic hover:text-teal-600 cursor-pointer"
+                      className="text-xs text-ink-400 italic hover:text-teal-600 cursor-pointer"
                       title="点击编辑知识点"
                     >
                       未关联知识点
@@ -2462,155 +2467,6 @@ function QuestionRow({
             <Badge variant="ink">平台副本</Badge>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ============ 分页组件 ============
-function PaginationBar({
-  currentPage,
-  totalPages,
-  totalItems,
-  pageSize,
-  pageSizeOptions,
-  onPageChange,
-  onPageSizeChange,
-}: {
-  currentPage: number;
-  totalPages: number;
-  totalItems: number;
-  pageSize: number;
-  pageSizeOptions: number[];
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (size: number) => void;
-}) {
-  const startItem = (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(currentPage * pageSize, totalItems);
-
-  // 生成页码数组（最多显示7个页码）
-  const getPageNumbers = () => {
-    const pages: (number | string)[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      if (currentPage <= 3) {
-        for (let i = 1; i <= 5; i++) pages.push(i);
-        pages.push("...");
-        pages.push(totalPages);
-      } else if (currentPage >= totalPages - 2) {
-        pages.push(1);
-        pages.push("...");
-        for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
-      } else {
-        pages.push(1);
-        pages.push("...");
-        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
-        pages.push("...");
-        pages.push(totalPages);
-      }
-    }
-    return pages;
-  };
-
-  return (
-    <div className="flex items-center justify-between gap-4 py-2 px-3 bg-white rounded-lg border border-ink-100">
-      {/* 左侧：总数和每页显示 */}
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-ink-500">
-          显示 {startItem}-{endItem} 条，共 {totalItems} 条
-        </span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-ink-400">每页</span>
-          <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="text-xs border border-ink-200 rounded px-2 py-1 bg-paper text-ink-700 cursor-pointer focus:outline-none focus:border-gold-400"
-          >
-            {pageSizeOptions.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-          <span className="text-xs text-ink-400">题</span>
-        </div>
-      </div>
-
-      {/* 右侧：分页导航 */}
-      <div className="flex items-center gap-1">
-        {/* 上一页 */}
-        <button
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage <= 1}
-          className={cn(
-            "px-2 py-1 rounded text-xs transition-colors",
-            currentPage <= 1
-              ? "text-ink-300 cursor-not-allowed"
-              : "text-ink-600 hover:bg-ink-100 hover:text-ink-900"
-          )}
-        >
-          上一页
-        </button>
-
-        {/* 页码 */}
-        {getPageNumbers().map((page, index) => (
-          <button
-            key={index}
-            onClick={() => typeof page === "number" && onPageChange(page)}
-            disabled={page === "..."}
-            className={cn(
-              "w-7 h-7 rounded text-xs transition-colors flex items-center justify-center",
-              page === currentPage
-                ? "bg-gold-500 text-white font-medium"
-                : page === "..."
-                ? "text-ink-400 cursor-default"
-                : "text-ink-600 hover:bg-ink-100 hover:text-ink-900"
-            )}
-          >
-            {page}
-          </button>
-        ))}
-
-        {/* 下一页 */}
-        <button
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage >= totalPages}
-          className={cn(
-            "px-2 py-1 rounded text-xs transition-colors",
-            currentPage >= totalPages
-              ? "text-ink-300 cursor-not-allowed"
-              : "text-ink-600 hover:bg-ink-100 hover:text-ink-900"
-          )}
-        >
-          下一页
-        </button>
-
-        {/* 快速跳转 */}
-        <div className="flex items-center gap-1 ml-2">
-          <span className="text-xs text-ink-400">跳至</span>
-          <input
-            type="number"
-            min={1}
-            max={totalPages}
-            className="w-10 text-xs border border-ink-200 rounded px-1 py-1 text-center focus:outline-none focus:border-gold-400"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                const value = Number((e.target as HTMLInputElement).value);
-                if (value >= 1 && value <= totalPages) {
-                  onPageChange(value);
-                }
-              }
-            }}
-            onBlur={(e) => {
-              const value = Number(e.target.value);
-              if (value >= 1 && value <= totalPages) {
-                onPageChange(value);
-              }
-            }}
-          />
-          <span className="text-xs text-ink-400">页</span>
-        </div>
       </div>
     </div>
   );

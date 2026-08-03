@@ -27,11 +27,13 @@ import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
 import { analyticsService, type KnowledgeMastery } from "@/services/analytics";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ResizableSidebarLayout } from "@/components/layout/ResizableSidebarLayout";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
+import { PaginationBar } from "@/components/ui/PaginationBar";
 import { Textarea, Input } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type {
@@ -259,6 +261,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
 
   const [sortKey, setSortKey] = useState<SortKey>("updated");
+  const [resourcePage, setResourcePage] = useState(1);
+  const [resourcePageSize, setResourcePageSize] = useState(20);
   const [onlyUncategorized, setOnlyUncategorized] = useState(false);
   const [selectedGrade, setSelectedGrade] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
@@ -1001,6 +1005,51 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     [activeTab, displayedData],
   );
 
+  const resourceListData = useMemo<ResourceListItem[]>(() => {
+    switch (activeTab) {
+      case "lecture":
+        return lecturesFiltered;
+      case "examPaper":
+        return examPapersFiltered;
+      case "courseware":
+        return displayedData as Courseware[];
+      case "material":
+        return displayedData as Material[];
+      default:
+        return [];
+    }
+  }, [activeTab, displayedData, examPapersFiltered, lecturesFiltered]);
+
+  const totalResourcePages = Math.max(1, Math.ceil(resourceListData.length / resourcePageSize));
+  const safeResourcePage = Math.min(resourcePage, totalResourcePages);
+  const paginatedResourceData = useMemo(() => {
+    const start = (safeResourcePage - 1) * resourcePageSize;
+    return resourceListData.slice(start, start + resourcePageSize);
+  }, [resourceListData, resourcePageSize, safeResourcePage]);
+
+  useEffect(() => {
+    setResourcePage(1);
+  }, [
+    activeTab,
+    checkedChapters,
+    checkedKnowledge,
+    keyword,
+    onlyUncategorized,
+    resourcePageSize,
+    selectedExamPaperTypeId,
+    selectedGrade,
+    selectedLectureTypeId,
+    selectedSemester,
+    selectedYear,
+    sortKey,
+  ]);
+
+  useEffect(() => {
+    if (resourcePage !== safeResourcePage) {
+      setResourcePage(safeResourcePage);
+    }
+  }, [resourcePage, safeResourcePage]);
+
   const toggleQuestionExpand = (id: string) => {
     setExpandedQuestionIds((prev) => {
       const next = new Set(prev);
@@ -1719,7 +1768,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                               >
                                 <div className="flex items-start gap-2">
                                   <div className="flex-1 min-w-0">
-                                    <MathHtml className="text-sm text-ink-800">{q.stem}</MathHtml>
+                                    <MathHtml className="whitespace-pre-wrap text-sm text-ink-800">{q.stem}</MathHtml>
                                     {q.options && q.options.length > 0 && (
                                       <div
                                         data-testid={`basket-question-options-${q.id}`}
@@ -1876,14 +1925,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           </div>
         </div>
       ) : (
-      <div className="grid grid-cols-12 gap-4">
-        {/* 左侧：章节/知识点目录 */}
-        <div className="col-span-3">
+      <ResizableSidebarLayout
+        storageKey="inteschool.my-resources.directory-width"
+        defaultWidth={300}
+        separatorLabel="调整我的资源章节课与知识点目录宽度"
+        sidebar={(
           <Card className="p-3 sticky top-4">
             <div className="flex gap-1 mb-3 p-1 bg-mist rounded-md">
               <button
                 onClick={() => setLeftTab("chapter")}
-                aria-label="章节目录"
+                aria-label="章节课目录"
                 className={cn(
                   "flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5",
                   leftTab === "chapter" ? "bg-paper text-gold-600 shadow-sm" : "text-ink-500 hover:text-ink-700",
@@ -1894,17 +1945,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   {checkedChapters.length > 0 && (
                     <span
                       className="absolute -bottom-1.5 -right-1.5 inline-flex h-3 w-3 items-center justify-center rounded-full bg-emerald-500 text-white ring-1 ring-paper"
-                      aria-label="章节目录已有勾选"
+                      aria-label="章节课目录已有勾选"
                     >
                       <Check className="h-2.5 w-2.5" strokeWidth={3} />
                     </span>
                   )}
                 </span>
-                章节目录
+                章节课目录
               </button>
               <button
                 onClick={() => setLeftTab("knowledge")}
-                aria-label="知识点"
+                aria-label="知识点目录"
                 className={cn(
                   "flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5",
                   leftTab === "knowledge" ? "bg-paper text-gold-600 shadow-sm" : "text-ink-500 hover:text-ink-700",
@@ -1921,14 +1972,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     </span>
                   )}
                 </span>
-                知识点
+                知识点目录
               </button>
             </div>
             {(leftTab === "chapter" ? chapterTree : knowledgeTree) ? (
               leftTab === "chapter" ? (
                 <SearchableTree
                   data={chapterTree!}
-                  title="章节目录"
+                  title="章节课目录"
                   accent="gold"
                   checkable
                   checkedIds={checkedChapters}
@@ -1960,10 +2011,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               </div>
             )}
           </Card>
-        </div>
-
+        )}
+      >
         {/* 右侧：资源列表 */}
-        <div className="col-span-9">
+        <div>
           {/* 搜索与排序 */}
           <div className="flex items-center gap-3 mb-4 flex-wrap">
             <div className="relative flex-1 max-w-md min-w-[200px]">
@@ -2085,12 +2136,30 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             </div>
           </div>
 
+          {!loading && resourceListData.length > 0 && (
+            <div className="mb-3">
+              <PaginationBar
+                currentPage={safeResourcePage}
+                totalPages={totalResourcePages}
+                totalItems={resourceListData.length}
+                pageSize={resourcePageSize}
+                pageSizeOptions={[10, 20, 50, 100]}
+                itemLabel="项"
+                onPageChange={(page) => setResourcePage(Math.min(totalResourcePages, Math.max(1, page)))}
+                onPageSizeChange={(pageSize) => {
+                  setResourcePageSize(pageSize);
+                  setResourcePage(1);
+                }}
+              />
+            </div>
+          )}
+
           {/* 资源列表内容 */}
           {loading ? (
             <div className="flex items-center justify-center py-20">
               <Spinner size={24} />
             </div>
-          ) : displayedData.length === 0 ? (
+          ) : resourceListData.length === 0 ? (
             <EmptyState
               icon={<currentTab.icon className="w-10 h-10 text-ink-200" />}
               title={`暂无${currentTab.label}资源`}
@@ -2101,7 +2170,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           ) : (
             <div className="space-y-3">
               {/* 讲义库 */}
-              {activeTab === "lecture" && lecturesFiltered.map((item) => {
+              {activeTab === "lecture" && (paginatedResourceData as Lecture[]).map((item) => {
                 const extractCopies = allLectures.filter(
                   (copy) => copy.sourceResourceId === item.id && copy.isExtractCopy
                 );
@@ -2219,7 +2288,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               })}
 
               {/* 试卷库 */}
-              {activeTab === "examPaper" && examPapersFiltered.map((item) => {
+              {activeTab === "examPaper" && (paginatedResourceData as ExamPaper[]).map((item) => {
                 const extractCopies = allExamPapers.filter(
                   (copy) => copy.sourceResourceId === item.id && copy.isExtractCopy
                 );
@@ -2402,7 +2471,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               })}
 
               {/* 课件库 */}
-              {activeTab === "courseware" && (displayedData as Courseware[]).map((item) => (
+              {activeTab === "courseware" && (paginatedResourceData as Courseware[]).map((item) => (
                 <ResourceCard
                   key={item.id}
                   {...batchSelectionCardProps("courseware", item.id)}
@@ -2446,7 +2515,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               ))}
 
               {/* 素材库 */}
-              {activeTab === "material" && (displayedData as Material[]).map((item) => (
+              {activeTab === "material" && (paginatedResourceData as Material[]).map((item) => (
                 <ResourceCard
                   key={item.id}
                   {...batchSelectionCardProps("material", item.id)}
@@ -2477,8 +2546,26 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               ))}
             </div>
           )}
+
+          {!loading && resourceListData.length > 0 && (
+            <div className="mt-4">
+              <PaginationBar
+                currentPage={safeResourcePage}
+                totalPages={totalResourcePages}
+                totalItems={resourceListData.length}
+                pageSize={resourcePageSize}
+                pageSizeOptions={[10, 20, 50, 100]}
+                itemLabel="项"
+                onPageChange={(page) => setResourcePage(Math.min(totalResourcePages, Math.max(1, page)))}
+                onPageSizeChange={(pageSize) => {
+                  setResourcePageSize(pageSize);
+                  setResourcePage(1);
+                }}
+              />
+            </div>
+          )}
         </div>
-      </div>
+      </ResizableSidebarLayout>
       )}
 
       <QuestionVideoModal
