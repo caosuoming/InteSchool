@@ -3,8 +3,10 @@ import { rpcCall } from "./api";
 import type {
   Question,
   QuestionFilter,
+  QuestionLink,
   QuestionType,
   QuestionRemark,
+  QuestionVideoReference,
   ResourceSemester,
   SimilarQuestionCandidate,
 } from "@/types";
@@ -16,6 +18,9 @@ export interface QuestionInput {
   answer: string;
   analysis: string;
   summary?: string;
+  board?: string;
+  links?: QuestionLink[];
+  explanationVideo?: QuestionVideoReference | null;
   chapterIds: string[];
   knowledgePointIds: string[];
   grade?: string;
@@ -53,6 +58,10 @@ export const questionService = {
 
   async createQuestion(teacherId: string, schoolId: string, input: QuestionInput): Promise<Question> {
     return rpcCall("question", "createQuestion", [teacherId, schoolId, input]) as any;
+  },
+
+  async adaptQuestion(id: string, stem: string): Promise<Question> {
+    return rpcCall("question", "adaptQuestion", [id, stem]) as any;
   },
 
   async updateQuestion(id: string, patch: Partial<Question>, duplicateDecision?: "add"): Promise<Question> {

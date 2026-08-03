@@ -1,8 +1,10 @@
 import type {
   Question,
   QuestionFilter,
+  QuestionLink,
   QuestionType,
   QuestionRemark,
+  QuestionVideoReference,
   ResourceSemester,
   SimilarQuestionCandidate,
 } from "../../src/types/index.js";
@@ -21,6 +23,9 @@ export interface QuestionInput {
   answer: string;
   analysis: string;
   summary?: string;
+  board?: string;
+  links?: QuestionLink[];
+  explanationVideo?: QuestionVideoReference | null;
   chapterIds: string[];
   knowledgePointIds: string[];
   grade?: string;
@@ -205,6 +210,9 @@ export const questionService = {
       answer: input.answer,
       analysis: input.analysis,
       summary: input.summary || "",
+      board: input.board || "",
+      links: input.links?.map((link) => ({ ...link })) || [],
+      explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
       chapterIds: input.chapterIds,
       knowledgePointIds: expandedKpIds,
       grade: input.grade,
@@ -224,6 +232,31 @@ export const questionService = {
     };
     db.update("questions", (list) => [question, ...list]);
     return question;
+  },
+
+  async adaptQuestion(id: string, stem: string): Promise<Question> {
+    await delay(300);
+    maybeThrowError();
+    const source = db.read("questions").find((question) => question.id === id);
+    if (!source) throw new Error("题目不存在");
+    const nextStem = stem.trim();
+    if (!nextStem) throw new Error("题干不能为空");
+    if (nextStem === source.stem.trim()) throw new Error("请先修改题干再确认改编");
+
+    const now = new Date().toISOString();
+    const adapted: Question = {
+      ...structuredClone(source),
+      id: genId("q"),
+      stem: nextStem,
+      usageCount: 0,
+      lastUsedAt: undefined,
+      duplicateHash: computeDuplicateHash(nextStem, source.answer, source.options),
+      hiddenByExamIds: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.update("questions", (list) => [adapted, ...list]);
+    return adapted;
   },
 
   async updateQuestion(
@@ -380,6 +413,9 @@ export const questionService = {
       answer: input.answer,
       analysis: input.analysis,
       summary: input.summary || "",
+      board: input.board || "",
+      links: input.links?.map((link) => ({ ...link })) || [],
+      explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
       chapterIds: input.chapterIds,
       knowledgePointIds: expandKnowledgePointAliases(input.knowledgePointIds, schoolId),
       grade: input.grade,

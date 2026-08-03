@@ -172,15 +172,17 @@ describe("QuestionEditor", () => {
     expect(screen.queryByPlaceholderText(/请输入答案/)).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/请输入解析/)).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/请输入本题总结/)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/请输入板书内容/)).not.toBeInTheDocument();
 
     const stemSection = screen.getByTestId("question-stem-section");
     expect(stemSection).toHaveClass("sticky", "top-0");
 
-    fireEvent.click(screen.getByRole("button", { name: "一键展开答案、解析与总结" }));
+    fireEvent.click(screen.getByRole("button", { name: "一键展开答案、解析、总结与板书" }));
 
     expect(screen.getByPlaceholderText(/请输入答案/)).toBeVisible();
     expect(screen.getByPlaceholderText(/请输入解析/)).toBeVisible();
     expect(screen.getByPlaceholderText(/请输入本题总结/)).toBeVisible();
+    expect(screen.getByPlaceholderText(/请输入板书内容/)).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "收起答案" }));
     expect(screen.queryByPlaceholderText(/请输入答案/)).not.toBeInTheDocument();

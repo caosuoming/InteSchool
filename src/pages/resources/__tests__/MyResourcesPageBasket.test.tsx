@@ -326,7 +326,7 @@ describe("MyResourcesPage resource basket", () => {
     );
 
     expect(screen.queryByText("答案")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTitle("查看完整答案、解析和总结"));
+    fireEvent.click(screen.getByTitle("查看完整答案、解析、总结和板书"));
     expect(screen.getByText("答案")).toBeInTheDocument();
     expect(screen.getByText("解析")).toBeInTheDocument();
     expect(screen.getByText("总结")).toBeInTheDocument();
@@ -336,9 +336,9 @@ describe("MyResourcesPage resource basket", () => {
     expect(singleTypeFilter).toBeChecked();
     fireEvent.click(singleTypeFilter);
     expect(await screen.findByText("题目（0/1）")).toBeInTheDocument();
-    expect(screen.queryByTitle("查看完整答案、解析和总结")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("查看完整答案、解析、总结和板书")).not.toBeInTheDocument();
     fireEvent.click(singleTypeFilter);
-    expect(await screen.findByTitle("查看完整答案、解析和总结")).toBeInTheDocument();
+    expect(await screen.findByTitle("查看完整答案、解析、总结和板书")).toBeInTheDocument();
 
     expect(analyticsService.listAnswerRecordsByStudents).toHaveBeenCalledWith([studentOne.id]);
     expect(analyticsService.getKnowledgeMastery).toHaveBeenCalledWith([studentOne.id], "school-1");
@@ -373,7 +373,7 @@ describe("MyResourcesPage resource basket", () => {
     await waitFor(() => {
       expect(basketService.removeQuestion).toHaveBeenCalledWith(populatedBasket.id, basketQuestion.id);
     });
-    expect(screen.queryByTitle("查看完整答案、解析和总结")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("查看完整答案、解析、总结和板书")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "从资源篮移除素材" }));
     await waitFor(() => {

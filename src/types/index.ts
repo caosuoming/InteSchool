@@ -770,6 +770,19 @@ export interface QuestionRemark {
   updatedAt: string;
 }
 
+export interface QuestionLink {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface QuestionVideoReference {
+  materialId: string;
+  title: string;
+  fileUrl?: string;
+  content?: string;
+}
+
 export interface Question {
   id: string;
   teacherId: string;
@@ -780,6 +793,12 @@ export interface Question {
   answer: string;
   analysis: string;
   summary?: string;
+  /** 板书内容；课堂手写板书保存后为图片文件地址，也可保存为文本。 */
+  board?: string;
+  /** 课堂中可直接调用的相关链接。 */
+  links?: QuestionLink[];
+  /** 关联到素材库中的讲解视频。 */
+  explanationVideo?: QuestionVideoReference | null;
   chapterIds: string[];
   knowledgePointIds: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
@@ -1847,6 +1866,10 @@ export interface LessonSlide {
     options?: string[];
     answer: string;
     analysis: string;
+    summary?: string;
+    board?: string;
+    links?: QuestionLink[];
+    explanationVideo?: QuestionVideoReference | null;
   };
   /** 知识块内容（type=knowledge时） */
   content?: string;

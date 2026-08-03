@@ -12,6 +12,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 import { containsMathDelimiter } from "@/lib/math-html";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
@@ -50,7 +51,7 @@ interface QuestionEditorProps {
   onCancel: () => void;
 }
 
-type CollapsibleSectionKey = "answer" | "analysis" | "summary";
+type CollapsibleSectionKey = "answer" | "analysis" | "summary" | "board";
 
 interface CollapsibleEditorSectionProps {
   title: string;
@@ -116,6 +117,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     answer: question.answer,
     analysis: question.analysis,
     summary: question.summary ?? "",
+    board: question.board ?? "",
     chapterIds: [...question.chapterIds],
     knowledgePointIds: [...question.knowledgePointIds],
     difficulty: question.difficulty,
@@ -138,6 +140,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     answer: false,
     analysis: false,
     summary: false,
+    board: false,
   });
   // 公式编辑器目标字段
   const [formulaTarget, setFormulaTarget] = useState<"stem" | "answer" | "analysis" | null>(null);
@@ -183,7 +186,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   };
   const toggleAllDetails = () => {
     const expanded = !allDetailsExpanded;
-    setExpandedSections({ answer: expanded, analysis: expanded, summary: expanded });
+    setExpandedSections({ answer: expanded, analysis: expanded, summary: expanded, board: expanded });
   };
 
   const persistQuestion = async (duplicateDecision?: "add") => {
@@ -196,6 +199,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         answer: form.answer,
         analysis: form.analysis,
         summary: form.summary,
+        board: form.board,
         chapterIds: form.chapterIds,
         knowledgePointIds: form.knowledgePointIds,
         difficulty: form.difficulty as any,
@@ -408,7 +412,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           onClick={toggleAllDetails}
           className="text-xs text-gold-600 hover:text-gold-700"
         >
-          {allDetailsExpanded ? "全部收起" : "一键展开答案、解析与总结"}
+          {allDetailsExpanded ? "全部收起" : "一键展开答案、解析、总结与板书"}
         </button>
       </div>
 
@@ -495,6 +499,25 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
               <MathHtml className="prose-sm whitespace-pre-wrap text-sm text-amber-800">
                 {form.summary}
               </MathHtml>
+            </div>
+          )}
+        </CollapsibleEditorSection>
+
+        <CollapsibleEditorSection
+          title="板书"
+          expanded={expandedSections.board}
+          preview={collapsedPreview(form.board)}
+          onToggle={() => toggleSection("board")}
+        >
+          <Textarea
+            value={form.board}
+            onChange={(e) => update("board", e.target.value)}
+            rows={3}
+            placeholder="请输入板书内容；课堂保存的手写板书会自动显示在这里"
+          />
+          {form.board && (
+            <div className="mt-2">
+              <QuestionSupplementaryDetails board={form.board} compact />
             </div>
           )}
         </CollapsibleEditorSection>

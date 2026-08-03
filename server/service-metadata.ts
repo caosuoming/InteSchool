@@ -946,6 +946,10 @@ export const serviceParameters = {
       "schoolId",
       "input"
     ],
+    "adaptQuestion": [
+      "id",
+      "stem"
+    ],
     "updateQuestion": [
       "id",
       "patch",
