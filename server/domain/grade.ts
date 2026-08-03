@@ -12,6 +12,7 @@ import type {
   GradeStatisticsTemplate,
   GradeTeacherOption,
   GradeTemplateProfile,
+  ClassTypeCategory,
   SchoolClass,
   Student,
   Teacher,
@@ -21,6 +22,7 @@ import type {
 import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
+  inferClassSubjectAvailability,
   normalizeGradeSettings,
 } from "../../src/lib/grade-statistics.js";
 import { averageGradeValues } from "../../src/lib/grade-reports.js";
@@ -36,9 +38,13 @@ function cohortKeyForClass(item: SchoolClass): string {
   return item.gradYear ? `grad-${item.gradYear}` : `grade-${item.grade}`;
 }
 
+function compareClassNames(left: SchoolClass, right: SchoolClass): number {
+  return left.name.localeCompare(right.name, "zh-CN", { numeric: true, sensitivity: "base" });
+}
+
 function buildCohorts(schoolId: string): GradeCohort[] {
   const classes = readList<SchoolClass>("schoolClasses")
-    .filter((item) => item.schoolId === schoolId && item.status !== "graduated");
+    .filter((item) => item.schoolId === schoolId && item.status !== "graduated" && item.status !== "deleted");
   const students = readList<Student>("students")
     .filter((item) => item.schoolId === schoolId && item.status === "active");
   const groups = new Map<string, SchoolClass[]>();
@@ -52,7 +58,7 @@ function buildCohorts(schoolId: string): GradeCohort[] {
 
   return [...groups.entries()]
     .map(([key, items]) => {
-      const sorted = [...items].sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+      const sorted = [...items].sort(compareClassNames);
       const first = sorted[0];
       const classIds = sorted.map((item) => item.id);
       const classIdSet = new Set(classIds);
@@ -94,10 +100,45 @@ function requireContext(schoolId: string, cohortKey: string): GradeImportContext
   const classIdSet = new Set(cohort.classIds);
   const classes = readList<SchoolClass>("schoolClasses")
     .filter((item) => item.schoolId === schoolId && classIdSet.has(item.id))
-    .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+    .sort(compareClassNames);
   const students = readList<Student>("students")
     .filter((item) => item.schoolId === schoolId && classIdSet.has(item.classId) && item.status === "active")
     .sort((left, right) => left.classId.localeCompare(right.classId) || left.studentNo.localeCompare(right.studentNo));
+  const latestExam = readList<GradeExam>("gradeExams")
+    .filter((item) => item.schoolId === schoolId && item.cohortKey === cohortKey)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  const latestRecords = latestExam?.records || [];
+  const classStudentCounts = Object.fromEntries(classes.map((classItem) => [
+    classItem.id,
+    students.filter((student) => student.classId === classItem.id).length,
+  ]));
+  const scoreAvailability = latestExam
+    ? inferClassSubjectAvailability(latestRecords, latestExam.subjects, classStudentCounts)
+    : {};
+  const classTypes = new Map(
+    readList<ClassTypeCategory>("classTypeCategories")
+      .filter((item) => item.schoolId === schoolId)
+      .map((item) => [item.id, item.name]),
+  );
+  const classProfiles = Object.fromEntries(classes.map((classItem) => {
+    const classStudents = students.filter((student) => student.classId === classItem.id);
+    const classRecords = latestRecords.filter((record) => record.classId === classItem.id);
+    const subjectSelections = [...new Set([
+      ...classStudents.map((student) => student.subjectSelection?.trim()),
+      ...classRecords.map((record) => record.subjectSelection?.trim()),
+    ].filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right, "zh-CN"));
+    const importedClassTypes = [...new Set(classRecords
+      .map((record) => record.classType?.trim())
+      .filter((value): value is string => Boolean(value)))];
+    return [classItem.id, {
+      classTypeName: (classItem.classTypeId && classTypes.get(classItem.classTypeId))
+        || importedClassTypes[0]
+        || undefined,
+      subjectSelections,
+      scoreSubjects: scoreAvailability[classItem.id] || [],
+      hasImportedScores: classRecords.length > 0,
+    }];
+  }));
   const templateProfile = readList<GradeTemplateProfile>("gradeTemplateProfiles")
     .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey);
   return {
@@ -105,6 +146,8 @@ function requireContext(schoolId: string, cohortKey: string): GradeImportContext
     classes,
     students,
     teachers: teacherOptions(schoolId),
+    classProfiles,
+    sampleRecords: latestRecords.slice(0, 8),
     templateProfile,
   };
 }
@@ -171,11 +214,13 @@ function defaultOrNormalizedSettings(
   settings: GradeExamSettings | undefined,
   subjects: string[],
   context: GradeImportContext,
+  classSubjectAvailability: Record<string, string[]> = {},
 ): GradeExamSettings {
   const defaults = buildDefaultGradeSettings(
     subjects,
     context.classes.map((item) => item.id),
     context.teachers,
+    classSubjectAvailability,
   );
   const baseSettings = settings || defaults;
   const inheritedDefaults = context.templateProfile
@@ -589,10 +634,8 @@ export const gradeService = {
     const sourceClassSettings = new Map(
       source.settings.classSubjects.map((item) => [item.classId, item]),
     );
-    const sourceClasses = [...sourceContext.classes]
-      .sort((left, right) => left.name.localeCompare(right.name, "zh-CN", { numeric: true }));
-    const targetClasses = [...targetContext.classes]
-      .sort((left, right) => left.name.localeCompare(right.name, "zh-CN", { numeric: true }));
+    const sourceClasses = [...sourceContext.classes].sort(compareClassNames);
+    const targetClasses = [...targetContext.classes].sort(compareClassNames);
     const classMappings = targetClasses.map((targetClass, index) => {
       const sameName = sourceClasses.find((item) => item.name === targetClass.name);
       const sourceClass = sameName || sourceClasses[index];
@@ -616,10 +659,20 @@ export const gradeService = {
         ),
       ]),
     );
+    const targetClassSubjectTeacherNames = Object.fromEntries(
+      classMappings.map(({ targetClass, sourceClass }) => [
+        targetClass.id,
+        structuredClone(
+          (sourceClass && source.settings.classSubjectTeacherNames?.[sourceClass.id])
+            || {},
+        ),
+      ]),
+    );
     const copied: GradeExamSettings = {
       ...structuredClone(source.settings),
       classSubjects: targetClassSubjects,
       classSubjectTeacherIds: targetClassSubjectTeacherIds,
+      classSubjectTeacherNames: targetClassSubjectTeacherNames,
     };
     return persistCohortSettings(
       schoolId,
@@ -739,7 +792,17 @@ export const gradeService = {
     });
 
     const preset = cohortSettingsFor(schoolId, input.cohortKey);
-    const settings = defaultOrNormalizedSettings(input.settings || preset?.settings, subjects, context);
+    const importedClassCounts = Object.fromEntries(context.classes.map((classItem) => [
+      classItem.id,
+      context.students.filter((student) => student.classId === classItem.id).length
+        + newStudents.filter((student) => student.classId === classItem.id).length,
+    ]));
+    const settings = defaultOrNormalizedSettings(
+      input.settings || preset?.settings,
+      subjects,
+      context,
+      inferClassSubjectAvailability(baseRecords, subjects, importedClassCounts),
+    );
     const records = calculateGradeRecords(baseRecords, subjects, settings);
     const now = new Date().toISOString();
     const exam: GradeExam = {

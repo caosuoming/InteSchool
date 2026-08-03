@@ -3,6 +3,7 @@ import type { GradeExamSettings } from "../types/index.js";
 import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
+  inferClassSubjectAvailability,
   normalizeGradeSettings,
   validateAssignmentRules,
 } from "./grade-statistics.js";
@@ -38,6 +39,62 @@ const baseRecords = [
 ];
 
 describe("grade statistics", () => {
+  it("infers complete score subjects for each class", () => {
+    const availability = inferClassSubjectAvailability([
+      { classId: "class-1", scores: { 数学: 100, 化学: 90 } },
+      { classId: "class-1", scores: { 数学: 80, 化学: null } },
+      { classId: "class-2", scores: { 数学: 70, 化学: 60 } },
+      {
+        classId: "class-3",
+        scores: { 数学: 88, 化学: null },
+        assignedScores: { 数学: 88, 化学: 92 },
+      },
+    ], ["数学", "化学"], {
+      "class-1": 2,
+      "class-2": 2,
+      "class-3": 1,
+    });
+
+    expect(availability).toEqual({
+      "class-1": ["数学"],
+      "class-2": [],
+      "class-3": ["数学", "化学"],
+    });
+  });
+
+  it("uses complete imported subjects as class ranking defaults", () => {
+    const settings = buildDefaultGradeSettings(
+      ["数学", "化学"],
+      ["class-1", "class-2", "class-3"],
+      [],
+      {
+        "class-1": ["数学"],
+        "class-2": ["数学", "化学"],
+      },
+    );
+
+    expect(settings.classSubjects).toEqual([
+      {
+        classId: "class-1",
+        examSubjects: ["数学"],
+        statisticSubjects: ["数学"],
+        separateRankSubjects: [],
+      },
+      {
+        classId: "class-2",
+        examSubjects: ["数学", "化学"],
+        statisticSubjects: ["数学", "化学"],
+        separateRankSubjects: [],
+      },
+      {
+        classId: "class-3",
+        examSubjects: ["数学", "化学"],
+        statisticSubjects: ["数学", "化学"],
+        separateRankSubjects: [],
+      },
+    ]);
+  });
+
   it("builds elective assignment and configurable report defaults", () => {
     const settings = buildDefaultGradeSettings(
       ["数学", "化学"],
@@ -132,6 +189,18 @@ describe("grade statistics", () => {
     expect(settings.classSubjectTeacherIds).toEqual({
       "class-1": { 数学: ["teacher-math"] },
       "class-2": { 数学: ["teacher-math"] },
+    });
+  });
+
+  it("normalizes manually entered class teachers", () => {
+    const settings = buildDefaultGradeSettings(["数学"], ["class-1"]);
+    settings.classSubjectTeacherNames = {
+      "class-1": { 数学: [" 张老师 ", "张老师", "李老师"] },
+    };
+
+    const normalized = normalizeGradeSettings(settings, ["数学"], ["class-1"]);
+    expect(normalized.classSubjectTeacherNames).toEqual({
+      "class-1": { 数学: ["张老师", "李老师"] },
     });
   });
 
