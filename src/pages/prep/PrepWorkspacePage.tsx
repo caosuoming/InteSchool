@@ -481,8 +481,10 @@ export default function PrepWorkspacePage() {
   return (
     <div>
       <PageHeader
-        title="集体备课"
-        description="用协作看板拆分教研任务、@ 负责人并跟踪完成进度"
+        title={collectiveEntry ? "集体研讨" : "集体备课"}
+        description={collectiveEntry
+          ? "查看当前备课组的研讨任务、已完成成果与整体进度"
+          : "用协作看板拆分教研任务、@ 负责人并跟踪完成进度"}
         icon={<Users className="w-5 h-5" />}
         action={
           <Button variant="gold" onClick={() => openCreateModal()}>
@@ -655,7 +657,7 @@ export default function PrepWorkspacePage() {
               <div>
                 <h2 className="font-serif text-lg font-semibold text-ink-900">
                   {selectedType === "all"
-                    ? "全部备课看板"
+                    ? collectiveEntry ? "备课组任务列表" : "全部备课看板"
                     : taskTypeLabels[selectedType]}
                 </h2>
                 <p className="text-xs text-ink-500">
@@ -684,8 +686,9 @@ export default function PrepWorkspacePage() {
                     board.workflows.length > 0
                       ? Math.round((completed / board.workflows.length) * 100)
                       : 0;
-                  const canPreview = board.status === "completed"
-                    && board.assignments.some((assignment) => assignment.submission);
+                  const canPreview = board.assignments.some(
+                    (assignment) => assignment.status === "completed" && assignment.submission,
+                  );
                   return (
                     <div key={board.id} className="group">
                       <Card hoverable className="h-full p-4 group-hover:border-gold-300">

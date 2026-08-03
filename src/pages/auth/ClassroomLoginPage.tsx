@@ -69,7 +69,7 @@ export default function ClassroomLoginPage() {
             onClick={() => navigate("/login")}
             className="inline-flex items-center gap-1 text-xs text-ink-300 hover:text-paper mb-5"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />教师工作台登录
+            <ArrowLeft className="w-3.5 h-3.5" />返回个人登录
           </button>
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-gold-400 text-ink-900 flex items-center justify-center">

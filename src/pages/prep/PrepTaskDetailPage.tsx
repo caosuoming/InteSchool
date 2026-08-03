@@ -325,7 +325,9 @@ export default function PrepTaskDetailPage() {
     teacher.roles.includes("dean") ||
     teacher.roles.includes("vicePrincipal") ||
     teacher.roles.includes("principal");
-  const hasSubmissions = task.assignments.some((assignment) => assignment.submission);
+  const hasReviewableSubmissions = task.assignments.some(
+    (assignment) => assignment.status === "completed" && assignment.submission,
+  );
   const linkedEditorPath = task.linkedResource
     ? task.linkedResource.type === "examPaper"
       ? `/exam-papers/${task.linkedResource.id}?prepTask=${task.id}`
@@ -346,7 +348,7 @@ export default function PrepTaskDetailPage() {
                 编辑协作文档
               </Button>
             )}
-            {task.status === "completed" && hasSubmissions && (
+            {hasReviewableSubmissions && (
               <Button variant="gold" onClick={() => setShowReviewModal(true)}>
                 <Eye className="w-4 h-4" />
                 预览成果

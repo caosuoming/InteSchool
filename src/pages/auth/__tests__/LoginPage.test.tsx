@@ -28,8 +28,9 @@ function renderLogin(props: Parameters<typeof LoginPage>[0] = {}) {
     <MemoryRouter initialEntries={["/"]}>
       <Routes>
         <Route path="/" element={<LoginPage {...props} />} />
+        <Route path="/login" element={<div>标准个人登录页</div>} />
         <Route path="/classroom-login" element={<div>课堂登录页</div>} />
-        <Route path="/prep-login" element={<div>集体备课登录页</div>} />
+        <Route path="/prep-login" element={<div>集体研讨登录页</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -54,24 +55,29 @@ describe("LoginPage", () => {
 
     expect(authState.login).toHaveBeenCalledWith("13800138000", "StrongPass123");
     expect(screen.getByRole("button", { name: "我要上课" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "集体备课" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "集体研讨" })).toBeInTheDocument();
   });
 
   it("opens the dedicated collective-preparation login entry", async () => {
     const user = userEvent.setup();
     renderLogin();
 
-    await user.click(screen.getByRole("button", { name: "集体备课" }));
+    await user.click(screen.getByRole("button", { name: "集体研讨" }));
 
-    expect(await screen.findByText("集体备课登录页")).toBeInTheDocument();
+    expect(await screen.findByText("集体研讨登录页")).toBeInTheDocument();
   });
 
-  it("labels the collective entry and hides registration", () => {
+  it("labels the collective discussion entry and returns to personal login", async () => {
+    const user = userEvent.setup();
     renderLogin({ destination: "/prep?entry=collective", loginOnly: true });
 
-    expect(screen.getByRole("heading", { name: "进入集体备课" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "进入集体研讨" })).toBeInTheDocument();
     expect(screen.getByText("使用备课组内任一教师账号登录")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "登录并进入集体备课" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录并进入集体研讨" })).toBeInTheDocument();
     expect(screen.queryByText("立即注册")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "我要上课" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "返回个人登录" }));
+    expect(await screen.findByText("标准个人登录页")).toBeInTheDocument();
   });
 });

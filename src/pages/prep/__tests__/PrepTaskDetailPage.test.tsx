@@ -220,51 +220,68 @@ describe("PrepTaskDetailPage submissions", () => {
     });
   });
 
-  it("opens sequential review tools after the whole board is completed", async () => {
-    const completed = createTask({
-      status: "completed",
-      workflows: [{
-        ...createTask().workflows[0],
-        status: "completed",
-      }],
-      assignments: [{
-        ...createTask().assignments[0],
-        status: "completed",
-        submission: {
-          id: "submission-1",
-          kind: "images",
-          title: "1 张图片",
-          submittedBy: teacher.id,
-          submittedAt: "2026-08-02T01:00:00.000Z",
-          updatedAt: "2026-08-02T01:00:00.000Z",
-          assets: [{
-            id: "image-1",
-            name: "板书.png",
-            url: "/api/files/image-1",
-            mimeType: "image/png",
-            size: 1024,
-          }],
-          annotations: [{
-            id: "stroke-mine",
-            targetId: "image-1",
-            tool: "pen",
-            color: "black",
-            points: [{ x: 0.45, y: 0.5 }, { x: 0.55, y: 0.5 }],
-            createdBy: teacher.id,
-            createdAt: "2026-08-02T01:01:00.000Z",
-          }, {
-            id: "stroke-other",
-            targetId: "image-1",
-            tool: "pen",
-            color: "red",
-            points: [{ x: 0.2, y: 0.2 }, { x: 0.3, y: 0.2 }],
-            createdBy: "teacher-2",
-            createdAt: "2026-08-02T01:02:00.000Z",
-          }],
+  it("opens review tools for completed work before the whole board is completed", async () => {
+    const partiallyCompleted = createTask({
+      status: "in_progress",
+      workflows: [
+        {
+          ...createTask().workflows[0],
+          status: "completed",
         },
-      }],
+        {
+          ...createTask().workflows[0],
+          id: "workflow-2",
+          name: "补充课堂练习",
+          order: 2,
+          status: "created",
+        },
+      ],
+      assignments: [
+        {
+          ...createTask().assignments[0],
+          status: "completed",
+          submission: {
+            id: "submission-1",
+            kind: "images",
+            title: "1 张图片",
+            submittedBy: teacher.id,
+            submittedAt: "2026-08-02T01:00:00.000Z",
+            updatedAt: "2026-08-02T01:00:00.000Z",
+            assets: [{
+              id: "image-1",
+              name: "板书.png",
+              url: "/api/files/image-1",
+              mimeType: "image/png",
+              size: 1024,
+            }],
+            annotations: [{
+              id: "stroke-mine",
+              targetId: "image-1",
+              tool: "pen",
+              color: "black",
+              points: [{ x: 0.45, y: 0.5 }, { x: 0.55, y: 0.5 }],
+              createdBy: teacher.id,
+              createdAt: "2026-08-02T01:01:00.000Z",
+            }, {
+              id: "stroke-other",
+              targetId: "image-1",
+              tool: "pen",
+              color: "red",
+              points: [{ x: 0.2, y: 0.2 }, { x: 0.3, y: 0.2 }],
+              createdBy: "teacher-2",
+              createdAt: "2026-08-02T01:02:00.000Z",
+            }],
+          },
+        },
+        {
+          ...createTask().assignments[0],
+          id: "assignment-2",
+          workflowId: "workflow-2",
+          status: "accepted",
+        },
+      ],
     });
-    vi.mocked(prepService.getTask).mockResolvedValue(completed);
+    vi.mocked(prepService.getTask).mockResolvedValue(partiallyCompleted);
 
     const user = userEvent.setup();
     renderPage();
@@ -272,6 +289,7 @@ describe("PrepTaskDetailPage submissions", () => {
     await user.click(await screen.findByRole("button", { name: "预览成果" }));
 
     expect(screen.getByText("集体备课成果预览")).toBeInTheDocument();
+    expect(screen.getByText("共 1 份已完成成果。可顺次查看、批注并全屏展示。")).toBeInTheDocument();
     expect(screen.getByAltText("板书.png")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "黑色笔" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "红色笔" })).toBeInTheDocument();
