@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   ArrowRight,
+  ClipboardCheck,
   ClipboardList,
   Copy,
   FileSpreadsheet,
@@ -40,7 +41,7 @@ import { GradeImportWizard } from "@/pages/students/GradeImportWizard";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { GRADE_SUBJECT_OPTIONS } from "@/lib/grade-spreadsheet";
 
-export type MyExamsSection = "rooms" | "grades";
+export type MyExamsSection = "rooms" | "invigilation" | "grades";
 
 const DEFAULT_COHORT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 
@@ -49,7 +50,8 @@ function ExamSectionTabs({ section }: { section: MyExamsSection }) {
     <div className="mb-5 flex gap-1 rounded-xl border border-ink-100 bg-paper p-1.5 shadow-sm">
       {([
         ["rooms", "/my-exams/rooms", "考场布置", MapPinned],
-        ["grades", "/my-exams/grades", "成绩处理", FileSpreadsheet],
+        ["invigilation", "/my-exams/invigilation", "监考表", ClipboardCheck],
+        ["grades", "/my-exams/grades", "成绩统计", FileSpreadsheet],
       ] as const).map(([value, path, label, Icon]) => (
         <Link
           key={value}
@@ -66,6 +68,25 @@ function ExamSectionTabs({ section }: { section: MyExamsSection }) {
         </Link>
       ))}
     </div>
+  );
+}
+
+function InvigilationTableSection() {
+  return (
+    <Card>
+      <EmptyState
+        icon={<ClipboardCheck className="h-8 w-8" />}
+        title="暂无监考表"
+        description="请先完成考场布置并生成考场方案，再维护对应的监考安排。"
+        action={(
+          <Link to="/my-exams/rooms">
+            <Button variant="outline">
+              前往考场布置<ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
+        )}
+      />
+    </Card>
   );
 }
 
@@ -408,7 +429,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
     <div>
       <PageHeader
         title="我的考试"
-        description="统一管理考场布置和按年级复用的成绩预处理配置"
+        description="统一管理考场布置、监考表和按年级复用的成绩统计配置"
         icon={<ClipboardList className="h-5 w-5" />}
       />
       <ExamSectionTabs section={section} />
@@ -421,6 +442,8 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
         <Card><EmptyState title="暂无可管理年级" description="请先在班级管理中创建学校班级并设置年级。" /></Card>
       ) : section === "rooms" ? (
         <ExamRoomArrangementPage embedded />
+      ) : section === "invigilation" ? (
+        <InvigilationTableSection />
       ) : (
         <GradePreprocessing
           schoolId={schoolId}

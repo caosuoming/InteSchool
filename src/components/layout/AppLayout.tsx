@@ -5,7 +5,7 @@ import {
   ChevronLeft, School, User, Settings, Users,
   FolderOpen, Download,
   ChevronDown, ChevronRight, Building2, Cloud,
-  BookOpen, Check, Crown, ClipboardList, MapPinned, FileSpreadsheet,
+  BookOpen, Check, Crown, ClipboardCheck, ClipboardList, MapPinned, FileSpreadsheet,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -48,7 +48,8 @@ const allNavItems: NavItem[] = [
     examManagerOnly: true,
     children: [
       { path: "/my-exams/rooms", label: "考场布置", icon: MapPinned },
-      { path: "/my-exams/grades", label: "成绩处理", icon: FileSpreadsheet },
+      { path: "/my-exams/invigilation", label: "监考表", icon: ClipboardCheck },
+      { path: "/my-exams/grades", label: "成绩统计", icon: FileSpreadsheet },
     ],
   },
   { path: "/school-resources", label: "校本资源", icon: Building2, schoolOnly: true },
