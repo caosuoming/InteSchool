@@ -845,10 +845,40 @@ export const serviceParameters = {
   "prep": {
     "listTasks": [
       "schoolId",
-      "teacherId"
+      "teacherId",
+      "teacher"
     ],
     "getTask": [
-      "taskId"
+      "taskId",
+      "password",
+      "teacher"
+    ],
+    "createResourceTask": [
+      "input",
+      "teacher"
+    ],
+    "getLinkedResource": [
+      "taskId",
+      "password",
+      "teacher"
+    ],
+    "updateLinkedResource": [
+      "taskId",
+      "patch",
+      "password",
+      "teacher"
+    ],
+    "addResourceComment": [
+      "taskId",
+      "input",
+      "password",
+      "teacher"
+    ],
+    "deleteResourceComment": [
+      "taskId",
+      "commentId",
+      "password",
+      "teacher"
     ],
     "createTask": [
       "schoolId",

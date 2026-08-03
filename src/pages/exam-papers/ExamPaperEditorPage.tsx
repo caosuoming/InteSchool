@@ -18,6 +18,7 @@ import { examPublishService } from "@/services/examPublish";
 import { knowledgeService } from "@/services/knowledge";
 import { analyticsService, type DateRange } from "@/services/analytics";
 import { settingsService } from "@/services/settings";
+import { prepService } from "@/services/prep";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -30,6 +31,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
+import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
+import { ResourceCommentButton } from "@/components/prep/ResourceCommentButton";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
 import {
   commonScoreUnderHeading,
@@ -48,6 +51,8 @@ import type {
   ExtractedDocumentBlock,
   Lecture,
   PersonalClass,
+  PrepResourceComment,
+  PrepTask,
   Question,
   ResourceSemester,
   SchoolClass,
@@ -144,6 +149,7 @@ export default function ExamPaperEditorPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const isPreview = location.pathname.endsWith("/preview") || searchParams.get("preview") === "1";
+  const prepTaskId = searchParams.get("prepTask");
   const [paperSize, setPaperSize] = useState<"A4" | "8K">("A4");
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
@@ -153,6 +159,14 @@ export default function ExamPaperEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [prepTask, setPrepTask] = useState<PrepTask | null>(null);
+  const [prepComments, setPrepComments] = useState<PrepResourceComment[]>([]);
+  const [prepPassword, setPrepPassword] = useState(() =>
+    prepTaskId ? sessionStorage.getItem(`prep-resource-password:${prepTaskId}`) || "" : "",
+  );
+  const [prepPasswordInput, setPrepPasswordInput] = useState("");
+  const [prepPasswordOpen, setPrepPasswordOpen] = useState(false);
+  const [prepSetupOpen, setPrepSetupOpen] = useState(false);
 
   // 编辑状态
   const [title, setTitle] = useState("");
@@ -233,34 +247,57 @@ export default function ExamPaperEditorPage() {
   const loadPaper = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const p = await examPaperService.getPaper(id);
-    if (!p) {
-      toast.error("试卷不存在");
-      navigate("/my-resources");
-      return;
+    try {
+      let p: ExamPaper | null;
+      if (prepTaskId) {
+        const linked = await prepService.getLinkedResource(prepTaskId, prepPassword || undefined);
+        if (!("questions" in linked.resource)) throw new Error("该协作任务关联的不是试卷");
+        p = linked.resource;
+        setPrepTask(linked.task);
+        setPrepComments(linked.comments);
+      } else {
+        p = await examPaperService.getPaper(id);
+        setPrepTask(null);
+        setPrepComments([]);
+      }
+      if (!p) {
+        toast.error("试卷不存在");
+        navigate("/my-resources");
+        return;
+      }
+      setPaper(p);
+      setTitle(p.title);
+      setDescription(p.description || "");
+      setGrade(p.grade);
+      setSchoolYear(p.schoolYear);
+      setSemester(p.semester || "上学期");
+      setTypeId(p.typeId || "");
+      setDuration(p.duration);
+      setPaperQuestions(p.questions);
+      setContentBlocks(p.contentBlocks || []);
+      setLayoutMode(p.layoutMode || "grouped");
+      setSelectedStudentIds(p.studentIds || []);
+      setPrepPasswordOpen(false);
+      // 加载关联题目
+      const qMap: Record<string, Question> = {};
+      const qIds = p.questions.map((q) => q.questionId).filter(Boolean) as string[];
+      if (qIds.length > 0) {
+        const all = await questionService.listQuestions({ schoolId });
+        all.forEach((q) => { if (qIds.includes(q.id)) qMap[q.id] = q; });
+      }
+      setQuestions(qMap);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "试卷加载失败";
+      if (prepTaskId && message.includes("密码")) {
+        setPrepPasswordOpen(true);
+      } else {
+        toast.error("加载失败", message);
+        navigate(prepTaskId ? "/prep" : "/my-resources/exam-papers");
+      }
+    } finally {
+      setLoading(false);
     }
-    setPaper(p);
-    setTitle(p.title);
-    setDescription(p.description || "");
-    setGrade(p.grade);
-    setSchoolYear(p.schoolYear);
-    setSemester(p.semester || "上学期");
-    setTypeId(p.typeId || "");
-    setDuration(p.duration);
-    setPaperQuestions(p.questions);
-    setContentBlocks(p.contentBlocks || []);
-    setLayoutMode(p.layoutMode || "grouped");
-    setSelectedStudentIds(p.studentIds || []);
-    // 加载关联题目
-    const qMap: Record<string, Question> = {};
-    const qIds = p.questions.map((q) => q.questionId).filter(Boolean) as string[];
-    if (qIds.length > 0) {
-      const all = await questionService.listQuestions({ schoolId });
-      all.forEach((q) => { if (qIds.includes(q.id)) qMap[q.id] = q; });
-    }
-    setQuestions(qMap);
-    setLoading(false);
-  }, [id, navigate, schoolId]);
+  }, [id, navigate, prepPassword, prepTaskId, schoolId]);
 
   useEffect(() => {
     loadPaper();
@@ -666,7 +703,7 @@ export default function ExamPaperEditorPage() {
     if (!paper || !title.trim()) { toast.error("请填写试卷标题"); return; }
     setSaving(true);
     try {
-      const updated = await examPaperService.updatePaper(paper.id, {
+      const patch = {
         title, description, grade, schoolYear, semester, duration,
         totalScore: totalScore,
         questions: paperQuestions,
@@ -674,14 +711,32 @@ export default function ExamPaperEditorPage() {
         studentIds: selectedStudentIds,
         typeId: typeId || undefined,
         layoutMode,
-      });
+      };
+      const updated = prepTaskId
+        ? await prepService.updateLinkedResource(prepTaskId, patch, prepPassword || undefined) as ExamPaper
+        : await examPaperService.updatePaper(paper.id, patch);
       setPaper(updated);
       toast.success("试卷已保存");
     } catch (e: any) {
-      toast.error("保存失败", e?.message);
+      const message = e?.message || "保存失败";
+      if (prepTaskId && String(message).includes("密码")) {
+        setPrepPasswordOpen(true);
+      }
+      toast.error("保存失败", message);
     } finally {
       setSaving(false);
     }
+  };
+
+  const handlePrepPasswordSubmit = () => {
+    if (!prepTaskId || !prepPasswordInput.trim()) {
+      toast.warning("请输入访问密码");
+      return;
+    }
+    const password = prepPasswordInput.trim();
+    sessionStorage.setItem(`prep-resource-password:${prepTaskId}`, password);
+    setPrepPassword(password);
+    setPrepPasswordOpen(false);
   };
 
   // 发布
@@ -816,6 +871,33 @@ export default function ExamPaperEditorPage() {
     }
   };
 
+  const prepPasswordModal = (
+    <Modal
+      open={prepPasswordOpen}
+      onClose={() => navigate("/prep")}
+      title="输入协作文档密码"
+      description="该试卷设置了查看密码，验证后才能查看和编辑。"
+      size="sm"
+      footer={(
+        <>
+          <Button variant="outline" onClick={() => navigate("/prep")}>返回集体备课</Button>
+          <Button variant="gold" onClick={handlePrepPasswordSubmit}>验证并打开</Button>
+        </>
+      )}
+    >
+      <Input
+        label="访问密码"
+        type="password"
+        autoFocus
+        value={prepPasswordInput}
+        onChange={(event) => setPrepPasswordInput(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") handlePrepPasswordSubmit();
+        }}
+      />
+    </Modal>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -823,6 +905,8 @@ export default function ExamPaperEditorPage() {
       </div>
     );
   }
+
+  if (prepPasswordOpen && !paper) return <div>{prepPasswordModal}</div>;
 
   // ===== 预览模式 =====
   if (isPreview) {
@@ -834,15 +918,22 @@ export default function ExamPaperEditorPage() {
           icon={<FileSpreadsheet className="w-5 h-5" />}
           action={
             <div className="no-print flex items-center gap-2">
-              <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
-                <Layout className="w-4 h-4" />
-                制作答题卡
-              </Button>
-              <Button variant="outline" onClick={() => setPublishOpen(true)}>
-                <Send className="w-4 h-4" />
-                选择发布对象
-              </Button>
-              <Button variant="gold" onClick={() => navigate(`/exam-papers/${id}`)}>
+              {!prepTaskId && (
+                <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
+                  <Layout className="w-4 h-4" />
+                  制作答题卡
+                </Button>
+              )}
+              {!prepTaskId && (
+                <Button variant="outline" onClick={() => setPublishOpen(true)}>
+                  <Send className="w-4 h-4" />
+                  选择发布对象
+                </Button>
+              )}
+              <Button
+                variant="gold"
+                onClick={() => navigate(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+              >
                 <Edit3 className="w-4 h-4" />
                 编辑试卷
               </Button>
@@ -1117,15 +1208,29 @@ export default function ExamPaperEditorPage() {
         icon={<FileSpreadsheet className="w-5 h-5" />}
         action={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => navigate("/my-resources/exam-papers")}>
+            <Button
+              variant="ghost"
+              onClick={() => navigate(prepTaskId ? `/prep/tasks/${prepTaskId}` : "/my-resources/exam-papers")}
+            >
               <ArrowLeft className="w-4 h-4" />
               返回
             </Button>
-            <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
-              <Layout className="w-4 h-4" />
-              制作答题卡
-            </Button>
-            <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/preview`)}>
+            {!prepTaskId && paper?.teacherId === teacher?.id && (
+              <Button variant="outline" onClick={() => setPrepSetupOpen(true)}>
+                <Users className="w-4 h-4" />
+                添加到集体备课
+              </Button>
+            )}
+            {!prepTaskId && (
+              <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
+                <Layout className="w-4 h-4" />
+                制作答题卡
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/exam-papers/${id}/preview${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+            >
               <Eye className="w-4 h-4" />
               预览
             </Button>
@@ -1276,6 +1381,16 @@ export default function ExamPaperEditorPage() {
                         <Badge variant={block.type === "question" ? "teal" : block.type === "knowledge" ? "gold" : "ink"}>
                           {label}
                         </Badge>
+                        {prepTaskId && (
+                          <ResourceCommentButton
+                            taskId={prepTaskId}
+                            targetId={block.id}
+                            targetLabel={block.content.slice(0, 80) || label}
+                            password={prepPassword || undefined}
+                            comments={prepComments}
+                            onCommentsChange={setPrepComments}
+                          />
+                        )}
                         {block.type === "question" && paperQuestion && (
                           <>
                             <Badge variant="default">{typeLabel[paperQuestion.type]}</Badge>
@@ -1430,21 +1545,34 @@ export default function ExamPaperEditorPage() {
                       </div>
                       <div className="space-y-3">
                         {group.questions.map((item, itemIndex) => (
-                          <EditQuestionRow
-                            key={item.pq.id}
-                            pq={item.pq}
-                            index={item.index}
-                            total={paperQuestions.length}
-                            question={item.question}
-                            answered={answeredQuestionIds.has(getCompletionQuestionId(item.pq))}
-                            canMoveUp={itemIndex > 0}
-                            canMoveDown={itemIndex < group.questions.length - 1}
-                            onMoveUp={() => handleMoveWithinGroup(item.index, "up")}
-                            onMoveDown={() => handleMoveWithinGroup(item.index, "down")}
-                            onRemove={() => handleRemoveQuestion(item.pq.id)}
-                            onReplace={() => handleReplaceQuestion(item.index)}
-                            onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
-                          />
+                          <div key={item.pq.id} className="space-y-1">
+                            <EditQuestionRow
+                              pq={item.pq}
+                              index={item.index}
+                              total={paperQuestions.length}
+                              question={item.question}
+                              answered={answeredQuestionIds.has(getCompletionQuestionId(item.pq))}
+                              canMoveUp={itemIndex > 0}
+                              canMoveDown={itemIndex < group.questions.length - 1}
+                              onMoveUp={() => handleMoveWithinGroup(item.index, "up")}
+                              onMoveDown={() => handleMoveWithinGroup(item.index, "down")}
+                              onRemove={() => handleRemoveQuestion(item.pq.id)}
+                              onReplace={() => handleReplaceQuestion(item.index)}
+                              onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
+                            />
+                            {prepTaskId && (
+                              <div className="flex justify-end">
+                                <ResourceCommentButton
+                                  taskId={prepTaskId}
+                                  targetId={item.pq.id}
+                                  targetLabel={`第 ${item.index + 1} 题`}
+                                  password={prepPassword || undefined}
+                                  comments={prepComments}
+                                  onCommentsChange={setPrepComments}
+                                />
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </section>
@@ -1454,19 +1582,32 @@ export default function ExamPaperEditorPage() {
             ) : (
               <div className="space-y-3">
                 {paperQuestions.map((paperQuestion, index) => (
-                  <EditQuestionRow
-                    key={paperQuestion.id}
-                    pq={paperQuestion}
-                    index={index}
-                    total={paperQuestions.length}
-                    question={paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined}
-                    answered={answeredQuestionIds.has(getCompletionQuestionId(paperQuestion))}
-                    onMoveUp={() => handleMove(index, "up")}
-                    onMoveDown={() => handleMove(index, "down")}
-                    onRemove={() => handleRemoveQuestion(paperQuestion.id)}
-                    onReplace={() => handleReplaceQuestion(index)}
-                    onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
-                  />
+                  <div key={paperQuestion.id} className="space-y-1">
+                    <EditQuestionRow
+                      pq={paperQuestion}
+                      index={index}
+                      total={paperQuestions.length}
+                      question={paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined}
+                      answered={answeredQuestionIds.has(getCompletionQuestionId(paperQuestion))}
+                      onMoveUp={() => handleMove(index, "up")}
+                      onMoveDown={() => handleMove(index, "down")}
+                      onRemove={() => handleRemoveQuestion(paperQuestion.id)}
+                      onReplace={() => handleReplaceQuestion(index)}
+                      onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
+                    />
+                    {prepTaskId && (
+                      <div className="flex justify-end">
+                        <ResourceCommentButton
+                          taskId={prepTaskId}
+                          targetId={paperQuestion.id}
+                          targetLabel={`第 ${index + 1} 题`}
+                          password={prepPassword || undefined}
+                          comments={prepComments}
+                          onCommentsChange={setPrepComments}
+                        />
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -2089,6 +2230,18 @@ export default function ExamPaperEditorPage() {
           </div>
         </div>
       </Modal>
+
+      {paper && (
+        <AddResourceToPrepModal
+          open={prepSetupOpen}
+          onClose={() => setPrepSetupOpen(false)}
+          resourceType="examPaper"
+          resourceId={paper.id}
+          resourceTitle={paper.title}
+          onCreated={(task) => navigate(`/exam-papers/${paper.id}?prepTask=${task.id}`)}
+        />
+      )}
+      {prepPasswordModal}
     </div>
   );
 }

@@ -87,6 +87,7 @@ const SENSITIVE_KEYS = new Set([
   "passwordHash",
   "password_hash",
   "viewPassword",
+  "viewPasswordHash",
   "wechatOpenId",
   "wechatUnionId",
   "wecomUserId",
@@ -389,9 +390,33 @@ function authorize(
         }
         authorizedPrepMutation = true;
       }
+      if (
+        service === "prep"
+        && ["updateLinkedResource", "addResourceComment", "deleteResourceComment"].includes(method)
+      ) {
+        const assignments = Array.isArray(record.assignments)
+          ? record.assignments as Array<Record<string, unknown>>
+          : [];
+        const participant = recordOwner(record) === teacher.id
+          || assignments.some((assignment) => assignment.teacherId === teacher.id);
+        if (!participant || recordSchool(record) !== teacher.schoolId) {
+          throw new Error("无权修改该协作文档");
+        }
+        authorizedPrepMutation = true;
+      }
       const owner = recordOwner(record);
       const school = recordSchool(record);
       const shared = record.isShared === true || record.scope === "platform" || record.scope === "school";
+      if (
+        (service === "examPaper" || service === "lecture")
+        && owner !== teacher.id
+        && ((state.prepTasks || []) as Array<Record<string, unknown>>).some((task) => {
+          const linked = task.linkedResource as Record<string, unknown> | undefined;
+          return linked?.id === record.id && Boolean(task.viewPasswordHash);
+        })
+      ) {
+        throw new Error("请从集体备课任务打开该受保护文档");
+      }
       if (service === "question" && targetRecord && !canReadQuestion(record, teacher)) {
         throw new Error("无权访问该资源");
       }

@@ -21,6 +21,7 @@ import { coursewareService } from "@/services/courseware";
 import { materialService } from "@/services/material";
 import { examPaperService } from "@/services/examPaper";
 import { settingsService } from "@/services/settings";
+import { prepService } from "@/services/prep";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -35,11 +36,14 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
+import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
+import { ResourceCommentButton } from "@/components/prep/ResourceCommentButton";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
   Lecture, LectureSection, Question, Basket, AnyClass, TreeNode,
   Student, AnswerRecord, AnswerScore, Courseware, Material, SchoolClass, PersonalClass,
   LectureColumnTemplate, LectureType, ResourceSemester, ExamPaper,
+  PrepResourceComment, PrepTask,
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
@@ -104,6 +108,7 @@ export default function LectureEditorPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isPreview = searchParams.get("preview") === "1";
+  const prepTaskId = searchParams.get("prepTask");
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester, ready: resourceOptionsReady } = useSchoolResourceOptions(teacher?.schoolId);
 
@@ -111,6 +116,14 @@ export default function LectureEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [prepTask, setPrepTask] = useState<PrepTask | null>(null);
+  const [prepComments, setPrepComments] = useState<PrepResourceComment[]>([]);
+  const [prepPassword, setPrepPassword] = useState(() =>
+    prepTaskId ? sessionStorage.getItem(`prep-resource-password:${prepTaskId}`) || "" : "",
+  );
+  const [prepPasswordInput, setPrepPasswordInput] = useState("");
+  const [prepPasswordOpen, setPrepPasswordOpen] = useState(false);
+  const [prepSetupOpen, setPrepSetupOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [grade, setGrade] = useState("");
@@ -277,68 +290,90 @@ export default function LectureEditorPage() {
   useEffect(() => {
     const load = async () => {
       if (!teacher || (id === "new" && !resourceOptionsReady)) return;
-      const [chs, kps, lecTypes, savedColumnTemplates] = await Promise.all([
-        knowledgeService.getChapterTree(teacher.schoolId!),
-        knowledgeService.getKnowledgeTree(teacher.schoolId!),
-        settingsService.listLectureTypes(teacher.schoolId!),
-        lectureService.listColumnTemplates(teacher.id, teacher.schoolId!),
-      ]);
-      setChapterTree(chs);
-      setKnowledgeTree(kps);
-      setLectureTypes(lecTypes);
-      setColumnTemplates(savedColumnTemplates);
-      const allClasses = await classSvc.listAllClasses(teacher.schoolId!, teacher.id);
-      setClasses(allClasses);
-      setBaskets(await basketService.listBaskets(teacher.id));
-      const allStudents = await classSvc.listStudentsBySchool(teacher.schoolId!);
-      setStudents(allStudents);
-      // 加载学校班级和个人班级（用于学生选择器）
-      classSvc.listSchoolClasses(teacher.schoolId!).then(setSchoolClasses);
-      classSvc.listPersonalClasses(teacher.id).then(setPersonalClasses);
+      setLoading(true);
+      try {
+        const [chs, kps, lecTypes, savedColumnTemplates] = await Promise.all([
+          knowledgeService.getChapterTree(teacher.schoolId!),
+          knowledgeService.getKnowledgeTree(teacher.schoolId!),
+          settingsService.listLectureTypes(teacher.schoolId!),
+          lectureService.listColumnTemplates(teacher.id, teacher.schoolId!),
+        ]);
+        setChapterTree(chs);
+        setKnowledgeTree(kps);
+        setLectureTypes(lecTypes);
+        setColumnTemplates(savedColumnTemplates);
+        const allClasses = await classSvc.listAllClasses(teacher.schoolId!, teacher.id);
+        setClasses(allClasses);
+        setBaskets(await basketService.listBaskets(teacher.id));
+        const allStudents = await classSvc.listStudentsBySchool(teacher.schoolId!);
+        setStudents(allStudents);
+        classSvc.listSchoolClasses(teacher.schoolId!).then(setSchoolClasses);
+        classSvc.listPersonalClasses(teacher.id).then(setPersonalClasses);
 
-      if (id && id !== "new") {
-        const lec = await lectureService.getLecture(id);
-        if (!lec) {
-          toast.error("讲义不存在");
-          navigate("/lectures");
-          return;
+        if (id && id !== "new") {
+          let lec: Lecture | null;
+          if (prepTaskId) {
+            const linked = await prepService.getLinkedResource(prepTaskId, prepPassword || undefined);
+            if (!("sections" in linked.resource)) throw new Error("该协作任务关联的不是讲义");
+            lec = linked.resource;
+            setPrepTask(linked.task);
+            setPrepComments(linked.comments);
+          } else {
+            lec = await lectureService.getLecture(id);
+            setPrepTask(null);
+            setPrepComments([]);
+          }
+          if (!lec) {
+            toast.error("讲义不存在");
+            navigate("/my-resources/lectures");
+            return;
+          }
+          setLecture(lec);
+          setTitle(lec.title);
+          setDescription(lec.description || "");
+          setGrade(lec.grade);
+          setSchoolYear(lec.schoolYear);
+          setSemester(lec.semester || "上学期");
+          setTypeId(lec.typeId || "");
+          setSelectedChapterIds(lec.chapterIds);
+          setSelectedPointIds(lec.knowledgePointIds);
+          setSelectedClassIds(lec.classIds);
+          setSections(lec.sections);
+          setSelectedChapterId(lec.sections.find((section) => section.type === "chapter")?.id || null);
+          setSelectedStudentIds(lec.studentIds || []);
+          setPrepPasswordOpen(false);
+
+          const records = await analyticsService.listAnswerRecordsByLecture(lec.id);
+          setAnswerRecords(records);
+        } else {
+          setTitle("未命名讲义");
+          setGrade(defaultGrade);
+          setSchoolYear(defaultSchoolYear);
+          setSemester(defaultSemester);
+          const initialColumn: LectureSection = {
+            id: `sec-${Date.now()}`,
+            title: "新建栏目",
+            type: "chapter",
+            content: "",
+            children: [],
+          };
+          setSections([initialColumn]);
+          setSelectedChapterId(initialColumn.id);
         }
-        setLecture(lec);
-        setTitle(lec.title);
-        setDescription(lec.description || "");
-        setGrade(lec.grade);
-        setSchoolYear(lec.schoolYear);
-        setSemester(lec.semester || "上学期");
-        setTypeId(lec.typeId || "");
-        setSelectedChapterIds(lec.chapterIds);
-        setSelectedPointIds(lec.knowledgePointIds);
-        setSelectedClassIds(lec.classIds);
-        setSections(lec.sections);
-        setSelectedChapterId(lec.sections.find((section) => section.type === "chapter")?.id || null);
-        setSelectedStudentIds(lec.studentIds || []);
-
-        // 加载答题记录
-        const records = await analyticsService.listAnswerRecordsByLecture(lec.id);
-        setAnswerRecords(records);
-      } else {
-        setTitle("未命名讲义");
-        setGrade(defaultGrade);
-        setSchoolYear(defaultSchoolYear);
-        setSemester(defaultSemester);
-        const initialColumn: LectureSection = {
-          id: `sec-${Date.now()}`,
-          title: "新建栏目",
-          type: "chapter",
-          content: "",
-          children: [],
-        };
-        setSections([initialColumn]);
-        setSelectedChapterId(initialColumn.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "讲义加载失败";
+        if (prepTaskId && message.includes("密码")) {
+          setPrepPasswordOpen(true);
+        } else {
+          toast.error("加载失败", message);
+          navigate(prepTaskId ? "/prep" : "/my-resources/lectures");
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
-    load();
-  }, [id, teacher, navigate, defaultGrade, defaultSchoolYear, defaultSemester, resourceOptionsReady]);
+    void load();
+  }, [id, teacher, navigate, defaultGrade, defaultSchoolYear, defaultSemester, resourceOptionsReady, prepPassword, prepTaskId]);
 
   // 当学生或时间周期变化时，加载学生在该时间段内做过的题目 ID 集合
   useEffect(() => {
@@ -472,8 +507,10 @@ export default function LectureEditorPage() {
       };
 
       if (lecture) {
-        const updated = await lectureService.updateLecture(lecture.id, payload);
-        if (publish) await lectureService.publish(lecture.id);
+        const updated = prepTaskId
+          ? await prepService.updateLinkedResource(prepTaskId, payload, prepPassword || undefined) as Lecture
+          : await lectureService.updateLecture(lecture.id, payload);
+        if (publish && !prepTaskId) await lectureService.publish(lecture.id);
         toast.success(publish ? "讲义已发布" : "讲义已保存");
         setLecture(updated);
       } else {
@@ -483,11 +520,24 @@ export default function LectureEditorPage() {
         navigate(`/lectures/${created.id}/edit`);
       }
     } catch (e) {
-      toast.error("保存失败", e instanceof Error ? e.message : undefined);
+      const message = e instanceof Error ? e.message : "保存失败";
+      if (prepTaskId && message.includes("密码")) setPrepPasswordOpen(true);
+      toast.error("保存失败", message);
     } finally {
       setSaving(false);
       setPublishing(false);
     }
+  };
+
+  const handlePrepPasswordSubmit = () => {
+    if (!prepTaskId || !prepPasswordInput.trim()) {
+      toast.warning("请输入访问密码");
+      return;
+    }
+    const password = prepPasswordInput.trim();
+    sessionStorage.setItem(`prep-resource-password:${prepTaskId}`, password);
+    setPrepPassword(password);
+    setPrepPasswordOpen(false);
   };
 
   // 添加栏目
@@ -1259,6 +1309,33 @@ export default function LectureEditorPage() {
     return type?.format || "mixed";
   }, [lectureTypes, typeId]);
 
+  const prepPasswordModal = (
+    <Modal
+      open={prepPasswordOpen}
+      onClose={() => navigate("/prep")}
+      title="输入协作文档密码"
+      description="该讲义设置了查看密码，验证后才能查看和编辑。"
+      size="sm"
+      footer={(
+        <>
+          <Button variant="outline" onClick={() => navigate("/prep")}>返回集体备课</Button>
+          <Button variant="gold" onClick={handlePrepPasswordSubmit}>验证并打开</Button>
+        </>
+      )}
+    >
+      <Input
+        label="访问密码"
+        type="password"
+        autoFocus
+        value={prepPasswordInput}
+        onChange={(event) => setPrepPasswordInput(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") handlePrepPasswordSubmit();
+        }}
+      />
+    </Modal>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -1267,7 +1344,7 @@ export default function LectureEditorPage() {
     );
   }
 
-
+  if (prepPasswordOpen && !lecture) return <div>{prepPasswordModal}</div>;
 
   // ===== 预览模式 =====
   if (isPreview) {
@@ -1278,7 +1355,10 @@ export default function LectureEditorPage() {
           description={lecture?.description || description || "预览模式"}
           icon={<FileText className="w-5 h-5" />}
           action={
-            <Button variant="outline" onClick={() => navigate(`/lectures/${id}/edit`)}>
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/lectures/${id}/edit${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+            >
               <Edit3 className="w-4 h-4" />
               返回编辑
             </Button>
@@ -1521,18 +1601,29 @@ export default function LectureEditorPage() {
         icon={<FileText className="w-5 h-5" />}
         action={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => navigate("/lectures")}>
+            <Button
+              variant="ghost"
+              onClick={() => navigate(prepTaskId ? `/prep/tasks/${prepTaskId}` : "/my-resources/lectures")}
+            >
               <ArrowLeft className="w-4 h-4" />
               返回
             </Button>
+            {!prepTaskId && lecture?.teacherId === teacher?.id && (
+              <Button variant="outline" onClick={() => setPrepSetupOpen(true)}>
+                <Users className="w-4 h-4" />
+                添加到集体备课
+              </Button>
+            )}
             <Button variant="outline" onClick={() => handleSave(false)} loading={saving}>
               <Save className="w-4 h-4" />
               保存
             </Button>
-            <Button variant="gold" onClick={() => handleSave(true)} loading={publishing}>
-              <Send className="w-4 h-4" />
-              发布
-            </Button>
+            {!prepTaskId && (
+              <Button variant="gold" onClick={() => handleSave(true)} loading={publishing}>
+                <Send className="w-4 h-4" />
+                发布
+              </Button>
+            )}
           </div>
         }
       />
@@ -1843,9 +1934,21 @@ export default function LectureEditorPage() {
                   <div className="text-xs text-ink-400 mt-1">{selectedColumn ? `${activeColumnSections.length} 个内容块` : "选择左侧栏目后添加知识块或题目"}</div>
                 </div>
                 {selectedColumn && (
-                  <Button variant="ghost" size="sm" onClick={() => { setEditingSection(selectedColumn); setSectionTitle(selectedColumn.title); setSectionContent(selectedColumn.content); setSectionLabel(""); }}>
-                    <Edit3 className="w-3.5 h-3.5" /> 编辑栏目
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    {prepTaskId && (
+                      <ResourceCommentButton
+                        taskId={prepTaskId}
+                        targetId={selectedColumn.id}
+                        targetLabel={selectedColumn.title}
+                        password={prepPassword || undefined}
+                        comments={prepComments}
+                        onCommentsChange={setPrepComments}
+                      />
+                    )}
+                    <Button variant="ghost" size="sm" onClick={() => { setEditingSection(selectedColumn); setSectionTitle(selectedColumn.title); setSectionContent(selectedColumn.content); setSectionLabel(""); }}>
+                      <Edit3 className="w-3.5 h-3.5" /> 编辑栏目
+                    </Button>
+                  </div>
                 )}
               </div>
 
@@ -1886,6 +1989,16 @@ export default function LectureEditorPage() {
                       <button type="button" onClick={() => { setEditingSection(child); setSectionTitle(child.title); setSectionContent(child.content); setSectionLabel(child.customLabel || ""); }} className="flex-1 min-w-0 text-left text-xs text-ink-700 truncate">
                         {child.customLabel ? `${child.customLabel} ` : ""}{child.title}
                       </button>
+                      {prepTaskId && (
+                        <ResourceCommentButton
+                          taskId={prepTaskId}
+                          targetId={child.id}
+                          targetLabel={child.title}
+                          password={prepPassword || undefined}
+                          comments={prepComments}
+                          onCommentsChange={setPrepComments}
+                        />
+                      )}
                       <button type="button" onClick={() => handleMoveChildSection(selectedColumn.id, childIndex, "up")} disabled={childIndex === 0} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="上移">↑</button>
                       <button type="button" onClick={() => handleMoveChildSection(selectedColumn.id, childIndex, "down")} disabled={childIndex === activeColumnSections.length - 1} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="下移">↓</button>
                       <button type="button" onClick={() => handleRemoveSection(child.id, selectedColumn.id)} className="text-ink-300 hover:text-red-600" title="删除内容块"><Trash2 className="w-3 h-3" /></button>
@@ -3067,6 +3180,18 @@ export default function LectureEditorPage() {
           </div>
         </div>
       </Modal>
+
+      {lecture && (
+        <AddResourceToPrepModal
+          open={prepSetupOpen}
+          onClose={() => setPrepSetupOpen(false)}
+          resourceType="lecture"
+          resourceId={lecture.id}
+          resourceTitle={lecture.title}
+          onCreated={(task) => navigate(`/lectures/${lecture.id}/edit?prepTask=${task.id}`)}
+        />
+      )}
+      {prepPasswordModal}
     </div>
   );
 }

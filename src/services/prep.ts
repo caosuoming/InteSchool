@@ -10,9 +10,13 @@ import type {
   PrepSubmission,
   PrepSubmissionInput,
   PrepAnnotationStroke,
+  PrepResourceComment,
+  PrepResourceTaskInput,
   QuestionReference,
   Question,
   Teacher,
+  ExamPaper,
+  Lecture,
 } from "@/types";
 
 export const taskTypeLabels: Record<PrepTaskType, string> = {
@@ -43,11 +47,42 @@ export const assignmentStatusLabels: Record<AssignmentStatus, string> = {
 
 export const prepService = {
   async listTasks(schoolId: string, teacherId?: string): Promise<PrepTask[]> {
-    return rpcCall("prep", "listTasks", [schoolId, teacherId]) as any;
+    return rpcCall("prep", "listTasks", [schoolId, teacherId, undefined]) as any;
   },
 
-  async getTask(taskId: string): Promise<PrepTask | null> {
-    return rpcCall("prep", "getTask", [taskId]) as any;
+  async getTask(taskId: string, password?: string): Promise<PrepTask | null> {
+    return rpcCall("prep", "getTask", [taskId, password, undefined]) as any;
+  },
+
+  async createResourceTask(input: PrepResourceTaskInput): Promise<PrepTask> {
+    return rpcCall("prep", "createResourceTask", [input, undefined]) as any;
+  },
+
+  async getLinkedResource(
+    taskId: string,
+    password?: string,
+  ): Promise<{ task: PrepTask; resource: ExamPaper | Lecture; comments: PrepResourceComment[] }> {
+    return rpcCall("prep", "getLinkedResource", [taskId, password, undefined]) as any;
+  },
+
+  async updateLinkedResource(
+    taskId: string,
+    patch: Partial<ExamPaper> | Partial<Lecture>,
+    password?: string,
+  ): Promise<ExamPaper | Lecture> {
+    return rpcCall("prep", "updateLinkedResource", [taskId, patch, password, undefined]) as any;
+  },
+
+  async addResourceComment(
+    taskId: string,
+    input: { targetId: string; content: string },
+    password?: string,
+  ): Promise<PrepResourceComment> {
+    return rpcCall("prep", "addResourceComment", [taskId, input, password, undefined]) as any;
+  },
+
+  async deleteResourceComment(taskId: string, commentId: string, password?: string): Promise<void> {
+    return rpcCall("prep", "deleteResourceComment", [taskId, commentId, password, undefined]) as any;
   },
 
   async createTask(schoolId: string, subjectGroupId: string, data: {

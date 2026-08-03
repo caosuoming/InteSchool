@@ -1717,6 +1717,32 @@ export interface PrepAnnotationStroke {
   createdAt: string;
 }
 
+/** 集体备课直接协作编辑的资源。 */
+export interface PrepLinkedResource {
+  type: PrepSubmissionResourceType;
+  id: string;
+  title: string;
+}
+
+/** 试卷题目、正文块或讲义栏目旁的文字批注。 */
+export interface PrepResourceComment {
+  id: string;
+  targetId: string;
+  content: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 从试卷库或讲义库创建协作任务时提交的参数。 */
+export interface PrepResourceTaskInput {
+  resourceType: PrepSubmissionResourceType;
+  resourceId: string;
+  collaboratorIds: string[];
+  password?: string;
+  passwordExpiresAt?: string;
+}
+
 /** 已提交的任务成果。资源关联会保存标题、原稿地址和文本快照，避免源资源后续变更影响看板。 */
 export interface PrepSubmission {
   id: string;
@@ -1790,6 +1816,14 @@ export interface PrepTask {
   assignments: PrepAssignment[];
   status: PrepTaskStatus;
   createdBy: string;
+  /** 由试卷库或讲义库直接发起的协作任务。 */
+  linkedResource?: PrepLinkedResource;
+  /** 仅用于前端展示，真实密码哈希由 RPC 层过滤。 */
+  accessProtected?: boolean;
+  passwordExpiresAt?: string;
+  resourceComments?: PrepResourceComment[];
+  /** 服务端持久化字段；RPC 响应会移除。 */
+  viewPasswordHash?: string;
   createdAt: string;
   updatedAt: string;
 }
