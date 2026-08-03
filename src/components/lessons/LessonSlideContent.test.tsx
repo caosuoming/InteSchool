@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import type { LessonSlide } from "@/types";
 import { LessonSlideContent } from "./LessonSlideContent";
 
@@ -65,5 +66,27 @@ describe("LessonSlideContent", () => {
     expect(screen.getByText("详细解析")).toBeInTheDocument();
     expect(screen.getByText("题目总结")).toBeInTheDocument();
     expect(screen.getByAltText("题目板书")).toHaveAttribute("src", "/api/files/board.png");
+  });
+
+  it("supports selecting and resizing built-in question text in editor mode", async () => {
+    const user = userEvent.setup();
+    const onSelectTextRegion = vi.fn();
+    render(
+      <LessonSlideContent
+        slide={{ ...slide, textStyles: { stem: { fontSize: 30 } } }}
+        questionVisibility={{ options: true }}
+        editable
+        selectedTextRegion="stem"
+        onSelectTextRegion={onSelectTextRegion}
+      />,
+    );
+
+    const stem = screen.getByText("题干内容").parentElement;
+    expect(stem).toHaveStyle({ fontSize: "30px" });
+    expect(stem).toHaveClass("select-text");
+    expect(screen.getByText("选项 A")).toBeInTheDocument();
+
+    await user.click(screen.getByText("题干内容"));
+    expect(onSelectTextRegion).toHaveBeenCalledWith("stem");
   });
 });

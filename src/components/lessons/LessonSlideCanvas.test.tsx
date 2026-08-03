@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { LessonSlideElement } from "@/types";
 import { LessonSlideCanvas } from "./LessonSlideCanvas";
@@ -15,6 +16,7 @@ const elements: LessonSlideElement[] = [
     fontSize: 28,
     textAlign: "center",
     animation: "rise",
+    animationOrder: 2,
   },
   {
     id: "image-1",
@@ -48,6 +50,7 @@ describe("LessonSlideCanvas", () => {
       width: "30%",
       height: "12%",
       animation: "lessonElementRise 460ms cubic-bezier(0.16, 1, 0.3, 1) both",
+      animationDelay: "160ms",
     });
   });
 
@@ -66,5 +69,50 @@ describe("LessonSlideCanvas", () => {
 
     expect(screen.getByTitle("拖动调整大小")).toBeInTheDocument();
     expect(screen.getAllByRole("img")).toHaveLength(1);
+  });
+
+  it("renders hyperlinks in presentation mode and keeps text selectable in editor mode", async () => {
+    const user = userEvent.setup();
+    const onSelectElement = vi.fn();
+    const linkElement: LessonSlideElement = {
+      id: "link-1",
+      kind: "text",
+      content: "拓展资料",
+      href: "https://example.com/resource",
+      x: 10,
+      y: 15,
+      width: 30,
+      height: 12,
+      fontSize: 28,
+      textAlign: "center",
+      animation: "rise",
+      animationOrder: 2,
+    };
+
+    const { rerender } = render(
+      <LessonSlideCanvas elements={[linkElement]}>
+        <div>基础课件内容</div>
+      </LessonSlideCanvas>,
+    );
+
+    expect(screen.getByRole("link", { name: "拓展资料" })).toHaveAttribute(
+      "href",
+      "https://example.com/resource",
+    );
+
+    rerender(
+      <LessonSlideCanvas
+        elements={[linkElement]}
+        editable
+        onSelectElement={onSelectElement}
+        onElementsChange={vi.fn()}
+      >
+        <div>基础课件内容</div>
+      </LessonSlideCanvas>,
+    );
+
+    await user.click(screen.getByText("拓展资料"));
+    expect(onSelectElement).toHaveBeenCalledWith("link-1");
+    expect(screen.getByText("拓展资料").closest(".absolute")).toHaveClass("select-text");
   });
 });

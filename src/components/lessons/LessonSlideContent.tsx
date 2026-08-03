@@ -1,4 +1,5 @@
-import type { LessonSlide } from "@/types";
+import type { MouseEvent } from "react";
+import type { LessonSlide, LessonSlideTextRegion } from "@/types";
 import { cn } from "@/lib/utils";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
@@ -10,12 +11,18 @@ import {
 interface LessonSlideContentProps {
   slide: LessonSlide;
   questionVisibility?: Partial<LessonQuestionContentVisibility>;
+  editable?: boolean;
+  selectedTextRegion?: LessonSlideTextRegion | null;
+  onSelectTextRegion?: (region: LessonSlideTextRegion) => void;
   className?: string;
 }
 
 export function LessonSlideContent({
   slide,
   questionVisibility,
+  editable = false,
+  selectedTextRegion,
+  onSelectTextRegion,
   className,
 }: LessonSlideContentProps) {
   const visibility = {
@@ -23,15 +30,40 @@ export function LessonSlideContent({
     ...questionVisibility,
   };
 
+  const textRegionProps = (region: LessonSlideTextRegion) => ({
+    onClick: editable ? (event: MouseEvent) => {
+      event.stopPropagation();
+      onSelectTextRegion?.(region);
+    } : undefined,
+    className: cn(
+      editable && "cursor-text select-text rounded outline-none transition-shadow",
+      editable && selectedTextRegion === region && "ring-2 ring-gold-400 ring-offset-2",
+    ),
+    style: slide.textStyles?.[region]?.fontSize
+      ? { fontSize: `${slide.textStyles[region]?.fontSize}px` }
+      : undefined,
+  });
+
   if (slide.type === "section") {
     return (
-      <div className={cn("flex h-full flex-col items-center justify-start px-12 pt-[16%] text-center", className)}>
+      <div className={cn("flex h-full flex-col items-center justify-start px-12 pt-[4%] text-center", className)}>
         <div className="mb-5 h-1 w-20 rounded-full bg-gold-400" />
-        <h2 className="max-w-4xl font-serif text-4xl font-bold leading-tight text-ink-900">
+        <h2
+          {...textRegionProps("title")}
+          className={cn(
+            "max-w-4xl font-serif text-4xl font-bold leading-tight text-ink-900",
+            textRegionProps("title").className,
+          )}
+        >
           {slide.title}
         </h2>
         {slide.content && (
-          <MathHtml className="mt-5 max-w-3xl text-lg text-ink-500">{slide.content}</MathHtml>
+          <div
+            {...textRegionProps("content")}
+            className={cn("mt-5 max-w-3xl text-lg text-ink-500", textRegionProps("content").className)}
+          >
+            <MathHtml>{slide.content}</MathHtml>
+          </div>
         )}
       </div>
     );
@@ -40,14 +72,20 @@ export function LessonSlideContent({
   if (slide.type === "question" && slide.questionSnapshot) {
     const question = slide.questionSnapshot;
     return (
-      <div className={cn("h-full overflow-hidden p-[5%]", className)}>
+      <div className={cn("h-full overflow-hidden px-[4%] pb-[4%] pt-[2.5%]", className)}>
         <div className="w-full space-y-5">
-          <MathHtml className="w-full text-2xl leading-relaxed text-ink-900">
-            {question.stem}
-          </MathHtml>
+          <div
+            {...textRegionProps("stem")}
+            className={cn("w-full text-2xl leading-relaxed text-ink-900", textRegionProps("stem").className)}
+          >
+            <MathHtml>{question.stem}</MathHtml>
+          </div>
 
           {visibility.options && question.options && question.options.length > 0 && (
-            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+            <div
+              {...textRegionProps("options")}
+              className={cn("grid w-full grid-cols-1 gap-2 sm:grid-cols-2", textRegionProps("options").className)}
+            >
               {question.options.map((option, index) => (
                 <div
                   key={`${slide.id}-option-${index}`}
@@ -56,7 +94,9 @@ export function LessonSlideContent({
                   <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-ink-900 font-mono text-sm text-paper">
                     {String.fromCharCode(65 + index)}
                   </span>
-                  <MathHtml className="min-w-0 flex-1 text-base text-ink-800">{option}</MathHtml>
+                  <MathHtml className="min-w-0 flex-1 text-ink-800">
+                    {option}
+                  </MathHtml>
                 </div>
               ))}
             </div>
@@ -106,11 +146,22 @@ export function LessonSlideContent({
   }
 
   return (
-    <div className={cn("h-full overflow-hidden p-10", className)}>
-      <div className="mb-5 border-b border-ink-100 pb-4 font-serif text-2xl font-bold text-ink-900">
+    <div className={cn("h-full overflow-hidden px-10 pb-10 pt-4", className)}>
+      <div
+        {...textRegionProps("title")}
+        className={cn(
+          "mb-5 border-b border-ink-100 pb-4 font-serif text-2xl font-bold text-ink-900",
+          textRegionProps("title").className,
+        )}
+      >
         {slide.title}
       </div>
-      <MathHtml className="text-lg leading-relaxed text-ink-800">{slide.content || "暂无内容"}</MathHtml>
+      <div
+        {...textRegionProps("content")}
+        className={cn("text-lg leading-relaxed text-ink-800", textRegionProps("content").className)}
+      >
+        <MathHtml>{slide.content || "暂无内容"}</MathHtml>
+      </div>
     </div>
   );
 }

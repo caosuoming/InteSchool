@@ -1869,6 +1869,15 @@ export interface LessonDocumentBlock {
 /** 课件元素入场动画 */
 export type LessonElementAnimation = "none" | "fade" | "rise" | "zoom";
 
+/** 课件元素强调动画 */
+export type LessonElementActionAnimation = "none" | "pulse" | "sway" | "spin";
+
+/** 课件元素退场动画 */
+export type LessonElementExitAnimation = "none" | "fade" | "shrink" | "drop";
+
+/** 课件内置文本区域。 */
+export type LessonSlideTextRegion = "title" | "content" | "stem" | "options";
+
 /** 题目页中可在上课时按需显示的内容区域。 */
 export type LessonQuestionContentSection = "stem" | "options" | "answer" | "analysis" | "supplementary";
 
@@ -1879,7 +1888,12 @@ interface LessonSlideElementBase {
   y: number;
   width: number;
   height: number;
+  /** 兼容旧课件的入场动画字段。 */
   animation?: LessonElementAnimation;
+  enterAnimation?: LessonElementAnimation;
+  actionAnimation?: LessonElementActionAnimation;
+  exitAnimation?: LessonElementExitAnimation;
+  animationOrder?: number;
   /** 从题目内容抽取出的元素所属区域；手工添加的元素不设置该字段。 */
   questionSection?: LessonQuestionContentSection;
 }
@@ -1889,6 +1903,7 @@ export interface LessonSlideTextElement extends LessonSlideElementBase {
   content: string;
   fontSize?: number;
   textAlign?: "left" | "center" | "right";
+  href?: string;
 }
 
 export interface LessonSlideImageElement extends LessonSlideElementBase {
@@ -1935,6 +1950,8 @@ export interface LessonSlide {
   editorUrl?: string;
   /** 页面上额外添加的文本框、题图等自由布局元素。 */
   elements?: LessonSlideElement[];
+  /** 内置标题、正文、题干和选项的展示样式。 */
+  textStyles?: Partial<Record<LessonSlideTextRegion, { fontSize?: number }>>;
 }
 
 /** 课件来源类型 */
