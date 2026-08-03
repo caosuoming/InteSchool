@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ArchiveRestore,
@@ -26,14 +26,18 @@ import {
   readStudentRosterFile,
 } from "@/lib/student-roster-spreadsheet";
 import { cn } from "@/lib/utils";
+import { authService } from "@/services/auth";
 import { classService } from "@/services/class";
+import { settingsService } from "@/services/settings";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import type {
+  ClassTypeCategory,
   SchoolClass,
   SchoolGrade,
   SchoolRosterRecycleBin,
   Student,
+  Teacher,
 } from "@/types";
 
 const EMPTY_RECYCLE_BIN: SchoolRosterRecycleBin = { classes: [], students: [] };
@@ -47,6 +51,50 @@ function gradeStatusLabel(grade: SchoolGrade): string {
   return grade.status === "graduated" ? "已毕业" : grade.grade;
 }
 
+function teacherAffiliation(teacher: Teacher, schoolId: string) {
+  return teacher.affiliations?.find((item) => item.schoolId === schoolId);
+}
+
+function assignedClassIds(teacher: Teacher, schoolId: string, kind: "teaching" | "homeroom"): string[] {
+  const affiliation = teacherAffiliation(teacher, schoolId);
+  return kind === "teaching"
+    ? affiliation?.teachingClassIds || teacher.teachingClassIds || []
+    : affiliation?.homeroomClassIds || teacher.homeroomClassIds || [];
+}
+
+function teacherSubject(teacher: Teacher, schoolId: string): string {
+  return teacherAffiliation(teacher, schoolId)?.subject || teacher.subject || "未设置学科";
+}
+
+function toggleAssignment(values: string[], classId: string, assigned: boolean): string[] {
+  return assigned
+    ? [...new Set([...values, classId])]
+    : values.filter((value) => value !== classId);
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
+}
+
+function classTypeStyle(color: string | undefined, selected: boolean): CSSProperties | undefined {
+  if (!color || !/^#[0-9a-f]{6}$/i.test(color)) return undefined;
+  return {
+    backgroundColor: `${color}${selected ? "2e" : "18"}`,
+    borderColor: `${color}${selected ? "cc" : "66"}`,
+  };
+}
+
+function majorityValue(values: string[]): string | null {
+  if (values.length < 2) return null;
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, (counts.get(value) || 0) + 1);
+  if (counts.size < 2) return null;
+  const ranked = [...counts.entries()].sort((left, right) => right[1] - left[1]);
+  return ranked[0][1] > ranked[1][1] ? ranked[0][0] : null;
+}
+
 export default function SchoolRosterPage() {
   const navigate = useNavigate();
   const { teacher, getCurrentAffiliation } = useAuthStore();
@@ -57,6 +105,8 @@ export default function SchoolRosterPage() {
   const [grades, setGrades] = useState<SchoolGrade[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [classTypes, setClassTypes] = useState<ClassTypeCategory[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [recycleBin, setRecycleBin] = useState<SchoolRosterRecycleBin>(EMPTY_RECYCLE_BIN);
   const [selectedGradeId, setSelectedGradeId] = useState("");
   const [selectedClassId, setSelectedClassId] = useState("");
@@ -69,6 +119,12 @@ export default function SchoolRosterPage() {
   const [gradeLevel, setGradeLevel] = useState("高一");
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [classNames, setClassNames] = useState("");
+  const [editClassOpen, setEditClassOpen] = useState(false);
+  const [editingClass, setEditingClass] = useState<SchoolClass | null>(null);
+  const [editClassName, setEditClassName] = useState("");
+  const [editClassTypeId, setEditClassTypeId] = useState("");
+  const [editHomeroomTeacherId, setEditHomeroomTeacherId] = useState("");
+  const [editSubjectTeacherIds, setEditSubjectTeacherIds] = useState<string[]>([]);
   const [editStudentOpen, setEditStudentOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editStudentName, setEditStudentName] = useState("");
@@ -81,16 +137,20 @@ export default function SchoolRosterPage() {
     if (!schoolId) return;
     setLoading(true);
     try {
-      const [nextGrades, nextClasses, nextStudents, nextRecycleBin] = await Promise.all([
+      const [nextGrades, nextClasses, nextStudents, nextRecycleBin, nextClassTypes, nextTeachers] = await Promise.all([
         classService.listSchoolGrades(schoolId),
         classService.listSchoolClasses(schoolId),
         classService.listStudentsBySchool(schoolId),
         classService.listSchoolRosterRecycleBin(schoolId),
+        settingsService.listClassTypes(schoolId),
+        authService.listTeachers(),
       ]);
       setGrades(nextGrades);
       setClasses(nextClasses);
       setStudents(nextStudents);
       setRecycleBin(nextRecycleBin);
+      setClassTypes(nextClassTypes);
+      setTeachers(nextTeachers);
       setSelectedGradeId((current) =>
         nextGrades.some((item) => item.id === current) ? current : nextGrades[0]?.id || "",
       );
@@ -123,6 +183,28 @@ export default function SchoolRosterPage() {
   const classStudents = useMemo(
     () => students.filter((item) => item.classId === selectedClassId && item.status === "active"),
     [selectedClassId, students],
+  );
+  const classTypeById = useMemo(
+    () => new Map(classTypes.map((item) => [item.id, item])),
+    [classTypes],
+  );
+  const classTeacherDetails = useMemo(() => {
+    const result = new Map<string, { homeroom: Teacher | null; subjectTeachers: Teacher[] }>();
+    for (const item of classes) {
+      result.set(item.id, {
+        homeroom: teachers.find((entry) => assignedClassIds(entry, schoolId, "homeroom").includes(item.id)) || null,
+        subjectTeachers: teachers.filter((entry) => assignedClassIds(entry, schoolId, "teaching").includes(item.id)),
+      });
+    }
+    return result;
+  }, [classes, schoolId, teachers]);
+  const commonSubjectSelection = useMemo(
+    () => majorityValue(classStudents.map((item) => item.subjectSelection?.trim() || "__empty__")),
+    [classStudents],
+  );
+  const commonStudentType = useMemo(
+    () => majorityValue(classStudents.map((item) => item.isExternal ? "external" : "internal")),
+    [classStudents],
   );
 
   const run = async (action: () => Promise<void>) => {
@@ -182,6 +264,74 @@ export default function SchoolRosterPage() {
     if (!window.confirm(`确定删除“${item.name}”吗？班级和所属学生会进入回收站。`)) return;
     await classService.deleteClass(item.id, false);
     toast.success("班级已移入回收站");
+    await load();
+  });
+
+  const openEditClass = (item: SchoolClass) => {
+    const details = classTeacherDetails.get(item.id);
+    setEditingClass(item);
+    setEditClassName(item.name);
+    setEditClassTypeId(item.classTypeId || "");
+    setEditHomeroomTeacherId(details?.homeroom?.id || "");
+    setEditSubjectTeacherIds(details?.subjectTeachers.map((entry) => entry.id) || []);
+    setEditClassOpen(true);
+  };
+
+  const closeEditClass = () => {
+    setEditClassOpen(false);
+    setEditingClass(null);
+  };
+
+  const toggleSubjectTeacher = (teacherId: string) => {
+    setEditSubjectTeacherIds((current) => current.includes(teacherId)
+      ? current.filter((id) => id !== teacherId)
+      : [...current, teacherId]);
+  };
+
+  const handleEditClass = () => run(async () => {
+    if (!editingClass) return;
+    const name = editClassName.trim();
+    if (!name) {
+      toast.error("请填写班级名称");
+      return;
+    }
+    const duplicate = gradeClasses.find((item) => item.id !== editingClass.id && item.name === name);
+    if (duplicate) {
+      toast.error("班级名称已存在", `与“${duplicate.name}”重复`);
+      return;
+    }
+
+    await classService.updateSchoolClass(editingClass.id, {
+      name,
+      classTypeId: editClassTypeId || null,
+    });
+
+    const selectedSubjectTeachers = new Set(editSubjectTeacherIds);
+    await Promise.all(teachers.map(async (teacherItem) => {
+      const teachingClassIds = assignedClassIds(teacherItem, schoolId, "teaching");
+      const homeroomClassIds = assignedClassIds(teacherItem, schoolId, "homeroom");
+      const nextTeachingClassIds = toggleAssignment(
+        teachingClassIds,
+        editingClass.id,
+        selectedSubjectTeachers.has(teacherItem.id),
+      );
+      const nextHomeroomClassIds = toggleAssignment(
+        homeroomClassIds,
+        editingClass.id,
+        teacherItem.id === editHomeroomTeacherId,
+      );
+      if (
+        sameStringSet(teachingClassIds, nextTeachingClassIds)
+        && sameStringSet(homeroomClassIds, nextHomeroomClassIds)
+      ) return;
+      await authService.updateTeacherTeachingProfile(teacherItem.id, {
+        teachingClassIds: nextTeachingClassIds,
+        homeroomClassIds: nextHomeroomClassIds,
+      });
+    }));
+
+    toast.success(`已更新班级“${name}”`);
+    closeEditClass();
     await load();
   });
 
@@ -388,35 +538,60 @@ export default function SchoolRosterPage() {
                   <EmptyState icon={<Users className="h-7 w-7" />} title="该年级暂无班级" description="可批量填写班级名称，或在导入学生时自动创建。" />
                 ) : (
                   <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-10">
-                    {gradeClasses.map((item) => (
-                      <div
-                        key={item.id}
-                        className={cn(
-                          "group relative min-w-0 rounded-md border transition-colors",
-                          selectedClassId === item.id
-                            ? "border-gold-400 bg-gold-50"
-                            : "border-ink-200 bg-white hover:border-ink-300 hover:bg-mist",
-                        )}
-                      >
-                        <button
-                          className="w-full min-w-0 px-2 py-1.5 pr-6 text-left"
-                          onClick={() => setSelectedClassId(item.id)}
-                          aria-label={`选择班级 ${item.name}`}
-                          title={`${item.name} · ${item.studentCount} 名在读学生`}
+                    {gradeClasses.map((item) => {
+                      const classType = item.classTypeId ? classTypeById.get(item.classTypeId) : undefined;
+                      const details = classTeacherDetails.get(item.id);
+                      const teacherSummary = details?.subjectTeachers.length
+                        ? details.subjectTeachers.map((entry) => `${entry.name}（${teacherSubject(entry, schoolId)}）`).join("、")
+                        : "未设置";
+                      const cardTitle = [
+                        `${item.name} · ${item.studentCount} 名在读学生`,
+                        `班型：${classType?.name || "未设置"}`,
+                        `班主任：${details?.homeroom?.name || "未设置"}`,
+                        `任课教师：${teacherSummary}`,
+                      ].join("\n");
+                      const selected = selectedClassId === item.id;
+                      return (
+                        <div
+                          key={item.id}
+                          style={classTypeStyle(classType?.color, selected)}
+                          className={cn(
+                            "group relative min-w-0 rounded-md border transition-shadow",
+                            selected
+                              ? "bg-gold-50 ring-2 ring-gold-300"
+                              : "border-ink-200 bg-white hover:border-ink-300 hover:shadow-sm",
+                          )}
                         >
-                          <div className="truncate text-xs font-medium text-ink-900">{item.name}</div>
-                          <div className="truncate text-[10px] text-ink-400">{item.studentCount} 人</div>
-                        </button>
-                        <button
-                          className="absolute right-1 top-1 p-1 text-ink-300 transition-opacity hover:text-red-600 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
-                          aria-label={`删除班级 ${item.name}`}
-                          title={`删除班级 ${item.name}`}
-                          onClick={() => handleDeleteClass(item)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))}
+                          <button
+                            className="w-full min-w-0 px-2 py-1.5 pr-11 text-left"
+                            onClick={() => setSelectedClassId(item.id)}
+                            aria-label={`选择班级 ${item.name}`}
+                            title={cardTitle}
+                          >
+                            <div className="truncate text-xs font-medium text-ink-900">{item.name}</div>
+                            <div className="truncate text-[10px] text-ink-500">
+                              {classType?.name || "未设置班型"} · {item.studentCount} 人
+                            </div>
+                          </button>
+                          <button
+                            className="absolute right-5 top-1 p-1 text-ink-400 transition-opacity hover:text-gold-700 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                            aria-label={`编辑班级 ${item.name}`}
+                            title={`编辑班级 ${item.name}`}
+                            onClick={() => openEditClass(item)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          <button
+                            className="absolute right-1 top-1 p-1 text-ink-300 transition-opacity hover:text-red-600 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                            aria-label={`删除班级 ${item.name}`}
+                            title={`删除班级 ${item.name}`}
+                            onClick={() => handleDeleteClass(item)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -449,25 +624,47 @@ export default function SchoolRosterPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-ink-100">
-                    {classStudents.map((item) => (
-                      <tr key={item.id} className="hover:bg-mist/60">
-                        <td className="px-4 py-3 font-medium text-ink-900">{item.name}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-ink-600">{item.studentNo || "—"}</td>
-                        <td className="px-4 py-3 text-ink-600">{item.subjectSelection || "—"}</td>
-                        <td className="px-4 py-3 text-ink-600">{item.grade}</td>
-                        <td className="px-4 py-3">{item.isExternal ? <Badge variant="amber">借读生</Badge> : <Badge>本校生</Badge>}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="inline-flex items-center gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => openEditStudent(item)}>
-                              <Pencil className="h-3.5 w-3.5" />编辑
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => handleDeleteStudent(item)} loading={working}>
-                              <Trash2 className="h-3.5 w-3.5" />删除
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {classStudents.map((item) => {
+                      const subjectValue = item.subjectSelection?.trim() || "__empty__";
+                      const studentTypeValue = item.isExternal ? "external" : "internal";
+                      const subjectIsDifferent = commonSubjectSelection !== null && subjectValue !== commonSubjectSelection;
+                      const studentTypeIsDifferent = commonStudentType !== null && studentTypeValue !== commonStudentType;
+                      return (
+                        <tr key={item.id} className="hover:bg-mist/60">
+                          <td className="px-4 py-3 font-medium text-ink-900">{item.name}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-ink-600">{item.studentNo || "—"}</td>
+                          <td className="px-4 py-3 text-ink-600">
+                            <span
+                              title={subjectIsDifferent ? "与本班多数学生的选科不同" : undefined}
+                              className={cn(
+                                "inline-flex rounded-md px-2 py-1",
+                                subjectIsDifferent && "bg-amber-100 font-semibold text-amber-900 ring-1 ring-amber-300",
+                              )}
+                            >
+                              {item.subjectSelection || "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-ink-600">{item.grade}</td>
+                          <td className="px-4 py-3">
+                            <span title={studentTypeIsDifferent ? "与本班多数学生的类型不同" : undefined}>
+                              <Badge variant={studentTypeIsDifferent ? "amber" : "default"}>
+                                {item.isExternal ? "借读生" : "本校生"}
+                              </Badge>
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => openEditStudent(item)}>
+                                <Pencil className="h-3.5 w-3.5" />编辑
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => handleDeleteStudent(item)} loading={working}>
+                                <Trash2 className="h-3.5 w-3.5" />删除
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -519,6 +716,83 @@ export default function SchoolRosterPage() {
           value={classNames}
           onChange={(event) => setClassNames(event.target.value)}
         />
+      </Modal>
+
+      <Modal
+        open={editClassOpen}
+        onClose={closeEditClass}
+        title="编辑班级"
+        description={editingClass ? `${editingClass.grade} · ${editingClass.name}` : undefined}
+        size="lg"
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeEditClass}>取消</Button>
+            <Button variant="gold" onClick={handleEditClass} loading={working}>保存修改</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input
+              label="班级名称"
+              value={editClassName}
+              onChange={(event) => setEditClassName(event.target.value)}
+              autoFocus
+            />
+            <Select
+              label="班型"
+              value={editClassTypeId}
+              onChange={(event) => setEditClassTypeId(event.target.value)}
+              placeholder="未设置班型"
+              options={classTypes
+                .filter((item) => item.enabled || item.id === editingClass?.classTypeId)
+                .map((item) => ({ value: item.id, label: item.name }))}
+            />
+          </div>
+          <Select
+            label="班主任"
+            value={editHomeroomTeacherId}
+            onChange={(event) => setEditHomeroomTeacherId(event.target.value)}
+            placeholder="未设置班主任"
+            options={teachers.map((item) => ({
+              value: item.id,
+              label: `${item.name} · ${teacherSubject(item, schoolId)}`,
+            }))}
+          />
+          <fieldset>
+            <legend className="mb-2 text-sm font-medium text-ink-700">任课教师</legend>
+            {teachers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-ink-200 px-4 py-8 text-center text-sm text-ink-400">
+                当前学校暂无可选教师
+              </div>
+            ) : (
+              <div className="grid max-h-64 gap-2 overflow-y-auto rounded-lg border border-ink-100 p-3 sm:grid-cols-2">
+                {teachers.map((item) => (
+                  <label
+                    key={item.id}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 transition-colors",
+                      editSubjectTeacherIds.includes(item.id)
+                        ? "border-gold-300 bg-gold-50"
+                        : "border-ink-200 bg-white hover:bg-mist",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={editSubjectTeacherIds.includes(item.id)}
+                      onChange={() => toggleSubjectTeacher(item.id)}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-ink-900">{item.name}</span>
+                      <span className="block truncate text-xs text-ink-400">{teacherSubject(item, schoolId)}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="mt-1.5 text-xs text-ink-400">班主任与任课教师可独立设置；保存后同步更新教师的教学资料。</p>
+          </fieldset>
+        </div>
       </Modal>
 
       <Modal

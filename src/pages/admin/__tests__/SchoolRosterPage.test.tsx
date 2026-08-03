@@ -2,9 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SchoolRosterPage from "@/pages/admin/SchoolRosterPage";
+import { authService } from "@/services/auth";
 import { classService } from "@/services/class";
+import { settingsService } from "@/services/settings";
 import { useAuthStore } from "@/stores/auth";
-import type { SchoolClass, SchoolGrade, Student, Teacher, TeacherAffiliation } from "@/types";
+import type { ClassTypeCategory, SchoolClass, SchoolGrade, Student, Teacher, TeacherAffiliation } from "@/types";
 
 vi.mock("@/services/class", () => ({
   classService: {
@@ -20,7 +22,21 @@ vi.mock("@/services/class", () => ({
     deleteStudent: vi.fn(),
     restoreSchoolClass: vi.fn(),
     restoreStudent: vi.fn(),
+    updateSchoolClass: vi.fn(),
     updateStudent: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/auth", () => ({
+  authService: {
+    listTeachers: vi.fn(),
+    updateTeacherTeachingProfile: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/settings", () => ({
+  settingsService: {
+    listClassTypes: vi.fn(),
   },
 }));
 
@@ -55,6 +71,16 @@ const grade: SchoolGrade = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 };
 
+const classType: ClassTypeCategory = {
+  id: "class-type-1",
+  schoolId: "school-1",
+  name: "实验班",
+  color: "#2563eb",
+  sortOrder: 0,
+  enabled: true,
+  createdAt: "2026-08-01T00:00:00.000Z",
+};
+
 const classes: SchoolClass[] = Array.from({ length: 10 }, (_, index) => ({
   id: `class-${index + 1}`,
   type: "school" as const,
@@ -63,11 +89,45 @@ const classes: SchoolClass[] = Array.from({ length: 10 }, (_, index) => ({
   name: `高二（${index + 1}）班`,
   grade: "高二",
   gradYear: 2029,
+  classTypeId: index === 0 ? classType.id : undefined,
   studentCount: index === 0 ? 1 : 0,
   status: "active" as const,
   createdBy: "teacher-1",
   createdAt: "2026-08-01T00:00:00.000Z",
 }));
+
+const managedTeachers = [
+  {
+    id: "teacher-a",
+    name: "王老师",
+    subject: "数学",
+    teachingClassIds: [classes[0].id],
+    homeroomClassIds: [classes[0].id],
+    affiliations: [{
+      id: "aff-teacher-a",
+      teacherId: "teacher-a",
+      schoolId: "school-1",
+      subject: "数学",
+      teachingClassIds: [classes[0].id],
+      homeroomClassIds: [classes[0].id],
+    }],
+  },
+  {
+    id: "teacher-b",
+    name: "李老师",
+    subject: "物理",
+    teachingClassIds: [],
+    homeroomClassIds: [],
+    affiliations: [{
+      id: "aff-teacher-b",
+      teacherId: "teacher-b",
+      schoolId: "school-1",
+      subject: "物理",
+      teachingClassIds: [],
+      homeroomClassIds: [],
+    }],
+  },
+] as Teacher[];
 
 const student: Student = {
   id: "student-1",
@@ -106,6 +166,10 @@ describe("SchoolRosterPage", () => {
     vi.mocked(classService.listSchoolClasses).mockResolvedValue(classes);
     vi.mocked(classService.listStudentsBySchool).mockResolvedValue([student]);
     vi.mocked(classService.listSchoolRosterRecycleBin).mockResolvedValue({ classes: [], students: [] });
+    vi.mocked(settingsService.listClassTypes).mockResolvedValue([classType]);
+    vi.mocked(authService.listTeachers).mockResolvedValue(managedTeachers);
+    vi.mocked(classService.updateSchoolClass).mockResolvedValue(classes[0]);
+    vi.mocked(authService.updateTeacherTeachingProfile).mockResolvedValue(managedTeachers[0]);
     vi.mocked(classService.updateStudent).mockResolvedValue(student);
   });
 
@@ -120,6 +184,61 @@ describe("SchoolRosterPage", () => {
     for (const item of classes) {
       expect(screen.getByRole("button", { name: `选择班级 ${item.name}` })).toBeInTheDocument();
     }
+
+    const typedClass = screen.getByRole("button", { name: `选择班级 ${classes[0].name}` }).parentElement;
+    expect(typedClass?.getAttribute("style")).toContain("background-color");
+    expect(typedClass).toHaveTextContent("实验班");
+  });
+
+  it("edits class type, homeroom teacher, and subject teachers", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: `编辑班级 ${classes[0].name}` }));
+    fireEvent.change(screen.getByLabelText("班级名称"), { target: { value: "高二实验班" } });
+    fireEvent.change(screen.getByLabelText("班主任"), { target: { value: managedTeachers[1].id } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /王老师/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /李老师/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => {
+      expect(classService.updateSchoolClass).toHaveBeenCalledWith(classes[0].id, {
+        name: "高二实验班",
+        classTypeId: classType.id,
+      });
+      expect(authService.updateTeacherTeachingProfile).toHaveBeenCalledWith(managedTeachers[0].id, {
+        teachingClassIds: [],
+        homeroomClassIds: [],
+      });
+      expect(authService.updateTeacherTeachingProfile).toHaveBeenCalledWith(managedTeachers[1].id, {
+        teachingClassIds: [classes[0].id],
+        homeroomClassIds: [classes[0].id],
+      });
+    });
+  });
+
+  it("emphasizes subject selections and student types that differ from the class majority", async () => {
+    vi.mocked(classService.listStudentsBySchool).mockResolvedValue([
+      student,
+      {
+        ...student,
+        id: "student-2",
+        name: "李同学",
+        studentNo: "20260002",
+      },
+      {
+        ...student,
+        id: "student-3",
+        name: "王同学",
+        studentNo: "20260003",
+        subjectSelection: "史政地",
+        isExternal: true,
+      },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByTitle("与本班多数学生的选科不同")).toHaveTextContent("史政地");
+    expect(screen.getByTitle("与本班多数学生的类型不同")).toHaveTextContent("借读生");
   });
 
   it("edits student name, number, elective subjects, grade, and gender", async () => {
