@@ -83,6 +83,7 @@ import { loadCoursewarePptSlides } from "@/lib/pptx";
 import { openCoursewareInWps } from "@/lib/wps";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
+type RenameableResourceType = Exclude<MyResourceTab, "question" | "basket">;
 type LeftTab = "chapter" | "knowledge";
 type SortKey = "updated" | "created" | "title";
 type ResourceListItem = Question | ExamPaper | Lecture | Courseware | Material;
@@ -1134,6 +1135,37 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       loadAll();
     } catch (e: any) {
       toast.error("删除失败", e?.message);
+    }
+  };
+
+  const handleRenameResource = async (
+    resourceType: RenameableResourceType,
+    id: string,
+    title: string,
+  ) => {
+    const nextTitle = title.trim();
+    if (!nextTitle) throw new Error("文档名称不能为空");
+
+    try {
+      if (resourceType === "lecture") {
+        const updated = await lectureService.updateLecture(id, { title: nextTitle });
+        setLectures((items) => items.map((item) => item.id === id ? updated : item));
+        setAllLectures((items) => items.map((item) => item.id === id ? updated : item));
+      } else if (resourceType === "examPaper") {
+        const updated = await examPaperService.updatePaper(id, { title: nextTitle });
+        setExamPapers((items) => items.map((item) => item.id === id ? updated : item));
+        setAllExamPapers((items) => items.map((item) => item.id === id ? updated : item));
+      } else if (resourceType === "courseware") {
+        const updated = await coursewareService.updateCourseware(id, { title: nextTitle });
+        setCoursewares((items) => items.map((item) => item.id === id ? updated : item));
+      } else {
+        const updated = await materialService.updateMaterial(id, { title: nextTitle });
+        setMaterials((items) => items.map((item) => item.id === id ? updated : item));
+      }
+      toast.success("文档名称已修改");
+    } catch (error) {
+      toast.error("修改名称失败", error instanceof Error ? error.message : undefined);
+      throw error;
     }
   };
 
@@ -2282,6 +2314,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         resourceTitle: mainLecture.title,
                       })}
                       onDelete={() => handleDelete(mainLecture.id)}
+                      onRename={(title) => handleRenameResource("lecture", mainLecture.id, title)}
                       onViewReflections={() => setViewingReflections({ title: mainLecture.title, list: reflectionsMap[mainLecture.id] || [] })}
                       onDuplicate={() => openDuplicate("lecture", mainLecture.id, mainLecture.title)}
                       alwaysShowActions
@@ -2377,9 +2410,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           resourceTitle: copy.title,
                         })}
                         onDelete={() => handleDelete(copy.id)}
+                        onRename={(title) => handleRenameResource("examPaper", copy.id, title)}
                         onViewReflections={() => setViewingReflections({ title: copy.title, list: reflectionsMap[copy.id] || [] })}
                         onDuplicate={() => openDuplicate("examPaper", copy.id, copy.title)}
                         showAddToLesson
+                        alwaysShowActions
                         titleBadge={{ text: "正稿", variant: "gold" }}
                         onAddToLesson={async () => {
                           if (!teacher) return;
@@ -2448,9 +2483,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             resourceTitle: item.title,
                           })}
                           onDelete={() => handleDelete(item.id)}
+                          onRename={(title) => handleRenameResource("examPaper", item.id, title)}
                           onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                           onDuplicate={() => openDuplicate("examPaper", item.id, item.title)}
                           showAddToLesson
+                          alwaysShowActions
                           titleBadge={!isExtracted && item.originalFileUrl ? { text: "待拆解", variant: "amber" } : undefined}
                           onAddToLesson={async () => {
                             if (!teacher) return;
@@ -2591,6 +2628,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   }}
                   onShare={() => handleOpenShare("courseware", item.id, item.title)}
                   onDelete={() => handleDelete(item.id)}
+                  onRename={(title) => handleRenameResource("courseware", item.id, title)}
                   onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                   onDuplicate={() => openDuplicate("courseware", item.id, item.title)}
                 />
@@ -2624,6 +2662,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     ? () => setKnowledgeVideoTarget(item)
                     : undefined}
                   onDelete={() => handleDelete(item.id)}
+                  onRename={(title) => handleRenameResource("material", item.id, title)}
+                  alwaysShowActions
                 />
               ))}
             </div>
@@ -3304,6 +3344,7 @@ interface ResourceCardProps {
   content?: string;
   updatedAt: string;
   onClick?: () => void;
+  onRename?: (title: string) => void | Promise<void>;
   onShare?: () => void;
   onDelete?: () => void;
   onAddToLesson?: () => void;
@@ -3330,9 +3371,12 @@ interface ResourceCardProps {
   compactActions?: boolean;
 }
 
-export function ResourceCard({ title, titleActions, primaryActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
+export function ResourceCard({ title, titleActions, primaryActions, description, meta, content, updatedAt, onClick, onRename, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(title);
+  const [savingTitle, setSavingTitle] = useState(false);
   const isImage = type === "image";
   const isKnowledgeBlock = type === "knowledgeBlock";
   const handlePreviewOpen = () => setPreviewOpen(true);
@@ -3344,6 +3388,43 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
   const latestReflection = reflections?.[0];
   const actionButtonPadding = compactActions ? "p-1" : "p-1.5";
   const actionIconSize = compactActions ? "w-3.5 h-3.5" : "w-4 h-4";
+
+  useEffect(() => {
+    if (!renaming) setTitleDraft(title);
+  }, [renaming, title]);
+
+  const beginRename = () => {
+    setTitleDraft(title);
+    setRenaming(true);
+  };
+
+  const cancelRename = () => {
+    setTitleDraft(title);
+    setRenaming(false);
+  };
+
+  const saveTitle = async () => {
+    const nextTitle = titleDraft.trim();
+    if (!nextTitle) {
+      toast.warning("文档名称不能为空");
+      return;
+    }
+    if (nextTitle === title) {
+      setRenaming(false);
+      return;
+    }
+
+    setSavingTitle(true);
+    try {
+      await onRename?.(nextTitle);
+      setRenaming(false);
+    } catch {
+      // 页面级回调负责显示具体错误；保留编辑态便于用户修正或重试。
+    } finally {
+      setSavingTitle(false);
+    }
+  };
+
   return (
     <>
       <div className={cn(
@@ -3376,13 +3457,55 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
           )}
           <div className="flex-1 min-w-0">
             <div className="mb-1 flex flex-wrap items-center gap-2" data-testid="resource-card-title-row">
-              <div
-                className={cn("font-medium text-ink-900 flex items-center gap-2", primaryClick && "cursor-pointer hover:text-gold-700")}
-                onClick={primaryClick}
-              >
-                <span>{title}</span>
-                {titleBadge && <Badge variant={titleBadge.variant}>{titleBadge.text}</Badge>}
-              </div>
+              {renaming ? (
+                <div className="flex min-w-[16rem] flex-1 items-center gap-1.5">
+                  <input
+                    autoFocus
+                    aria-label={`修改文档名称：${title}`}
+                    value={titleDraft}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void saveTitle();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelRename();
+                      }
+                    }}
+                    disabled={savingTitle}
+                    className="h-8 min-w-0 flex-1 rounded-md border border-gold-300 bg-paper px-2 text-sm font-medium text-ink-900 outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void saveTitle()}
+                    disabled={savingTitle}
+                    className="rounded p-1.5 text-teal-700 hover:bg-teal-50 disabled:cursor-wait disabled:opacity-50"
+                    title="保存名称"
+                    aria-label="保存名称"
+                  >
+                    {savingTitle ? <Spinner size={14} /> : <Check className="h-4 w-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelRename}
+                    disabled={savingTitle}
+                    className="rounded p-1.5 text-ink-400 hover:bg-mist hover:text-ink-700 disabled:opacity-50"
+                    title="取消修改"
+                    aria-label="取消修改"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  className={cn("font-medium text-ink-900 flex items-center gap-2", primaryClick && "cursor-pointer hover:text-gold-700")}
+                  onClick={primaryClick}
+                >
+                  <span>{title}</span>
+                  {titleBadge && <Badge variant={titleBadge.variant}>{titleBadge.text}</Badge>}
+                </div>
+              )}
               {titleActions && (
                 <div className="flex items-center gap-2" data-testid="resource-card-title-actions">
                   {titleActions}
@@ -3432,27 +3555,6 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-3 flex-wrap text-xs text-ink-400">
-              {meta.map((m, i) => (
-                <span key={i}>
-                  <span className="text-ink-300">{m.label}：</span>
-                  <span className="text-ink-600">{m.value}</span>
-                </span>
-              ))}
-              <span className="ml-auto text-ink-300">{timeAgo(updatedAt)}</span>
-            </div>
-            {showAddToBasket && basketResourceType && basketResourceId && (
-              <div className="mt-3 pt-3 border-t border-ink-50">
-                <AddToBasketDropdown
-                  resourceType={basketResourceType}
-                  resourceId={basketResourceId}
-                  resourceTitle={title}
-                  size="sm"
-                  variant="outline"
-                  onAdded={onBasketChanged}
-                />
-              </div>
-            )}
           </div>
           <div className={cn("flex items-start flex-shrink-0", compactActions ? "gap-1" : "gap-2")}>
             {donated && <Badge variant="teal">已捐赠</Badge>}
@@ -3472,6 +3574,17 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
                 title="查看/编辑"
               >
                 <Eye className={actionIconSize} />
+              </button>
+            )}
+            {onRename && (
+              <button
+                onClick={beginRename}
+                disabled={renaming || savingTitle}
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-40")}
+                title="修改名称"
+                aria-label={`修改名称：${title}`}
+              >
+                <Pencil className={actionIconSize} />
               </button>
             )}
             {(isImage || isKnowledgeBlock) && (
@@ -3549,6 +3662,32 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
             </div>
           </div>
         </div>
+        <div
+          data-testid="resource-card-details"
+          className="mt-2 flex w-full items-center gap-x-4 gap-y-1.5 text-xs text-ink-400"
+        >
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1.5">
+            {meta.map((m, i) => (
+              <span key={i}>
+                <span className="text-ink-300">{m.label}：</span>
+                <span className="text-ink-600">{m.value}</span>
+              </span>
+            ))}
+          </div>
+          <span className="flex-shrink-0 text-ink-300">{timeAgo(updatedAt)}</span>
+        </div>
+        {showAddToBasket && basketResourceType && basketResourceId && (
+          <div className="mt-3 border-t border-ink-50 pt-3">
+            <AddToBasketDropdown
+              resourceType={basketResourceType}
+              resourceId={basketResourceId}
+              resourceTitle={title}
+              size="sm"
+              variant="outline"
+              onAdded={onBasketChanged}
+            />
+          </div>
+        )}
         {primaryActions && (
           <div
             data-testid="resource-card-primary-actions"
