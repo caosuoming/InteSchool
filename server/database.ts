@@ -51,6 +51,10 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+function normalizePhone(phone: string): string {
+  return phone.trim().replace(/[\s()-]/g, "").replace(/^\+86/, "");
+}
+
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -757,8 +761,11 @@ export class DatabaseStore {
     })();
   }
 
-  authenticate(email: string, password: string): UserRow | null {
-    const user = this.getUserByEmail(email);
+  authenticate(identifier: string, password: string): UserRow | null {
+    const normalizedPhone = normalizePhone(identifier);
+    const user = /^1[3-9]\d{9}$/.test(normalizedPhone)
+      ? this.getUserByPhone(normalizedPhone)
+      : this.getUserByEmail(identifier);
     if (!user || !verifyPassword(password, user.password_hash)) return null;
     return user;
   }

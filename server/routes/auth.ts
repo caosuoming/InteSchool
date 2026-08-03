@@ -9,14 +9,31 @@ import { canManageTeachingProfiles } from "../../src/lib/teaching-profile-permis
 
 export const SESSION_COOKIE = "inteschool_session";
 
-const loginSchema = z.object({
-  email: z.string().trim().email().max(254),
-  password: z.string().min(1).max(128),
-});
-
 function normalizePhone(value: string): string {
   return value.trim().replace(/[\s()-]/g, "").replace(/^\+86/, "");
 }
+
+const loginIdentifierSchema = z.string().trim().min(1).max(254).refine((value) => (
+  z.string().email().safeParse(value).success || /^1[3-9]\d{9}$/.test(normalizePhone(value))
+), "请输入有效的邮箱或手机号");
+
+const loginSchema = z.object({
+  identifier: loginIdentifierSchema.optional(),
+  email: loginIdentifierSchema.optional(),
+  phone: loginIdentifierSchema.optional(),
+  password: z.string().min(1).max(128),
+}).superRefine((input, context) => {
+  if (!input.identifier && !input.email && !input.phone) {
+    context.addIssue({
+      code: "custom",
+      path: ["identifier"],
+      message: "请输入邮箱或手机号",
+    });
+  }
+}).transform((input) => ({
+  identifier: input.identifier || input.email || input.phone || "",
+  password: input.password,
+}));
 
 const phoneSchema = z.string().transform(normalizePhone).refine(
   (value) => /^1[3-9]\d{9}$/.test(value),
@@ -37,7 +54,8 @@ const teachingFieldsSchema = z.object({
   homeroomClassIds: z.array(z.string().min(1).max(100)).max(20).default([]),
 });
 
-const registerSchema = loginSchema.extend({
+const registerSchema = z.object({
+  email: z.string().trim().email().max(254),
   password: z.string().min(10).max(128),
   name: z.string().trim().min(2).max(50),
   phone: phoneSchema,
@@ -441,10 +459,10 @@ export async function registerAuthRoutes(
 
   app.post("/api/auth/login", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (request, reply) => {
     const input = loginSchema.parse(request.body);
-    const user = store.authenticate(input.email, input.password);
+    const user = store.authenticate(input.identifier, input.password);
     if (!user) {
       reply.code(401);
-      throw new Error("邮箱或密码错误");
+      throw new Error("邮箱、手机号或密码错误");
     }
     const teacher = store.getTeacherById(user.teacher_id);
     if (!teacher) throw new Error("账号关联的教师资料不存在");

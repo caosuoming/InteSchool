@@ -7,7 +7,7 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   init: () => Promise<void>;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (identifier: string, password: string) => Promise<boolean>;
   register: (input: Parameters<typeof authService.register>[0]) => Promise<boolean>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -37,10 +37,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  login: async (email, password) => {
+  login: async (identifier, password) => {
     set({ loading: true, error: null });
     try {
-      const teacher = await authService.login(email, password);
+      const teacher = await authService.login(identifier, password);
       set({ teacher, loading: false });
       return true;
     } catch (error) {

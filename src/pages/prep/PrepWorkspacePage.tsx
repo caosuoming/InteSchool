@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import {
   BarChart3,
   BookMarked,
@@ -12,6 +12,7 @@ import {
   FilePenLine,
   FileSearch,
   FlaskConical,
+  Eye,
   Layers3,
   ListChecks,
   Plus,
@@ -33,6 +34,7 @@ import {
 import { organizationService } from "@/services/organization";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { PrepBoardReviewModal } from "@/pages/prep/PrepBoardReviewModal";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -191,6 +193,7 @@ function nextAssignmentAction(
 
 export default function PrepWorkspacePage() {
   const { teacher } = useAuthStore();
+  const location = useLocation();
   const { gradeOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const [tasks, setTasks] = useState<PrepTask[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -202,6 +205,8 @@ export default function PrepWorkspacePage() {
   const [updatingAssignmentId, setUpdatingAssignmentId] = useState<
     string | null
   >(null);
+  const [reviewTask, setReviewTask] = useState<PrepTask | null>(null);
+  const collectiveEntry = new URLSearchParams(location.search).get("entry") === "collective";
 
   const currentAffiliation = useMemo(() => {
     if (!teacher) return null;
@@ -213,6 +218,26 @@ export default function PrepWorkspacePage() {
       null
     );
   }, [teacher]);
+
+  const scopedTasks = useMemo(() => {
+    if (!collectiveEntry || !teacher) return tasks;
+    const prepGroupIds = new Set(
+      currentAffiliation?.prepGroupIds?.length
+        ? currentAffiliation.prepGroupIds
+        : teacher.prepGroupIds,
+    );
+    const subjectGroupIds = new Set(
+      currentAffiliation?.subjectGroupIds?.length
+        ? currentAffiliation.subjectGroupIds
+        : teacher.subjectGroupIds,
+    );
+    return tasks.filter((task) => (
+      (Boolean(task.prepGroupId) && prepGroupIds.has(task.prepGroupId!))
+      || (!task.prepGroupId && subjectGroupIds.has(task.subjectGroupId))
+      || task.createdBy === teacher.id
+      || task.assignments.some((assignment) => assignment.teacherId === teacher.id)
+    ));
+  }, [collectiveEntry, currentAffiliation, tasks, teacher]);
 
   const loadData = useCallback(async () => {
     if (!teacher?.schoolId) return;
@@ -250,7 +275,7 @@ export default function PrepWorkspacePage() {
       rejected: 4,
     };
 
-    return tasks
+    return scopedTasks
       .flatMap((board) =>
         board.assignments
           .filter((assignment) => assignment.teacherId === teacher.id)
@@ -277,26 +302,26 @@ export default function PrepWorkspacePage() {
           new Date(a.board.updatedAt).getTime()
         );
       });
-  }, [tasks, teacher]);
+  }, [scopedTasks, teacher]);
 
   const visibleTasks = useMemo(() => {
-    if (selectedType === "all") return tasks;
-    return tasks.filter((task) =>
+    if (selectedType === "all") return scopedTasks;
+    return scopedTasks.filter((task) =>
       task.workflows.some((workflow) => workflow.type === selectedType),
     );
-  }, [selectedType, tasks]);
+  }, [scopedTasks, selectedType]);
 
-  const activeBoardCount = tasks.filter(
+  const activeBoardCount = scopedTasks.filter(
     (task) => task.status !== "completed" && task.status !== "cancelled",
   ).length;
-  const completedWorkflowCount = tasks.reduce(
+  const completedWorkflowCount = scopedTasks.reduce(
     (total, task) =>
       total +
       task.workflows.filter((workflow) => workflow.status === "completed")
         .length,
     0,
   );
-  const totalWorkflowCount = tasks.reduce(
+  const totalWorkflowCount = scopedTasks.reduce(
     (total, task) => total + task.workflows.length,
     0,
   );
@@ -598,7 +623,7 @@ export default function PrepWorkspacePage() {
                       </div>
                       <div className="mt-0.5 text-[11px] text-ink-400">
                         {
-                          tasks.filter((task) =>
+                          scopedTasks.filter((task) =>
                             task.workflows.some(
                               (workflow) => workflow.type === template.type,
                             ),
@@ -645,18 +670,13 @@ export default function PrepWorkspacePage() {
                     board.workflows.length > 0
                       ? Math.round((completed / board.workflows.length) * 100)
                       : 0;
+                  const canPreview = board.status === "completed"
+                    && board.assignments.some((assignment) => assignment.submission);
                   return (
-                    <Link
-                      key={board.id}
-                      to={`/prep/tasks/${board.id}`}
-                      className="group block"
-                    >
-                      <Card
-                        hoverable
-                        className="h-full p-4 group-hover:border-gold-300"
-                      >
+                    <div key={board.id} className="group">
+                      <Card hoverable className="h-full p-4 group-hover:border-gold-300">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
+                          <Link to={`/prep/tasks/${board.id}`} className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <h3 className="font-serif text-base font-semibold text-ink-900 line-clamp-1">
                                 {board.title}
@@ -668,8 +688,26 @@ export default function PrepWorkspacePage() {
                             <div className="mt-1 text-xs text-ink-500">
                               {board.grade} · {board.subject}
                             </div>
+                          </Link>
+                          <div className="flex flex-shrink-0 items-center gap-1">
+                            {canPreview && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setReviewTask(board)}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                预览成果
+                              </Button>
+                            )}
+                            <Link
+                              to={`/prep/tasks/${board.id}`}
+                              aria-label={`查看${board.title}详情`}
+                              className="rounded-md p-1.5 text-ink-300 transition-colors hover:bg-gold-50 hover:text-gold-600"
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Link>
                           </div>
-                          <ChevronRight className="h-4 w-4 flex-shrink-0 text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-gold-600" />
                         </div>
 
                         {board.description && (
@@ -725,7 +763,7 @@ export default function PrepWorkspacePage() {
                           <div className="mb-1.5 flex items-center justify-between text-xs">
                             <span className="text-ink-500">看板进度</span>
                             <span className="font-medium text-ink-800">
-                              {completed}/{board.workflows.length}
+                              {completed}/{board.workflows.length} · {progress}%
                             </span>
                           </div>
                           <div className="h-1.5 overflow-hidden rounded-full bg-ink-100">
@@ -736,7 +774,7 @@ export default function PrepWorkspacePage() {
                           </div>
                         </div>
                       </Card>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>
@@ -853,6 +891,17 @@ export default function PrepWorkspacePage() {
             </Card>
           </aside>
         </div>
+      )}
+
+      {reviewTask && (
+        <PrepBoardReviewModal
+          open
+          onClose={() => setReviewTask(null)}
+          task={reviewTask}
+          teacher={teacher}
+          teacherNames={teacherNames}
+          onAnnotationsSaved={loadData}
+        />
       )}
 
       <Modal

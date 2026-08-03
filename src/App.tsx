@@ -156,6 +156,14 @@ export default function App() {
             path="/login"
             element={teacher ? <Navigate to={teacher.schoolId ? "/dashboard" : "/school-auth"} replace /> : <LoginPage />}
           />
+          <Route
+            path="/prep-login"
+            element={
+              teacher
+                ? <Navigate to={teacher.schoolId ? "/prep?entry=collective" : "/school-auth"} replace />
+                : <LoginPage destination="/prep?entry=collective" loginOnly />
+            }
+          />
           <Route path="/classroom-login" element={<ClassroomLoginPage />} />
           <Route
             path="/classroom"

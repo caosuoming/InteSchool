@@ -96,7 +96,7 @@ describe("auth service", () => {
     });
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email: "login@example.com", password: "StrongPass123" }),
+      body: JSON.stringify({ identifier: "login@example.com", password: "StrongPass123" }),
     });
     expect(apiMocks.setCsrfToken).toHaveBeenLastCalledWith("csrf-login");
   });
