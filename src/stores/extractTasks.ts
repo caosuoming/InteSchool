@@ -11,7 +11,7 @@ import { useExtractConfigStore } from "@/stores/extractConfig";
 import { toast } from "@/stores/ui";
 import type { ResourceSemester } from "@/types";
 
-export const MAX_CONCURRENT_EXTRACT_TASKS = 10;
+export const MAX_CONCURRENT_EXTRACT_TASKS = 2;
 
 export type ExtractTaskStatus = "extracting" | "ready" | "failed";
 

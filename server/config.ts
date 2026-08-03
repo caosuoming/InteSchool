@@ -80,7 +80,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     maxUploadBytes: integerEnv(process.env.INTESCHOOL_MAX_UPLOAD_BYTES, 50 * 1024 * 1024),
     documentExtractionConcurrency: Math.max(
       1,
-      integerEnv(process.env.INTESCHOOL_DOCUMENT_EXTRACTION_CONCURRENCY, 3),
+      integerEnv(process.env.INTESCHOOL_DOCUMENT_EXTRACTION_CONCURRENCY, 2),
     ),
     ...overrides,
   };
