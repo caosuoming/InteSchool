@@ -1,4 +1,12 @@
-import type { AnswerRecord, AnswerScore, AnswerSource, Question, TreeNode, SchoolClass } from "../../src/types/index.js";
+import type {
+  AnswerRecord,
+  AnswerScore,
+  AnswerSource,
+  KnowledgePoint,
+  Question,
+  SchoolClass,
+  TreeNode,
+} from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
@@ -7,6 +15,7 @@ import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 export interface KnowledgeMastery {
   knowledgePointId: string;
   knowledgePointName: string;
+  knowledgePointPath: string[];
   totalAttempts: number;
   correctCount: number;
   partialCount: number;
@@ -318,7 +327,21 @@ export const analyticsService = {
       .filter((a) => studentIds.includes(a.studentId));
     records = filterByDateRange(records, range);
     const questions = db.read("questions").filter((q) => q.schoolId === schoolId);
-    const knowledgePoints = db.read("knowledgePoints").filter((p) => p.schoolId === schoolId);
+    const knowledgePoints = (db.read("knowledgePoints") as KnowledgePoint[])
+      .filter((p) => p.schoolId === schoolId);
+    const knowledgePointMap = new Map(knowledgePoints.map((point) => [point.id, point] as const));
+
+    const getKnowledgePointPath = (knowledgePointId: string): string[] => {
+      const path: string[] = [];
+      const visited = new Set<string>();
+      let current = knowledgePointMap.get(knowledgePointId);
+      while (current && !visited.has(current.id)) {
+        visited.add(current.id);
+        path.unshift(current.name);
+        current = current.parentId ? knowledgePointMap.get(current.parentId) : undefined;
+      }
+      return path;
+    };
 
     const questionMap = new Map<string, Question>(
       questions.map((q: Question) => [q.id, q] as const),
@@ -358,6 +381,7 @@ export const analyticsService = {
       return {
         knowledgePointId: kp.id,
         knowledgePointName: kp.name,
+        knowledgePointPath: getKnowledgePointPath(kp.id),
         totalAttempts: stat.total,
         correctCount: stat.correct,
         partialCount: stat.partial,

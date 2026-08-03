@@ -2,13 +2,15 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   BarChart3, Users, GraduationCap, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, AlertCircle, Circle, TrendingUp,
-  Award, FileText, Calendar, User, Clock,
+  Award, FileText, Calendar, User, Clock, Network,
+  ArrowUpToLine, ArrowDownToLine,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
 import { settingsService } from "@/services/settings";
 import { analyticsService, type KnowledgeMastery, type StudentAnswerDetail, type DateRange } from "@/services/analytics";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
@@ -16,6 +18,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory } from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import {
+  knowledgePointDisplayName,
+  orderKnowledgeMasteryRows,
+  type KnowledgePointPlacement,
+} from "./student-learning-table";
 
 const questionTypeLabel: Record<string, string> = {
   single: "单选",
@@ -110,8 +117,17 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const [prevBestClass, setPrevBestClass] = useState<{ mastery: KnowledgeMastery[]; className: string } | null>(null);
   const [classAvgMastery, setClassAvgMastery] = useState<KnowledgeMastery[]>([]);
   const [showComparison, setShowComparison] = useState(true);
+  const [showParentNodes, setShowParentNodes] = useState(false);
+  const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<Set<string>>(new Set());
+  const [knowledgePointPlacements, setKnowledgePointPlacements] = useState<Record<string, KnowledgePointPlacement>>({});
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("all");
   const dateRange = useMemo(() => getDateRange(timeRangeKey), [timeRangeKey]);
+  const orderedMastery = useMemo(
+    () => orderKnowledgeMasteryRows(mastery, knowledgePointPlacements),
+    [knowledgePointPlacements, mastery],
+  );
+  const allKnowledgePointsSelected = mastery.length > 0
+    && mastery.every((item) => selectedKnowledgePointIds.has(item.knowledgePointId));
 
   // 加载班级列表
   useEffect(() => {
@@ -209,6 +225,8 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   }, [mastery, answerDetails]);
 
   const selectClass = (cls: AnyClass) => {
+    setSelectedKnowledgePointIds(new Set());
+    setKnowledgePointPlacements({});
     setSelection({
       type: "class",
       classId: cls.id,
@@ -220,6 +238,8 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   };
 
   const selectStudent = (cls: AnyClass, student: Student) => {
+    setSelectedKnowledgePointIds(new Set());
+    setKnowledgePointPlacements({});
     setSelection({
       type: "student",
       classId: cls.id,
@@ -227,6 +247,34 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
       studentId: student.id,
       studentName: student.name,
     });
+  };
+
+  const toggleKnowledgePoint = (knowledgePointId: string) => {
+    setSelectedKnowledgePointIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(knowledgePointId)) next.delete(knowledgePointId);
+      else next.add(knowledgePointId);
+      return next;
+    });
+  };
+
+  const toggleAllKnowledgePoints = () => {
+    setSelectedKnowledgePointIds(
+      allKnowledgePointsSelected
+        ? new Set()
+        : new Set(mastery.map((item) => item.knowledgePointId)),
+    );
+  };
+
+  const placeSelectedKnowledgePoints = (placement: KnowledgePointPlacement) => {
+    setKnowledgePointPlacements((previous) => {
+      const next = { ...previous };
+      selectedKnowledgePointIds.forEach((knowledgePointId) => {
+        next[knowledgePointId] = placement;
+      });
+      return next;
+    });
+    setSelectedKnowledgePointIds(new Set());
   };
 
   const renderClassItem = (cls: AnyClass, isPersonal: boolean) => {
@@ -324,9 +372,11 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
         />
       )}
 
-      <div className="grid grid-cols-12 gap-4">
-        {/* 左侧：班级与学生列表 */}
-        <div className="col-span-3">
+      <ResizableSplitPane
+        storageKey="inteschool:student-learning-sidebar-width"
+        className="items-start"
+        sidebarClassName="min-w-0"
+        sidebar={
           <Card className="p-3 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto">
             <div className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2 px-1">
               班级列表
@@ -354,10 +404,8 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
               </div>
             )}
           </Card>
-        </div>
-
-        {/* 右侧：学情数据 */}
-        <div className="col-span-9">
+        }
+      >
           {!selection ? (
             <EmptyState
               icon={<Users className="w-10 h-10 text-ink-200" />}
@@ -487,12 +535,26 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
               </div>
 
               {/* 知识点掌握情况 */}
-              <Card>
+              <Card className="relative">
                 <CardHeader
                   title="知识点训练与掌握情况"
                   subtitle={`共 ${overview.totalKps} 个知识点，已训练 ${overview.trainedKps} 个`}
                   action={
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        aria-pressed={showParentNodes}
+                        onClick={() => setShowParentNodes((visible) => !visible)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          showParentNodes
+                            ? "border-gold-300 bg-gold-50 text-gold-700"
+                            : "border-ink-200 text-ink-600 hover:border-ink-300 hover:bg-mist",
+                        )}
+                      >
+                        <Network className="w-3.5 h-3.5" />
+                        显示知识点的父节点
+                      </button>
                       {showComparison && hasComparisonData(selection, sameGradeTypeAvg, prevBestClass, classAvgMastery) && (
                         <div className="flex items-center gap-3 text-xs text-ink-500">
                           <div className="flex items-center gap-1.5">
@@ -538,7 +600,18 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-ink-100 text-xs text-ink-500">
-                          <th className="text-left py-2 px-3 font-medium">知识点</th>
+                          <th className="text-left py-2 px-3 font-medium">
+                            <label className="inline-flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                aria-label="全选知识点"
+                                checked={allKnowledgePointsSelected}
+                                onChange={toggleAllKnowledgePoints}
+                                className="w-3.5 h-3.5 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
+                              />
+                              <span>知识点</span>
+                            </label>
+                          </th>
                           <th className="text-center py-2 px-3 font-medium">训练次数</th>
                           <th className="text-center py-2 px-3 font-medium">全对</th>
                           <th className="text-center py-2 px-3 font-medium">半对</th>
@@ -548,25 +621,30 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                         </tr>
                       </thead>
                       <tbody>
-                        {mastery
-                          .sort((a, b) => {
-                            // 按掌握状态排序：薄弱 > 基本掌握 > 已掌握 > 未训练
-                            const order = { weak: 0, basic: 1, mastered: 2, untrained: 3 };
-                            if (order[a.masteryLevel] !== order[b.masteryLevel]) {
-                              return order[a.masteryLevel] - order[b.masteryLevel];
-                            }
-                            return b.totalAttempts - a.totalAttempts;
-                          })
-                          .map((m) => {
+                        {orderedMastery.map((m) => {
                             const cfg = masteryConfig[m.masteryLevel];
                             const MasteryIcon = cfg.icon;
+                            const selected = selectedKnowledgePointIds.has(m.knowledgePointId);
+                            const displayName = knowledgePointDisplayName(m, showParentNodes);
                             return (
                               <tr
                                 key={m.knowledgePointId}
-                                className="border-b border-ink-50 hover:bg-mist/50 transition-colors"
+                                className={cn(
+                                  "border-b border-ink-50 transition-colors",
+                                  selected ? "bg-gold-50/70" : "hover:bg-mist/50",
+                                )}
                               >
                                 <td className="py-2.5 px-3 text-ink-900 font-medium">
-                                  {m.knowledgePointName}
+                                  <label className="flex min-w-[180px] items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`选择知识点 ${displayName}`}
+                                      checked={selected}
+                                      onChange={() => toggleKnowledgePoint(m.knowledgePointId)}
+                                      className="w-3.5 h-3.5 flex-shrink-0 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
+                                    />
+                                    <span className="whitespace-nowrap" title={displayName}>{displayName}</span>
+                                  </label>
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-mono text-ink-700">
                                   {m.totalAttempts}
@@ -714,6 +792,35 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                     </table>
                   </div>
                 )}
+                {selectedKnowledgePointIds.size > 0 && (
+                  <div
+                    role="toolbar"
+                    aria-label="知识点排序操作"
+                    className="fixed right-6 top-1/2 z-40 -translate-y-1/2 rounded-xl border border-ink-200 bg-paper/95 p-2 shadow-xl backdrop-blur"
+                  >
+                    <div className="px-2 pb-1.5 text-[11px] text-ink-500">
+                      已选择 {selectedKnowledgePointIds.size} 个知识点
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => placeSelectedKnowledgePoints("top")}
+                        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-gold-50 hover:text-gold-700"
+                      >
+                        <ArrowUpToLine className="w-3.5 h-3.5" />
+                        置顶
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => placeSelectedKnowledgePoints("bottom")}
+                        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-mist"
+                      >
+                        <ArrowDownToLine className="w-3.5 h-3.5" />
+                        沉底
+                      </button>
+                    </div>
+                  </div>
+                )}
               </Card>
 
               {/* 做过的题目列表 */}
@@ -795,8 +902,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
               </Card>
             </div>
           )}
-        </div>
-      </div>
+      </ResizableSplitPane>
     </div>
   );
 }
