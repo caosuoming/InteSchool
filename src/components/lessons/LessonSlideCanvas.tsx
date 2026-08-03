@@ -1,4 +1,10 @@
-import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { GripVertical, Maximize2 } from "lucide-react";
 import type { LessonSlideElement } from "@/types";
 import { cn } from "@/lib/utils";
@@ -53,6 +59,15 @@ export function LessonSlideCanvas({
 }: LessonSlideCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const interactionRef = useRef<Interaction | null>(null);
+  const textElementRefs = useRef(new Map<string, HTMLDivElement>());
+
+  useEffect(() => {
+    if (!editable || !selectedElementId) return;
+    const element = elements.find((item) => item.id === selectedElementId);
+    if (element?.kind !== "text" || element.content) return;
+    const editor = textElementRefs.current.get(selectedElementId);
+    editor?.focus();
+  }, [editable, elements, selectedElementId]);
 
   const startInteraction = (
     event: ReactPointerEvent<HTMLDivElement>,
@@ -167,7 +182,39 @@ export function LessonSlideCanvas({
                 className="h-full w-full rounded-md object-contain"
               />
             ) : (
-              element.href && !editable ? (
+              editable ? (
+                <div
+                  ref={(node) => {
+                    if (node) textElementRefs.current.set(element.id, node);
+                    else textElementRefs.current.delete(element.id);
+                  }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  data-placeholder="直接输入文字"
+                  className={cn(
+                    "h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900 outline-none",
+                    "empty:before:pointer-events-none empty:before:text-ink-300 empty:before:content-[attr(data-placeholder)]",
+                    element.href && "text-gold-700 underline decoration-gold-300 underline-offset-4",
+                  )}
+                  style={textStyle}
+                  dangerouslySetInnerHTML={{ __html: element.content }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectElement?.(element.id);
+                  }}
+                  onBlur={(event) => {
+                    if (!onElementsChange) return;
+                    const content = event.currentTarget.innerHTML === "<br>"
+                      ? ""
+                      : event.currentTarget.innerHTML;
+                    onElementsChange(elements.map((item) => (
+                      item.id === element.id && item.kind === "text"
+                        ? { ...item, content }
+                        : item
+                    )));
+                  }}
+                />
+              ) : element.href ? (
                 <a
                   href={element.href}
                   target="_blank"

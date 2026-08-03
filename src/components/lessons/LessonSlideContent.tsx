@@ -44,6 +44,21 @@ export function LessonSlideContent({
       : undefined,
   });
 
+  if (slide.freeformLayout) {
+    if (slide.type === "question" && slide.questionSnapshot && visibility.supplementary) {
+      return (
+        <div className={cn("absolute bottom-[4%] left-[4%] right-[4%]", className)}>
+          <QuestionSupplementaryDetails
+            links={slide.questionSnapshot.links}
+            explanationVideo={slide.questionSnapshot.explanationVideo}
+            compact
+          />
+        </div>
+      );
+    }
+    return null;
+  }
+
   if (slide.type === "section") {
     return (
       <div className={cn("flex h-full flex-col items-center justify-start px-12 pt-[4%] text-center", className)}>

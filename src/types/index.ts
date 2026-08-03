@@ -1922,6 +1922,8 @@ export interface LessonSlide {
   id: string;
   type: LessonSlideType;
   title: string;
+  /** 使用自由画布布局时，页面正文完全由 elements 渲染。 */
+  freeformLayout?: boolean;
   /** 题目ID（type=question时） */
   questionId?: string;
   /** 题目快照（保存时的题目内容，防止后续题目修改影响课件） */
