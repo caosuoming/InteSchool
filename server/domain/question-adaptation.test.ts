@@ -55,16 +55,21 @@ function state(): AppState {
 }
 
 describe("question adaptation", () => {
-  it("creates a new question with only the stem and identity fields changed", async () => {
+  it("creates a new question with the adapted content and reset identity fields", async () => {
     await runWithState(state(), async () => {
-      const adapted = await questionService.adaptQuestion("question-source", "改编后的题干");
+      const adapted = await questionService.adaptQuestion("question-source", {
+        stem: "改编后的题干",
+        answer: "B",
+        analysis: "改编后的解析",
+        summary: "改编后的总结",
+      });
 
       expect(adapted.id).not.toBe(source.id);
       expect(adapted.stem).toBe("改编后的题干");
       expect(adapted.options).toEqual(source.options);
-      expect(adapted.answer).toBe(source.answer);
-      expect(adapted.analysis).toBe(source.analysis);
-      expect(adapted.summary).toBe(source.summary);
+      expect(adapted.answer).toBe("B");
+      expect(adapted.analysis).toBe("改编后的解析");
+      expect(adapted.summary).toBe("改编后的总结");
       expect(adapted.board).toBe(source.board);
       expect(adapted.links).toEqual(source.links);
       expect(adapted.links).not.toBe(source.links);
@@ -76,7 +81,7 @@ describe("question adaptation", () => {
       expect(adapted.lastUsedAt).toBeUndefined();
       expect(adapted.hiddenByExamIds).toEqual([]);
       expect(adapted.duplicateHash).toBe(
-        computeDuplicateHash("改编后的题干", source.answer, source.options),
+        computeDuplicateHash("改编后的题干", "B", source.options),
       );
 
       const questions = await questionService.listQuestions();
@@ -85,10 +90,20 @@ describe("question adaptation", () => {
     });
   });
 
-  it("does not create a question when the stem is blank or unchanged", async () => {
+  it("requires all four adapted fields to be non-empty and changed", async () => {
     await runWithState(state(), async () => {
-      await expect(questionService.adaptQuestion("question-source", "   ")).rejects.toThrow("题干不能为空");
-      await expect(questionService.adaptQuestion("question-source", "原始题干")).rejects.toThrow("请先修改题干");
+      await expect(questionService.adaptQuestion("question-source", {
+        stem: "   ",
+        answer: "B",
+        analysis: "新解析",
+        summary: "新总结",
+      })).rejects.toThrow("题干不能为空");
+      await expect(questionService.adaptQuestion("question-source", {
+        stem: "新题干",
+        answer: "A",
+        analysis: "新解析",
+        summary: "新总结",
+      })).rejects.toThrow("请同步修改答案");
       expect(await questionService.listQuestions()).toHaveLength(1);
     });
   });

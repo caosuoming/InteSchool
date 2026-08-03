@@ -783,6 +783,13 @@ export interface QuestionVideoReference {
   content?: string;
 }
 
+export interface QuestionAdaptationInput {
+  stem: string;
+  answer: string;
+  analysis: string;
+  summary: string;
+}
+
 export interface Question {
   id: string;
   teacherId: string;
@@ -976,6 +983,8 @@ export interface Material {
   content: string; // 素材内容
   fileUrl?: string;
   fileSize?: number;
+  /** 知识块可关联素材库中的讲解视频。 */
+  explanationVideo?: QuestionVideoReference | null;
   tags: string[];
   /** 查重哈希：用于知识块查重 */
   duplicateHash?: string;

@@ -32,6 +32,7 @@ import type {
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { inferMaterialTypeFromFile } from "@/lib/material-media";
 
 type TabKey = "upload" | "share" | "ai";
 
@@ -266,6 +267,7 @@ export function UploadPage() {
         file,
         title,
         description: "",
+        materialType: inferMaterialTypeFromFile(file),
         status: "pending",
       });
     }

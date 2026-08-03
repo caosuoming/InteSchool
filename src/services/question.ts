@@ -2,6 +2,7 @@ import { rpcCall } from "./api";
 
 import type {
   Question,
+  QuestionAdaptationInput,
   QuestionFilter,
   QuestionLink,
   QuestionType,
@@ -60,8 +61,8 @@ export const questionService = {
     return rpcCall("question", "createQuestion", [teacherId, schoolId, input]) as any;
   },
 
-  async adaptQuestion(id: string, stem: string): Promise<Question> {
-    return rpcCall("question", "adaptQuestion", [id, stem]) as any;
+  async adaptQuestion(id: string, input: QuestionAdaptationInput): Promise<Question> {
+    return rpcCall("question", "adaptQuestion", [id, input]) as any;
   },
 
   async updateQuestion(id: string, patch: Partial<Question>, duplicateDecision?: "add"): Promise<Question> {

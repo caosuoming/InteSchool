@@ -5,7 +5,7 @@ import {
   Calendar, Eye, Presentation, FileBox,
   ArrowUpDown, Clock, ChevronDown, ChevronRight,
   FileSpreadsheet, Sparkles, Trash2, Share2, Upload, Filter, Library, FileText,
-  PlayCircle, Copy, MessageSquareText, Star,
+  PlayCircle, Copy, MessageSquareText, Star, Video,
   ShoppingCart, CheckSquare, Square, Plus, X,
   Layout,
   Gift, Users, Pencil, Check,
@@ -56,6 +56,7 @@ import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { useDocumentTypeOptions } from "@/hooks/useDocumentTypeOptions";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
+import { QuestionVideoModal } from "@/components/question/QuestionVideoModal";
 import { BasketAudiencePicker } from "@/components/basket/BasketAudiencePicker";
 import {
   basketAudienceLabel,
@@ -270,6 +271,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [examPapers, setExamPapers] = useState<ExamPaper[]>([]);
   const [coursewares, setCoursewares] = useState<Courseware[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [knowledgeVideoTarget, setKnowledgeVideoTarget] = useState<Material | null>(null);
 
   // 所有试卷/讲义（含拆解副本），用于查找源资源的拆解副本
   const [allExamPapers, setAllExamPapers] = useState<ExamPaper[]>([]);
@@ -2454,6 +2456,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     { label: "类型", value: materialTypeLabel[item.type] },
                     { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
                     { label: "标签", value: item.tags.join("、") || "无" },
+                    ...(item.type === "knowledgeBlock"
+                      ? [{ label: "讲解视频", value: item.explanationVideo?.title || "未关联" }]
+                      : []),
                   ]}
                   content={item.content}
                   updatedAt={item.updatedAt}
@@ -2464,6 +2469,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   basketResourceId={item.id}
                   onBasketChanged={loadAll}
                   onShare={() => handleOpenShare("material", item.id, item.title)}
+                  onExplanationVideo={item.type === "knowledgeBlock"
+                    ? () => setKnowledgeVideoTarget(item)
+                    : undefined}
                   onDelete={() => handleDelete(item.id)}
                 />
               ))}
@@ -2472,6 +2480,19 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         </div>
       </div>
       )}
+
+      <QuestionVideoModal
+        open={Boolean(knowledgeVideoTarget)}
+        question={null}
+        material={knowledgeVideoTarget}
+        teacherId={teacher?.id}
+        schoolId={teacher?.schoolId}
+        onClose={() => setKnowledgeVideoTarget(null)}
+        onMaterialSaved={(updated) => {
+          setMaterials((current) => current.map((item) => item.id === updated.id ? updated : item));
+          setKnowledgeVideoTarget(null);
+        }}
+      />
 
       {resourceSelections.size > 0 && (
         <div
@@ -3118,6 +3139,7 @@ interface ResourceCardProps {
   onAddToLesson?: () => void;
   onAddToPrep?: () => void;
   onDuplicate?: () => void;
+  onExplanationVideo?: () => void;
   onConvertToExamPaper?: () => void;
   onViewReflections?: () => void;
   reflections?: Reflection[];
@@ -3138,7 +3160,7 @@ interface ResourceCardProps {
   compactActions?: boolean;
 }
 
-export function ResourceCard({ title, titleActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
+export function ResourceCard({ title, titleActions, description, meta, content, updatedAt, onClick, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const isImage = type === "image";
@@ -3307,6 +3329,15 @@ export function ResourceCard({ title, titleActions, description, meta, content, 
                 title="添加到集体备课"
               >
                 <Users className={actionIconSize} />
+              </button>
+            )}
+            {onExplanationVideo && (
+              <button
+                onClick={onExplanationVideo}
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-violet-50 hover:text-violet-700")}
+                title="讲解视频"
+              >
+                <Video className={actionIconSize} />
               </button>
             )}
             {showAddToLesson && onAddToLesson && (

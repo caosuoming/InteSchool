@@ -6,19 +6,22 @@ import { uploadFile } from "@/services/api";
 import { materialService } from "@/services/material";
 import { questionService } from "@/services/question";
 import { toast } from "@/stores/ui";
+import { isVideoMaterial, looksLikeVideoFile } from "@/lib/material-media";
 import type { Material, Question, QuestionVideoReference } from "@/types";
 
 interface QuestionVideoModalProps {
   open: boolean;
   question: Question | null;
+  material?: Material | null;
   teacherId?: string;
   schoolId?: string;
   onClose: () => void;
-  onSaved: (question: Question) => void;
+  onSaved?: (question: Question) => void;
+  onMaterialSaved?: (material: Material) => void;
 }
 
 function looksLikeVideo(file: File): boolean {
-  return file.type.startsWith("video/") || /\.(?:mp4|webm|ogg|mov|m4v)$/i.test(file.name);
+  return file.type.startsWith("video/") || looksLikeVideoFile(file.name);
 }
 
 function toReference(material: Material): QuestionVideoReference {
@@ -33,37 +36,40 @@ function toReference(material: Material): QuestionVideoReference {
 export function QuestionVideoModal({
   open,
   question,
+  material,
   teacherId,
   schoolId,
   onClose,
   onSaved,
+  onMaterialSaved,
 }: QuestionVideoModalProps) {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [selectedMaterialId, setSelectedMaterialId] = useState("");
   const [localFile, setLocalFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const currentReference = question?.explanationVideo || material?.explanationVideo || null;
 
   useEffect(() => {
-    if (!open || !question || !teacherId || !schoolId) return;
-    setSelectedMaterialId(question.explanationVideo?.materialId || "");
+    if (!open || (!question && !material) || !teacherId || !schoolId) return;
+    setSelectedMaterialId(currentReference?.materialId || "");
     setLocalFile(null);
     setLoading(true);
     materialService.listMaterials({ teacherId, schoolId })
-      .then((items) => setMaterials(items.filter((item) => item.type === "video")))
+      .then((items) => setMaterials(items.filter(isVideoMaterial)))
       .catch((error) => toast.error("视频素材加载失败", error instanceof Error ? error.message : undefined))
       .finally(() => setLoading(false));
-  }, [open, question, schoolId, teacherId]);
+  }, [currentReference?.materialId, material, open, question, schoolId, teacherId]);
 
   const currentMissingReference = useMemo(() => {
-    if (!question?.explanationVideo || !selectedMaterialId) return null;
+    if (!currentReference || !selectedMaterialId) return null;
     return materials.some((item) => item.id === selectedMaterialId)
       ? null
-      : question.explanationVideo;
-  }, [materials, question, selectedMaterialId]);
+      : currentReference;
+  }, [currentReference, materials, selectedMaterialId]);
 
   const handleSave = async () => {
-    if (!question || !teacherId || !schoolId) return;
+    if ((!question && !material) || !teacherId || !schoolId) return;
     if (localFile && !looksLikeVideo(localFile)) {
       toast.error("请选择视频文件");
       return;
@@ -74,31 +80,42 @@ export function QuestionVideoModal({
       let reference: QuestionVideoReference | null = null;
       if (localFile) {
         const uploaded = await uploadFile(localFile);
-        const material = await materialService.createMaterial(teacherId, schoolId, {
+        const targetLabel = question ? "题目" : "知识块";
+        const targetTitle = question
+          ? question.stem.replace(/<[^>]+>/g, "").slice(0, 60)
+          : material?.title || "";
+        const uploadedMaterial = await materialService.createMaterial(teacherId, schoolId, {
           title: localFile.name,
-          description: `题目讲解视频：${question.stem.replace(/<[^>]+>/g, "").slice(0, 60)}`,
-          chapterIds: [...question.chapterIds],
-          knowledgePointIds: [...question.knowledgePointIds],
-          grade: question.grade || "",
-          schoolYear: question.schoolYear || "",
-          semester: question.semester,
+          description: `${targetLabel}讲解视频：${targetTitle}`,
+          chapterIds: [...(question?.chapterIds || material?.chapterIds || [])],
+          knowledgePointIds: [...(question?.knowledgePointIds || material?.knowledgePointIds || [])],
+          grade: question?.grade || material?.grade || "",
+          schoolYear: question?.schoolYear || material?.schoolYear || "",
+          semester: question?.semester || material?.semester,
           type: "video",
           content: localFile.name,
           fileUrl: uploaded.url,
           fileSize: localFile.size,
-          tags: ["题目讲解"],
+          tags: [`${targetLabel}讲解`],
         });
-        reference = toReference(material);
+        reference = toReference(uploadedMaterial);
       } else if (selectedMaterialId) {
         const selected = materials.find((item) => item.id === selectedMaterialId);
         reference = selected ? toReference(selected) : currentMissingReference;
       }
 
-      const updated = await questionService.updateQuestion(question.id, {
-        explanationVideo: reference,
-      });
+      if (question) {
+        const updated = await questionService.updateQuestion(question.id, {
+          explanationVideo: reference,
+        });
+        onSaved?.(updated);
+      } else if (material) {
+        const updated = await materialService.updateMaterial(material.id, {
+          explanationVideo: reference,
+        });
+        onMaterialSaved?.(updated);
+      }
       toast.success(reference ? "讲解视频已关联" : "讲解视频已移除");
-      onSaved(updated);
     } catch (error) {
       toast.error("讲解视频保存失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -125,8 +142,14 @@ export function QuestionVideoModal({
     >
       <div className="space-y-5">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-ink-700">从素材库选择</label>
+          <label
+            htmlFor="question-video-material"
+            className="mb-1.5 block text-sm font-medium text-ink-700"
+          >
+            从素材库选择
+          </label>
           <select
+            id="question-video-material"
             value={localFile ? "" : selectedMaterialId}
             onChange={(event) => {
               setSelectedMaterialId(event.target.value);
