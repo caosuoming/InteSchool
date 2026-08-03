@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   GraduationCap, Plus, Users, UserPlus, Trash2,
   School, Layers, ChevronRight, Pencil,
   Calendar, MoreVertical, ArrowRightLeft, PauseCircle,
-  PlayCircle, Archive,
+  PlayCircle, Archive, ArrowLeft,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
@@ -25,6 +26,7 @@ import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoo
 type Tab = "school" | "personal";
 
 export default function ClassesPage({ personalOnly = false }: { personalOnly?: boolean }) {
+  const navigate = useNavigate();
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const currentAffiliation = getCurrentAffiliation();
   const isPersonal = !currentAffiliation?.schoolId;
@@ -459,10 +461,22 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
         }
         icon={<GraduationCap className="w-5 h-5" />}
         action={
-          <Button variant="gold" onClick={() => setCreateClassOpen(true)}>
-            <Plus className="w-4 h-4" />
-            {isPersonal || personalOnly ? "新建教学班" : tab === "school" ? "新建班级" : "新建教学班"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {personalOnly && (
+              <Button
+                variant="outline"
+                onClick={() => navigate("/admin/classes")}
+                aria-label="返回班级与学生"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                返回
+              </Button>
+            )}
+            <Button variant="gold" onClick={() => setCreateClassOpen(true)}>
+              <Plus className="w-4 h-4" />
+              {isPersonal || personalOnly ? "新建教学班" : tab === "school" ? "新建班级" : "新建教学班"}
+            </Button>
+          </div>
         }
       />
 
