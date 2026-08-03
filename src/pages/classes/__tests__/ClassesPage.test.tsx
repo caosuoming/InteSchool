@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ClassesPage from "@/pages/classes/ClassesPage";
 import { classService } from "@/services/class";
@@ -91,7 +92,11 @@ describe("ClassesPage", () => {
   });
 
   it("marks a student from the loaded class roster as already added", async () => {
-    render(<ClassesPage />);
+    render(
+      <MemoryRouter>
+        <ClassesPage />
+      </MemoryRouter>,
+    );
 
     fireEvent.click(await screen.findByRole("button", { name: "个人教学班 (1)" }));
     fireEvent.click(await screen.findByText("竞赛辅导班"));
@@ -105,5 +110,20 @@ describe("ClassesPage", () => {
     const addedButton = await screen.findByRole("button", { name: "已添加" });
     expect(addedButton).toBeDisabled();
     expect(screen.queryByRole("button", { name: "添加" })).not.toBeInTheDocument();
+  });
+
+  it("returns from the personal classes page to the school roster", async () => {
+    render(
+      <MemoryRouter initialEntries={["/classes"]}>
+        <Routes>
+          <Route path="/classes" element={<ClassesPage personalOnly />} />
+          <Route path="/admin/classes" element={<div>班级与学生页面</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "返回班级与学生" }));
+
+    expect(await screen.findByText("班级与学生页面")).toBeInTheDocument();
   });
 });
