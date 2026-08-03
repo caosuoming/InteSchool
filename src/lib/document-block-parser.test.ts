@@ -265,6 +265,48 @@ describe("document block parser", () => {
     });
   });
 
+  it("treats numbered sub-question detail markers as analysis", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "18. 已知函数 f(x)，完成下列各问。",
+        "答案与解析",
+        "18. 【答案】（1）命题成立；（2）x=2。",
+        "【小问1详解】先证明函数在区间上单调。",
+        "小问2详解：再代入边界条件求得 x=2。",
+        "【小问３详解】最后检验结果满足原条件。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      answer: "（1）命题成立；（2）x=2。",
+      analysis: [
+        "先证明函数在区间上单调。",
+        "再代入边界条件求得 x=2。",
+        "最后检验结果满足原条件。",
+      ].join("\n"),
+    });
+  });
+
+  it("recognizes numbered sub-question detail markers in inline answer regions", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 已知函数 f(x)，完成两个小问。",
+        "答案：（1）递增；（2）最小值为 0。",
+        "【小问1详解】由导数恒正可知函数递增。",
+        "小问2详解 根据单调性可得最小值为 0。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      answer: "（1）递增；（2）最小值为 0。",
+      analysis: "由导数恒正可知函数递增。\n根据单调性可得最小值为 0。",
+    });
+  });
+
   it("maps compact answer keys from a trailing 答案 section", () => {
     const blocks = parseDocumentBlocks(
       [

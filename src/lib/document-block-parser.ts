@@ -69,10 +69,16 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function keywordPattern(keywords: string[]): RegExp | null {
-  const alternatives = [...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean))]
-    .sort((left, right) => right.length - left.length)
-    .map(escapeRegex);
+function keywordPattern(
+  keywords: string[],
+  rawAlternatives: string[] = [],
+): RegExp | null {
+  const alternatives = [
+    ...rawAlternatives,
+    ...[...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean))]
+      .sort((left, right) => right.length - left.length)
+      .map(escapeRegex),
+  ];
   return alternatives.length ? new RegExp(`^(?:${alternatives.join("|")})\\s*[:：]?\\s*`) : null;
 }
 
@@ -318,6 +324,7 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
 }
 
 const builtInTrailingAnalysisKeywords = ["详解", "【详解】"];
+const numberedSubQuestionAnalysisMarkerSource = String.raw`(?:(?:【|［|\[|\(|（)\s*)?小问\s*(?:第\s*)?(?:（|\()?\s*(?:[\d０-９]{1,3}|[零〇一二三四五六七八九十百两]+)\s*(?:）|\))?\s*详解(?:\s*(?:】|］|\]|\)|）))?`;
 const builtInAnalysisAsSummaryKeywords = ["分析", "【分析】", "分析："];
 
 function isAnalysisAsSummaryKeyword(keyword: string): boolean {
@@ -357,10 +364,16 @@ function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
   }));
 }
 
-function fieldSearchPattern(keywords: string[]): RegExp | null {
-  const alternatives = [...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean))]
-    .sort((left, right) => right.length - left.length)
-    .map(escapeRegex);
+function fieldSearchPattern(
+  keywords: string[],
+  rawAlternatives: string[] = [],
+): RegExp | null {
+  const alternatives = [
+    ...rawAlternatives,
+    ...[...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean))]
+      .sort((left, right) => right.length - left.length)
+      .map(escapeRegex),
+  ];
   return alternatives.length ? new RegExp(`(?:${alternatives.join("|")})\\s*[:：]?\\s*`, "g") : null;
 }
 
@@ -424,12 +437,15 @@ function parseTrailingSolutions(
   ];
   const patterns: Array<[Exclude<QuestionField, "content">, RegExp | null]> = [
     ["answer", fieldSearchPattern(config.answerKeywords)],
-    ["analysis", fieldSearchPattern(analysisKeywords)],
+    [
+      "analysis",
+      fieldSearchPattern(analysisKeywords, [numberedSubQuestionAnalysisMarkerSource]),
+    ],
     ["summary", fieldSearchPattern(categorizedKeywords.summaryKeywords)],
   ];
   const anchoredPatterns = [
     keywordPattern(config.answerKeywords),
-    keywordPattern(analysisKeywords),
+    keywordPattern(analysisKeywords, [numberedSubQuestionAnalysisMarkerSource]),
     keywordPattern(categorizedKeywords.summaryKeywords),
   ];
   const solutions: TrailingSolution[] = [];
@@ -580,7 +596,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   const blocks: DocumentBlock[] = [];
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
   const answerPattern = keywordPattern(config.answerKeywords);
-  const analysisPattern = keywordPattern(categorizedKeywords.analysisKeywords);
+  const analysisPattern = keywordPattern(
+    [...categorizedKeywords.analysisKeywords, ...builtInTrailingAnalysisKeywords],
+    [numberedSubQuestionAnalysisMarkerSource],
+  );
   const summaryPattern = keywordPattern(categorizedKeywords.summaryKeywords);
   let currentBlock: Partial<DocumentBlock> = {};
   let currentQuestionField: QuestionField = "content";

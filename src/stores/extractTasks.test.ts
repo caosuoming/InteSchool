@@ -95,7 +95,7 @@ describe("extract task store", () => {
     ]);
   });
 
-  it("limits active background extraction to ten documents", () => {
+  it("limits active background extraction to two documents", () => {
     mocks.getLecture.mockImplementation(() => new Promise(() => undefined));
 
     for (let index = 0; index < MAX_CONCURRENT_EXTRACT_TASKS; index += 1) {
@@ -106,7 +106,7 @@ describe("extract task store", () => {
     expect(useExtractTasksStore.getState().tasks).toHaveLength(MAX_CONCURRENT_EXTRACT_TASKS);
     expect(mocks.toastWarning).toHaveBeenCalledWith(
       "并行拆解任务已达上限",
-      expect.stringContaining("最多同时处理 10 个文档"),
+      expect.stringContaining("最多同时处理 2 个文档"),
     );
   });
 
