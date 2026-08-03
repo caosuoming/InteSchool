@@ -100,4 +100,53 @@ describe("generateExamAssignments", () => {
     }));
     expect(() => generateExamAssignments(constrained, context)).toThrow(/考场容量不足/);
   });
+
+  it("separates checked subjects and combines the remaining subjects", () => {
+    const mixed = input("combination");
+    mixed.separateSubjects = ["物理"];
+
+    const assignments = generateExamAssignments(mixed, context);
+
+    expect(assignments).toHaveLength(4);
+    expect(assignments.filter((item) => item.sessionKey === "subject:物理")).toHaveLength(2);
+    expect(assignments.filter((item) => item.sessionKey === "combined")).toHaveLength(2);
+    expect(assignments.find((item) => item.studentId === "student-1" && item.sessionKey === "combined")?.subjectLabel).toBe("化学");
+  });
+
+  it("does not create seats for students marked absent", () => {
+    const absent = input("combination");
+    absent.studentSubjects = absent.studentSubjects.map((selection) => selection.studentId === "student-1"
+      ? { ...selection, absent: true }
+      : selection);
+
+    const assignments = generateExamAssignments(absent, context);
+
+    expect(assignments).toHaveLength(2);
+    expect(assignments.some((item) => item.studentId === "student-1")).toBe(false);
+  });
+
+  it("uses the latest grade rank as the seat order when requested", () => {
+    const ranked = input("combination");
+    ranked.seatOrder = "previousRank";
+    ranked.rooms = [{ id: "room-a", name: "第一考场", number: "A01", location: "教学楼 101", capacity: 3 }];
+    ranked.classRules = ranked.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+    const rankedContext: ExamArrangementContext = {
+      ...context,
+      previousGradeRanks: {
+        "student-1": 2,
+        "student-2": 3,
+        "student-3": 1,
+      },
+    };
+
+    const assignments = generateExamAssignments(ranked, rankedContext);
+
+    expect(assignments.find((item) => item.studentId === "student-3")?.seatNo).toBe(1);
+    expect(assignments.find((item) => item.studentId === "student-1")?.seatNo).toBe(2);
+    expect(assignments.find((item) => item.studentId === "student-2")?.seatNo).toBe(3);
+    expect(assignments[0]).toMatchObject({ roomNumber: "A01", roomLocation: "教学楼 101" });
+  });
 });

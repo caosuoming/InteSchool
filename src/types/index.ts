@@ -382,10 +382,17 @@ export interface GradeCohort {
 // ============ 考场安排 ============
 
 export type ExamArrangementMode = "combination" | "subject";
+export type ExamSubjectSetupMode = "all" | "selection";
+export type ExamSeatOrder = "random" | "previousRank";
 
 export interface ExamRoomConfig {
   id: string;
+  /** 兼容旧方案；新方案中与 number 保持一致。 */
   name: string;
+  /** 展示在座位表和桌贴上的考场号。 */
+  number?: string;
+  /** 实际考试地点，例如教学楼与教室。 */
+  location?: string;
   capacity: number;
 }
 
@@ -400,6 +407,8 @@ export interface ExamClassRoomRule {
 export interface ExamStudentSubjectSelection {
   studentId: string;
   subjects: string[];
+  /** 弃考学生不生成任何座位。 */
+  absent?: boolean;
 }
 
 export interface ExamSeatAssignment {
@@ -415,6 +424,8 @@ export interface ExamSeatAssignment {
   sessionKey: string;
   roomId: string;
   roomName: string;
+  roomNumber?: string;
+  roomLocation?: string;
   seatNo: number;
   admissionNo: string;
 }
@@ -424,8 +435,17 @@ export interface ExamArrangementInput {
   cohortKey: string;
   name: string;
   examDate?: string;
+  /** 旧方案兼容字段；新方案使用 separateSubjects 表达混合编排。 */
   mode: ExamArrangementMode;
+  /** 全部学科，或语数外加选科组合。 */
+  subjectSetupMode?: ExamSubjectSetupMode;
   subjects: string[];
+  /** 学生选科名称对应的实际考试科目。 */
+  selectionSubjects?: Record<string, string[]>;
+  /** 勾选的科目单独排考场，其余科目合并为一个场次。 */
+  separateSubjects?: string[];
+  /** 随机排座或按最近一次考试年级名次排座。 */
+  seatOrder?: ExamSeatOrder;
   rooms: ExamRoomConfig[];
   classRules: ExamClassRoomRule[];
   studentSubjects: ExamStudentSubjectSelection[];
@@ -445,6 +465,8 @@ export interface ExamArrangementContext {
   cohort: GradeCohort;
   classes: SchoolClass[];
   students: Student[];
+  /** 最近一次同年级考试的年级名次。 */
+  previousGradeRanks?: Record<string, number>;
 }
 
 export interface GradeTeacherOption {
