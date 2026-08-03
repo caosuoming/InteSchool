@@ -1,4 +1,5 @@
 import type { GradeExam, GradeImportRow } from "../types/index.js";
+import type { GradeClassAverageReport } from "./grade-class-average.js";
 import { buildGradeReportTable } from "./grade-reports.js";
 import {
   ASSIGNABLE_GRADE_SUBJECTS,
@@ -381,4 +382,88 @@ export async function exportGradeExam(exam: GradeExam): Promise<void> {
 
   const safeName = exam.name.replace(/[\\/:*?"<>|]/g, "_");
   await writeXlsxFile(sheets).toFile(`${safeName}_成绩统计.xlsx`);
+}
+
+export async function exportGradeClassAverageReport(report: GradeClassAverageReport): Promise<void> {
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const border = { borderStyle: "thin" as const, borderColor: "#9CA3AF" };
+  const textCell = (value: string | number | null, options: Record<string, unknown> = {}) => ({
+    value: value ?? undefined,
+    type: typeof value === "number" ? Number : String,
+    align: typeof value === "number" ? "right" as const : "center" as const,
+    alignVertical: "center" as const,
+    height: 22,
+    ...border,
+    ...options,
+  });
+  const rows: Array<Array<ReturnType<typeof textCell>>> = [];
+  rows.push([
+    textCell(report.title, { fontWeight: "bold", fontSize: 16, align: "left" }),
+    ...Array.from({ length: report.subjects.length + 1 }, () => textCell(null)),
+    textCell(report.reportDate.replace(/-/g, "."), { fontWeight: "bold" }),
+  ]);
+  rows.push(["类别", "班级", "班主任 / 人数", ...report.subjects, "总分平均"].map((value) => textCell(value, {
+    fontWeight: "bold",
+    backgroundColor: "#F3F4F6",
+  })));
+
+  report.groups.forEach((group) => {
+    group.rows.forEach((row) => {
+      if (report.options.showTeacherRows) {
+        rows.push([
+          textCell(group.category),
+          textCell(row.classLabel),
+          textCell(row.homeroomTeachers.join("、")),
+          ...report.subjects.map((subject) => textCell(row.subjectTeachers[subject]?.join("、") || "")),
+          textCell(null),
+        ]);
+      }
+      rows.push([
+        textCell(report.options.showTeacherRows ? "" : group.category),
+        textCell(row.classLabel),
+        textCell(`${row.studentCount} 人`),
+        ...report.subjects.map((subject) => textCell(row.subjectAverages[subject])),
+        textCell(row.totalAverage, { fontWeight: "bold" }),
+      ]);
+    });
+    if (group.rows.length > 1 && report.options.showGroupDifference) {
+      rows.push([
+        textCell(group.category),
+        textCell("分差", { fontWeight: "bold" }),
+        textCell(""),
+        ...report.subjects.map((subject) => textCell(group.difference.subjectValues[subject])),
+        textCell(group.difference.totalValue, { fontWeight: "bold" }),
+      ]);
+    }
+    if (group.rows.length > 1 && report.options.showGroupAverage) {
+      rows.push([
+        textCell(group.category),
+        textCell(`平均（${group.rows.map((row) => row.classLabel).join("、")}）`, { fontWeight: "bold" }),
+        textCell(""),
+        ...report.subjects.map((subject) => textCell(group.average.subjectValues[subject], { fontWeight: "bold" })),
+        textCell(group.average.totalValue, { fontWeight: "bold" }),
+      ]);
+    }
+  });
+  if (report.options.showOverallAverage) {
+    rows.push([
+      textCell("全校平均", { fontWeight: "bold" }),
+      textCell(""),
+      textCell(""),
+      ...report.subjects.map((subject) => textCell(report.overallAverage.subjectValues[subject], { fontWeight: "bold" })),
+      textCell(report.overallAverage.totalValue, { fontWeight: "bold" }),
+    ]);
+  }
+
+  const safeName = report.title.replace(/[\\/:*?"<>|]/g, "_") || "班级平均分统计表";
+  await writeXlsxFile(rows, {
+    columns: [
+      { width: 16 },
+      { width: 14 },
+      { width: 18 },
+      ...report.subjects.map(() => ({ width: 14 })),
+      { width: 14 },
+    ],
+    stickyRowsCount: 2,
+  }).toFile(`${safeName}.xlsx`);
 }

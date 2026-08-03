@@ -19,6 +19,7 @@ import { gradeService } from "@/services/grade";
 import type {
   GradeCohort,
   GradeCohortSettings,
+  GradeExam,
   GradeExamSettings,
   GradeImportContext,
 } from "@/types";
@@ -38,6 +39,7 @@ import {
 } from "@/lib/grade-statistics";
 import { GradeSettingsEditor } from "@/pages/students/GradeSettingsEditor";
 import { GradeImportWizard } from "@/pages/students/GradeImportWizard";
+import { GradeClassAverageTable } from "@/pages/students/GradeClassAverageTable";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { GRADE_SUBJECT_OPTIONS } from "@/lib/grade-spreadsheet";
 
@@ -163,6 +165,8 @@ function GradePreprocessing({
 }) {
   const [context, setContext] = useState<GradeImportContext | null>(null);
   const [record, setRecord] = useState<GradeCohortSettings | null>(null);
+  const [exams, setExams] = useState<GradeExam[]>([]);
+  const [selectedExamId, setSelectedExamId] = useState("");
   const [subjects, setSubjects] = useState<string[]>([]);
   const [draft, setDraft] = useState<GradeExamSettings | null>(null);
   const [copySource, setCopySource] = useState("");
@@ -175,15 +179,18 @@ function GradePreprocessing({
     if (!cohortKey) {
       setContext(null);
       setRecord(null);
+      setExams([]);
+      setSelectedExamId("");
       setSubjects([]);
       setDraft(null);
       return;
     }
     setLoading(true);
     try {
-      const [nextContext, nextRecord] = await Promise.all([
+      const [nextContext, nextRecord, nextExams] = await Promise.all([
         gradeService.getImportContext(schoolId, cohortKey),
         gradeService.getCohortSettings(schoolId, cohortKey),
+        gradeService.listExams(schoolId, cohortKey),
       ]);
       const nextSubjects = nextRecord?.subjects?.length
         ? nextRecord.subjects
@@ -209,6 +216,10 @@ function GradePreprocessing({
       );
       setContext(nextContext);
       setRecord(nextRecord);
+      setExams(nextExams);
+      setSelectedExamId((current) => (
+        nextExams.some((item) => item.id === current) ? current : nextExams[0]?.id || ""
+      ));
       setSubjects(nextSubjects);
       setDraft(nextSettings);
       setCopySource("");
@@ -227,6 +238,24 @@ function GradePreprocessing({
     () => cohorts.filter((item) => item.key !== cohortKey),
     [cohortKey, cohorts],
   );
+  const selectedExam = useMemo(
+    () => exams.find((item) => item.id === selectedExamId) || exams[0] || null,
+    [exams, selectedExamId],
+  );
+  const classAverageTemplate = useMemo(
+    () => draft?.templates.find((item) => item.kind === "classAverage") || null,
+    [draft?.templates],
+  );
+
+  const handleImported = (exam: GradeExam) => {
+    setImportOpen(false);
+    setExams((current) => [exam, ...current.filter((item) => item.id !== exam.id)]);
+    setSelectedExamId(exam.id);
+    setContext((current) => current ? {
+      ...current,
+      sampleRecords: exam.records.slice(0, 8),
+    } : current);
+  };
 
   const toggleSubject = (subject: string) => {
     if (!context || !draft) return;
@@ -259,7 +288,12 @@ function GradePreprocessing({
         subjects,
         draft,
       );
+      const refreshedExams = await gradeService.listExams(schoolId, cohortKey);
       setRecord(saved);
+      setExams(refreshedExams);
+      setSelectedExamId((current) => (
+        refreshedExams.some((item) => item.id === current) ? current : refreshedExams[0]?.id || ""
+      ));
       setSubjects(saved.subjects);
       setDraft(structuredClone(saved.settings));
       toast.success("年级预处理配置已保存", "该年级已有考试已按新配置重新计算");
@@ -379,6 +413,49 @@ function GradePreprocessing({
         <Card className="p-4"><TableProperties className="mb-2 h-5 w-5 text-purple-600" /><div className="font-medium text-sm">成绩模板</div><div className="mt-1 text-xs text-ink-500">{draft.templates.filter((item) => item.enabled).length} 个启用模板</div></Card>
       </div>
 
+      {exams.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={<TableProperties className="h-8 w-8" />}
+            title="尚未上传该年级成绩"
+            description="导入成绩后，系统会在这里自动生成可调整的班级平均分统计表。"
+            action={(
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload className="h-4 w-4" />导入成绩
+              </Button>
+            )}
+          />
+        </Card>
+      ) : (
+        <>
+          <Card className="p-4">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,26rem)_1fr] md:items-end">
+              <Select
+                label="班级平均分数据来源"
+                value={selectedExam?.id || ""}
+                onChange={(event) => setSelectedExamId(event.target.value)}
+                options={exams.map((exam) => ({
+                  value: exam.id,
+                  label: `${exam.name}${exam.examDate ? `（${exam.examDate}）` : ""}`,
+                }))}
+              />
+              <div className="text-xs text-ink-500 md:pb-2">
+                已上传 {exams.length} 次考试；切换考试只更换统计数据，表格布局和教师配置仍按当前年级配置复用。
+              </div>
+            </div>
+          </Card>
+          {selectedExam && classAverageTemplate && (
+            <GradeClassAverageTable
+              exam={selectedExam}
+              settings={draft}
+              template={classAverageTemplate}
+              context={context}
+              onChange={setDraft}
+            />
+          )}
+        </>
+      )}
+
       <GradeSettingsEditor
         settings={draft}
         subjects={subjects}
@@ -392,7 +469,7 @@ function GradePreprocessing({
         teacherId={teacherId}
         cohorts={cohorts}
         onClose={() => setImportOpen(false)}
-        onImported={() => setImportOpen(false)}
+        onImported={handleImported}
       />
     </div>
   );

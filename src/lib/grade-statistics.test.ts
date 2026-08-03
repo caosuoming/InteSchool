@@ -204,6 +204,33 @@ describe("grade statistics", () => {
     });
   });
 
+  it("normalizes editable class-average table options", () => {
+    const settings = buildDefaultGradeSettings(["数学"], ["class-1", "class-2"]);
+    const template = settings.templates.find((item) => item.kind === "classAverage")!;
+    template.classAverageOptions = {
+      title: "  期末平均分表  ",
+      reportDate: "2026/01/27",
+      classOrder: ["class-2", "removed-class"],
+      hiddenClassIds: ["class-1", "removed-class"],
+      classCategories: { "class-1": "  强基班  ", "removed-class": "旧班级" },
+      classLabels: { "class-2": "  二班  " },
+      showTeacherRows: false,
+    };
+
+    const normalized = normalizeGradeSettings(settings, ["数学"], ["class-1", "class-2"]);
+    const options = normalized.templates.find((item) => item.kind === "classAverage")?.classAverageOptions;
+
+    expect(options).toMatchObject({
+      title: "期末平均分表",
+      classOrder: ["class-2", "class-1"],
+      hiddenClassIds: ["class-1"],
+      classCategories: { "class-1": "强基班" },
+      classLabels: { "class-2": "二班" },
+      showTeacherRows: false,
+    });
+    expect(options?.reportDate).toBeUndefined();
+  });
+
   it("assigns elective scores and produces grade and class competition ranks", () => {
     const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1", "class-2"]);
     const records = calculateGradeRecords(baseRecords, ["数学", "化学"], settings);

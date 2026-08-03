@@ -1,5 +1,6 @@
 import type {
   GradeBandRule,
+  GradeClassAverageOptions,
   GradeClassSubjectSetting,
   GradeExamSettings,
   GradeScoreRecord,
@@ -209,6 +210,42 @@ export function validateAssignmentRules(rules: GradeBandRule[]): void {
   });
 }
 
+function normalizeClassAverageOptions(
+  options: GradeClassAverageOptions,
+  classSet: Set<string>,
+): GradeClassAverageOptions {
+  const knownClassIds = [...classSet];
+  const requestedOrder = unique(options.classOrder || []).filter((classId) => classSet.has(classId));
+  const normalizeLabels = (values: Record<string, string> | undefined, maxLength: number) => Object.fromEntries(
+    Object.entries(values || {})
+      .filter(([classId]) => classSet.has(classId))
+      .map(([classId, value]) => [classId, value.trim().slice(0, maxLength)])
+      .filter(([, value]) => Boolean(value)),
+  );
+  const optionalBoolean = (value: unknown): boolean | undefined => (
+    typeof value === "boolean" ? value : undefined
+  );
+  const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(options.reportDate || "")
+    ? options.reportDate
+    : undefined;
+
+  return {
+    title: options.title?.trim().slice(0, 120) || undefined,
+    reportDate,
+    classOrder: [
+      ...requestedOrder,
+      ...knownClassIds.filter((classId) => !requestedOrder.includes(classId)),
+    ],
+    hiddenClassIds: unique(options.hiddenClassIds || []).filter((classId) => classSet.has(classId)),
+    classCategories: normalizeLabels(options.classCategories, 30),
+    classLabels: normalizeLabels(options.classLabels, 30),
+    showTeacherRows: optionalBoolean(options.showTeacherRows),
+    showGroupDifference: optionalBoolean(options.showGroupDifference),
+    showGroupAverage: optionalBoolean(options.showGroupAverage),
+    showOverallAverage: optionalBoolean(options.showOverallAverage),
+  };
+}
+
 export function normalizeGradeSettings(
   settings: GradeExamSettings,
   subjects: string[],
@@ -299,6 +336,9 @@ export function normalizeGradeSettings(
     if (item.kind === "customTable" && columns?.length === 0) {
       throw new Error(`模板“${item.name || index + 1}”至少需要一列`);
     }
+    const classAverageOptions = item.kind === "classAverage" && item.classAverageOptions
+      ? normalizeClassAverageOptions(item.classAverageOptions, classSet)
+      : undefined;
     return {
       ...item,
       id,
@@ -309,6 +349,7 @@ export function normalizeGradeSettings(
         ? Math.floor(item.bestElectiveCount)
         : undefined,
       columns,
+      classAverageOptions,
     };
   });
 
