@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { MathHtml } from "@/components/ui/MathHtml";
-import { cn, getOptionsGridCols } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 
 interface ExtractedQuestionContentProps {
   number?: number;
@@ -59,7 +60,7 @@ export function ExtractedQuestionContent({
         <div className={cn(
           "mt-2 grid gap-2",
           number !== undefined && "pl-6",
-          getOptionsGridCols(options.length),
+          getQuestionOptionGridColumns(options),
         )}>
           {options.map((option, index) => {
             const optionLabel = String.fromCharCode(65 + index);
