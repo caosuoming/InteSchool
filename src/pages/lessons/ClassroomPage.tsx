@@ -475,6 +475,9 @@ export default function ClassroomPage() {
 
   const openLesson = (lesson: LessonCourseware) => {
     setAllLessonsOpen(false);
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      void document.documentElement.requestFullscreen().catch(() => undefined);
+    }
     setPresenting(lesson);
   };
 

@@ -170,6 +170,13 @@ describe("ClassroomPage", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: vi.fn(() => ({
+        clearRect: vi.fn(),
+        drawImage: vi.fn(),
+      })),
+    });
     localStorage.clear();
     sessionStorage.clear();
     fullscreenElement = null;
@@ -261,7 +268,7 @@ describe("ClassroomPage", () => {
     expect(await screen.findByText("订正上一周数学周练")).toBeInTheDocument();
   });
 
-  it("switches to the lesson tab and displays published courseware", async () => {
+  it("switches to the lesson tab and starts published courseware in fullscreen presentation mode", async () => {
     const user = userEvent.setup();
     renderPage();
 
@@ -270,6 +277,11 @@ describe("ClassroomPage", () => {
 
     expect(await screen.findByText("函数图像")).toBeInTheDocument();
     expect(screen.getByText("全屏上课")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /函数图像/ }));
+
+    expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalled();
+    expect(await screen.findByText("课件暂无页面")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出全屏" })).toBeInTheDocument();
   });
 
   it("keeps the subject rail available before any lesson is published", async () => {
