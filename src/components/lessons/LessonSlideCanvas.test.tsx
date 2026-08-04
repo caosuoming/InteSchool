@@ -142,4 +142,43 @@ describe("LessonSlideCanvas", () => {
       }),
     ]));
   });
+
+  it("renders formulas while editing and stores compact LaTeX after blur", () => {
+    const onElementsChange = vi.fn();
+    const formulaElement: LessonSlideElement = {
+      id: "formula-1",
+      kind: "text",
+      content: "集合 $\\{x\\mid 0\\le x<5\\}$",
+      x: 10,
+      y: 15,
+      width: 60,
+      height: 16,
+      fontSize: 28,
+      textAlign: "left",
+    };
+
+    const { container } = render(
+      <LessonSlideCanvas
+        elements={[formulaElement]}
+        editable
+        selectedElementId="formula-1"
+        onSelectElement={vi.fn()}
+        onElementsChange={onElementsChange}
+      >
+        <div>基础课件内容</div>
+      </LessonSlideCanvas>,
+    );
+
+    const editor = container.querySelector<HTMLElement>("[contenteditable='true']");
+    expect(editor?.querySelector(".katex")).not.toBeNull();
+    expect(editor?.textContent).not.toContain("$\\{x\\mid 0\\le x<5\\}$");
+
+    fireEvent.blur(editor!);
+    expect(onElementsChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "formula-1",
+        content: "集合 $\\{x\\mid 0\\le x<5\\}$",
+      }),
+    ]);
+  });
 });

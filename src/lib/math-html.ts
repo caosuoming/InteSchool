@@ -98,6 +98,42 @@ export function renderMathHtml(content: string): string {
   return template.innerHTML;
 }
 
+/**
+ * Converts rendered formula wrappers inside an editable rich-text fragment
+ * back to the compact dollar-delimited LaTeX stored by InteSchool.
+ *
+ * Formula placeholders are restored after reading `innerHTML` so operators
+ * such as `<` remain valid LaTeX instead of being persisted as `&lt;`.
+ */
+export function serializeMathHtml(content: string): string {
+  if (!content) return "";
+
+  const template = document.createElement("template");
+  template.innerHTML = content;
+  const replacements = new Map<string, string>();
+
+  template.content
+    .querySelectorAll<HTMLElement>(".katex-formula[data-latex]")
+    .forEach((formula, index) => {
+      const latex = formula.dataset.latex;
+      if (latex === undefined) return;
+
+      let placeholder = `\uE000INTESCHOOL_MATH_${index}\uE001`;
+      while (content.includes(placeholder) || replacements.has(placeholder)) {
+        placeholder += "_";
+      }
+      const delimiter = formula.classList.contains("katex-formula-block") ? "$$" : "$";
+      replacements.set(placeholder, `${delimiter}${latex}${delimiter}`);
+      formula.replaceWith(document.createTextNode(placeholder));
+    });
+
+  let serialized = template.innerHTML;
+  for (const [placeholder, formula] of replacements) {
+    serialized = serialized.split(placeholder).join(formula);
+  }
+  return serialized.normalize("NFC");
+}
+
 function applyDocumentImageLayouts(root: DocumentFragment): void {
   const images = root.querySelectorAll<HTMLImageElement>("img");
   for (const image of images) {

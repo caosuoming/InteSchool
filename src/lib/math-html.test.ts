@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { containsMathDelimiter, renderMathHtml } from "./math-html";
+import { containsMathDelimiter, renderMathHtml, serializeMathHtml } from "./math-html";
 
 describe("renderMathHtml", () => {
   it("renders inline formulas in plain question text", () => {
@@ -126,5 +126,25 @@ describe("containsMathDelimiter", () => {
   it("recognizes formulas but ignores escaped dollar signs", () => {
     expect(containsMathDelimiter("$x$")).toBe(true);
     expect(containsMathDelimiter("价格为 \\$5")).toBe(false);
+  });
+});
+
+describe("serializeMathHtml", () => {
+  it("restores editable inline and block formulas to dollar-delimited LaTeX", () => {
+    const rendered = renderMathHtml(
+      "集合 $\\{x\\mid 0\\le x<5\\}$<br>结论：$$A\\cap B$$",
+    );
+
+    expect(serializeMathHtml(rendered)).toBe(
+      "集合 $\\{x\\mid 0\\le x<5\\}$<br>结论：$$A\\cap B$$",
+    );
+  });
+
+  it("preserves surrounding rich text while removing expanded KaTeX markup", () => {
+    const rendered = renderMathHtml("<strong>已知</strong> $x^2=1$");
+    const serialized = serializeMathHtml(rendered);
+
+    expect(serialized).toBe("<strong>已知</strong> $x^2=1$");
+    expect(serialized).not.toContain("class=\"katex\"");
   });
 });
