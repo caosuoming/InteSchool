@@ -718,16 +718,6 @@ export default function ClassroomPage() {
               </aside>
 
               <section className="flex min-w-0 flex-1 flex-col">
-                <div className="flex flex-shrink-0 items-center gap-3 border-b border-neutral-800 px-4 py-3 sm:px-5">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400 text-lg font-bold text-neutral-950">
-                    {selectedLessonSubject.slice(0, 1)}
-                  </div>
-                  <div className="min-w-0">
-                    <h2 className="truncate text-lg font-semibold">{selectedLessonSubject}</h2>
-                    <div className="mt-0.5 text-[10px] text-neutral-500">{selectedLessons.length} 份已推送课件</div>
-                  </div>
-                </div>
-
                 <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5">
                   {selectedLessons.length === 0 ? (
                     <div className="flex h-full min-h-52 flex-col items-center justify-center text-center">

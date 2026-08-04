@@ -276,6 +276,8 @@ describe("ClassroomPage", () => {
     await user.click(screen.getByRole("button", { name: /^上课/ }));
 
     expect(await screen.findByText("函数图像")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "数学" })).not.toBeInTheDocument();
+    expect(screen.queryByText("1 份已推送课件")).not.toBeInTheDocument();
     expect(screen.getByText("全屏上课")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /函数图像/ }));
 
