@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { FileText } from "lucide-react";
-import { BasketMaterialListItem, OriginalFileRow, QuestionListItem, ResourceCard } from "@/pages/resources/MyResourcesPage";
+import {
+  BasketMaterialListItem,
+  LinkedResourceRow,
+  OriginalFileRow,
+  QuestionListItem,
+  ResourceCard,
+} from "@/pages/resources/MyResourcesPage";
 import type { Material, Question } from "@/types";
 
 vi.mock("@/components/ui/MathHtml", () => ({
@@ -65,12 +71,35 @@ describe("OriginalFileRow", () => {
       />,
     );
 
+    expect(screen.getByText("原稿：")).toBeInTheDocument();
     expect(screen.getByText("期末数学试卷.docx")).toBeInTheDocument();
-    expect(screen.getByText("期末数学试卷.docx").parentElement).toHaveClass("ml-4");
+    expect(screen.getByText("期末数学试卷.docx").closest("div")).toHaveClass("ml-4");
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["查看", "下载"]);
     expect(screen.queryByText("原稿备份")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    expect(onView).toHaveBeenCalledOnce();
+  });
+});
+
+describe("LinkedResourceRow", () => {
+  it("labels and opens a generated courseware link", () => {
+    const onView = vi.fn();
+
+    render(
+      <LinkedResourceRow
+        label="课件"
+        title="函数单元测验（上课课件）"
+        icon={FileText}
+        onView={onView}
+      />,
+    );
+
+    expect(screen.getByText("课件：")).toBeInTheDocument();
+    expect(screen.getByText("函数单元测验（上课课件）")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", {
+      name: "查看课件：函数单元测验（上课课件）",
+    }));
     expect(onView).toHaveBeenCalledOnce();
   });
 });

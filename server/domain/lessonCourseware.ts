@@ -1,4 +1,5 @@
 import type {
+  Courseware,
   LessonCourseware,
   LessonCoursewareFilter,
   LessonDocumentBlock,
@@ -495,9 +496,51 @@ export interface LessonCoursewareInput {
   sourceType: "examPaper" | "lecture" | "courseware" | "manual";
   sourceId?: string;
   sourceTitle?: string;
+  libraryCoursewareId?: string;
   coursewareMode?: "editable" | "direct";
   slides: LessonSlide[];
   classIds: string[];
+}
+
+function generatedCoursewareContent(
+  sourceType: "examPaper" | "lecture",
+  sourceTitle: string,
+  slideCount: number,
+): string {
+  const sourceLabel = sourceType === "examPaper" ? "试卷" : "讲义";
+  return `由${sourceLabel}《${sourceTitle}》生成的上课课件，共 ${slideCount} 页。`;
+}
+
+function saveGeneratedCoursewareToLibrary(
+  lesson: LessonCourseware,
+  libraryCoursewareId: string,
+  sourceType: "examPaper" | "lecture",
+  sourceId: string,
+  sourceTitle: string,
+): void {
+  const now = lesson.createdAt;
+  const courseware: Courseware = {
+    id: libraryCoursewareId,
+    teacherId: lesson.teacherId,
+    schoolId: lesson.schoolId,
+    title: lesson.title,
+    description: lesson.description,
+    chapterIds: lesson.chapterIds,
+    knowledgePointIds: lesson.knowledgePointIds,
+    grade: lesson.grade,
+    schoolYear: lesson.schoolYear,
+    semester: lesson.semester || "上学期",
+    type: "other",
+    content: generatedCoursewareContent(sourceType, sourceTitle, lesson.slides.length),
+    lessonCoursewareId: lesson.id,
+    sourceResourceType: sourceType,
+    sourceResourceId: sourceId,
+    sourceResourceTitle: sourceTitle,
+    tags: ["上课课件"],
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.update("coursewares", (list) => [courseware, ...list]);
 }
 
 export const lessonCoursewareService = {
@@ -587,6 +630,7 @@ export const lessonCoursewareService = {
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       sourceTitle: input.sourceTitle,
+      libraryCoursewareId: input.libraryCoursewareId,
       coursewareMode: input.coursewareMode,
       slides: input.slides,
       classIds,
@@ -619,6 +663,31 @@ export const lessonCoursewareService = {
       }),
     );
     if (!updated) throw new Error("课件不存在");
+    const linkedSourceType = updated.sourceType;
+    if (updated.libraryCoursewareId
+      && (linkedSourceType === "examPaper" || linkedSourceType === "lecture")) {
+      const linkedLesson = updated;
+      db.update("coursewares", (list) => list.map((courseware) => (
+        courseware.id === linkedLesson.libraryCoursewareId
+          ? {
+            ...courseware,
+            title: linkedLesson.title,
+            description: linkedLesson.description,
+            chapterIds: linkedLesson.chapterIds,
+            knowledgePointIds: linkedLesson.knowledgePointIds,
+            grade: linkedLesson.grade,
+            schoolYear: linkedLesson.schoolYear,
+            semester: linkedLesson.semester || "上学期",
+            content: generatedCoursewareContent(
+              linkedSourceType,
+              linkedLesson.sourceTitle || courseware.sourceResourceTitle || linkedLesson.title,
+              linkedLesson.slides.length,
+            ),
+            updatedAt: linkedLesson.updatedAt,
+          }
+          : courseware
+      )));
+    }
     return updated;
   },
 
@@ -706,7 +775,8 @@ export const lessonCoursewareService = {
       ...(bodySlides.length > 0 ? bodySlides : documentBlockSlides(documentBlocks)),
     ];
 
-    return this.createCourseware(teacherId, schoolId, {
+    const libraryCoursewareId = genId("cw");
+    const lesson = await this.createCourseware(teacherId, schoolId, {
       title: `${examPaper.title}（上课课件）`,
       chapterIds: examPaper.chapterIds,
       knowledgePointIds: examPaper.knowledgePointIds,
@@ -716,9 +786,18 @@ export const lessonCoursewareService = {
       sourceType: "examPaper",
       sourceId: examPaper.id,
       sourceTitle: examPaper.title,
+      libraryCoursewareId,
       slides,
       classIds: [],
     });
+    saveGeneratedCoursewareToLibrary(
+      lesson,
+      libraryCoursewareId,
+      "examPaper",
+      examPaper.id,
+      examPaper.title,
+    );
+    return lesson;
   },
 
   /**
@@ -765,7 +844,8 @@ export const lessonCoursewareService = {
     });
     if (slides.length === 1) slides.push(...documentBlockSlides(documentBlocks));
 
-    return this.createCourseware(teacherId, schoolId, {
+    const libraryCoursewareId = genId("cw");
+    const lesson = await this.createCourseware(teacherId, schoolId, {
       title: `${lecture.title}（上课课件）`,
       chapterIds: lecture.chapterIds,
       knowledgePointIds: lecture.knowledgePointIds,
@@ -775,9 +855,18 @@ export const lessonCoursewareService = {
       sourceType: "lecture",
       sourceId: lecture.id,
       sourceTitle: lecture.title,
+      libraryCoursewareId,
       slides,
       classIds: [],
     });
+    saveGeneratedCoursewareToLibrary(
+      lesson,
+      libraryCoursewareId,
+      "lecture",
+      lecture.id,
+      lecture.title,
+    );
+    return lesson;
   },
 
   async createFromCourseware(

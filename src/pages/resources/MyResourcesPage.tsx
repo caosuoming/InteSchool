@@ -225,8 +225,9 @@ export function OriginalFileRow({
   return (
     <div className="ml-4 flex min-w-0 items-center gap-3 rounded-lg bg-ink-50/60 px-3 py-2 text-sm">
       <FileIcon className="h-4 w-4 flex-shrink-0 text-ink-400" />
-      <span className="min-w-0 flex-1 truncate text-ink-600" title={displayName}>
-        {displayName}
+      <span className="min-w-0 flex-1 truncate text-ink-600">
+        <span className="font-medium text-ink-500">原稿：</span>
+        <span title={displayName}>{displayName}</span>
       </span>
       <div className="flex flex-shrink-0 items-center gap-3 text-xs">
         <button
@@ -244,6 +245,44 @@ export function OriginalFileRow({
           iconClassName="h-3.5 w-3.5"
         />
       </div>
+    </div>
+  );
+}
+
+interface LinkedResourceRowProps {
+  label: "原稿" | "课件";
+  title: string;
+  icon: typeof FileText;
+  onView: () => void;
+}
+
+export function LinkedResourceRow({
+  label,
+  title,
+  icon: ResourceIcon,
+  onView,
+}: LinkedResourceRowProps) {
+  return (
+    <div className="ml-4 flex min-w-0 items-center gap-3 rounded-lg bg-ink-50/60 px-3 py-2 text-sm">
+      <ResourceIcon className="h-4 w-4 flex-shrink-0 text-ink-400" />
+      <button
+        type="button"
+        className="min-w-0 flex-1 truncate text-left text-ink-600 transition-colors hover:text-ink-900"
+        onClick={onView}
+        title={title}
+      >
+        <span className="font-medium text-ink-500">{label}：</span>
+        <span>{title}</span>
+      </button>
+      <button
+        type="button"
+        className="inline-flex flex-shrink-0 items-center gap-1 text-xs text-ink-600 transition-colors hover:text-ink-900"
+        onClick={onView}
+        aria-label={`查看${label}：${title}`}
+      >
+        <Eye className="h-3.5 w-3.5" />
+        查看
+      </button>
     </div>
   );
 }
@@ -476,6 +515,33 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   );
   const allVisibleQuestionsSelected = visibleBasketQuestions.length > 0
     && visibleBasketQuestions.every((question) => selectedQuestionIds.has(question.id));
+  const generatedCoursewaresBySource = useMemo(() => {
+    const result = new Map<string, Courseware[]>();
+    coursewares.forEach((courseware) => {
+      if (!courseware.sourceResourceType || !courseware.sourceResourceId) return;
+      const key = `${courseware.sourceResourceType}:${courseware.sourceResourceId}`;
+      result.set(key, [...(result.get(key) || []), courseware]);
+    });
+    return result;
+  }, [coursewares]);
+
+  const openLinkedCourseware = useCallback((courseware: Courseware) => {
+    navigate(courseware.lessonCoursewareId
+      ? `/my-lessons/${courseware.lessonCoursewareId}/edit`
+      : `/coursewares/${courseware.id}`);
+  }, [navigate]);
+  const renderGeneratedCoursewareRows = (
+    sourceType: "examPaper" | "lecture",
+    sourceId: string,
+  ) => (generatedCoursewaresBySource.get(`${sourceType}:${sourceId}`) || []).map((courseware) => (
+    <LinkedResourceRow
+      key={courseware.id}
+      label="课件"
+      title={courseware.title}
+      icon={Presentation}
+      onView={() => openLinkedCourseware(courseware)}
+    />
+  ));
 
   const loadTeacherDonations = useCallback(async () => {
     if (!teacher) return;
@@ -2372,6 +2438,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         }
                       }}
                     />
+                    {renderGeneratedCoursewareRows("lecture", mainLecture.id)}
                     {item.originalFileUrl && !hasExtractCopy && isExtracted && (
                       <div className="flex items-center gap-3 text-xs flex-wrap pl-4">
                         <div className="flex items-center gap-2">
@@ -2411,8 +2478,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 return (
                   <div key={item.id} className="space-y-2">
                     {hasExtractCopy && extractCopies.map((copy) => (
-                      <ResourceCard
-                        key={copy.id}
+                      <div key={copy.id} className="space-y-2">
+                        <ResourceCard
                         {...batchSelectionCardProps("examPaper", copy.id)}
                         title={copy.title}
                         titleActions={hasCompletedLesson("examPaper", copy.id)
@@ -2460,7 +2527,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             toast.error("添加失败", err instanceof Error ? err.message : undefined);
                           }
                         }}
-                      />
+                        />
+                        {renderGeneratedCoursewareRows("examPaper", copy.id)}
+                      </div>
                     ))}
                     {!hasExtractCopy && (
                       <>
@@ -2540,6 +2609,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             }
                           }}
                         />
+                        {renderGeneratedCoursewareRows("examPaper", item.id)}
                         {item.originalFileUrl && isExtracted && (
                           <div className="flex items-center gap-3 text-xs flex-wrap pl-1">
                             <div className="flex items-center gap-2">
@@ -2598,8 +2668,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
               {/* 课件库 */}
               {activeTab === "courseware" && (paginatedResourceData as Courseware[]).map((item) => (
-                <ResourceCard
-                  key={item.id}
+                <div key={item.id} className="space-y-2">
+                  <ResourceCard
                   {...batchSelectionCardProps("courseware", item.id)}
                   title={item.title}
                   description={item.description}
@@ -2617,10 +2687,21 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   basketResourceType="courseware"
                   basketResourceId={item.id}
                   onBasketChanged={loadAll}
-                  onClick={() => item.type === "ppt"
-                    ? void openCoursewareInWps(item)
-                    : navigate(`/coursewares/${item.id}`)}
-                  primaryActions={item.type === "ppt" ? (
+                  onClick={() => item.lessonCoursewareId
+                    ? openLinkedCourseware(item)
+                    : item.type === "ppt"
+                      ? void openCoursewareInWps(item)
+                      : navigate(`/coursewares/${item.id}`)}
+                  primaryActions={item.lessonCoursewareId ? (
+                    <Button
+                      variant="gold"
+                      size="sm"
+                      onClick={() => openLinkedCourseware(item)}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      编辑课件
+                    </Button>
+                  ) : item.type === "ppt" ? (
                     <>
                       <Button
                         variant="gold"
@@ -2645,7 +2726,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     </>
                   ) : undefined}
                   alwaysShowActions
-                  showAddToLesson={item.type !== "ppt"}
+                  showAddToLesson={!item.lessonCoursewareId && item.type !== "ppt"}
                   onAddToLesson={async () => {
                     if (!teacher) return;
                     try {
@@ -2665,7 +2746,18 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   onRename={(title) => handleRenameResource("courseware", item.id, title)}
                   onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                   onDuplicate={() => openDuplicate("courseware", item.id, item.title)}
-                />
+                  />
+                  {item.sourceResourceType && item.sourceResourceId && (
+                    <LinkedResourceRow
+                      label="原稿"
+                      title={item.sourceResourceTitle || "源文档"}
+                      icon={item.sourceResourceType === "examPaper" ? FileSpreadsheet : FileText}
+                      onView={() => navigate(item.sourceResourceType === "examPaper"
+                        ? `/exam-papers/${item.sourceResourceId}/preview`
+                        : `/lectures/${item.sourceResourceId}/preview`)}
+                    />
+                  )}
+                </div>
               ))}
 
               {/* 素材库 */}
