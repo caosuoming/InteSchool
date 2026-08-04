@@ -103,6 +103,16 @@ const question = {
   updatedAt: timestamp,
 } as Question;
 
+const secondQuestion = {
+  ...question,
+  id: "question-2",
+  type: "essay",
+  stem: "第二个项目的附属题目",
+  options: undefined,
+  answer: "证明略",
+  analysis: "使用定义证明。",
+} as Question;
+
 const paper = {
   id: "paper-1",
   teacherId: teacher.id,
@@ -180,6 +190,16 @@ function renderPage() {
   );
 }
 
+function renderEditorPage() {
+  return render(
+    <MemoryRouter initialEntries={[`/exam-papers/${paper.id}`]}>
+      <Routes>
+        <Route path="/exam-papers/:id" element={<ExamPaperEditorPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe("ExamPaperEditorPage preview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -230,6 +250,88 @@ describe("ExamPaperEditorPage preview", () => {
       id: paper.id,
       title: paper.title,
       contentBlocks: paper.contentBlocks,
+    });
+  });
+});
+
+describe("ExamPaperEditorPage structured editor", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listBaskets.mockResolvedValue([]);
+    mocks.listAllClasses.mockResolvedValue([]);
+    mocks.listSchoolClasses.mockResolvedValue([]);
+    mocks.listPersonalClasses.mockResolvedValue([]);
+    mocks.listStudentsBySchool.mockResolvedValue([]);
+    mocks.listPublications.mockResolvedValue([]);
+    mocks.listExamPaperTypes.mockResolvedValue([]);
+    mocks.listSettings.mockResolvedValue([]);
+    mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
+
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      questions: [
+        paper.questions[0],
+        {
+          id: "paper-question-2",
+          questionId: secondQuestion.id,
+          type: secondQuestion.type,
+          stem: secondQuestion.stem,
+          answer: secondQuestion.answer,
+          analysis: secondQuestion.analysis,
+          score: 8,
+        },
+      ],
+      contentBlocks: [
+        { id: "title-block", type: "documentTitle", content: "文档原始标题" },
+        { id: "group-1", type: "groupTitle", content: "项目一" },
+        {
+          id: "question-block-1",
+          type: "question",
+          content: question.stem,
+          questionId: question.id,
+          examPaperQuestionId: "paper-question-1",
+        },
+        { id: "group-2", type: "heading", content: "项目二" },
+        {
+          id: "question-block-2",
+          type: "question",
+          content: secondQuestion.stem,
+          questionId: secondQuestion.id,
+          examPaperQuestionId: "paper-question-2",
+        },
+      ],
+    });
+    mocks.listQuestions.mockResolvedValue([question, secondQuestion]);
+  });
+
+  it("keeps paper properties on one desktop row and moves a project with its questions", async () => {
+    renderEditorPage();
+
+    const projectOneInput = await screen.findByDisplayValue<HTMLInputElement>("项目一");
+    expect(projectOneInput.labels).toHaveLength(0);
+
+    const metadataGrid = screen.getByLabelText("年级").parentElement?.parentElement;
+    expect(metadataGrid).toHaveClass("lg:grid-cols-5");
+    for (const label of ["学年", "学期", "试卷类型", "考试时长（分钟）"]) {
+      expect(screen.getByLabelText(label).parentElement?.parentElement).toBe(metadataGrid);
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "项目一整体下移" }));
+
+    await waitFor(() => {
+      const projectOne = screen.getByDisplayValue("项目一").closest("section");
+      const projectTwo = screen.getByDisplayValue("项目二").closest("section");
+      const firstQuestion = screen.getByText(question.stem).closest("section");
+      const secondProjectQuestion = screen.getByText(secondQuestion.stem).closest("section");
+      expect(projectOne).not.toBeNull();
+      expect(projectTwo).not.toBeNull();
+      expect(firstQuestion).not.toBeNull();
+      expect(secondProjectQuestion).not.toBeNull();
+      expect(projectTwo!.compareDocumentPosition(secondProjectQuestion!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(secondProjectQuestion!.compareDocumentPosition(projectOne!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(projectOne!.compareDocumentPosition(firstQuestion!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(within(secondProjectQuestion!).getByText("题目 1")).toBeInTheDocument();
+      expect(within(firstQuestion!).getByText("题目 2")).toBeInTheDocument();
     });
   });
 });

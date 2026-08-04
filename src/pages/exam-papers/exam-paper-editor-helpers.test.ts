@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { AnswerRecord, ExtractedDocumentBlock } from "@/types";
+import type { AnswerRecord, ExamPaperQuestion, ExtractedDocumentBlock } from "@/types";
 import {
   buildQuestionProgress,
+  canMoveStructuredQuestionGroup,
   getCollapsedStructuredBlockIds,
   getHeadingInsertIndex,
   insertBlocksUnderHeading,
+  moveStructuredQuestionGroup,
+  orderPaperQuestionsByContentBlocks,
 } from "./exam-paper-editor-helpers";
 
 function record(overrides: Partial<AnswerRecord>): AnswerRecord {
@@ -66,6 +69,41 @@ describe("structured question groups", () => {
       "question-new",
       "group-2",
       "question-2",
+    ]);
+  });
+
+  it("moves a question group together with all of its descendant blocks", () => {
+    expect(canMoveStructuredQuestionGroup(blocks, "group-1", "up")).toBe(false);
+    expect(canMoveStructuredQuestionGroup(blocks, "group-1", "down")).toBe(true);
+
+    const moved = moveStructuredQuestionGroup(blocks, "group-1", "down");
+    expect(moved.map((block) => block.id)).toEqual([
+      "title",
+      "group-2",
+      "question-2",
+      "group-1",
+      "question-1",
+      "note-1",
+    ]);
+  });
+
+  it("keeps the paper question order aligned with the moved content blocks", () => {
+    const moved = moveStructuredQuestionGroup(blocks, "group-1", "down");
+    const questions: ExamPaperQuestion[] = [
+      { id: "paper-question-1", stem: "第一题", answer: "A", analysis: "", score: 5, type: "single" },
+      { id: "paper-question-2", stem: "第二题", answer: "", analysis: "", score: 8, type: "essay" },
+      { id: "paper-question-extra", stem: "未关联题", answer: "", analysis: "", score: 3, type: "short" },
+    ];
+    const blocksWithQuestionIds = moved.map((block) => {
+      if (block.id === "question-1") return { ...block, examPaperQuestionId: "paper-question-1" };
+      if (block.id === "question-2") return { ...block, examPaperQuestionId: "paper-question-2" };
+      return block;
+    });
+
+    expect(orderPaperQuestionsByContentBlocks(blocksWithQuestionIds, questions).map((question) => question.id)).toEqual([
+      "paper-question-2",
+      "paper-question-1",
+      "paper-question-extra",
     ]);
   });
 });
