@@ -52,6 +52,10 @@ import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { MaterialImageThumbnail, MaterialPreviewModal } from "@/components/resource/MaterialPreviewModal";
+import {
+  ConfigurableResourceActions,
+  type ConfigurableResourceAction,
+} from "@/components/resource/ConfigurableResourceActions";
 import { Badge } from "@/components/ui/Badge";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
@@ -2409,6 +2413,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       onDuplicate={() => openDuplicate("lecture", mainLecture.id, mainLecture.title)}
                       alwaysShowActions
                       compactActions
+                      configurableActions
+                      detailsPresentation="titleTooltip"
                       onConvertToExamPaper={async () => {
                         if (!teacher) return;
                         try {
@@ -2510,6 +2516,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         onDuplicate={() => openDuplicate("examPaper", copy.id, copy.title)}
                         showAddToLesson
                         alwaysShowActions
+                        compactActions
+                        configurableActions
+                        detailsPresentation="titleTooltip"
                         titleBadge={{ text: "正稿", variant: "gold" }}
                         onAddToLesson={async () => {
                           if (!teacher) return;
@@ -2591,6 +2600,34 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           onDuplicate={() => openDuplicate("examPaper", item.id, item.title)}
                           showAddToLesson
                           alwaysShowActions
+                          compactActions
+                          configurableActions
+                          detailsPresentation="titleTooltip"
+                          additionalActions={[
+                            {
+                              key: "answerSheet",
+                              label: "制作答题卡",
+                              icon: <Layout />,
+                              onClick: () => navigate(`/exam-papers/${item.id}/answer-sheet`),
+                              tone: "gold",
+                            },
+                            {
+                              key: "convertToLecture",
+                              label: "转讲义",
+                              icon: <FileText />,
+                              onClick: async () => {
+                                if (!teacher) return;
+                                try {
+                                  const result = await examPaperService.convertToLecture(item.id);
+                                  toast.success("已转换为讲义", "正在跳转到讲义编辑器...");
+                                  navigate(`/lectures/${result.lectureId}/edit`);
+                                } catch (err) {
+                                  toast.error("转换失败", err instanceof Error ? err.message : undefined);
+                                }
+                              },
+                              tone: "gold",
+                            },
+                          ]}
                           titleBadge={!isExtracted && item.originalFileUrl ? { text: "待拆解", variant: "amber" } : undefined}
                           onAddToLesson={async () => {
                             if (!teacher) return;
@@ -2625,33 +2662,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             <Badge variant="teal">已拆解</Badge>
                           </div>
                         )}
-                        <div className="mt-2 flex gap-2 flex-wrap">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => navigate(`/exam-papers/${item.id}/answer-sheet`)}
-                          >
-                            <Layout className="w-3.5 h-3.5" />
-                            制作答题卡
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={async () => {
-                              if (!teacher) return;
-                              try {
-                                const result = await examPaperService.convertToLecture(item.id);
-                                toast.success("已转换为讲义", "正在跳转到讲义编辑器...");
-                                navigate(`/lectures/${result.lectureId}/edit`);
-                              } catch (err) {
-                                toast.error("转换失败", err instanceof Error ? err.message : undefined);
-                              }
-                            }}
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            转讲义
-                          </Button>
-                        </div>
                       </>
                     )}
                     {hasExtractCopy && item.originalFileUrl && (
@@ -3501,9 +3511,12 @@ interface ResourceCardProps {
   onToggleSelection?: () => void;
   alwaysShowActions?: boolean;
   compactActions?: boolean;
+  configurableActions?: boolean;
+  detailsPresentation?: "inline" | "titleTooltip";
+  additionalActions?: ConfigurableResourceAction[];
 }
 
-export function ResourceCard({ title, titleActions, primaryActions, description, meta, content, updatedAt, onClick, onRename, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions }: ResourceCardProps) {
+export function ResourceCard({ title, titleActions, primaryActions, description, meta, content, updatedAt, onClick, onRename, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -3520,6 +3533,87 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
   const latestReflection = reflections?.[0];
   const actionButtonPadding = compactActions ? "p-1" : "p-1.5";
   const actionIconSize = compactActions ? "w-3.5 h-3.5" : "w-4 h-4";
+  const titleDetails = [
+    ...meta.map((item) => `${item.label}：${item.value}`),
+    `更新：${timeAgo(updatedAt)}`,
+  ].join("\n");
+  const resourceActions: ConfigurableResourceAction[] = [
+    ...(onClick ? [{
+      key: "view",
+      label: "查看/编辑",
+      icon: <Eye />,
+      onClick,
+    }] : []),
+    ...(onRename ? [{
+      key: "rename",
+      label: "修改名称",
+      ariaLabel: `修改名称：${title}`,
+      icon: <Pencil />,
+      onClick: () => {
+        setTitleDraft(title);
+        setRenaming(true);
+      },
+      disabled: renaming || savingTitle,
+      tone: "gold" as const,
+    }] : []),
+    ...((isImage || isKnowledgeBlock) ? [{
+      key: "preview",
+      label: isImage ? "预览图片" : knowledgeExpanded ? "收起知识块" : "展开知识块",
+      icon: <Eye />,
+      onClick: isImage ? handlePreviewOpen : toggleKnowledge,
+      tone: "gold" as const,
+    }] : []),
+    ...(onShare ? [{
+      key: "share",
+      label: "分享",
+      icon: <Share2 />,
+      onClick: onShare,
+      tone: "teal" as const,
+    }] : []),
+    ...(onAddToPrep ? [{
+      key: "addToPrep",
+      label: "添加到集体备课",
+      icon: <Users />,
+      onClick: onAddToPrep,
+      tone: "amber" as const,
+    }] : []),
+    ...(onExplanationVideo ? [{
+      key: "explanationVideo",
+      label: "讲解视频",
+      icon: <Video />,
+      onClick: onExplanationVideo,
+      tone: "violet" as const,
+    }] : []),
+    ...(showAddToLesson && onAddToLesson ? [{
+      key: "addToLesson",
+      label: "添加到上课",
+      icon: <PlayCircle />,
+      onClick: onAddToLesson,
+      tone: "gold" as const,
+    }] : []),
+    ...(onConvertToExamPaper ? [{
+      key: "convertToExamPaper",
+      label: "转试卷",
+      icon: <FileSpreadsheet />,
+      onClick: onConvertToExamPaper,
+      tone: "gold" as const,
+    }] : []),
+    ...(onDuplicate ? [{
+      key: "duplicate",
+      label: "创建副本",
+      icon: <Copy />,
+      onClick: onDuplicate,
+      tone: "indigo" as const,
+    }] : []),
+    ...additionalActions,
+    ...(onDelete ? [{
+      key: "delete",
+      label: "删除",
+      icon: <Trash2 />,
+      onClick: onDelete,
+      tone: "danger" as const,
+    }] : []),
+  ];
 
   useEffect(() => {
     if (!renaming) setTitleDraft(title);
@@ -3631,10 +3725,12 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
                 </div>
               ) : (
                 <div
-                  className={cn("font-medium text-ink-900 flex items-center gap-2", primaryClick && "cursor-pointer hover:text-gold-700")}
+                  data-testid="resource-card-title"
+                  className={cn("font-medium text-ink-900 flex min-w-0 items-center gap-2", primaryClick && "cursor-pointer hover:text-gold-700")}
                   onClick={primaryClick}
+                  title={detailsPresentation === "titleTooltip" ? titleDetails : undefined}
                 >
-                  <span>{title}</span>
+                  <span className="truncate">{title}</span>
                   {titleBadge && <Badge variant={titleBadge.variant}>{titleBadge.text}</Badge>}
                 </div>
               )}
@@ -3699,6 +3795,10 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
                 alwaysShowActions ? "opacity-100" : "opacity-0 group-hover:opacity-100",
               )}
             >
+            {configurableActions ? (
+              <ConfigurableResourceActions actions={resourceActions} compact={compactActions} />
+            ) : (
+              <>
             {onClick && (
               <button
                 onClick={onClick}
@@ -3791,23 +3891,27 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
                 <Trash2 className={actionIconSize} />
               </button>
             )}
+              </>
+            )}
             </div>
           </div>
         </div>
-        <div
-          data-testid="resource-card-details"
-          className="mt-2 flex w-full items-center gap-x-4 gap-y-1.5 text-xs text-ink-400"
-        >
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1.5">
-            {meta.map((m, i) => (
-              <span key={i}>
-                <span className="text-ink-300">{m.label}：</span>
-                <span className="text-ink-600">{m.value}</span>
-              </span>
-            ))}
+        {detailsPresentation === "inline" && (
+          <div
+            data-testid="resource-card-details"
+            className="mt-2 flex w-full items-center gap-x-4 gap-y-1.5 text-xs text-ink-400"
+          >
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1.5">
+              {meta.map((m, i) => (
+                <span key={i}>
+                  <span className="text-ink-300">{m.label}：</span>
+                  <span className="text-ink-600">{m.value}</span>
+                </span>
+              ))}
+            </div>
+            <span className="flex-shrink-0 text-ink-300">{timeAgo(updatedAt)}</span>
           </div>
-          <span className="flex-shrink-0 text-ink-300">{timeAgo(updatedAt)}</span>
-        </div>
+        )}
         {showAddToBasket && basketResourceType && basketResourceId && (
           <div className="mt-3 border-t border-ink-50 pt-3">
             <AddToBasketDropdown

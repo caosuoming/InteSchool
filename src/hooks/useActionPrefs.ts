@@ -1,91 +1,133 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const STORAGE_KEY = "question-action-prefs";
+const DEFAULT_STORAGE_KEY = "question-action-prefs";
+const EVENT_PREFIX = "inteschool-action-prefs:";
 
 export interface ActionPrefs {
-  /** 按钮显示顺序，按 key 排列 */
+  /** 按钮显示顺序，按 key 排列。 */
   order: string[];
-  /** 被折叠到"更多"菜单中的按钮 key */
+  /** 被折叠到“更多”菜单中的按钮 key。 */
   collapsed: string[];
 }
 
-const DEFAULT_PREFS: ActionPrefs = {
+export interface UseActionPrefsOptions {
+  storageKey?: string;
+  defaultPrefs?: ActionPrefs;
+}
+
+const DEFAULT_QUESTION_ACTION_PREFS: ActionPrefs = {
   order: ["addToBasket", "edit", "download", "replace", "share", "quickEdit", "delete"],
   collapsed: ["replace", "quickEdit"],
 };
 
-function loadPrefs(): ActionPrefs {
+function uniqueStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is string => typeof item === "string" && item.length > 0))];
+}
+
+function normalizePrefs(value: unknown, defaults: ActionPrefs): ActionPrefs {
+  if (!value || typeof value !== "object") return defaults;
+  const parsed = value as Partial<ActionPrefs>;
+  const storedOrder = uniqueStrings(parsed.order);
+  const order = [
+    ...storedOrder,
+    ...defaults.order.filter((key) => !storedOrder.includes(key)),
+  ];
+  const collapsed = Array.isArray(parsed.collapsed)
+    ? uniqueStrings(parsed.collapsed)
+    : defaults.collapsed;
+  return { order: order.length > 0 ? order : defaults.order, collapsed };
+}
+
+function loadPrefs(storageKey: string, defaults: ActionPrefs): ActionPrefs {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_PREFS;
-    const parsed = JSON.parse(raw) as ActionPrefs;
-    return {
-      order: Array.isArray(parsed.order) && parsed.order.length > 0 ? parsed.order : DEFAULT_PREFS.order,
-      collapsed: Array.isArray(parsed.collapsed) ? parsed.collapsed : DEFAULT_PREFS.collapsed,
-    };
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return defaults;
+    return normalizePrefs(JSON.parse(raw), defaults);
   } catch {
-    return DEFAULT_PREFS;
+    return defaults;
   }
 }
 
-function savePrefs(prefs: ActionPrefs) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    // 忽略存储错误
-  }
+function notifyPrefsChanged(storageKey: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(`${EVENT_PREFIX}${storageKey}`));
 }
 
-export function useActionPrefs() {
-  const [prefs, setPrefs] = useState<ActionPrefs>(DEFAULT_PREFS);
+function savePrefs(storageKey: string, prefs: ActionPrefs) {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(prefs));
+  } catch {
+    // 存储不可用时仍保留当前页面内的设置。
+  }
+  notifyPrefsChanged(storageKey);
+}
+
+export function useActionPrefs(options: UseActionPrefsOptions = {}) {
+  const storageKey = options.storageKey ?? DEFAULT_STORAGE_KEY;
+  const defaultPrefs = options.defaultPrefs ?? DEFAULT_QUESTION_ACTION_PREFS;
+  const normalizedDefaults = useMemo<ActionPrefs>(() => ({
+    order: [...defaultPrefs.order],
+    collapsed: [...defaultPrefs.collapsed],
+  }), [defaultPrefs]);
+  const [prefs, setPrefs] = useState<ActionPrefs>(normalizedDefaults);
+  const prefsRef = useRef(prefs);
+
+  const applyPrefs = useCallback((next: ActionPrefs) => {
+    prefsRef.current = next;
+    setPrefs(next);
+  }, []);
 
   useEffect(() => {
-    setPrefs(loadPrefs());
-  }, []);
+    const reload = () => applyPrefs(loadPrefs(storageKey, normalizedDefaults));
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === storageKey) reload();
+    };
+
+    reload();
+    window.addEventListener(`${EVENT_PREFIX}${storageKey}`, reload);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(`${EVENT_PREFIX}${storageKey}`, reload);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [applyPrefs, normalizedDefaults, storageKey]);
+
+  const commit = useCallback((next: ActionPrefs) => {
+    applyPrefs(next);
+    savePrefs(storageKey, next);
+  }, [applyPrefs, storageKey]);
 
   const update = useCallback((next: ActionPrefs) => {
-    setPrefs(next);
-    savePrefs(next);
-  }, []);
+    commit(normalizePrefs(next, normalizedDefaults));
+  }, [commit, normalizedDefaults]);
 
-  /** 将某个按钮移到折叠区 */
   const collapse = useCallback((key: string) => {
-    setPrefs((prev) => {
-      const next = {
-        order: prev.order,
-        collapsed: prev.collapsed.includes(key) ? prev.collapsed : [...prev.collapsed, key],
-      };
-      savePrefs(next);
-      return next;
+    const prev = prefsRef.current;
+    commit({
+      order: prev.order,
+      collapsed: prev.collapsed.includes(key) ? prev.collapsed : [...prev.collapsed, key],
     });
-  }, []);
+  }, [commit]);
 
-  /** 将某个按钮从折叠区移出 */
   const expand = useCallback((key: string) => {
-    setPrefs((prev) => {
-      const next = {
-        order: prev.order,
-        collapsed: prev.collapsed.filter((k) => k !== key),
-      };
-      savePrefs(next);
-      return next;
+    const prev = prefsRef.current;
+    commit({
+      order: prev.order,
+      collapsed: prev.collapsed.filter((item) => item !== key),
     });
-  }, []);
+  }, [commit]);
 
-  /** 移动按钮顺序 */
   const move = useCallback((key: string, direction: "left" | "right") => {
-    setPrefs((prev) => {
-      const order = [...prev.order];
-      const idx = order.indexOf(key);
-      if (idx === -1) return prev;
-      const targetIdx = direction === "left" ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= order.length) return prev;
-      [order[idx], order[targetIdx]] = [order[targetIdx], order[idx]];
-      const next = { ...prev, order };
-      savePrefs(next);
-      return next;
-    });
-  }, []);
+    const prev = prefsRef.current;
+    const order = [...prev.order];
+    const index = order.indexOf(key);
+    if (index === -1) return;
+    const targetIndex = direction === "left" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= order.length) return;
+    [order[index], order[targetIndex]] = [order[targetIndex], order[index]];
+    commit({ ...prev, order });
+  }, [commit]);
 
   return { prefs, update, collapse, expand, move };
 }
