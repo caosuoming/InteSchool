@@ -218,6 +218,10 @@ describe("platform resource donations", () => {
       title: "函数课件",
       type: "ppt",
       content: "",
+      lessonCoursewareId: "lesson-private",
+      sourceResourceType: "lecture",
+      sourceResourceId: "lecture-private",
+      sourceResourceTitle: "内部讲义",
       tags: [],
     });
     (appState.materials as Material[]).push({
@@ -250,8 +254,14 @@ describe("platform resource donations", () => {
         .toBe("函数测试（副本）");
       expect((appState.lectures as Lecture[]).find((item) => item.teacherId === "teacher-c")?.title)
         .toBe("函数讲义（副本）");
-      expect((appState.coursewares as Courseware[]).find((item) => item.teacherId === "teacher-c")?.title)
-        .toBe("函数课件（副本）");
+      expect((appState.coursewares as Courseware[]).find((item) => item.teacherId === "teacher-c"))
+        .toMatchObject({
+          title: "函数课件（副本）",
+          lessonCoursewareId: undefined,
+          sourceResourceType: undefined,
+          sourceResourceId: undefined,
+          sourceResourceTitle: undefined,
+        });
       expect((appState.materials as Material[]).find((item) => item.teacherId === "teacher-c")?.title)
         .toBe("函数素材（副本）");
     });

@@ -468,6 +468,23 @@ describe("courseware lesson flow", () => {
         type: "question",
         title: "第 19 题",
       });
+      expect(lesson.libraryCoursewareId).toBeTruthy();
+      const libraryCourseware = await coursewareService.getCourseware(lesson.libraryCoursewareId!);
+      expect(libraryCourseware).toMatchObject({
+        id: lesson.libraryCoursewareId,
+        lessonCoursewareId: lesson.id,
+        sourceResourceType: "examPaper",
+        sourceResourceId: paper.id,
+        sourceResourceTitle: paper.title,
+        title: lesson.title,
+        type: "other",
+        tags: ["上课课件"],
+      });
+      expect(libraryCourseware?.content).toContain("共 20 页");
+
+      await lessonCoursewareService.updateCourseware(lesson.id, { title: "函数检测课堂版" });
+      await expect(coursewareService.getCourseware(lesson.libraryCoursewareId!))
+        .resolves.toMatchObject({ title: "函数检测课堂版" });
     });
   });
 
@@ -665,6 +682,15 @@ describe("courseware lesson flow", () => {
         }),
         expect.objectContaining({ kind: "image", src: "/api/files/question-image" }),
       ]));
+      const libraryCourseware = await coursewareService.getCourseware(lesson.libraryCoursewareId!);
+      expect(libraryCourseware).toMatchObject({
+        lessonCoursewareId: lesson.id,
+        sourceResourceType: "lecture",
+        sourceResourceId: lecture.id,
+        sourceResourceTitle: lecture.title,
+        title: lesson.title,
+      });
+      expect(libraryCourseware?.content).toContain("由讲义");
     });
   });
 });

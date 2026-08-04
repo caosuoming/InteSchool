@@ -1020,6 +1020,14 @@ export interface Courseware {
   onlineAccessToken?: string;
   /** 绑定后的在线编辑地址，例如 WPS 在线文档共享链接。 */
   editorUrl?: string;
+  /** 从试卷或讲义生成的上课课件所对应的“我的上课”课件。 */
+  lessonCoursewareId?: string;
+  /** 生成该课件的源文档类型。 */
+  sourceResourceType?: "examPaper" | "lecture";
+  /** 生成该课件的源文档 ID；拆解文档指向正稿。 */
+  sourceResourceId?: string;
+  /** 源文档标题冗余，便于课件库直接展示原稿链接。 */
+  sourceResourceTitle?: string;
   tags: string[];
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
@@ -2064,6 +2072,8 @@ export interface LessonCourseware {
   sourceId?: string;
   /** 来源资源标题（冗余） */
   sourceTitle?: string;
+  /** 同步保存在课件库中的资源 ID。 */
+  libraryCoursewareId?: string;
   /** 课件库 PPT 的导入方式。 */
   coursewareMode?: "editable" | "direct";
   /** 课件页面列表 */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   Chapter,
+  Courseware,
   ExamPaper,
   KnowledgePoint,
   Lecture,
@@ -233,6 +234,59 @@ describe("independent school resource catalogs", () => {
       expect((state.chapters as Chapter[]).find((item) => item.id === copy.chapterIds[0])?.name).toBe("函数");
       expect((state.knowledgePoints as KnowledgePoint[]).find((item) => item.id === copy.knowledgePointIds[0])?.name).toBe("导数");
       expect(copy.chapterIds).not.toEqual(backup!.chapterIds);
+    });
+  });
+
+  it("restores courseware as an independent copy without private lesson links", async () => {
+    const state = baseState();
+    const courseware: Courseware = {
+      id: "courseware-a",
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      title: "函数课堂课件",
+      chapterIds: ["ch-function-a"],
+      knowledgePointIds: ["kp-derivative-a"],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期",
+      type: "other",
+      content: "由讲义生成",
+      lessonCoursewareId: "lesson-private",
+      sourceResourceType: "lecture",
+      sourceResourceId: "lecture-private",
+      sourceResourceTitle: "内部讲义",
+      tags: ["上课课件"],
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.coursewares = [courseware];
+
+    await runWithState(state, async () => {
+      const backup = await schoolBackupService.autoBackupForResource(
+        "school-a",
+        "teacher-a",
+        "courseware",
+        courseware.id,
+        ["class-b"],
+        "跨班级发布",
+      );
+      expect(backup).not.toBeNull();
+      state.coursewares = [];
+
+      const result = await schoolBackupService.saveAsOwnResource(
+        backup!.id,
+        teacher("teacher-b"),
+      );
+      const restored = (state.coursewares as Courseware[])
+        .find((item) => item.id === result.newResourceId);
+      expect(restored).toMatchObject({
+        title: "函数课堂课件（副本）",
+        teacherId: "teacher-b",
+        lessonCoursewareId: undefined,
+        sourceResourceType: undefined,
+        sourceResourceId: undefined,
+        sourceResourceTitle: undefined,
+      });
     });
   });
 

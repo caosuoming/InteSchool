@@ -7,7 +7,7 @@ import { reflectionService } from "./reflection.js";
 function matchFilter(c: Courseware, filter: ResourceFilter): boolean {
   if (filter.keyword) {
     const kw = filter.keyword.toLowerCase();
-    const haystack = `${c.title} ${c.description || ""} ${c.content}`.toLowerCase();
+    const haystack = `${c.title} ${c.description || ""} ${c.content} ${c.sourceResourceTitle || ""}`.toLowerCase();
     if (!haystack.includes(kw)) return false;
   }
   if (filter.chapterIds?.length) {
@@ -151,12 +151,38 @@ export const coursewareService = {
       }),
     );
     if (!updated) throw new Error("课件不存在");
+    if (updated.lessonCoursewareId) {
+      const linkedCourseware = updated;
+      db.update("lessonCoursewares", (list) => list.map((lesson) => (
+        lesson.id === linkedCourseware.lessonCoursewareId
+          ? {
+            ...lesson,
+            title: linkedCourseware.title,
+            description: linkedCourseware.description,
+            chapterIds: linkedCourseware.chapterIds,
+            knowledgePointIds: linkedCourseware.knowledgePointIds,
+            grade: linkedCourseware.grade,
+            schoolYear: linkedCourseware.schoolYear,
+            semester: linkedCourseware.semester || "上学期",
+            updatedAt: linkedCourseware.updatedAt,
+          }
+          : lesson
+      )));
+    }
     return updated;
   },
 
   async deleteCourseware(id: string): Promise<void> {
     await delay(200);
+    const courseware = db.read("coursewares").find((item) => item.id === id);
     db.update("coursewares", (list) => list.filter((c) => c.id !== id));
+    if (courseware?.lessonCoursewareId) {
+      db.update("lessonCoursewares", (list) => list.map((lesson) => (
+        lesson.id === courseware.lessonCoursewareId
+          ? { ...lesson, libraryCoursewareId: undefined }
+          : lesson
+      )));
+    }
   },
 
   /**
@@ -175,6 +201,10 @@ export const coursewareService = {
       ...source,
       id: genId("cw"),
       title: newTitle || `${source.title}（副本）`,
+      lessonCoursewareId: undefined,
+      sourceResourceType: undefined,
+      sourceResourceId: undefined,
+      sourceResourceTitle: undefined,
       onlineAccessToken: source.fileUrl ? randomUUID() : undefined,
       createdAt: now,
       updatedAt: now,
