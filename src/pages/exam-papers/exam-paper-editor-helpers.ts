@@ -1,4 +1,4 @@
-import type { AnswerRecord, ExtractedDocumentBlock } from "@/types";
+import type { AnswerRecord, ExamPaperQuestion, ExtractedDocumentBlock } from "@/types";
 
 export interface QuestionProgress {
   answeredCount: number;
@@ -103,5 +103,81 @@ export function insertBlocksUnderHeading(
     ...blocks.slice(0, insertIndex),
     ...insertedBlocks,
     ...blocks.slice(insertIndex),
+  ];
+}
+
+function getQuestionGroupStarts(blocks: ExtractedDocumentBlock[]): number[] {
+  return blocks.reduce<number[]>((starts, block, index) => {
+    if (isQuestionGroupBlock(block)) starts.push(index);
+    return starts;
+  }, []);
+}
+
+export function canMoveStructuredQuestionGroup(
+  blocks: ExtractedDocumentBlock[],
+  headingId: string,
+  direction: "up" | "down",
+): boolean {
+  const groupStarts = getQuestionGroupStarts(blocks);
+  const groupIndex = groupStarts.findIndex((index) => blocks[index].id === headingId);
+  if (groupIndex < 0) return false;
+  return direction === "up"
+    ? groupIndex > 0
+    : groupIndex < groupStarts.length - 1;
+}
+
+export function moveStructuredQuestionGroup(
+  blocks: ExtractedDocumentBlock[],
+  headingId: string,
+  direction: "up" | "down",
+): ExtractedDocumentBlock[] {
+  const groupStarts = getQuestionGroupStarts(blocks);
+  const groupIndex = groupStarts.findIndex((index) => blocks[index].id === headingId);
+  if (groupIndex < 0 || !canMoveStructuredQuestionGroup(blocks, headingId, direction)) {
+    return blocks;
+  }
+
+  const currentStart = groupStarts[groupIndex];
+  const currentEnd = groupStarts[groupIndex + 1] ?? blocks.length;
+
+  if (direction === "up") {
+    const previousStart = groupStarts[groupIndex - 1];
+    return [
+      ...blocks.slice(0, previousStart),
+      ...blocks.slice(currentStart, currentEnd),
+      ...blocks.slice(previousStart, currentStart),
+      ...blocks.slice(currentEnd),
+    ];
+  }
+
+  const nextStart = groupStarts[groupIndex + 1];
+  const nextEnd = groupStarts[groupIndex + 2] ?? blocks.length;
+  return [
+    ...blocks.slice(0, currentStart),
+    ...blocks.slice(nextStart, nextEnd),
+    ...blocks.slice(currentStart, nextStart),
+    ...blocks.slice(nextEnd),
+  ];
+}
+
+export function orderPaperQuestionsByContentBlocks(
+  blocks: ExtractedDocumentBlock[],
+  questions: ExamPaperQuestion[],
+): ExamPaperQuestion[] {
+  const questionsById = new Map(questions.map((question) => [question.id, question]));
+  const orderedIds = new Set<string>();
+  const orderedQuestions: ExamPaperQuestion[] = [];
+
+  blocks.forEach((block) => {
+    if (block.type !== "question" || !block.examPaperQuestionId) return;
+    const question = questionsById.get(block.examPaperQuestionId);
+    if (!question || orderedIds.has(question.id)) return;
+    orderedIds.add(question.id);
+    orderedQuestions.push(question);
+  });
+
+  return [
+    ...orderedQuestions,
+    ...questions.filter((question) => !orderedIds.has(question.id)),
   ];
 }

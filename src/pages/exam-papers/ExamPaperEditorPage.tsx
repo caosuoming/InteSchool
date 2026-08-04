@@ -42,9 +42,13 @@ import {
 } from "@/pages/exam-papers/extracted-document";
 import {
   buildQuestionProgress,
+  canMoveStructuredQuestionGroup,
   getCollapsedStructuredBlockIds,
   getHeadingInsertIndex,
   insertBlocksUnderHeading,
+  isQuestionGroupBlock,
+  moveStructuredQuestionGroup,
+  orderPaperQuestionsByContentBlocks,
   type QuestionProgress,
 } from "@/pages/exam-papers/exam-paper-editor-helpers";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
@@ -594,13 +598,22 @@ export default function ExamPaperEditorPage() {
   };
 
   const moveContentBlock = (index: number, direction: "up" | "down") => {
-    setContentBlocks((previous) => {
+    const block = contentBlocks[index];
+    if (!block) return;
+
+    let next: ExtractedDocumentBlock[];
+    if (isQuestionGroupBlock(block)) {
+      next = moveStructuredQuestionGroup(contentBlocks, block.id, direction);
+    } else {
       const target = direction === "up" ? index - 1 : index + 1;
-      if (target < 0 || target >= previous.length) return previous;
-      const next = [...previous];
+      if (target < 0 || target >= contentBlocks.length) return;
+      next = [...contentBlocks];
       [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
+    }
+
+    if (next === contentBlocks) return;
+    setContentBlocks(next);
+    setPaperQuestions((previous) => orderPaperQuestionsByContentBlocks(next, previous));
   };
 
   const removeContentBlock = (blockId: string) => {
@@ -1482,42 +1495,46 @@ export default function ExamPaperEditorPage() {
               <span className="font-semibold text-gold-700">{totalScore} 分</span>
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.8fr)_minmax(200px,1.6fr)_repeat(5,minmax(120px,1fr))]">
-            <Input label="文档名" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <Input label="描述" value={description} onChange={(e) => setDescription(e.target.value)} />
-            <Select
-              label="年级"
-              value={grade}
-              onChange={(e) => setGrade(e.target.value)}
-              options={includeCurrentOption(gradeOptions, grade)}
-            />
-            <Select
-              label="学年"
-              value={schoolYear}
-              onChange={(e) => setSchoolYear(e.target.value)}
-              options={includeCurrentOption(schoolYearOptions, schoolYear)}
-            />
-            <Select
-              label="学期"
-              value={semester}
-              onChange={(e) => setSemester(e.target.value as ResourceSemester)}
-              options={semesterOptions}
-            />
-            <Select
-              label="试卷类型"
-              value={typeId}
-              onChange={(e) => setTypeId(e.target.value)}
-              options={[
-                { value: "", label: "未设置" },
-                ...examPaperTypeOptions,
-              ]}
-            />
-            <Input
-              label="考试时长（分钟）"
-              type="number"
-              value={String(duration)}
-              onChange={(e) => setDuration(Number(e.target.value))}
-            />
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input label="文档名" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <Input label="描述" value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <Select
+                label="年级"
+                value={grade}
+                onChange={(e) => setGrade(e.target.value)}
+                options={includeCurrentOption(gradeOptions, grade)}
+              />
+              <Select
+                label="学年"
+                value={schoolYear}
+                onChange={(e) => setSchoolYear(e.target.value)}
+                options={includeCurrentOption(schoolYearOptions, schoolYear)}
+              />
+              <Select
+                label="学期"
+                value={semester}
+                onChange={(e) => setSemester(e.target.value as ResourceSemester)}
+                options={semesterOptions}
+              />
+              <Select
+                label="试卷类型"
+                value={typeId}
+                onChange={(e) => setTypeId(e.target.value)}
+                options={[
+                  { value: "", label: "未设置" },
+                  ...examPaperTypeOptions,
+                ]}
+              />
+              <Input
+                label="考试时长（分钟）"
+                type="number"
+                value={String(duration)}
+                onChange={(e) => setDuration(Number(e.target.value))}
+              />
+            </div>
           </div>
         </Card>
 
@@ -1589,6 +1606,12 @@ export default function ExamPaperEditorPage() {
                   const headingScore = isQuestionGroup
                     ? commonScoreUnderHeading(contentBlocks, paperQuestions, block.id)
                     : null;
+                  const canMoveUp = isQuestionGroup
+                    ? canMoveStructuredQuestionGroup(contentBlocks, block.id, "up")
+                    : blockIndex > 0;
+                  const canMoveDown = isQuestionGroup
+                    ? canMoveStructuredQuestionGroup(contentBlocks, block.id, "down")
+                    : blockIndex < contentBlocks.length - 1;
                   const label = block.type === "documentTitle"
                     ? "文档标题"
                     : block.type === "documentInfo" || block.type === "text"
@@ -1691,17 +1714,19 @@ export default function ExamPaperEditorPage() {
                         )}>
                           <button
                             onClick={() => moveContentBlock(blockIndex, "up")}
-                            disabled={blockIndex === 0}
+                            disabled={!canMoveUp}
                             className="p-1 text-ink-400 hover:text-gold-600 disabled:opacity-25"
-                            title="上移"
+                            aria-label={isQuestionGroup ? `${block.content}整体上移` : `${label}上移`}
+                            title={isQuestionGroup ? "整个项目上移" : "上移"}
                           >
                             <ChevronUp className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => moveContentBlock(blockIndex, "down")}
-                            disabled={blockIndex === contentBlocks.length - 1}
+                            disabled={!canMoveDown}
                             className="p-1 text-ink-400 hover:text-gold-600 disabled:opacity-25"
-                            title="下移"
+                            aria-label={isQuestionGroup ? `${block.content}整体下移` : `${label}下移`}
+                            title={isQuestionGroup ? "整个项目下移" : "下移"}
                           >
                             <ChevronDown className="h-4 w-4" />
                           </button>
@@ -1747,7 +1772,7 @@ export default function ExamPaperEditorPage() {
                         />
                       ) : isQuestionGroup ? (
                         <Input
-                          label="题型或项目名"
+                          aria-label="题型或项目名"
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
                         />
