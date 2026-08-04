@@ -14,6 +14,7 @@ interface LessonSlideCanvasProps {
   elements?: LessonSlideElement[];
   children: ReactNode;
   editable?: boolean;
+  allowTextEditing?: boolean;
   selectedElementId?: string | null;
   onSelectElement?: (id: string | null) => void;
   onElementsChange?: (elements: LessonSlideElement[]) => void;
@@ -52,6 +53,7 @@ export function LessonSlideCanvas({
   elements = [],
   children,
   editable = false,
+  allowTextEditing = editable,
   selectedElementId,
   onSelectElement,
   onElementsChange,
@@ -62,12 +64,12 @@ export function LessonSlideCanvas({
   const textElementRefs = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
-    if (!editable || !selectedElementId) return;
+    if (!editable || !allowTextEditing || !selectedElementId) return;
     const element = elements.find((item) => item.id === selectedElementId);
     if (element?.kind !== "text" || element.content) return;
     const editor = textElementRefs.current.get(selectedElementId);
     editor?.focus();
-  }, [editable, elements, selectedElementId]);
+  }, [allowTextEditing, editable, elements, selectedElementId]);
 
   const startInteraction = (
     event: ReactPointerEvent<HTMLDivElement>,
@@ -182,7 +184,7 @@ export function LessonSlideCanvas({
                 className="h-full w-full rounded-md object-contain"
               />
             ) : (
-              editable ? (
+              editable && allowTextEditing ? (
                 <div
                   ref={(node) => {
                     if (node) textElementRefs.current.set(element.id, node);
