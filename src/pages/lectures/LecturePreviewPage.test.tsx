@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LecturePreviewPage from "./LecturePreviewPage";
@@ -25,7 +25,7 @@ const lecture: Lecture = {
   id: "lecture-1",
   teacherId: "teacher-1",
   schoolId: "school-1",
-  title: "函数专题讲义",
+  title: "函数专题讲义_2026（拆解版）",
   description: "函数性质与典型例题",
   chapterIds: [],
   knowledgePointIds: [],
@@ -36,16 +36,23 @@ const lecture: Lecture = {
   studentIds: ["student-2"],
   sections: [
     {
+      id: "document-title",
+      title: "函数专题讲义",
+      type: "chapter",
+      content: "",
+      children: [],
+    },
+    {
       id: "column-1",
       title: "知识梳理",
       type: "chapter",
-      content: "先回顾函数的基本性质。",
+      content: "先回顾函数 $f(x)$ 的基本性质。",
       children: [
         {
           id: "knowledge-1",
           title: "单调性",
           type: "knowledge",
-          content: "在给定区间内判断函数增减。",
+          content: "在给定区间内判断函数的增减，满足 $x>0$。",
           children: [],
         },
       ],
@@ -65,6 +72,13 @@ const lecture: Lecture = {
           children: [],
         },
       ],
+    },
+  ],
+  contentBlocks: [
+    {
+      id: "block-title",
+      type: "documentTitle",
+      content: "函数专题讲义",
     },
   ],
   version: 1,
@@ -106,10 +120,10 @@ const question: Question = {
   teacherId: "teacher-1",
   schoolId: "school-1",
   type: "single",
-  stem: "函数 f(x)=x² 在哪个区间单调递增？",
-  options: ["(-∞,0]", "[0,+∞)", "R", "不存在"],
+  stem: "函数 $f(x)=x^2$ 在哪个区间单调递增？",
+  options: ["$(-\\infty,0]$", "$[0,+\\infty)$", "$\\mathbb{R}$", "不存在"],
   answer: "B",
-  analysis: "二次函数在非负区间单调递增。",
+  analysis: "二次函数 $f(x)=x^2$ 在非负区间单调递增。",
   summary: "函数单调性",
   chapterIds: [],
   knowledgePointIds: [],
@@ -146,29 +160,50 @@ describe("LecturePreviewPage", () => {
     vi.mocked(questionService.getQuestion).mockResolvedValue(question);
   });
 
-  it("renders the property bar and three-column preview workspace", async () => {
-    renderPage();
+  it("renders the simplified preview with a centered document title and formulas", async () => {
+    const { container } = renderPage();
 
-    expect(await screen.findByText("预览：函数专题讲义")).toBeInTheDocument();
+    expect(await screen.findByText("预览：函数专题讲义_2026（拆解版）")).toBeInTheDocument();
     expect(screen.getByText("讲义属性")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "栏目" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "栏目" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /整份讲义/ })).not.toBeInTheDocument();
     expect(screen.getByText("使用对象")).toBeInTheDocument();
     expect(screen.getByText("高一（1）班")).toBeInTheDocument();
     expect(screen.getByText("张同学")).toBeInTheDocument();
     expect(screen.getByText("李同学")).toBeInTheDocument();
     expect(screen.getByLabelText("纸张大小")).toHaveValue("A4");
-  });
 
-  it("switches the middle preview to a selected column", async () => {
-    renderPage();
-    await screen.findByText("预览：函数专题讲义");
-
-    fireEvent.click(screen.getByRole("button", { name: /例题精讲/ }));
+    const paper = screen.getByTestId("lecture-paper");
+    expect(within(paper).queryByText("函数专题讲义_2026（拆解版）")).not.toBeInTheDocument();
+    const documentTitle = within(paper).getByText("函数专题讲义");
+    expect(documentTitle.closest(".text-center")).not.toBeNull();
+    expect(within(paper).queryByText("单调性")).not.toBeInTheDocument();
+    expect(within(paper).getByText(/在给定区间内判断函数的增减/)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getAllByText("例题精讲").length).toBeGreaterThanOrEqual(2);
+      expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4);
     });
-    expect(await screen.findByText("函数 f(x)=x² 在哪个区间单调递增？")).toBeInTheDocument();
-    expect(screen.queryByText("先回顾函数的基本性质。")).not.toBeInTheDocument();
+  });
+
+  it("toggles answer and analysis by clicking the question stem", async () => {
+    renderPage();
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+
+    const questionStem = await screen.findByRole("button", { name: /显示答案与解析/ });
+    expect(screen.queryByText("较易")).not.toBeInTheDocument();
+    expect(screen.queryByText("单选")).not.toBeInTheDocument();
+    expect(screen.queryByText("展开答案与解析")).not.toBeInTheDocument();
+    expect(screen.queryByText("答案：")).not.toBeInTheDocument();
+
+    fireEvent.click(questionStem);
+
+    expect(screen.getByText("答案：")).toBeInTheDocument();
+    expect(screen.getByText("解析：")).toBeInTheDocument();
+    expect(questionStem).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(questionStem);
+    await waitFor(() => {
+      expect(screen.queryByText("答案：")).not.toBeInTheDocument();
+    });
   });
 });
