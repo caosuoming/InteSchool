@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExamArrangementContext, ExamArrangementInput } from "@/types";
-import { generateExamAssignments } from "./exam-arrangement";
+import { generateExamAssignments, summarizeExamGroups } from "./exam-arrangement";
 
 const context: ExamArrangementContext = {
   cohort: {
@@ -111,6 +111,47 @@ describe("generateExamAssignments", () => {
     expect(assignments.filter((item) => item.sessionKey === "subject:物理")).toHaveLength(2);
     expect(assignments.filter((item) => item.sessionKey === "combined")).toHaveLength(2);
     expect(assignments.find((item) => item.studentId === "student-1" && item.sessionKey === "combined")?.subjectLabel).toBe("化学");
+  });
+
+  it("summarizes the actual student count for every exam group", () => {
+    const mixed = input("combination");
+    mixed.separateSubjects = ["物理"];
+
+    expect(summarizeExamGroups(mixed, context)).toEqual([
+      {
+        key: "combined:化学",
+        sessionKey: "combined",
+        subjectLabel: "化学",
+        studentCount: 2,
+        classIds: ["class-1"],
+      },
+      {
+        key: "subject:物理",
+        sessionKey: "subject:物理",
+        subjectLabel: "物理",
+        studentCount: 2,
+        classIds: ["class-1", "class-2"],
+      },
+    ]);
+  });
+
+  it("uses the user-adjusted room mapping for each exam group", () => {
+    const mapped = input("combination");
+    mapped.classRules = mapped.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a", "room-b"], 化学: ["room-a", "room-b"] },
+    }));
+    mapped.groupRoomIds = {
+      "combined:物理|化学": ["room-b"],
+      "combined:化学": ["room-a"],
+      "combined:物理": ["room-a"],
+    };
+
+    const assignments = generateExamAssignments(mapped, context);
+
+    expect(assignments.find((item) => item.studentId === "student-1")?.roomId).toBe("room-b");
+    expect(assignments.find((item) => item.studentId === "student-2")?.roomId).toBe("room-a");
+    expect(assignments.find((item) => item.studentId === "student-3")?.roomId).toBe("room-a");
   });
 
   it("does not create seats for students marked absent", () => {

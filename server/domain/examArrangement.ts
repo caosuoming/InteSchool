@@ -29,6 +29,7 @@ function readArrangements(): ExamArrangement[] {
         item.separateSubjects ?? (item.mode === "subject" ? item.subjects : []),
       ),
       seatOrder: item.seatOrder || "random",
+      groupRoomIds: structuredClone(item.groupRoomIds || {}),
       rooms,
       studentSubjects: item.studentSubjects.map((selection) => ({
         ...selection,
@@ -100,6 +101,7 @@ export const examArrangementService = {
       selectionSubjects: structuredClone(input.selectionSubjects || {}),
       separateSubjects: structuredClone(separateSubjects),
       seatOrder: input.seatOrder || "random",
+      groupRoomIds: structuredClone(input.groupRoomIds || {}),
       rooms: input.rooms.map((room) => ({
         ...room,
         name: room.number || room.name,
@@ -135,6 +137,7 @@ export const examArrangementService = {
       selectionSubjects: structuredClone(preparedInput.selectionSubjects),
       separateSubjects: structuredClone(preparedInput.separateSubjects),
       seatOrder: preparedInput.seatOrder,
+      groupRoomIds: structuredClone(preparedInput.groupRoomIds),
       rooms: structuredClone(preparedInput.rooms),
       classRules: structuredClone(preparedInput.classRules),
       studentSubjects: structuredClone(preparedInput.studentSubjects),
