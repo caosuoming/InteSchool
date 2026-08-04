@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Send, Plus, Sparkles, FileText, BookOpen,
-  Trash2, GripVertical, ShoppingBasket, Library, Files,
+  Trash2, ShoppingBasket, Library, Files,
   GraduationCap, Users, Wand2, Loader2, X, ChevronDown, ChevronRight,
   Type, ListOrdered, CheckCircle2, Edit3, Eye,
   UserCheck, Award, Clock, Presentation, FileBox,
@@ -38,6 +38,7 @@ import { QuestionEditor } from "@/components/question/QuestionEditor";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
 import { ResourceCommentButton } from "@/components/prep/ResourceCommentButton";
+import { LectureSectionEditorRow } from "@/pages/lectures/LectureSectionEditorRow";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
   Lecture, LectureSection, Question, Basket, AnyClass, TreeNode,
@@ -669,7 +670,7 @@ export default function LectureEditorPage() {
     }
   };
 
-  const handleAddTextSection = () => {
+  const handleAddTextSection = (targetChapterId = selectedChapterId) => {
     const newSec: LectureSection = {
       id: `sec-${Date.now()}`,
       title: "新文本段落",
@@ -677,15 +678,15 @@ export default function LectureEditorPage() {
       content: "在此输入段落内容...",
       children: [],
     };
-    if (selectedChapterId) {
+    if (targetChapterId) {
       setSections((prev) =>
         prev.map((s) =>
-          s.id === selectedChapterId
+          s.id === targetChapterId
             ? { ...s, children: [...s.children, newSec] }
             : s,
         ),
       );
-      setOutlineExpanded((prev) => ({ ...prev, [selectedChapterId]: true }));
+      setOutlineExpanded((prev) => ({ ...prev, [targetChapterId]: true }));
     } else {
       setSections((prev) => [...prev, newSec]);
     }
@@ -1039,6 +1040,25 @@ export default function LectureEditorPage() {
         return { ...section, children };
       }),
     );
+  };
+
+  const handleUpdateSectionLabel = (sectionId: string, label: string, parentId?: string) => {
+    setSections((previous) => previous.map((section) => {
+      if (parentId && section.id === parentId) {
+        return {
+          ...section,
+          children: section.children.map((child) =>
+            child.id === sectionId
+              ? { ...child, customLabel: label || undefined }
+              : child,
+          ),
+        };
+      }
+      if (!parentId && section.id === sectionId) {
+        return { ...section, customLabel: label || undefined };
+      }
+      return section;
+    }));
   };
 
   const handleSaveSection = () => {
@@ -1731,26 +1751,26 @@ export default function LectureEditorPage() {
       {/* 根据版本类型显示不同内容 */}
       {currentVersionType === "extract" && (
         <div className="space-y-4">
-          {/* 顶部：讲义属性 */}
           <Card className="p-4">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-gold-600" />
                 <h3 className="font-serif font-semibold text-ink-900">讲义属性</h3>
               </div>
-              <div className="text-xs text-ink-400">
-                {sections.filter((section) => section.type === "chapter").length} 栏目 · {lectureQuestionIds.length} 题
+              <div className="flex items-center gap-4 text-xs text-ink-500">
+                <span>{sections.filter((section) => section.type === "chapter").length} 个栏目</span>
+                <span className="font-semibold text-gold-700">{lectureQuestionIds.length} 道题</span>
               </div>
             </div>
             <div className="grid md:grid-cols-2 xl:grid-cols-6 gap-3">
               <div className="xl:col-span-2">
-                <Input label="标题" value={title} onChange={(e) => setTitle(e.target.value)} />
+                <Input label="标题" value={title} onChange={(event) => setTitle(event.target.value)} />
               </div>
               <div className="xl:col-span-2">
                 <Textarea
                   label="描述"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(event) => setDescription(event.target.value)}
                   rows={1}
                   placeholder="讲义简介"
                 />
@@ -1758,25 +1778,25 @@ export default function LectureEditorPage() {
               <Select
                 label="适用年级"
                 value={grade}
-                onChange={(e) => setGrade(e.target.value)}
+                onChange={(event) => setGrade(event.target.value)}
                 options={includeCurrentOption(gradeOptions, grade)}
               />
               <Select
                 label="学年"
                 value={schoolYear}
-                onChange={(e) => setSchoolYear(e.target.value)}
+                onChange={(event) => setSchoolYear(event.target.value)}
                 options={includeCurrentOption(schoolYearOptions, schoolYear)}
               />
               <Select
                 label="学期"
                 value={semester}
-                onChange={(e) => setSemester(e.target.value as ResourceSemester)}
+                onChange={(event) => setSemester(event.target.value as ResourceSemester)}
                 options={semesterOptions}
               />
               <Select
                 label="讲义类型"
                 value={typeId}
-                onChange={(e) => setTypeId(e.target.value)}
+                onChange={(event) => setTypeId(event.target.value)}
                 options={[
                   { value: "", label: "未设置" },
                   ...lectureTypeOptions,
@@ -1850,203 +1870,374 @@ export default function LectureEditorPage() {
             </div>
           </Card>
 
-          <div className="grid xl:grid-cols-[250px_minmax(0,1fr)_300px] gap-4 items-start">
-            {/* 左侧：栏目 */}
-            <Card className="p-3 xl:sticky xl:top-4">
-              <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-ink-100">
-                <div className="flex items-center gap-2 min-w-0">
-                  <ListOrdered className="w-4 h-4 text-teal-500 flex-shrink-0" />
-                  <h3 className="font-serif font-semibold text-ink-900 text-sm">栏目</h3>
-                  <Badge variant="ink">{sections.filter((section) => section.type === "chapter").length}</Badge>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => setCreateColumnTemplateOpen(true)} className="p-1.5 rounded text-ink-500 hover:text-gold-700 hover:bg-gold-50" title="将当前栏目保存为模板">
-                    <Save className="w-3.5 h-3.5" />
-                  </button>
-                  <button type="button" onClick={() => setColumnTemplateOpen(true)} className="p-1.5 rounded text-ink-500 hover:text-gold-700 hover:bg-gold-50" title="从模板添加栏目">
-                    <LayoutTemplate className="w-3.5 h-3.5" />
-                  </button>
-                  <button type="button" onClick={handleAddChapter} className="p-1.5 rounded text-ink-500 hover:text-gold-700 hover:bg-gold-50" title="新建栏目">
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5 max-h-[620px] overflow-y-auto pr-1">
-                {sections.filter((section) => section.type === "chapter").length === 0 && (
-                  <div className="py-8 text-center text-xs text-ink-400">暂无栏目</div>
-                )}
-                {sections.map((section, sectionIndex) => {
-                  if (section.type !== "chapter") return null;
-                  const selected = selectedChapterId === section.id;
-                  return (
-                    <div key={section.id} className={cn("rounded-md border transition-colors", selected ? "border-gold-300 bg-gold-50/40" : "border-ink-100 bg-paper hover:border-ink-200")}>
-                      <div className="flex items-center gap-1 px-2 py-2">
-                        <GripVertical className="w-3.5 h-3.5 text-ink-300 flex-shrink-0" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedChapterId(section.id);
-                            setEditingSection(null);
-                            setOutlineExpanded((previous) => ({ ...previous, [section.id]: true }));
-                          }}
-                          className="flex-1 min-w-0 text-left"
-                        >
-                          <div className={cn("text-xs truncate", selected ? "font-medium text-gold-800" : "text-ink-700")}>{section.title}</div>
-                          <div className="text-[10px] text-ink-400 mt-0.5">{section.children.length} 个内容块</div>
-                        </button>
-                        <button type="button" onClick={() => handleMoveSection(sectionIndex, "up")} disabled={sectionIndex === 0} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="栏目上移">↑</button>
-                        <button type="button" onClick={() => handleMoveSection(sectionIndex, "down")} disabled={sectionIndex === sections.length - 1} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="栏目下移">↓</button>
-                        <button type="button" onClick={() => handleRemoveSection(section.id)} className="text-ink-300 hover:text-red-600" title="删除栏目">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {sections.some((section) => section.type !== "chapter") && (
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedChapterId(null); setEditingSection(null); }}
-                    className={cn("w-full rounded-md border px-2 py-2 text-left text-xs", selectedChapterId === null ? "border-gold-300 bg-gold-50/40 text-gold-800 font-medium" : "border-ink-100 text-ink-600 hover:border-ink-200")}
-                  >
-                    未归入栏目内容
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-1.5 pt-3 mt-3 border-t border-ink-100">
-                <Button variant="outline" size="sm" onClick={() => setColumnTemplateOpen(true)}><LayoutTemplate className="w-3.5 h-3.5" /> 模板</Button>
-                <Button variant="outline" size="sm" onClick={() => setCreateColumnTemplateOpen(true)}><Save className="w-3.5 h-3.5" /> 保存模板</Button>
-                <Button variant="gold" size="sm" onClick={handleAddChapter}><Plus className="w-3.5 h-3.5" /> 新建</Button>
-              </div>
-            </Card>
-
-            {/* 中间：当前栏目内容 */}
+          <div className="grid xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
             <Card className="min-w-0 p-4">
-              <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-ink-100">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-teal-500 flex-shrink-0" />
-                    <h3 className="font-serif font-semibold text-ink-900 truncate">{selectedColumn?.title || "未归入栏目内容"}</h3>
-                    <Badge variant="ink">v{lecture?.version || 1}</Badge>
-                  </div>
-                  <div className="text-xs text-ink-400 mt-1">{selectedColumn ? `${activeColumnSections.length} 个内容块` : "选择左侧栏目后添加知识块或题目"}</div>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-ink-100">
+                <div className="flex items-center gap-2">
+                  <ListOrdered className="w-4 h-4 text-teal-500" />
+                  <h3 className="font-serif font-semibold text-ink-900">讲义全貌</h3>
+                  <Badge variant="ink">{sections.length} 个内容块</Badge>
                 </div>
-                {selectedColumn && (
-                  <div className="flex items-center gap-1">
-                    {prepTaskId && (
-                      <ResourceCommentButton
-                        taskId={prepTaskId}
-                        targetId={selectedColumn.id}
-                        targetLabel={selectedColumn.title}
-                        password={prepPassword || undefined}
-                        comments={prepComments}
-                        onCommentsChange={setPrepComments}
-                      />
-                    )}
-                    <Button variant="ghost" size="sm" onClick={() => { setEditingSection(selectedColumn); setSectionTitle(selectedColumn.title); setSectionContent(selectedColumn.content); setSectionLabel(""); }}>
-                      <Edit3 className="w-3.5 h-3.5" /> 编辑栏目
-                    </Button>
-                  </div>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setColumnTemplateOpen(true)}>
+                    <LayoutTemplate className="w-3.5 h-3.5" /> 栏目模板
+                  </Button>
+                  <Button variant="gold" size="sm" onClick={handleAddChapter}>
+                    <Plus className="w-3.5 h-3.5" /> 添加栏目
+                  </Button>
+                </div>
               </div>
 
               {editingSection && (
                 <div className="p-3 mb-4 rounded-lg border border-gold-200 bg-gold-50/20">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-medium text-ink-700">{editingSection.type === "chapter" ? "编辑栏目" : editingSection.type === "question" ? "编辑题目块" : "编辑内容块"}</span>
-                    <button type="button" onClick={() => setEditingSection(null)} className="text-ink-400 hover:text-ink-700"><X className="w-3.5 h-3.5" /></button>
+                    <span className="text-xs font-medium text-ink-700">
+                      {editingSection.type === "chapter" ? "编辑栏目" : editingSection.type === "question" ? "编辑题目块" : "编辑内容块"}
+                    </span>
+                    <button type="button" onClick={() => setEditingSection(null)} className="text-ink-400 hover:text-ink-700">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                   <div className="grid md:grid-cols-2 gap-3">
-                    {editingSection.type !== "chapter" && <Input label="编号标签" value={sectionLabel} onChange={(event) => setSectionLabel(event.target.value)} placeholder="如：例1、变式2" />}
-                    <Input label={editingSection.type === "chapter" ? "栏目标题" : "标题"} value={sectionTitle} onChange={(event) => setSectionTitle(event.target.value)} />
-                    {editingSection.type !== "question" && <div className="md:col-span-2"><Textarea label="内容" value={sectionContent} onChange={(event) => setSectionContent(event.target.value)} rows={4} /></div>}
-                  </div>
-                  {editingSection.type === "question" && <div className="text-[11px] text-ink-500 mt-2">题目正文在题库中统一编辑。</div>}
-                  <div className="flex justify-end mt-3"><Button variant="gold" size="sm" onClick={handleSaveSection}><Save className="w-3.5 h-3.5" /> 保存</Button></div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-1.5 flex-wrap p-2.5 mb-4 rounded-lg border border-ink-100 bg-ink-50/50">
-                <span className="text-xs font-medium text-ink-500 mr-1">添加到当前栏目</span>
-                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={handleAddKnowledgeSection}><Wand2 className="w-3.5 h-3.5" /> 知识块</Button>
-                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={handleAddTextSection}><Type className="w-3.5 h-3.5" /> 文本</Button>
-                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("bank")}><Library className="w-3.5 h-3.5" /> 题库</Button>
-                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("basket")}><ShoppingBasket className="w-3.5 h-3.5" /> 资源篮</Button>
-                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("examPaper")}><FileStack className="w-3.5 h-3.5" /> 其它试卷</Button>
-                <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("lecture")}><Files className="w-3.5 h-3.5" /> 其它讲义</Button>
-                <Button variant="ghost" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("courseware")}><Presentation className="w-3.5 h-3.5" /> 课件</Button>
-                <Button variant="ghost" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("material")}><FileBox className="w-3.5 h-3.5" /> 素材</Button>
-                <Button variant="ghost" size="sm" onClick={() => setAutoGenOpen(true)}><Sparkles className="w-3.5 h-3.5" /> AI 编排</Button>
-              </div>
-
-              {activeColumnSections.length > 0 && selectedColumn && (
-                <div className="space-y-1.5 mb-4">
-                  {activeColumnSections.map((child, childIndex) => (
-                    <div key={child.id} className="flex items-center gap-2 rounded-md border border-ink-100 px-2.5 py-2 hover:bg-ink-50/50">
-                      {child.type === "question" ? <ListOrdered className="w-3.5 h-3.5 text-teal-500 flex-shrink-0" /> : child.type === "knowledge" ? <Sparkles className="w-3.5 h-3.5 text-gold-500 flex-shrink-0" /> : <Type className="w-3.5 h-3.5 text-ink-400 flex-shrink-0" />}
-                      <button type="button" onClick={() => { setEditingSection(child); setSectionTitle(child.title); setSectionContent(child.content); setSectionLabel(child.customLabel || ""); }} className="flex-1 min-w-0 text-left text-xs text-ink-700 truncate">
-                        {child.customLabel ? `${child.customLabel} ` : ""}{child.title}
-                      </button>
-                      {prepTaskId && (
-                        <ResourceCommentButton
-                          taskId={prepTaskId}
-                          targetId={child.id}
-                          targetLabel={child.title}
-                          password={prepPassword || undefined}
-                          comments={prepComments}
-                          onCommentsChange={setPrepComments}
+                    {editingSection.type !== "chapter" && (
+                      <Input
+                        label="编号标签"
+                        value={sectionLabel}
+                        onChange={(event) => setSectionLabel(event.target.value)}
+                        placeholder="如：例1、变式2"
+                      />
+                    )}
+                    <Input
+                      label={editingSection.type === "chapter" ? "栏目标题" : "标题"}
+                      value={sectionTitle}
+                      onChange={(event) => setSectionTitle(event.target.value)}
+                    />
+                    {editingSection.type !== "question" && (
+                      <div className="md:col-span-2">
+                        <Textarea
+                          label="内容"
+                          value={sectionContent}
+                          onChange={(event) => setSectionContent(event.target.value)}
+                          rows={4}
                         />
-                      )}
-                      <button type="button" onClick={() => handleMoveChildSection(selectedColumn.id, childIndex, "up")} disabled={childIndex === 0} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="上移">↑</button>
-                      <button type="button" onClick={() => handleMoveChildSection(selectedColumn.id, childIndex, "down")} disabled={childIndex === activeColumnSections.length - 1} className="text-[11px] text-ink-400 hover:text-gold-700 disabled:opacity-25" title="下移">↓</button>
-                      <button type="button" onClick={() => handleRemoveSection(child.id, selectedColumn.id)} className="text-ink-300 hover:text-red-600" title="删除内容块"><Trash2 className="w-3 h-3" /></button>
-                    </div>
-                  ))}
+                      </div>
+                    )}
+                  </div>
+                  {editingSection.type === "question" && (
+                    <div className="text-[11px] text-ink-500 mt-2">题目正文在题库中统一编辑；题号也可直接在下方题目左上角修改。</div>
+                  )}
+                  <div className="flex justify-end mt-3">
+                    <Button variant="gold" size="sm" onClick={handleSaveSection}>
+                      <Save className="w-3.5 h-3.5" /> 保存
+                    </Button>
+                  </div>
                 </div>
               )}
 
-              {activeColumnSections.length === 0 ? (
-                <div className="text-center py-16">
+              {sections.length === 0 ? (
+                <div className="py-16 text-center">
                   <FileText className="w-12 h-12 mx-auto mb-3 text-ink-200" />
-                  <div className="text-sm text-ink-500 mb-1">{selectedColumn ? "当前栏目还没有内容" : "请先从左侧选择或创建栏目"}</div>
-                  <div className="text-xs text-ink-400">可添加知识块、题库题目、资源篮内容或其它试卷/讲义中的题目</div>
+                  <div className="text-sm text-ink-500 mb-1">讲义暂无栏目</div>
+                  <div className="text-xs text-ink-400 mb-3">先创建栏目，再加入知识块、文本或题目。</div>
+                  <Button variant="gold" size="sm" onClick={handleAddChapter}>
+                    <Plus className="w-3.5 h-3.5" /> 创建第一个栏目
+                  </Button>
                 </div>
               ) : (
-                <div className="border-t border-ink-100 pt-4">
-                  <PreviewContent
-                    sections={selectedColumn ? [selectedColumn] : activeColumnSections}
-                    paperSize="A4"
-                    showSummary
-                    baseQuestionSpacing={1}
-                    baseKnowledgeSpacing={1}
-                    sectionSpacings={{}}
-                    answerRecords={answerRecords}
-                    students={students}
-                    lectureStudents={lectureStudents}
-                    baskets={baskets}
-                    answeredQuestionIds={answeredQuestionIds}
-                    onEditScore={openScoreEditor}
-                    onEditQuestion={handleEditQuestion}
-                    onAddToBasket={handleAddToBasketFromPreview}
-                    onRemoveFromBasket={handleRemoveFromBasketFromPreview}
-                    onUpdateStudentAnswer={handleUpdateStudentAnswerFromPreview}
-                  />
+                <div className="space-y-5">
+                  {sections.map((section, sectionIndex) => {
+                    if (section.type !== "chapter") return null;
+                    const selected = selectedChapterId === section.id;
+                    return (
+                      <section
+                        key={section.id}
+                        className={cn(
+                          "rounded-xl border p-3 transition-colors",
+                          selected ? "border-gold-300 bg-gold-50/20" : "border-ink-100 bg-paper",
+                        )}
+                      >
+                        <div className="flex flex-wrap items-start gap-2 mb-3 pb-3 border-b border-ink-100">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedChapterId(section.id)}
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <div className="flex items-center gap-2">
+                              <BookOpen className="w-4 h-4 flex-shrink-0 text-gold-600" />
+                              <h2 className="truncate font-serif font-bold text-ink-900">{section.title}</h2>
+                              {selected && <Badge variant="gold">当前栏目</Badge>}
+                            </div>
+                            {section.content && (
+                              <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-ink-500">{section.content}</p>
+                            )}
+                          </button>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveSection(sectionIndex, "up")}
+                              disabled={sectionIndex === 0}
+                              className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-25"
+                              title="栏目上移"
+                            >↑</button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveSection(sectionIndex, "down")}
+                              disabled={sectionIndex === sections.length - 1}
+                              className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-25"
+                              title="栏目下移"
+                            >↓</button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingSection(section);
+                                setSectionTitle(section.title);
+                                setSectionContent(section.content);
+                                setSectionLabel("");
+                              }}
+                              className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700"
+                              title="编辑栏目"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSection(section.id)}
+                              className="rounded p-1 text-ink-400 hover:bg-red-50 hover:text-red-600"
+                              title="删除栏目"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 mb-3 rounded-lg border border-ink-100 bg-ink-50/50 p-2">
+                          <span className="mr-1 text-xs font-medium text-ink-500">添加内容</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedChapterId(section.id);
+                              handleAddKnowledgeSection();
+                            }}
+                          >
+                            <Wand2 className="w-3.5 h-3.5" /> 知识块
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => handleAddTextSection(section.id)}>
+                            <Type className="w-3.5 h-3.5" /> 文本
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedChapterId(section.id);
+                              setAddSource("bank");
+                            }}
+                          >
+                            <Library className="w-3.5 h-3.5" /> 题目
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedChapterId(section.id);
+                              setAddSource("basket");
+                            }}
+                          >
+                            <ShoppingBasket className="w-3.5 h-3.5" /> 资源篮
+                          </Button>
+                        </div>
+
+                        {section.children.length === 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChapterId(section.id);
+                              setAddSource("bank");
+                            }}
+                            className="w-full rounded-lg border border-dashed border-ink-200 py-8 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700"
+                          >
+                            当前栏目暂无内容，点击添加题目
+                          </button>
+                        ) : (
+                          <div className="space-y-3">
+                            {section.children.map((child, childIndex) => {
+                              const questionIndex = section.children
+                                .slice(0, childIndex + 1)
+                                .filter((item) => item.type === "question").length - 1;
+                              const question = child.questionId ? lectureQuestions[child.questionId] : undefined;
+                              return (
+                                <div key={child.id} className="space-y-1">
+                                  <LectureSectionEditorRow
+                                    section={child}
+                                    index={Math.max(0, questionIndex)}
+                                    question={question}
+                                    answered={Boolean(child.questionId && answeredQuestionIds.has(child.questionId))}
+                                    canMoveUp={childIndex > 0}
+                                    canMoveDown={childIndex < section.children.length - 1}
+                                    onLabelChange={(label) => handleUpdateSectionLabel(child.id, label, section.id)}
+                                    onMoveUp={() => handleMoveChildSection(section.id, childIndex, "up")}
+                                    onMoveDown={() => handleMoveChildSection(section.id, childIndex, "down")}
+                                    onEditSection={() => {
+                                      setEditingSection(child);
+                                      setSectionTitle(child.title);
+                                      setSectionContent(child.content);
+                                      setSectionLabel(child.customLabel || "");
+                                    }}
+                                    onEditQuestion={question ? () => handleEditQuestion(question) : undefined}
+                                    onRemove={() => handleRemoveSection(child.id, section.id)}
+                                  />
+                                  {prepTaskId && (
+                                    <div className="flex justify-end">
+                                      <ResourceCommentButton
+                                        taskId={prepTaskId}
+                                        targetId={child.id}
+                                        targetLabel={child.title}
+                                        password={prepPassword || undefined}
+                                        comments={prepComments}
+                                        onCommentsChange={setPrepComments}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })}
+
+                  {sections.some((section) => section.type !== "chapter") && (
+                    <section className="rounded-xl border border-ink-100 bg-paper p-3">
+                      <div className="mb-3 flex items-center gap-2 border-b border-ink-100 pb-3">
+                        <FileText className="w-4 h-4 text-ink-500" />
+                        <h2 className="font-serif font-bold text-ink-900">未归入栏目内容</h2>
+                      </div>
+                      <div className="space-y-3">
+                        {sections.filter((section) => section.type !== "chapter").map((section, rootIndex, ungrouped) => {
+                          const questionIndex = ungrouped
+                            .slice(0, rootIndex + 1)
+                            .filter((item) => item.type === "question").length - 1;
+                          const question = section.questionId ? lectureQuestions[section.questionId] : undefined;
+                          return (
+                            <LectureSectionEditorRow
+                              key={section.id}
+                              section={section}
+                              index={Math.max(0, questionIndex)}
+                              question={question}
+                              answered={Boolean(section.questionId && answeredQuestionIds.has(section.questionId))}
+                              canMoveUp={rootIndex > 0}
+                              canMoveDown={rootIndex < ungrouped.length - 1}
+                              onLabelChange={(label) => handleUpdateSectionLabel(section.id, label)}
+                              onMoveUp={() => handleMoveSection(sections.indexOf(section), "up")}
+                              onMoveDown={() => handleMoveSection(sections.indexOf(section), "down")}
+                              onEditSection={() => {
+                                setEditingSection(section);
+                                setSectionTitle(section.title);
+                                setSectionContent(section.content);
+                                setSectionLabel(section.customLabel || "");
+                              }}
+                              onEditQuestion={question ? () => handleEditQuestion(question) : undefined}
+                              onRemove={() => handleRemoveSection(section.id)}
+                            />
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
                 </div>
               )}
             </Card>
 
-            {/* 右侧：使用学生 */}
             <div className="space-y-4 xl:sticky xl:top-4">
+              <Card className="p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-gold-500" />
+                  <h3 className="font-serif font-semibold text-ink-900 text-sm">讲义工具</h3>
+                </div>
+                <Select
+                  label="内容添加到"
+                  value={selectedChapterId || ""}
+                  onChange={(event) => setSelectedChapterId(event.target.value || null)}
+                  options={sections
+                    .filter((section) => section.type === "chapter")
+                    .map((section) => ({ value: section.id, label: section.title }))}
+                  placeholder="请选择栏目"
+                />
+                <Button variant="gold" size="sm" className="w-full justify-start" onClick={() => setAutoGenOpen(true)}>
+                  <Sparkles className="w-3.5 h-3.5" /> AI 自动组讲义
+                </Button>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <Button variant="outline" size="sm" onClick={handleAddChapter}>
+                    <Plus className="w-3.5 h-3.5" /> 新建栏目
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setColumnTemplateOpen(true)}>
+                    <LayoutTemplate className="w-3.5 h-3.5" /> 栏目模板
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setCreateColumnTemplateOpen(true)}>
+                    <Save className="w-3.5 h-3.5" /> 保存模板
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={handleAddKnowledgeSection}>
+                    <Wand2 className="w-3.5 h-3.5" /> 知识块
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => handleAddTextSection()}>
+                    <Type className="w-3.5 h-3.5" /> 文本
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("bank")}>
+                    <Library className="w-3.5 h-3.5" /> 题库
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("basket")}>
+                    <ShoppingBasket className="w-3.5 h-3.5" /> 资源篮
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("examPaper")}>
+                    <FileStack className="w-3.5 h-3.5" /> 其他试卷
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("lecture")}>
+                    <Files className="w-3.5 h-3.5" /> 其他讲义
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("courseware")}>
+                    <Presentation className="w-3.5 h-3.5" /> 课件
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={!selectedColumn} onClick={() => setAddSource("material")}>
+                    <FileBox className="w-3.5 h-3.5" /> 素材
+                  </Button>
+                </div>
+                <div className="pt-3 border-t border-ink-100 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-ink-500">当前栏目</span>
+                    <span className="max-w-[180px] truncate font-medium text-ink-800">{selectedColumn?.title || "未选择"}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-ink-500">内容块</span>
+                    <span className="font-medium text-ink-800">{selectedColumn?.children.length || 0} 个</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-ink-500">题目总数</span>
+                    <span className="font-semibold text-gold-700">{lectureQuestionIds.length} 道</span>
+                  </div>
+                </div>
+              </Card>
+
               <Card className="p-4">
                 <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-ink-100">
-                  <div className="flex items-center gap-2"><UserCheck className="w-4 h-4 text-emerald-600" /><h3 className="font-serif font-semibold text-ink-900 text-sm">使用学生</h3><Badge variant="ink">{selectedLectureStudents.length}</Badge></div>
-                  <Button variant="ghost" size="sm" onClick={() => setShowStudentPicker(true)}><Plus className="w-3.5 h-3.5" /> 添加</Button>
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    <h3 className="font-serif font-semibold text-ink-900 text-sm">使用学生</h3>
+                    <Badge variant="ink">{selectedLectureStudents.length}</Badge>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setShowStudentPicker(true)}>
+                    <Plus className="w-3.5 h-3.5" /> 添加
+                  </Button>
                 </div>
 
                 {selectedLectureStudents.length === 0 ? (
-                  <button type="button" onClick={() => setShowStudentPicker(true)} className="w-full py-8 rounded-lg border border-dashed border-ink-200 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700">添加该讲义使用学生</button>
+                  <button
+                    type="button"
+                    onClick={() => setShowStudentPicker(true)}
+                    className="w-full py-8 rounded-lg border border-dashed border-ink-200 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700"
+                  >
+                    添加该讲义使用学生
+                  </button>
                 ) : (
                   <div className="space-y-1.5 max-h-[330px] overflow-y-auto pr-1">
                     {selectedLectureStudents.map((student) => {
@@ -2054,10 +2245,26 @@ export default function LectureEditorPage() {
                       const allDone = lectureQuestionIds.length > 0 && completedCount >= lectureQuestionIds.length;
                       return (
                         <div key={student.id} className="flex items-center gap-2 rounded-md border border-ink-100 px-2.5 py-2">
-                          <div className="w-7 h-7 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center text-xs font-medium flex-shrink-0">{student.name.charAt(0)}</div>
-                          <div className="flex-1 min-w-0"><div className="text-xs font-medium text-ink-800 truncate">{student.name}</div><div className="text-[10px] text-ink-400 truncate">{lectureQuestionIds.length > 0 ? `${completedCount}/${lectureQuestionIds.length} 题已记录` : "讲义暂无题目"}</div></div>
-                          <Badge variant={allDone ? "green" : completedCount > 0 ? "gold" : "default"}>{allDone ? "已做" : completedCount > 0 ? "进行中" : "未做"}</Badge>
-                          <button type="button" onClick={() => setSelectedStudentIds((previous) => previous.filter((studentId) => studentId !== student.id))} className="text-ink-300 hover:text-red-600" title="移除学生"><X className="w-3 h-3" /></button>
+                          <div className="w-7 h-7 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center text-xs font-medium flex-shrink-0">
+                            {student.name.charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-ink-800 truncate">{student.name}</div>
+                            <div className="text-[10px] text-ink-400 truncate">
+                              {lectureQuestionIds.length > 0 ? `${completedCount}/${lectureQuestionIds.length} 题已记录` : "讲义暂无题目"}
+                            </div>
+                          </div>
+                          <Badge variant={allDone ? "green" : completedCount > 0 ? "gold" : "default"}>
+                            {allDone ? "已做" : completedCount > 0 ? "进行中" : "未做"}
+                          </Badge>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStudentIds((previous) => previous.filter((studentId) => studentId !== student.id))}
+                            className="text-ink-300 hover:text-red-600"
+                            title="移除学生"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
                         </div>
                       );
                     })}
@@ -2066,10 +2273,23 @@ export default function LectureEditorPage() {
 
                 {selectedLectureStudents.length > 0 && (
                   <div className="space-y-2 pt-3 mt-3 border-t border-ink-100">
-                    <select value={timeRangeKey} onChange={(event) => setTimeRangeKey(event.target.value as TimeRangeKey)} className="w-full text-xs border border-ink-200 rounded px-2 py-1.5 bg-paper text-ink-700">
-                      {timeRangeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    <select
+                      value={timeRangeKey}
+                      onChange={(event) => setTimeRangeKey(event.target.value as TimeRangeKey)}
+                      className="w-full text-xs border border-ink-200 rounded px-2 py-1.5 bg-paper text-ink-700"
+                    >
+                      {timeRangeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
                     </select>
-                    <Button variant="gold" size="sm" className="w-full" onClick={handleMarkAllDone} loading={markingAllDone} disabled={!lecture || lectureQuestionIds.length === 0}>
+                    <Button
+                      variant="gold"
+                      size="sm"
+                      className="w-full"
+                      onClick={handleMarkAllDone}
+                      loading={markingAllDone}
+                      disabled={!lecture || lectureQuestionIds.length === 0}
+                    >
                       <CheckSquare className="w-3.5 h-3.5" /> 一键标记所有学生已做
                     </Button>
                     {!lecture && <div className="text-[11px] text-ink-400">先保存讲义后即可标记学生使用情况。</div>}
