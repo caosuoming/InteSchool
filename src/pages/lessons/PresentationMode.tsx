@@ -14,10 +14,13 @@ import {
   Eye,
   EyeOff,
   Link2,
+  LogOut,
   Maximize2,
   Minimize2,
+  Move,
   MousePointer2,
   NotebookPen,
+  Plus,
   Trash2,
   Users,
   X,
@@ -69,6 +72,23 @@ interface WritableCanvasProps {
   className?: string;
 }
 
+interface BoardPage {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  clearToken: number;
+}
+
+interface BoardInteraction {
+  mode: "move" | "resize";
+  boardId: string;
+  startX: number;
+  startY: number;
+  board: BoardPage;
+}
+
 const INITIAL_DRAWING_PRESETS: DrawingPreset[] = [
   { id: "pen-red", kind: "pen", label: "红色画笔", color: "#dc2626", width: 3 },
   { id: "pen-blue", kind: "pen", label: "蓝色画笔", color: "#2563eb", width: 3 },
@@ -91,16 +111,109 @@ const questionTypeLabel: Record<string, string> = {
   essay: "解答",
 };
 
-const SCRATCHPAD_BACKGROUND: CSSProperties = {
+const BOARD_BACKGROUND: CSSProperties = {
   backgroundColor: "#fffef8",
-  backgroundImage: [
-    "linear-gradient(to right, transparent 10%, rgba(220, 38, 38, 0.16) 10%, rgba(220, 38, 38, 0.16) calc(10% + 1px), transparent calc(10% + 1px))",
-    "repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(37, 99, 235, 0.13) 32px)",
-  ].join(", "),
+  backgroundImage: "repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(37, 99, 235, 0.13) 32px)",
 };
+
+const PRESENTATION_ELEMENT_PREFIX = "presentation-built-in";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function asPresentationText(
+  slide: LessonSlide,
+  suffix: string,
+  content: string,
+  position: Pick<LessonSlideElement, "x" | "y" | "width" | "height">,
+  options?: Pick<Extract<LessonSlideElement, { kind: "text" }>, "fontSize" | "textAlign" | "questionSection">,
+): LessonSlideElement {
+  return {
+    id: `${PRESENTATION_ELEMENT_PREFIX}-${slide.id}-${suffix}`,
+    kind: "text",
+    content,
+    ...position,
+    ...options,
+  };
+}
+
+function getPresentationElements(slide: LessonSlide): LessonSlideElement[] {
+  const existing = slide.elements || [];
+  if (slide.freeformLayout || slide.type === "courseware") return existing;
+
+  if (slide.type === "section") {
+    return [
+      asPresentationText(
+        slide,
+        "section-title",
+        slide.title,
+        { x: 10, y: 18, width: 80, height: 24 },
+        { fontSize: slide.textStyles?.title?.fontSize || 38, textAlign: "center" },
+      ),
+      ...(slide.content ? [asPresentationText(
+        slide,
+        "section-content",
+        slide.content,
+        { x: 14, y: 48, width: 72, height: 28 },
+        { fontSize: slide.textStyles?.content?.fontSize || 22, textAlign: "center" },
+      )] : []),
+      ...existing,
+    ];
+  }
+
+  if (slide.type === "question" && slide.questionSnapshot) {
+    const question = slide.questionSnapshot;
+    const optionWidth = question.options && question.options.length > 1 ? 43 : 90;
+    const optionElements = (question.options || []).map((option, index) => asPresentationText(
+      slide,
+      `option-${index}`,
+      `<strong>${String.fromCharCode(65 + index)}.</strong> ${option}`,
+      {
+        x: 5 + (index % 2) * 47,
+        y: 32 + Math.floor(index / 2) * 15,
+        width: optionWidth,
+        height: 12,
+      },
+      { fontSize: slide.textStyles?.options?.fontSize || 20, questionSection: "options" },
+    ));
+    return [
+      asPresentationText(
+        slide,
+        "stem",
+        question.stem,
+        { x: 5, y: 5, width: 90, height: 23 },
+        { fontSize: slide.textStyles?.stem?.fontSize || 26, questionSection: "stem" },
+      ),
+      ...optionElements,
+      asPresentationText(
+        slide,
+        "answer",
+        `<strong>参考答案</strong><br />${question.answer || "暂无答案"}`,
+        { x: 5, y: 68, width: 42, height: 24 },
+        { fontSize: 18, questionSection: "answer" },
+      ),
+      asPresentationText(
+        slide,
+        "analysis",
+        `<strong>解析</strong><br />${question.analysis || "暂无解析"}${question.summary ? `<br /><strong>总结</strong><br />${question.summary}` : ""}`,
+        { x: 53, y: 68, width: 42, height: 24 },
+        { fontSize: 18, questionSection: "analysis" },
+      ),
+      ...existing,
+    ];
+  }
+
+  return [
+    ...(slide.content ? [asPresentationText(
+      slide,
+      "knowledge-content",
+      slide.content,
+      { x: 5, y: 6, width: 90, height: 88 },
+      { fontSize: slide.textStyles?.content?.fontSize || 24 },
+    )] : []),
+    ...existing,
+  ];
 }
 
 function WritableCanvas({ tool, preset, clearToken, className }: WritableCanvasProps) {
@@ -134,7 +247,15 @@ function WritableCanvas({ tool, preset, clearToken, className }: WritableCanvasP
   useEffect(() => {
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
-    return () => window.removeEventListener("resize", resizeCanvas);
+    const parent = canvasRef.current?.parentElement;
+    const observer = typeof ResizeObserver === "undefined" || !parent
+      ? null
+      : new ResizeObserver(resizeCanvas);
+    observer?.observe(parent);
+    return () => {
+      window.removeEventListener("resize", resizeCanvas);
+      observer?.disconnect();
+    };
   }, [resizeCanvas]);
 
   useEffect(() => {
@@ -218,18 +339,19 @@ function DrawingPresetGlyph({ preset }: { preset: DrawingPreset }) {
     ? clamp(preset.width, 2, 8)
     : clamp(preset.width / 2, 5, 13);
   return (
-    <span className="relative block h-6 w-6 -rotate-45" aria-hidden="true">
+    <span className="relative block h-7 w-6" aria-hidden="true">
       <span
-        className="absolute left-1/2 top-1/2 block h-6 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        data-pen-tip="up"
+        className="absolute left-1/2 top-0 block h-2 w-2 -translate-x-1/2 rotate-45 border-l-2 border-t-2"
+        style={{ color: preset.color }}
+      />
+      <span
+        className="absolute bottom-0 left-1/2 block h-[22px] -translate-x-1/2 rounded-b-full rounded-t-sm"
         style={{
           width: `${thickness}px`,
           backgroundColor: preset.color,
           opacity: preset.kind === "highlighter" ? 0.7 : 1,
         }}
-      />
-      <span
-        className="absolute bottom-0 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rotate-45 border-b border-r border-current"
-        style={{ color: preset.color }}
       />
     </span>
   );
@@ -255,6 +377,8 @@ export function PresentationMode({
   onExit,
 }: PresentationModeProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const boardInteractionRef = useRef<BoardInteraction | null>(null);
   const [currentIndex, setCurrentIndex] = useState(() => clamp(initialIndex, 0, Math.max(0, slides.length - 1)));
   const [tool, setTool] = useState<Tool>("select");
   const [drawingPresets, setDrawingPresets] = useState(INITIAL_DRAWING_PRESETS);
@@ -265,19 +389,24 @@ export function PresentationMode({
   const [sidePanel, setSidePanel] = useState<{ side: Side; tab: SideTab } | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [elementOverrides, setElementOverrides] = useState<Record<string, LessonSlideElement[]>>({});
-  const [stageScale, setStageScale] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
-  const [scratchpadOpen, setScratchpadOpen] = useState(false);
+  const [boards, setBoards] = useState<BoardPage[]>([]);
+  const [boardsVisible, setBoardsVisible] = useState(false);
+  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [mainClearToken, setMainClearToken] = useState(0);
-  const [scratchpadClearToken, setScratchpadClearToken] = useState(0);
 
   const currentSlide = slides[currentIndex];
   const selectedDrawingPreset = drawingPresets.find((preset) => preset.id === tool);
+  const baseCurrentElements = currentSlide ? getPresentationElements(currentSlide) : [];
   const currentElements = currentSlide
-    ? elementOverrides[currentSlide.id] ?? currentSlide.elements ?? []
+    ? elementOverrides[currentSlide.id] ?? baseCurrentElements
     : [];
   const displayedSlide = currentSlide
-    ? { ...currentSlide, elements: currentElements }
+    ? {
+        ...currentSlide,
+        freeformLayout: currentSlide.type === "courseware" ? currentSlide.freeformLayout : true,
+        elements: currentElements,
+      }
     : undefined;
 
   const askableStudents = (currentSlide?.askableStudentIds || [])
@@ -332,7 +461,6 @@ export function PresentationMode({
     setQuestionVisibility({ ...STEM_ONLY_QUESTION_VISIBILITY });
     setSidePanel(null);
     setSelectedElementId(null);
-    setStageScale(1);
     setMainClearToken((value) => value + 1);
   }, [currentIndex]);
 
@@ -343,8 +471,8 @@ export function PresentationMode({
         return;
       }
       if (event.key === "Escape") {
-        if (scratchpadOpen) {
-          setScratchpadOpen(false);
+        if (boardsVisible) {
+          setBoardsVisible(false);
         } else if (sidePanel) {
           setSidePanel(null);
         } else if (!document.fullscreenElement) {
@@ -362,7 +490,7 @@ export function PresentationMode({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onExit, scratchpadOpen, sidePanel, slides.length]);
+  }, [boardsVisible, onExit, sidePanel, slides.length]);
 
   const goPrev = useCallback(() => setCurrentIndex((index) => Math.max(0, index - 1)), []);
   const goNext = useCallback(
@@ -383,31 +511,28 @@ export function PresentationMode({
     }));
   };
 
-  const scaleSelectedElementOrStage = (factor: number) => {
-    if (tool === "select" && selectedElementId && currentSlide) {
-      setElementOverrides((current) => {
-        const source = current[currentSlide.id] ?? currentSlide.elements ?? [];
-        return {
-          ...current,
-          [currentSlide.id]: source.map((element) => {
-            if (element.id !== selectedElementId) return element;
-            const centerX = element.x + element.width / 2;
-            const centerY = element.y + element.height / 2;
-            const width = Number(clamp(element.width * factor, 6, 100).toFixed(4));
-            const height = Number(clamp(element.height * factor, 6, 100).toFixed(4));
-            return {
-              ...element,
-              width,
-              height,
-              x: Number(clamp(centerX - width / 2, 0, 100 - width).toFixed(4)),
-              y: Number(clamp(centerY - height / 2, 0, 100 - height).toFixed(4)),
-            };
-          }),
-        };
-      });
-      return;
-    }
-    setStageScale((current) => clamp(current + (factor > 1 ? 0.1 : -0.1), 0.7, 1.5));
+  const scaleSelectedElement = (factor: number) => {
+    if (!selectedElementId || !currentSlide) return;
+    setElementOverrides((current) => {
+      const source = current[currentSlide.id] ?? getPresentationElements(currentSlide);
+      return {
+        ...current,
+        [currentSlide.id]: source.map((element) => {
+          if (element.id !== selectedElementId) return element;
+          const centerX = element.x + element.width / 2;
+          const centerY = element.y + element.height / 2;
+          const width = Number(clamp(element.width * factor, 6, 100).toFixed(4));
+          const height = Number(clamp(element.height * factor, 6, 100).toFixed(4));
+          return {
+            ...element,
+            width,
+            height,
+            x: Number(clamp(centerX - width / 2, 0, 100 - width).toFixed(4)),
+            y: Number(clamp(centerY - height / 2, 0, 100 - height).toFixed(4)),
+          };
+        }),
+      };
+    });
   };
 
   const toggleFullscreen = async () => {
@@ -429,8 +554,95 @@ export function PresentationMode({
   };
 
   const clearActiveSurface = () => {
-    if (scratchpadOpen) setScratchpadClearToken((value) => value + 1);
-    else setMainClearToken((value) => value + 1);
+    if (boardsVisible && activeBoardId) {
+      setBoards((current) => current.map((board) => (
+        board.id === activeBoardId ? { ...board, clearToken: board.clearToken + 1 } : board
+      )));
+      return;
+    }
+    setMainClearToken((value) => value + 1);
+  };
+
+  const addBoard = () => {
+    const index = boards.length;
+    const offset = (index % 5) * 3;
+    const board: BoardPage = {
+      id: `board-${Date.now()}-${index}`,
+      x: 16 + offset,
+      y: 10 + offset,
+      width: 68,
+      height: 62,
+      clearToken: 0,
+    };
+    setBoards((current) => [...current, board]);
+    setActiveBoardId(board.id);
+    setBoardsVisible(true);
+  };
+
+  const toggleBoards = () => {
+    if (boards.length === 0) {
+      addBoard();
+      return;
+    }
+    setBoardsVisible((visible) => !visible);
+  };
+
+  const removeBoard = (boardId: string) => {
+    const next = boards.filter((board) => board.id !== boardId);
+    setBoards(next);
+    if (activeBoardId === boardId) setActiveBoardId(next.at(-1)?.id || null);
+    if (next.length === 0) setBoardsVisible(false);
+  };
+
+  const startBoardInteraction = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    board: BoardPage,
+    mode: BoardInteraction["mode"],
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveBoardId(board.id);
+    boardInteractionRef.current = {
+      mode,
+      boardId: board.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      board,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveBoardInteraction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const interaction = boardInteractionRef.current;
+    const surface = surfaceRef.current;
+    if (!interaction || !surface) return;
+    const rect = surface.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const dx = ((event.clientX - interaction.startX) / rect.width) * 100;
+    const dy = ((event.clientY - interaction.startY) / rect.height) * 100;
+    setBoards((current) => current.map((board) => {
+      if (board.id !== interaction.boardId) return board;
+      if (interaction.mode === "move") {
+        return {
+          ...board,
+          x: Number(clamp(interaction.board.x + dx, 0, 100 - interaction.board.width).toFixed(4)),
+          y: Number(clamp(interaction.board.y + dy, 0, 100 - interaction.board.height).toFixed(4)),
+        };
+      }
+      return {
+        ...board,
+        width: Number(clamp(interaction.board.width + dx, 28, 100 - interaction.board.x).toFixed(4)),
+        height: Number(clamp(interaction.board.height + dy, 24, 100 - interaction.board.y).toFixed(4)),
+      };
+    }));
+  };
+
+  const endBoardInteraction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!boardInteractionRef.current) return;
+    boardInteractionRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
   };
 
   const renderPanelContent = (tab: SideTab) => {
@@ -570,14 +782,54 @@ export function PresentationMode({
     );
   };
 
+  const renderPageNavigation = (side: Side) => (
+    <div
+      className={cn(
+        "absolute bottom-4 z-40 flex items-center gap-1.5 rounded-xl border border-white/15 bg-ink-900/80 p-1.5 text-paper shadow-xl backdrop-blur",
+        side === "left" ? "left-4" : "right-4",
+      )}
+      aria-label={`${side === "left" ? "左侧" : "右侧"}翻页控制`}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {side === "left" && (
+        <button
+          type="button"
+          onClick={onExit}
+          aria-label="下课"
+          className="flex h-9 items-center gap-1.5 rounded-lg bg-red-500/15 px-3 text-sm font-medium text-red-100 transition-colors hover:bg-red-500/30"
+        >
+          <LogOut className="h-4 w-4" />
+          下课
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={goPrev}
+        disabled={currentIndex === 0}
+        aria-label={`${side === "left" ? "左侧" : "右侧"}上一页`}
+        className="flex h-9 items-center gap-1 rounded-lg px-3 text-sm transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        上一页
+      </button>
+      <button
+        type="button"
+        onClick={goNext}
+        disabled={currentIndex === slides.length - 1}
+        aria-label={`${side === "left" ? "左侧" : "右侧"}下一页`}
+        className="flex h-9 items-center gap-1 rounded-lg px-3 text-sm transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        下一页
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
+  );
+
   return (
     <div ref={rootRef} className="fixed inset-0 z-50 flex flex-col bg-ink-900">
-      <div className="relative flex-1 overflow-hidden bg-ink-800">
+      <div ref={surfaceRef} className="relative flex-1 overflow-hidden bg-ink-800">
         <div className="absolute inset-0 flex items-center justify-center p-5 sm:p-7 lg:p-9">
-          <div
-            className="flex h-full w-full items-center justify-center transition-transform duration-150"
-            style={{ transform: `scale(${stageScale})` }}
-          >
+          <div className="flex h-full w-full items-center justify-center">
             {displayedSlide?.type === "courseware" ? (
               <div className="h-full w-full max-w-6xl overflow-hidden rounded-xl bg-paper shadow-2xl">
                 <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-[60vh]" />
@@ -605,7 +857,7 @@ export function PresentationMode({
 
         <WritableCanvas
           key={currentSlide?.id || "empty-slide"}
-          tool={scratchpadOpen ? "none" : tool}
+          tool={boardsVisible ? "none" : tool}
           preset={selectedDrawingPreset}
           clearToken={mainClearToken}
           className="z-10"
@@ -613,49 +865,32 @@ export function PresentationMode({
 
         {renderSideRail("left")}
         {renderSideRail("right")}
-
-        <button
-          type="button"
-          onClick={goPrev}
-          disabled={currentIndex === 0}
-          aria-label="上一页"
-          className="absolute bottom-4 left-4 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-ink-900/75 text-paper shadow-lg backdrop-blur hover:bg-ink-900 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <button
-          type="button"
-          onClick={goNext}
-          disabled={currentIndex === slides.length - 1}
-          aria-label="下一页"
-          className="absolute bottom-4 right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-ink-900/75 text-paper shadow-lg backdrop-blur hover:bg-ink-900 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
+        {renderPageNavigation("left")}
+        {renderPageNavigation("right")}
 
         <div
-          className="absolute bottom-4 right-16 z-40 flex items-center gap-1 rounded-xl border border-white/60 bg-paper/95 p-1.5 shadow-xl backdrop-blur"
+          className="absolute right-4 top-4 z-40 flex items-center gap-1 rounded-xl border border-white/60 bg-paper/95 p-1.5 shadow-xl backdrop-blur"
           onPointerDown={(event) => event.stopPropagation()}
         >
           <button
             type="button"
-            aria-label="缩小"
-            onClick={() => scaleSelectedElementOrStage(0.9)}
-            className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-ink-700 hover:bg-ink-100"
-            title={tool === "select" && selectedElementId ? "缩小所选对象" : "缩小页面"}
+            aria-label="缩小所选对象"
+            onClick={() => scaleSelectedElement(0.9)}
+            disabled={!selectedElementId}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-30"
+            title="缩小所选对象"
           >
             <ZoomOut className="h-4 w-4" />
-            缩小
           </button>
           <button
             type="button"
-            aria-label="放大"
-            onClick={() => scaleSelectedElementOrStage(1.1)}
-            className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-ink-700 hover:bg-ink-100"
-            title={tool === "select" && selectedElementId ? "放大所选对象" : "放大页面"}
+            aria-label="放大所选对象"
+            onClick={() => scaleSelectedElement(1.1)}
+            disabled={!selectedElementId}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-30"
+            title="放大所选对象"
           >
             <ZoomIn className="h-4 w-4" />
-            放大
           </button>
           <div className="mx-0.5 h-5 w-px bg-ink-200" />
           <button
@@ -669,39 +904,76 @@ export function PresentationMode({
           </button>
         </div>
 
-        {scratchpadOpen && (
-          <div
-            className="absolute inset-0 z-[35] flex items-center justify-center bg-ink-950/80 px-5 pb-24 pt-5 backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
-            aria-label="临时板书弹窗"
-            onPointerDown={(event) => event.stopPropagation()}
-          >
+        {boards.map((board, index) => {
+          const active = activeBoardId === board.id;
+          const label = `板书 ${index + 1}`;
+          return (
             <section
-              className="relative aspect-video w-[min(92vw,calc(78vh*16/9))] overflow-hidden rounded-2xl border-4 border-ink-700 shadow-2xl"
-              style={SCRATCHPAD_BACKGROUND}
+              key={board.id}
+              role="region"
+              aria-label={label}
+              className={cn(
+                "absolute overflow-hidden rounded-xl border-2 shadow-2xl transition-[box-shadow,opacity]",
+                active ? "border-gold-400 ring-2 ring-gold-300/60" : "border-ink-600",
+                !boardsVisible && "invisible pointer-events-none opacity-0",
+              )}
+              style={{
+                ...BOARD_BACKGROUND,
+                left: `${board.x}%`,
+                top: `${board.y}%`,
+                width: `${board.width}%`,
+                height: `${board.height}%`,
+                zIndex: active ? 29 : 26 + index,
+              }}
+              onPointerDown={() => setActiveBoardId(board.id)}
             >
-              <div className="pointer-events-none absolute left-[10%] top-0 h-full w-px bg-red-500/10" aria-hidden="true" />
+              <div
+                data-board-divider="center"
+                className="pointer-events-none absolute bottom-0 left-1/2 top-0 z-[1] w-px -translate-x-1/2 bg-red-600/20"
+                aria-hidden="true"
+              />
               <WritableCanvas
-                tool={tool}
+                tool={boardsVisible && active ? tool : "none"}
                 preset={selectedDrawingPreset}
-                clearToken={scratchpadClearToken}
+                clearToken={board.clearToken}
                 className="z-10"
               />
-              <div className="absolute left-4 top-3 z-20 rounded-lg bg-paper/80 px-3 py-1.5 text-xs text-ink-500 shadow-sm backdrop-blur">
-                临时板书
+              <button
+                type="button"
+                aria-label={`移动${label}`}
+                className="absolute left-2 top-2 z-20 flex h-9 w-9 cursor-move items-center justify-center rounded-lg bg-ink-900/80 text-paper shadow-lg hover:bg-ink-900"
+                onPointerDown={(event) => startBoardInteraction(event, board, "move")}
+                onPointerMove={moveBoardInteraction}
+                onPointerUp={endBoardInteraction}
+                onPointerCancel={endBoardInteraction}
+              >
+                <Move className="h-4 w-4" />
+              </button>
+              <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2 rounded-lg bg-paper/85 px-3 py-1.5 text-xs font-medium text-ink-600 shadow-sm backdrop-blur">
+                {label}
               </div>
               <button
                 type="button"
-                aria-label="关闭临时板书"
-                onClick={() => setScratchpadOpen(false)}
-                className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-ink-900/80 text-paper shadow-lg hover:bg-ink-900"
+                aria-label={`删除${label}`}
+                onClick={() => removeBoard(board.id)}
+                className="absolute right-12 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-lg bg-paper/85 text-ink-500 shadow-lg hover:bg-red-50 hover:text-red-600"
               >
                 <X className="h-4 w-4" />
               </button>
+              <button
+                type="button"
+                aria-label={`调整${label}的大小`}
+                className="absolute right-2 top-2 z-20 flex h-9 w-9 cursor-nwse-resize items-center justify-center rounded-lg bg-ink-900/80 text-paper shadow-lg hover:bg-ink-900"
+                onPointerDown={(event) => startBoardInteraction(event, board, "resize")}
+                onPointerMove={moveBoardInteraction}
+                onPointerUp={endBoardInteraction}
+                onPointerCancel={endBoardInteraction}
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
             </section>
-          </div>
-        )}
+          );
+        })}
 
         <div
           className="absolute bottom-3 left-1/2 z-40 flex -translate-x-1/2 items-end gap-1 rounded-xl border border-white/60 bg-paper/95 px-1.5 py-1.5 shadow-2xl backdrop-blur"
@@ -846,28 +1118,39 @@ export function PresentationMode({
           </button>
           <button
             type="button"
-            aria-label={scratchpadOpen ? "清空临时板书" : "清空批注"}
+            aria-label={boardsVisible && activeBoardId ? "清空当前板书" : "清空批注"}
             onClick={clearActiveSurface}
             className="flex h-10 w-9 items-center justify-center rounded-lg bg-mist text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
-            title={scratchpadOpen ? "清空临时板书" : "清空批注"}
+            title={boardsVisible && activeBoardId ? "清空当前板书" : "清空批注"}
           >
             <Trash2 className="h-4 w-4" />
           </button>
           <button
             type="button"
-            aria-label={scratchpadOpen ? "收起临时板书" : "打开临时板书"}
-            aria-pressed={scratchpadOpen}
-            onClick={() => setScratchpadOpen((open) => !open)}
+            aria-label={boardsVisible ? "收起板书" : "打开板书"}
+            aria-pressed={boardsVisible}
+            onClick={toggleBoards}
             className={cn(
               "flex h-10 w-9 items-center justify-center rounded-lg transition-colors",
-              scratchpadOpen
+              boardsVisible
                 ? "bg-teal-100 text-teal-800 ring-2 ring-teal-400"
                 : "bg-mist text-ink-600 hover:bg-teal-50 hover:text-teal-700",
             )}
-            title="临时板书"
+            title="板书"
           >
             <NotebookPen className="h-5 w-5" />
           </button>
+          {boardsVisible && (
+            <button
+              type="button"
+              aria-label="新增板书"
+              onClick={addBoard}
+              className="flex h-10 w-9 items-center justify-center rounded-lg bg-mist text-ink-600 transition-colors hover:bg-teal-50 hover:text-teal-700"
+              title="新增板书"
+            >
+              <Plus className="h-5 w-5" />
+            </button>
+          )}
         </div>
       </div>
     </div>
