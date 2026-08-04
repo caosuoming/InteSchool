@@ -284,6 +284,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   // 所有试卷/讲义（含拆解副本），用于查找源资源的拆解副本
   const [allExamPapers, setAllExamPapers] = useState<ExamPaper[]>([]);
   const [allLectures, setAllLectures] = useState<Lecture[]>([]);
+  const [completedLessonSourceKeys, setCompletedLessonSourceKeys] = useState<Set<string>>(new Set());
 
   // 展开的题目 ID
   const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
@@ -500,12 +501,19 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
     };
     try {
-      const [qData, lecData, examData, cwData, matData] = await Promise.all([
+      const [qData, lecData, examData, cwData, matData, completedLessons] = await Promise.all([
         questionService.listQuestions({ ...baseFilter, teacherId: teacher?.id }),
         lectureService.listLectures({ ...baseFilter, teacherId: teacher?.id }),
         examPaperService.listPapers({ ...baseFilter, teacherId: teacher?.id }),
         coursewareService.listCoursewares({ ...baseFilter, teacherId: teacher?.id }),
         materialService.listMaterials({ ...baseFilter, teacherId: teacher?.id }),
+        teacher?.id
+          ? lessonCoursewareService.listCoursewares({
+            teacherId: teacher.id,
+            schoolId,
+            lifecycleStatus: "completed",
+          })
+          : Promise.resolve([]),
       ]);
       const safeQuestions = qData || [];
       const safeLectures = lecData || [];
@@ -520,6 +528,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       // 保存完整列表（含拆解副本），用于查找源资源的拆解副本
       setAllExamPapers(safeExamPapers);
       setAllLectures(safeLectures);
+      setCompletedLessonSourceKeys(new Set(
+        (completedLessons || [])
+          .filter((lesson) => lesson.sourceId && ["examPaper", "lecture"].includes(lesson.sourceType))
+          .map((lesson) => `${lesson.sourceType}:${lesson.sourceId}`),
+      ));
       // 加载试卷/讲义/课件的课后反思（仅按 targetId 关联）
       const reflectionTargets: string[] = [
         ...safeExamPapers.map((r) => r.id),
@@ -1050,6 +1063,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   ]);
 
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
+  const hasCompletedLesson = (resourceType: "examPaper" | "lecture", resourceId: string) => (
+    completedLessonSourceKeys.has(`${resourceType}:${resourceId}`)
+  );
 
   // 试卷/讲义列表过滤掉拆解副本（拆解副本通过源资源下方缩进显示）
   const examPapersFiltered = useMemo(
@@ -2266,29 +2282,37 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 const isExtracting = item.extractStatus === "extracting"
                   || isExtractTaskRunning(extractTasks, item.id, "lecture");
                 const mainLecture = hasExtractCopy ? extractCopies[0] : item;
+                const lectureWasTaught = hasCompletedLesson("lecture", mainLecture.id)
+                  || hasCompletedLesson("lecture", item.id);
                 return (
                   <div key={item.id} className="space-y-2">
                     <ResourceCard
                       key={mainLecture.id}
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
-                      titleActions={item.originalFileUrl && !isExtracted && !hasExtractCopy ? (
+                      titleActions={lectureWasTaught
+                        || (item.originalFileUrl && !isExtracted && !hasExtractCopy) ? (
                         <>
-                          <DocumentDownloadButton
-                            fileUrl={item.originalFileUrl}
-                            fileName={item.originalFileName}
-                            className="text-xs font-normal text-gold-600 hover:text-gold-700"
-                            iconClassName="w-3.5 h-3.5"
-                          />
-                          <Button
-                            variant="gold"
-                            size="sm"
-                            onClick={() => handleOpenExtract(item, "lecture")}
-                            loading={isExtracting}
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            {isExtracting ? "拆解中..." : "文档拆解"}
-                          </Button>
+                          {lectureWasTaught && <Badge variant="green">已上课</Badge>}
+                          {item.originalFileUrl && !isExtracted && !hasExtractCopy && (
+                            <>
+                              <DocumentDownloadButton
+                                fileUrl={item.originalFileUrl}
+                                fileName={item.originalFileName}
+                                className="text-xs font-normal text-gold-600 hover:text-gold-700"
+                                iconClassName="w-3.5 h-3.5"
+                              />
+                              <Button
+                                variant="gold"
+                                size="sm"
+                                onClick={() => handleOpenExtract(item, "lecture")}
+                                loading={isExtracting}
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                {isExtracting ? "拆解中..." : "文档拆解"}
+                              </Button>
+                            </>
+                          )}
                         </>
                       ) : undefined}
                       description={mainLecture.description || (hasExtractCopy ? "文档拆解生成的正稿，可编辑替换其中的题目和知识块" : undefined)}
@@ -2391,6 +2415,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         key={copy.id}
                         {...batchSelectionCardProps("examPaper", copy.id)}
                         title={copy.title}
+                        titleActions={hasCompletedLesson("examPaper", copy.id)
+                          || hasCompletedLesson("examPaper", item.id)
+                          ? <Badge variant="green">已上课</Badge>
+                          : undefined}
                         description={copy.description || "文档拆解生成的副本，可编辑替换其中的题目和知识块"}
                         meta={[
                           { label: "类型", value: getExamPaperTypeLabel(copy.typeId) },
@@ -2439,23 +2467,29 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                           {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
-                          titleActions={item.originalFileUrl && !isExtracted ? (
+                          titleActions={hasCompletedLesson("examPaper", item.id)
+                            || (item.originalFileUrl && !isExtracted) ? (
                             <>
-                              <DocumentDownloadButton
-                                fileUrl={item.originalFileUrl}
-                                fileName={item.originalFileName}
-                                className="text-xs font-normal text-gold-600 hover:text-gold-700"
-                                iconClassName="w-3.5 h-3.5"
-                              />
-                              <Button
-                                variant="gold"
-                                size="sm"
-                                onClick={() => handleOpenExtract(item, "examPaper")}
-                                loading={isExtracting}
-                              >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                {isExtracting ? "拆解中..." : "文档拆解"}
-                              </Button>
+                              {hasCompletedLesson("examPaper", item.id) && <Badge variant="green">已上课</Badge>}
+                              {item.originalFileUrl && !isExtracted && (
+                                <>
+                                  <DocumentDownloadButton
+                                    fileUrl={item.originalFileUrl}
+                                    fileName={item.originalFileName}
+                                    className="text-xs font-normal text-gold-600 hover:text-gold-700"
+                                    iconClassName="w-3.5 h-3.5"
+                                  />
+                                  <Button
+                                    variant="gold"
+                                    size="sm"
+                                    onClick={() => handleOpenExtract(item, "examPaper")}
+                                    loading={isExtracting}
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    {isExtracting ? "拆解中..." : "文档拆解"}
+                                  </Button>
+                                </>
+                              )}
                             </>
                           ) : undefined}
                           description={item.description}

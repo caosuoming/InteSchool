@@ -10,7 +10,10 @@ import type {
   LectureSection,
   Question,
   ResourceSemester,
+  Teacher,
   TeacherAffiliation,
+  TeacherLessonSchedule,
+  TeacherLessonScheduleEntry,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
@@ -498,6 +501,53 @@ export interface LessonCoursewareInput {
 }
 
 export const lessonCoursewareService = {
+  async getLessonSchedule(teacher: Teacher): Promise<TeacherLessonSchedule> {
+    await delay(100);
+    return {
+      entries: (teacher.lessonSchedule?.entries || []).map((entry) => ({ ...entry })),
+      updatedAt: teacher.lessonSchedule?.updatedAt,
+    };
+  },
+
+  async saveLessonSchedule(
+    entries: TeacherLessonScheduleEntry[],
+    teacher: Teacher,
+  ): Promise<TeacherLessonSchedule> {
+    await delay(200);
+    maybeThrowError();
+    if (!teacher.schoolId) throw new Error("请先完成学校认证");
+
+    const allowedClassIds = new Set(defaultClassIds(teacher, teacher.schoolId));
+    const uniqueEntries = new Map<string, TeacherLessonScheduleEntry>();
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (!Number.isInteger(entry.day) || entry.day < 1 || entry.day > 5) {
+        throw new Error("课表星期设置不合法");
+      }
+      if (!Number.isInteger(entry.period) || entry.period < 1 || entry.period > 8) {
+        throw new Error("课表节次设置不合法");
+      }
+      if (!allowedClassIds.has(entry.classId)) {
+        throw new Error("课表中包含非本人任教班级");
+      }
+      uniqueEntries.set(`${entry.day}:${entry.period}`, {
+        day: entry.day,
+        period: entry.period,
+        classId: entry.classId,
+      });
+    }
+
+    const schedule: TeacherLessonSchedule = {
+      entries: [...uniqueEntries.values()].sort((left, right) => (
+        left.day - right.day || left.period - right.period
+      )),
+      updatedAt: new Date().toISOString(),
+    };
+    db.update("teachers", (items: Teacher[]) => items.map((item) => (
+      item.id === teacher.id ? { ...item, lessonSchedule: schedule } : item
+    )));
+    return schedule;
+  },
+
   async listCoursewares(filter: LessonCoursewareFilter = {}): Promise<LessonCourseware[]> {
     await delay(300);
     return db

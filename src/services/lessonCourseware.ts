@@ -7,6 +7,8 @@ import type {
   LessonDocumentBlock,
   LessonSlide,
   ResourceSemester,
+  TeacherLessonSchedule,
+  TeacherLessonScheduleEntry,
 } from "@/types";
 
 export interface LessonCoursewareInput {
@@ -26,6 +28,14 @@ export interface LessonCoursewareInput {
 }
 
 export const lessonCoursewareService = {
+  async getLessonSchedule(): Promise<TeacherLessonSchedule> {
+    return rpcCall("lessonCourseware", "getLessonSchedule", []) as any;
+  },
+
+  async saveLessonSchedule(entries: TeacherLessonScheduleEntry[]): Promise<TeacherLessonSchedule> {
+    return rpcCall("lessonCourseware", "saveLessonSchedule", [entries, undefined]) as any;
+  },
+
   async listCoursewares(filter: LessonCoursewareFilter = {}): Promise<LessonCourseware[]> {
     return rpcCall("lessonCourseware", "listCoursewares", [filter]) as any;
   },

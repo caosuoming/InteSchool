@@ -703,6 +703,13 @@ export const serviceParameters = {
     ]
   },
   "lessonCourseware": {
+    "getLessonSchedule": [
+      "teacher"
+    ],
+    "saveLessonSchedule": [
+      "entries",
+      "teacher"
+    ],
     "listCoursewares": [
       "filter"
     ],

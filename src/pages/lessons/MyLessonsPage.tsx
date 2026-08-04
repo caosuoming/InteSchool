@@ -4,7 +4,7 @@ import {
   BookOpen, Plus, Search, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
   BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, X, MonitorPlay,
-  CheckCircle2, RotateCcw,
+  CheckCircle2, RotateCcw, CalendarDays, Save,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -19,6 +19,8 @@ import type {
   ClassroomNotice,
   LessonCourseware,
   SchoolClass,
+  TeacherLessonScheduleDay,
+  TeacherLessonScheduleEntry,
 } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -68,7 +70,80 @@ function fileSizeLabel(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-type LessonTab = "notice" | "homework" | "courseware";
+const scheduleDays = [
+  { value: 1, label: "星期一" },
+  { value: 2, label: "星期二" },
+  { value: 3, label: "星期三" },
+  { value: 4, label: "星期四" },
+  { value: 5, label: "星期五" },
+] as const satisfies ReadonlyArray<{ value: TeacherLessonScheduleDay; label: string }>;
+
+const schedulePeriods = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+interface ClassMultiSelectDropdownProps {
+  label: string;
+  classes: SchoolClass[];
+  selectedIds: string[];
+  loading: boolean;
+  onToggle: (classId: string) => void;
+}
+
+function ClassMultiSelectDropdown({
+  label,
+  classes,
+  selectedIds,
+  loading,
+  onToggle,
+}: ClassMultiSelectDropdownProps) {
+  const selectedNames = classes
+    .filter((item) => selectedIds.includes(item.id))
+    .map((item) => `${item.grade} · ${item.name}`);
+
+  return (
+    <div>
+      <div className="mb-1.5 text-sm font-medium text-ink-700">{label}</div>
+      <details className="group relative">
+        <summary
+          aria-label={`${label}下拉选择`}
+          className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-ink-200 bg-paper px-3 py-2 text-sm text-ink-700 marker:content-none hover:border-gold-300"
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {loading
+              ? "班级加载中..."
+              : classes.length === 0
+                ? "暂无可用班级"
+                : selectedNames.length === 0
+                  ? "请选择班级"
+                  : selectedNames.length === classes.length
+                    ? `全部班级（${selectedNames.length}）`
+                    : selectedNames.join("、")}
+          </span>
+          <ChevronDown className="h-4 w-4 flex-shrink-0 transition-transform group-open:rotate-180" />
+        </summary>
+        {!loading && classes.length > 0 && (
+          <div className="absolute z-30 mt-1 max-h-64 w-full min-w-64 overflow-y-auto rounded-lg border border-ink-150 bg-paper p-2 shadow-lg">
+            {classes.map((item) => (
+              <label
+                key={item.id}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm text-ink-700 hover:bg-mist"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(item.id)}
+                  onChange={() => onToggle(item.id)}
+                  className="accent-amber-500"
+                />
+                {item.grade} · {item.name}
+              </label>
+            ))}
+          </div>
+        )}
+      </details>
+    </div>
+  );
+}
+
+type LessonTab = "courseware" | "schedule" | "homework" | "notice";
 
 export function MyLessonsPage() {
   const navigate = useNavigate();
@@ -99,10 +174,15 @@ export function MyLessonsPage() {
   const [noticeEndsAt, setNoticeEndsAt] = useState(() => localDateTimeValue(new Date(Date.now() + 24 * 60 * 60_000)));
   const [selectedNoticeClassIds, setSelectedNoticeClassIds] = useState<string[]>([]);
   const [publishingNotice, setPublishingNotice] = useState(false);
-  const [activeTab, setActiveTab] = useState<LessonTab>("notice");
+  const [activeTab, setActiveTab] = useState<LessonTab>("courseware");
   const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null);
   const [editingHomeworkId, setEditingHomeworkId] = useState<string | null>(null);
   const [homeworkAttachments, setHomeworkAttachments] = useState<ClassroomHomeworkAttachment[]>([]);
+  const [lessonSchedule, setLessonSchedule] = useState<TeacherLessonScheduleEntry[]>([]);
+  const [scheduleDraft, setScheduleDraft] = useState<TeacherLessonScheduleEntry[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
+  const [scheduleEditing, setScheduleEditing] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   const classNames = useMemo(
     () => new Map(classes.map((item) => [item.id, `${item.grade} · ${item.name}`])),
@@ -205,6 +285,50 @@ export function MyLessonsPage() {
   useEffect(() => {
     void loadHomeworkData();
   }, [loadHomeworkData]);
+
+  const loadLessonSchedule = useCallback(async () => {
+    if (!teacher?.schoolId) return;
+    setScheduleLoading(true);
+    try {
+      const schedule = await lessonCoursewareService.getLessonSchedule();
+      setLessonSchedule(schedule.entries);
+      setScheduleDraft(schedule.entries);
+    } catch (err) {
+      toast.error("课表加载失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setScheduleLoading(false);
+    }
+  }, [teacher?.schoolId]);
+
+  useEffect(() => {
+    void loadLessonSchedule();
+  }, [loadLessonSchedule]);
+
+  const updateScheduleSlot = (
+    day: TeacherLessonScheduleDay,
+    period: number,
+    classId: string,
+  ) => {
+    setScheduleDraft((current) => {
+      const remaining = current.filter((entry) => entry.day !== day || entry.period !== period);
+      return classId ? [...remaining, { day, period, classId }] : remaining;
+    });
+  };
+
+  const handleSaveSchedule = async () => {
+    setSavingSchedule(true);
+    try {
+      const saved = await lessonCoursewareService.saveLessonSchedule(scheduleDraft);
+      setLessonSchedule(saved.entries);
+      setScheduleDraft(saved.entries);
+      setScheduleEditing(false);
+      toast.success("课表已保存");
+    } catch (err) {
+      toast.error("课表保存失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
 
   const toggleHomeworkClass = (classId: string) => {
     setSelectedClassIds((current) => current.includes(classId)
@@ -529,11 +653,12 @@ export function MyLessonsPage() {
       </div>
 
       <Card className="mb-4 p-2">
-        <div className="grid grid-cols-3 gap-2" role="tablist" aria-label="我的上课内容">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4" role="tablist" aria-label="我的上课内容">
           {([
-            ["notice", "班级通知", BellRing],
-            ["homework", "布置作业", ClipboardCheck],
             ["courseware", "我的课件", Presentation],
+            ["schedule", "我的课表", CalendarDays],
+            ["homework", "我的作业", ClipboardCheck],
+            ["notice", "班级通知", BellRing],
           ] as const).map(([value, label, Icon]) => (
             <button
               key={value}
@@ -552,6 +677,121 @@ export function MyLessonsPage() {
           ))}
         </div>
       </Card>
+
+      {activeTab === "schedule" && (
+        <Card className="mb-4 p-5">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gold-50 text-gold-700">
+                <CalendarDays className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="font-semibold text-ink-900">我的课表</div>
+                <p className="mt-1 text-xs text-ink-500">按星期和节次维护任教班级，课表仅对当前账号生效。</p>
+              </div>
+            </div>
+            {!scheduleEditing && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={scheduleLoading || classes.length === 0}
+                onClick={() => {
+                  setScheduleDraft(lessonSchedule);
+                  setScheduleEditing(true);
+                }}
+              >
+                <Edit3 className="h-4 w-4" />编辑课表
+              </Button>
+            )}
+          </div>
+
+          {scheduleLoading ? (
+            <div className="py-12 text-center text-sm text-ink-400">课表加载中...</div>
+          ) : classes.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-ink-200 py-12 text-center text-sm text-ink-400">
+              当前没有可加入课表的任教班级
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-ink-150">
+              <table className="min-w-[780px] w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-mist/80 text-ink-700">
+                    <th className="w-24 border-b border-r border-ink-150 px-3 py-3 text-center font-medium">节次</th>
+                    {scheduleDays.map((day) => (
+                      <th key={day.value} className="border-b border-r border-ink-150 px-3 py-3 text-center font-medium last:border-r-0">
+                        {day.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedulePeriods.map((period) => (
+                    <tr key={period} className="even:bg-mist/30">
+                      <th className="border-b border-r border-ink-100 px-3 py-3 text-center font-medium text-ink-600">
+                        第 {period} 节
+                      </th>
+                      {scheduleDays.map((day) => {
+                        const entries = scheduleEditing ? scheduleDraft : lessonSchedule;
+                        const entry = entries.find((item) => item.day === day.value && item.period === period);
+                        return (
+                          <td key={day.value} className="border-b border-r border-ink-100 p-2 text-center last:border-r-0">
+                            {scheduleEditing ? (
+                              <select
+                                aria-label={`${day.label} 第${period}节`}
+                                value={entry?.classId || ""}
+                                onChange={(event) => updateScheduleSlot(day.value, period, event.target.value)}
+                                className="h-9 w-full rounded-md border border-ink-200 bg-paper px-2 text-xs text-ink-700 outline-none focus:border-gold-400"
+                              >
+                                <option value="">无课</option>
+                                {classes.map((schoolClass) => (
+                                  <option key={schoolClass.id} value={schoolClass.id}>
+                                    {schoolClass.grade} · {schoolClass.name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : entry ? (
+                              <span className="inline-flex rounded-md bg-gold-50 px-2.5 py-1.5 text-xs font-medium text-gold-800">
+                                {classNames.get(entry.classId) || entry.classId}
+                              </span>
+                            ) : (
+                              <span className="text-ink-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {scheduleEditing && (
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={savingSchedule}
+                onClick={() => {
+                  setScheduleDraft(lessonSchedule);
+                  setScheduleEditing(false);
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                variant="gold"
+                loading={savingSchedule}
+                onClick={() => void handleSaveSchedule()}
+              >
+                <Save className="h-4 w-4" />保存课表
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
 
       {activeTab === "notice" && <Card className="p-5 mb-4">
         <div className="flex items-start gap-3 mb-4">
@@ -573,30 +813,14 @@ export function MyLessonsPage() {
           className="min-h-24"
         />
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1.4fr_0.7fr_0.7fr]">
-          <div>
-            <div className="mb-1.5 text-sm font-medium text-ink-700">通知班级</div>
-            <div className="flex min-h-11 flex-wrap gap-2 rounded-lg border border-ink-200 bg-mist/60 p-2">
-              {homeworkLoading ? (
-                <span className="px-1 py-1 text-xs text-ink-400">班级加载中...</span>
-              ) : classes.length === 0 ? (
-                <span className="px-1 py-1 text-xs text-ink-400">暂无任教班级</span>
-              ) : classes.map((item) => (
-                <label
-                  key={item.id}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-ink-150 bg-paper px-2.5 py-1.5 text-xs text-ink-700 hover:border-gold-300"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedNoticeClassIds.includes(item.id)}
-                    onChange={() => toggleNoticeClass(item.id)}
-                    className="accent-amber-500"
-                  />
-                  {item.grade} · {item.name}
-                </label>
-              ))}
-            </div>
-          </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(280px,1.3fr)_minmax(190px,0.85fr)_minmax(190px,0.85fr)]">
+          <ClassMultiSelectDropdown
+            label="通知班级"
+            classes={classes}
+            selectedIds={selectedNoticeClassIds}
+            loading={homeworkLoading}
+            onToggle={toggleNoticeClass}
+          />
           <Input
             label="开始时间"
             type="datetime-local"
@@ -664,7 +888,7 @@ export function MyLessonsPage() {
       </Card>}
 
       {activeTab === "homework" && <Card className="p-5 mb-4">
-        <div className="flex items-start justify-between gap-4 mb-4">
+        <div className="mb-4">
           <div>
             <div className="flex items-center gap-2 text-ink-900 font-semibold">
               <ClipboardCheck className="w-5 h-5 text-gold-600" />
@@ -672,11 +896,6 @@ export function MyLessonsPage() {
             </div>
             <p className="text-xs text-ink-500 mt-1">发布后，所选班级可从登录页进入“我要上课”查看。</p>
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={() => setHistoryOpen((open) => !open)}>
-            <CalendarClock className="w-4 h-4" />
-            往期作业
-            {historyOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </Button>
         </div>
 
         <Textarea
@@ -757,30 +976,14 @@ export function MyLessonsPage() {
           )}
         </div>
 
-        <div className="grid xl:grid-cols-[1.4fr_0.6fr_0.7fr] gap-4 mt-4">
-          <div>
-            <div className="text-sm font-medium text-ink-700 mb-1.5">发布班级</div>
-            <div className="min-h-11 rounded-lg border border-ink-200 bg-mist/60 p-2 flex flex-wrap gap-2">
-              {homeworkLoading ? (
-                <span className="text-xs text-ink-400 px-1 py-1">班级加载中...</span>
-              ) : classes.length === 0 ? (
-                <span className="text-xs text-ink-400 px-1 py-1">暂无可用班级</span>
-              ) : classes.map((item) => (
-                <label
-                  key={item.id}
-                  className="inline-flex items-center gap-2 rounded-md bg-paper border border-ink-150 px-2.5 py-1.5 text-xs text-ink-700 cursor-pointer hover:border-gold-300"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedClassIds.includes(item.id)}
-                    onChange={() => toggleHomeworkClass(item.id)}
-                    className="accent-amber-500"
-                  />
-                  {item.grade} · {item.name}
-                </label>
-              ))}
-            </div>
-          </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(280px,1.3fr)_minmax(190px,0.85fr)_minmax(190px,0.85fr)]">
+          <ClassMultiSelectDropdown
+            label="发布班级"
+            classes={classes}
+            selectedIds={selectedClassIds}
+            loading={homeworkLoading}
+            onToggle={toggleHomeworkClass}
+          />
           <Input
             label="作业日期"
             type="date"
@@ -808,21 +1011,33 @@ export function MyLessonsPage() {
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 mt-4">
+        <div className="mt-4 flex items-start justify-end gap-2">
           {editingHomeworkId && (
             <Button type="button" variant="outline" onClick={resetHomeworkForm}>
               取消编辑
             </Button>
           )}
-          <Button
-            type="button"
-            variant="gold"
-            loading={publishingHomework}
-            disabled={homeworkLoading || classes.length === 0}
-            onClick={() => void handlePublishHomework()}
-          >
-            <Send className="w-4 h-4" />{editingHomeworkId ? "保存作业修改" : "发布作业"}
-          </Button>
+          <div className="flex flex-col items-stretch gap-2">
+            <Button
+              type="button"
+              variant="gold"
+              loading={publishingHomework}
+              disabled={homeworkLoading || classes.length === 0}
+              onClick={() => void handlePublishHomework()}
+            >
+              <Send className="w-4 h-4" />{editingHomeworkId ? "保存作业修改" : "发布作业"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              <CalendarClock className="w-4 h-4" />
+              往期作业
+              {historyOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
         </div>
 
         {historyOpen && (

@@ -10,10 +10,11 @@ import { donationService } from "@/services/donation";
 import { examPaperService } from "@/services/examPaper";
 import { knowledgeService } from "@/services/knowledge";
 import { lectureService } from "@/services/lecture";
+import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { materialService } from "@/services/material";
 import { questionService } from "@/services/question";
 import { shareService } from "@/services/share";
-import type { Material, Teacher, TreeNode } from "@/types";
+import type { ExamPaper, LessonCourseware, Material, Teacher, TreeNode } from "@/types";
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
   useSchoolResourceOptions: () => ({
@@ -87,6 +88,9 @@ vi.mock("@/services/lecture", () => ({
     updateLecture: vi.fn(),
     deleteLecture: vi.fn(),
   },
+}));
+vi.mock("@/services/lessonCourseware", () => ({
+  lessonCoursewareService: { listCoursewares: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock("@/services/courseware", () => ({
   coursewareService: {
@@ -164,6 +168,46 @@ const material: Material = {
   updatedAt: "2026-07-30T00:00:00.000Z",
 };
 
+const examPaper: ExamPaper = {
+  id: "paper-1",
+  teacherId: "teacher-1",
+  schoolId: "school-1",
+  title: "函数单元测验",
+  chapterIds: [],
+  knowledgePointIds: [],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  duration: 45,
+  totalScore: 100,
+  questions: [],
+  status: "draft",
+  createdAt: "2026-07-30T00:00:00.000Z",
+  updatedAt: "2026-07-30T00:00:00.000Z",
+};
+
+const completedLesson: LessonCourseware = {
+  id: "lesson-1",
+  teacherId: "teacher-1",
+  schoolId: "school-1",
+  title: "函数单元测验（上课课件）",
+  chapterIds: [],
+  knowledgePointIds: [],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  sourceType: "examPaper",
+  sourceId: examPaper.id,
+  sourceTitle: examPaper.title,
+  slides: [],
+  classIds: ["class-1"],
+  status: "draft",
+  lifecycleStatus: "completed",
+  completedAt: "2026-07-30T10:00:00.000Z",
+  createdAt: "2026-07-30T00:00:00.000Z",
+  updatedAt: "2026-07-30T10:00:00.000Z",
+};
+
 const chapterTree: TreeNode = {
   id: "chapter-root",
   name: "全部章节",
@@ -180,10 +224,10 @@ const knowledgeTree: TreeNode = {
   children: [],
 };
 
-function renderPage() {
+function renderPage(initialTab: "material" | "examPaper" = "material") {
   return render(
     <MemoryRouter>
-      <MyResourcesPage initialTab="material" />
+      <MyResourcesPage initialTab={initialTab} />
     </MemoryRouter>,
   );
 }
@@ -203,6 +247,7 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(questionService.listQuestions).mockResolvedValue([]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([]);
     vi.mocked(lectureService.listLectures).mockResolvedValue([]);
+    vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
     vi.mocked(coursewareService.listCoursewares).mockResolvedValue([]);
     vi.mocked(materialService.listMaterials).mockResolvedValue([material]);
     vi.mocked(materialService.getMaterial).mockResolvedValue(material);
@@ -215,6 +260,21 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
     vi.mocked(classService.listMyClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([]);
+  });
+
+  it("marks an exam paper when its linked lesson has been completed", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper]);
+    vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([completedLesson]);
+
+    renderPage("examPaper");
+
+    expect(await screen.findByText(examPaper.title)).toBeInTheDocument();
+    expect(screen.getByText("已上课")).toBeInTheDocument();
+    expect(lessonCoursewareService.listCoursewares).toHaveBeenCalledWith(expect.objectContaining({
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      lifecycleStatus: "completed",
+    }));
   });
 
   it("shows the floating panel only after selecting a resource", async () => {
