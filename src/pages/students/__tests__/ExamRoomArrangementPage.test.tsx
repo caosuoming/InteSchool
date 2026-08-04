@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -125,6 +125,21 @@ const savedArrangement: ExamArrangement = {
     roomLocation: "教学楼 301",
     seatNo: 1,
     admissionNo: "20260510010001",
+  }, {
+    id: "subject:物理:student-1",
+    studentId: "student-1",
+    studentName: "张同学",
+    studentNo: "001",
+    classId: "class-1",
+    className: "高三（1）班",
+    subjectLabel: "物理",
+    sessionKey: "subject:物理",
+    roomId: "room-1",
+    roomName: "高三（1）班",
+    roomNumber: "高三（1）班",
+    roomLocation: "教学楼 301",
+    seatNo: 1,
+    admissionNo: "20260510040001",
   }],
   createdAt: "2026-05-01T00:00:00.000Z",
   updatedAt: "2026-05-01T00:00:00.000Z",
@@ -231,5 +246,31 @@ describe("ExamRoomArrangementPage", () => {
     await user.click(screen.getByRole("button", { name: "复用此考场安排" }));
     expect(screen.getByLabelText("考试名称")).toHaveValue("第一次模拟考试（复用）");
     expect(arrangementSelect).toHaveValue("new");
+  });
+
+  it("shows one class row per student and selectable desk-label rooms", async () => {
+    const user = userEvent.setup();
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([savedArrangement]);
+    renderPage();
+
+    const arrangementSelect = await screen.findByLabelText("选择考场安排");
+    await user.selectOptions(arrangementSelect, savedArrangement.id);
+
+    const classTab = await screen.findByRole("tab", { name: "班级考场安排预览" });
+    expect(classTab).toHaveAttribute("aria-selected", "true");
+    const classTable = screen.getByRole("table");
+    expect(within(classTable).getAllByRole("row")).toHaveLength(2);
+    expect(within(classTable).getByText("物理")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择高三（1）班")).toBeChecked();
+
+    await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
+    expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("1 张桌贴")).toBeInTheDocument();
+    const roomCheckbox = screen.getByLabelText("选择高三（1）班");
+    expect(roomCheckbox).toBeChecked();
+
+    await user.click(roomCheckbox);
+    expect(screen.getByRole("button", { name: "下载已选桌贴" })).toBeDisabled();
+    expect(screen.getByText("已选择 0 / 1 个考场，共 0 张桌贴")).toBeInTheDocument();
   });
 });
