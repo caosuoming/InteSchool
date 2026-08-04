@@ -36,6 +36,8 @@ vi.mock("@/services/classroomNotice", () => ({
 
 vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
+    getLessonSchedule: vi.fn(),
+    saveLessonSchedule: vi.fn(),
     listCoursewares: vi.fn(),
     deleteCourseware: vi.fn(),
     completeCourseware: vi.fn(),
@@ -172,6 +174,8 @@ describe("MyLessonsPage classroom publishing", () => {
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(classroomNoticeService.createNotice).mockResolvedValue(activeNotice);
     vi.mocked(classroomNoticeService.updateNotice).mockResolvedValue(activeNotice);
+    vi.mocked(lessonCoursewareService.getLessonSchedule).mockResolvedValue({ entries: [] });
+    vi.mocked(lessonCoursewareService.saveLessonSchedule).mockImplementation(async (entries) => ({ entries }));
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
     vi.mocked(lessonCoursewareService.deleteCourseware).mockResolvedValue(undefined);
     vi.mocked(lessonCoursewareService.completeCourseware).mockImplementation(async (id) => courseware(id, "completed"));
@@ -188,6 +192,35 @@ describe("MyLessonsPage classroom publishing", () => {
     });
   });
 
+  it("orders the lesson tabs, defaults to courseware, and saves the weekly schedule", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      "我的课件",
+      "我的课表",
+      "我的作业",
+      "班级通知",
+    ]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+
+    await user.click(screen.getByRole("tab", { name: "我的课表" }));
+    await user.click(await screen.findByRole("button", { name: "编辑课表" }));
+    await user.selectOptions(screen.getByLabelText("星期一 第1节"), "class-1");
+    await user.click(screen.getByRole("button", { name: "保存课表" }));
+
+    await waitFor(() => {
+      expect(lessonCoursewareService.saveLessonSchedule).toHaveBeenCalledWith([
+        { day: 1, period: 1, classId: "class-1" },
+      ]);
+    });
+  });
+
   it("defaults to the teacher's class and publishes homework immediately", async () => {
     const user = userEvent.setup();
     render(
@@ -196,7 +229,8 @@ describe("MyLessonsPage classroom publishing", () => {
       </MemoryRouter>,
     );
 
-    await user.click(await screen.findByRole("tab", { name: "布置作业" }));
+    await user.click(await screen.findByRole("tab", { name: "我的作业" }));
+    await user.click(screen.getByLabelText("发布班级下拉选择"));
     expect(await screen.findByRole("checkbox", { name: "高一 · 高一（1）班" })).toBeChecked();
 
     await user.type(screen.getByLabelText("作业内容"), "完成课本第 42 页第 1—6 题");
@@ -224,6 +258,7 @@ describe("MyLessonsPage classroom publishing", () => {
     );
 
     expect((await screen.findAllByText("今天放学后进行卫生检查")).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("tab", { name: "班级通知" }));
     await user.type(screen.getByLabelText("通知内容"), "明天第一节课改到实验室");
     await user.click(screen.getByRole("button", { name: "发送通知" }));
 
@@ -249,7 +284,8 @@ describe("MyLessonsPage classroom publishing", () => {
       </MemoryRouter>,
     );
 
-    await user.click(await screen.findByRole("tab", { name: "布置作业" }));
+    await user.click(await screen.findByRole("tab", { name: "我的作业" }));
+    await user.click(screen.getByLabelText("发布班级下拉选择"));
     expect(await screen.findByRole("checkbox", { name: "高一 · 高一（1）班" })).toBeChecked();
     const file = new File(["pdf"], "函数图像.pdf", { type: "application/pdf" });
     await user.upload(screen.getByLabelText("选择作业附件"), file);
@@ -328,7 +364,7 @@ describe("MyLessonsPage classroom publishing", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "编辑作业" }));
-    expect(screen.getByRole("tab", { name: "布置作业" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "我的作业" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("作业内容")).toHaveValue(createdHomework.content);
     expect(screen.getByText("原作业.pdf")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "保存作业修改" }));

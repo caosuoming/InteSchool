@@ -101,6 +101,8 @@ export interface Teacher {
   affiliations: TeacherAffiliation[];
   /** 当前激活的所属单位ID */
   currentAffiliationId: string | null;
+  /** 教师在“我的上课”中维护的周课表。 */
+  lessonSchedule?: TeacherLessonSchedule;
   /** 可管理的平台资源学科；仅平台超级管理员可以授予或撤销。 */
   platformModeratorSubjects?: string[];
   createdAt: string;
@@ -2026,6 +2028,23 @@ export type LessonSourceType = "examPaper" | "lecture" | "courseware" | "manual"
 
 /** 上课课件在“我的上课”中的生命周期状态。 */
 export type LessonCoursewareLifecycleStatus = "active" | "completed" | "trashed";
+
+/** 周课表中的工作日，1 表示星期一，5 表示星期五。 */
+export type TeacherLessonScheduleDay = 1 | 2 | 3 | 4 | 5;
+
+/** 教师周课表中的一个上课时段。 */
+export interface TeacherLessonScheduleEntry {
+  day: TeacherLessonScheduleDay;
+  /** 节次，当前界面支持第 1—8 节。 */
+  period: number;
+  classId: string;
+}
+
+/** 教师个人周课表。 */
+export interface TeacherLessonSchedule {
+  entries: TeacherLessonScheduleEntry[];
+  updatedAt?: string;
+}
 
 /** 上课课件 */
 export interface LessonCourseware {

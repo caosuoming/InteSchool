@@ -66,6 +66,9 @@ vi.mock("@/services/material", () => ({
 vi.mock("@/services/lecture", () => ({
   lectureService: { listLectures: vi.fn().mockResolvedValue([]) },
 }));
+vi.mock("@/services/lessonCourseware", () => ({
+  lessonCoursewareService: { listCoursewares: vi.fn().mockResolvedValue([]) },
+}));
 vi.mock("@/services/share", () => ({ shareService: {} }));
 vi.mock("@/services/donation", () => ({
   donationService: { listTeacherDonations: vi.fn().mockResolvedValue([]) },

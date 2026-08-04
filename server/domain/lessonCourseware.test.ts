@@ -6,6 +6,7 @@ import type {
   Lecture,
   LessonDocumentBlock,
   Question,
+  Teacher,
 } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { coursewareService } from "./courseware.js";
@@ -360,6 +361,29 @@ describe("courseware lesson flow", () => {
         deletedAt: null,
       });
       expect(await lessonCoursewareService.listCoursewares({ teacherId: "teacher-1" })).toHaveLength(1);
+    });
+  });
+
+  it("persists a teacher schedule and rejects classes outside the teaching assignment", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      const teacher = state.teachers[0] as unknown as Teacher;
+      const schedule = await lessonCoursewareService.saveLessonSchedule([
+        { day: 1, period: 1, classId: "class-1" },
+        { day: 5, period: 8, classId: "class-1" },
+      ], teacher);
+
+      expect(schedule.entries).toEqual([
+        { day: 1, period: 1, classId: "class-1" },
+        { day: 5, period: 8, classId: "class-1" },
+      ]);
+      expect(await lessonCoursewareService.getLessonSchedule(
+        state.teachers[0] as unknown as Teacher,
+      )).toEqual(schedule);
+      await expect(lessonCoursewareService.saveLessonSchedule([
+        { day: 2, period: 3, classId: "class-other" },
+      ], teacher)).rejects.toThrow("课表中包含非本人任教班级");
     });
   });
 
