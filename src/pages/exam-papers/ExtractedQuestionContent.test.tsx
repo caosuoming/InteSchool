@@ -45,4 +45,28 @@ describe("ExtractedQuestionContent", () => {
     fireEvent.keyDown(stem, { key: "Enter" });
     expect(screen.getByText("解析")).toBeInTheDocument();
   });
+
+  it("reduces option columns when option content is long", () => {
+    const { container, rerender } = render(
+      <ExtractedQuestionContent
+        stem="题干"
+        options={["短选项", "中".repeat(31), "短选项", "短选项"]}
+        answer="A"
+        analysis="解析"
+      />,
+    );
+
+    expect(container.querySelector(".grid")).toHaveClass("grid-cols-2");
+
+    rerender(
+      <ExtractedQuestionContent
+        stem="题干"
+        options={["短选项", "长".repeat(61), "短选项", "短选项"]}
+        answer="A"
+        analysis="解析"
+      />,
+    );
+
+    expect(container.querySelector(".grid")).toHaveClass("grid-cols-1");
+  });
 });

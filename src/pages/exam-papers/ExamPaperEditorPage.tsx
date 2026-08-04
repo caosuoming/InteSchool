@@ -67,6 +67,7 @@ import type {
   TreeNode,
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
+import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
 import { generateExamPaperDocx } from "@/lib/docx";
 import { treeNameMap } from "@/lib/basket-audience";
@@ -1283,28 +1284,6 @@ export default function ExamPaperEditorPage() {
               className="no-print space-y-4 xl:sticky xl:top-4"
               aria-label="试卷信息侧栏"
             >
-              <Card className="p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-gold-600" />
-                  <h2 className="font-serif text-sm font-semibold text-ink-900">文档信息</h2>
-                </div>
-                <dl className="space-y-2 text-xs">
-                  {[
-                    ["年级", grade],
-                    ["学年", schoolYear],
-                    ["学期", semester],
-                    ["考试时长", `${duration} 分钟`],
-                    ["题目数量", `${paperQuestions.length} 题`],
-                    ["总分", `${totalScore} 分`],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex items-start justify-between gap-3">
-                      <dt className="text-ink-400">{label}</dt>
-                      <dd className="text-right font-medium text-ink-700">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </Card>
-
               <Card className="p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-gold-600" />
@@ -2672,7 +2651,7 @@ function PreviewQuestionItem({
           {pq.options && pq.options.length > 0 && (
             <div className={cn(
               "pl-5 mt-2 gap-2 grid",
-              getOptionsGridCols(pq.options.length),
+              getQuestionOptionGridColumns(pq.options),
             )}>
               {pq.options.map((opt, i) => (
                 <div key={i} className={cn(

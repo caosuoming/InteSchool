@@ -207,11 +207,15 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.queryByRole("button", { name: "打印" })).not.toBeInTheDocument();
 
     const sidebar = screen.getByLabelText("试卷信息侧栏");
+    expect(within(sidebar).queryByText("文档信息")).not.toBeInTheDocument();
     expect(within(sidebar).getByText("难度分布")).toBeInTheDocument();
     expect(within(sidebar).getByText("已发布对象")).toBeInTheDocument();
     expect(within(sidebar).getByText("高一（1）班")).toBeInTheDocument();
     expect(within(sidebar).getByText("包含知识点")).toBeInTheDocument();
     expect(within(sidebar).getByText("函数定义域")).toBeInTheDocument();
+    expect(screen.getAllByText("难度分布")).toHaveLength(1);
+    expect(screen.getAllByText("已发布对象")).toHaveLength(1);
+    expect(screen.getAllByText("包含知识点")).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "收起信息栏" }));
     expect(screen.queryByLabelText("试卷信息侧栏")).not.toBeInTheDocument();
