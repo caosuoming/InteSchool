@@ -8,6 +8,7 @@ import {
 import { GripVertical, Maximize2 } from "lucide-react";
 import type { LessonSlideElement } from "@/types";
 import { cn } from "@/lib/utils";
+import { renderMathHtml, serializeMathHtml } from "@/lib/math-html";
 import { MathHtml } from "@/components/ui/MathHtml";
 
 interface LessonSlideCanvasProps {
@@ -199,7 +200,7 @@ export function LessonSlideCanvas({
                     element.href && "text-gold-700 underline decoration-gold-300 underline-offset-4",
                   )}
                   style={textStyle}
-                  dangerouslySetInnerHTML={{ __html: element.content }}
+                  dangerouslySetInnerHTML={{ __html: renderMathHtml(element.content) }}
                   onClick={(event) => {
                     event.stopPropagation();
                     onSelectElement?.(element.id);
@@ -208,7 +209,7 @@ export function LessonSlideCanvas({
                     if (!onElementsChange) return;
                     const content = event.currentTarget.innerHTML === "<br>"
                       ? ""
-                      : event.currentTarget.innerHTML;
+                      : serializeMathHtml(event.currentTarget.innerHTML);
                     onElementsChange(elements.map((item) => (
                       item.id === element.id && item.kind === "text"
                         ? { ...item, content }
