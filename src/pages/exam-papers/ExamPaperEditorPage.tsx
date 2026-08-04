@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "react-rout
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
   FileSpreadsheet, GraduationCap, Users, Send,
-  ChevronUp, ChevronDown, Library, Files, FileText, ListOrdered,
+  ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered,
   BarChart3, CheckCircle2, AlertCircle, Lock, Calendar, Layout,
   Sparkles, BookOpen, Lightbulb, Printer,
   CheckSquare, ArrowUpDown,
@@ -40,6 +40,13 @@ import {
   resolveExtractedQuestionDisplay,
   setScoreUnderHeading,
 } from "@/pages/exam-papers/extracted-document";
+import {
+  buildQuestionProgress,
+  getCollapsedStructuredBlockIds,
+  getHeadingInsertIndex,
+  insertBlocksUnderHeading,
+  type QuestionProgress,
+} from "@/pages/exam-papers/exam-paper-editor-helpers";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
   AnyClass,
@@ -141,7 +148,12 @@ const groupByType = (questions: ExamPaperQuestion[], qMap: Record<string, Questi
   return effectiveOrder.filter((t) => groups[t]).map((t) => groups[t]);
 };
 
-type AddSource = "basket" | "bank" | "examPaper" | "lecture";
+type AddSource = "choose" | "basket" | "bank" | "examPaper" | "lecture";
+
+type AddTarget =
+  | { kind: "group"; groupType: string; label: string }
+  | { kind: "heading"; headingId: string; label: string }
+  | null;
 
 export default function ExamPaperEditorPage() {
   const { id } = useParams();
@@ -203,9 +215,13 @@ export default function ExamPaperEditorPage() {
 
   // 大题型顺序（编辑模式）
   const [groupOrder, setGroupOrder] = useState<string[]>(typeOrder);
+  const [collapsedGroupTypes, setCollapsedGroupTypes] = useState<Set<string>>(new Set());
+  const [collapsedHeadingIds, setCollapsedHeadingIds] = useState<Set<string>>(new Set());
 
   // 添加题目
   const [addSource, setAddSource] = useState<AddSource | null>(null);
+  const [addTarget, setAddTarget] = useState<AddTarget>(null);
+  const [replaceIdx, setReplaceIdx] = useState<number | null>(null);
   const [bankQuestions, setBankQuestions] = useState<Question[]>([]);
   const [bankKeyword, setBankKeyword] = useState("");
   const [selectedBasket, setSelectedBasket] = useState<Basket | null>(null);
@@ -235,6 +251,7 @@ export default function ExamPaperEditorPage() {
   const [showStudentPicker, setShowStudentPicker] = useState(false);
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("all");
   const [answeredQuestionIds, setAnsweredQuestionIds] = useState<Set<string>>(new Set());
+  const [questionProgress, setQuestionProgress] = useState<Record<string, QuestionProgress>>({});
   const [students, setStudents] = useState<Student[]>([]);
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
@@ -243,6 +260,69 @@ export default function ExamPaperEditorPage() {
   const dateRange = useMemo(() => getDateRange(timeRangeKey), [timeRangeKey]);
 
   const schoolId = teacher?.schoolId || "sch-1";
+  const hiddenStructuredBlockIds = useMemo(
+    () => getCollapsedStructuredBlockIds(contentBlocks, collapsedHeadingIds),
+    [contentBlocks, collapsedHeadingIds],
+  );
+  const addTargetQuestionType = useMemo(() => {
+    if (addTarget?.kind === "group") return addTarget.groupType;
+    if (addTarget?.kind === "heading") {
+      return contentBlocks.find((block) => block.id === addTarget.headingId)?.questionType;
+    }
+    return undefined;
+  }, [addTarget, contentBlocks]);
+
+  const getQuestionProgress = useCallback((questionId: string): QuestionProgress | undefined => {
+    if (selectedStudentIds.length === 0) return undefined;
+    return questionProgress[questionId] || {
+      answeredCount: 0,
+      targetCount: selectedStudentIds.length,
+      scoredCount: 0,
+      correctRate: null,
+    };
+  }, [questionProgress, selectedStudentIds.length]);
+
+  const openAddQuestion = useCallback((target: AddTarget = null) => {
+    setAddTarget(target);
+    setReplaceIdx(null);
+    setAddSource("choose");
+    setSelectedQuestionIds([]);
+    setSelectedBasket(null);
+    setSelectedPaper(null);
+    setSelectedLecture(null);
+    if (target?.kind === "group") {
+      setCollapsedGroupTypes((previous) => {
+        const next = new Set(previous);
+        next.delete(target.groupType);
+        return next;
+      });
+    }
+    if (target?.kind === "heading") {
+      setCollapsedHeadingIds((previous) => {
+        const next = new Set(previous);
+        next.delete(target.headingId);
+        return next;
+      });
+    }
+  }, []);
+
+  const closeAddQuestion = useCallback(() => {
+    setAddSource(null);
+    setAddTarget(null);
+    setReplaceIdx(null);
+    setSelectedQuestionIds([]);
+    setSelectedBasket(null);
+    setSelectedPaper(null);
+    setSelectedLecture(null);
+  }, []);
+
+  const chooseAddSource = useCallback((source: Exclude<AddSource, "choose">) => {
+    setAddSource(source);
+    setSelectedQuestionIds([]);
+    setSelectedBasket(null);
+    setSelectedPaper(null);
+    setSelectedLecture(null);
+  }, []);
 
   const loadPaper = useCallback(async () => {
     if (!id) return;
@@ -320,16 +400,28 @@ export default function ExamPaperEditorPage() {
     });
   }, [id, teacher, schoolId, loadPaper]);
 
-  // 当学生或时间周期变化时，加载学生在该时间段内做过的题目 ID 集合
+  // 当发布对象或时间周期变化时，加载每道题的完成情况和正确率。
   useEffect(() => {
     if (selectedStudentIds.length === 0) {
       setAnsweredQuestionIds(new Set());
+      setQuestionProgress({});
       return;
     }
-    analyticsService
-      .getAnsweredQuestionIds(selectedStudentIds, dateRange)
-      .then(setAnsweredQuestionIds)
-      .catch(() => setAnsweredQuestionIds(new Set()));
+    let cancelled = false;
+    analyticsService.listAnswerRecordsByStudents(selectedStudentIds, dateRange)
+      .then((records) => {
+        if (cancelled) return;
+        setAnsweredQuestionIds(new Set(records.map((record) => record.questionId)));
+        setQuestionProgress(buildQuestionProgress(records, selectedStudentIds));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAnsweredQuestionIds(new Set());
+        setQuestionProgress({});
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedStudentIds, dateRange]);
 
   const filteredStudents = useMemo(() => {
@@ -580,9 +672,13 @@ export default function ExamPaperEditorPage() {
   };
 
   // 编辑模式：换题（替换某题的题库关联）
-  const [replaceIdx, setReplaceIdx] = useState<number | null>(null);
   const handleReplaceQuestion = (idx: number) => {
+    setAddTarget(null);
     setReplaceIdx(idx);
+    setSelectedQuestionIds([]);
+    setSelectedBasket(null);
+    setSelectedPaper(null);
+    setSelectedLecture(null);
     setAddSource("bank");
   };
 
@@ -602,7 +698,7 @@ export default function ExamPaperEditorPage() {
 
   // 添加题目确认
   const handleConfirmAdd = async () => {
-    if (!addSource || selectedQuestionIds.length === 0) {
+    if (!addSource || addSource === "choose" || selectedQuestionIds.length === 0) {
       toast.error("请选择至少一道题目");
       return;
     }
@@ -625,6 +721,10 @@ export default function ExamPaperEditorPage() {
         .map((s) => s.questionId!)
         .filter((qid) => selectedQuestionIds.includes(qid));
       toAdd = all.filter((q) => qIds.includes(q.id));
+    }
+
+    if (addTargetQuestionType) {
+      toAdd = toAdd.filter((question) => question.type === addTargetQuestionType);
     }
 
     if (replaceIdx !== null) {
@@ -658,9 +758,16 @@ export default function ExamPaperEditorPage() {
         ));
       }
       toast.success("题目已替换");
-      setReplaceIdx(null);
     } else {
       // 添加模式
+      if (toAdd.length === 0) {
+        toast.error(
+          addTargetQuestionType
+            ? `所选题目不属于“${typeLabel[addTargetQuestionType] || addTargetQuestionType}”题型`
+            : "未找到有效题目",
+        );
+        return;
+      }
       const newPqs: ExamPaperQuestion[] = toAdd.map((q) => ({
         id: `pq-${Date.now()}-${q.id}`,
         questionId: q.id,
@@ -671,19 +778,55 @@ export default function ExamPaperEditorPage() {
         score: 5,
         type: q.type,
       }));
-      setPaperQuestions((prev) => [...prev, ...newPqs]);
-      if (contentBlocks.length > 0) {
-        setContentBlocks((prev) => [
-          ...prev,
-          ...newPqs.map((paperQuestion) => ({
-            id: `doc-block-${crypto.randomUUID()}`,
-            type: "question" as const,
-            content: paperQuestion.stem,
-            questionType: paperQuestion.type,
-            questionId: paperQuestion.questionId,
-            examPaperQuestionId: paperQuestion.id,
-          })),
-        ]);
+      const newBlocks: ExtractedDocumentBlock[] = newPqs.map((paperQuestion) => ({
+        id: `doc-block-${crypto.randomUUID()}`,
+        type: "question",
+        content: paperQuestion.stem,
+        questionType: paperQuestion.type,
+        questionId: paperQuestion.questionId,
+        examPaperQuestionId: paperQuestion.id,
+      }));
+
+      if (addTarget?.kind === "heading") {
+        const blockInsertIndex = getHeadingInsertIndex(contentBlocks, addTarget.headingId);
+        const nextQuestionId = contentBlocks
+          .slice(blockInsertIndex)
+          .find((block) => block.type === "question" && block.examPaperQuestionId)
+          ?.examPaperQuestionId;
+        setPaperQuestions((previous) => {
+          const questionInsertIndex = nextQuestionId
+            ? previous.findIndex((question) => question.id === nextQuestionId)
+            : previous.length;
+          const safeInsertIndex = questionInsertIndex < 0 ? previous.length : questionInsertIndex;
+          return [
+            ...previous.slice(0, safeInsertIndex),
+            ...newPqs,
+            ...previous.slice(safeInsertIndex),
+          ];
+        });
+        setContentBlocks((previous) => insertBlocksUnderHeading(
+          previous,
+          addTarget.headingId,
+          newBlocks,
+        ));
+      } else if (addTarget?.kind === "group") {
+        setPaperQuestions((previous) => {
+          let insertIndex = previous.length;
+          previous.forEach((question, index) => {
+            const questionType = questions[question.questionId || ""]?.type || question.type;
+            if (questionType === addTarget.groupType) insertIndex = index + 1;
+          });
+          return [
+            ...previous.slice(0, insertIndex),
+            ...newPqs,
+            ...previous.slice(insertIndex),
+          ];
+        });
+      } else {
+        setPaperQuestions((previous) => [...previous, ...newPqs]);
+        if (contentBlocks.length > 0) {
+          setContentBlocks((previous) => [...previous, ...newBlocks]);
+        }
       }
       const newQMap = { ...questions };
       toAdd.forEach((q) => { newQMap[q.id] = q; });
@@ -691,16 +834,12 @@ export default function ExamPaperEditorPage() {
       toast.success(`已添加 ${toAdd.length} 道题目`);
     }
 
-    setAddSource(null);
-    setSelectedQuestionIds([]);
-    setSelectedBasket(null);
-    setSelectedPaper(null);
-    setSelectedLecture(null);
+    closeAddQuestion();
   };
 
   // 保存
   const handleSave = async () => {
-    if (!paper || !title.trim()) { toast.error("请填写试卷标题"); return; }
+    if (!paper || !title.trim()) { toast.error("请填写文档名"); return; }
     setSaving(true);
     try {
       const patch = {
@@ -826,7 +965,7 @@ export default function ExamPaperEditorPage() {
   const handleMarkAllDone = async () => {
     if (!paper) return;
     if (selectedStudentIds.length === 0) {
-      toast.warning("请先选择学生");
+      toast.warning("请先选择发布对象");
       return;
     }
     const questionIds = Array.from(new Set(paperQuestions.map(getCompletionQuestionId)));
@@ -857,8 +996,9 @@ export default function ExamPaperEditorPage() {
       if (pendingRecords.length > 0) {
         await analyticsService.batchSaveAnswerRecords(pendingRecords);
       }
-      const answeredIds = await analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange);
-      setAnsweredQuestionIds(answeredIds);
+      const refreshedRecords = await analyticsService.listAnswerRecordsByStudents(selectedStudentIds, dateRange);
+      setAnsweredQuestionIds(new Set(refreshedRecords.map((record) => record.questionId)));
+      setQuestionProgress(buildQuestionProgress(refreshedRecords, selectedStudentIds));
       toast.success(
         pendingRecords.length > 0
           ? `已补充 ${pendingRecords.length} 条完成记录，已有得分保持不变`
@@ -1255,13 +1395,9 @@ export default function ExamPaperEditorPage() {
               <span className="font-semibold text-gold-700">{totalScore} 分</span>
             </div>
           </div>
-          <div className="grid md:grid-cols-2 xl:grid-cols-7 gap-3">
-            <div className="xl:col-span-2">
-              <Input label="标题" value={title} onChange={(e) => setTitle(e.target.value)} />
-            </div>
-            <div className="xl:col-span-2">
-              <Textarea label="描述" value={description} onChange={(e) => setDescription(e.target.value)} rows={1} />
-            </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.8fr)_minmax(200px,1.6fr)_repeat(5,minmax(120px,1fr))]">
+            <Input label="文档名" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Input label="描述" value={description} onChange={(e) => setDescription(e.target.value)} />
             <Select
               label="年级"
               value={grade}
@@ -1336,7 +1472,7 @@ export default function ExamPaperEditorPage() {
                     </Button>
                   </>
                 )}
-                <Button variant="gold" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
+                <Button variant="gold" size="sm" onClick={() => openAddQuestion()}>
                   <Plus className="w-3.5 h-3.5" />
                   添加题目
                 </Button>
@@ -1346,6 +1482,7 @@ export default function ExamPaperEditorPage() {
             {isStructuredExtract ? (
               <div className="space-y-3">
                 {contentBlocks.map((block, blockIndex) => {
+                  if (hiddenStructuredBlockIds.has(block.id)) return null;
                   const paperQuestion = block.examPaperQuestionId
                     ? paperQuestions.find((question) => question.id === block.examPaperQuestionId)
                     : undefined;
@@ -1358,6 +1495,7 @@ export default function ExamPaperEditorPage() {
                     ? resolveExtractedQuestionDisplay(paperQuestion, linkedQuestion, block.content)
                     : undefined;
                   const isQuestionGroup = block.type === "groupTitle" || block.type === "heading";
+                  const headingCollapsed = isQuestionGroup && collapsedHeadingIds.has(block.id);
                   const headingQuestionCount = isQuestionGroup
                     ? questionIdsUnderHeading(contentBlocks, block.id).length
                     : 0;
@@ -1378,8 +1516,26 @@ export default function ExamPaperEditorPage() {
                   return (
                     <section key={block.id} className="rounded-md border border-ink-100 bg-paper p-3">
                       <div className="mb-2 flex items-center gap-2">
+                        {isQuestionGroup && (
+                          <button
+                            type="button"
+                            onClick={() => setCollapsedHeadingIds((previous) => {
+                              const next = new Set(previous);
+                              if (next.has(block.id)) next.delete(block.id);
+                              else next.add(block.id);
+                              return next;
+                            })}
+                            className="rounded p-1 text-ink-400 hover:bg-ink-50 hover:text-gold-700"
+                            aria-label={`${headingCollapsed ? "展开" : "折叠"}${block.content}`}
+                            title={headingCollapsed ? "展开下属题目" : "折叠下属题目"}
+                          >
+                            {headingCollapsed
+                              ? <ChevronRight className="h-4 w-4" />
+                              : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                        )}
                         <Badge variant={block.type === "question" ? "teal" : block.type === "knowledge" ? "gold" : "ink"}>
-                          {label}
+                          {label}{block.type === "question" && paperQuestionIndex >= 0 ? ` ${paperQuestionIndex + 1}` : ""}
                         </Badge>
                         {prepTaskId && (
                           <ResourceCommentButton
@@ -1394,6 +1550,9 @@ export default function ExamPaperEditorPage() {
                         {block.type === "question" && paperQuestion && (
                           <>
                             <Badge variant="default">{typeLabel[paperQuestion.type]}</Badge>
+                            <QuestionProgressBadge
+                              progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
+                            />
                             <div className="ml-auto flex items-center gap-1">
                               <Input
                                 aria-label="题目分值"
@@ -1423,6 +1582,21 @@ export default function ExamPaperEditorPage() {
                             />
                             <span className="text-xs text-ink-500">分</span>
                           </div>
+                        )}
+                        {isQuestionGroup && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={headingQuestionCount === 0 ? "ml-auto" : undefined}
+                            onClick={() => openAddQuestion({
+                              kind: "heading",
+                              headingId: block.id,
+                              label: block.content,
+                            })}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            添加题目
+                          </Button>
                         )}
                         <div className={cn(
                           "flex items-center gap-0.5",
@@ -1471,6 +1645,7 @@ export default function ExamPaperEditorPage() {
                       )}
                       {block.type === "question" && questionDisplay ? (
                         <ExtractedQuestionContent
+                          number={paperQuestionIndex >= 0 ? paperQuestionIndex + 1 : undefined}
                           stem={questionDisplay.stem}
                           options={questionDisplay.options}
                           answer={questionDisplay.answer}
@@ -1509,8 +1684,8 @@ export default function ExamPaperEditorPage() {
                 title="试卷暂无题目"
                 description="从右侧选择来源添加题目"
                 action={
-                  <Button variant="gold" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
-                    <Plus className="w-3.5 h-3.5" /> 从题库添加
+                  <Button variant="gold" size="sm" onClick={() => openAddQuestion()}>
+                    <Plus className="w-3.5 h-3.5" /> 添加题目
                   </Button>
                 }
               />
@@ -1518,9 +1693,26 @@ export default function ExamPaperEditorPage() {
               <div className="space-y-6">
                 {groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex, groups) => {
                   const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
+                  const groupCollapsed = collapsedGroupTypes.has(group.type);
                   return (
                     <section key={group.type}>
                       <div className="flex items-center gap-3 mb-3 pb-2 border-b border-ink-200">
+                        <button
+                          type="button"
+                          onClick={() => setCollapsedGroupTypes((previous) => {
+                            const next = new Set(previous);
+                            if (next.has(group.type)) next.delete(group.type);
+                            else next.add(group.type);
+                            return next;
+                          })}
+                          className="rounded p-1 text-ink-400 hover:bg-ink-50 hover:text-gold-700"
+                          aria-label={`${groupCollapsed ? "展开" : "折叠"}${getGroupHeading(group.type, groupIndex)}`}
+                          title={groupCollapsed ? "展开题目" : "折叠题目"}
+                        >
+                          {groupCollapsed
+                            ? <ChevronRight className="h-4 w-4" />
+                            : <ChevronDown className="h-4 w-4" />}
+                        </button>
                         <div className="flex flex-col gap-0.5">
                           <button
                             onClick={() => handleGroupMove(group.type, "up")}
@@ -1542,8 +1734,21 @@ export default function ExamPaperEditorPage() {
                         <h2 className="font-serif text-base font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
                         <span className="text-xs text-ink-500">{group.questions.length} 题</span>
                         <span className="text-xs text-gold-700 font-medium">{groupScore} 分</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="ml-auto"
+                          onClick={() => openAddQuestion({
+                            kind: "group",
+                            groupType: group.type,
+                            label: getGroupHeading(group.type, groupIndex),
+                          })}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          添加题目
+                        </Button>
                       </div>
-                      <div className="space-y-3">
+                      {!groupCollapsed && <div className="space-y-3">
                         {group.questions.map((item, itemIndex) => (
                           <div key={item.pq.id} className="space-y-1">
                             <EditQuestionRow
@@ -1551,7 +1756,7 @@ export default function ExamPaperEditorPage() {
                               index={item.index}
                               total={paperQuestions.length}
                               question={item.question}
-                              answered={answeredQuestionIds.has(getCompletionQuestionId(item.pq))}
+                              progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
                               canMoveUp={itemIndex > 0}
                               canMoveDown={itemIndex < group.questions.length - 1}
                               onMoveUp={() => handleMoveWithinGroup(item.index, "up")}
@@ -1574,7 +1779,7 @@ export default function ExamPaperEditorPage() {
                             )}
                           </div>
                         ))}
-                      </div>
+                      </div>}
                     </section>
                   );
                 })}
@@ -1588,7 +1793,7 @@ export default function ExamPaperEditorPage() {
                       index={index}
                       total={paperQuestions.length}
                       question={paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined}
-                      answered={answeredQuestionIds.has(getCompletionQuestionId(paperQuestion))}
+                      progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
                       onMoveUp={() => handleMove(index, "up")}
                       onMoveDown={() => handleMove(index, "down")}
                       onRemove={() => handleRemoveQuestion(paperQuestion.id)}
@@ -1629,16 +1834,16 @@ export default function ExamPaperEditorPage() {
                 <Sparkles className="w-3.5 h-3.5" /> AI 自动组卷
               </Button>
               <div className="grid grid-cols-2 gap-1.5">
-                <Button variant="outline" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("bank"); }}>
+                <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("bank"); }}>
                   <Library className="w-3.5 h-3.5" /> 题库
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("basket"); }}>
+                <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("basket"); }}>
                   <ShoppingBasket className="w-3.5 h-3.5" /> 试题篮
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("examPaper"); }}>
+                <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("examPaper"); }}>
                   <Files className="w-3.5 h-3.5" /> 其他试卷
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => { setReplaceIdx(null); setAddSource("lecture"); }}>
+                <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("lecture"); }}>
                   <FileText className="w-3.5 h-3.5" /> 讲义
                 </Button>
               </div>
@@ -1661,12 +1866,12 @@ export default function ExamPaperEditorPage() {
             <Card className="p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <CheckSquare className="w-4 h-4 text-emerald-600" />
-                <h3 className="font-serif font-semibold text-ink-900 text-sm">学生完成标注</h3>
+                <h3 className="font-serif font-semibold text-ink-900 text-sm">发布对象与完成情况</h3>
               </div>
               <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => setShowStudentPicker(true)}>
                 <span className="flex items-center gap-1.5 min-w-0">
                   <Users className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span className="truncate">{selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择学生"}</span>
+                  <span className="truncate">{selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择发布对象"}</span>
                 </span>
                 {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
               </Button>
@@ -1913,26 +2118,109 @@ export default function ExamPaperEditorPage() {
       {/* 添加/换题弹窗 */}
       <Modal
         open={Boolean(addSource)}
-        onClose={() => { setAddSource(null); setReplaceIdx(null); }}
+        onClose={closeAddQuestion}
         size="lg"
         title={replaceIdx !== null
           ? "替换题目"
-          : addSource === "basket" ? "从试题篮添加题目"
-          : addSource === "bank" ? "从题库添加题目"
-          : addSource === "examPaper" ? "从其它试卷添加题目"
-          : addSource === "lecture" ? "从讲义添加题目" : "添加题目"
+          : addTarget
+            ? `向「${addTarget.label}」添加题目`
+            : "添加题目"
         }
-        description={`已选择 ${selectedQuestionIds.length} 道题目${replaceIdx !== null ? "（将替换第 " + (replaceIdx + 1) + " 题）" : ""}`}
+        description={`${replaceIdx !== null ? `将替换第 ${replaceIdx + 1} 题 · ` : ""}已选择 ${selectedQuestionIds.length} 道题目${addTargetQuestionType ? ` · 仅显示${typeLabel[addTargetQuestionType] || addTargetQuestionType}题` : ""}`}
         footer={
           <>
-            <Button variant="ghost" onClick={() => { setAddSource(null); setReplaceIdx(null); }}>取消</Button>
-            <Button variant="gold" onClick={handleConfirmAdd} disabled={selectedQuestionIds.length === 0 || (replaceIdx !== null && selectedQuestionIds.length > 1)}>
+            <Button variant="ghost" onClick={closeAddQuestion}>取消</Button>
+            <Button
+              variant="gold"
+              onClick={handleConfirmAdd}
+              disabled={
+                addSource === "choose"
+                || selectedQuestionIds.length === 0
+                || (replaceIdx !== null && selectedQuestionIds.length > 1)
+              }
+            >
               <Plus className="w-3.5 h-3.5" />
               {replaceIdx !== null ? "确认替换" : "添加选中题目"}
             </Button>
           </>
         }
       >
+        {replaceIdx === null && (
+          <div className="mb-4 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => chooseAddSource("basket")}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors",
+                  addSource === "basket"
+                    ? "border-gold-400 bg-gold-50 text-gold-800"
+                    : "border-ink-200 text-ink-600 hover:border-ink-300 hover:bg-ink-50",
+                )}
+              >
+                <ShoppingBasket className="h-4 w-4" />
+                资源篮
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseAddSource("bank")}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors",
+                  addSource === "bank"
+                    ? "border-gold-400 bg-gold-50 text-gold-800"
+                    : "border-ink-200 text-ink-600 hover:border-ink-300 hover:bg-ink-50",
+                )}
+              >
+                <Library className="h-4 w-4" />
+                题库
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseAddSource("examPaper")}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors",
+                  addSource === "examPaper" || addSource === "lecture"
+                    ? "border-gold-400 bg-gold-50 text-gold-800"
+                    : "border-ink-200 text-ink-600 hover:border-ink-300 hover:bg-ink-50",
+                )}
+              >
+                <Files className="h-4 w-4" />
+                其它文档
+              </button>
+            </div>
+            {(addSource === "examPaper" || addSource === "lecture") && (
+              <div className="flex items-center gap-1 rounded-md bg-ink-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => chooseAddSource("examPaper")}
+                  className={cn(
+                    "flex-1 rounded px-3 py-1.5 text-xs transition-colors",
+                    addSource === "examPaper" ? "bg-white font-medium text-gold-700 shadow-sm" : "text-ink-500",
+                  )}
+                >
+                  试卷
+                </button>
+                <button
+                  type="button"
+                  onClick={() => chooseAddSource("lecture")}
+                  className={cn(
+                    "flex-1 rounded px-3 py-1.5 text-xs transition-colors",
+                    addSource === "lecture" ? "bg-white font-medium text-gold-700 shadow-sm" : "text-ink-500",
+                  )}
+                >
+                  讲义
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {addSource === "choose" && (
+          <div className="rounded-lg border border-dashed border-ink-200 px-4 py-12 text-center text-sm text-ink-400">
+            请选择题目来源
+          </div>
+        )}
+
         {addSource === "basket" && (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
@@ -1957,6 +2245,7 @@ export default function ExamPaperEditorPage() {
                 onSelect={setSelectedQuestionIds}
                 singleSelect={replaceIdx !== null}
                 answeredQuestionIds={answeredQuestionIds}
+                questionType={addTargetQuestionType}
               />
             )}
           </div>
@@ -1966,7 +2255,9 @@ export default function ExamPaperEditorPage() {
           <div className="space-y-3">
             <Input placeholder="搜索题目" value={bankKeyword} onChange={(e) => setBankKeyword(e.target.value)} />
             <div className="grid sm:grid-cols-2 gap-2 max-h-96 overflow-y-auto">
-              {bankQuestions.map((q) => {
+              {bankQuestions
+                .filter((question) => !addTargetQuestionType || question.type === addTargetQuestionType)
+                .map((q) => {
                 const checked = selectedQuestionIds.includes(q.id);
                 const answered = answeredQuestionIds.has(q.id);
                 return (
@@ -2015,7 +2306,9 @@ export default function ExamPaperEditorPage() {
             </div>
             {selectedPaper && (
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {selectedPaper.questions.filter((pq) => pq.questionId).map((pq) => {
+                {selectedPaper.questions
+                  .filter((pq) => pq.questionId && (!addTargetQuestionType || pq.type === addTargetQuestionType))
+                  .map((pq) => {
                   const checked = selectedQuestionIds.includes(pq.questionId!);
                   return (
                     <label key={pq.id} className={cn(
@@ -2104,8 +2397,8 @@ export default function ExamPaperEditorPage() {
         open={showStudentPicker}
         onClose={() => setShowStudentPicker(false)}
         size="lg"
-        title="选择学生"
-        description="选择学生后，将标注这些学生在所选时间段内已做过的题目"
+        title="选择发布对象"
+        description="选择发布对象后，每道题会显示所选时间段内的完成人数与正确率"
         footer={
           <div className="flex items-center justify-between w-full">
             <Button variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}>
@@ -2353,16 +2646,39 @@ function PreviewQuestionItem({
   );
 }
 
+function QuestionProgressBadge({ progress }: { progress?: QuestionProgress }) {
+  if (!progress) return null;
+  if (progress.answeredCount === 0) {
+    return (
+      <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] text-ink-500">
+        发布对象未做
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded bg-gold-50 px-1.5 py-0.5 text-[10px] text-gold-800">
+      <span>已做 {progress.answeredCount}/{progress.targetCount}</span>
+      <span className="text-gold-300">·</span>
+      <span>
+        {progress.correctRate === null
+          ? "暂无正确率"
+          : `正确率 ${Math.round(progress.correctRate * 100)}%`}
+      </span>
+    </span>
+  );
+}
+
 // ===== 编辑模式的题目行 =====
 function EditQuestionRow({
-  pq, index, total, question, answered, canMoveUp, canMoveDown,
+  pq, index, total, question, progress, canMoveUp, canMoveDown,
   onMoveUp, onMoveDown, onRemove, onReplace, onUpdateScore,
 }: {
   pq: ExamPaperQuestion;
   index: number;
   total: number;
   question: Question | null | undefined;
-  answered: boolean;
+  progress?: QuestionProgress;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onMoveUp: () => void;
@@ -2405,9 +2721,7 @@ function EditQuestionRow({
                 {difficultyLabel[question.difficulty]}
               </Badge>
             )}
-            {answered && (
-              <span className="tag-gold text-[10px] py-0.5">已做过</span>
-            )}
+            <QuestionProgressBadge progress={progress} />
             <div className="flex items-center gap-1">
               <Input
                 type="number"
@@ -2489,7 +2803,7 @@ function EditQuestionRow({
 
 // ===== 试题篮题目列表 =====
 function BasketQuestionList({
-  basket, schoolId, selectedIds, onSelect, singleSelect, answeredQuestionIds,
+  basket, schoolId, selectedIds, onSelect, singleSelect, answeredQuestionIds, questionType,
 }: {
   basket: Basket;
   schoolId: string;
@@ -2497,16 +2811,20 @@ function BasketQuestionList({
   onSelect: (ids: string[]) => void;
   singleSelect?: boolean;
   answeredQuestionIds: Set<string>;
+  questionType?: string;
 }) {
   const [qs, setQs] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     questionService.listQuestions({ schoolId }).then((all) => {
-      setQs(all.filter((q) => basket.questionIds.includes(q.id)));
+      setQs(all.filter((q) => (
+        basket.questionIds.includes(q.id)
+        && (!questionType || q.type === questionType)
+      )));
       setLoading(false);
     });
-  }, [basket, schoolId]);
+  }, [basket, questionType, schoolId]);
 
   if (loading) return <Spinner size={20} />;
 
