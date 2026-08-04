@@ -34,7 +34,13 @@ import {
   type GradeSubjectScoreAvailability,
   type GradeWorkbookData,
 } from "@/lib/grade-spreadsheet";
-import { autoMatchGradeRows, gradeRowResolutionError } from "@/lib/grade-matching";
+import {
+  applyGradeRowBatchResolution,
+  autoMatchGradeRows,
+  createGradeStudentDraft,
+  gradeRowResolutionError,
+  orderGradeImportRows,
+} from "@/lib/grade-matching";
 import {
   buildDefaultGradeSettings,
   DEFAULT_ASSIGNMENT_RULES,
@@ -126,6 +132,7 @@ export function GradeImportWizard({
   const [examName, setExamName] = useState("");
   const [examDate, setExamDate] = useState("");
   const [rows, setRows] = useState<GradeImportRow[]>([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
   const [settings, setSettings] = useState<GradeExamSettings | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -141,6 +148,7 @@ export function GradeImportWizard({
     setExamName("");
     setExamDate("");
     setRows([]);
+    setSelectedRowKeys(new Set());
     setSettings(null);
     setSubmitting(false);
   };
@@ -185,7 +193,14 @@ export function GradeImportWizard({
     () => scoreAvailability.filter((item) => item.hasAssigned).map((item) => item.subject),
     [scoreAvailability],
   );
-  const unresolvedCount = rows.filter((row) => gradeRowResolutionError(row)).length;
+  const orderedRows = useMemo(() => orderGradeImportRows(rows), [rows]);
+  const unresolvedRows = useMemo(
+    () => orderedRows.filter((row) => gradeRowResolutionError(row)),
+    [orderedRows],
+  );
+  const unresolvedCount = unresolvedRows.length;
+  const allUnresolvedSelected = unresolvedCount > 0
+    && unresolvedRows.every((row) => selectedRowKeys.has(row.rowKey));
   const previewRows = selectedSheet?.rows.slice(headerRowIndex + 1, headerRowIndex + 7) || [];
 
   const applySheet = (nextWorkbook: GradeWorkbookData, nextSheetIndex: number) => {
@@ -240,6 +255,7 @@ export function GradeImportWizard({
       const parsed = parseGradeRows(selectedSheet, headerRowIndex, mappings);
       const matched = autoMatchGradeRows(parsed, context);
       setRows(matched);
+      setSelectedRowKeys(new Set());
       const importedSubjects = mappedSubjects(mappings);
       const studentClassIds = new Map<string, string>(
         context.students.map((student): [string, string] => [student.id, student.classId]),
@@ -288,18 +304,12 @@ export function GradeImportWizard({
     setRows((current) => current.map((row) => {
       if (row.rowKey !== rowKey) return row;
       if (value === "__new__") {
-        const guessedClass = context?.classes.find((item) => item.name === row.sourceClassName)
-          || context?.classes.find((item) => item.name.includes(row.sourceClassName) || row.sourceClassName.includes(item.name))
-          || context?.classes[0];
+        if (!context) return row;
         return {
           ...row,
           studentId: undefined,
           updateStudentName: false,
-          createStudent: {
-            name: row.sourceName,
-            studentNo: row.sourceStudentNo,
-            classId: guessedClass?.id || "",
-          },
+          createStudent: createGradeStudentDraft(row, context),
         };
       }
       if (!value) {
@@ -313,6 +323,37 @@ export function GradeImportWizard({
         updateStudentName: Boolean(student && student.name.trim() !== row.sourceName.trim()),
       };
     }));
+  };
+
+  const toggleRowSelection = (rowKey: string) => {
+    setSelectedRowKeys((current) => {
+      const next = new Set(current);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
+      return next;
+    });
+  };
+
+  const toggleAllUnresolved = () => {
+    setSelectedRowKeys((current) => {
+      const next = new Set(current);
+      if (allUnresolvedSelected) {
+        unresolvedRows.forEach((row) => next.delete(row.rowKey));
+      } else {
+        unresolvedRows.forEach((row) => next.add(row.rowKey));
+      }
+      return next;
+    });
+  };
+
+  const applyBatchResolution = (resolution: "create" | "clear") => {
+    if (!context || selectedRowKeys.size === 0) return;
+    setRows((current) => applyGradeRowBatchResolution(current, selectedRowKeys, resolution, context));
+    toast.success(
+      resolution === "create" ? "已批量设为新增学生" : "已清除所选处理结果",
+      `共处理 ${selectedRowKeys.size} 行`,
+    );
+    setSelectedRowKeys(new Set());
   };
 
   const updateNewStudent = (
@@ -620,20 +661,61 @@ export function GradeImportWizard({
 
       {step === 2 && context && (
         <div className="rounded-xl border border-ink-200 overflow-hidden">
-          <div className="flex flex-col gap-2 border-b border-ink-100 bg-mist/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-medium text-ink-800">学生名单对应</div>
-              <div className="mt-0.5 text-xs text-ink-400">优先按学号，其次按“班级 + 姓名”自动匹配；未匹配项必须关联已有学生或新增学生。</div>
+          <div className="border-b border-ink-100 bg-mist/50 px-4 py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-medium text-ink-800">学生名单对应</div>
+                <div className="mt-0.5 text-xs text-ink-400">待处理记录优先显示；系统按学号、班级和姓名自动匹配，剩余记录可逐行或批量处理。</div>
+              </div>
+              <div className="flex gap-2">
+                <Badge variant="green">已完成 {rows.length - unresolvedCount}</Badge>
+                {unresolvedCount > 0 && <Badge variant="red">待处理 {unresolvedCount}</Badge>}
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Badge variant="green">已完成 {rows.length - unresolvedCount}</Badge>
-              {unresolvedCount > 0 && <Badge variant="red">待处理 {unresolvedCount}</Badge>}
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-100 pt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={unresolvedCount === 0}
+                onClick={toggleAllUnresolved}
+              >
+                {allUnresolvedSelected ? "取消选择待处理" : `选择全部待处理（${unresolvedCount}）`}
+              </Button>
+              <span className="text-xs text-ink-500">已选择 {selectedRowKeys.size} 行</span>
+              <div className="ml-auto flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={selectedRowKeys.size === 0}
+                  onClick={() => applyBatchResolution("clear")}
+                >
+                  清除所选处理
+                </Button>
+                <Button
+                  variant="gold"
+                  size="sm"
+                  disabled={selectedRowKeys.size === 0}
+                  onClick={() => applyBatchResolution("create")}
+                >
+                  批量作为新增学生
+                </Button>
+              </div>
             </div>
           </div>
           <div className="max-h-[58vh] overflow-auto">
             <table className="min-w-[1100px] w-full text-xs">
               <thead className="sticky top-0 z-10 bg-ink-50 text-ink-500 shadow-sm">
                 <tr>
+                  <th className="w-10 px-3 py-2.5 text-center font-medium">
+                    <input
+                      type="checkbox"
+                      aria-label="选择全部待处理记录"
+                      checked={allUnresolvedSelected}
+                      disabled={unresolvedCount === 0}
+                      onChange={toggleAllUnresolved}
+                      className="h-4 w-4 accent-gold-500"
+                    />
+                  </th>
                   <th className="px-3 py-2.5 text-left font-medium">Excel 行</th>
                   <th className="px-3 py-2.5 text-left font-medium">原班级</th>
                   <th className="px-3 py-2.5 text-left font-medium">姓名</th>
@@ -646,10 +728,20 @@ export function GradeImportWizard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {rows.map((row) => {
+                {orderedRows.map((row) => {
                   const selectedStudent = context.students.find((item) => item.id === row.studentId);
+                  const unresolved = Boolean(gradeRowResolutionError(row));
                   return (
-                    <tr key={row.rowKey} className={gradeRowResolutionError(row) ? "bg-red-50/40" : undefined}>
+                    <tr key={row.rowKey} className={unresolved ? "bg-red-50/40" : undefined}>
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择 Excel 第 ${row.sourceRowNumber} 行`}
+                          checked={selectedRowKeys.has(row.rowKey)}
+                          onChange={() => toggleRowSelection(row.rowKey)}
+                          className="h-4 w-4 accent-gold-500"
+                        />
+                      </td>
                       <td className="px-3 py-3 text-ink-400">{row.sourceRowNumber}</td>
                       <td className="px-3 py-3 text-ink-700">{row.sourceClassName || "未填写"}</td>
                       <td className="px-3 py-3 font-medium text-ink-900">{row.sourceName}</td>
