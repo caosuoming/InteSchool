@@ -1,6 +1,8 @@
 import type { GradeImportContext, GradeImportRow, Student } from "../types/index.js";
 import { normalizeClassName } from "./grade-spreadsheet.js";
 
+export type GradeRowBatchResolution = "create" | "clear";
+
 function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, "").toLowerCase();
 }
@@ -15,6 +17,17 @@ function classIdForSourceName(sourceClassName: string, context: GradeImportConte
     return candidate.includes(normalized) || normalized.includes(candidate);
   });
   return contained.length === 1 ? contained[0].id : undefined;
+}
+
+export function createGradeStudentDraft(
+  row: GradeImportRow,
+  context: GradeImportContext,
+): NonNullable<GradeImportRow["createStudent"]> {
+  return {
+    name: row.sourceName,
+    studentNo: row.sourceStudentNo,
+    classId: classIdForSourceName(row.sourceClassName, context) || context.classes[0]?.id || "",
+  };
 }
 
 function uniqueStudent(candidates: Student[]): Student | undefined {
@@ -70,4 +83,37 @@ export function gradeRowResolutionError(row: GradeImportRow): string | null {
   if (!row.createStudent.studentNo.trim()) return "新增学生学号不能为空";
   if (!row.createStudent.classId) return "请选择新增学生所属班级";
   return null;
+}
+
+export function orderGradeImportRows(rows: GradeImportRow[]): GradeImportRow[] {
+  return rows
+    .map((row, index) => ({ row, index, unresolved: Boolean(gradeRowResolutionError(row)) }))
+    .sort((left, right) => Number(right.unresolved) - Number(left.unresolved) || left.index - right.index)
+    .map(({ row }) => row);
+}
+
+export function applyGradeRowBatchResolution(
+  rows: GradeImportRow[],
+  rowKeys: ReadonlySet<string>,
+  resolution: GradeRowBatchResolution,
+  context: GradeImportContext,
+): GradeImportRow[] {
+  if (rowKeys.size === 0) return rows;
+  return rows.map((row) => {
+    if (!rowKeys.has(row.rowKey)) return row;
+    if (resolution === "clear") {
+      return {
+        ...row,
+        studentId: undefined,
+        createStudent: undefined,
+        updateStudentName: false,
+      };
+    }
+    return {
+      ...row,
+      studentId: undefined,
+      updateStudentName: false,
+      createStudent: createGradeStudentDraft(row, context),
+    };
+  });
 }
