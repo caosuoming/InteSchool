@@ -56,6 +56,45 @@ describe("QuestionListItem", () => {
     expect(stem).not.toHaveClass("line-clamp-2");
     expect(stem).toHaveClass("whitespace-pre-wrap");
   });
+
+  it("lays out short text choices on one row and image choices on two columns", () => {
+    const { rerender } = render(
+      <QuestionListItem
+        question={{ ...question, type: "single", options: ["1", "2", "3", "4"] }}
+        expanded
+        onToggle={vi.fn()}
+        onShare={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId(`resource-question-options-${question.id}`)).toHaveClass(
+      "grid",
+      "grid-cols-4",
+      "gap-x-4",
+    );
+
+    rerender(
+      <QuestionListItem
+        question={{
+          ...question,
+          type: "single",
+          options: [
+            '<img src="/a.png" alt="A" />',
+            '<img src="/b.png" alt="B" />',
+            '<img src="/c.png" alt="C" />',
+            '<img src="/d.png" alt="D" />',
+          ],
+        }}
+        expanded
+        onToggle={vi.fn()}
+        onShare={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId(`resource-question-options-${question.id}`)).toHaveClass("grid-cols-2");
+  });
 });
 
 describe("OriginalFileRow", () => {

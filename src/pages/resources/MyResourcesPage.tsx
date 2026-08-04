@@ -3395,11 +3395,17 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
           </div>
 
           {question.options && question.options.length > 0 && expanded && (
-            <div className="text-xs text-ink-600 space-y-0.5 mb-2 mt-2 bg-mist/40 p-2 rounded">
+            <div
+              data-testid={`resource-question-options-${question.id}`}
+              className={cn(
+                "mb-2 mt-2 grid gap-x-4 gap-y-1.5 rounded bg-mist/40 p-2 text-xs text-ink-600",
+                getQuestionOptionGridColumns(question.options),
+              )}
+            >
               {question.options.map((opt, i) => (
-                <div key={i} className="flex items-start gap-1">
+                <div key={i} className="flex min-w-0 items-start gap-1">
                   <span className="font-mono font-semibold flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
-                  <MathHtml className="min-w-0">{opt}</MathHtml>
+                  <MathHtml className="min-w-0 flex-1 break-all whitespace-pre-wrap">{opt}</MathHtml>
                 </div>
               ))}
             </div>
