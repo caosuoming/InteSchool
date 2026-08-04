@@ -194,9 +194,16 @@ describe("ExamRoomArrangementPage", () => {
     await user.click(screen.getByRole("radio", { name: /所有学科/ }));
     expect(screen.getByRole("radio", { name: /所有学科/ })).toHaveAttribute("aria-checked", "true");
 
-    expect(screen.getByLabelText("考场号")).toHaveValue("高三（1）班");
-    expect(screen.getByLabelText("考场位置")).toHaveValue("高三（1）班");
+    expect(screen.getByLabelText("考场号")).toHaveValue("1考场");
+    expect(screen.getByLabelText("考场位置")).toHaveValue("高三1班教室");
     expect(screen.getByLabelText("考场可安排人数")).toHaveValue(1);
+    expect(screen.getByText("实际考试组合人数")).toBeInTheDocument();
+    expect(screen.getByText("考试组合对应考场")).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("批量考场容量"));
+    await user.type(screen.getByLabelText("批量考场容量"), "32");
+    await user.click(screen.getByRole("button", { name: "批量设置容量" }));
+    expect(screen.getByLabelText("考场可安排人数")).toHaveValue(32);
   });
 
   it("allows an individual student to be marked absent", async () => {

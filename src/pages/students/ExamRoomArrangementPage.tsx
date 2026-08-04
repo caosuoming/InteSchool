@@ -39,6 +39,7 @@ import {
   downloadDeskLabels,
   groupDeskLabels,
 } from "@/lib/exam-arrangement-export";
+import { summarizeExamGroups, type ExamGroupSummary } from "@/lib/exam-arrangement";
 
 const DEFAULT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 const CORE_SUBJECTS = ["语文", "数学", "英语"];
@@ -82,17 +83,42 @@ function createRules(context: ExamArrangementContext, subjects: string[], rooms:
   }));
 }
 
+function classNumber(name: string, fallback: number): string {
+  const matches = [...name.matchAll(/\d+/g)];
+  return matches.at(-1)?.[0] || String(fallback);
+}
+
+function defaultRoomIdsForGroup(group: ExamGroupSummary, rooms: ExamRoomConfig[]): string[] {
+  const roomIds = rooms
+    .filter((room) => !room.classroomClassId || group.classIds.includes(room.classroomClassId))
+    .map((room) => room.id);
+  return roomIds.length > 0 ? roomIds : rooms.map((room) => room.id);
+}
+
+function normalizeGroupRoomIds(
+  draft: ExamArrangementInput,
+  context: ExamArrangementContext,
+): Record<string, string[]> {
+  const validRoomIds = new Set(draft.rooms.map((room) => room.id));
+  return Object.fromEntries(summarizeExamGroups(draft, context).map((group) => {
+    const configured = [...new Set((draft.groupRoomIds?.[group.key] || []).filter((roomId) => validRoomIds.has(roomId)))];
+    return [group.key, configured.length > 0 ? configured : defaultRoomIdsForGroup(group, draft.rooms)];
+  }));
+}
+
 function createDefaultRooms(context: ExamArrangementContext): ExamRoomConfig[] {
   if (context.classes.length === 0) {
-    return [{ id: "room-1", name: "第 01 考场", number: "第 01 考场", location: "待填写", capacity: 30 }];
+    return [{ id: "room-1", name: "1考场", number: "1考场", location: "待填写", capacity: 30 }];
   }
-  return context.classes.map((classItem) => {
+  return context.classes.map((classItem, index) => {
+    const number = classNumber(classItem.name, index + 1);
     const studentCount = context.students.filter((student) => student.classId === classItem.id).length;
     return {
       id: `room-${classItem.id}`,
-      name: classItem.name,
-      number: classItem.name,
-      location: classItem.name,
+      name: `${number}考场`,
+      number: `${number}考场`,
+      location: `${classItem.grade || context.cohort.grade}${number}班教室`,
+      classroomClassId: classItem.id,
       capacity: Math.max(1, studentCount),
     };
   });
@@ -110,7 +136,7 @@ function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInp
       : [...DEFAULT_SUBJECTS],
     absent: false,
   }));
-  return {
+  const draft: ExamArrangementInput = {
     cohortKey: context.cohort.key,
     name: `${context.cohort.label}考试`,
     examDate: new Date().toISOString().slice(0, 10),
@@ -121,9 +147,11 @@ function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInp
     separateSubjects: [],
     seatOrder: "random",
     rooms,
+    groupRoomIds: {},
     classRules: createRules(context, DEFAULT_SUBJECTS, rooms),
     studentSubjects,
   };
+  return { ...draft, groupRoomIds: normalizeGroupRoomIds(draft, context) };
 }
 
 function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementContext): ExamArrangementInput {
@@ -133,12 +161,14 @@ function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementC
     name: room.number || room.name,
     number: room.number || room.name,
     location: room.location || room.name,
+    classroomClassId: room.classroomClassId
+      || context.classes.find((classItem) => room.id === `room-${classItem.id}`)?.id,
   }));
   const selectionSubjects = Object.fromEntries(Object.entries(current.selectionSubjects || {}).map(([name, items]) => [
     name,
     uniqueSubjects(items).filter((subject) => subjects.includes(subject)),
   ]));
-  return {
+  const normalized: ExamArrangementInput = {
     ...current,
     mode: current.mode || "combination",
     subjectSetupMode: current.subjectSetupMode || "all",
@@ -161,6 +191,7 @@ function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementC
       };
     }),
   };
+  return { ...normalized, groupRoomIds: normalizeGroupRoomIds(normalized, context) };
 }
 
 function cloneDraft(arrangement: ExamArrangement, context: ExamArrangementContext): ExamArrangementInput {
@@ -176,6 +207,7 @@ function cloneDraft(arrangement: ExamArrangement, context: ExamArrangementContex
     separateSubjects: structuredClone(arrangement.separateSubjects || []),
     seatOrder: arrangement.seatOrder,
     rooms: structuredClone(arrangement.rooms),
+    groupRoomIds: structuredClone(arrangement.groupRoomIds || {}),
     classRules: structuredClone(arrangement.classRules),
     studentSubjects: structuredClone(arrangement.studentSubjects),
   }, context);
@@ -252,6 +284,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [saving, setSaving] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState("");
   const [studentClassFilter, setStudentClassFilter] = useState("");
+  const [bulkCapacity, setBulkCapacity] = useState(30);
   const [newPlanOpen, setNewPlanOpen] = useState(false);
   const [newPlanName, setNewPlanName] = useState("");
 
@@ -262,6 +295,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       : []
   ), [draft?.id, selectedArrangement]);
   const deskLabels = useMemo(() => groupDeskLabels(assignments), [assignments]);
+  const examGroups = useMemo(() => (
+    draft && context ? summarizeExamGroups(draft, context) : []
+  ), [context, draft]);
 
   useEffect(() => {
     if (!schoolId) {
@@ -467,15 +503,20 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const addRoom = () => {
     updateDraft((current) => {
       const index = current.rooms.length + 1;
+      const roomId = `room-${Date.now()}`;
       return {
         ...current,
         rooms: [...current.rooms, {
-          id: `room-${Date.now()}`,
-          name: `第 ${String(index).padStart(2, "0")} 考场`,
-          number: `第 ${String(index).padStart(2, "0")} 考场`,
+          id: roomId,
+          name: `${index}考场`,
+          number: `${index}考场`,
           location: "待填写",
           capacity: 30,
         }],
+        groupRoomIds: Object.fromEntries(Object.entries(current.groupRoomIds || {}).map(([key, roomIds]) => [
+          key,
+          [...new Set([...roomIds, roomId])],
+        ])),
       };
     });
   };
@@ -484,6 +525,48 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     updateDraft((current) => current.rooms.length <= 1
       ? current
       : { ...current, rooms: current.rooms.filter((room) => room.id !== roomId) });
+  };
+
+  const applyBulkCapacity = () => {
+    const capacity = Math.floor(Number(bulkCapacity));
+    if (!Number.isFinite(capacity) || capacity < 1 || capacity > 1000) {
+      toast.error("考场容量应为 1 至 1000 人");
+      return;
+    }
+    updateDraft((current) => ({
+      ...current,
+      rooms: current.rooms.map((room) => ({ ...room, capacity })),
+    }));
+    toast.success("已批量修改考场容量", `全部考场均设为 ${capacity} 人`);
+  };
+
+  const toggleGroupRoom = (groupKey: string, roomId: string) => {
+    updateDraft((current) => {
+      const selected = current.groupRoomIds?.[groupKey] || [];
+      if (selected.includes(roomId) && selected.length === 1) {
+        toast.error("每个考试组合至少需要一个考场");
+        return current;
+      }
+      return {
+        ...current,
+        groupRoomIds: {
+          ...current.groupRoomIds,
+          [groupKey]: selected.includes(roomId)
+            ? selected.filter((item) => item !== roomId)
+            : [...selected, roomId],
+        },
+      };
+    });
+  };
+
+  const resetGroupRooms = (group: ExamGroupSummary) => {
+    updateDraft((current) => ({
+      ...current,
+      groupRoomIds: {
+        ...current.groupRoomIds,
+        [group.key]: defaultRoomIdsForGroup(group, current.rooms),
+      },
+    }));
   };
 
   const toggleStudentSubject = (studentId: string, subject: string) => {
@@ -550,13 +633,16 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const pageActions = draft ? (
     <>
       <Button variant="outline" onClick={handleNew}><RotateCcw className="h-4 w-4" />新建方案</Button>
-      <Button variant="gold" onClick={handleSave} loading={saving}><Save className="h-4 w-4" />预览并保存</Button>
-      <Button variant="outline" disabled={deskLabels.length === 0} onClick={() => window.print()}>
-        <Printer className="h-4 w-4" />打印桌贴
-      </Button>
-      <Button variant="outline" disabled={deskLabels.length === 0} onClick={() => void downloadLabels()}>
-        <Download className="h-4 w-4" />下载桌贴
-      </Button>
+      {view === "result" && (
+        <>
+          <Button variant="outline" disabled={deskLabels.length === 0} onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />打印桌贴
+          </Button>
+          <Button variant="outline" disabled={deskLabels.length === 0} onClick={() => void downloadLabels()}>
+            <Download className="h-4 w-4" />下载桌贴
+          </Button>
+        </>
+      )}
     </>
   ) : undefined;
 
@@ -584,7 +670,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
         <Card className="no-print"><EmptyState icon={<Users className="h-8 w-8" />} title="暂无可安排的年级" description="请先在班级管理中建立班级和学生档案。" /></Card>
       ) : (
         <>
-          <div className="no-print mb-5 grid gap-3 rounded-xl border border-ink-100 bg-paper p-4 shadow-sm lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+          <div className="no-print mb-5 grid gap-3 rounded-xl border border-ink-100 bg-paper p-4 shadow-sm lg:grid-cols-2 lg:items-end">
             <Select label="所属年级" value={cohortKey} onChange={(event) => setCohortKey(event.target.value)} options={cohorts.map((item) => ({ value: item.key, label: `${item.label} · ${item.studentCount} 人` }))} />
             <Select
               label="选择考场安排"
@@ -595,10 +681,6 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 ...arrangements.map((item) => ({ value: item.id, label: `${item.name} · ${item.examDate || "日期待定"}` })),
               ]}
             />
-            <div className="flex gap-2">
-              <Button variant={view === "settings" ? "ink" : "outline"} onClick={() => setView("settings")}>配置</Button>
-              <Button variant={view === "result" ? "ink" : "outline"} onClick={() => setView("result")} disabled={assignments.length === 0}>预览</Button>
-            </div>
           </div>
 
           {selectedArrangement && (
@@ -615,7 +697,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     单独排考：{selectedArrangement.separateSubjects?.join("、") || "无"}；弃考 {selectedArrangement.studentSubjects.filter((item) => item.absent).length} 人；{selectedArrangement.rooms.length} 个考场
                   </div>
                 </div>
-                <Button variant="gold" onClick={handleReuse}><Copy className="h-4 w-4" />复用此考场安排</Button>
+                <div className="flex flex-wrap gap-2">
+                  {view === "result" && <Button variant="outline" onClick={() => setView("settings")}>修改配置</Button>}
+                  <Button variant="gold" onClick={handleReuse}><Copy className="h-4 w-4" />复用此考场安排</Button>
+                </div>
               </div>
             </Card>
           )}
@@ -681,9 +766,15 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 </Card>
 
                 <Card className="p-0 overflow-hidden">
-                  <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
-                    <div><div className="font-medium text-ink-900">考场列表</div><div className="mt-0.5 text-xs text-ink-500">默认以班级名称作为考场号和位置，所有位置均可编辑。</div></div>
-                    <Button variant="outline" size="sm" onClick={addRoom}><Plus className="h-4 w-4" />增加考场</Button>
+                  <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div><div className="font-medium text-ink-900">可用考场</div><div className="mt-0.5 text-xs text-ink-500">班级教室默认生成“1考场”“2考场”等，可继续增加教室外考场。</div></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="w-28">
+                        <Input aria-label="批量考场容量" type="number" min={1} max={1000} value={bulkCapacity} onChange={(event) => setBulkCapacity(Number(event.target.value))} />
+                      </div>
+                      <Button variant="outline" size="sm" onClick={applyBulkCapacity}>批量设置容量</Button>
+                      <Button variant="outline" size="sm" onClick={addRoom}><Plus className="h-4 w-4" />增加考场</Button>
+                    </div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="min-w-[680px] w-full text-sm">
@@ -712,6 +803,49 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
                   合并安排：{draft.subjects.filter((subject) => !(draft.separateSubjects || []).includes(subject)).join("、") || "无"}
                 </div>
+                <div className="mt-4 border-t border-ink-100 pt-4">
+                  <div className="text-sm font-medium text-ink-800">实际考试组合人数</div>
+                  <div className="mt-1 text-xs text-ink-500">根据当前科目、选科和弃考设置实时计算。</div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {examGroups.map((group) => (
+                      <div key={group.key} className="rounded-lg border border-ink-100 bg-paper px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="truncate text-sm font-medium text-ink-800">{group.subjectLabel.split(" / ").join("、")}</div>
+                          <Badge>{group.studentCount} 人</Badge>
+                        </div>
+                        <div className="mt-1 text-xs text-ink-400">{group.sessionKey === "combined" ? "合并场次" : "单独场次"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+
+              <Card>
+                <div className="font-medium text-ink-900">考试组合对应考场</div>
+                <div className="mt-1 text-xs text-ink-500">系统按参加该组合的班级教室和所有教室外考场自动生成，可逐项微调。</div>
+                <div className="mt-4 space-y-4">
+                  {examGroups.map((group) => (
+                    <div key={group.key} className="rounded-lg border border-ink-100 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-ink-900">{group.subjectLabel.split(" / ").join("、")}</div>
+                          <div className="mt-0.5 text-xs text-ink-500">{group.studentCount} 人 · {group.classIds.length} 个班级</div>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => resetGroupRooms(group)}><RotateCcw className="h-3.5 w-3.5" />恢复自动分配</Button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {draft.rooms.map((room) => (
+                          <CheckboxPill
+                            key={room.id}
+                            checked={(draft.groupRoomIds?.[group.key] || []).includes(room.id)}
+                            label={`${room.number || room.name} · ${room.location || "位置待填写"}`}
+                            onClick={() => toggleGroupRoom(group.key, room.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </Card>
 
               <Card className="p-0 overflow-hidden">
@@ -737,9 +871,13 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   })}
                 </div>
               </Card>
+
+              <div className="flex justify-end">
+                <Button variant="gold" onClick={handleSave} loading={saving}><Save className="h-4 w-4" />预览</Button>
+              </div>
             </div>
           ) : assignments.length === 0 ? (
-            <Card className="no-print"><EmptyState icon={<LayoutGrid className="h-8 w-8" />} title="尚未生成安排" description="完成配置后点击“预览并保存”。" /></Card>
+            <Card className="no-print"><EmptyState icon={<LayoutGrid className="h-8 w-8" />} title="尚未生成安排" description="完成配置后点击页面底部的“预览”。" /></Card>
           ) : (
             <div className="no-print space-y-5">
               <div className="grid gap-4 sm:grid-cols-3">

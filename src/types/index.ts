@@ -393,6 +393,8 @@ export interface ExamRoomConfig {
   number?: string;
   /** 实际考试地点，例如教学楼与教室。 */
   location?: string;
+  /** 由班级自动生成的考场所对应的班级；教室外考场不填写。 */
+  classroomClassId?: string;
   capacity: number;
 }
 
@@ -447,6 +449,8 @@ export interface ExamArrangementInput {
   /** 随机排座或按最近一次考试年级名次排座。 */
   seatOrder?: ExamSeatOrder;
   rooms: ExamRoomConfig[];
+  /** 每个实际考试组合允许使用的考场 ID，未配置时默认使用全部考场。 */
+  groupRoomIds?: Record<string, string[]>;
   classRules: ExamClassRoomRule[];
   studentSubjects: ExamStudentSubjectSelection[];
 }

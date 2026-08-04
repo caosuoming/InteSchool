@@ -17,6 +17,14 @@ interface SeatTask {
   eligibleRoomIds: string[];
 }
 
+export interface ExamGroupSummary {
+  key: string;
+  sessionKey: string;
+  subjectLabel: string;
+  studentCount: number;
+  classIds: string[];
+}
+
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
@@ -28,6 +36,58 @@ function stableHash(value: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+}
+
+function examGroupKey(sessionKey: string, selectedSubjects: string[]): string {
+  return sessionKey === "combined"
+    ? `combined:${selectedSubjects.join("|")}`
+    : sessionKey;
+}
+
+export function summarizeExamGroups(
+  input: ExamArrangementInput,
+  context: ExamArrangementContext,
+): ExamGroupSummary[] {
+  const subjects = uniqueStrings(input.subjects || []);
+  const separateSubjects = new Set(uniqueStrings(
+    input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
+  ).filter((subject) => subjects.includes(subject)));
+  const selections = new Map((input.studentSubjects || []).map((item) => [item.studentId, item]));
+  const groups = new Map<string, ExamGroupSummary>();
+
+  const addGroup = (student: Student, sessionKey: string, selectedSubjects: string[]) => {
+    if (selectedSubjects.length === 0) return;
+    const key = examGroupKey(sessionKey, selectedSubjects);
+    const current = groups.get(key);
+    if (current) {
+      current.studentCount += 1;
+      if (!current.classIds.includes(student.classId)) current.classIds.push(student.classId);
+      return;
+    }
+    groups.set(key, {
+      key,
+      sessionKey,
+      subjectLabel: selectedSubjects.join(" / "),
+      studentCount: 1,
+      classIds: [student.classId],
+    });
+  };
+
+  for (const student of context.students) {
+    const selection = selections.get(student.id);
+    if (selection?.absent) continue;
+    const selected = subjects.filter((subject) => (selection?.subjects || subjects).includes(subject));
+    const combined = selected.filter((subject) => !separateSubjects.has(subject));
+    addGroup(student, "combined", combined);
+    for (const subject of selected.filter((item) => separateSubjects.has(item))) {
+      addGroup(student, `subject:${subject}`, [subject]);
+    }
+  }
+
+  return [...groups.values()].sort((left, right) =>
+    left.sessionKey.localeCompare(right.sessionKey, "zh-CN")
+    || left.subjectLabel.localeCompare(right.subjectLabel, "zh-CN"),
+  );
 }
 
 function normalizeRooms(rooms: ExamRoomConfig[]): ExamRoomConfig[] {
@@ -135,12 +195,18 @@ function createTask(
   selectedSubjects: string[],
   rules: Map<string, ExamClassRoomRule>,
   allRoomIds: string[],
+  groupRoomIds: Record<string, string[]>,
 ): SeatTask {
   const classRule = rules.get(student.classId);
-  const eligibleRoomIds = roomIntersection(
+  const subjectRoomIds = roomIntersection(
     selectedSubjects.map((subject) => classRule?.subjectRoomIds[subject] || allRoomIds),
     allRoomIds,
   );
+  const groupKey = examGroupKey(sessionKey, selectedSubjects);
+  const configuredRoomIds = groupRoomIds[groupKey];
+  const eligibleRoomIds = configuredRoomIds
+    ? subjectRoomIds.filter((roomId) => configuredRoomIds.includes(roomId))
+    : subjectRoomIds;
   const subjectLabel = selectedSubjects.join(" / ");
   if (eligibleRoomIds.length === 0) {
     throw new Error(`「${className}」学生 ${student.name} 的「${subjectLabel}」没有共同可用考场`);
@@ -158,6 +224,15 @@ function buildTasks(
 ): SeatTask[] {
   const classMap = new Map(context.classes.map((item) => [item.id, item]));
   const allRoomIds = rooms.map((room) => room.id);
+  const roomIdSet = new Set(allRoomIds);
+  const groupRoomIds = Object.fromEntries(Object.entries(input.groupRoomIds || {}).map(([groupKey, roomIds]) => {
+    const normalized = uniqueStrings(roomIds || []);
+    if (normalized.length === 0) throw new Error(`考试组合「${groupKey}」至少需要选择一个考场`);
+    if (normalized.some((roomId) => !roomIdSet.has(roomId))) {
+      throw new Error(`考试组合「${groupKey}」引用了不存在的考场`);
+    }
+    return [groupKey, normalized];
+  }));
   const separateSubjects = new Set(uniqueStrings(
     input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
   ).filter((subject) => subjects.includes(subject)));
@@ -173,10 +248,10 @@ function buildTasks(
 
     const combined = selected.filter((subject) => !separateSubjects.has(subject));
     if (combined.length > 0) {
-      tasks.push(createTask(student, classItem.name, "combined", combined, rules, allRoomIds));
+      tasks.push(createTask(student, classItem.name, "combined", combined, rules, allRoomIds, groupRoomIds));
     }
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
-      tasks.push(createTask(student, classItem.name, `subject:${subject}`, [subject], rules, allRoomIds));
+      tasks.push(createTask(student, classItem.name, `subject:${subject}`, [subject], rules, allRoomIds, groupRoomIds));
     }
   }
   return tasks;
