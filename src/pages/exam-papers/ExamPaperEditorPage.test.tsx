@@ -1,0 +1,231 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ExamPaper, ExamPublication, Question, Teacher, TreeNode } from "@/types";
+
+const mocks = vi.hoisted(() => ({
+  getPaper: vi.fn(),
+  listQuestions: vi.fn(),
+  listBaskets: vi.fn(),
+  listAllClasses: vi.fn(),
+  listSchoolClasses: vi.fn(),
+  listPersonalClasses: vi.fn(),
+  listStudentsBySchool: vi.fn(),
+  listPublications: vi.fn(),
+  listExamPaperTypes: vi.fn(),
+  listSettings: vi.fn(),
+  getKnowledgeTree: vi.fn(),
+  generateExamPaperDocx: vi.fn(),
+}));
+
+const teacher = {
+  id: "teacher-1",
+  schoolId: "school-1",
+  name: "测试教师",
+} as Teacher;
+
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: () => ({ teacher }),
+}));
+vi.mock("@/services/examPaper", () => ({
+  examPaperService: {
+    getPaper: mocks.getPaper,
+    listPapers: vi.fn().mockResolvedValue([]),
+  },
+}));
+vi.mock("@/services/question", () => ({
+  questionService: {
+    listQuestions: mocks.listQuestions,
+  },
+}));
+vi.mock("@/services/basket", () => ({
+  basketService: {
+    listBaskets: mocks.listBaskets,
+  },
+}));
+vi.mock("@/services/lecture", () => ({
+  lectureService: { listLectures: vi.fn().mockResolvedValue([]) },
+}));
+vi.mock("@/services/class", () => ({
+  classService: {
+    listAllClasses: mocks.listAllClasses,
+    listSchoolClasses: mocks.listSchoolClasses,
+    listPersonalClasses: mocks.listPersonalClasses,
+    listStudentsBySchool: mocks.listStudentsBySchool,
+  },
+}));
+vi.mock("@/services/examPublish", () => ({
+  examPublishService: {
+    listPublications: mocks.listPublications,
+    revokePublication: vi.fn(),
+  },
+}));
+vi.mock("@/services/knowledge", () => ({
+  knowledgeService: {
+    getKnowledgeTree: mocks.getKnowledgeTree,
+    getChapterTree: vi.fn().mockResolvedValue([]),
+  },
+}));
+vi.mock("@/services/settings", () => ({
+  settingsService: {
+    listExamPaperTypes: mocks.listExamPaperTypes,
+    listSettings: mocks.listSettings,
+  },
+}));
+vi.mock("@/services/analytics", () => ({
+  analyticsService: { getAnsweredQuestionIds: vi.fn().mockResolvedValue(new Set()) },
+}));
+vi.mock("@/lib/docx", () => ({
+  generateExamPaperDocx: mocks.generateExamPaperDocx,
+}));
+
+import ExamPaperEditorPage from "./ExamPaperEditorPage";
+
+const timestamp = "2026-08-04T00:00:00.000Z";
+
+const question = {
+  id: "question-1",
+  teacherId: teacher.id,
+  schoolId: teacher.schoolId,
+  type: "single",
+  stem: "函数的定义域是？",
+  options: ["实数集", "正实数集"],
+  answer: "A",
+  analysis: "根据定义判断。",
+  chapterIds: [],
+  knowledgePointIds: ["knowledge-1"],
+  difficulty: 2,
+  recommendation: 3,
+  usageCount: 0,
+  remark: "",
+  isShared: false,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+} as Question;
+
+const paper = {
+  id: "paper-1",
+  teacherId: teacher.id,
+  schoolId: teacher.schoolId,
+  title: "外层试卷标题",
+  description: "",
+  chapterIds: [],
+  knowledgePointIds: ["knowledge-1"],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  duration: 90,
+  totalScore: 5,
+  status: "draft",
+  isExtractCopy: true,
+  questions: [{
+    id: "paper-question-1",
+    questionId: question.id,
+    type: "single",
+    stem: question.stem,
+    options: question.options,
+    answer: question.answer,
+    analysis: question.analysis,
+    score: 5,
+  }],
+  contentBlocks: [
+    { id: "title-block", type: "documentTitle", content: "文档原始标题" },
+    {
+      id: "question-block",
+      type: "question",
+      content: question.stem,
+      questionId: question.id,
+      examPaperQuestionId: "paper-question-1",
+    },
+  ],
+  createdAt: timestamp,
+  updatedAt: timestamp,
+} as ExamPaper;
+
+const knowledgeTree = {
+  id: "root",
+  name: "知识点",
+  children: [{
+    id: "knowledge-1",
+    name: "函数定义域",
+    children: [],
+  }],
+} as TreeNode;
+
+const publication = {
+  id: "publication-1",
+  examPaperId: paper.id,
+  publisherId: teacher.id,
+  publisherSchoolId: teacher.schoolId,
+  title: paper.title,
+  targetType: "schoolClass",
+  targetClassIds: ["class-1"],
+  targetStudentIds: [],
+  targetSchoolIds: [],
+  isFormalExam: false,
+  hasViewPassword: false,
+  questionIds: [question.id],
+  status: "active",
+  createdAt: timestamp,
+  updatedAt: timestamp,
+} as ExamPublication;
+
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={[`/exam-papers/${paper.id}/preview`]}>
+      <Routes>
+        <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("ExamPaperEditorPage preview", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getPaper.mockResolvedValue(paper);
+    mocks.listQuestions.mockResolvedValue([question]);
+    mocks.listBaskets.mockResolvedValue([]);
+    mocks.listAllClasses.mockResolvedValue([{ id: "class-1", name: "高一（1）班" }]);
+    mocks.listSchoolClasses.mockResolvedValue([]);
+    mocks.listPersonalClasses.mockResolvedValue([]);
+    mocks.listStudentsBySchool.mockResolvedValue([]);
+    mocks.listPublications.mockResolvedValue([publication]);
+    mocks.listExamPaperTypes.mockResolvedValue([]);
+    mocks.listSettings.mockResolvedValue([]);
+    mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
+    mocks.generateExamPaperDocx.mockResolvedValue(undefined);
+  });
+
+  it("uses a collapsible information sidebar and downloads instead of printing", async () => {
+    renderPage();
+
+    expect(await screen.findByText("文档原始标题")).toBeInTheDocument();
+    const preview = screen.getByTestId("exam-paper-preview");
+    expect(within(preview).queryByText("外层试卷标题")).not.toBeInTheDocument();
+    expect(screen.queryByText("版面：")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打印" })).not.toBeInTheDocument();
+
+    const sidebar = screen.getByLabelText("试卷信息侧栏");
+    expect(within(sidebar).getByText("难度分布")).toBeInTheDocument();
+    expect(within(sidebar).getByText("已发布对象")).toBeInTheDocument();
+    expect(within(sidebar).getByText("高一（1）班")).toBeInTheDocument();
+    expect(within(sidebar).getByText("包含知识点")).toBeInTheDocument();
+    expect(within(sidebar).getByText("函数定义域")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "收起信息栏" }));
+    expect(screen.queryByLabelText("试卷信息侧栏")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开信息栏" }));
+    expect(screen.getByLabelText("试卷信息侧栏")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    await waitFor(() => {
+      expect(mocks.generateExamPaperDocx).toHaveBeenCalledOnce();
+    });
+    expect(mocks.generateExamPaperDocx.mock.calls[0][0]).toMatchObject({
+      id: paper.id,
+      title: paper.title,
+      contentBlocks: paper.contentBlocks,
+    });
+  });
+});

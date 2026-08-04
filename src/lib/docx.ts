@@ -4,7 +4,7 @@ import {
   BorderStyle, convertInchesToTwip,
 } from "docx";
 import { saveAs } from "file-saver";
-import type { Question } from "@/types";
+import type { ExamPaper, ExamPaperQuestion, Question } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
@@ -153,6 +153,195 @@ function createOptionsTable(options: string[]): Table {
     width: { size: 100, type: WidthType.PERCENTAGE },
     rows,
   });
+}
+
+function plainDocumentText(value: string | undefined): string {
+  if (!value) return "";
+  const withLineBreaks = value
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/(?:p|div|li|h[1-6])>/gi, "\n");
+
+  if (typeof document !== "undefined") {
+    const container = document.createElement("div");
+    container.innerHTML = withLineBreaks;
+    return (container.textContent || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  return withLineBreaks
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function safeDocxFileName(title: string): string {
+  const normalized = title.trim().replace(/[\\/:*?"<>|]/g, "_");
+  return `${normalized || "试卷"}.docx`;
+}
+
+function appendExamQuestion(
+  children: Array<Paragraph | Table>,
+  question: ExamPaperQuestion,
+  linkedQuestion: Question | undefined,
+  number: number,
+  stemOverride?: string,
+) {
+  const stem = plainDocumentText(stemOverride || question.stem || linkedQuestion?.stem);
+  const options = question.options?.length ? question.options : linkedQuestion?.options;
+  const answer = plainDocumentText(question.answer || linkedQuestion?.answer);
+  const analysis = plainDocumentText(question.analysis || linkedQuestion?.analysis);
+
+  children.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `${number}. `,
+          bold: true,
+          font: "宋体",
+          size: 24,
+        }),
+        new TextRun({
+          text: stem,
+          font: "宋体",
+          size: 24,
+        }),
+        new TextRun({
+          text: `  （${question.score} 分）`,
+          color: "6B7280",
+          font: "宋体",
+          size: 20,
+        }),
+      ],
+      spacing: { before: 240, after: 120, line: 360 },
+    }),
+  );
+
+  if (options?.length) {
+    children.push(createOptionsTable(options.map((option) => plainDocumentText(option))));
+  }
+
+  children.push(createLabeledParagraph("答案", answer || "暂无答案", "059669"));
+  children.push(createLabeledParagraph("解析", analysis || "暂无解析", "D4A24C"));
+}
+
+export async function generateExamPaperDocx(
+  paper: ExamPaper,
+  questionsById: Record<string, Question> = {},
+): Promise<void> {
+  const children: Array<Paragraph | Table> = [];
+  const contentBlocks = paper.contentBlocks || [];
+
+  if (contentBlocks.length > 0) {
+    let questionNumber = 0;
+    for (const block of contentBlocks) {
+      const content = plainDocumentText(block.content);
+      if (block.type === "documentTitle") {
+        children.push(
+          new Paragraph({
+            text: content,
+            heading: HeadingLevel.TITLE,
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 360 },
+          }),
+        );
+        continue;
+      }
+      if (block.type === "groupTitle" || block.type === "heading") {
+        children.push(createHeading(content));
+        continue;
+      }
+      if (block.type === "knowledge") {
+        if (block.title) children.push(createHeading(plainDocumentText(block.title), HeadingLevel.HEADING_3));
+        if (content) children.push(createParagraph(content, { spacing: { line: 360 } }));
+        continue;
+      }
+      if (block.type === "question") {
+        const question = paper.questions.find((item) => item.id === block.examPaperQuestionId)
+          || paper.questions.find((item) => item.questionId && item.questionId === block.questionId);
+        if (!question) {
+          if (content) children.push(createParagraph(content, { spacing: { line: 360 } }));
+          continue;
+        }
+        questionNumber += 1;
+        const linkedQuestionId = question.questionId || block.questionId;
+        appendExamQuestion(
+          children,
+          question,
+          linkedQuestionId ? questionsById[linkedQuestionId] : undefined,
+          questionNumber,
+          content,
+        );
+        continue;
+      }
+      if (content) children.push(createParagraph(content, { spacing: { line: 360 } }));
+    }
+  } else {
+    children.push(
+      new Paragraph({
+        text: plainDocumentText(paper.title),
+        heading: HeadingLevel.TITLE,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 180 },
+      }),
+    );
+    if (paper.description) {
+      children.push(createParagraph(plainDocumentText(paper.description), {
+        color: "6B7280",
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 120 },
+      }));
+    }
+    children.push(createParagraph(
+      `${paper.grade} · ${paper.schoolYear} · ${paper.semester || "上学期"} · ${paper.duration} 分钟 · 满分 ${paper.totalScore} 分`,
+      {
+        color: "6B7280",
+        size: 20,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 360 },
+      },
+    ));
+    paper.questions.forEach((question, index) => {
+      appendExamQuestion(
+        children,
+        question,
+        question.questionId ? questionsById[question.questionId] : undefined,
+        index + 1,
+      );
+    });
+  }
+
+  if (children.length === 0) {
+    children.push(createParagraph("该试卷暂无可下载内容。"));
+  }
+
+  const doc = new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: {
+              top: convertInchesToTwip(0.8),
+              right: convertInchesToTwip(0.8),
+              bottom: convertInchesToTwip(0.8),
+              left: convertInchesToTwip(0.8),
+            },
+          },
+        },
+        children,
+      },
+    ],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  saveAs(blob, safeDocxFileName(paper.title));
 }
 
 export async function generateQuestionDocx(

@@ -5,7 +5,7 @@ import {
   FileSpreadsheet, GraduationCap, Users, Send,
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered,
   BarChart3, CheckCircle2, AlertCircle, Lock, Calendar, Layout,
-  Sparkles, BookOpen, Lightbulb, Printer,
+  Sparkles, BookOpen, Lightbulb, Download, PanelRightClose, PanelRightOpen,
   CheckSquare, ArrowUpDown,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -68,6 +68,8 @@ import type {
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
+import { generateExamPaperDocx } from "@/lib/docx";
+import { treeNameMap } from "@/lib/basket-audience";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -162,7 +164,6 @@ export default function ExamPaperEditorPage() {
   const [searchParams] = useSearchParams();
   const isPreview = location.pathname.endsWith("/preview") || searchParams.get("preview") === "1";
   const prepTaskId = searchParams.get("prepTask");
-  const [paperSize, setPaperSize] = useState<"A4" | "8K">("A4");
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
 
@@ -171,6 +172,8 @@ export default function ExamPaperEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [previewSidebarOpen, setPreviewSidebarOpen] = useState(true);
   const [prepTask, setPrepTask] = useState<PrepTask | null>(null);
   const [prepComments, setPrepComments] = useState<PrepResourceComment[]>([]);
   const [prepPassword, setPrepPassword] = useState(() =>
@@ -548,6 +551,25 @@ export default function ExamPaperEditorPage() {
     });
     return stats;
   }, [paperQuestions, questions]);
+
+  const activePublications = useMemo(
+    () => publications.filter((publication) => publication.status === "active"),
+    [publications],
+  );
+
+  const knowledgeNameMap = useMemo(() => treeNameMap(knowledgeTree), [knowledgeTree]);
+  const includedKnowledgePointIds = useMemo(() => {
+    const ids = new Set(paper?.knowledgePointIds || []);
+    paperQuestions.forEach((paperQuestion) => {
+      if (!paperQuestion.questionId) return;
+      questions[paperQuestion.questionId]?.knowledgePointIds.forEach((id) => ids.add(id));
+    });
+    return Array.from(ids);
+  }, [paper?.knowledgePointIds, paperQuestions, questions]);
+  const includedKnowledgePointNames = useMemo(
+    () => includedKnowledgePointIds.map((id) => knowledgeNameMap.get(id) || "未命名知识点"),
+    [includedKnowledgePointIds, knowledgeNameMap],
+  );
 
   const totalScore = useMemo(() =>
     paperQuestions.reduce((sum, q) => sum + q.score, 0), [paperQuestions]);
@@ -927,6 +949,30 @@ export default function ExamPaperEditorPage() {
     }
   };
 
+  const handleDownload = async () => {
+    if (!paper) return;
+    setDownloading(true);
+    try {
+      await generateExamPaperDocx({
+        ...paper,
+        title,
+        description,
+        grade,
+        schoolYear,
+        semester,
+        duration,
+        totalScore,
+        questions: paperQuestions,
+        contentBlocks,
+      }, questions);
+      toast.success("试卷已下载");
+    } catch (error) {
+      toast.error("下载失败", error instanceof Error ? error.message : "无法生成试卷文档");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // 调整大题型顺序
   const handleGroupMove = (groupType: string, dir: "up" | "down") => {
     setGroupOrder((prev) => {
@@ -1051,7 +1097,7 @@ export default function ExamPaperEditorPage() {
   // ===== 预览模式 =====
   if (isPreview) {
     return (
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-[1500px] mx-auto">
         <PageHeader
           title={paper?.title || title}
           description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
@@ -1081,127 +1127,36 @@ export default function ExamPaperEditorPage() {
           }
         />
 
-        {/* 版面选择 + 打印工具栏 */}
-        <div className="no-print flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-ink-500">版面：</span>
-              <select
-                value={paperSize}
-                onChange={(e) => setPaperSize(e.target.value as "A4" | "8K")}
-                className="text-sm border border-ink-200 rounded-md px-2 py-1 bg-white text-ink-700 cursor-pointer focus:outline-none focus:border-gold-400"
-              >
-                <option value="A4">A4（单栏）</option>
-                <option value="8K">8K（双栏）</option>
-              </select>
-            </div>
-            {paperSize === "8K" && (
-              <span className="text-xs text-ink-400">8K 默认两栏排版</span>
-            )}
-          </div>
-          <Button variant="gold" onClick={() => window.print()}>
-            <Printer className="w-4 h-4" />
-            打印
+        <div className="no-print mb-4 flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            aria-expanded={previewSidebarOpen}
+            aria-controls="exam-paper-preview-sidebar"
+            onClick={() => setPreviewSidebarOpen((open) => !open)}
+          >
+            {previewSidebarOpen
+              ? <PanelRightClose className="w-4 h-4" />
+              : <PanelRightOpen className="w-4 h-4" />}
+            {previewSidebarOpen ? "收起信息栏" : "展开信息栏"}
+          </Button>
+          <Button variant="gold" onClick={handleDownload} loading={downloading}>
+            <Download className="w-4 h-4" />
+            下载
           </Button>
         </div>
 
-        {/* 难度分布概览 */}
-        <Card className="no-print mb-6 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="w-4 h-4 text-gold-600" />
-            <h3 className="font-serif font-semibold text-ink-900 text-sm">难度分布</h3>
-            <span className="text-xs text-ink-400">共 {paperQuestions.length} 题</span>
-          </div>
-          <div className="grid grid-cols-5 gap-2">
-            {[1, 2, 3, 4, 5].map((d) => {
-              const count = difficultyStats[d];
-              const pct = paperQuestions.length > 0 ? (count / paperQuestions.length) * 100 : 0;
-              return (
-                <div key={d} className="text-center">
-                  <div className={cn(
-                    "text-lg font-serif font-bold",
-                    d <= 2 ? "text-emerald-600" : d === 3 ? "text-amber-600" : "text-red-600",
-                  )}>
-                    {count}
-                  </div>
-                  <div className="text-[10px] text-ink-500 mb-1">{difficultyLabel[d]}</div>
-                  <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
-                    <div
-                      className={cn(
-                        "h-full rounded-full",
-                        d <= 2 ? "bg-emerald-400" : d === 3 ? "bg-amber-400" : "bg-red-400",
-                      )}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-
-        {/* 发布状态 */}
-        {publications.filter((p) => p.status === "active").length > 0 && (
-          <Card className="no-print mb-6 p-4 border-l-4 border-gold-400">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-green-500" />
-                <span className="font-medium text-ink-900">试卷已发布</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {publications.filter((p) => p.status === "active").map((pub) => (
-                  <div key={pub.id} className="flex items-center gap-3">
-                    <div className="text-sm">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="green">发布中</Badge>
-                        {pub.isFormalExam && pub.hasViewPassword && (
-                          <Lock className="w-3 h-3 text-ink-400" />
-                        )}
-                      </div>
-                      <div className="text-xs text-ink-500 mt-1">
-                        发布给：{
-                          [
-                            ...pub.targetClassIds.map((cid) => classes.find((c) => c.id === cid)?.name).filter(Boolean),
-                            ...(pub.targetStudentIds || []).map((sid) => students.find((student) => student.id === sid)?.name).filter(Boolean),
-                          ].join(", ") || "未知"
-                        }
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleRevoke(pub.id)}
-                      loading={revoking}
-                    >
-                      撤回发布
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* 纸张版面 */}
-        <div className={cn("paper-sheet rounded-lg", paperSize === "8K" ? "paper-8k" : "paper-a4")}>
-          <div className="paper-content p-10 print-area">
-            {/* 试卷头 */}
-            <div className="text-center mb-6 pb-4 border-b-2 border-ink-200">
-              <h1 className="font-serif text-2xl font-bold text-ink-900 mb-2">{paper?.title}</h1>
-              {description && <p className="text-sm text-ink-500 mb-2">{description}</p>}
-              <div className="flex items-center justify-center gap-4 text-xs text-ink-500">
-                <span>年级：{grade}</span>
-                <span>学年：{schoolYear}</span>
-                <span>学期：{semester}</span>
-                <span>时间：{duration}分钟</span>
-                <span>满分：{totalScore}分</span>
-              </div>
-            </div>
-
-            {/* 正文 */}
-            {isStructuredExtract ? (
-              <div className="space-y-4">
-                {contentBlocks.map((block, blockIndex) => {
+        <div className={cn(
+          "grid items-start gap-5",
+          previewSidebarOpen && "xl:grid-cols-[minmax(0,1fr)_20rem]",
+        )}>
+          <div className="min-w-0">
+            {/* 纸张版面 */}
+            <div className="paper-sheet paper-a4 rounded-lg" data-testid="exam-paper-preview">
+              <div className="paper-content p-10 print-area">
+                {/* 正文 */}
+                {isStructuredExtract ? (
+                  <div className="space-y-4">
+                    {contentBlocks.map((block, blockIndex) => {
                   if (block.type === "documentTitle") {
                     return (
                       <h1 key={block.id} className="py-4 text-center font-serif text-2xl font-bold text-ink-900">
@@ -1260,18 +1215,18 @@ export default function ExamPaperEditorPage() {
                       {block.content}
                     </div>
                   );
-                })}
-              </div>
-            ) : paperQuestions.length === 0 ? (
-              <EmptyState
-                icon={<FileText className="w-10 h-10 text-ink-200" />}
-                title="试卷暂无题目"
-                description="切换到编辑模式添加题目"
-              />
-            ) : (
-              <div className="space-y-6">
-                {layoutMode === "grouped" ? (
-                  groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex) => {
+                    })}
+                  </div>
+                ) : paperQuestions.length === 0 ? (
+                  <EmptyState
+                    icon={<FileText className="w-10 h-10 text-ink-200" />}
+                    title="试卷暂无题目"
+                    description="切换到编辑模式添加题目"
+                  />
+                ) : (
+                  <div className="space-y-6">
+                    {layoutMode === "grouped" ? (
+                      groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex) => {
                     const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
                     return (
                       <div key={group.type}>
@@ -1296,10 +1251,10 @@ export default function ExamPaperEditorPage() {
                         </div>
                       </div>
                     );
-                  })
-                ) : (
-                  <div className="space-y-4">
-                    {paperQuestions.map((pq, index) => {
+                      })
+                    ) : (
+                      <div className="space-y-4">
+                        {paperQuestions.map((pq, index) => {
                       const q = pq.questionId ? questions[pq.questionId] : undefined;
                       return (
                         <PreviewQuestionItem
@@ -1313,12 +1268,144 @@ export default function ExamPaperEditorPage() {
                           onRemoveFromBasket={() => pq.questionId && handleRemoveFromDefault(pq.questionId)}
                         />
                       );
-                    })}
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
+            </div>
           </div>
+
+          {previewSidebarOpen && (
+            <aside
+              id="exam-paper-preview-sidebar"
+              className="no-print space-y-4 xl:sticky xl:top-4"
+              aria-label="试卷信息侧栏"
+            >
+              <Card className="p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-gold-600" />
+                  <h2 className="font-serif text-sm font-semibold text-ink-900">文档信息</h2>
+                </div>
+                <dl className="space-y-2 text-xs">
+                  {[
+                    ["年级", grade],
+                    ["学年", schoolYear],
+                    ["学期", semester],
+                    ["考试时长", `${duration} 分钟`],
+                    ["题目数量", `${paperQuestions.length} 题`],
+                    ["总分", `${totalScore} 分`],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex items-start justify-between gap-3">
+                      <dt className="text-ink-400">{label}</dt>
+                      <dd className="text-right font-medium text-ink-700">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </Card>
+
+              <Card className="p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-gold-600" />
+                  <h2 className="font-serif text-sm font-semibold text-ink-900">难度分布</h2>
+                  <span className="text-xs text-ink-400">共 {paperQuestions.length} 题</span>
+                </div>
+                <div className="space-y-2">
+                  {[1, 2, 3, 4, 5].map((difficulty) => {
+                    const count = difficultyStats[difficulty];
+                    const percentage = paperQuestions.length > 0
+                      ? (count / paperQuestions.length) * 100
+                      : 0;
+                    return (
+                      <div key={difficulty} className="grid grid-cols-[44px_1fr_24px] items-center gap-2 text-[11px]">
+                        <span className="text-ink-500">{difficultyLabel[difficulty]}</span>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-ink-100">
+                          <div
+                            className={cn(
+                              "h-full rounded-full",
+                              difficulty <= 2
+                                ? "bg-emerald-400"
+                                : difficulty === 3
+                                  ? "bg-amber-400"
+                                  : "bg-red-400",
+                            )}
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                        <span className="text-right font-mono text-ink-600">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+
+              <Card className="p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <h2 className="font-serif text-sm font-semibold text-ink-900">已发布对象</h2>
+                </div>
+                {activePublications.length === 0 ? (
+                  <div className="text-xs text-ink-400">尚未发布</div>
+                ) : (
+                  <div className="space-y-3">
+                    {activePublications.map((publication) => {
+                      const targetNames = [
+                        ...publication.targetClassIds
+                          .map((classId) => classes.find((item) => item.id === classId)?.name)
+                          .filter(Boolean),
+                        ...(publication.targetStudentIds || [])
+                          .map((studentId) => students.find((item) => item.id === studentId)?.name)
+                          .filter(Boolean),
+                      ] as string[];
+                      if ((publication.targetSchoolIds || []).length > 0) {
+                        targetNames.push(`${publication.targetSchoolIds.length} 所外校`);
+                      }
+                      return (
+                        <div key={publication.id} className="rounded-md border border-ink-100 p-3">
+                          <div className="mb-2 flex items-center gap-2">
+                            <Badge variant="green">发布中</Badge>
+                            {publication.isFormalExam && publication.hasViewPassword && (
+                              <Lock className="h-3.5 w-3.5 text-ink-400" aria-label="已设置访问密码" />
+                            )}
+                          </div>
+                          <div className="text-xs leading-5 text-ink-600">
+                            {targetNames.join("、") || "未知对象"}
+                          </div>
+                          <Button
+                            className="mt-3 w-full"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRevoke(publication.id)}
+                            loading={revoking}
+                          >
+                            撤回发布
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+
+              <Card className="p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-teal-600" />
+                  <h2 className="font-serif text-sm font-semibold text-ink-900">包含知识点</h2>
+                  <span className="text-xs text-ink-400">{includedKnowledgePointNames.length}</span>
+                </div>
+                {includedKnowledgePointNames.length === 0 ? (
+                  <div className="text-xs text-ink-400">暂无关联知识点</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {includedKnowledgePointNames.map((name, index) => (
+                      <Badge key={`${includedKnowledgePointIds[index]}-${name}`} variant="teal">{name}</Badge>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </aside>
+          )}
         </div>
 
         {/* 发布弹窗 */}
