@@ -146,6 +146,15 @@ const lesson: LessonCourseware = {
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
 
+const chineseLesson: LessonCourseware = {
+  ...lesson,
+  id: "lesson-2",
+  teacherId: "teacher-2",
+  teacherName: "李老师",
+  subject: "语文",
+  title: "《劝学》文本研读",
+};
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/classroom/class-1"]}>
@@ -261,6 +270,50 @@ describe("ClassroomPage", () => {
 
     expect(await screen.findByText("函数图像")).toBeInTheDocument();
     expect(screen.getByText("全屏上课")).toBeInTheDocument();
+  });
+
+  it("keeps the subject rail available before any lesson is published", async () => {
+    const user = userEvent.setup();
+    vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
+    renderPage();
+
+    await screen.findByText("完成课本第 42 页第 1—6 题");
+    await user.click(screen.getByRole("button", { name: /^上课/ }));
+
+    expect(screen.getByRole("complementary", { name: "上课学科" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "选择语文学科，0份课件" })).toBeInTheDocument();
+    expect(screen.getByText("该学科暂无已推送课件")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "更多课件" }));
+    expect(screen.getByText("该班级暂无已发布课件。")).toBeInTheDocument();
+  });
+
+  it("filters lessons by an ordered subject rail and opens every lesson from More", async () => {
+    const user = userEvent.setup();
+    vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([lesson, chineseLesson]);
+    renderPage();
+
+    await screen.findByText("完成课本第 42 页第 1—6 题");
+    await user.click(screen.getByRole("button", { name: /^上课/ }));
+
+    expect(screen.getByRole("complementary", { name: "上课学科" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "选择英语学科，0份课件" })).toBeInTheDocument();
+    expect(await screen.findByText("《劝学》文本研读")).toBeInTheDocument();
+    expect(screen.queryByText("函数图像")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "选择数学学科，1份课件" }));
+    expect(await screen.findByText("函数图像")).toBeInTheDocument();
+    expect(screen.queryByText("《劝学》文本研读")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "数学学科上移" }));
+    expect(localStorage.getItem("inteschool-classroom-preferences:class-1")).toContain(
+      '"lessonSubjectOrder":["数学","语文"',
+    );
+
+    await user.click(screen.getByRole("button", { name: "更多课件" }));
+    expect(screen.getByRole("heading", { name: "全部上课课件" })).toBeInTheDocument();
+    expect(screen.getAllByText("函数图像")).toHaveLength(2);
+    expect(screen.getByText("《劝学》文本研读")).toBeInTheDocument();
   });
 
   it("scrolls active notices outside lesson mode and toggles page fullscreen", async () => {

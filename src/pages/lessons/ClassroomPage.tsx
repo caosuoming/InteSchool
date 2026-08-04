@@ -26,6 +26,7 @@ import {
 import { BrandMark } from "@/components/brand/BrandMark";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
 import { Spinner } from "@/components/ui/Spinner";
+import { SUBJECT_OPTIONS } from "@/lib/education";
 import { cn } from "@/lib/utils";
 import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
@@ -45,6 +46,7 @@ type ClassroomTab = "homework" | "lesson";
 
 interface ClassroomPreferences {
   subjectOrder: string[];
+  lessonSubjectOrder: string[];
   hiddenSubjects: string[];
   fontSize: number;
 }
@@ -68,6 +70,7 @@ function preferencesKey(classId: string): string {
 function readPreferences(classId: string): ClassroomPreferences {
   const fallback: ClassroomPreferences = {
     subjectOrder: [],
+    lessonSubjectOrder: [],
     hiddenSubjects: [],
     fontSize: DEFAULT_FONT_SIZE,
   };
@@ -78,6 +81,9 @@ function readPreferences(classId: string): ClassroomPreferences {
     return {
       subjectOrder: Array.isArray(stored.subjectOrder)
         ? stored.subjectOrder.filter((item): item is string => typeof item === "string")
+        : [],
+      lessonSubjectOrder: Array.isArray(stored.lessonSubjectOrder)
+        ? stored.lessonSubjectOrder.filter((item): item is string => typeof item === "string")
         : [],
       hiddenSubjects: Array.isArray(stored.hiddenSubjects)
         ? stored.hiddenSubjects.filter((item): item is string => typeof item === "string")
@@ -175,6 +181,37 @@ function HomeworkRow({
   );
 }
 
+function lessonSubject(lesson: LessonCourseware): string {
+  return lesson.subject?.trim() || "其他";
+}
+
+function LessonCard({ lesson, onOpen }: { lesson: LessonCourseware; onOpen: (lesson: LessonCourseware) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(lesson)}
+      className="group rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-left transition-colors hover:border-amber-400/70 hover:bg-neutral-900"
+    >
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 group-hover:bg-amber-400 group-hover:text-neutral-950">
+          <Play className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="line-clamp-2 text-lg font-medium text-white">{lesson.title}</div>
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-neutral-500">
+            <span className="inline-flex items-center gap-1"><UserRound className="h-3.5 w-3.5" />{lesson.teacherName || "任课教师"}</span>
+            <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{lesson.slides.length} 页</span>
+          </div>
+        </div>
+      </div>
+      {lesson.description && <p className="mt-4 line-clamp-2 text-sm text-neutral-500">{lesson.description}</p>}
+      <div className="mt-5 flex items-center justify-end gap-1 text-sm text-amber-300">
+        全屏上课<ChevronRight className="h-4 w-4" />
+      </div>
+    </button>
+  );
+}
+
 export default function ClassroomPage() {
   const classroomRootRef = useRef<HTMLDivElement>(null);
   const { classId: routeClassId } = useParams<{ classId?: string }>();
@@ -190,6 +227,8 @@ export default function ClassroomPage() {
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [allLessonsOpen, setAllLessonsOpen] = useState(false);
+  const [selectedLessonSubject, setSelectedLessonSubject] = useState("");
   const [presenting, setPresenting] = useState<LessonCourseware | null>(null);
   const [preferences, setPreferences] = useState<ClassroomPreferences>(() => readPreferences(routeClassId || ""));
   const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
@@ -208,6 +247,8 @@ export default function ClassroomPage() {
     setPreferences(readPreferences(selectedClassId));
     setHiddenPanelOpen(false);
     setHistoryOpen(false);
+    setAllLessonsOpen(false);
+    setSelectedLessonSubject("");
     setHistoryHomeworks([]);
   }, [selectedClassId]);
 
@@ -302,14 +343,37 @@ export default function ClassroomPage() {
     (group) => preferences.hiddenSubjects.includes(group.subject),
   );
 
-  const lessonGroups = useMemo(() => {
+  const lessonsBySubject = useMemo(() => {
     const grouped = new Map<string, LessonCourseware[]>();
     for (const lesson of lessons) {
-      const subject = lesson.subject || "其他学科";
+      const subject = lessonSubject(lesson);
       grouped.set(subject, [...(grouped.get(subject) || []), lesson]);
     }
-    return [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right, "zh-CN"));
+    return grouped;
   }, [lessons]);
+
+  const lessonSubjects = useMemo(() => {
+    const availableSubjects = [...new Set([...SUBJECT_OPTIONS, ...lessonsBySubject.keys()])];
+    return [
+      ...preferences.lessonSubjectOrder.filter((subject) => availableSubjects.includes(subject)),
+      ...availableSubjects.filter((subject) => !preferences.lessonSubjectOrder.includes(subject)),
+    ];
+  }, [lessonsBySubject, preferences.lessonSubjectOrder]);
+
+  useEffect(() => {
+    if (!selectedLessonSubject && loading) return;
+    if (selectedLessonSubject && lessonSubjects.includes(selectedLessonSubject)) return;
+    setSelectedLessonSubject(
+      lessonSubjects.find((subject) => (lessonsBySubject.get(subject)?.length || 0) > 0)
+        || lessonSubjects[0]
+        || "",
+    );
+  }, [lessonSubjects, lessonsBySubject, loading, selectedLessonSubject]);
+
+  const selectedLessons = lessonsBySubject.get(selectedLessonSubject) || [];
+  const allLessonGroups = lessonSubjects
+    .map((subject) => [subject, lessonsBySubject.get(subject) || []] as const)
+    .filter(([, items]) => items.length > 0);
 
   const handleClassChange = (classId: string) => {
     sessionStorage.setItem(CLASSROOM_KEY, classId);
@@ -329,6 +393,15 @@ export default function ClassroomPage() {
     const nextOrder = [...fullOrder];
     [nextOrder[from], nextOrder[to]] = [nextOrder[to], nextOrder[from]];
     savePreferences({ ...preferences, subjectOrder: nextOrder });
+  };
+
+  const moveLessonSubject = (subject: string, direction: -1 | 1) => {
+    const from = lessonSubjects.indexOf(subject);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= lessonSubjects.length) return;
+    const nextOrder = [...lessonSubjects];
+    [nextOrder[from], nextOrder[to]] = [nextOrder[to], nextOrder[from]];
+    savePreferences({ ...preferences, lessonSubjectOrder: nextOrder });
   };
 
   const completeSubject = (subject: string) => {
@@ -398,6 +471,11 @@ export default function ClassroomPage() {
     } catch (error) {
       toast.error("全屏切换失败", error instanceof Error ? error.message : undefined);
     }
+  };
+
+  const openLesson = (lesson: LessonCourseware) => {
+    setAllLessonsOpen(false);
+    setPresenting(lesson);
   };
 
   if (presenting) {
@@ -539,7 +617,10 @@ export default function ClassroomPage() {
           </div>
         </header>
 
-        <div className="relative flex-1 overflow-y-auto bg-black p-3 sm:p-4 lg:p-5">
+        <div className={cn(
+          "relative flex-1 bg-black",
+          tab === "lesson" ? "min-h-0 overflow-hidden" : "overflow-y-auto p-3 sm:p-4 lg:p-5",
+        )}>
           {loading ? (
             <div className="flex h-full items-center justify-center"><Spinner size={34} /></div>
           ) : classes.length === 0 ? (
@@ -575,52 +656,102 @@ export default function ClassroomPage() {
                 })}
               </section>
             )
-          ) : lessons.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <Presentation className="mb-4 h-14 w-14 text-neutral-800" />
-              <div className="text-lg text-neutral-300">该班级暂无已发布课件</div>
-              <div className="mt-2 text-xs text-neutral-600">教师可在“我的上课”中选择班级并发布。</div>
-            </div>
           ) : (
-            <div className="space-y-7">
-              {lessonGroups.map(([subject, items]) => (
-                <section key={subject}>
-                  <div className="mb-3 flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400 font-bold text-neutral-950">{subject.slice(0, 1)}</div>
-                    <div>
-                      <h2 className="text-lg font-semibold">{subject}</h2>
-                      <div className="text-[10px] text-neutral-500">{items.length} 份课件</div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-                    {items.map((lesson) => (
-                      <button
-                        type="button"
-                        key={lesson.id}
-                        onClick={() => setPresenting(lesson)}
-                        className="group rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-left transition-colors hover:border-amber-400/70 hover:bg-neutral-900"
+            <div className="flex h-full min-h-0">
+              <aside className="flex w-28 flex-shrink-0 flex-col border-r border-neutral-800 bg-neutral-950 sm:w-32 lg:w-36" aria-label="上课学科">
+                <div className="border-b border-neutral-800 px-3 py-3">
+                  <div className="text-xs font-semibold text-neutral-200">全部学科</div>
+                  <div className="mt-1 text-[10px] text-neutral-600">选择并调整顺序</div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+                  {lessonSubjects.map((subject, index) => {
+                    const count = lessonsBySubject.get(subject)?.length || 0;
+                    const selected = selectedLessonSubject === subject;
+                    return (
+                      <div
+                        key={subject}
+                        className={cn(
+                          "mb-1 grid grid-cols-[minmax(0,1fr)_1.5rem] overflow-hidden rounded-lg border transition-colors",
+                          selected
+                            ? "border-amber-400 bg-amber-400 text-neutral-950"
+                            : "border-transparent text-neutral-400 hover:border-neutral-700 hover:bg-neutral-900 hover:text-white",
+                        )}
                       >
-                        <div className="flex items-start gap-4">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 group-hover:bg-amber-400 group-hover:text-neutral-950">
-                            <Play className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="line-clamp-2 text-lg font-medium text-white">{lesson.title}</div>
-                            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-neutral-500">
-                              <span className="inline-flex items-center gap-1"><UserRound className="h-3.5 w-3.5" />{lesson.teacherName || "任课教师"}</span>
-                              <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{lesson.slides.length} 页</span>
-                            </div>
-                          </div>
-                        </div>
-                        {lesson.description && <p className="mt-4 line-clamp-2 text-sm text-neutral-500">{lesson.description}</p>}
-                        <div className="mt-5 flex items-center justify-end gap-1 text-sm text-amber-300">
-                          全屏上课<ChevronRight className="h-4 w-4" />
-                        </div>
-                      </button>
-                    ))}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLessonSubject(subject)}
+                          className="min-w-0 px-2 py-2.5 text-left"
+                          aria-label={`选择${subject}学科，${count}份课件`}
+                        >
+                          <span className="block truncate text-xs font-semibold sm:text-sm">{subject}</span>
+                          <span className={cn("mt-0.5 block text-[9px]", selected ? "text-neutral-800/70" : "text-neutral-600")}>{count} 份</span>
+                        </button>
+                        <span className={cn("grid grid-rows-2 border-l", selected ? "border-neutral-950/20" : "border-neutral-800")}>
+                          <button
+                            type="button"
+                            onClick={() => moveLessonSubject(subject, -1)}
+                            disabled={index === 0}
+                            className="flex items-center justify-center border-b border-inherit hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-25"
+                            aria-label={`${subject}学科上移`}
+                            title="上移"
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveLessonSubject(subject, 1)}
+                            disabled={index === lessonSubjects.length - 1}
+                            className="flex items-center justify-center hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-25"
+                            aria-label={`${subject}学科下移`}
+                            title="下移"
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </aside>
+
+              <section className="flex min-w-0 flex-1 flex-col">
+                <div className="flex flex-shrink-0 items-center gap-3 border-b border-neutral-800 px-4 py-3 sm:px-5">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400 text-lg font-bold text-neutral-950">
+                    {selectedLessonSubject.slice(0, 1)}
                   </div>
-                </section>
-              ))}
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-semibold">{selectedLessonSubject}</h2>
+                    <div className="mt-0.5 text-[10px] text-neutral-500">{selectedLessons.length} 份已推送课件</div>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5">
+                  {selectedLessons.length === 0 ? (
+                    <div className="flex h-full min-h-52 flex-col items-center justify-center text-center">
+                      <BookOpen className="mb-3 h-11 w-11 text-neutral-800" />
+                      <div className="text-sm text-neutral-400">该学科暂无已推送课件</div>
+                      <div className="mt-1 text-xs text-neutral-600">可选择左侧其他学科，或查看全部课件。</div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                      {selectedLessons.map((lesson) => (
+                        <LessonCard key={lesson.id} lesson={lesson} onOpen={openLesson} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-shrink-0 justify-end border-t border-neutral-800 bg-neutral-950 px-4 py-2.5 sm:px-5">
+                  <button
+                    type="button"
+                    onClick={() => setAllLessonsOpen(true)}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-700 px-3 text-xs text-neutral-300 hover:border-amber-400 hover:text-amber-300"
+                  >
+                    更多课件
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </section>
             </div>
           )}
         </div>
@@ -671,6 +802,43 @@ export default function ClassroomPage() {
           </footer>
         )}
       </main>
+
+      {allLessonsOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/70" onClick={() => setAllLessonsOpen(false)}>
+          <section
+            className="max-h-[88vh] w-full max-w-6xl overflow-y-auto rounded-t-3xl border border-neutral-800 bg-neutral-950 shadow-2xl lg:m-6 lg:rounded-3xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold">全部上课课件</h2>
+                <p className="mt-1 text-xs text-neutral-500">该班级“我的上课”中已经发布的全部课件。</p>
+              </div>
+              <button type="button" onClick={() => setAllLessonsOpen(false)} className="text-sm text-neutral-400 hover:text-white">关闭</button>
+            </div>
+            <div className="space-y-7 p-4 sm:p-5">
+              {allLessonGroups.length === 0 ? (
+                <div className="py-16 text-center text-sm text-neutral-500">该班级暂无已发布课件。</div>
+              ) : allLessonGroups.map(([subject, items]) => (
+                <section key={subject}>
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400 font-bold text-neutral-950">{subject.slice(0, 1)}</div>
+                    <div>
+                      <h3 className="font-semibold text-white">{subject}</h3>
+                      <div className="text-[10px] text-neutral-500">{items.length} 份课件</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                    {items.map((lesson) => (
+                      <LessonCard key={lesson.id} lesson={lesson} onOpen={openLesson} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
 
       {hiddenPanelOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/70" onClick={() => setHiddenPanelOpen(false)}>
