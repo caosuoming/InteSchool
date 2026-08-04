@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FileText } from "lucide-react";
 import {
   BasketMaterialListItem,
@@ -144,6 +144,10 @@ describe("LinkedResourceRow", () => {
 });
 
 describe("ResourceCard", () => {
+  beforeEach(() => {
+    localStorage.removeItem("document-resource-action-prefs");
+  });
+
   it("renders document actions beside the title without triggering the card action", () => {
     const onClick = vi.fn();
     const onDownload = vi.fn();
@@ -258,6 +262,100 @@ describe("ResourceCard", () => {
     expect(mainRow.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(details).toHaveTextContent("类型：周练");
     expect(details).toHaveTextContent("题目：20 题");
+  });
+
+  it("hides document metadata and exposes it from the document title", () => {
+    render(
+      <ResourceCard
+        title="函数单元测试卷"
+        meta={[
+          { label: "类型", value: "周练" },
+          { label: "题目", value: "20 题" },
+        ]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+        detailsPresentation="titleTooltip"
+      />,
+    );
+
+    expect(screen.queryByTestId("resource-card-details")).not.toBeInTheDocument();
+    expect(screen.getByTestId("resource-card-title")).toHaveAttribute(
+      "title",
+      expect.stringContaining("类型：周练\n题目：20 题\n更新："),
+    );
+  });
+
+  it("moves secondary document actions into a menu and persists pinning across cards", async () => {
+    const onShareFirst = vi.fn();
+    const onShareSecond = vi.fn();
+
+    render(
+      <>
+        <ResourceCard
+          title="第一份试卷"
+          meta={[]}
+          updatedAt="2026-07-30T00:00:00.000Z"
+          onClick={vi.fn()}
+          onRename={vi.fn()}
+          onShare={onShareFirst}
+          configurableActions
+          alwaysShowActions
+        />
+        <ResourceCard
+          title="第二份试卷"
+          meta={[]}
+          updatedAt="2026-07-30T00:00:00.000Z"
+          onClick={vi.fn()}
+          onRename={vi.fn()}
+          onShare={onShareSecond}
+          configurableActions
+          alwaysShowActions
+        />
+      </>,
+    );
+
+    expect(screen.queryByRole("button", { name: "分享" })).not.toBeInTheDocument();
+    const actionBars = screen.getAllByTestId("configurable-resource-actions");
+    fireEvent.click(within(actionBars[0]).getByRole("button", { name: "更多操作" }));
+    expect(screen.getByRole("menuitem", { name: "分享" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "直接显示：分享" }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "分享" })).toHaveLength(2));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "分享" })[0]);
+    expect(onShareFirst).toHaveBeenCalledOnce();
+    expect(onShareSecond).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem("document-resource-action-prefs") || "{}").collapsed)
+      .not.toContain("share");
+  });
+
+  it("allows direct document actions to be reordered", async () => {
+    render(
+      <ResourceCard
+        title="函数讲义"
+        meta={[]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+        onClick={vi.fn()}
+        onRename={vi.fn()}
+        onAddToLesson={vi.fn()}
+        showAddToLesson
+        configurableActions
+        alwaysShowActions
+      />,
+    );
+
+    const actionBar = screen.getByTestId("configurable-resource-actions");
+    expect(within(actionBar).getAllByRole("button").map((button) => button.getAttribute("aria-label")))
+      .toEqual(["查看/编辑", "修改名称：函数讲义", "添加到上课", "更多操作"]);
+
+    fireEvent.click(within(actionBar).getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "自定义按钮与顺序" }));
+    fireEvent.click(screen.getByRole("button", { name: "前移：添加到上课" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭自定义操作" }));
+
+    await waitFor(() => {
+      expect(within(actionBar).getAllByRole("button").map((button) => button.getAttribute("aria-label")))
+        .toEqual(["查看/编辑", "添加到上课", "修改名称：函数讲义", "更多操作"]);
+    });
   });
 
   it("places prominent PPT push actions below the resource details", () => {
