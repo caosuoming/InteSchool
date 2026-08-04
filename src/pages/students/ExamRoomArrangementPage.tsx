@@ -35,9 +35,11 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 import {
-  downloadClassArrangement,
+  downloadClassArrangements,
   downloadDeskLabels,
   groupDeskLabels,
+  groupDeskLabelsByRoom,
+  groupStudentArrangements,
 } from "@/lib/exam-arrangement-export";
 import { summarizeExamGroups, type ExamGroupSummary } from "@/lib/exam-arrangement";
 
@@ -45,6 +47,7 @@ const DEFAULT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生
 const CORE_SUBJECTS = ["语文", "数学", "英语"];
 
 type ViewMode = "settings" | "result";
+type PreviewMode = "class" | "desk";
 
 function uniqueSubjects(values: string[]): string[] {
   const selected = new Set(values.map((item) => item.trim()).filter(Boolean));
@@ -280,6 +283,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [selectedArrangementId, setSelectedArrangementId] = useState("");
   const [draft, setDraft] = useState<ExamArrangementInput | null>(null);
   const [view, setView] = useState<ViewMode>("settings");
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("class");
+  const [selectedClassIds, setSelectedClassIds] = useState<Set<string>>(new Set());
+  const [selectedRoomIds, setSelectedRoomIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState("");
@@ -295,6 +301,11 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       : []
   ), [draft?.id, selectedArrangement]);
   const deskLabels = useMemo(() => groupDeskLabels(assignments), [assignments]);
+  const deskRoomGroups = useMemo(() => groupDeskLabelsByRoom(assignments), [assignments]);
+  const selectedDeskLabels = useMemo(
+    () => deskLabels.filter((label) => selectedRoomIds.has(label.roomId)),
+    [deskLabels, selectedRoomIds],
+  );
   const examGroups = useMemo(() => (
     draft && context ? summarizeExamGroups(draft, context) : []
   ), [context, draft]);
@@ -605,45 +616,60 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     if (!context) return [];
     return context.classes.map((classItem) => ({
       classItem,
-      assignments: assignments
-        .filter((item) => item.classId === classItem.id)
-        .sort((left, right) => left.studentNo.localeCompare(right.studentNo, "zh-CN")
-          || left.sessionKey.localeCompare(right.sessionKey, "zh-CN")),
-    })).filter((group) => group.assignments.length > 0);
+      students: groupStudentArrangements(assignments.filter((item) => item.classId === classItem.id)),
+    })).filter((group) => group.students.length > 0);
   }, [assignments, context]);
 
-  const downloadClass = async (classId: string, className: string) => {
+  useEffect(() => {
+    if (view !== "result") return;
+    setPreviewMode("class");
+    setSelectedClassIds(new Set(classAssignmentGroups.map(({ classItem }) => classItem.id)));
+    setSelectedRoomIds(new Set(deskRoomGroups.map((group) => group.roomId)));
+  }, [classAssignmentGroups, deskRoomGroups, selectedArrangementId, view]);
+
+  const toggleClassSelection = (classId: string) => {
+    setSelectedClassIds((current) => {
+      const next = new Set(current);
+      if (next.has(classId)) next.delete(classId);
+      else next.add(classId);
+      return next;
+    });
+  };
+
+  const toggleRoomSelection = (roomId: string) => {
+    setSelectedRoomIds((current) => {
+      const next = new Set(current);
+      if (next.has(roomId)) next.delete(roomId);
+      else next.add(roomId);
+      return next;
+    });
+  };
+
+  const downloadSelectedClasses = async () => {
     if (!selectedArrangement) return;
     try {
-      await downloadClassArrangement(selectedArrangement, classId, className);
+      await downloadClassArrangements(
+        selectedArrangement,
+        classAssignmentGroups
+          .filter(({ classItem }) => selectedClassIds.has(classItem.id))
+          .map(({ classItem }) => ({ id: classItem.id, name: classItem.name })),
+      );
     } catch (error) {
       toast.error("下载班级安排失败", error instanceof Error ? error.message : undefined);
     }
   };
 
-  const downloadLabels = async () => {
+  const downloadSelectedLabels = async () => {
     if (!selectedArrangement) return;
     try {
-      await downloadDeskLabels(selectedArrangement);
+      await downloadDeskLabels(selectedArrangement, selectedRoomIds);
     } catch (error) {
       toast.error("下载桌贴失败", error instanceof Error ? error.message : undefined);
     }
   };
 
   const pageActions = draft ? (
-    <>
-      <Button variant="outline" onClick={handleNew}><RotateCcw className="h-4 w-4" />新建方案</Button>
-      {view === "result" && (
-        <>
-          <Button variant="outline" disabled={deskLabels.length === 0} onClick={() => window.print()}>
-            <Printer className="h-4 w-4" />打印桌贴
-          </Button>
-          <Button variant="outline" disabled={deskLabels.length === 0} onClick={() => void downloadLabels()}>
-            <Download className="h-4 w-4" />下载桌贴
-          </Button>
-        </>
-      )}
-    </>
+    <Button variant="outline" onClick={handleNew}><RotateCcw className="h-4 w-4" />新建方案</Button>
   ) : undefined;
 
   return (
@@ -698,7 +724,6 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {view === "result" && <Button variant="outline" onClick={() => setView("settings")}>修改配置</Button>}
                   <Button variant="gold" onClick={handleReuse}><Copy className="h-4 w-4" />复用此考场安排</Button>
                 </div>
               </div>
@@ -886,19 +911,169 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 <Card><div className="text-xs text-ink-400">弃考学生</div><div className="mt-1 text-2xl font-semibold text-ink-900">{draft.studentSubjects.filter((item) => item.absent).length}</div></Card>
               </div>
 
-              {classAssignmentGroups.map(({ classItem, assignments: classAssignments }) => (
+              <Card className="p-0 overflow-hidden">
+                <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex flex-wrap gap-2" role="tablist" aria-label="考场安排预览方式">
+                    <Button
+                      role="tab"
+                      aria-selected={previewMode === "class"}
+                      variant={previewMode === "class" ? "ink" : "ghost"}
+                      onClick={() => setPreviewMode("class")}
+                    >
+                      班级考场安排预览
+                    </Button>
+                    <Button
+                      role="tab"
+                      aria-selected={previewMode === "desk"}
+                      variant={previewMode === "desk" ? "ink" : "ghost"}
+                      onClick={() => setPreviewMode("desk")}
+                    >
+                      桌贴预览
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => setView("settings")}><RotateCcw className="h-4 w-4" />重新排考场</Button>
+                    {previewMode === "class" ? (
+                      <Button variant="gold" disabled={selectedClassIds.size === 0} onClick={() => void downloadSelectedClasses()}>
+                        <Download className="h-4 w-4" />下载已选班级
+                      </Button>
+                    ) : (
+                      <>
+                        <Button variant="outline" disabled={selectedDeskLabels.length === 0} onClick={() => window.print()}>
+                          <Printer className="h-4 w-4" />打印已选桌贴
+                        </Button>
+                        <Button variant="gold" disabled={selectedDeskLabels.length === 0} onClick={() => void downloadSelectedLabels()}>
+                          <Download className="h-4 w-4" />下载已选桌贴
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-ink-50 px-5 py-3 text-sm text-ink-600">
+                  {previewMode === "class" ? (
+                    <label className="inline-flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        aria-label="选择全部班级"
+                        checked={classAssignmentGroups.length > 0 && selectedClassIds.size === classAssignmentGroups.length}
+                        onChange={(event) => setSelectedClassIds(event.target.checked
+                          ? new Set(classAssignmentGroups.map(({ classItem }) => classItem.id))
+                          : new Set())}
+                      />
+                      全选班级
+                    </label>
+                  ) : (
+                    <label className="inline-flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        aria-label="选择全部考场"
+                        checked={deskRoomGroups.length > 0 && selectedRoomIds.size === deskRoomGroups.length}
+                        onChange={(event) => setSelectedRoomIds(event.target.checked
+                          ? new Set(deskRoomGroups.map((group) => group.roomId))
+                          : new Set())}
+                      />
+                      全选考场
+                    </label>
+                  )}
+                  <span>
+                    {previewMode === "class"
+                      ? `已选择 ${selectedClassIds.size} / ${classAssignmentGroups.length} 个班级`
+                      : `已选择 ${selectedRoomIds.size} / ${deskRoomGroups.length} 个考场，共 ${selectedDeskLabels.length} 张桌贴`}
+                  </span>
+                </div>
+              </Card>
+
+              {previewMode === "class" ? classAssignmentGroups.map(({ classItem, students }) => (
                 <Card key={classItem.id} className="p-0 overflow-hidden">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
-                    <div><div className="font-medium text-ink-900">{classItem.name}</div><div className="mt-0.5 text-xs text-ink-500">按学生展示每门学科的考场号和位置；一起考试的科目已合并。</div></div>
-                    <Button variant="outline" size="sm" onClick={() => void downloadClass(classItem.id, classItem.name)}><Download className="h-4 w-4" />下载本班</Button>
+                    <label className="inline-flex cursor-pointer items-start gap-3">
+                      <input
+                        className="mt-1"
+                        type="checkbox"
+                        aria-label={`选择${classItem.name}`}
+                        checked={selectedClassIds.has(classItem.id)}
+                        onChange={() => toggleClassSelection(classItem.id)}
+                      />
+                      <span>
+                        <span className="block font-medium text-ink-900">{classItem.name}</span>
+                        <span className="mt-0.5 block text-xs text-ink-500">每名学生只显示一条记录，所有考试科目、考场号和位置集中列出。</span>
+                      </span>
+                    </label>
+                    <Badge>{students.length} 名学生</Badge>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="min-w-[920px] w-full text-xs">
-                      <thead className="bg-ink-50 text-ink-500"><tr><th className="px-4 py-2.5 text-left font-medium">姓名</th><th className="px-4 py-2.5 text-left font-medium">学号</th><th className="px-4 py-2.5 text-left font-medium">考试科目</th><th className="px-4 py-2.5 text-left font-medium">考场号</th><th className="px-4 py-2.5 text-left font-medium">考场位置</th><th className="px-4 py-2.5 text-left font-medium">座位号</th><th className="px-4 py-2.5 text-left font-medium">准考证号</th></tr></thead>
-                      <tbody className="divide-y divide-ink-100">{classAssignments.map((item) => (
-                        <tr key={item.id}><td className="px-4 py-2.5 font-medium text-ink-900">{item.studentName}</td><td className="px-4 py-2.5">{item.studentNo}</td><td className="px-4 py-2.5">{item.subjectLabel}</td><td className="px-4 py-2.5 font-medium">{item.roomNumber || item.roomName}</td><td className="px-4 py-2.5">{item.roomLocation || item.roomName}</td><td className="px-4 py-2.5">{item.seatNo}</td><td className="px-4 py-2.5 font-mono">{item.admissionNo}</td></tr>
+                    <table className="min-w-[760px] w-full text-sm">
+                      <thead className="bg-ink-50 text-xs text-ink-500">
+                        <tr>
+                          <th className="w-36 px-4 py-2.5 text-left font-medium">姓名</th>
+                          <th className="w-40 px-4 py-2.5 text-left font-medium">学号</th>
+                          <th className="px-4 py-2.5 text-left font-medium">考试安排</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-ink-100">{students.map((student) => (
+                        <tr key={student.key} className="align-top">
+                          <td className="px-4 py-3 font-medium text-ink-900">{student.studentName}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-ink-700">{student.studentNo}</td>
+                          <td className="px-4 py-2">
+                            <div className="divide-y divide-ink-100 rounded-lg border border-ink-100">{student.assignments.map((item) => (
+                              <div key={item.id} className="grid gap-1 px-3 py-2.5 lg:grid-cols-[minmax(9rem,1fr)_minmax(8rem,0.7fr)_minmax(12rem,1.2fr)_auto] lg:items-center">
+                                <div className="font-medium text-ink-900">{item.subjectLabel.split(" / ").join("、")}</div>
+                                <div className="text-ink-700">{item.roomNumber || item.roomName}</div>
+                                <div className="text-ink-600">{item.roomLocation || item.roomName}</div>
+                                <div className="text-xs text-ink-400">{item.seatNo} 号 · {item.admissionNo}</div>
+                              </div>
+                            ))}</div>
+                          </td>
+                        </tr>
                       ))}</tbody>
                     </table>
+                  </div>
+                </Card>
+              )) : deskRoomGroups.map((roomGroup) => (
+                <Card key={roomGroup.roomId} className="p-0 overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
+                    <label className="inline-flex cursor-pointer items-start gap-3">
+                      <input
+                        className="mt-1"
+                        type="checkbox"
+                        aria-label={`选择${roomGroup.roomNumber}`}
+                        checked={selectedRoomIds.has(roomGroup.roomId)}
+                        onChange={() => toggleRoomSelection(roomGroup.roomId)}
+                      />
+                      <span>
+                        <span className="block font-medium text-ink-900">{roomGroup.roomNumber}</span>
+                        <span className="mt-0.5 block text-xs text-ink-500">{roomGroup.roomLocation}</span>
+                      </span>
+                    </label>
+                    <Badge>{roomGroup.labels.length} 张桌贴</Badge>
+                  </div>
+                  <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
+                    {roomGroup.labels.map((label) => (
+                      <article key={label.key} className="rounded-xl border-2 border-ink-300 bg-paper p-4 shadow-sm">
+                        <div className="text-center font-serif text-base font-semibold text-ink-900">{selectedArrangement?.name}</div>
+                        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-ink-500">
+                          <span>{selectedArrangement?.examDate || "考试日期待定"}</span>
+                          <span>{label.roomLocation}</span>
+                        </div>
+                        <div className="mt-3 flex items-end justify-between border-y border-ink-200 py-2 text-ink-900">
+                          <span className="font-medium">{label.roomNumber}</span>
+                          <strong className="text-xl">{label.seatNo} 号</strong>
+                        </div>
+                        <div className="divide-y divide-ink-100">{label.assignments.map((assignment) => (
+                          <div key={assignment.id} className="py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="font-medium text-ink-900">{assignment.studentName}</div>
+                              <div className="text-xs font-medium text-ink-600">{assignment.subjectLabel.split(" / ").join("、")}</div>
+                            </div>
+                            <div className="mt-1 grid gap-1 text-xs text-ink-500 sm:grid-cols-2">
+                              <span>班级：{assignment.className}</span>
+                              <span>学号：{assignment.studentNo}</span>
+                            </div>
+                            <div className="mt-1 font-mono text-xs text-ink-400">准考证号：{assignment.admissionNo}</div>
+                          </div>
+                        ))}</div>
+                      </article>
+                    ))}
                   </div>
                 </Card>
               ))}
@@ -907,9 +1082,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
             </div>
           )}
 
-          {deskLabels.length > 0 && selectedArrangement && (
+          {selectedDeskLabels.length > 0 && selectedArrangement && (
             <div className="print-only exam-desk-label-sheet">
-              {deskLabels.map((group) => (
+              {selectedDeskLabels.map((group) => (
                 <section key={group.key} className="exam-desk-label">
                   <div className="exam-desk-label-title">{selectedArrangement.name}</div>
                   <div className="exam-desk-label-meta"><span>{selectedArrangement.examDate || "考试日期待定"}</span><span>{group.roomLocation}</span></div>
