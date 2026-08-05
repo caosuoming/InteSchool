@@ -228,10 +228,10 @@ function CheckboxPill({ checked, label, onClick, disabled = false }: {
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         checked
-          ? "border-gold-300 bg-gold-50 text-gold-800"
-          : "border-ink-200 bg-paper text-ink-500 hover:border-ink-300",
+          ? "border-gold-300 bg-gold-50 text-gold-800 shadow-sm"
+          : "border-ink-200 bg-paper text-ink-600 hover:border-ink-300 hover:bg-ink-50/60",
       )}
     >
       <span className={cn(
@@ -774,7 +774,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       {subjectSelectionNames(context).length === 0 ? (
                         <div className="rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">学生档案中暂无选科名称，暂按全部勾选科目处理。</div>
                       ) : subjectSelectionNames(context).map((selectionName) => (
-                        <div key={selectionName} className="rounded-lg border border-ink-100 p-3">
+                        <div key={selectionName} className="rounded-xl border border-ink-200 bg-ink-50/30 p-4">
                           <div className="mb-2 text-sm font-medium text-ink-800">{selectionName}</div>
                           <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => (
                             <CheckboxPill
@@ -801,20 +801,25 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       <Button variant="outline" size="sm" onClick={addRoom}><Plus className="h-4 w-4" />增加考场</Button>
                     </div>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-[680px] w-full text-sm">
-                      <thead className="bg-ink-50 text-xs text-ink-500"><tr><th className="px-4 py-2.5 text-left font-medium">考场号</th><th className="px-4 py-2.5 text-left font-medium">考场位置</th><th className="px-4 py-2.5 text-left font-medium">可安排人数</th><th className="px-4 py-2.5 text-right font-medium">操作</th></tr></thead>
-                      <tbody className="divide-y divide-ink-100">
-                        {draft.rooms.map((room) => (
-                          <tr key={room.id}>
-                            <td className="px-4 py-3"><Input aria-label="考场号" value={room.number || room.name} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, name: event.target.value, number: event.target.value } : item) }))} /></td>
-                            <td className="px-4 py-3"><Input aria-label="考场位置" value={room.location || ""} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, location: event.target.value } : item) }))} /></td>
-                            <td className="px-4 py-3"><Input aria-label="考场可安排人数" type="number" min={1} max={1000} value={room.capacity} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, capacity: Number(event.target.value) } : item) }))} /></td>
-                            <td className="px-4 py-3 text-right"><Button variant="ghost" size="icon" aria-label={`删除${room.number || room.name}`} disabled={draft.rooms.length === 1} onClick={() => removeRoom(room.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="grid gap-3 p-4 md:grid-cols-2 2xl:grid-cols-3" role="list" aria-label="可用考场列表">
+                    {draft.rooms.map((room) => (
+                      <article key={room.id} data-testid="room-card" className="rounded-xl border border-ink-200 bg-ink-50/30 p-4 shadow-sm" role="listitem">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-ink-900">{room.number || room.name}</div>
+                            <div className="mt-0.5 truncate text-xs text-ink-500">{room.location || "位置待填写"}</div>
+                          </div>
+                          <Button variant="ghost" size="icon" aria-label={`删除${room.number || room.name}`} disabled={draft.rooms.length === 1} onClick={() => removeRoom(room.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Input label="考场号" aria-label="考场号" value={room.number || room.name} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, name: event.target.value, number: event.target.value } : item) }))} />
+                          <Input label="可安排人数" aria-label="考场可安排人数" type="number" min={1} max={1000} value={room.capacity} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, capacity: Number(event.target.value) } : item) }))} />
+                          <div className="sm:col-span-2">
+                            <Input label="考场位置" aria-label="考场位置" value={room.location || ""} onChange={(event) => updateDraft((current) => ({ ...current, rooms: current.rooms.map((item) => item.id === room.id ? { ...item, location: event.target.value } : item) }))} />
+                          </div>
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 </Card>
               </div>
@@ -828,34 +833,21 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
                   合并安排：{draft.subjects.filter((subject) => !(draft.separateSubjects || []).includes(subject)).join("、") || "无"}
                 </div>
-                <div className="mt-4 border-t border-ink-100 pt-4">
-                  <div className="text-sm font-medium text-ink-800">实际考试组合人数</div>
-                  <div className="mt-1 text-xs text-ink-500">根据当前科目、选科和弃考设置实时计算。</div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {examGroups.map((group) => (
-                      <div key={group.key} className="rounded-lg border border-ink-100 bg-paper px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="truncate text-sm font-medium text-ink-800">{group.subjectLabel.split(" / ").join("、")}</div>
-                          <Badge>{group.studentCount} 人</Badge>
-                        </div>
-                        <div className="mt-1 text-xs text-ink-400">{group.sessionKey === "combined" ? "合并场次" : "单独场次"}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="font-medium text-ink-900">考试组合对应考场</div>
-                <div className="mt-1 text-xs text-ink-500">系统按参加该组合的班级教室和所有教室外考场自动生成，可逐项微调。</div>
-                <div className="mt-4 space-y-4">
+                <div className="mt-5 border-t border-ink-100 pt-5">
+                  <div className="text-sm font-medium text-ink-800">实际考试组合人数与对应考场</div>
+                  <div className="mt-1 text-xs text-ink-500">人数根据当前科目、选科和弃考设置实时计算；考场由系统自动生成，可逐项微调。</div>
+                  <div className="mt-4 grid gap-3 xl:grid-cols-2">
                   {examGroups.map((group) => (
-                    <div key={group.key} className="rounded-lg border border-ink-100 p-4">
+                    <article key={group.key} data-testid="exam-group-card" className="rounded-xl border border-ink-200 bg-ink-50/30 p-4 shadow-sm">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="text-sm font-medium text-ink-900">{group.subjectLabel.split(" / ").join("、")}</div>
-                          <div className="mt-0.5 text-xs text-ink-500">{group.studentCount} 人 · {group.classIds.length} 个班级</div>
+                          <div className="mt-0.5 text-xs text-ink-500">{group.sessionKey === "combined" ? "合并场次" : "单独场次"} · {group.classIds.length} 个班级</div>
                         </div>
+                        <Badge>{group.studentCount} 人</Badge>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
+                        <div className="text-xs font-medium text-ink-500">可用考场</div>
                         <Button variant="ghost" size="sm" onClick={() => resetGroupRooms(group)}><RotateCcw className="h-3.5 w-3.5" />恢复自动分配</Button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -868,8 +860,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                           />
                         ))}
                       </div>
-                    </div>
+                    </article>
                   ))}
+                  </div>
                 </div>
               </Card>
 
@@ -879,19 +872,21 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   <Input value={studentKeyword} onChange={(event) => setStudentKeyword(event.target.value)} placeholder="搜索姓名或学号" aria-label="搜索学生" />
                   <Select value={studentClassFilter} onChange={(event) => setStudentClassFilter(event.target.value)} placeholder="全部班级" options={context.classes.map((item) => ({ value: item.id, label: item.name }))} />
                 </div>
-                <div className="max-h-[560px] overflow-auto divide-y divide-ink-100">
+                <div className="grid max-h-[640px] gap-3 overflow-auto p-4 lg:grid-cols-2" role="list" aria-label="学生考试科目列表">
                   {filteredStudents.map((student) => {
                     const selection = draft.studentSubjects.find((item) => item.studentId === student.id);
                     const className = context.classes.find((item) => item.id === student.classId)?.name || "未分班";
                     return (
-                      <div key={student.id} className={cn("grid gap-3 px-5 py-3 xl:grid-cols-[14rem_1fr_auto] xl:items-center", selection?.absent && "bg-red-50/60")}>
-                        <div><div className="text-sm font-medium text-ink-900">{student.name} <span className="font-normal text-ink-400">{student.studentNo}</span></div><div className="text-xs text-ink-400">{className}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div></div>
-                        <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
-                        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-red-700">
+                      <article key={student.id} data-testid="student-subject-card" role="listitem" className={cn("rounded-xl border border-ink-200 bg-ink-50/30 p-4 shadow-sm", selection?.absent && "border-red-200 bg-red-50/60")}>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div><div className="text-sm font-medium text-ink-900">{student.name} <span className="font-normal text-ink-400">{student.studentNo}</span></div><div className="mt-0.5 text-xs text-ink-400">{className}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div></div>
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-red-700">
                           <input aria-label={`${student.name}弃考`} type="checkbox" checked={Boolean(selection?.absent)} onChange={() => toggleStudentAbsent(student.id)} />
                           弃考
-                        </label>
-                      </div>
+                          </label>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
+                      </article>
                     );
                   })}
                 </div>
@@ -1001,32 +996,25 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     </label>
                     <Badge>{students.length} 名学生</Badge>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-[760px] w-full text-sm">
-                      <thead className="bg-ink-50 text-xs text-ink-500">
-                        <tr>
-                          <th className="w-36 px-4 py-2.5 text-left font-medium">姓名</th>
-                          <th className="w-40 px-4 py-2.5 text-left font-medium">学号</th>
-                          <th className="px-4 py-2.5 text-left font-medium">考试安排</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-ink-100">{students.map((student) => (
-                        <tr key={student.key} className="align-top">
-                          <td className="px-4 py-3 font-medium text-ink-900">{student.studentName}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-ink-700">{student.studentNo}</td>
-                          <td className="px-4 py-2">
-                            <div className="divide-y divide-ink-100 rounded-lg border border-ink-100">{student.assignments.map((item) => (
-                              <div key={item.id} className="grid gap-1 px-3 py-2.5 lg:grid-cols-[minmax(9rem,1fr)_minmax(8rem,0.7fr)_minmax(12rem,1.2fr)_auto] lg:items-center">
-                                <div className="font-medium text-ink-900">{item.subjectLabel.split(" / ").join("、")}</div>
-                                <div className="text-ink-700">{item.roomNumber || item.roomName}</div>
-                                <div className="text-ink-600">{item.roomLocation || item.roomName}</div>
-                                <div className="text-xs text-ink-400">{item.seatNo} 号 · {item.admissionNo}</div>
-                              </div>
-                            ))}</div>
-                          </td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
+                  <div className="grid gap-4 p-4 lg:grid-cols-2" role="list" aria-label={`${classItem.name}学生考场安排`}>
+                    {students.map((student) => (
+                      <article key={student.key} data-testid="student-arrangement-card" role="listitem" className="rounded-xl border border-ink-200 bg-ink-50/30 p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="font-medium text-ink-900">{student.studentName}</div>
+                          <div className="font-mono text-xs text-ink-500">{student.studentNo}</div>
+                        </div>
+                        <div className="mt-3 space-y-2">{student.assignments.map((item) => (
+                          <div key={item.id} className="rounded-lg border border-ink-100 bg-paper p-3">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="font-medium text-ink-900">{item.subjectLabel.split(" / ").join("、")}</div>
+                              <Badge>{item.seatNo} 号</Badge>
+                            </div>
+                            <div className="mt-2 text-sm text-ink-700">{item.roomNumber || item.roomName} · {item.roomLocation || item.roomName}</div>
+                            <div className="mt-1 font-mono text-xs text-ink-400">准考证号：{item.admissionNo}</div>
+                          </div>
+                        ))}</div>
+                      </article>
+                    ))}
                   </div>
                 </Card>
               )) : deskRoomGroups.map((roomGroup) => (
@@ -1049,7 +1037,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   </div>
                   <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
                     {roomGroup.labels.map((label) => (
-                      <article key={label.key} className="rounded-xl border-2 border-ink-300 bg-paper p-4 shadow-sm">
+                      <article key={label.key} data-testid="desk-label-card" className="rounded-2xl border-2 border-ink-300 bg-paper p-5 shadow-sm">
                         <div className="text-center font-serif text-base font-semibold text-ink-900">{selectedArrangement?.name}</div>
                         <div className="mt-2 flex items-center justify-between gap-3 text-xs text-ink-500">
                           <span>{selectedArrangement?.examDate || "考试日期待定"}</span>

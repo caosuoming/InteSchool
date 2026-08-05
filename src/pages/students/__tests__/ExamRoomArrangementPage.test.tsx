@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -212,8 +212,10 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByLabelText("考场号")).toHaveValue("1考场");
     expect(screen.getByLabelText("考场位置")).toHaveValue("高三1班教室");
     expect(screen.getByLabelText("考场可安排人数")).toHaveValue(1);
-    expect(screen.getByText("实际考试组合人数")).toBeInTheDocument();
-    expect(screen.getByText("考试组合对应考场")).toBeInTheDocument();
+    expect(screen.getByText("实际考试组合人数与对应考场")).toBeInTheDocument();
+    expect(screen.getAllByTestId("room-card")).toHaveLength(1);
+    expect(screen.getAllByTestId("exam-group-card").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("student-subject-card")).toHaveLength(1);
 
     await user.clear(screen.getByLabelText("批量考场容量"));
     await user.type(screen.getByLabelText("批量考场容量"), "32");
@@ -248,7 +250,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(arrangementSelect).toHaveValue("new");
   });
 
-  it("shows one class row per student and selectable desk-label rooms", async () => {
+  it("shows card-based student arrangements and selectable desk-label rooms", async () => {
     const user = userEvent.setup();
     vi.mocked(examArrangementService.listArrangements).mockResolvedValue([savedArrangement]);
     renderPage();
@@ -258,14 +260,14 @@ describe("ExamRoomArrangementPage", () => {
 
     const classTab = await screen.findByRole("tab", { name: "班级考场安排预览" });
     expect(classTab).toHaveAttribute("aria-selected", "true");
-    const classTable = screen.getByRole("table");
-    expect(within(classTable).getAllByRole("row")).toHaveLength(2);
-    expect(within(classTable).getByText("物理")).toBeInTheDocument();
+    expect(screen.getAllByTestId("student-arrangement-card")).toHaveLength(1);
+    expect(screen.getAllByText("物理").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("选择高三（1）班")).toBeChecked();
 
     await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("1 张桌贴")).toBeInTheDocument();
+    expect(screen.getAllByTestId("desk-label-card")).toHaveLength(1);
     const roomCheckbox = screen.getByLabelText("选择高三（1）班");
     expect(roomCheckbox).toBeChecked();
 
