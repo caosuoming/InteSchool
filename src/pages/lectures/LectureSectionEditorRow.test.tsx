@@ -22,25 +22,25 @@ const question = {
   analysis: "一次函数 y = kx + b 的斜率为 k。",
 } as Question;
 
-function renderRow(overrides: Partial<LectureSection> = {}) {
+function renderRow(overrides: Partial<LectureSection> = {}, questionOverride: Question = question) {
   const onLabelChange = vi.fn();
-  const onEditQuestion = vi.fn();
-  render(
+  const onReplaceQuestion = vi.fn();
+  const view = render(
     <LectureSectionEditorRow
       section={{ ...section, ...overrides }}
       index={2}
-      question={question}
+      question={questionOverride}
       canMoveUp
       canMoveDown
       onLabelChange={onLabelChange}
       onMoveUp={vi.fn()}
       onMoveDown={vi.fn()}
       onEditSection={vi.fn()}
-      onEditQuestion={onEditQuestion}
+      onReplaceQuestion={onReplaceQuestion}
       onRemove={vi.fn()}
     />,
   );
-  return { onLabelChange, onEditQuestion };
+  return { ...view, onLabelChange, onReplaceQuestion };
 }
 
 describe("LectureSectionEditorRow", () => {
@@ -55,12 +55,13 @@ describe("LectureSectionEditorRow", () => {
     expect(onLabelChange).toHaveBeenCalledWith("例 7");
   });
 
-  it("displays an existing custom number and keeps question editing available", () => {
-    const { onEditQuestion } = renderRow({ customLabel: "变式 2" });
+  it("displays an existing custom number and exposes question replacement", () => {
+    const { onReplaceQuestion } = renderRow({ customLabel: "变式 2" });
 
     expect(screen.getByRole("textbox", { name: "题目编号：一次函数练习" })).toHaveValue("变式 2");
-    fireEvent.click(screen.getByRole("button", { name: "编辑题目" }));
-    expect(onEditQuestion).toHaveBeenCalledOnce();
+    expect(screen.getAllByText(question.stem)).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "换题" }));
+    expect(onReplaceQuestion).toHaveBeenCalledOnce();
   });
 
   it("expands the answer and analysis", () => {
@@ -69,5 +70,20 @@ describe("LectureSectionEditorRow", () => {
     expect(screen.queryByText("一次函数 y = kx + b 的斜率为 k。")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看答案与解析" }));
     expect(screen.getByText("一次函数 y = kx + b 的斜率为 k。")).toBeInTheDocument();
+  });
+
+  it("renders formulas in the stem, options, answer, and analysis", () => {
+    const formulaQuestion = {
+      ...question,
+      stem: "已知椭圆 $\\frac{x^2}{4}+\\frac{y^2}{3}=1$",
+      options: ["$\\frac{1}{2}$", "$\\sqrt{3}$"],
+      answer: "$\\frac{1}{2}$",
+      analysis: "离心率为 $e=\\frac{c}{a}$。",
+    } as Question;
+    const { container } = renderRow({}, formulaQuestion);
+
+    expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(3);
+    fireEvent.click(screen.getByRole("button", { name: "查看答案与解析" }));
+    expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(5);
   });
 });

@@ -12,6 +12,7 @@ import {
 
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
+import { MathHtml } from "@/components/ui/MathHtml";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import type { LectureSection, Question } from "@/types";
 
@@ -26,7 +27,7 @@ interface LectureSectionEditorRowProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEditSection: () => void;
-  onEditQuestion?: () => void;
+  onReplaceQuestion?: () => void;
   onRemove: () => void;
 }
 
@@ -48,7 +49,7 @@ export function LectureSectionEditorRow({
   onMoveUp,
   onMoveDown,
   onEditSection,
-  onEditQuestion,
+  onReplaceQuestion,
   onRemove,
 }: LectureSectionEditorRowProps) {
   const [showAnswer, setShowAnswer] = useState(false);
@@ -79,12 +80,12 @@ export function LectureSectionEditorRow({
           </div>
         )}
 
-        <div className="min-w-[10rem] flex-1 truncate text-sm font-medium text-ink-800">
-          {section.type === "question"
-            ? question?.stem || section.title || "题目加载中..."
-            : section.title}
-          {answered && <span className="tag-gold ml-2 text-[10px] py-0.5">已做过</span>}
-        </div>
+        {section.type !== "question" && (
+          <div className="min-w-[10rem] flex-1 truncate text-sm font-medium text-ink-800">
+            {section.title}
+          </div>
+        )}
+        {answered && <span className="tag-gold text-[10px] py-0.5">已做过</span>}
 
         <div className="ml-auto flex items-center gap-0.5">
           <button
@@ -105,23 +106,25 @@ export function LectureSectionEditorRow({
           >
             <ChevronDown className="h-4 w-4" />
           </button>
-          {section.type === "question" && question && onEditQuestion && (
+          {section.type === "question" && question && onReplaceQuestion && (
             <button
               type="button"
-              onClick={onEditQuestion}
+              onClick={onReplaceQuestion}
               className="rounded px-2 py-1 text-xs text-teal-600 hover:bg-teal-50 hover:text-teal-700"
             >
-              编辑题目
+              换题
             </button>
           )}
-          <button
-            type="button"
-            onClick={onEditSection}
-            className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700"
-            title="编辑内容块"
-          >
-            <Edit3 className="h-4 w-4" />
-          </button>
+          {section.type !== "question" && (
+            <button
+              type="button"
+              onClick={onEditSection}
+              className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700"
+              title="编辑内容块"
+            >
+              <Edit3 className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onRemove}
@@ -137,17 +140,17 @@ export function LectureSectionEditorRow({
         {section.type === "question" ? (
           question ? (
             <div className="space-y-2">
-              <div className="whitespace-pre-wrap text-sm leading-relaxed text-ink-900">
+              <MathHtml className="whitespace-pre-wrap text-sm leading-relaxed text-ink-900">
                 {question.stem}
-              </div>
+              </MathHtml>
               {section.displayMode !== "stem-only" && question.options && question.options.length > 0 && (
                 <div className={cn("grid gap-2 text-xs text-ink-700", getOptionsGridCols(question.options.length))}>
                   {question.options.map((option, optionIndex) => (
-                    <div key={optionIndex} className="min-w-0 rounded border border-ink-100 px-2 py-1.5">
+                    <div key={optionIndex} className="flex min-w-0 items-start gap-1 rounded border border-ink-100 px-2 py-1.5">
                       <span className="font-mono font-semibold text-ink-500">
                         {String.fromCharCode(65 + optionIndex)}.
-                      </span>{" "}
-                      <span className="break-all">{option}</span>
+                      </span>
+                      <MathHtml className="min-w-0 flex-1 break-all">{option}</MathHtml>
                     </div>
                   ))}
                 </div>
@@ -165,11 +168,11 @@ export function LectureSectionEditorRow({
                 <div className="space-y-2">
                   <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2 text-xs text-ink-800">
                     <span className="font-medium text-emerald-700">答案：</span>
-                    {question.answer}
+                    <MathHtml className="mt-1">{question.answer}</MathHtml>
                   </div>
                   <div className="rounded border border-gold-200 bg-gold-50/30 p-2 text-xs text-ink-800">
                     <span className="font-medium text-gold-700">解析：</span>
-                    {question.analysis}
+                    <MathHtml className="mt-1">{question.analysis}</MathHtml>
                   </div>
                 </div>
               )}
