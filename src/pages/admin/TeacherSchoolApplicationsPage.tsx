@@ -6,6 +6,7 @@ import { authService } from "@/services/auth";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import type { SchoolApplication } from "@/types";
+import { roleLabels } from "@/services/organization";
 
 function Detail({ label, value }: { label: string; value?: string }) {
   if (!value) return null;
@@ -98,7 +99,12 @@ export default function TeacherSchoolApplicationsPage() {
                     />
                     <Detail label="任教年级" value={application.teachingGrades?.join("、")} />
                     <Detail label="工号" value={application.employeeNo} />
-                    <Detail label="职务" value={application.position} />
+                    <Detail
+                      label="申请身份"
+                      value={application.roles?.length
+                        ? application.roles.map((role) => roleLabels[role]).join("、")
+                        : application.position || roleLabels.teacher}
+                    />
                   </div>
 
                   <div className="flex flex-wrap items-center gap-4 mt-4 text-xs text-ink-400">

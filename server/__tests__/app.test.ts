@@ -2064,6 +2064,21 @@ describe("production backend", () => {
     });
     expect(missingSubjects.statusCode).toBe(400);
 
+    const invalidRole = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/applications",
+      headers: {
+        cookie: applicant.cookie,
+        "x-inteschool-csrf": applicant.csrfToken,
+      },
+      payload: {
+        schoolId: "sch-3",
+        subjects: ["数学"],
+        roles: ["platform_admin"],
+      },
+    });
+    expect(invalidRole.statusCode).toBe(400);
+
     const apply = await built.app.inject({
       method: "POST",
       url: "/api/auth/applications",
@@ -2076,6 +2091,7 @@ describe("production backend", () => {
         subjects: ["数学", "物理"],
         teachingGrades: ["高一", "高二"],
         position: "年级组长",
+        roles: ["teacher", "headTeacher", "gradeLeader"],
         requestSchoolAdmin: true,
       },
     });
@@ -2086,12 +2102,14 @@ describe("production backend", () => {
       subjects: string[];
       proofFileId: null;
       requestSchoolAdmin: boolean;
+      roles: string[];
     }>();
     expect(application).toMatchObject({
       employeeNo: "",
       subjects: ["数学", "物理"],
       proofFileId: null,
       requestSchoolAdmin: true,
+      roles: ["teacher", "headTeacher", "gradeLeader"],
     });
 
     const schoolAdmin = await login(built.app);
@@ -2163,6 +2181,7 @@ describe("production backend", () => {
         subjects: string[];
         position: string;
         role: string;
+        roles: string[];
         affiliations: Array<Record<string, unknown>>;
       };
     }>().teacher;
@@ -2172,6 +2191,7 @@ describe("production backend", () => {
       subjects: ["数学", "物理"],
       position: "年级组长",
       role: "school_admin",
+      roles: ["teacher", "headTeacher", "gradeLeader"],
     });
     expect(teacher.affiliations).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -2180,6 +2200,7 @@ describe("production backend", () => {
         teachingGrades: ["高一", "高二"],
         position: "年级组长",
         role: "school_admin",
+        roles: ["teacher", "headTeacher", "gradeLeader"],
       }),
     ]));
   });

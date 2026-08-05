@@ -18,22 +18,12 @@ import { schoolService } from "@/services/school";
 import { authService } from "@/services/auth";
 import { uploadFile } from "@/services/api";
 import { toast } from "@/stores/ui";
-import { Button, Input, Modal, Select, Textarea } from "@/components/ui";
-import type { School, SchoolCreationApplication } from "@/types";
+import { Button, Input, Modal, Textarea } from "@/components/ui";
+import type { School, SchoolCreationApplication, TeacherRole } from "@/types";
 import { cn } from "@/lib/utils";
 import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
-
-const POSITION_OPTIONS = [
-  { value: "", label: "不填写" },
-  { value: "普通教师", label: "普通教师" },
-  { value: "班主任", label: "班主任" },
-  { value: "备课组长", label: "备课组长" },
-  { value: "学科组长", label: "学科组长" },
-  { value: "年级组长", label: "年级组长" },
-  { value: "教务主任", label: "教务主任" },
-  { value: "副校长", label: "副校长" },
-  { value: "校长", label: "校长" },
-];
+import { TEACHER_ROLES } from "@/lib/teacher-roles";
+import { roleLabels } from "@/services/organization";
 
 export default function SchoolAuthPage() {
   const navigate = useNavigate();
@@ -46,7 +36,7 @@ export default function SchoolAuthPage() {
   const [employeeNo, setEmployeeNo] = useState("");
   const [subjects, setSubjects] = useState<string[]>([]);
   const [teachingGrades, setTeachingGrades] = useState<string[]>([]);
-  const [position, setPosition] = useState("");
+  const [roles, setRoles] = useState<TeacherRole[]>(["teacher"]);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [requestSchoolAdmin, setRequestSchoolAdmin] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -101,6 +91,13 @@ export default function SchoolAuthPage() {
     setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
   };
 
+  const toggleRole = (role: TeacherRole) => {
+    if (role === "teacher") return;
+    setRoles((current) => current.includes(role)
+      ? current.filter((item) => item !== role)
+      : [...current, role]);
+  };
+
   const openCreationApplication = () => {
     setSchoolDraft((draft) => ({ ...draft, name: keyword.trim() || draft.name }));
     setCreationOpen(true);
@@ -134,6 +131,7 @@ export default function SchoolAuthPage() {
     setSubmitting(true);
     try {
       const uploaded = proofFile ? await uploadFile(proofFile) : null;
+      const position = roles.map((role) => roleLabels[role]).join("、");
       const application = await authService.applySchool(
         teacher.id,
         selectedSchool.id,
@@ -143,6 +141,7 @@ export default function SchoolAuthPage() {
         teachingGrades,
         position,
         requestSchoolAdmin,
+        roles,
       );
       if (application.status === "approved") {
         toast.success("认证已通过", `欢迎加入 ${selectedSchool.name}`);
@@ -389,12 +388,34 @@ export default function SchoolAuthPage() {
                     </div>
                   </fieldset>
 
-                  <Select
-                    label="职务（可选）"
-                    value={position}
-                    onChange={(e) => setPosition(e.target.value)}
-                    options={POSITION_OPTIONS}
-                  />
+                  <fieldset>
+                    <legend className="block text-sm font-medium text-ink-700 mb-1.5">
+                      申请身份 <span className="text-red-500">*</span>
+                    </legend>
+                    <div className="flex flex-wrap gap-2">
+                      {TEACHER_ROLES.map((role) => (
+                        <label
+                          key={role}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                            role === "teacher" ? "cursor-not-allowed" : "cursor-pointer",
+                            roles.includes(role)
+                              ? "border-gold-400 bg-gold-50 text-ink-900"
+                              : "border-ink-200 bg-white text-ink-600 hover:border-ink-300",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={roles.includes(role)}
+                            disabled={role === "teacher"}
+                            onChange={() => toggleRole(role)}
+                          />
+                          {roleLabels[role]}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-ink-400 mt-1.5">教师身份默认包含，其他身份可同时选择多项</p>
+                  </fieldset>
 
                   <div>
                     <label className="block text-sm font-medium text-ink-700 mb-1.5">
