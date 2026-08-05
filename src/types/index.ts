@@ -2037,20 +2037,45 @@ export type LessonSourceType = "examPaper" | "lecture" | "courseware" | "manual"
 /** 上课课件在“我的上课”中的生命周期状态。 */
 export type LessonCoursewareLifecycleStatus = "active" | "completed" | "trashed";
 
-/** 周课表中的工作日，1 表示星期一，5 表示星期五。 */
-export type TeacherLessonScheduleDay = 1 | 2 | 3 | 4 | 5;
+/** 周课表中的星期，1 表示星期一，7 表示星期日。 */
+export type TeacherLessonScheduleDay = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+/** 周课表的周次范围；工作日使用 all，周末按单双周分别维护。 */
+export type TeacherLessonScheduleWeekParity = "all" | "odd" | "even";
+
+/**
+ * 周课表时段编码。
+ * -2/-1 分别表示早早读、早读，0 表示午间练；
+ * 1—8 表示正常课时，9—12 表示晚一至晚四。
+ */
+export type TeacherLessonSchedulePeriod =
+  | -2 | -1 | 0
+  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  | 9 | 10 | 11 | 12;
 
 /** 教师周课表中的一个上课时段。 */
 export interface TeacherLessonScheduleEntry {
   day: TeacherLessonScheduleDay;
-  /** 节次，当前界面支持第 1—8 节。 */
-  period: number;
+  period: TeacherLessonSchedulePeriod;
+  /** 工作日固定为 all；周六、周日分别使用 odd/even。旧数据缺失时按工作日 all 兼容。 */
+  weekParity?: TeacherLessonScheduleWeekParity;
   classId: string;
+}
+
+/** 教师课表中一个时段的起止时间。 */
+export interface TeacherLessonScheduleTimeRange {
+  period: TeacherLessonSchedulePeriod;
+  /** 24 小时制 HH:mm。 */
+  startTime: string;
+  /** 24 小时制 HH:mm。 */
+  endTime: string;
 }
 
 /** 教师个人周课表。 */
 export interface TeacherLessonSchedule {
   entries: TeacherLessonScheduleEntry[];
+  /** 旧课表可能缺失，读取时会补齐默认作息。 */
+  timeRanges?: TeacherLessonScheduleTimeRange[];
   updatedAt?: string;
 }
 

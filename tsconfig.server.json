@@ -15,6 +15,12 @@
     "strict": false,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["server/**/*.ts", "src/types/**/*.ts", "src/lib/grade-statistics.ts", "src/lib/exam-arrangement.ts"],
+  "include": [
+    "server/**/*.ts",
+    "src/types/**/*.ts",
+    "src/lib/grade-statistics.ts",
+    "src/lib/exam-arrangement.ts",
+    "src/lib/teacher-schedule.ts"
+  ],
   "exclude": ["node_modules", "dist", "build"]
 }
