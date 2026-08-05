@@ -708,6 +708,7 @@ export const serviceParameters = {
     ],
     "saveLessonSchedule": [
       "entries",
+      "timeRanges",
       "teacher"
     ],
     "listCoursewares": [

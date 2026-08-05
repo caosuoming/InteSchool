@@ -364,26 +364,71 @@ describe("courseware lesson flow", () => {
     });
   });
 
-  it("persists a teacher schedule and rejects classes outside the teaching assignment", async () => {
+  it("persists the expanded teacher schedule with weekend parity and time ranges", async () => {
     const state = createState();
 
     await runWithState(state, async () => {
       const teacher = state.teachers[0] as unknown as Teacher;
       const schedule = await lessonCoursewareService.saveLessonSchedule([
         { day: 1, period: 1, classId: "class-1" },
-        { day: 5, period: 8, classId: "class-1" },
-      ], teacher);
+        { day: 1, period: -2, classId: "class-1" },
+        { day: 5, period: 12, classId: "class-1" },
+        { day: 6, period: 1, weekParity: "odd", classId: "class-1" },
+        { day: 6, period: 1, weekParity: "even", classId: "class-1" },
+      ], [{ period: 1, startTime: "08:00", endTime: "08:45" }], teacher);
 
       expect(schedule.entries).toEqual([
-        { day: 1, period: 1, classId: "class-1" },
-        { day: 5, period: 8, classId: "class-1" },
+        { day: 1, period: -2, weekParity: "all", classId: "class-1" },
+        { day: 1, period: 1, weekParity: "all", classId: "class-1" },
+        { day: 5, period: 12, weekParity: "all", classId: "class-1" },
+        { day: 6, period: 1, weekParity: "odd", classId: "class-1" },
+        { day: 6, period: 1, weekParity: "even", classId: "class-1" },
       ]);
+      expect(schedule.timeRanges).toHaveLength(15);
+      expect(schedule.timeRanges).toContainEqual({
+        period: 1,
+        startTime: "08:00",
+        endTime: "08:45",
+      });
       expect(await lessonCoursewareService.getLessonSchedule(
         state.teachers[0] as unknown as Teacher,
       )).toEqual(schedule);
+    });
+  });
+
+  it("normalizes legacy schedules and rejects invalid expanded schedule values", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      const teacher = state.teachers[0] as unknown as Teacher;
+      teacher.lessonSchedule = {
+        entries: [{ day: 1, period: 1, classId: "class-1" }],
+        updatedAt: now,
+      };
+      const legacySchedule = await lessonCoursewareService.getLessonSchedule(teacher);
+      expect(legacySchedule.entries).toEqual([
+        { day: 1, period: 1, weekParity: "all", classId: "class-1" },
+      ]);
+      expect(legacySchedule.timeRanges).toHaveLength(15);
+
       await expect(lessonCoursewareService.saveLessonSchedule([
         { day: 2, period: 3, classId: "class-other" },
-      ], teacher)).rejects.toThrow("课表中包含非本人任教班级");
+      ], undefined, teacher)).rejects.toThrow("课表中包含非本人任教班级");
+      await expect(lessonCoursewareService.saveLessonSchedule([
+        { day: 8 as 7, period: 1, classId: "class-1" },
+      ], undefined, teacher)).rejects.toThrow("课表星期设置不合法");
+      await expect(lessonCoursewareService.saveLessonSchedule([
+        { day: 1, period: 13 as 12, classId: "class-1" },
+      ], undefined, teacher)).rejects.toThrow("课表节次设置不合法");
+      await expect(lessonCoursewareService.saveLessonSchedule([
+        { day: 1, period: 1, weekParity: "odd", classId: "class-1" },
+      ], undefined, teacher)).rejects.toThrow("工作日课表不区分单双周");
+      await expect(lessonCoursewareService.saveLessonSchedule([
+        { day: 6, period: 1, classId: "class-1" },
+      ], undefined, teacher)).rejects.toThrow("周末课表必须设置单周或双周");
+      await expect(lessonCoursewareService.saveLessonSchedule([], [
+        { period: 1, startTime: "09:00", endTime: "08:00" },
+      ], teacher)).rejects.toThrow("课表时间区间设置不合法");
     });
   });
 

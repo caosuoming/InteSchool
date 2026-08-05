@@ -4,7 +4,7 @@ import {
   BookOpen, Plus, Search, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
   BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, MonitorPlay,
-  CheckCircle2, RotateCcw, CalendarDays, Save,
+  CheckCircle2, RotateCcw, CalendarDays,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -21,6 +21,9 @@ import type {
   SchoolClass,
   TeacherLessonScheduleDay,
   TeacherLessonScheduleEntry,
+  TeacherLessonSchedulePeriod,
+  TeacherLessonScheduleTimeRange,
+  TeacherLessonScheduleWeekParity,
 } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -28,7 +31,9 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
+import { TeacherTimetable } from "@/components/lessons/TeacherTimetable";
 import { openCoursewareInWps } from "@/lib/wps";
+import { defaultTeacherScheduleTimeRanges, withDefaultTeacherScheduleTimeRanges } from "@/lib/teacher-schedule";
 
 function localDateValue(date = new Date()): string {
   const year = date.getFullYear();
@@ -69,16 +74,6 @@ function fileSizeLabel(size: number): string {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
-
-const scheduleDays = [
-  { value: 1, label: "星期一" },
-  { value: 2, label: "星期二" },
-  { value: 3, label: "星期三" },
-  { value: 4, label: "星期四" },
-  { value: 5, label: "星期五" },
-] as const satisfies ReadonlyArray<{ value: TeacherLessonScheduleDay; label: string }>;
-
-const schedulePeriods = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
 interface ClassMultiSelectDropdownProps {
   label: string;
@@ -186,6 +181,12 @@ export function MyLessonsPage() {
   const [homeworkAttachments, setHomeworkAttachments] = useState<ClassroomHomeworkAttachment[]>([]);
   const [lessonSchedule, setLessonSchedule] = useState<TeacherLessonScheduleEntry[]>([]);
   const [scheduleDraft, setScheduleDraft] = useState<TeacherLessonScheduleEntry[]>([]);
+  const [scheduleTimeRanges, setScheduleTimeRanges] = useState<TeacherLessonScheduleTimeRange[]>(
+    defaultTeacherScheduleTimeRanges,
+  );
+  const [scheduleTimeRangeDraft, setScheduleTimeRangeDraft] = useState<TeacherLessonScheduleTimeRange[]>(
+    defaultTeacherScheduleTimeRanges,
+  );
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleEditing, setScheduleEditing] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -298,8 +299,11 @@ export function MyLessonsPage() {
     setScheduleLoading(true);
     try {
       const schedule = await lessonCoursewareService.getLessonSchedule();
+      const normalizedTimeRanges = withDefaultTeacherScheduleTimeRanges(schedule.timeRanges);
       setLessonSchedule(schedule.entries);
       setScheduleDraft(schedule.entries);
+      setScheduleTimeRanges(normalizedTimeRanges);
+      setScheduleTimeRangeDraft(normalizedTimeRanges);
     } catch (err) {
       toast.error("课表加载失败", err instanceof Error ? err.message : undefined);
     } finally {
@@ -313,21 +317,39 @@ export function MyLessonsPage() {
 
   const updateScheduleSlot = (
     day: TeacherLessonScheduleDay,
-    period: number,
+    period: TeacherLessonSchedulePeriod,
+    weekParity: TeacherLessonScheduleWeekParity,
     classId: string,
   ) => {
     setScheduleDraft((current) => {
-      const remaining = current.filter((entry) => entry.day !== day || entry.period !== period);
-      return classId ? [...remaining, { day, period, classId }] : remaining;
+      const remaining = current.filter((entry) => (
+        entry.day !== day
+        || entry.period !== period
+        || (entry.weekParity || (entry.day <= 5 ? "all" : "odd")) !== weekParity
+      ));
+      return classId ? [...remaining, { day, period, weekParity, classId }] : remaining;
     });
+  };
+
+  const updateScheduleTimeRange = (
+    period: TeacherLessonSchedulePeriod,
+    field: "startTime" | "endTime",
+    value: string,
+  ) => {
+    setScheduleTimeRangeDraft((current) => current.map((range) => (
+      range.period === period ? { ...range, [field]: value } : range
+    )));
   };
 
   const handleSaveSchedule = async () => {
     setSavingSchedule(true);
     try {
-      const saved = await lessonCoursewareService.saveLessonSchedule(scheduleDraft);
+      const saved = await lessonCoursewareService.saveLessonSchedule(scheduleDraft, scheduleTimeRangeDraft);
+      const normalizedTimeRanges = withDefaultTeacherScheduleTimeRanges(saved.timeRanges);
       setLessonSchedule(saved.entries);
       setScheduleDraft(saved.entries);
+      setScheduleTimeRanges(normalizedTimeRanges);
+      setScheduleTimeRangeDraft(normalizedTimeRanges);
       setScheduleEditing(false);
       toast.success("课表已保存");
     } catch (err) {
@@ -726,118 +748,30 @@ export function MyLessonsPage() {
       </Card>
 
       {activeTab === "schedule" && (
-        <Card className="mb-4 p-5">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gold-50 text-gold-700">
-                <CalendarDays className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-semibold text-ink-900">我的课表</div>
-                <p className="mt-1 text-xs text-ink-500">按星期和节次维护任教班级，课表仅对当前账号生效。</p>
-              </div>
-            </div>
-            {!scheduleEditing && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={scheduleLoading || classes.length === 0}
-                onClick={() => {
-                  setScheduleDraft(lessonSchedule);
-                  setScheduleEditing(true);
-                }}
-              >
-                <Edit3 className="h-4 w-4" />编辑课表
-              </Button>
-            )}
-          </div>
-
-          {scheduleLoading ? (
-            <div className="py-12 text-center text-sm text-ink-400">课表加载中...</div>
-          ) : classes.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-ink-200 py-12 text-center text-sm text-ink-400">
-              当前没有可加入课表的任教班级
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-ink-150">
-              <table className="min-w-[780px] w-full border-collapse text-sm">
-                <thead>
-                  <tr className="bg-mist/80 text-ink-700">
-                    <th className="w-24 border-b border-r border-ink-150 px-3 py-3 text-center font-medium">节次</th>
-                    {scheduleDays.map((day) => (
-                      <th key={day.value} className="border-b border-r border-ink-150 px-3 py-3 text-center font-medium last:border-r-0">
-                        {day.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedulePeriods.map((period) => (
-                    <tr key={period} className="even:bg-mist/30">
-                      <th className="border-b border-r border-ink-100 px-3 py-3 text-center font-medium text-ink-600">
-                        第 {period} 节
-                      </th>
-                      {scheduleDays.map((day) => {
-                        const entries = scheduleEditing ? scheduleDraft : lessonSchedule;
-                        const entry = entries.find((item) => item.day === day.value && item.period === period);
-                        return (
-                          <td key={day.value} className="border-b border-r border-ink-100 p-2 text-center last:border-r-0">
-                            {scheduleEditing ? (
-                              <select
-                                aria-label={`${day.label} 第${period}节`}
-                                value={entry?.classId || ""}
-                                onChange={(event) => updateScheduleSlot(day.value, period, event.target.value)}
-                                className="h-9 w-full rounded-md border border-ink-200 bg-paper px-2 text-xs text-ink-700 outline-none focus:border-gold-400"
-                              >
-                                <option value="">无课</option>
-                                {classes.map((schoolClass) => (
-                                  <option key={schoolClass.id} value={schoolClass.id}>
-                                    {schoolClass.grade} · {schoolClass.name}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : entry ? (
-                              <span className="inline-flex rounded-md bg-gold-50 px-2.5 py-1.5 text-xs font-medium text-gold-800">
-                                {classNames.get(entry.classId) || entry.classId}
-                              </span>
-                            ) : (
-                              <span className="text-ink-300">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {scheduleEditing && (
-            <div className="mt-4 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={savingSchedule}
-                onClick={() => {
-                  setScheduleDraft(lessonSchedule);
-                  setScheduleEditing(false);
-                }}
-              >
-                取消
-              </Button>
-              <Button
-                type="button"
-                variant="gold"
-                loading={savingSchedule}
-                onClick={() => void handleSaveSchedule()}
-              >
-                <Save className="h-4 w-4" />保存课表
-              </Button>
-            </div>
-          )}
-        </Card>
+        <TeacherTimetable
+          classes={classes}
+          classNames={classNames}
+          entries={lessonSchedule}
+          draftEntries={scheduleDraft}
+          timeRanges={scheduleTimeRanges}
+          draftTimeRanges={scheduleTimeRangeDraft}
+          loading={scheduleLoading}
+          editing={scheduleEditing}
+          saving={savingSchedule}
+          onStartEditing={() => {
+            setScheduleDraft(lessonSchedule);
+            setScheduleTimeRangeDraft(scheduleTimeRanges);
+            setScheduleEditing(true);
+          }}
+          onCancelEditing={() => {
+            setScheduleDraft(lessonSchedule);
+            setScheduleTimeRangeDraft(scheduleTimeRanges);
+            setScheduleEditing(false);
+          }}
+          onSave={() => void handleSaveSchedule()}
+          onSlotChange={updateScheduleSlot}
+          onTimeRangeChange={updateScheduleTimeRange}
+        />
       )}
 
       {activeTab === "notice" && <Card className="p-5 mb-4">

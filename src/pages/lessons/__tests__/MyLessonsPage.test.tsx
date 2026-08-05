@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { uploadFile } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { ClassroomHomework, ClassroomNotice, LessonCourseware, Teacher } from "@/types";
+import { defaultTeacherScheduleTimeRanges } from "@/lib/teacher-schedule";
 
 vi.mock("@/services/class", () => ({
   classService: {
@@ -174,8 +175,14 @@ describe("MyLessonsPage classroom publishing", () => {
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(classroomNoticeService.createNotice).mockResolvedValue(activeNotice);
     vi.mocked(classroomNoticeService.updateNotice).mockResolvedValue(activeNotice);
-    vi.mocked(lessonCoursewareService.getLessonSchedule).mockResolvedValue({ entries: [] });
-    vi.mocked(lessonCoursewareService.saveLessonSchedule).mockImplementation(async (entries) => ({ entries }));
+    vi.mocked(lessonCoursewareService.getLessonSchedule).mockResolvedValue({
+      entries: [],
+      timeRanges: defaultTeacherScheduleTimeRanges(),
+    });
+    vi.mocked(lessonCoursewareService.saveLessonSchedule).mockImplementation(async (entries, timeRanges) => ({
+      entries,
+      timeRanges,
+    }));
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
     vi.mocked(lessonCoursewareService.deleteCourseware).mockResolvedValue(undefined);
     vi.mocked(lessonCoursewareService.completeCourseware).mockImplementation(async (id) => courseware(id, "completed"));
@@ -210,14 +217,33 @@ describe("MyLessonsPage classroom publishing", () => {
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
 
     await user.click(screen.getByRole("tab", { name: "我的课表" }));
+    expect(await screen.findByRole("columnheader", { name: "时间区间" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "星期六" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "星期日" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "早早读" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "早读" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "午间练" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "晚四" })).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "编辑课表" }));
     await user.selectOptions(screen.getByLabelText("星期一 第1节"), "class-1");
+    await user.selectOptions(screen.getByLabelText("星期六 单周 第1节"), "class-1");
+    fireEvent.change(screen.getByLabelText("第 1 节 开始时间"), {
+      target: { value: "08:00" },
+    });
     await user.click(screen.getByRole("button", { name: "保存课表" }));
 
     await waitFor(() => {
-      expect(lessonCoursewareService.saveLessonSchedule).toHaveBeenCalledWith([
-        { day: 1, period: 1, classId: "class-1" },
-      ]);
+      expect(lessonCoursewareService.saveLessonSchedule).toHaveBeenCalledWith(
+        [
+          { day: 1, period: 1, weekParity: "all", classId: "class-1" },
+          { day: 6, period: 1, weekParity: "odd", classId: "class-1" },
+        ],
+        expect.arrayContaining([
+          { period: 1, startTime: "08:00", endTime: "08:35" },
+          { period: -2, startTime: "06:40", endTime: "07:10" },
+          { period: 12, startTime: "21:05", endTime: "21:50" },
+        ]),
+      );
     });
   });
 

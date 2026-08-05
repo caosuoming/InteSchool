@@ -9,6 +9,7 @@ import type {
   ResourceSemester,
   TeacherLessonSchedule,
   TeacherLessonScheduleEntry,
+  TeacherLessonScheduleTimeRange,
 } from "@/types";
 
 export interface LessonCoursewareInput {
@@ -32,8 +33,11 @@ export const lessonCoursewareService = {
     return rpcCall("lessonCourseware", "getLessonSchedule", []) as any;
   },
 
-  async saveLessonSchedule(entries: TeacherLessonScheduleEntry[]): Promise<TeacherLessonSchedule> {
-    return rpcCall("lessonCourseware", "saveLessonSchedule", [entries, undefined]) as any;
+  async saveLessonSchedule(
+    entries: TeacherLessonScheduleEntry[],
+    timeRanges: TeacherLessonScheduleTimeRange[],
+  ): Promise<TeacherLessonSchedule> {
+    return rpcCall("lessonCourseware", "saveLessonSchedule", [entries, timeRanges, undefined]) as any;
   },
 
   async listCoursewares(filter: LessonCoursewareFilter = {}): Promise<LessonCourseware[]> {

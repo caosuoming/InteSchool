@@ -15,7 +15,16 @@ import type {
   TeacherAffiliation,
   TeacherLessonSchedule,
   TeacherLessonScheduleEntry,
+  TeacherLessonSchedulePeriod,
+  TeacherLessonScheduleTimeRange,
+  TeacherLessonScheduleWeekParity,
 } from "../../src/types/index.js";
+import {
+  TEACHER_SCHEDULE_SLOTS,
+  teacherScheduleEntryParity,
+  teacherScheduleSlotIndex,
+  withDefaultTeacherScheduleTimeRanges,
+} from "../../src/lib/teacher-schedule.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
@@ -543,17 +552,93 @@ function saveGeneratedCoursewareToLibrary(
   db.update("coursewares", (list) => [courseware, ...list]);
 }
 
+const TEACHER_SCHEDULE_PERIODS = new Set<number>(
+  TEACHER_SCHEDULE_SLOTS.map((slot) => slot.period),
+);
+const SCHEDULE_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+function sortTeacherScheduleEntries(
+  entries: TeacherLessonScheduleEntry[],
+): TeacherLessonScheduleEntry[] {
+  return entries.sort((left, right) => (
+    left.day - right.day
+    || (teacherScheduleEntryParity(left) === "even" ? 1 : 0)
+      - (teacherScheduleEntryParity(right) === "even" ? 1 : 0)
+    || teacherScheduleSlotIndex(left.period) - teacherScheduleSlotIndex(right.period)
+  ));
+}
+
+function normalizeStoredScheduleEntries(
+  entries: readonly TeacherLessonScheduleEntry[] | undefined,
+): TeacherLessonScheduleEntry[] {
+  const normalized = new Map<string, TeacherLessonScheduleEntry>();
+  for (const rawEntry of entries || []) {
+    const entry = rawEntry as TeacherLessonScheduleEntry & {
+      day?: number;
+      period?: number;
+      weekParity?: unknown;
+      classId?: unknown;
+    };
+    if (!Number.isInteger(entry.day) || entry.day! < 1 || entry.day! > 7) continue;
+    if (!TEACHER_SCHEDULE_PERIODS.has(entry.period!)) continue;
+    if (typeof entry.classId !== "string" || !entry.classId) continue;
+    const day = entry.day as TeacherLessonScheduleEntry["day"];
+    const period = entry.period as TeacherLessonSchedulePeriod;
+    const weekParity: TeacherLessonScheduleWeekParity = day <= 5
+      ? "all"
+      : entry.weekParity === "even" ? "even" : "odd";
+    normalized.set(`${day}:${weekParity}:${period}`, {
+      day,
+      period,
+      weekParity,
+      classId: entry.classId,
+    });
+  }
+  return sortTeacherScheduleEntries([...normalized.values()]);
+}
+
+function normalizeScheduleTimeRanges(
+  timeRanges: readonly TeacherLessonScheduleTimeRange[] | undefined,
+  strict: boolean,
+): TeacherLessonScheduleTimeRange[] {
+  const normalized = new Map<TeacherLessonSchedulePeriod, TeacherLessonScheduleTimeRange>();
+  for (const rawRange of timeRanges || []) {
+    const range = rawRange as TeacherLessonScheduleTimeRange & {
+      period?: number;
+      startTime?: unknown;
+      endTime?: unknown;
+    };
+    const periodValid = TEACHER_SCHEDULE_PERIODS.has(range.period!);
+    const startValid = typeof range.startTime === "string" && SCHEDULE_TIME_PATTERN.test(range.startTime);
+    const endValid = typeof range.endTime === "string" && SCHEDULE_TIME_PATTERN.test(range.endTime);
+    const orderValid = startValid && endValid && range.startTime < range.endTime;
+    if (!periodValid || !startValid || !endValid || !orderValid) {
+      if (strict) throw new Error("课表时间区间设置不合法");
+      continue;
+    }
+    const period = range.period as TeacherLessonSchedulePeriod;
+    normalized.set(period, {
+      period,
+      startTime: range.startTime as string,
+      endTime: range.endTime as string,
+    });
+  }
+  return withDefaultTeacherScheduleTimeRanges([...normalized.values()]);
+}
+
 export const lessonCoursewareService = {
   async getLessonSchedule(teacher: Teacher): Promise<TeacherLessonSchedule> {
     await delay(100);
     return {
-      entries: (teacher.lessonSchedule?.entries || []).map((entry) => ({ ...entry })),
+      entries: normalizeStoredScheduleEntries(teacher.lessonSchedule?.entries),
+      timeRanges: normalizeScheduleTimeRanges(teacher.lessonSchedule?.timeRanges, false),
       updatedAt: teacher.lessonSchedule?.updatedAt,
     };
   },
 
   async saveLessonSchedule(
     entries: TeacherLessonScheduleEntry[],
+    timeRanges: TeacherLessonScheduleTimeRange[] | undefined,
     teacher: Teacher,
   ): Promise<TeacherLessonSchedule> {
     await delay(200);
@@ -563,26 +648,38 @@ export const lessonCoursewareService = {
     const allowedClassIds = new Set(defaultClassIds(teacher, teacher.schoolId));
     const uniqueEntries = new Map<string, TeacherLessonScheduleEntry>();
     for (const entry of Array.isArray(entries) ? entries : []) {
-      if (!Number.isInteger(entry.day) || entry.day < 1 || entry.day > 5) {
+      if (!Number.isInteger(entry.day) || entry.day < 1 || entry.day > 7) {
         throw new Error("课表星期设置不合法");
       }
-      if (!Number.isInteger(entry.period) || entry.period < 1 || entry.period > 8) {
+      if (!TEACHER_SCHEDULE_PERIODS.has(entry.period)) {
         throw new Error("课表节次设置不合法");
+      }
+      let weekParity: TeacherLessonScheduleWeekParity;
+      if (entry.day <= 5) {
+        if (entry.weekParity !== undefined && entry.weekParity !== "all") {
+          throw new Error("工作日课表不区分单双周");
+        }
+        weekParity = "all";
+      } else {
+        if (entry.weekParity !== "odd" && entry.weekParity !== "even") {
+          throw new Error("周末课表必须设置单周或双周");
+        }
+        weekParity = entry.weekParity;
       }
       if (!allowedClassIds.has(entry.classId)) {
         throw new Error("课表中包含非本人任教班级");
       }
-      uniqueEntries.set(`${entry.day}:${entry.period}`, {
+      uniqueEntries.set(`${entry.day}:${weekParity}:${entry.period}`, {
         day: entry.day,
         period: entry.period,
+        weekParity,
         classId: entry.classId,
       });
     }
 
     const schedule: TeacherLessonSchedule = {
-      entries: [...uniqueEntries.values()].sort((left, right) => (
-        left.day - right.day || left.period - right.period
-      )),
+      entries: sortTeacherScheduleEntries([...uniqueEntries.values()]),
+      timeRanges: normalizeScheduleTimeRanges(timeRanges, true),
       updatedAt: new Date().toISOString(),
     };
     db.update("teachers", (items: Teacher[]) => items.map((item) => (
