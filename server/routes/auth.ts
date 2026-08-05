@@ -6,6 +6,8 @@ import type { ServerConfig } from "../config.js";
 import type { AppState, SessionUser, TeacherRecord } from "../types.js";
 import { withSerializedState } from "../rpc.js";
 import { canManageTeachingProfiles } from "../../src/lib/teaching-profile-permissions.js";
+import { normalizeTeacherRoles, TEACHER_ROLES } from "../../src/lib/teacher-roles.js";
+import type { TeacherRole } from "../../src/types/index.js";
 
 export const SESSION_COOKIE = "inteschool_session";
 
@@ -81,6 +83,7 @@ const applicationSchema = z.object({
   teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).default([]),
   teachingClassIds: z.array(z.string().min(1).max(100)).max(100).default([]),
   position: z.string().trim().max(50).optional().default(""),
+  roles: z.array(z.enum(TEACHER_ROLES)).min(1).max(TEACHER_ROLES.length).optional().default(["teacher"]),
   proofFileId: z.string().uuid().optional(),
   requestSchoolAdmin: z.boolean().optional().default(false),
 }).superRefine((input, context) => {
@@ -97,6 +100,7 @@ const applicationSchema = z.object({
     ...input,
     subjects,
     subject: subjects[0],
+    roles: normalizeTeacherRoles(input.roles),
   };
 });
 
@@ -258,6 +262,7 @@ function activateAffiliation(
   teachingClassIds: string[] = [],
   position = "",
   requestSchoolAdmin = false,
+  roles: TeacherRole[] = ["teacher"],
 ): TeacherRecord {
   const subject = subjects[0];
   const schools = state.schools as Array<{ id: string; name: string }>;
@@ -279,7 +284,7 @@ function activateAffiliation(
     position,
     status: "active",
     role,
-    roles: existing?.roles || ["teacher"],
+    roles: normalizeTeacherRoles(roles),
     subjectGroupIds: existing?.subjectGroupIds || [],
     prepGroupIds: existing?.prepGroupIds || [],
     isCurrent: true,
@@ -712,6 +717,7 @@ export async function registerAuthRoutes(
         teachingGrades: input.teachingGrades,
         teachingClassIds: input.teachingClassIds,
         position: input.position,
+        roles: input.roles,
         proofFileId: input.proofFileId || null,
         proofFileName: file?.originalName || "",
         requestSchoolAdmin: input.requestSchoolAdmin,
@@ -733,6 +739,7 @@ export async function registerAuthRoutes(
           input.teachingClassIds,
           input.position,
           input.requestSchoolAdmin,
+          input.roles,
         );
       }
       return application;
@@ -801,6 +808,11 @@ export async function registerAuthRoutes(
           Array.isArray(application.teachingClassIds) ? application.teachingClassIds as string[] : [],
           typeof application.position === "string" ? application.position : "",
           application.requestSchoolAdmin === true,
+          Array.isArray(application.roles)
+            ? normalizeTeacherRoles(application.roles.filter(
+              (item): item is TeacherRole => TEACHER_ROLES.includes(item as TeacherRole),
+            ))
+            : ["teacher"],
         );
       }
       return { ok: true };

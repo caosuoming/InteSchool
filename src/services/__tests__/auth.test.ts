@@ -187,6 +187,7 @@ describe("auth service", () => {
       ["高一", "高二"],
       "年级组长",
       true,
+      ["teacher", "headTeacher", "gradeLeader"],
     )).resolves.toEqual(application);
     await expect(authService.getApplicationsByTeacher("ignored-teacher")).resolves.toEqual([application]);
     await expect(authService.getPendingApplications("ignored-school")).resolves.toEqual([application]);
@@ -202,6 +203,7 @@ describe("auth service", () => {
         teachingGrades: ["高一", "高二"],
         position: "年级组长",
         requestSchoolAdmin: true,
+        roles: ["teacher", "headTeacher", "gradeLeader"],
       }),
     }, true);
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/applications/mine");

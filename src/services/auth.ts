@@ -6,6 +6,7 @@ import type {
   SchoolApplication,
   Teacher,
   TeacherAffiliation,
+  TeacherRole,
 } from "@/types";
 import { apiRequest, setCsrfToken } from "./api";
 
@@ -143,6 +144,7 @@ export const authService = {
     teachingGrades: string[] = [],
     position = "",
     requestSchoolAdmin = false,
+    roles: TeacherRole[] = ["teacher"],
   ): Promise<SchoolApplication> {
     const normalizedSubjects = Array.isArray(subjects) ? subjects : [subjects];
     return apiRequest<SchoolApplication>("/api/auth/applications", {
@@ -155,6 +157,7 @@ export const authService = {
         teachingGrades,
         position,
         requestSchoolAdmin,
+        roles,
       }),
     }, true);
   },

@@ -193,6 +193,8 @@ export interface SchoolApplication {
   subjects: string[];
   teachingGrades?: string[];
   position?: string;
+  /** 申请加入学校时希望获得的教师身份；旧申请可能缺少该字段 */
+  roles?: TeacherRole[];
   proofFileId?: string | null;
   proofFileName?: string;
   requestSchoolAdmin?: boolean;
