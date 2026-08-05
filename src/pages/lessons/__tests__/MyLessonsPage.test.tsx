@@ -289,13 +289,20 @@ describe("MyLessonsPage classroom publishing", () => {
     expect(await screen.findByRole("checkbox", { name: "高一 · 高一（1）班" })).toBeChecked();
     const file = new File(["pdf"], "函数图像.pdf", { type: "application/pdf" });
     await user.upload(screen.getByLabelText("选择作业附件"), file);
-    expect(screen.getByText("函数图像.pdf")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(uploadFile).toHaveBeenCalledWith(file);
+    });
+    const previewButton = await screen.findByTitle("预览 函数图像.pdf");
+    expect(classroomHomeworkService.createHomework).not.toHaveBeenCalled();
+    await user.click(previewButton);
+    expect(await screen.findByTitle("函数图像.pdf")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
 
     await user.type(screen.getByLabelText("作业内容"), "阅读附件并完成练习");
     await user.click(screen.getByRole("button", { name: "发布作业" }));
 
     await waitFor(() => {
-      expect(uploadFile).toHaveBeenCalledWith(file);
       expect(classroomHomeworkService.createHomework).toHaveBeenCalledWith(
         "teacher-1",
         "school-1",
