@@ -18,6 +18,7 @@ import type {
   ExamPaper,
   Lecture,
 } from "../../src/types/index.js";
+import { sanitizeExamPaperPatch, sanitizeLecturePatch } from "./document-resource-lock.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
@@ -420,13 +421,14 @@ export const prepService = {
     if (task.linkedResource!.type === "examPaper") {
       db.update("examPapers", (list) => list.map((paper) => {
         if (paper.id !== task.linkedResource!.id) return paper;
-        updated = { ...paper, ...(safePatch as Partial<ExamPaper>), updatedAt: now };
+        const sanitized = sanitizeExamPaperPatch(paper, safePatch as Partial<ExamPaper>);
+        updated = { ...paper, ...sanitized, updatedAt: now };
         return updated as ExamPaper;
       }));
     } else {
       db.update("lectures", (list) => list.map((lecture) => {
         if (lecture.id !== task.linkedResource!.id) return lecture;
-        const lecturePatch = safePatch as Partial<Lecture>;
+        const lecturePatch = sanitizeLecturePatch(lecture, safePatch as Partial<Lecture>);
         updated = {
           ...lecture,
           ...lecturePatch,

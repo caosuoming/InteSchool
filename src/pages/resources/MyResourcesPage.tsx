@@ -7,7 +7,7 @@ import {
   FileSpreadsheet, Sparkles, Trash2, Share2, Upload, Filter, Library, FileText,
   PlayCircle, Copy, MessageSquareText, Star, Video,
   ShoppingCart, CheckSquare, Square, Plus, X,
-  Layout,
+  Layout, Files,
   Gift, Users, Pencil, Check,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -85,6 +85,12 @@ import { matchingResourceTypeIds } from "@/lib/resource-type-hierarchy";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
 import { loadCoursewarePptSlides } from "@/lib/pptx";
 import { openCoursewareInWps } from "@/lib/wps";
+import {
+  documentCategory,
+  documentCategoryLabel,
+  documentCategoryOptions,
+  type DocumentCategory,
+} from "@/lib/document-resource";
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
 type RenameableResourceType = Exclude<MyResourceTab, "question" | "basket">;
@@ -291,6 +297,29 @@ export function LinkedResourceRow({
   );
 }
 
+interface DocumentResourceGroupProps {
+  category: DocumentCategory;
+  children: React.ReactNode;
+}
+
+export function DocumentResourceGroup({ category, children }: DocumentResourceGroupProps) {
+  return (
+    <section
+      className="rounded-xl border border-ink-200 bg-ink-50/35 p-3 shadow-sm"
+      data-testid="document-resource-group"
+    >
+      <div className="mb-2 flex items-center gap-2 px-1 text-xs text-ink-500">
+        <Files className="h-3.5 w-3.5" />
+        <span>同源文档</span>
+        <Badge variant={category === "uploaded" ? "amber" : category === "extracted" ? "gold" : "ink"}>
+          {documentCategoryLabel(category)}
+        </Badge>
+      </div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
 export default function MyResourcesPage({ initialTab = "question" }: MyResourcesPageProps) {
   const navigate = useNavigate();
   const { teacher } = useAuthStore();
@@ -315,6 +344,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [selectedSemester, setSelectedSemester] = useState("");
   const [selectedExamPaperTypeId, setSelectedExamPaperTypeId] = useState("");
   const [selectedLectureTypeId, setSelectedLectureTypeId] = useState("");
+  const [selectedDocumentCategory, setSelectedDocumentCategory] = useState<DocumentCategory | "">("");
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
@@ -536,16 +566,27 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [navigate]);
   const renderGeneratedCoursewareRows = (
     sourceType: "examPaper" | "lecture",
-    sourceId: string,
-  ) => (generatedCoursewaresBySource.get(`${sourceType}:${sourceId}`) || []).map((courseware) => (
-    <LinkedResourceRow
-      key={courseware.id}
-      label="课件"
-      title={courseware.title}
-      icon={Presentation}
-      onView={() => openLinkedCourseware(courseware)}
-    />
-  ));
+    sourceIds: string | string[],
+  ) => {
+    const ids = Array.isArray(sourceIds) ? sourceIds : [sourceIds];
+    const seen = new Set<string>();
+    return ids
+      .flatMap((sourceId) => generatedCoursewaresBySource.get(`${sourceType}:${sourceId}`) || [])
+      .filter((courseware) => {
+        if (seen.has(courseware.id)) return false;
+        seen.add(courseware.id);
+        return true;
+      })
+      .map((courseware) => (
+        <LinkedResourceRow
+          key={courseware.id}
+          label="课件"
+          title={courseware.title}
+          icon={Presentation}
+          onView={() => openLinkedCourseware(courseware)}
+        />
+      ));
+  };
 
   const loadTeacherDonations = useCallback(async () => {
     if (!teacher) return;
@@ -1137,14 +1178,24 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     completedLessonSourceKeys.has(`${resourceType}:${resourceId}`)
   );
 
-  // 试卷/讲义列表过滤掉拆解副本（拆解副本通过源资源下方缩进显示）
+  // 试卷/讲义按同源文档分组分页，拆解副本作为源文档的组内子项展示。
   const examPapersFiltered = useMemo(
-    () => (activeTab === "examPaper" ? (displayedData as ExamPaper[]).filter((p) => !p.isExtractCopy) : []),
-    [activeTab, displayedData],
+    () => (activeTab === "examPaper"
+      ? (displayedData as ExamPaper[])
+        .filter((paper) => !paper.isExtractCopy)
+        .filter((paper) => !selectedDocumentCategory
+          || documentCategory(paper, allExamPapers) === selectedDocumentCategory)
+      : []),
+    [activeTab, allExamPapers, displayedData, selectedDocumentCategory],
   );
   const lecturesFiltered = useMemo(
-    () => (activeTab === "lecture" ? (displayedData as Lecture[]).filter((l) => !l.isExtractCopy) : []),
-    [activeTab, displayedData],
+    () => (activeTab === "lecture"
+      ? (displayedData as Lecture[])
+        .filter((lecture) => !lecture.isExtractCopy)
+        .filter((lecture) => !selectedDocumentCategory
+          || documentCategory(lecture, allLectures) === selectedDocumentCategory)
+      : []),
+    [activeTab, allLectures, displayedData, selectedDocumentCategory],
   );
 
   const resourceListData = useMemo<ResourceListItem[]>(() => {
@@ -1179,6 +1230,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     onlyUncategorized,
     resourcePageSize,
     selectedExamPaperTypeId,
+    selectedDocumentCategory,
     selectedGrade,
     selectedLectureTypeId,
     selectedSemester,
@@ -2238,6 +2290,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap w-full">
+              {(activeTab === "examPaper" || activeTab === "lecture") && (
+                <FilterSelect
+                  label="文档类别"
+                  value={selectedDocumentCategory}
+                  options={documentCategoryOptions}
+                  onChange={(value) => setSelectedDocumentCategory(value as DocumentCategory | "")}
+                />
+              )}
               {activeTab === "examPaper" && (
                 <FilterSelect
                   label="试卷类型"
@@ -2355,7 +2415,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 const lectureWasTaught = hasCompletedLesson("lecture", mainLecture.id)
                   || hasCompletedLesson("lecture", item.id);
                 return (
-                  <div key={item.id} className="space-y-2">
+                  <DocumentResourceGroup
+                    key={item.id}
+                    category={documentCategory(item, allLectures)}
+                  >
                     <ResourceCard
                       key={mainLecture.id}
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
@@ -2385,7 +2448,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           )}
                         </>
                       ) : undefined}
-                      description={mainLecture.description || (hasExtractCopy ? "文档拆解生成的正稿，可编辑替换其中的题目和知识块" : undefined)}
+                      description={mainLecture.description || (hasExtractCopy
+                        ? "文档拆解生成的拆解稿，可修改属性；内容与顺序保持原稿结构"
+                        : undefined)}
                       meta={[
                         { label: "类型", value: getLectureTypeLabel(mainLecture.typeId) },
                         { label: "年级", value: `${mainLecture.grade} · ${mainLecture.schoolYear} · ${mainLecture.semester || "上学期"}` },
@@ -2426,7 +2491,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         }
                       }}
                       showAddToLesson
-                      titleBadge={hasExtractCopy ? { text: "正稿", variant: "gold" } : (!isExtracted && item.originalFileUrl ? { text: "待拆解", variant: "amber" } : undefined)}
+                      titleBadge={hasExtractCopy
+                        ? { text: "拆解稿", variant: "gold" }
+                        : (!isExtracted && item.originalFileUrl
+                          ? { text: "上传原稿", variant: "amber" }
+                          : undefined)}
                       onAddToLesson={async () => {
                         if (!teacher) return;
                         try {
@@ -2444,7 +2513,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         }
                       }}
                     />
-                    {renderGeneratedCoursewareRows("lecture", mainLecture.id)}
+                    {renderGeneratedCoursewareRows(
+                      "lecture",
+                      [item.id, ...extractCopies.map((copy) => copy.id)],
+                    )}
                     {item.originalFileUrl && !hasExtractCopy && isExtracted && (
                       <div className="flex items-center gap-3 text-xs flex-wrap pl-4">
                         <div className="flex items-center gap-2">
@@ -2468,7 +2540,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         onView={() => navigate(`/resources/preview/${item.id}?type=lecture`)}
                       />
                     )}
-                  </div>
+                  </DocumentResourceGroup>
                 );
               })}
 
@@ -2482,7 +2554,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 const isExtracting = item.extractStatus === "extracting"
                   || isExtractTaskRunning(extractTasks, item.id, "examPaper");
                 return (
-                  <div key={item.id} className="space-y-2">
+                  <DocumentResourceGroup
+                    key={item.id}
+                    category={documentCategory(item, allExamPapers)}
+                  >
                     {hasExtractCopy && extractCopies.map((copy) => (
                       <div key={copy.id} className="space-y-2">
                         <ResourceCard
@@ -2492,7 +2567,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           || hasCompletedLesson("examPaper", item.id)
                           ? <Badge variant="green">已上课</Badge>
                           : undefined}
-                        description={copy.description || "文档拆解生成的副本，可编辑替换其中的题目和知识块"}
+                        description={copy.description || "文档拆解生成的拆解稿，可修改属性和分值；题目与顺序保持原稿结构"}
                         meta={[
                           { label: "类型", value: getExamPaperTypeLabel(copy.typeId) },
                           { label: "年级", value: `${copy.grade} · ${copy.schoolYear} · ${copy.semester || "上学期"}` },
@@ -2519,7 +2594,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         compactActions
                         configurableActions
                         detailsPresentation="titleTooltip"
-                        titleBadge={{ text: "正稿", variant: "gold" }}
+                        titleBadge={{ text: "拆解稿", variant: "gold" }}
                         onAddToLesson={async () => {
                           if (!teacher) return;
                           try {
@@ -2537,7 +2612,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           }
                         }}
                         />
-                        {renderGeneratedCoursewareRows("examPaper", copy.id)}
                       </div>
                     ))}
                     {!hasExtractCopy && (
@@ -2628,7 +2702,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                               tone: "gold",
                             },
                           ]}
-                          titleBadge={!isExtracted && item.originalFileUrl ? { text: "待拆解", variant: "amber" } : undefined}
+                          titleBadge={!isExtracted && item.originalFileUrl
+                            ? { text: "上传原稿", variant: "amber" }
+                            : undefined}
                           onAddToLesson={async () => {
                             if (!teacher) return;
                             try {
@@ -2646,7 +2722,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             }
                           }}
                         />
-                        {renderGeneratedCoursewareRows("examPaper", item.id)}
                         {item.originalFileUrl && isExtracted && (
                           <div className="flex items-center gap-3 text-xs flex-wrap pl-1">
                             <div className="flex items-center gap-2">
@@ -2664,6 +2739,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         )}
                       </>
                     )}
+                    {renderGeneratedCoursewareRows(
+                      "examPaper",
+                      [item.id, ...extractCopies.map((copy) => copy.id)],
+                    )}
                     {hasExtractCopy && item.originalFileUrl && (
                       <OriginalFileRow
                         fileUrl={item.originalFileUrl}
@@ -2672,7 +2751,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         onView={() => navigate(`/resources/preview/${item.id}?type=examPaper`)}
                       />
                     )}
-                  </div>
+                  </DocumentResourceGroup>
                 );
               })}
 

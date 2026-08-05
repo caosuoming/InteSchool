@@ -13,6 +13,7 @@ import { questionService } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
+import { sanitizeLecturePatch } from "./document-resource-lock.js";
 
 function collectQuestionIds(sections: LectureSection[]): string[] {
   const ids: string[] = [];
@@ -202,10 +203,11 @@ export const lectureService = {
     db.update("lectures", (list) =>
       list.map((l) => {
         if (l.id === id) {
+          const safePatch = sanitizeLecturePatch(l, patch);
           updated = {
             ...l,
-            ...patch,
-            version: patch.sections ? l.version + 1 : l.version,
+            ...safePatch,
+            version: safePatch.sections ? l.version + 1 : l.version,
             updatedAt: new Date().toISOString(),
           };
           return updated;
@@ -248,6 +250,18 @@ export const lectureService = {
       status: "draft",
       version: 1,
       sections: copySections(source.sections),
+      contentBlocks: undefined,
+      originalFileUrl: undefined,
+      originalFileName: undefined,
+      originalFileType: undefined,
+      originalFileSize: undefined,
+      isExtractCopy: undefined,
+      sourceResourceId: undefined,
+      extractStatus: undefined,
+      versionType: undefined,
+      hasOrigin: undefined,
+      hasPreview: undefined,
+      hasAnswerSheet: undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -465,8 +479,12 @@ export const lectureService = {
       updatedAt: now,
     };
     db.update("lectures", (list) => [copy, ...list]);
-    // 标记源讲义已拆解
-    await this.updateLecture(sourceId, { extractStatus: "done" });
+    // 拆解状态属于系统来源信息，不通过普通属性更新接口写入。
+    db.update("lectures", (list) => list.map((lecture) => (
+      lecture.id === sourceId
+        ? { ...lecture, extractStatus: "done", updatedAt: now }
+        : lecture
+    )));
     return copy;
   },
 

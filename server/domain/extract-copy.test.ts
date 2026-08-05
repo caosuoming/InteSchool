@@ -138,6 +138,7 @@ function state(): AppState {
     questions,
     examPapers: [sourcePaper()],
     lectures: [sourceLecture()],
+    reflections: [],
   };
 }
 
@@ -237,6 +238,111 @@ describe("document extract copies", () => {
       });
       expect((appState.lectures as Lecture[]).find((lecture) => lecture.id === "lecture-source"))
         .toMatchObject({ extractStatus: "done" });
+    });
+  });
+
+  it("allows exam paper score changes while rejecting extracted document structure changes", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const copy = await examPaperService.createExtractCopy("paper-source", blocks());
+      const rescoredQuestions = copy.questions.map((question, index) => ({
+        ...question,
+        score: question.score + index + 1,
+      }));
+
+      const rescored = await examPaperService.updatePaper(copy.id, {
+        title: "允许修改属性",
+        questions: rescoredQuestions,
+      });
+      expect(rescored.title).toBe("允许修改属性");
+      expect(rescored.questions.map((question) => question.score)).toEqual(
+        rescoredQuestions.map((question) => question.score),
+      );
+      expect(rescored.totalScore).toBe(
+        rescoredQuestions.reduce((sum, question) => sum + question.score, 0),
+      );
+
+      await expect(examPaperService.updatePaper(copy.id, {
+        questions: [...rescored.questions].reverse(),
+      })).rejects.toThrow("不能换题、删除题目或调整题目顺序");
+      await expect(examPaperService.updatePaper(copy.id, {
+        questions: rescored.questions.map((question, index) => (
+          index === 0 ? { ...question, stem: "被篡改的题干" } : question
+        )),
+      })).rejects.toThrow("不能换题、删除题目或调整题目顺序");
+
+      const stillLocked = await examPaperService.updatePaper(copy.id, {
+        isExtractCopy: undefined,
+        sourceResourceId: undefined,
+      });
+      expect(stillLocked).toMatchObject({
+        isExtractCopy: true,
+        sourceResourceId: "paper-source",
+      });
+    });
+  });
+
+  it("allows lecture property changes while rejecting extracted document content changes", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const copy = await lectureService.createExtractCopy("lecture-source", blocks());
+
+      const renamed = await lectureService.updateLecture(copy.id, { title: "允许修改讲义属性" });
+      expect(renamed.title).toBe("允许修改讲义属性");
+      expect(renamed.sections).toEqual(copy.sections);
+
+      await expect(lectureService.updateLecture(copy.id, {
+        sections: [...copy.sections].reverse(),
+      })).rejects.toThrow("不能编辑、删除或调整讲义内容顺序");
+
+      const stillLocked = await lectureService.updateLecture(copy.id, {
+        isExtractCopy: undefined,
+        sourceResourceId: undefined,
+      });
+      expect(stillLocked).toMatchObject({
+        isExtractCopy: true,
+        sourceResourceId: "lecture-source",
+      });
+    });
+  });
+
+  it("creates fully editable authored copies from extracted documents", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const extractedPaper = await examPaperService.createExtractCopy("paper-source", blocks());
+      const paperCopy = await examPaperService.duplicatePaper(extractedPaper.id, "试卷普通副本");
+      expect(paperCopy).toMatchObject({
+        title: "试卷普通副本",
+        isExtractCopy: undefined,
+        sourceResourceId: undefined,
+        originalFileUrl: undefined,
+        contentBlocks: undefined,
+      });
+      const reorderedPaper = await examPaperService.updatePaper(paperCopy.id, {
+        questions: [...paperCopy.questions].reverse(),
+      });
+      expect(reorderedPaper.questions.map((question) => question.id)).toEqual(
+        [...paperCopy.questions].reverse().map((question) => question.id),
+      );
+
+      const extractedLecture = await lectureService.createExtractCopy("lecture-source", blocks());
+      const lectureCopy = await lectureService.duplicateLecture(extractedLecture.id, "讲义普通副本");
+      expect(lectureCopy).toMatchObject({
+        title: "讲义普通副本",
+        isExtractCopy: undefined,
+        sourceResourceId: undefined,
+        originalFileUrl: undefined,
+        contentBlocks: undefined,
+      });
+      const reorderedLecture = await lectureService.updateLecture(lectureCopy.id, {
+        sections: [...lectureCopy.sections].reverse(),
+      });
+      expect(reorderedLecture.sections.map((section) => section.id)).toEqual(
+        [...lectureCopy.sections].reverse().map((section) => section.id),
+      );
     });
   });
 });

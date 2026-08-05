@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FileText } from "lucide-react";
 import {
   BasketMaterialListItem,
+  DocumentResourceGroup,
   LinkedResourceRow,
   OriginalFileRow,
   QuestionListItem,
@@ -18,6 +19,25 @@ vi.mock("@/components/ui/MathHtml", () => ({
 vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
   default: () => <div>题库</div>,
 }));
+
+describe("DocumentResourceGroup", () => {
+  it("wraps related resources in one bordered group and labels the document category", () => {
+    render(
+      <DocumentResourceGroup category="extracted">
+        <div>拆解稿卡片</div>
+        <div>原稿行</div>
+        <div>课件行</div>
+      </DocumentResourceGroup>,
+    );
+
+    const group = screen.getByTestId("document-resource-group");
+    expect(group).toHaveClass("border", "rounded-xl");
+    expect(within(group).getByText("同源文档")).toBeInTheDocument();
+    expect(within(group).getByText("拆解稿")).toBeInTheDocument();
+    expect(within(group).getByText("原稿行")).toBeInTheDocument();
+    expect(within(group).getByText("课件行")).toBeInTheDocument();
+  });
+});
 
 const question: Question = {
   id: "question-1",
