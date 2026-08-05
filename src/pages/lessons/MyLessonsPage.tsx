@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   BookOpen, Plus, Search, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
-  BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, X, MonitorPlay,
+  BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, MonitorPlay,
   CheckCircle2, RotateCcw, CalendarDays, Save,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -88,6 +88,12 @@ interface ClassMultiSelectDropdownProps {
   onToggle: (classId: string) => void;
 }
 
+interface HomeworkUpload {
+  key: string;
+  name: string;
+  size: number;
+}
+
 function ClassMultiSelectDropdown({
   label,
   classes,
@@ -163,7 +169,7 @@ export function MyLessonsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [homeworkContent, setHomeworkContent] = useState("");
-  const [homeworkFiles, setHomeworkFiles] = useState<File[]>([]);
+  const [homeworkUploads, setHomeworkUploads] = useState<HomeworkUpload[]>([]);
   const [homeworkDate, setHomeworkDate] = useState(localDateValue);
   const [publishMode, setPublishMode] = useState<"now" | "scheduled">("now");
   const [scheduledAt, setScheduledAt] = useState(() => localDateTimeValue(new Date(Date.now() + 30 * 60_000)));
@@ -183,6 +189,7 @@ export function MyLessonsPage() {
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleEditing, setScheduleEditing] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const homeworkDraftVersion = useRef(0);
 
   const classNames = useMemo(
     () => new Map(classes.map((item) => [item.id, `${item.grade} · ${item.name}`])),
@@ -351,9 +358,10 @@ export function MyLessonsPage() {
   };
 
   const resetHomeworkForm = () => {
+    homeworkDraftVersion.current += 1;
     setEditingHomeworkId(null);
     setHomeworkContent("");
-    setHomeworkFiles([]);
+    setHomeworkUploads([]);
     setHomeworkAttachments([]);
     setHomeworkDate(localDateValue());
     setPublishMode("now");
@@ -371,10 +379,11 @@ export function MyLessonsPage() {
   };
 
   const handleEditHomework = (homework: ClassroomHomework) => {
+    homeworkDraftVersion.current += 1;
     const scheduled = new Date(homework.publishAt).getTime() > Date.now();
     setEditingHomeworkId(homework.id);
     setHomeworkContent(homework.content);
-    setHomeworkFiles([]);
+    setHomeworkUploads([]);
     setHomeworkAttachments(homework.attachments || []);
     setHomeworkDate(homework.assignedDate);
     setPublishMode(scheduled ? "scheduled" : "now");
@@ -430,7 +439,11 @@ export function MyLessonsPage() {
 
   const handlePublishHomework = async () => {
     if (!teacher?.schoolId) return;
-    if (!homeworkContent.trim() && homeworkFiles.length === 0 && homeworkAttachments.length === 0) {
+    if (homeworkUploads.length > 0) {
+      toast.warning("附件仍在上传，请稍候");
+      return;
+    }
+    if (!homeworkContent.trim() && homeworkAttachments.length === 0) {
       toast.warning("请输入作业内容或添加附件");
       return;
     }
@@ -450,16 +463,9 @@ export function MyLessonsPage() {
     }
     setPublishingHomework(true);
     try {
-      const uploadedFiles = await Promise.all(homeworkFiles.map((file) => uploadFile(file)));
       const input = {
         content: homeworkContent,
-        attachments: [...homeworkAttachments, ...uploadedFiles.map((file) => ({
-          id: file.id,
-          name: file.originalName,
-          url: file.url,
-          mimeType: file.mimeType,
-          size: file.size,
-        }))],
+        attachments: homeworkAttachments,
         classIds: selectedClassIds,
         assignedDate: homeworkDate,
         publishAt: publishAt.toISOString(),
@@ -482,17 +488,58 @@ export function MyLessonsPage() {
 
   const handleHomeworkFiles = (files: FileList | null) => {
     if (!files) return;
-    setHomeworkFiles((current) => {
-      const next = [...current];
-      for (const file of Array.from(files)) {
-        const duplicate = next.some((item) =>
-          item.name === file.name && item.size === file.size && item.lastModified === file.lastModified);
-        if (!duplicate) next.push(file);
-      }
-      const available = Math.max(0, 8 - homeworkAttachments.length);
-      if (next.length > available) toast.warning("作业附件不能超过 8 个");
-      return next.slice(0, available);
+    const existingKeys = new Set([
+      ...homeworkAttachments.map((item) => `${item.name}:${item.size}`),
+      ...homeworkUploads.map((item) => `${item.name}:${item.size}`),
+    ]);
+    const candidates = Array.from(files).filter((file) => {
+      const key = `${file.name}:${file.size}`;
+      if (existingKeys.has(key)) return false;
+      existingKeys.add(key);
+      return true;
     });
+    const available = Math.max(0, 8 - homeworkAttachments.length - homeworkUploads.length);
+    if (candidates.length > available) toast.warning("作业附件不能超过 8 个");
+    const selected = candidates.slice(0, available);
+    if (selected.length === 0) return;
+
+    const draftVersion = homeworkDraftVersion.current;
+    const uploads = selected.map((file) => ({
+      file,
+      item: {
+        key: `${draftVersion}:${file.name}:${file.size}:${file.lastModified}`,
+        name: file.name,
+        size: file.size,
+      },
+    }));
+    setHomeworkUploads((current) => [...current, ...uploads.map(({ item }) => item)]);
+
+    for (const { file, item } of uploads) {
+      void uploadFile(file)
+        .then((uploaded) => {
+          if (homeworkDraftVersion.current !== draftVersion) return;
+          setHomeworkAttachments((current) => {
+            if (current.some((attachment) => attachment.id === uploaded.id)) return current;
+            return [...current, {
+              id: uploaded.id,
+              name: uploaded.originalName,
+              url: uploaded.url,
+              mimeType: uploaded.mimeType,
+              size: uploaded.size,
+            }];
+          });
+        })
+        .catch((error) => {
+          if (homeworkDraftVersion.current !== draftVersion) return;
+          toast.error(
+            `附件“${file.name}”上传失败`,
+            error instanceof Error ? error.message : undefined,
+          );
+        })
+        .finally(() => {
+          setHomeworkUploads((current) => current.filter((upload) => upload.key !== item.key));
+        });
+    }
   };
 
   const handleDeleteHomework = async (id: string) => {
@@ -918,62 +965,36 @@ export function MyLessonsPage() {
                 aria-label="选择作业附件"
                 accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.docx,.txt,.md"
                 className="sr-only"
-                disabled={publishingHomework}
+                disabled={publishingHomework || homeworkUploads.length > 0}
                 onChange={(event) => {
                   handleHomeworkFiles(event.currentTarget.files);
                   event.currentTarget.value = "";
                 }}
               />
             </label>
-            <span className="text-xs text-ink-400">最多 8 个，支持图片、PDF、DOCX、TXT 和 Markdown</span>
+            <span className="text-xs text-ink-400">最多 8 个；选择后立即上传，上传完成即可点击预览</span>
           </div>
-          {homeworkAttachments.length > 0 && (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {homeworkAttachments.map((attachment) => (
-                <div key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-ink-100 bg-paper px-3 py-2">
-                  <FileText className="h-4 w-4 flex-shrink-0 text-gold-600" />
+          {homeworkUploads.length > 0 && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-label="作业附件上传中">
+              {homeworkUploads.map((upload) => (
+                <div key={upload.key} className="flex min-w-0 items-center gap-2 rounded-lg border border-gold-200 bg-gold-50/60 px-3 py-2">
+                  <Clock className="h-4 w-4 flex-shrink-0 animate-pulse text-gold-600" />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium text-ink-800">{attachment.name}</div>
-                    <div className="text-[10px] text-ink-400">{fileSizeLabel(attachment.size)}</div>
+                    <div className="truncate text-xs font-medium text-ink-800">{upload.name}</div>
+                    <div className="text-[10px] text-ink-500">正在上传 · {fileSizeLabel(upload.size)}</div>
                   </div>
-                  <button
-                    type="button"
-                    aria-label={`移除附件 ${attachment.name}`}
-                    disabled={publishingHomework}
-                    onClick={() => setHomeworkAttachments((items) => items.filter((item) => item.id !== attachment.id))}
-                    className="rounded p-1 text-ink-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
                 </div>
               ))}
             </div>
           )}
-          {homeworkFiles.length > 0 && (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {homeworkFiles.map((file) => (
-                <div
-                  key={`${file.name}:${file.size}:${file.lastModified}`}
-                  className="flex min-w-0 items-center gap-2 rounded-lg border border-ink-100 bg-paper px-3 py-2"
-                >
-                  <FileText className="h-4 w-4 flex-shrink-0 text-gold-600" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium text-ink-800">{file.name}</div>
-                    <div className="text-[10px] text-ink-400">{fileSizeLabel(file.size)}</div>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label={`移除附件 ${file.name}`}
-                    disabled={publishingHomework}
-                    onClick={() => setHomeworkFiles((items) => items.filter((item) => item !== file))}
-                    className="rounded p-1 text-ink-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          <HomeworkAttachments
+            attachments={homeworkAttachments}
+            className="mt-3"
+            removeDisabled={publishingHomework || homeworkUploads.length > 0}
+            onRemove={(attachment) => setHomeworkAttachments((items) => (
+              items.filter((item) => item.id !== attachment.id)
+            ))}
+          />
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(280px,1.3fr)_minmax(190px,0.85fr)_minmax(190px,0.85fr)]">
@@ -1013,7 +1034,12 @@ export function MyLessonsPage() {
 
         <div className="mt-4 flex items-start justify-end gap-2">
           {editingHomeworkId && (
-            <Button type="button" variant="outline" onClick={resetHomeworkForm}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={publishingHomework || homeworkUploads.length > 0}
+              onClick={resetHomeworkForm}
+            >
               取消编辑
             </Button>
           )}
@@ -1022,7 +1048,7 @@ export function MyLessonsPage() {
               type="button"
               variant="gold"
               loading={publishingHomework}
-              disabled={homeworkLoading || classes.length === 0}
+              disabled={homeworkLoading || classes.length === 0 || homeworkUploads.length > 0}
               onClick={() => void handlePublishHomework()}
             >
               <Send className="w-4 h-4" />{editingHomeworkId ? "保存作业修改" : "发布作业"}

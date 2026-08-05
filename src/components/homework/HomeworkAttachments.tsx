@@ -20,6 +20,8 @@ interface HomeworkAttachmentsProps {
   attachments?: ClassroomHomeworkAttachment[];
   theme?: "light" | "dark";
   className?: string;
+  onRemove?: (attachment: ClassroomHomeworkAttachment) => void;
+  removeDisabled?: boolean;
 }
 
 type PreviewKind = "image" | "pdf" | "document" | "download";
@@ -234,6 +236,8 @@ export function HomeworkAttachments({
   attachments = [],
   theme = "light",
   className,
+  onRemove,
+  removeDisabled = false,
 }: HomeworkAttachmentsProps) {
   const [previewing, setPreviewing] = useState<ClassroomHomeworkAttachment | null>(null);
   if (attachments.length === 0) return null;
@@ -242,24 +246,47 @@ export function HomeworkAttachments({
     <>
       <div className={cn("flex flex-wrap gap-2", className)}>
         {attachments.map((attachment) => (
-          <button
+          <div
             key={attachment.id}
-            type="button"
-            onClick={() => setPreviewing(attachment)}
             className={cn(
-              "inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+              "inline-flex min-w-0 max-w-full items-stretch overflow-hidden rounded-lg border text-xs transition-colors",
               theme === "dark"
-                ? "border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-amber-400 hover:text-amber-200"
-                : "border-ink-150 bg-paper text-ink-700 hover:border-gold-400 hover:text-ink-900",
+                ? "border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-amber-400"
+                : "border-ink-150 bg-paper text-ink-700 hover:border-gold-400",
             )}
-            title={`预览 ${attachment.name}`}
           >
-            <AttachmentIcon attachment={attachment} className="h-4 w-4 flex-shrink-0" />
-            <span className="truncate">{attachment.name}</span>
-            <span className={cn("flex-shrink-0", theme === "dark" ? "text-neutral-500" : "text-ink-400")}>
-              {fileSizeLabel(attachment.size)}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setPreviewing(attachment)}
+              className={cn(
+                "inline-flex min-w-0 items-center gap-2 px-3 py-2 text-left",
+                theme === "dark" ? "hover:text-amber-200" : "hover:text-ink-900",
+              )}
+              title={`预览 ${attachment.name}`}
+            >
+              <AttachmentIcon attachment={attachment} className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">{attachment.name}</span>
+              <span className={cn("flex-shrink-0", theme === "dark" ? "text-neutral-500" : "text-ink-400")}>
+                {fileSizeLabel(attachment.size)}
+              </span>
+            </button>
+            {onRemove && (
+              <button
+                type="button"
+                aria-label={`移除附件 ${attachment.name}`}
+                disabled={removeDisabled}
+                onClick={() => onRemove(attachment)}
+                className={cn(
+                  "flex w-9 flex-shrink-0 items-center justify-center border-l disabled:cursor-not-allowed disabled:opacity-40",
+                  theme === "dark"
+                    ? "border-neutral-700 text-neutral-500 hover:bg-red-950/40 hover:text-red-300"
+                    : "border-ink-100 text-ink-400 hover:bg-red-50 hover:text-red-600",
+                )}
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         ))}
       </div>
       <HomeworkAttachmentPreview attachment={previewing} onClose={() => setPreviewing(null)} />
