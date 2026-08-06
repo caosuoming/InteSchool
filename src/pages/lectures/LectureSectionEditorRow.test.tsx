@@ -22,7 +22,11 @@ const question = {
   analysis: "一次函数 y = kx + b 的斜率为 k。",
 } as Question;
 
-function renderRow(overrides: Partial<LectureSection> = {}, questionOverride: Question = question) {
+function renderRow(
+  overrides: Partial<LectureSection> = {},
+  questionOverride: Question = question,
+  readOnly = false,
+) {
   const onLabelChange = vi.fn();
   const onReplaceQuestion = vi.fn();
   const view = render(
@@ -38,6 +42,7 @@ function renderRow(overrides: Partial<LectureSection> = {}, questionOverride: Qu
       onEditSection={vi.fn()}
       onReplaceQuestion={onReplaceQuestion}
       onRemove={vi.fn()}
+      readOnly={readOnly}
     />,
   );
   return { ...view, onLabelChange, onReplaceQuestion };
@@ -85,5 +90,15 @@ describe("LectureSectionEditorRow", () => {
     expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(3);
     fireEvent.click(screen.getByRole("button", { name: "查看答案与解析" }));
     expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("keeps a locked document section readable without structure actions", () => {
+    renderRow({ customLabel: "例 3" }, question, true);
+
+    expect(screen.getByText(question.stem)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "题目编号：一次函数练习" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "换题" })).not.toBeInTheDocument();
+    expect(screen.queryByTitle("上移")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("删除内容块")).not.toBeInTheDocument();
   });
 });

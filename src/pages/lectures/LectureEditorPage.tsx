@@ -7,7 +7,7 @@ import {
   Type, ListOrdered, CheckCircle2, Edit3, Eye,
   UserCheck, Award, Clock, Presentation, FileBox,
   Lightbulb, Printer, Layout, LayoutTemplate, FileStack,
-  CheckSquare,
+  CheckSquare, Lock,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
@@ -50,6 +50,7 @@ import type {
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
 import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
+import { isDocumentStructureLocked } from "@/lib/document-resource";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -115,6 +116,7 @@ export default function LectureEditorPage() {
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester, ready: resourceOptionsReady } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [lecture, setLecture] = useState<Lecture | null>(null);
+  const isStructureLocked = isDocumentStructureLocked(lecture);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -506,8 +508,8 @@ export default function LectureEditorPage() {
         semester,
         classIds: selectedClassIds,
         studentIds: selectedStudentIds,
-        sections,
         typeId: typeId || undefined,
+        ...(isStructureLocked ? {} : { sections }),
       };
 
       if (lecture) {
@@ -518,7 +520,10 @@ export default function LectureEditorPage() {
         toast.success(publish ? "讲义已发布" : "讲义已保存");
         setLecture(updated);
       } else {
-        const created = await lectureService.createLecture(teacher.id, teacher.schoolId!, payload);
+        const created = await lectureService.createLecture(teacher.id, teacher.schoolId!, {
+          ...payload,
+          sections,
+        });
         if (publish) await lectureService.publish(created.id);
         toast.success(publish ? "讲义已创建并发布" : "讲义已创建");
         navigate(`/lectures/${created.id}/edit`);
@@ -1956,6 +1961,13 @@ export default function LectureEditorPage() {
             </div>
           </Card>
 
+          {isStructureLocked && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-xs text-amber-900">
+              <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+              <span>上传原稿和拆解稿可修改文档属性；栏目、内容块、题目和顺序保持原稿结构。</span>
+            </div>
+          )}
+
           <div className="grid xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
             <Card className="min-w-0 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-ink-100">
@@ -1964,17 +1976,17 @@ export default function LectureEditorPage() {
                   <h3 className="font-serif font-semibold text-ink-900">讲义全貌</h3>
                   <Badge variant="ink">{sections.length} 个内容块</Badge>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                {!isStructureLocked && <div className="flex flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => setColumnTemplateOpen(true)}>
                     <LayoutTemplate className="w-3.5 h-3.5" /> 栏目模板
                   </Button>
                   <Button variant="gold" size="sm" onClick={handleAddChapter}>
                     <Plus className="w-3.5 h-3.5" /> 添加栏目
                   </Button>
-                </div>
+                </div>}
               </div>
 
-              {editingSection && editingSection.type !== "chapter" && (
+              {editingSection && editingSection.type !== "chapter" && !isStructureLocked && (
                 <div className="p-3 mb-4 rounded-lg border border-gold-200 bg-gold-50/20">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-medium text-ink-700">
@@ -2023,9 +2035,11 @@ export default function LectureEditorPage() {
                   <FileText className="w-12 h-12 mx-auto mb-3 text-ink-200" />
                   <div className="text-sm text-ink-500 mb-1">讲义暂无栏目</div>
                   <div className="text-xs text-ink-400 mb-3">先创建栏目，再加入知识块、文本或题目。</div>
-                  <Button variant="gold" size="sm" onClick={handleAddChapter}>
-                    <Plus className="w-3.5 h-3.5" /> 创建第一个栏目
-                  </Button>
+                  {!isStructureLocked && (
+                    <Button variant="gold" size="sm" onClick={handleAddChapter}>
+                      <Plus className="w-3.5 h-3.5" /> 创建第一个栏目
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-5">
@@ -2050,10 +2064,11 @@ export default function LectureEditorPage() {
                               <input
                                 aria-label={`栏目名称 ${sectionIndex + 1}`}
                                 value={section.title}
+                                disabled={isStructureLocked}
                                 onFocus={() => setSelectedChapterId(section.id)}
                                 onChange={(event) => handleUpdateColumnTitle(section.id, event.target.value)}
                                 placeholder="栏目名称（可留空）"
-                                className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-serif font-bold text-ink-900 outline-none transition-colors placeholder:font-sans placeholder:font-normal placeholder:text-ink-300 hover:border-ink-200 focus:border-gold-400 focus:bg-paper"
+                                className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-serif font-bold text-ink-900 outline-none transition-colors placeholder:font-sans placeholder:font-normal placeholder:text-ink-300 hover:border-ink-200 focus:border-gold-400 focus:bg-paper disabled:cursor-default disabled:hover:border-transparent"
                               />
                               {selected && <Badge variant="gold">当前栏目</Badge>}
                             </div>
@@ -2061,7 +2076,7 @@ export default function LectureEditorPage() {
                               <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-ink-500">{section.content}</p>
                             )}
                           </div>
-                          <div className="flex items-center gap-0.5">
+                          {!isStructureLocked && <div className="flex items-center gap-0.5">
                             <button
                               type="button"
                               onClick={() => handleMoveSection(sectionIndex, "up")}
@@ -2084,10 +2099,10 @@ export default function LectureEditorPage() {
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
-                          </div>
+                          </div>}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-1.5 mb-3 rounded-lg border border-ink-100 bg-ink-50/50 p-2">
+                        {!isStructureLocked && <div className="flex flex-wrap items-center gap-1.5 mb-3 rounded-lg border border-ink-100 bg-ink-50/50 p-2">
                           <span className="mr-1 text-xs font-medium text-ink-500">添加内容</span>
                           <Button
                             variant="outline"
@@ -2139,18 +2154,19 @@ export default function LectureEditorPage() {
                           >
                             <FileBox className="w-3.5 h-3.5" /> 素材库
                           </Button>
-                        </div>
+                        </div>}
 
                         {section.children.length === 0 ? (
                           <button
                             type="button"
+                            disabled={isStructureLocked}
                             onClick={() => {
                               setSelectedChapterId(section.id);
                               setAddSource("bank");
                             }}
-                            className="w-full rounded-lg border border-dashed border-ink-200 py-8 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700"
+                            className="w-full rounded-lg border border-dashed border-ink-200 py-8 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700 disabled:cursor-default disabled:hover:border-ink-200 disabled:hover:text-ink-400"
                           >
-                            当前栏目暂无内容，点击添加题目
+                            {isStructureLocked ? "当前栏目暂无内容" : "当前栏目暂无内容，点击添加题目"}
                           </button>
                         ) : (
                           <div className="space-y-3">
@@ -2183,6 +2199,7 @@ export default function LectureEditorPage() {
                                       setAddSource("bank");
                                     } : undefined}
                                     onRemove={() => handleRemoveSection(child.id, section.id)}
+                                    readOnly={isStructureLocked}
                                   />
                                   {prepTaskId && (
                                     <div className="flex justify-end">
@@ -2241,6 +2258,7 @@ export default function LectureEditorPage() {
                                 setAddSource("bank");
                               } : undefined}
                               onRemove={() => handleRemoveSection(section.id)}
+                              readOnly={isStructureLocked}
                             />
                           );
                         })}
@@ -2257,6 +2275,13 @@ export default function LectureEditorPage() {
                   <Sparkles className="w-4 h-4 text-gold-500" />
                   <h3 className="font-serif font-semibold text-ink-900 text-sm">讲义工具</h3>
                 </div>
+                {isStructureLocked ? (
+                  <div className="flex items-start gap-2 rounded-md bg-ink-50 px-2.5 py-2 text-[11px] leading-relaxed text-ink-500">
+                    <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                    <span>当前文档结构已锁定，不能新增、删除或调整内容。</span>
+                  </div>
+                ) : (
+                  <>
                 <Select
                   label="内容添加到"
                   value={selectedChapterId || ""}
@@ -2295,6 +2320,9 @@ export default function LectureEditorPage() {
                     <FileBox className="w-3.5 h-3.5" /> 素材库
                   </Button>
                 </div>
+                  </>
+                )}
+
                 <div className="pt-3 border-t border-ink-100 space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-ink-500">当前栏目</span>

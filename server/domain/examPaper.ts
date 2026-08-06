@@ -9,6 +9,7 @@ import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService } from "./question.js";
 import { reflectionService } from "./reflection.js";
+import { sanitizeExamPaperPatch } from "./document-resource-lock.js";
 
 function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
   if (filter.keyword) {
@@ -122,9 +123,10 @@ export const examPaperService = {
     db.update("examPapers", (list) =>
       list.map((p) => {
         if (p.id === id) {
+          const safePatch = sanitizeExamPaperPatch(p, patch);
           updated = {
             ...p,
-            ...patch,
+            ...safePatch,
             updatedAt: new Date().toISOString(),
           };
           return updated;
@@ -164,6 +166,14 @@ export const examPaperService = {
       title: newTitle || `${source.title}（副本）`,
       status: "draft",
       questions: copiedQuestions,
+      contentBlocks: undefined,
+      originalFileUrl: undefined,
+      originalFileName: undefined,
+      originalFileType: undefined,
+      originalFileSize: undefined,
+      isExtractCopy: undefined,
+      sourceResourceId: undefined,
+      extractStatus: undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -288,8 +298,12 @@ export const examPaperService = {
       updatedAt: now,
     };
     db.update("examPapers", (list) => [copy, ...list]);
-    // 标记源试卷已拆解
-    await this.updatePaper(sourceId, { extractStatus: "done" });
+    // 拆解状态属于系统来源信息，不通过普通属性更新接口写入。
+    db.update("examPapers", (list) => list.map((paper) => (
+      paper.id === sourceId
+        ? { ...paper, extractStatus: "done", updatedAt: now }
+        : paper
+    )));
     return copy;
   },
 

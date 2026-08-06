@@ -75,6 +75,7 @@ import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
 import { generateExamPaperDocx } from "@/lib/docx";
 import { treeNameMap } from "@/lib/basket-audience";
+import { isDocumentStructureLocked } from "@/lib/document-resource";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -173,6 +174,7 @@ export default function ExamPaperEditorPage() {
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [paper, setPaper] = useState<ExamPaper | null>(null);
+  const isStructureLocked = isDocumentStructureLocked(paper);
   const [questions, setQuestions] = useState<Record<string, Question>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -291,6 +293,7 @@ export default function ExamPaperEditorPage() {
   }, [questionProgress, selectedStudentIds.length]);
 
   const openAddQuestion = useCallback((target: AddTarget = null) => {
+    if (isStructureLocked) return;
     setAddTarget(target);
     setReplaceIdx(null);
     setAddSource("choose");
@@ -312,7 +315,7 @@ export default function ExamPaperEditorPage() {
         return next;
       });
     }
-  }, []);
+  }, [isStructureLocked]);
 
   const closeAddQuestion = useCallback(() => {
     setAddSource(null);
@@ -599,6 +602,7 @@ export default function ExamPaperEditorPage() {
   };
 
   const moveContentBlock = (index: number, direction: "up" | "down") => {
+    if (isStructureLocked) return;
     const block = contentBlocks[index];
     if (!block) return;
 
@@ -618,6 +622,7 @@ export default function ExamPaperEditorPage() {
   };
 
   const removeContentBlock = (blockId: string) => {
+    if (isStructureLocked) return;
     const block = contentBlocks.find((item) => item.id === blockId);
     setContentBlocks((previous) => previous.filter((item) => item.id !== blockId));
     if (block?.examPaperQuestionId) {
@@ -670,6 +675,7 @@ export default function ExamPaperEditorPage() {
 
   // 编辑模式：调整顺序
   const handleMove = (idx: number, dir: "up" | "down") => {
+    if (isStructureLocked) return;
     setPaperQuestions((prev) => {
       const next = [...prev];
       const target = dir === "up" ? idx - 1 : idx + 1;
@@ -680,6 +686,7 @@ export default function ExamPaperEditorPage() {
   };
 
   const handleMoveWithinGroup = (idx: number, dir: "up" | "down") => {
+    if (isStructureLocked) return;
     setPaperQuestions((prev) => {
       const current = prev[idx];
       if (!current) return prev;
@@ -703,12 +710,14 @@ export default function ExamPaperEditorPage() {
 
   // 编辑模式：删除题目
   const handleRemoveQuestion = (pqId: string) => {
+    if (isStructureLocked) return;
     setPaperQuestions((prev) => prev.filter((q) => q.id !== pqId));
     setContentBlocks((prev) => prev.filter((block) => block.examPaperQuestionId !== pqId));
   };
 
   // 编辑模式：换题（替换某题的题库关联）
   const handleReplaceQuestion = (idx: number) => {
+    if (isStructureLocked) return;
     setAddTarget(null);
     setReplaceIdx(idx);
     setSelectedQuestionIds([]);
@@ -734,6 +743,10 @@ export default function ExamPaperEditorPage() {
 
   // 添加题目确认
   const handleConfirmAdd = async () => {
+    if (isStructureLocked) {
+      toast.warning("上传原稿和拆解稿不能增删或替换题目");
+      return;
+    }
     if (!addSource || addSource === "choose" || selectedQuestionIds.length === 0) {
       toast.error("请选择至少一道题目");
       return;
@@ -882,10 +895,9 @@ export default function ExamPaperEditorPage() {
         title, description, grade, schoolYear, semester, duration,
         totalScore: totalScore,
         questions: paperQuestions,
-        contentBlocks,
         studentIds: selectedStudentIds,
         typeId: typeId || undefined,
-        layoutMode,
+        ...(isStructureLocked ? {} : { contentBlocks, layoutMode }),
       };
       const updated = prepTaskId
         ? await prepService.updateLinkedResource(prepTaskId, patch, prepPassword || undefined) as ExamPaper
@@ -989,6 +1001,7 @@ export default function ExamPaperEditorPage() {
 
   // 调整大题型顺序
   const handleGroupMove = (groupType: string, dir: "up" | "down") => {
+    if (isStructureLocked) return;
     setGroupOrder((prev) => {
       const idx = prev.indexOf(groupType);
       if (idx === -1) return prev;
@@ -1004,6 +1017,7 @@ export default function ExamPaperEditorPage() {
     paperQuestion.questionId ? questions[paperQuestion.questionId]?.difficulty || 3 : 3;
 
   const handleSortByDifficulty = () => {
+    if (isStructureLocked) return;
     setPaperQuestions((previous) => {
       const next = [...previous];
       next.sort((left, right) => {
@@ -1526,7 +1540,7 @@ export default function ExamPaperEditorPage() {
                 <h3 className="font-serif font-semibold text-ink-900">试卷全貌</h3>
                 <Badge variant="ink">{paperQuestions.length} 题</Badge>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              {!isStructureLocked && <div className="flex flex-wrap items-center gap-2">
                 {!isStructuredExtract && (
                   <>
                     <div className="flex items-center rounded-md border border-ink-200 p-0.5 bg-ink-50">
@@ -1559,8 +1573,15 @@ export default function ExamPaperEditorPage() {
                   <Plus className="w-3.5 h-3.5" />
                   添加题目
                 </Button>
-              </div>
+              </div>}
             </div>
+
+            {isStructureLocked && (
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-xs text-amber-900">
+                <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <span>上传原稿和拆解稿可修改文档属性与题目分值；题目内容、数量和顺序保持原稿结构。</span>
+              </div>
+            )}
 
             {isStructuredExtract ? (
               <div className="space-y-3">
@@ -1672,7 +1693,7 @@ export default function ExamPaperEditorPage() {
                             <span className="text-xs text-ink-500">分</span>
                           </div>
                         )}
-                        {isQuestionGroup && (
+                        {isQuestionGroup && !isStructureLocked && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -1687,7 +1708,7 @@ export default function ExamPaperEditorPage() {
                             添加题目
                           </Button>
                         )}
-                        <div className={cn(
+                        {!isStructureLocked && <div className={cn(
                           "flex items-center gap-0.5",
                           block.type !== "question" && !isQuestionGroup && "ml-auto",
                         )}>
@@ -1724,13 +1745,14 @@ export default function ExamPaperEditorPage() {
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
-                        </div>
+                        </div>}
                       </div>
                       {block.type === "knowledge" && (
                         <Input
                           label="知识块标题"
                           value={block.title || ""}
                           onChange={(event) => updateContentBlock(block.id, { title: event.target.value })}
+                          disabled={isStructureLocked}
                           className="mb-2"
                         />
                       )}
@@ -1748,12 +1770,14 @@ export default function ExamPaperEditorPage() {
                           label="文档标题"
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
+                          disabled={isStructureLocked}
                         />
                       ) : isQuestionGroup ? (
                         <Input
                           aria-label="题型或项目名"
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
+                          disabled={isStructureLocked}
                         />
                       ) : (
                         <Textarea
@@ -1762,6 +1786,7 @@ export default function ExamPaperEditorPage() {
                             : "内容"}
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
+                          disabled={isStructureLocked}
                           rows={4}
                         />
                       )}
@@ -1774,11 +1799,11 @@ export default function ExamPaperEditorPage() {
                 icon={<FileText className="w-10 h-10 text-ink-200" />}
                 title="试卷暂无题目"
                 description="从右侧选择来源添加题目"
-                action={
+                action={!isStructureLocked ? (
                   <Button variant="gold" size="sm" onClick={() => openAddQuestion()}>
                     <Plus className="w-3.5 h-3.5" /> 添加题目
                   </Button>
-                }
+                ) : undefined}
               />
             ) : layoutMode === "grouped" ? (
               <div className="space-y-6">
@@ -1804,7 +1829,7 @@ export default function ExamPaperEditorPage() {
                             ? <ChevronRight className="h-4 w-4" />
                             : <ChevronDown className="h-4 w-4" />}
                         </button>
-                        <div className="flex flex-col gap-0.5">
+                        {!isStructureLocked && <div className="flex flex-col gap-0.5">
                           <button
                             onClick={() => handleGroupMove(group.type, "up")}
                             disabled={groupIndex === 0}
@@ -1821,11 +1846,11 @@ export default function ExamPaperEditorPage() {
                           >
                             <ChevronDown className="w-3 h-3" />
                           </button>
-                        </div>
+                        </div>}
                         <h2 className="font-serif text-base font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
                         <span className="text-xs text-ink-500">{group.questions.length} 题</span>
                         <span className="text-xs text-gold-700 font-medium">{groupScore} 分</span>
-                        <Button
+                        {!isStructureLocked && <Button
                           variant="outline"
                           size="sm"
                           className="ml-auto"
@@ -1837,7 +1862,7 @@ export default function ExamPaperEditorPage() {
                         >
                           <Plus className="h-3.5 w-3.5" />
                           添加题目
-                        </Button>
+                        </Button>}
                       </div>
                       {!groupCollapsed && <div className="space-y-3">
                         {group.questions.map((item, itemIndex) => (
@@ -1855,6 +1880,7 @@ export default function ExamPaperEditorPage() {
                               onRemove={() => handleRemoveQuestion(item.pq.id)}
                               onReplace={() => handleReplaceQuestion(item.index)}
                               onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
+                              structureLocked={isStructureLocked}
                             />
                             {prepTaskId && (
                               <div className="flex justify-end">
@@ -1890,6 +1916,7 @@ export default function ExamPaperEditorPage() {
                       onRemove={() => handleRemoveQuestion(paperQuestion.id)}
                       onReplace={() => handleReplaceQuestion(index)}
                       onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
+                      structureLocked={isStructureLocked}
                     />
                     {prepTaskId && (
                       <div className="flex justify-end">
@@ -1916,28 +1943,37 @@ export default function ExamPaperEditorPage() {
                 <Sparkles className="w-4 h-4 text-gold-500" />
                 <h3 className="font-serif font-semibold text-ink-900 text-sm">组卷工具</h3>
               </div>
-              <Button
-                variant="gold"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => setAutoGenOpen(true)}
-              >
-                <Sparkles className="w-3.5 h-3.5" /> AI 自动组卷
-              </Button>
-              <div className="grid grid-cols-2 gap-1.5">
-                <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("bank"); }}>
-                  <Library className="w-3.5 h-3.5" /> 题库
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("basket"); }}>
-                  <ShoppingBasket className="w-3.5 h-3.5" /> 试题篮
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("examPaper"); }}>
-                  <Files className="w-3.5 h-3.5" /> 其他试卷
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("lecture"); }}>
-                  <FileText className="w-3.5 h-3.5" /> 讲义
-                </Button>
-              </div>
+              {isStructureLocked ? (
+                <div className="flex items-start gap-2 rounded-md bg-ink-50 px-2.5 py-2 text-[11px] leading-relaxed text-ink-500">
+                  <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <span>当前文档结构已锁定，仅可调整题目分值。</span>
+                </div>
+              ) : (
+                <>
+                  <Button
+                    variant="gold"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => setAutoGenOpen(true)}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" /> AI 自动组卷
+                  </Button>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("bank"); }}>
+                      <Library className="w-3.5 h-3.5" /> 题库
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("basket"); }}>
+                      <ShoppingBasket className="w-3.5 h-3.5" /> 试题篮
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("examPaper"); }}>
+                      <Files className="w-3.5 h-3.5" /> 其他试卷
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setAddTarget(null); setReplaceIdx(null); chooseAddSource("lecture"); }}>
+                      <FileText className="w-3.5 h-3.5" /> 讲义
+                    </Button>
+                  </div>
+                </>
+              )}
               <div className="pt-3 border-t border-ink-100 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-ink-500">当前编排</span>
@@ -2763,7 +2799,7 @@ function QuestionProgressBadge({ progress }: { progress?: QuestionProgress }) {
 // ===== 编辑模式的题目行 =====
 function EditQuestionRow({
   pq, index, total, question, progress, canMoveUp, canMoveDown,
-  onMoveUp, onMoveDown, onRemove, onReplace, onUpdateScore,
+  onMoveUp, onMoveDown, onRemove, onReplace, onUpdateScore, structureLocked = false,
 }: {
   pq: ExamPaperQuestion;
   index: number;
@@ -2777,13 +2813,14 @@ function EditQuestionRow({
   onRemove: () => void;
   onReplace: () => void;
   onUpdateScore: (score: number) => void;
+  structureLocked?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="border border-ink-100 rounded-md p-3 hover:border-ink-200 transition-colors">
       <div className="flex items-start gap-2">
         {/* 上下移动 */}
-        <div className="flex flex-col gap-0.5 pt-1">
+        {!structureLocked && <div className="flex flex-col gap-0.5 pt-1">
           <button
             onClick={onMoveUp}
             disabled={canMoveUp === false || (canMoveUp === undefined && index === 0)}
@@ -2800,7 +2837,7 @@ function EditQuestionRow({
           >
             <ChevronDown className="w-4 h-4" />
           </button>
-        </div>
+        </div>}
 
         <div className="flex-1 min-w-0">
           {/* 标签行 */}
@@ -2871,7 +2908,7 @@ function EditQuestionRow({
         </div>
 
         {/* 操作按钮 */}
-        <div className="flex-shrink-0 flex items-center gap-1">
+        {!structureLocked && <div className="flex-shrink-0 flex items-center gap-1">
           <button
             onClick={onReplace}
             className="px-2 py-1 rounded text-xs text-teal-600 hover:bg-teal-50 transition-colors"
@@ -2886,7 +2923,7 @@ function EditQuestionRow({
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
-        </div>
+        </div>}
       </div>
     </div>
   );

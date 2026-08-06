@@ -304,11 +304,11 @@ describe("ExamPaperEditorPage structured editor", () => {
     mocks.listQuestions.mockResolvedValue([question, secondQuestion]);
   });
 
-  it("keeps paper properties on one desktop row and moves a project with its questions", async () => {
+  it("keeps paper properties and scores editable while locking extracted document structure", async () => {
     renderEditorPage();
 
     const projectOneInput = await screen.findByDisplayValue<HTMLInputElement>("项目一");
-    expect(projectOneInput.labels).toHaveLength(0);
+    expect(projectOneInput).toBeDisabled();
 
     const metadataGrid = screen.getByLabelText("年级").parentElement?.parentElement;
     expect(metadataGrid).toHaveClass("lg:grid-cols-5");
@@ -316,22 +316,13 @@ describe("ExamPaperEditorPage structured editor", () => {
       expect(screen.getByLabelText(label).parentElement?.parentElement).toBe(metadataGrid);
     }
 
-    fireEvent.click(screen.getByRole("button", { name: "项目一整体下移" }));
+    expect(screen.getByText(/题目内容、数量和顺序保持原稿结构/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "项目一整体下移" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加题目" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "换题" })).not.toBeInTheDocument();
 
-    await waitFor(() => {
-      const projectOne = screen.getByDisplayValue("项目一").closest("section");
-      const projectTwo = screen.getByDisplayValue("项目二").closest("section");
-      const firstQuestion = screen.getByText(question.stem).closest("section");
-      const secondProjectQuestion = screen.getByText(secondQuestion.stem).closest("section");
-      expect(projectOne).not.toBeNull();
-      expect(projectTwo).not.toBeNull();
-      expect(firstQuestion).not.toBeNull();
-      expect(secondProjectQuestion).not.toBeNull();
-      expect(projectTwo!.compareDocumentPosition(secondProjectQuestion!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(secondProjectQuestion!.compareDocumentPosition(projectOne!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(projectOne!.compareDocumentPosition(firstQuestion!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(within(secondProjectQuestion!).getByText("题目 1")).toBeInTheDocument();
-      expect(within(firstQuestion!).getByText("题目 2")).toBeInTheDocument();
-    });
+    const scoreInputs = screen.getAllByLabelText<HTMLInputElement>("题目分值");
+    expect(scoreInputs).toHaveLength(2);
+    expect(scoreInputs.every((input) => !input.disabled)).toBe(true);
   });
 });
