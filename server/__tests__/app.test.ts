@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import JSZip from "jszip";
+import Database from "better-sqlite3";
 import { buildApp, type BuiltApp } from "../app.js";
 import { fetchPublicText } from "../lib/safe-fetch.js";
 import { buildDefaultGradeSettings } from "../../src/lib/grade-statistics.js";
@@ -204,6 +205,55 @@ describe("production backend", () => {
     expect(built.store.loadState().questions).toEqual([]);
   });
 
+  it("migrates legacy accounts to nullable email without losing existing users", async () => {
+    await built.app.close();
+    const databasePath = join(workDir, "legacy-email.sqlite");
+    const legacy = new Database(databasePath);
+    legacy.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        teacher_id TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        phone TEXT UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    const now = new Date().toISOString();
+    legacy.prepare(`
+      INSERT INTO users(id, teacher_id, email, phone, password_hash, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("legacy-user", "legacy-teacher", "legacy@example.com", "13800000000", "legacy-hash", now, now);
+    legacy.close();
+
+    built = await buildApp({
+      databasePath,
+      uploadsDir: join(workDir, "legacy-uploads"),
+      seedStatePath: resolve("server/seed-state.json"),
+      serveStatic: false,
+      logger: false,
+      enableDemoAccount: false,
+      seedDemoData: false,
+      cookieSecure: false,
+    });
+    await built.app.ready();
+
+    const emailColumn = (built.store.sqlite.prepare("PRAGMA table_info(users)").all() as Array<{
+      name: string;
+      notnull: number;
+    }>).find((column) => column.name === "email");
+    expect(emailColumn?.notnull).toBe(0);
+    expect(built.store.sqlite.prepare("SELECT email, phone FROM users WHERE id = ?").get("legacy-user"))
+      .toEqual({ email: "legacy@example.com", phone: "13800000000" });
+
+    built.store.createUser("phone-only-teacher-1", null, "StrongPass123", "13800000001");
+    built.store.createUser("phone-only-teacher-2", null, "StrongPass123", "13800000002");
+    expect(built.store.sqlite.prepare("SELECT COUNT(*) AS count FROM users WHERE email IS NULL").get())
+      .toEqual({ count: 2 });
+    expect(built.store.sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+  });
+
   it("serves health checks and maps invalid input to 400", async () => {
     const health = await built.app.inject({ method: "GET", url: "/api/health" });
     expect(health.statusCode).toBe(200);
@@ -342,6 +392,85 @@ describe("production backend", () => {
     expect(phoneLogin.statusCode).toBe(200);
     expect(phoneLogin.json<{ teacher: { email: string } }>().teacher.email)
       .toBe("phone-login@example.com");
+  });
+
+  it("registers with only an authorized phone and lets the teacher bind an email later", async () => {
+    const phone = nextPhone();
+    authorizeRegistration(phone, { schoolId: "sch-2" });
+    const registered = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        email: "",
+        password: "StrongPass123",
+        name: "无邮箱教师",
+        phone,
+        schoolId: "sch-2",
+        subject: "数学",
+        teachingGrades: [],
+        teachingClassIds: [],
+      },
+    });
+    expect(registered.statusCode).toBe(200);
+    const registeredBody = registered.json<{ teacher: { email: string }; csrfToken: string }>();
+    expect(registeredBody.teacher.email).toBe("");
+    expect(built.store.sqlite.prepare("SELECT email FROM users WHERE phone = ?").get(phone))
+      .toEqual({ email: null });
+
+    const phoneLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { identifier: phone, password: "StrongPass123" },
+    });
+    expect(phoneLogin.statusCode).toBe(200);
+
+    const bound = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/email",
+      headers: {
+        cookie: sessionCookie(registered),
+        "x-inteschool-csrf": registeredBody.csrfToken,
+      },
+      payload: { email: "RECOVERY@example.com" },
+    });
+    expect(bound.statusCode).toBe(200);
+    expect(bound.json<{ email: string }>().email).toBe("recovery@example.com");
+
+    const emailLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { identifier: "recovery@example.com", password: "StrongPass123" },
+    });
+    expect(emailLogin.statusCode).toBe(200);
+
+    const otherPhone = nextPhone();
+    authorizeRegistration(otherPhone, { schoolId: "sch-2" });
+    const other = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        password: "StrongPass123",
+        name: "另一教师",
+        phone: otherPhone,
+        schoolId: "sch-2",
+        subject: "语文",
+        teachingGrades: [],
+        teachingClassIds: [],
+      },
+    });
+    expect(other.statusCode).toBe(200);
+    const otherBody = other.json<{ csrfToken: string }>();
+    const duplicate = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/email",
+      headers: {
+        cookie: sessionCookie(other),
+        "x-inteschool-csrf": otherBody.csrfToken,
+      },
+      payload: { email: "recovery@example.com" },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toEqual({ error: "该邮箱已注册" });
   });
 
   it("does not trust forwarded client IPs unless a proxy is configured", async () => {

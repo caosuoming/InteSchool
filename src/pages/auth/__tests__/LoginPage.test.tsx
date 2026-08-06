@@ -58,6 +58,17 @@ describe("LoginPage", () => {
     expect(screen.getByRole("button", { name: "集体研讨" })).toBeInTheDocument();
   });
 
+  it("does not require an email when creating an account", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "立即注册" }));
+
+    const email = screen.getByLabelText("邮箱（可选）");
+    expect(email).not.toBeRequired();
+    expect(email).toHaveAccessibleDescription("可稍后在个人中心绑定，用于忘记密码时找回账号");
+  });
+
   it("opens the dedicated collective-preparation login entry", async () => {
     const user = userEvent.setup();
     renderLogin();

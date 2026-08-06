@@ -37,7 +37,7 @@ type JsonRecord = { id: string; [key: string]: unknown };
 interface UserRow {
   id: string;
   teacher_id: string;
-  email: string;
+  email: string | null;
   phone: string | null;
   password_hash: string;
 }
@@ -127,7 +127,7 @@ export class DatabaseStore {
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         teacher_id TEXT NOT NULL UNIQUE,
-        email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        email TEXT UNIQUE COLLATE NOCASE,
         phone TEXT UNIQUE,
         password_hash TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -182,10 +182,38 @@ export class DatabaseStore {
       );
     `);
 
-    const userColumns = this.sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    let userColumns = this.sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string; notnull: number }>;
     if (!userColumns.some((column) => column.name === "phone")) {
       this.sqlite.exec("ALTER TABLE users ADD COLUMN phone TEXT");
       this.sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) WHERE phone IS NOT NULL");
+      userColumns = this.sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string; notnull: number }>;
+    }
+    if (userColumns.find((column) => column.name === "email")?.notnull === 1) {
+      const foreignKeysEnabled = this.sqlite.pragma("foreign_keys", { simple: true }) === 1;
+      this.sqlite.pragma("foreign_keys = OFF");
+      try {
+        this.sqlite.transaction(() => {
+          this.sqlite.exec(`
+            CREATE TABLE users_email_optional (
+              id TEXT PRIMARY KEY,
+              teacher_id TEXT NOT NULL UNIQUE,
+              email TEXT UNIQUE COLLATE NOCASE,
+              phone TEXT UNIQUE,
+              password_hash TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            INSERT INTO users_email_optional(
+              id, teacher_id, email, phone, password_hash, created_at, updated_at
+            )
+            SELECT id, teacher_id, email, phone, password_hash, created_at, updated_at FROM users;
+            DROP TABLE users;
+            ALTER TABLE users_email_optional RENAME TO users;
+          `);
+        })();
+      } finally {
+        if (foreignKeysEnabled) this.sqlite.pragma("foreign_keys = ON");
+      }
     }
   }
 
@@ -646,12 +674,13 @@ export class DatabaseStore {
   }
 
   private getUserByEmail(email: string): UserRow | null {
+    if (!email.trim()) return null;
     return (this.sqlite.prepare("SELECT * FROM users WHERE email = ? COLLATE NOCASE").get(normalizeEmail(email)) as UserRow | undefined) || null;
   }
 
-  createUser(teacherId: string, email: string, password: string, phone: string | null = null): string {
-    const normalized = normalizeEmail(email);
-    if (this.getUserByEmail(normalized)) throw new DuplicateAccountError("该邮箱已注册");
+  createUser(teacherId: string, email: string | null | undefined, password: string, phone: string | null = null): string {
+    const normalized = email?.trim() ? normalizeEmail(email) : null;
+    if (normalized && this.getUserByEmail(normalized)) throw new DuplicateAccountError("该邮箱已注册");
     if (phone && this.getUserByPhone(phone)) throw new DuplicateAccountError("该手机号已注册");
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -663,7 +692,8 @@ export class DatabaseStore {
     } catch (error) {
       if (error instanceof Error && error.message.includes("UNIQUE")) {
         if (phone && this.getUserByPhone(phone)) throw new DuplicateAccountError("该手机号已注册");
-        throw new DuplicateAccountError("该邮箱已注册");
+        if (normalized && this.getUserByEmail(normalized)) throw new DuplicateAccountError("该邮箱已注册");
+        throw new DuplicateAccountError("账号已存在");
       }
       throw error;
     }
@@ -772,6 +802,36 @@ export class DatabaseStore {
 
   getUserByPhone(phone: string): UserRow | null {
     return (this.sqlite.prepare("SELECT * FROM users WHERE phone = ?").get(phone) as UserRow | undefined) || null;
+  }
+
+  bindAccountEmail(userId: string, teacherId: string, email: string): TeacherRecord {
+    const normalized = normalizeEmail(email);
+    const existing = this.getUserByEmail(normalized);
+    if (existing && existing.id !== userId) throw new DuplicateAccountError("该邮箱已注册");
+
+    try {
+      return this.sqlite.transaction(() => {
+        const row = this.sqlite.prepare(
+          "SELECT data_json FROM app_records WHERE collection = 'teachers' AND id = ?",
+        ).get(teacherId) as { data_json: string } | undefined;
+        if (!row) throw new Error("教师不存在");
+        const teacher = JSON.parse(row.data_json) as TeacherRecord;
+        teacher.email = normalized;
+        const now = new Date().toISOString();
+        this.sqlite.prepare("UPDATE users SET email = ?, updated_at = ? WHERE id = ?")
+          .run(normalized, now, userId);
+        this.sqlite.prepare(`
+          UPDATE app_records SET data_json = ?, updated_at = ?
+          WHERE collection = 'teachers' AND id = ?
+        `).run(JSON.stringify(teacher), now, teacherId);
+        return publicTeacher(teacher);
+      })();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("UNIQUE")) {
+        throw new DuplicateAccountError("该邮箱已注册");
+      }
+      throw error;
+    }
   }
 
   createRegistrationAuthorization(input: Omit<RegistrationAuthorizationRecord, "createdByName" | "consumedByName">): RegistrationAuthorizationRecord {

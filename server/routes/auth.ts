@@ -42,6 +42,11 @@ const phoneSchema = z.string().transform(normalizePhone).refine(
   "请输入有效的中国大陆手机号",
 );
 
+const optionalEmailSchema = z.preprocess(
+  (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().trim().email().max(254).optional(),
+);
+
 const schoolDraftSchema = z.object({
   name: z.string().trim().min(2).max(100),
   code: z.string().trim().min(2).max(30).regex(/^[A-Za-z0-9_-]+$/),
@@ -57,7 +62,7 @@ const teachingFieldsSchema = z.object({
 });
 
 const registerSchema = z.object({
-  email: z.string().trim().email().max(254),
+  email: optionalEmailSchema,
   password: z.string().min(10).max(128),
   name: z.string().trim().min(2).max(50),
   phone: phoneSchema,
@@ -73,6 +78,10 @@ const registerSchema = z.object({
 const registrationAuthorizationSchema = z.object({
   phone: phoneSchema,
   kind: z.enum(["admin", "guarantee"]),
+});
+
+const emailBindingSchema = z.object({
+  email: z.string().trim().email().max(254),
 });
 
 const applicationSchema = z.object({
@@ -404,7 +413,7 @@ export async function registerAuthRoutes(
 
     const teacher: TeacherRecord = {
       id: teacherId,
-      email: input.email.toLowerCase(),
+      email: input.email?.toLowerCase() || "",
       name: input.name,
       nickname: "",
       avatar: input.name.charAt(0),
@@ -455,7 +464,7 @@ export async function registerAuthRoutes(
       createdAt: now,
     };
     store.createAuthorizedAccount(teacher, input.password, input.phone, { newSchool });
-    const user = store.authenticate(input.email, input.password);
+    const user = store.authenticate(input.phone, input.password);
     if (!user) throw new Error("账号创建失败");
     const { token, session } = store.createSession(user);
     setSessionCookie(reply, token, config);
@@ -549,6 +558,13 @@ export async function registerAuthRoutes(
     }).parse(request.body);
     store.changePassword(session.userId, input.currentPassword, input.newPassword);
     return { ok: true };
+  });
+
+  app.patch("/api/auth/email", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const input = emailBindingSchema.parse(request.body);
+    return store.bindAccountEmail(session.userId, session.teacherId, input.email);
   });
 
   app.patch("/api/auth/profile", async (request) => {
