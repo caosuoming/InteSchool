@@ -45,7 +45,7 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
-  it("extracts table cells without merging option boundaries", async () => {
+  it("preserves table rows and cells instead of flattening them", async () => {
     const data = await makeDocx(`
       <w:tbl>
         <w:tr>
@@ -55,7 +55,38 @@ describe("DOCX structure-aware text extraction", () => {
       </w:tbl>
     `);
 
-    await expect(extractDocxStructuredText(data)).resolves.toBe("A. 甲\tB. 乙");
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      '<table class="document-table"><tbody><tr><td>A. 甲</td><td>B. 乙</td></tr></tbody></table>',
+    );
+  });
+
+  it("preserves horizontal and vertical merged table cells", async () => {
+    const data = await makeDocx(`
+      <w:tbl>
+        <w:tr>
+          <w:tc>
+            <w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+            <w:p><w:r><w:t>题号</w:t></w:r></w:p>
+          </w:tc>
+          <w:tc>
+            <w:tcPr><w:gridSpan w:val="2"/></w:tcPr>
+            <w:p><w:r><w:t>1-2</w:t></w:r></w:p>
+          </w:tc>
+        </w:tr>
+        <w:tr>
+          <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc>
+          <w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+          <w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+        </w:tr>
+      </w:tbl>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      '<table class="document-table"><tbody>'
+        + '<tr><td rowspan="2">题号</td><td colspan="2">1-2</td></tr>'
+        + '<tr><td>A</td><td>B</td></tr>'
+        + '</tbody></table>',
+    );
   });
 
   it("normalizes decomposed not-equal signs before converting Word equations", async () => {

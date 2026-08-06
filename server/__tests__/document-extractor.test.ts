@@ -175,6 +175,27 @@ describe("document extractor", () => {
     expect(result.html).not.toContain("$\\frac{x}{2}=1$");
   });
 
+  it("renders preserved DOCX tables with formulas in their cells", async () => {
+    const filePath = join(workDir, "table.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({ value: "表格被压平", messages: [] });
+    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>表格被压平</p>", messages: [] });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      "18. 分布列如下：\n"
+        + '<table class="document-table"><tbody>'
+        + '<tr><td>X</td><td>0</td><td>1</td></tr>'
+        + '<tr><td>P</td><td>$k(1-\\alpha)^2$</td><td>$k\\alpha$</td></tr>'
+        + "</tbody></table>",
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.html).toContain('<table class="document-table">');
+    expect(result.html).toContain("<td>X</td>");
+    expect(result.html).toContain('class="katex"');
+    expect(result.html).not.toContain("表格被压平");
+  });
+
   it("extracts DOCX text without generating preview HTML", async () => {
     const filePath = join(workDir, "text-only.docx");
     await writeFile(filePath, "fake docx");

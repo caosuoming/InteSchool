@@ -13,6 +13,7 @@ const LATEX_STRUCTURE_PATTERN = /\\[A-Za-z]+|[_^{}=<>]/;
 
 const SAFE_RICH_TEXT_TAGS = sanitizeHtml.defaults.allowedTags.concat([
   "img",
+  "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col",
   "math", "semantics", "annotation",
   "mrow", "mi", "mo", "mn", "ms", "mtext", "mspace",
   "msup", "msub", "msubsup", "mfrac", "msqrt", "mroot",
@@ -27,6 +28,9 @@ function sanitizeRichText(content: string): string {
       "*": ["class", "title", "role", "aria-hidden", "data-latex"],
       a: ["href", "title", "target", "rel"],
       img: ["src", "alt", "title", "width", "height", "loading"],
+      th: ["colspan", "rowspan", "scope"],
+      td: ["colspan", "rowspan"],
+      col: ["span"],
       math: ["xmlns", "display"],
       annotation: ["encoding"],
     },

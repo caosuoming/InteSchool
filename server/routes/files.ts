@@ -151,20 +151,32 @@ export async function registerFileRoutes(
   const limitExtraction = createAsyncLimiter(config.documentExtractionConcurrency);
   const inFlightExtractions = new Map<string, ReturnType<typeof extractDocument>>();
   const extractedTextCache = new Map<string, Awaited<ReturnType<typeof extractDocument>>>();
+  const extractedPreviewCache = new Map<string, Awaited<ReturnType<typeof extractDocument>>>();
+  const setRecentExtraction = (
+    cache: Map<string, Awaited<ReturnType<typeof extractDocument>>>,
+    fileId: string,
+    extracted: Awaited<ReturnType<typeof extractDocument>>,
+  ) => {
+    cache.delete(fileId);
+    cache.set(fileId, extracted);
+    if (cache.size > 8) {
+      const oldestFileId = cache.keys().next().value;
+      if (oldestFileId) cache.delete(oldestFileId);
+    }
+  };
   const cacheExtractedText = (
     fileId: string,
     extracted: Awaited<ReturnType<typeof extractDocument>>,
   ) => {
     const textOnly = { ...extracted, html: "" };
-    extractedTextCache.delete(fileId);
-    extractedTextCache.set(fileId, textOnly);
-    if (extractedTextCache.size > 8) {
-      const oldestFileId = extractedTextCache.keys().next().value;
-      if (oldestFileId) extractedTextCache.delete(oldestFileId);
-    }
+    setRecentExtraction(extractedTextCache, fileId, textOnly);
     return textOnly;
   };
   const extractStoredDocument = (file: StoredFile, includeHtml: boolean) => {
+    if (includeHtml) {
+      const cached = extractedPreviewCache.get(file.id);
+      if (cached) return Promise.resolve(cached);
+    }
     if (!includeHtml) {
       const cached = extractedTextCache.get(file.id);
       if (cached) return Promise.resolve(cached);
@@ -186,6 +198,7 @@ export async function registerFileRoutes(
       },
     )).then((extracted) => {
       cacheExtractedText(file.id, extracted);
+      if (includeHtml) setRecentExtraction(extractedPreviewCache, file.id, extracted);
       return extracted;
     }).finally(() => {
       inFlightExtractions.delete(key);

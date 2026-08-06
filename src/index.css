@@ -111,6 +111,28 @@
     vertical-align: middle;
   }
 
+  .document-table {
+    width: 100%;
+    margin: 0.75rem 0;
+    border-collapse: collapse;
+    table-layout: auto;
+    font-size: 0.95em;
+  }
+
+  .document-table th,
+  .document-table td {
+    min-width: 4rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgb(203 213 225);
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .document-table th {
+    font-weight: 600;
+    background: rgb(248 250 252);
+  }
+
   .document-preview-content img {
     display: inline-block;
     width: auto;

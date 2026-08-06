@@ -1,4 +1,8 @@
 import type { Material, Question, QuestionType } from "@/types";
+import {
+  isDocumentTableFragment,
+  parseDocumentTable,
+} from "@/lib/document-table";
 
 export type DocumentBlockType =
   | "documentTitle"
@@ -408,6 +412,95 @@ function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
   }));
 }
 
+function normalizeTableHeader(value: string): string {
+  return value.replace(/[\s\u00a0:：、.．()（）【】\x5b\x5d]+/g, "").toLowerCase();
+}
+
+function isQuestionNumberHeader(value: string): boolean {
+  return /^(?:题号|题目|序号|编号|question|no)$/.test(normalizeTableHeader(value));
+}
+
+function isAnswerHeader(value: string): boolean {
+  return /^(?:参考)?答案$|^answer$/.test(normalizeTableHeader(value));
+}
+
+function tableQuestionNumber(value: string): string | null {
+  const normalized = normalizeQuestionNumber(value).replace(/[\s\u00a0]/g, "");
+  const match = /^(?:第)?(\d{1,4})(?:题)?[、.．:：)）]?$/.exec(normalized);
+  return match?.[1] || null;
+}
+
+function tableAnswer(value: string): string {
+  return value
+    .replace(/^\s*(?:参考)?答案\s*[:：]?\s*/i, "")
+    .trim();
+}
+
+function expandedTableRows(fragment: string): string[][] {
+  return parseDocumentTable(fragment).map((row) => row.flatMap((cell) => (
+    Array.from({ length: cell.colSpan || 1 }, () => cell.content.trim())
+  )));
+}
+
+function trailingSolutionsFromTable(
+  fragment: string,
+  startOrder: number,
+): TrailingSolution[] {
+  if (!isDocumentTableFragment(fragment)) return [];
+  const rows = expandedTableRows(fragment).filter((row) => row.some(Boolean));
+  const entries = new Map<string, string>();
+  const add = (numberValue: string, answerValue: string) => {
+    const number = tableQuestionNumber(numberValue);
+    const answer = tableAnswer(answerValue);
+    if (number && answer && !entries.has(number)) entries.set(number, answer);
+  };
+
+  for (let rowIndex = 0; rowIndex + 1 < rows.length; rowIndex += 1) {
+    const questionRow = rows[rowIndex];
+    const answerRow = rows[rowIndex + 1];
+    const labelled = isQuestionNumberHeader(questionRow[0] || "")
+      && isAnswerHeader(answerRow[0] || "");
+    const offset = labelled ? 1 : 0;
+    const numbers = questionRow.slice(offset).map(tableQuestionNumber);
+    const answers = answerRow.slice(offset).map(tableAnswer);
+    const usable = numbers.filter(Boolean).length;
+    if ((labelled && usable > 0) || (!labelled && usable >= 2 && answers.length >= usable)) {
+      numbers.forEach((number, index) => {
+        if (number) add(number, answers[index] || "");
+      });
+      rowIndex += 1;
+    }
+  }
+
+  for (let headerIndex = 0; headerIndex < rows.length; headerIndex += 1) {
+    const header = rows[headerIndex];
+    const questionColumn = header.findIndex(isQuestionNumberHeader);
+    const answerColumn = header.findIndex(isAnswerHeader);
+    if (questionColumn < 0 || answerColumn < 0 || questionColumn === answerColumn) continue;
+    for (const row of rows.slice(headerIndex + 1)) {
+      add(row[questionColumn] || "", row[answerColumn] || "");
+    }
+  }
+
+  if (entries.size === 0) {
+    const vertical = rows
+      .map((row) => ({
+        number: tableQuestionNumber(row[0] || ""),
+        answer: tableAnswer(row[1] || ""),
+      }))
+      .filter((entry) => entry.number && entry.answer);
+    if (vertical.length >= 2) {
+      vertical.forEach((entry) => add(entry.number!, entry.answer));
+    }
+  }
+
+  return [...entries].map(([number, answer], index) => ({
+    number,
+    answer,
+    order: startOrder + index,
+  }));
+}
+
 function fieldSearchPattern(
   keywords: string[],
   rawAlternatives: string[] = [],
@@ -512,6 +605,13 @@ function parseTrailingSolutions(
   for (const originalLine of lines) {
     const line = originalLine.trim();
     if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
+
+    const tableSolutions = trailingSolutionsFromTable(line, solutions.length);
+    if (tableSolutions.length > 0) {
+      submitCurrent();
+      solutions.push(...tableSolutions);
+      continue;
+    }
 
     const numberedEntries = splitNumberedTrailingEntries(line);
     if (numberedEntries.length > 0) {
@@ -771,6 +871,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
 
     if (currentBlock.type === "question") {
       if (isImageLine(line)) {
+        appendQuestionField(currentBlock, currentQuestionField, line);
+        continue;
+      }
+      if (isDocumentTableFragment(line)) {
         appendQuestionField(currentBlock, currentQuestionField, line);
         continue;
       }

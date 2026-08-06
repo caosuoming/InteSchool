@@ -14,6 +14,11 @@ import {
   parseOfficeMetafileLayout,
   type OfficeMetafileLayout,
 } from "../../src/lib/office-metafile.js";
+import {
+  parseDocumentTable,
+  serializeDocumentTable,
+  splitDocumentTableSegments,
+} from "../../src/lib/document-table.js";
 
 export interface ExtractedDocument {
   text: string;
@@ -146,9 +151,19 @@ function renderMathAwareHtml(text: string): string {
     return parts.join("");
   };
 
-  return text
-    .split("\n")
-    .map((line) => `<p>${line ? renderLine(line) : "<br>"}</p>`)
+  return splitDocumentTableSegments(text)
+    .map((segment) => {
+      if (segment.type === "table") {
+        return serializeDocumentTable(
+          parseDocumentTable(segment.value),
+          (content) => renderLine(content).replace(/\n/g, "<br>"),
+        );
+      }
+      return segment.value
+        .split("\n")
+        .map((line) => `<p>${line ? renderLine(line) : "<br>"}</p>`)
+        .join("");
+    })
     .join("");
 }
 
@@ -195,7 +210,7 @@ export async function extractDocument(
       extractDocxStructuredText(convertedData, options.docxImageUrl),
     ]);
     const text = (structuredText || raw.value.trim()).normalize("NFC");
-    const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)/.test(text);
+    const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)|<table\b[^>]*\bdocument-table\b/i.test(text);
     const mammothWarnings = documentPreviewWarnings(
       [...raw.messages, ...rendered.messages],
       hasRichContent,

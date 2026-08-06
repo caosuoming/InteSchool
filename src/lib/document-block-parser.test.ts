@@ -368,6 +368,67 @@ describe("document block parser", () => {
     expect(blocks.map((block) => block.answer)).toEqual(["A", "C", "D"]);
   });
 
+  it("maps a horizontal table answer key back to numbered questions", () => {
+    const answerTable = '<table class="document-table"><tbody>'
+      + '<tr><td>题号</td><td>1</td><td>2</td><td>3</td></tr>'
+      + '<tr><td>答案</td><td>A</td><td>BC</td><td>D</td></tr>'
+      + '</tbody></table>';
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "3. 第三题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "参考答案",
+        answerTable,
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.answer)).toEqual(["A", "BC", "D"]);
+    expect(blocks.map((block) => block.questionType)).toEqual(["single", "multiple", "single"]);
+  });
+
+  it("maps a vertical table answer key back to numbered questions", () => {
+    const answerTable = '<table class="document-table"><tbody>'
+      + '<tr><th>题号</th><th>答案</th></tr>'
+      + '<tr><td>1</td><td>B</td></tr>'
+      + '<tr><td>2</td><td>A、D</td></tr>'
+      + '</tbody></table>';
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案",
+        answerTable,
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.answer)).toEqual(["B", "A、D"]);
+  });
+
+  it("keeps a data table inside the question stem", () => {
+    const dataTable = '<table class="document-table"><tbody>'
+      + '<tr><td>X</td><td>0</td><td>1</td><td>2</td></tr>'
+      + '<tr><td>P</td><td>$k(1-\\alpha)^2$</td><td>$k\\alpha$</td><td>$k$</td></tr>'
+      + '</tbody></table>';
+    const blocks = parseDocumentBlocks(
+      [
+        "18. 某商品购买数量 X 的分布列如下：",
+        dataTable,
+        "求 X 的数学期望。",
+        "答案：略",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: `18. 某商品购买数量 X 的分布列如下：\n${dataTable}\n求 X 的数学期望。`,
+      answer: "略",
+    });
+  });
+
   it("keeps numbered sub-question answers together before trailing analysis", () => {
     const blocks = parseDocumentBlocks(
       [
