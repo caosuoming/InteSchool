@@ -159,10 +159,13 @@ describe("PresentationMode", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(firstBoard.querySelector('[data-board-divider="center"]')).toHaveClass("left-1/2");
     expect(screen.getByRole("button", { name: "移动板书 1" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "调整板书 1的大小" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /调整板书 1大小/ })).toHaveLength(8);
     expect(screen.getByRole("button", { name: "清空当前板书" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "在板书 1后新增一页" }));
-    expect(screen.getByRole("region", { name: "板书 2" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "切换到板书 1书写区 1" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("button", { name: "在板书 1中新增书写区" }));
+    expect(screen.getAllByRole("region", { name: /板书/ })).toHaveLength(1);
+    expect(screen.getByRole("tab", { name: "切换到板书 1书写区 2" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("region", { name: "板书 2" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "收起板书" }));
     expect(firstBoard).toHaveClass("invisible");
 
@@ -176,7 +179,7 @@ describe("PresentationMode", () => {
     expect(onExit).toHaveBeenCalledOnce();
   });
 
-  it("keeps the slide writable while board pages move as cards with draggable screen-sized frames", async () => {
+  it("keeps the slide writable while a board moves and switches independent writing areas", async () => {
     const user = userEvent.setup();
     render(
       <PresentationMode
@@ -212,8 +215,8 @@ describe("PresentationMode", () => {
     expect(writingFrame).toHaveAttribute("data-draggable", "false");
 
     expect(screen.getByLabelText("课件批注画布")).toHaveClass("pointer-events-auto");
-    expect(screen.getByLabelText("板书 1书写区域")).toHaveClass("pointer-events-auto");
-    expect(screen.getByRole("button", { name: "在板书 1后新增一页" })).toBeInTheDocument();
+    expect(screen.getByLabelText("板书 1书写区 1")).toHaveClass("pointer-events-auto");
+    expect(screen.getByRole("button", { name: "在板书 1中新增书写区" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "选择工具" }));
     expect(writingFrame).toHaveAttribute("data-draggable", "true");
@@ -232,11 +235,77 @@ describe("PresentationMode", () => {
     fireEvent.pointerUp(writingFrame!, { pointerId: 2, clientX: 350, clientY: 240 });
     expect(writingFrame?.style.left).not.toBe(frameLeftBefore);
 
-    await user.click(screen.getByRole("button", { name: "在板书 1后新增一页" }));
-    const secondBoard = screen.getByRole("region", { name: "板书 2" });
-    expect(secondBoard).toHaveAttribute("data-active", "true");
-    fireEvent.pointerDown(firstBoard);
-    expect(firstBoard).toHaveAttribute("data-active", "true");
+    await user.click(screen.getByRole("button", { name: "在板书 1中新增书写区" }));
+    const writingFrames = firstBoard.querySelectorAll<HTMLElement>("[data-board-writing-frame]");
+    expect(writingFrames).toHaveLength(2);
+    expect(writingFrames[0]).toHaveAttribute("data-active", "false");
+    expect(writingFrames[1]).toHaveAttribute("data-active", "true");
+    await user.click(screen.getByRole("button", { name: "红色画笔" }));
+    expect(screen.getByLabelText("板书 1书写区 1")).toHaveClass("pointer-events-none");
+    expect(screen.getByLabelText("板书 1书写区 2")).toHaveClass("pointer-events-auto");
+
+    await user.click(screen.getByRole("tab", { name: "切换到板书 1书写区 1" }));
+    expect(writingFrames[0]).toHaveAttribute("data-active", "true");
+    expect(writingFrames[1]).toHaveAttribute("data-active", "false");
+    expect(screen.getByLabelText("板书 1书写区 1")).toHaveClass("pointer-events-auto");
+    expect(screen.getByLabelText("板书 1书写区 2")).toHaveClass("pointer-events-none");
+    expect(screen.getAllByRole("region", { name: /板书/ })).toHaveLength(1);
+  });
+
+  it("keeps classroom controls above boards and resizes from every edge and corner", async () => {
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={slides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "打开板书" }));
+    const surface = screen.getByTestId("presentation-surface");
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({}),
+    });
+
+    const board = screen.getByRole("region", { name: "板书 1" });
+    expect(board).toHaveStyle({ zIndex: "60" });
+    expect(screen.getByLabelText("书写工具")).toHaveClass("z-[90]");
+    expect(screen.getByLabelText("左侧翻页控制")).toHaveClass("z-[90]");
+    expect(screen.getByRole("button", { name: "左侧显示内容" }).parentElement?.parentElement).toHaveClass("z-[90]");
+
+    const resizeHandles = board.querySelectorAll<HTMLElement>("[data-board-resize-handle]");
+    expect(Array.from(resizeHandles).map((handle) => handle.dataset.boardResizeHandle)).toEqual([
+      "n", "ne", "e", "se", "s", "sw", "w", "nw",
+    ]);
+
+    const westHandle = screen.getByRole("button", { name: "从左边调整板书 1大小" });
+    fireEvent.pointerDown(westHandle, { pointerId: 3, clientX: 160, clientY: 300 });
+    fireEvent.pointerMove(westHandle, { pointerId: 3, clientX: 60, clientY: 300 });
+    fireEvent.pointerUp(westHandle, { pointerId: 3, clientX: 60, clientY: 300 });
+    expect(board).toHaveStyle({ left: "6%", width: "78%" });
+
+    const northHandle = screen.getByRole("button", { name: "从上边调整板书 1大小" });
+    fireEvent.pointerDown(northHandle, { pointerId: 4, clientX: 400, clientY: 80 });
+    fireEvent.pointerMove(northHandle, { pointerId: 4, clientX: 400, clientY: 0 });
+    fireEvent.pointerUp(northHandle, { pointerId: 4, clientX: 400, clientY: 0 });
+    expect(board).toHaveStyle({ top: "0%", height: "72%" });
+
+    const southEastHandle = screen.getByRole("button", { name: "从右下角调整板书 1大小" });
+    fireEvent.pointerDown(southEastHandle, { pointerId: 5, clientX: 840, clientY: 576 });
+    fireEvent.pointerMove(southEastHandle, { pointerId: 5, clientX: 940, clientY: 656 });
+    fireEvent.pointerUp(southEastHandle, { pointerId: 5, clientX: 940, clientY: 656 });
+    expect(board).toHaveStyle({ width: "88%", height: "82%" });
   });
 
   it("turns legacy knowledge content into a selectable object without showing its title", async () => {
