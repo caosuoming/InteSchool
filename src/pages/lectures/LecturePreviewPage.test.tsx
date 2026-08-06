@@ -160,7 +160,7 @@ describe("LecturePreviewPage", () => {
     vi.mocked(questionService.getQuestion).mockResolvedValue(question);
   });
 
-  it("renders the simplified preview with a centered document title and formulas", async () => {
+  it("renders a synchronized two-column preview with question metadata", async () => {
     const { container } = renderPage();
 
     expect(await screen.findByText("预览：函数专题讲义_2026（拆解版）")).toBeInTheDocument();
@@ -174,11 +174,19 @@ describe("LecturePreviewPage", () => {
     expect(screen.getByLabelText("纸张大小")).toHaveValue("A4");
 
     const paper = screen.getByTestId("lecture-paper");
+    expect(paper).toHaveClass("lecture-preview-grid");
     expect(within(paper).queryByText("函数专题讲义_2026（拆解版）")).not.toBeInTheDocument();
     const documentTitle = within(paper).getByText("函数专题讲义");
     expect(documentTitle.closest(".text-center")).not.toBeNull();
     expect(within(paper).queryByText("单调性")).not.toBeInTheDocument();
     expect(within(paper).getByText(/在给定区间内判断函数的增减/)).toBeInTheDocument();
+    expect(screen.getByTestId("lecture-preview-details")).toHaveTextContent("题目属性");
+    const questionDetails = screen.getByTestId("lecture-question-details-1");
+    expect(questionDetails).toHaveTextContent("第 1 题");
+    expect(questionDetails).toHaveTextContent("单选");
+    expect(questionDetails).toHaveTextContent("较易");
+    expect(questionDetails).toHaveTextContent("使用次数3 次");
+    expect(questionDetails.parentElement).toHaveClass("lecture-preview-right");
 
     await waitFor(() => {
       expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4);
@@ -190,8 +198,9 @@ describe("LecturePreviewPage", () => {
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
 
     const questionStem = await screen.findByRole("button", { name: /显示答案与解析/ });
-    expect(screen.queryByText("较易")).not.toBeInTheDocument();
-    expect(screen.queryByText("单选")).not.toBeInTheDocument();
+    const questionDetails = screen.getByTestId("lecture-question-details-1");
+    expect(questionDetails).toHaveTextContent("较易");
+    expect(questionDetails).toHaveTextContent("单选");
     expect(screen.queryByText("展开答案与解析")).not.toBeInTheDocument();
     expect(screen.queryByText("答案：")).not.toBeInTheDocument();
 

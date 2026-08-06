@@ -199,6 +199,52 @@
   padding: 0.75rem 0 0.75rem 1.25rem;
 }
 
+/* 讲义预览：题面与题目属性共享网格行，保持纵向对齐并共同滚动。 */
+.lecture-preview-grid {
+  --lecture-paper-width: 210mm;
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--lecture-paper-width) minmax(17rem, 1fr);
+  align-items: stretch;
+  min-width: calc(var(--lecture-paper-width) + 17rem);
+  min-height: 297mm;
+  margin: 0 auto;
+  background: linear-gradient(
+    to right,
+    #fff 0,
+    #fff var(--lecture-paper-width),
+    transparent var(--lecture-paper-width)
+  );
+}
+.lecture-preview-grid.lecture-preview-8k {
+  --lecture-paper-width: 260mm;
+  min-height: 370mm;
+}
+.lecture-preview-grid::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--lecture-paper-width);
+  content: "";
+  pointer-events: none;
+  box-shadow: 0 4px 24px rgba(16, 42, 67, 0.08);
+}
+.lecture-preview-left {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: 0.5rem 2.5rem;
+  background: #fff;
+}
+.lecture-preview-title {
+  padding-top: 2.5rem;
+  padding-bottom: 1.5rem;
+}
+.lecture-preview-right {
+  min-width: 0;
+  border-left: 1px solid rgba(16, 42, 67, 0.2);
+  padding: 0.5rem 0 0.5rem 1.25rem;
+}
+
 /* ===== 打印样式 ===== */
 @media print {
   .no-print { display: none !important; }
@@ -225,12 +271,21 @@
     background: #fff;
   }
   .exam-paper-preview-grid::before,
-  .exam-paper-preview-right {
+  .exam-paper-preview-right,
+  .lecture-preview-grid::before,
+  .lecture-preview-right {
     display: none !important;
   }
-  .exam-paper-preview-left {
+  .exam-paper-preview-left,
+  .lecture-preview-left {
     padding-right: 0;
     padding-left: 0;
+  }
+  .lecture-preview-grid {
+    display: block;
+    min-width: 0;
+    min-height: auto;
+    background: #fff;
   }
   body { background: white !important; }
   @page { margin: 12mm; }
