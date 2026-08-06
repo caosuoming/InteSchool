@@ -366,6 +366,20 @@ export const serviceParameters = {
       "schoolId",
       "teacherId"
     ],
+    "listMyStudentArchives": [
+      "schoolId",
+      "teacherId"
+    ],
+    "updateStudentContacts": [
+      "studentId",
+      "input",
+      "teacher"
+    ],
+    "updateStudentArchiveStatus": [
+      "studentId",
+      "input",
+      "teacher"
+    ],
     "listMyClassIds": [
       "schoolId",
       "teacherId"

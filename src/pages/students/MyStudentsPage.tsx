@@ -4,18 +4,24 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { StudentInteractionPage } from "./StudentInteractionPage";
 import StudentLearningPage from "@/pages/analytics/StudentLearningPage";
 import { StudentSectionTabs } from "./StudentSectionTabs";
+import { StudentArchivePage } from "./StudentArchivePage";
 
-type StudentTab = "interaction" | "learning";
+type StudentTab = "interaction" | "learning" | "archive";
 
 export default function MyStudentsPage() {
   const [searchParams] = useSearchParams();
-  const activeTab: StudentTab = searchParams.get("tab") === "learning" ? "learning" : "interaction";
+  const tab = searchParams.get("tab");
+  const activeTab: StudentTab = tab === "archive"
+    ? "archive"
+    : tab === "learning"
+      ? "learning"
+      : "interaction";
 
   return (
     <div>
       <PageHeader
         title="我的学生"
-        description="管理学生互动记录与学习情况"
+        description="管理学生互动、学习情况与档案状态"
         icon={<Users className="w-5 h-5" />}
       />
 
@@ -23,8 +29,10 @@ export default function MyStudentsPage() {
 
       {activeTab === "interaction" ? (
         <StudentInteractionPage embedded />
-      ) : (
+      ) : activeTab === "learning" ? (
         <StudentLearningPage embedded />
+      ) : (
+        <StudentArchivePage />
       )}
     </div>
   );

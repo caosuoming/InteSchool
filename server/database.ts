@@ -26,7 +26,7 @@ export const COLLECTIONS = [
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
   "shareRecords", "examPublications", "lessonCoursewares", "reflections",
   "classroomHomeworks", "classroomNotices",
-  "studentInteractions", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
+  "studentInteractions", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
   "gradeExams", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements",
 ] as const;

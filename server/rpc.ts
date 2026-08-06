@@ -4,6 +4,11 @@ import { serviceRegistry, type ServiceName } from "./service-registry.js";
 import { serviceParameters } from "./service-metadata.js";
 import type { DatabaseStore } from "./database.js";
 import { EXAM_MANAGER_ROLES } from "../src/lib/exam-permissions.js";
+import {
+  canHomeroomUpdateStudentStatus,
+  canManageStudentArchive,
+  isHomeroomStudent,
+} from "./student-archive-permissions.js";
 
 const PUBLIC_CALLS = new Set([
   "school.listSchools",
@@ -351,6 +356,19 @@ function authorize(
   }
   if (service === "class" && method === "listSchoolRosterRecycleBin" && !canManageSchoolRoster(teacher)) {
     throw new Error("该操作需要年级组长、副校长、校长或学校管理员权限");
+  }
+  if (service === "class" && method === "updateStudentContacts") {
+    if (!canManageStudentArchive(teacher) && !isHomeroomStudent(state, teacher, normalizedArgs[0])) {
+      throw new Error("仅班主任、年级组长及以上权限可补充学生联系方式");
+    }
+  }
+  if (service === "class" && method === "updateStudentArchiveStatus") {
+    if (
+      !canManageStudentArchive(teacher)
+      && !canHomeroomUpdateStudentStatus(state, teacher, normalizedArgs[0], normalizedArgs[1])
+    ) {
+      throw new Error("班主任仅可登记本班请假，借读、休学和转学需年级组长及以上权限");
+    }
   }
   if (service === "ai" && typeof normalizedArgs[0] === "string") {
     const firstId = normalizedArgs[0];

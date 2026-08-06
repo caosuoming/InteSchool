@@ -10,6 +10,9 @@ import type {
   StudentRosterImportRow,
   StudentRosterImportResult,
   SchoolRosterRecycleBin,
+  StudentArchiveOverview,
+  StudentArchiveStatusInput,
+  StudentContactInfo,
 } from "@/types";
 
 export interface StudentInput {
@@ -112,6 +115,24 @@ export const classService = {
 
   async listMyStudents(schoolId: string | null, teacherId: string): Promise<Student[]> {
     return rpcCall("class", "listMyStudents", [schoolId, teacherId]) as any;
+  },
+
+  async listMyStudentArchives(schoolId: string | null, teacherId: string): Promise<StudentArchiveOverview> {
+    return rpcCall("class", "listMyStudentArchives", [schoolId, teacherId]) as any;
+  },
+
+  async updateStudentContacts(
+    studentId: string,
+    input: StudentContactInfo & { note?: string },
+  ): Promise<Student> {
+    return rpcCall("class", "updateStudentContacts", [studentId, input, undefined]) as any;
+  },
+
+  async updateStudentArchiveStatus(
+    studentId: string,
+    input: StudentArchiveStatusInput,
+  ): Promise<Student> {
+    return rpcCall("class", "updateStudentArchiveStatus", [studentId, input, undefined]) as any;
   },
 
   async listMyClassIds(schoolId: string | null, teacherId: string): Promise<Set<string>> {
