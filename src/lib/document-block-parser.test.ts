@@ -55,6 +55,34 @@ describe("document block parser", () => {
   });
 
   it.each([
+    [
+      "一、选择题（本题共8小题，每小题5分，共40分，在每小题给出的四个选项中，只有一项是符合题目要求的。）",
+      "single",
+    ],
+    [
+      "二、多选题（本大题共3小题，每小题6分，共18分，在每小题给出的选项中，部分选对得部分分。）",
+      "multiple",
+    ],
+    [
+      "一 \u200B、 选 择 题 （本题共8小题，每小题5分，共40分）",
+      "single",
+    ],
+    [
+      "二\u2060、 多 项 选 择 题：本大题共3小题，每小题6分",
+      "multiple",
+    ],
+  ] as const)("recognizes noisy extracted section heading %s", (heading, questionType) => {
+    const blocks = parseDocumentBlocks(
+      [heading, "1. 示例题目 A. 甲 B. 乙 C. 丙 D. 丁"].join("\n"),
+      { ...config, headingKeywords: [] },
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: "groupTitle", content: heading });
+    expect(blocks[1]).toMatchObject({ type: "question", questionType });
+  });
+
+  it.each([
     "分析：注意题目中的隐含条件。",
     "【分析】注意题目中的隐含条件。",
     "分析 注意题目中的隐含条件。",

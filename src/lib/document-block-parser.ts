@@ -69,6 +69,40 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const STRUCTURAL_FORMAT_CHARACTERS = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff]/g;
+
+function normalizeStructuralText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(STRUCTURAL_FORMAT_CHARACTERS, "");
+}
+
+function flexibleLiteralSource(value: string): string {
+  return Array.from(normalizeStructuralText(value).replace(/\s+/g, ""))
+    .map(escapeRegex)
+    .join("\\s*");
+}
+
+const questionSectionLabels = [
+  "不定项选择题",
+  "单项选择题",
+  "多项选择题",
+  "选择题",
+  "单选题",
+  "多选题",
+  "判断题",
+  "填空题",
+  "解答题",
+  "计算题",
+  "证明题",
+];
+
+const builtInQuestionSectionPattern = new RegExp(
+  `^(?:[一二三四五六七八九十百]{1,3}|[0-9]{1,3})\\s*[、.,:)]\\s*(?:${questionSectionLabels
+    .map(flexibleLiteralSource)
+    .join("|")})(?:\\s|[(:]|$)`,
+);
+
 function keywordPattern(
   keywords: string[],
   rawAlternatives: string[] = [],
@@ -83,12 +117,13 @@ function keywordPattern(
 }
 
 function detectSectionQuestionType(text: string): QuestionType | undefined {
-  if (/多项选择|多选|多个正确|不止一个|至少(?:有|选)/.test(text)) return "multiple";
-  if (/单项选择|单选/.test(text)) return "single";
-  if (/判断题|判断正误/.test(text)) return "judge";
-  if (/填空题|填空/.test(text)) return "short";
-  if (/解答题|计算题|证明题|论述题/.test(text)) return "essay";
-  if (/选择题/.test(text)) return "single";
+  const normalized = normalizeStructuralText(text).replace(/\s+/g, "");
+  if (/不定项选择|多项选择|多选|多个正确|不止一个|至少(?:有|选)/.test(normalized)) return "multiple";
+  if (/单项选择|单选/.test(normalized)) return "single";
+  if (/判断题|判断正误/.test(normalized)) return "judge";
+  if (/填空题|填空/.test(normalized)) return "short";
+  if (/解答题|计算题|证明题|论述题/.test(normalized)) return "essay";
+  if (/选择题/.test(normalized)) return "single";
   return undefined;
 }
 
@@ -199,18 +234,18 @@ function inferQuestionType(
 }
 
 function isHeading(text: string, config: DocumentParseConfig): boolean {
-  const builtInQuestionSectionPattern = /^(?:[一二三四五六七八九十百]{1,3})\s*[、.．:：)）]\s*(?:单项选择题|多项选择题|选择题|单选题|多选题|判断题|填空题|解答题|计算题|证明题)(?:\s|[（(:：]|$)/;
+  const normalized = normalizeStructuralText(text);
   const configured = [...new Set(config.headingKeywords.map((keyword) => keyword.trim()).filter(Boolean))]
     .sort((left, right) => right.length - left.length)
-    .map(escapeRegex);
+    .map(flexibleLiteralSource);
   const configuredPattern = configured.length
-    ? new RegExp(`^(?:${configured.join("|")})[、.．)）]\\s*`)
+    ? new RegExp(`^(?:${configured.join("|")})\\s*[、.,)]\\s*`)
     : null;
   return Boolean(
-    builtInQuestionSectionPattern.test(text)
-    || configuredPattern?.test(text)
-    || /^第[一二三四五六七八九十百\d]+[章节部分单元]\s*/.test(text)
-    || /^#{1,6}\s+/.test(text),
+    builtInQuestionSectionPattern.test(normalized)
+    || configuredPattern?.test(normalized)
+    || /^第\s*[一二三四五六七八九十百0-9]+\s*[章节部分单元]\s*/.test(normalized)
+    || /^#{1,6}\s+/.test(normalized),
   );
 }
 
