@@ -52,6 +52,7 @@ export function summarizeExamGroups(
   const separateSubjects = new Set(uniqueStrings(
     input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
   ).filter((subject) => subjects.includes(subject)));
+  const combinedSubjects = subjects.filter((subject) => !separateSubjects.has(subject));
   const selections = new Map((input.studentSubjects || []).map((item) => [item.studentId, item]));
   const groups = new Map<string, ExamGroupSummary>();
 
@@ -77,8 +78,9 @@ export function summarizeExamGroups(
     const selection = selections.get(student.id);
     if (selection?.absent) continue;
     const selected = subjects.filter((subject) => (selection?.subjects || subjects).includes(subject));
-    const combined = selected.filter((subject) => !separateSubjects.has(subject));
-    addGroup(student, "combined", combined);
+    if (combinedSubjects.some((subject) => selected.includes(subject))) {
+      addGroup(student, "combined", combinedSubjects);
+    }
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
       addGroup(student, `subject:${subject}`, [subject]);
     }
@@ -236,6 +238,7 @@ function buildTasks(
   const separateSubjects = new Set(uniqueStrings(
     input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
   ).filter((subject) => subjects.includes(subject)));
+  const combinedSubjects = subjects.filter((subject) => !separateSubjects.has(subject));
   const tasks: SeatTask[] = [];
 
   for (const student of context.students) {
@@ -246,9 +249,8 @@ function buildTasks(
     const classItem = classMap.get(student.classId);
     if (!classItem) continue;
 
-    const combined = selected.filter((subject) => !separateSubjects.has(subject));
-    if (combined.length > 0) {
-      tasks.push(createTask(student, classItem.name, "combined", combined, rules, allRoomIds, groupRoomIds));
+    if (combinedSubjects.some((subject) => selected.includes(subject))) {
+      tasks.push(createTask(student, classItem.name, "combined", combinedSubjects, rules, allRoomIds, groupRoomIds));
     }
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
       tasks.push(createTask(student, classItem.name, `subject:${subject}`, [subject], rules, allRoomIds, groupRoomIds));
