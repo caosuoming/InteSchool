@@ -20,6 +20,7 @@ import { knowledgeService } from "@/services/knowledge";
 import { analyticsService, type DateRange } from "@/services/analytics";
 import { settingsService } from "@/services/settings";
 import { prepService } from "@/services/prep";
+import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -203,6 +204,7 @@ export default function ExamPaperEditorPage() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [sendingToLessons, setSendingToLessons] = useState(false);
   const [prepTask, setPrepTask] = useState<PrepTask | null>(null);
   const [prepComments, setPrepComments] = useState<PrepResourceComment[]>([]);
   const [prepPassword, setPrepPassword] = useState(() =>
@@ -985,22 +987,42 @@ export default function ExamPaperEditorPage() {
     closeAddQuestion();
   };
 
+  const buildPaperPatch = useCallback((): Partial<ExamPaper> => ({
+    title,
+    description,
+    grade,
+    schoolYear,
+    semester,
+    duration,
+    totalScore,
+    questions: paperQuestions,
+    studentIds: selectedStudentIds,
+    typeId: typeId || undefined,
+    ...(isStructureLocked ? {} : { contentBlocks, layoutMode }),
+  }), [
+    contentBlocks,
+    description,
+    duration,
+    grade,
+    isStructureLocked,
+    layoutMode,
+    paperQuestions,
+    schoolYear,
+    selectedStudentIds,
+    semester,
+    title,
+    totalScore,
+    typeId,
+  ]);
+
   // 保存
   const handleSave = async () => {
     if (!paper || !title.trim()) { toast.error("请填写文档名"); return; }
     setSaving(true);
     try {
-      const patch = {
-        title, description, grade, schoolYear, semester, duration,
-        totalScore: totalScore,
-        questions: paperQuestions,
-        studentIds: selectedStudentIds,
-        typeId: typeId || undefined,
-        ...(isStructureLocked ? {} : { contentBlocks, layoutMode }),
-      };
       const updated = prepTaskId
-        ? await prepService.updateLinkedResource(prepTaskId, patch, prepPassword || undefined) as ExamPaper
-        : await examPaperService.updatePaper(paper.id, patch);
+        ? await prepService.updateLinkedResource(prepTaskId, buildPaperPatch(), prepPassword || undefined) as ExamPaper
+        : await examPaperService.updatePaper(paper.id, buildPaperPatch());
       setPaper(updated);
       toast.success("试卷已保存");
     } catch (e: any) {
@@ -1095,6 +1117,28 @@ export default function ExamPaperEditorPage() {
       toast.error("下载失败", error instanceof Error ? error.message : "无法生成试卷文档");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleSendToMyLessons = async () => {
+    if (!paper || !teacher || prepTaskId) return;
+    setSendingToLessons(true);
+    try {
+      if (navigationDraft?.paperId === paper.id) {
+        const updated = await examPaperService.updatePaper(paper.id, buildPaperPatch());
+        setPaper(updated);
+      }
+      const courseware = await lessonCoursewareService.createFromExamPaper(
+        teacher.id,
+        schoolId,
+        paper.id,
+      );
+      toast.success("已发送到我的上课", "正在进入课件编辑...");
+      navigate(`/my-lessons/${courseware.id}/edit`);
+    } catch (error) {
+      toast.error("发送失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSendingToLessons(false);
     }
   };
 
@@ -1231,6 +1275,12 @@ export default function ExamPaperEditorPage() {
           icon={<FileSpreadsheet className="w-5 h-5" />}
           action={
             <div className="no-print flex items-center gap-2">
+              {!prepTaskId && paper?.teacherId === teacher?.id && (
+                <Button variant="outline" onClick={handleSendToMyLessons} loading={sendingToLessons}>
+                  <BookOpen className="w-4 h-4" />
+                  发送到我的上课
+                </Button>
+              )}
               {!prepTaskId && (
                 <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
                   <Layout className="w-4 h-4" />
@@ -1460,8 +1510,8 @@ export default function ExamPaperEditorPage() {
     <div>
       <PageHeader
         title={`编辑：${paper?.title || title}`}
-        description="换题、调整顺序、添加题目"
         icon={<FileSpreadsheet className="w-5 h-5" />}
+        className={prepTaskId ? undefined : "mb-3"}
         action={
           <div className="flex items-center gap-2">
             <Button
@@ -1471,24 +1521,6 @@ export default function ExamPaperEditorPage() {
               <ArrowLeft className="w-4 h-4" />
               返回
             </Button>
-            {!prepTaskId && paper?.teacherId === teacher?.id && (
-              <Button variant="outline" onClick={() => setPrepSetupOpen(true)}>
-                <Users className="w-4 h-4" />
-                添加到集体备课
-              </Button>
-            )}
-            {!prepTaskId && (
-              <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
-                <Layout className="w-4 h-4" />
-                制作答题卡
-              </Button>
-            )}
-            {!prepTaskId && (
-              <Button variant="outline" onClick={() => setPublishOpen(true)}>
-                <Send className="w-4 h-4" />
-                选择发布对象
-              </Button>
-            )}
             <Button
               variant="outline"
               onClick={() => navigateWithDraft(`/exam-papers/${id}/preview${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
@@ -1503,6 +1535,29 @@ export default function ExamPaperEditorPage() {
           </div>
         }
       />
+
+      {!prepTaskId && (
+        <div
+          role="toolbar"
+          aria-label="试卷辅助操作"
+          className="mb-6 flex flex-wrap items-center justify-end gap-2"
+        >
+          {paper?.teacherId === teacher?.id && (
+            <Button variant="outline" onClick={() => setPrepSetupOpen(true)}>
+              <Users className="w-4 h-4" />
+              添加到集体备课
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
+            <Layout className="w-4 h-4" />
+            制作答题卡
+          </Button>
+          <Button variant="outline" onClick={() => setPublishOpen(true)}>
+            <Send className="w-4 h-4" />
+            选择发布对象
+          </Button>
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* 顶部：试卷属性 */}
