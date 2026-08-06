@@ -9,6 +9,7 @@ import {
 const ESCAPED_DOLLAR = "\uE000INTESCHOOL_DOLLAR\uE001";
 const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea";
 const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
+const LATEX_STRUCTURE_PATTERN = /\\[A-Za-z]+|[_^{}=<>]/;
 
 const SAFE_RICH_TEXT_TAGS = sanitizeHtml.defaults.allowedTags.concat([
   "img",
@@ -248,15 +249,53 @@ function parseMathSegments(content: string): MathSegment[] {
   }
 
   if (lastIndex < protectedContent.length) {
-    segments.push({
-      type: "text",
-      value: restoreEscapedDollars(protectedContent.slice(lastIndex)),
-    });
+    appendTrailingSegments(segments, protectedContent.slice(lastIndex));
   }
 
   return segments.length > 0
     ? segments
     : [{ type: "text", value: restoreEscapedDollars(protectedContent) }];
+}
+
+function appendTrailingSegments(segments: MathSegment[], trailing: string): void {
+  const delimiterIndex = trailing.indexOf("$");
+  if (delimiterIndex < 0) {
+    segments.push({ type: "text", value: restoreEscapedDollars(trailing) });
+    return;
+  }
+
+  const isBlock = trailing.startsWith("$$", delimiterIndex);
+  const delimiterLength = isBlock ? 2 : 1;
+  const latex = restoreEscapedDollars(trailing.slice(delimiterIndex + delimiterLength)).trim();
+
+  if (!isLikelyUnclosedLatex(latex)) {
+    segments.push({ type: "text", value: restoreEscapedDollars(trailing) });
+    return;
+  }
+
+  if (delimiterIndex > 0) {
+    segments.push({
+      type: "text",
+      value: restoreEscapedDollars(trailing.slice(0, delimiterIndex)),
+    });
+  }
+  segments.push({ type: isBlock ? "block" : "inline", value: latex });
+}
+
+function isLikelyUnclosedLatex(value: string): boolean {
+  if (!value || !LATEX_STRUCTURE_PATTERN.test(value)) return false;
+
+  try {
+    katex.renderToString(value, {
+      throwOnError: true,
+      displayMode: false,
+      output: "html",
+      strict: false,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function restoreEscapedDollars(content: string): string {

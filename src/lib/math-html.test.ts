@@ -42,6 +42,30 @@ describe("renderMathHtml", () => {
     expect(container.querySelector(".katex-formula-block")?.tagName).toBe("SPAN");
   });
 
+  it("repairs a trailing formula with a missing closing delimiter", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      "由 $f(x)>0$ 及减函数得 $x\\left(x-1\\right)<2\\Rightarrow {x}^{2}-x-2<0\\Rightarrow -1<x<2",
+    );
+
+    expect(container).toHaveTextContent("及减函数得");
+    const formulas = container.querySelectorAll(".katex-formula");
+    expect(formulas).toHaveLength(2);
+    expect(formulas[1]).toHaveAttribute(
+      "data-latex",
+      "x\\left(x-1\\right)<2\\Rightarrow {x}^{2}-x-2<0\\Rightarrow -1<x<2",
+    );
+    expect(container.textContent).not.toContain("\\Rightarrow");
+  });
+
+  it("does not treat an unmatched currency marker as a formula", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml("资料费为 $5");
+
+    expect(container.querySelector(".katex-formula")).toBeNull();
+    expect(container).toHaveTextContent("资料费为 $5");
+  });
+
   it("keeps angle brackets in plain text instead of treating them as HTML", () => {
     const container = document.createElement("div");
     container.innerHTML = renderMathHtml("当 a < b 时，$a-b<0$。");
