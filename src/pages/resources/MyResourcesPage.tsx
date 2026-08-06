@@ -2159,7 +2159,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <div className="flex gap-1 mb-3 p-1 bg-mist rounded-md">
               <button
                 onClick={() => setLeftTab("chapter")}
-                aria-label="章节课目录"
+                aria-label="章节课"
                 className={cn(
                   "flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5",
                   leftTab === "chapter" ? "bg-paper text-gold-600 shadow-sm" : "text-ink-500 hover:text-ink-700",
@@ -2176,11 +2176,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     </span>
                   )}
                 </span>
-                章节课目录
+                章节课
               </button>
               <button
                 onClick={() => setLeftTab("knowledge")}
-                aria-label="知识点目录"
+                aria-label="知识点"
                 className={cn(
                   "flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5",
                   leftTab === "knowledge" ? "bg-paper text-gold-600 shadow-sm" : "text-ink-500 hover:text-ink-700",
@@ -2197,7 +2197,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     </span>
                   )}
                 </span>
-                知识点目录
+                知识点
               </button>
             </div>
             {(leftTab === "chapter" ? chapterTree : knowledgeTree) ? (
@@ -2205,6 +2205,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 <SearchableTree
                   data={chapterTree!}
                   title="章节课目录"
+                  showTitle={false}
                   accent="gold"
                   checkable
                   checkedIds={checkedChapters}
@@ -2219,6 +2220,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 <SearchableTree
                   data={knowledgeTree!}
                   title="知识点目录"
+                  showTitle={false}
                   accent="teal"
                   checkable
                   checkedIds={checkedKnowledge}

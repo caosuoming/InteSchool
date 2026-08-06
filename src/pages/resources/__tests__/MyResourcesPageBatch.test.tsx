@@ -43,10 +43,12 @@ vi.mock("@/components/tree/SearchableTree", () => ({
     title,
     onCheck,
     onReset,
+    showTitle = true,
   }: {
     title: string;
     onCheck?: (ids: string[]) => void;
     onReset?: () => void;
+    showTitle?: boolean;
   }) => (
     <div>
       <button
@@ -54,7 +56,7 @@ vi.mock("@/components/tree/SearchableTree", () => ({
         aria-label={title.endsWith("目录") ? `勾选${title}` : undefined}
         onClick={() => onCheck?.([title.includes("章节") ? "chapter-new" : "knowledge-new"])}
       >
-        {title}
+        {showTitle ? title : "选择"}
       </button>
       {onReset && (
         <button type="button" aria-label={`重置${title}`} onClick={onReset}>
@@ -302,10 +304,15 @@ describe("MyResourcesPage batch actions", () => {
   it("marks selected directory tabs and resets both directory selections together", async () => {
     renderPage();
 
+    expect(await screen.findByRole("button", { name: "章节课" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "知识点" })).toBeInTheDocument();
+    expect(screen.queryByText("章节课目录")).not.toBeInTheDocument();
+
     fireEvent.click(await screen.findByRole("button", { name: "勾选章节课目录" }));
     expect(screen.getByLabelText("章节课目录已有勾选")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "知识点目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "知识点" }));
+    expect(screen.queryByText("知识点目录")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "勾选知识点目录" }));
     expect(screen.getByLabelText("章节课目录已有勾选")).toBeInTheDocument();
     expect(screen.getByLabelText("知识点目录已有勾选")).toBeInTheDocument();
