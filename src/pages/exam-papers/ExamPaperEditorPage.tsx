@@ -1,11 +1,11 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
   FileSpreadsheet, GraduationCap, Users, Send,
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered,
-  BarChart3, CheckCircle2, AlertCircle, Lock, Calendar, Layout,
-  Sparkles, BookOpen, Lightbulb, Download, PanelRightClose, PanelRightOpen,
+  AlertCircle, Lock, Calendar, Layout,
+  Sparkles, BookOpen, Lightbulb, Download,
   CheckSquare, ArrowUpDown,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -28,6 +28,7 @@ import { Input, Textarea, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
@@ -163,12 +164,33 @@ type AddTarget =
   | { kind: "heading"; headingId: string; label: string }
   | null;
 
+interface ExamPaperNavigationDraft {
+  paperId: string;
+  title: string;
+  description: string;
+  grade: string;
+  schoolYear: string;
+  semester: ResourceSemester;
+  typeId: string;
+  duration: number;
+  paperQuestions: ExamPaperQuestion[];
+  contentBlocks: ExtractedDocumentBlock[];
+  layoutMode: "grouped" | "flat";
+  selectedStudentIds: string[];
+  questions: Record<string, Question>;
+}
+
+interface ExamPaperNavigationState {
+  examPaperDraft?: ExamPaperNavigationDraft;
+}
+
 export default function ExamPaperEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const isPreview = location.pathname.endsWith("/preview") || searchParams.get("preview") === "1";
+  const navigationDraft = (location.state as ExamPaperNavigationState | null)?.examPaperDraft;
   const prepTaskId = searchParams.get("prepTask");
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
@@ -180,7 +202,6 @@ export default function ExamPaperEditorPage() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [previewSidebarOpen, setPreviewSidebarOpen] = useState(true);
   const [prepTask, setPrepTask] = useState<PrepTask | null>(null);
   const [prepComments, setPrepComments] = useState<PrepResourceComment[]>([]);
   const [prepPassword, setPrepPassword] = useState(() =>
@@ -356,25 +377,45 @@ export default function ExamPaperEditorPage() {
         navigate("/my-resources");
         return;
       }
-      setPaper(p);
-      setTitle(p.title);
-      setDescription(p.description || "");
-      setGrade(p.grade);
-      setSchoolYear(p.schoolYear);
-      setSemester(p.semester || "上学期");
-      setTypeId(p.typeId || "");
-      setDuration(p.duration);
-      setPaperQuestions(p.questions);
-      setContentBlocks(p.contentBlocks || []);
-      setLayoutMode(p.layoutMode || "grouped");
-      setSelectedStudentIds(p.studentIds || []);
+      const draft = navigationDraft?.paperId === p.id ? navigationDraft : undefined;
+      const nextPaperQuestions = draft?.paperQuestions || p.questions;
+      const nextContentBlocks = draft?.contentBlocks || p.contentBlocks || [];
+      const nextPaper = draft
+        ? {
+            ...p,
+            title: draft.title,
+            description: draft.description,
+            grade: draft.grade,
+            schoolYear: draft.schoolYear,
+            semester: draft.semester,
+            typeId: draft.typeId || undefined,
+            duration: draft.duration,
+            questions: nextPaperQuestions,
+            contentBlocks: nextContentBlocks,
+            layoutMode: draft.layoutMode,
+            studentIds: draft.selectedStudentIds,
+          }
+        : p;
+      setPaper(nextPaper);
+      setTitle(draft?.title ?? p.title);
+      setDescription(draft?.description ?? p.description ?? "");
+      setGrade(draft?.grade ?? p.grade);
+      setSchoolYear(draft?.schoolYear ?? p.schoolYear);
+      setSemester(draft?.semester ?? p.semester ?? "上学期");
+      setTypeId(draft?.typeId ?? p.typeId ?? "");
+      setDuration(draft?.duration ?? p.duration);
+      setPaperQuestions(nextPaperQuestions);
+      setContentBlocks(nextContentBlocks);
+      setLayoutMode(draft?.layoutMode ?? p.layoutMode ?? "grouped");
+      setSelectedStudentIds(draft?.selectedStudentIds ?? p.studentIds ?? []);
       setPrepPasswordOpen(false);
       // 加载关联题目
-      const qMap: Record<string, Question> = {};
-      const qIds = p.questions.map((q) => q.questionId).filter(Boolean) as string[];
-      if (qIds.length > 0) {
+      const qMap: Record<string, Question> = { ...(draft?.questions || {}) };
+      const qIds = nextPaperQuestions.map((q) => q.questionId).filter(Boolean) as string[];
+      const missingQuestionIds = qIds.filter((questionId) => !qMap[questionId]);
+      if (missingQuestionIds.length > 0) {
         const all = await questionService.listQuestions({ schoolId });
-        all.forEach((q) => { if (qIds.includes(q.id)) qMap[q.id] = q; });
+        all.forEach((q) => { if (missingQuestionIds.includes(q.id)) qMap[q.id] = q; });
       }
       setQuestions(qMap);
     } catch (error) {
@@ -388,7 +429,7 @@ export default function ExamPaperEditorPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate, prepPassword, prepTaskId, schoolId]);
+  }, [id, navigate, navigationDraft, prepPassword, prepTaskId, schoolId]);
 
   useEffect(() => {
     loadPaper();
@@ -583,6 +624,43 @@ export default function ExamPaperEditorPage() {
     paperQuestions.reduce((sum, q) => sum + q.score, 0), [paperQuestions]);
 
   const isStructuredExtract = Boolean(paper?.isExtractCopy && contentBlocks.length > 0);
+
+  const buildNavigationDraft = useCallback((): ExamPaperNavigationDraft | undefined => {
+    if (!paper) return undefined;
+    return {
+      paperId: paper.id,
+      title,
+      description,
+      grade,
+      schoolYear,
+      semester,
+      typeId,
+      duration,
+      paperQuestions,
+      contentBlocks,
+      layoutMode,
+      selectedStudentIds,
+      questions,
+    };
+  }, [
+    contentBlocks,
+    description,
+    duration,
+    grade,
+    layoutMode,
+    paper,
+    paperQuestions,
+    questions,
+    schoolYear,
+    selectedStudentIds,
+    semester,
+    title,
+    typeId,
+  ]);
+
+  const navigateWithDraft = useCallback((path: string) => {
+    navigate(path, { state: { examPaperDraft: buildNavigationDraft() } satisfies ExamPaperNavigationState });
+  }, [buildNavigationDraft, navigate]);
 
   const updateContentBlock = (
     blockId: string,
@@ -1127,7 +1205,7 @@ export default function ExamPaperEditorPage() {
     return (
       <div className="max-w-[1500px] mx-auto">
         <PageHeader
-          title={paper?.title || title}
+          title={title || paper?.title}
           description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
           icon={<FileSpreadsheet className="w-5 h-5" />}
           action={
@@ -1146,7 +1224,7 @@ export default function ExamPaperEditorPage() {
               )}
               <Button
                 variant="gold"
-                onClick={() => navigate(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+                onClick={() => navigateWithDraft(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
               >
                 <Edit3 className="w-4 h-4" />
                 编辑试卷
@@ -1156,264 +1234,188 @@ export default function ExamPaperEditorPage() {
         />
 
         <div className="no-print mb-4 flex items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            aria-expanded={previewSidebarOpen}
-            aria-controls="exam-paper-preview-sidebar"
-            onClick={() => setPreviewSidebarOpen((open) => !open)}
-          >
-            {previewSidebarOpen
-              ? <PanelRightClose className="w-4 h-4" />
-              : <PanelRightOpen className="w-4 h-4" />}
-            {previewSidebarOpen ? "收起信息栏" : "展开信息栏"}
-          </Button>
           <Button variant="gold" onClick={handleDownload} loading={downloading}>
             <Download className="w-4 h-4" />
             下载
           </Button>
         </div>
 
-        <div className={cn(
-          "grid items-start gap-5",
-          previewSidebarOpen && "xl:grid-cols-[minmax(0,1fr)_20rem]",
-        )}>
-          <div className="min-w-0">
-            {/* 纸张版面 */}
-            <div className="paper-sheet paper-a4 rounded-lg" data-testid="exam-paper-preview">
-              <div className="paper-content p-10 print-area">
-                {/* 正文 */}
-                {isStructuredExtract ? (
-                  <div className="space-y-4">
-                    {contentBlocks.map((block, blockIndex) => {
-                  if (block.type === "documentTitle") {
-                    return (
-                      <h1 key={block.id} className="py-4 text-center font-serif text-2xl font-bold text-ink-900">
-                        {block.content}
-                      </h1>
-                    );
-                  }
-                  if (block.type === "groupTitle" || block.type === "heading") {
-                    return (
-                      <h2 key={block.id} className="font-serif text-lg font-bold text-ink-900 pt-3 pb-2 border-b border-ink-200">
-                        {block.content}
-                      </h2>
-                    );
-                  }
-                  if (block.type === "knowledge") {
-                    return (
-                      <section key={block.id} className="rounded-md border border-gold-200 bg-gold-50/20 p-4">
-                        {block.title && (
-                          <h3 className="mb-2 font-serif font-semibold text-ink-900">{block.title}</h3>
-                        )}
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-ink-800">{block.content}</div>
-                      </section>
-                    );
-                  }
-                  if (block.type === "question") {
-                    const questionNumber = contentBlocks
-                      .slice(0, blockIndex + 1)
-                      .filter((item) => item.type === "question").length;
-                    const paperQuestion = paperQuestions.find(
-                      (item) => item.id === block.examPaperQuestionId,
-                    );
-                    const linkedQuestionId = paperQuestion?.questionId || block.questionId;
-                    const linkedQuestion = linkedQuestionId ? questions[linkedQuestionId] : undefined;
-                    const display = resolveExtractedQuestionDisplay(
-                      paperQuestion,
-                      linkedQuestion,
-                      block.content,
-                    );
-                    return (
-                      <section key={block.id} className="flex items-start gap-2 rounded-md border border-ink-100 p-4">
-                        <ExtractedQuestionContent
-                          number={questionNumber}
-                          stem={display.stem}
-                          options={display.options}
-                          answer={display.answer}
-                          analysis={display.analysis}
-                        />
-                        {paperQuestion && (
-                          <span className="flex-shrink-0 text-xs font-medium text-gold-700">{paperQuestion.score} 分</span>
-                        )}
-                      </section>
-                    );
-                  }
+        <div className="overflow-x-auto pb-4">
+          <div className="exam-paper-preview-grid" data-testid="exam-paper-preview">
+            <PreviewQuestionPair
+              leftClassName="exam-paper-preview-title"
+              left={(
+                <MathHtml className="text-center font-serif text-2xl font-bold text-ink-900">
+                  {title || "未命名试卷"}
+                </MathHtml>
+              )}
+              right={(
+                <div data-testid="exam-paper-preview-details">
+                  <div className="font-serif text-sm font-semibold text-ink-900">题目信息</div>
+                  <div className="mt-1 text-xs leading-5 text-ink-400">与左侧对应题目同步排列并共同滚动</div>
+                </div>
+              )}
+            />
+
+            {isStructuredExtract ? (
+              contentBlocks.map((block, blockIndex) => {
+                if (block.type === "documentTitle") return null;
+                if (block.type === "groupTitle" || block.type === "heading") {
                   return (
-                    <div key={block.id} className="whitespace-pre-wrap text-sm leading-relaxed text-ink-700">
-                      {block.content}
-                    </div>
+                    <PreviewQuestionPair
+                      key={block.id}
+                      leftClassName="pt-3 pb-2"
+                      left={(
+                        <MathHtml className="border-b border-ink-200 pb-2 font-serif text-lg font-bold text-ink-900">
+                          {block.content}
+                        </MathHtml>
+                      )}
+                    />
                   );
-                    })}
-                  </div>
-                ) : paperQuestions.length === 0 ? (
+                }
+                if (block.type === "knowledge") {
+                  return (
+                    <PreviewQuestionPair
+                      key={block.id}
+                      left={(
+                        <section className="rounded-md border border-gold-200 bg-gold-50/20 p-4">
+                          {block.title && (
+                            <MathHtml className="mb-2 font-serif font-semibold text-ink-900">{block.title}</MathHtml>
+                          )}
+                          <MathHtml className="whitespace-pre-wrap text-sm leading-relaxed text-ink-800">{block.content}</MathHtml>
+                        </section>
+                      )}
+                    />
+                  );
+                }
+                if (block.type === "question") {
+                  const questionNumber = contentBlocks
+                    .slice(0, blockIndex + 1)
+                    .filter((item) => item.type === "question").length;
+                  const paperQuestion = paperQuestions.find(
+                    (item) => item.id === block.examPaperQuestionId,
+                  );
+                  const linkedQuestionId = paperQuestion?.questionId || block.questionId;
+                  const linkedQuestion = linkedQuestionId ? questions[linkedQuestionId] : undefined;
+                  const display = resolveExtractedQuestionDisplay(
+                    paperQuestion,
+                    linkedQuestion,
+                    block.content,
+                  );
+                  return (
+                    <PreviewQuestionPair
+                      key={block.id}
+                      left={(
+                        <section className="flex items-start gap-2 rounded-md border border-ink-100 p-4">
+                          <ExtractedQuestionContent
+                            number={questionNumber}
+                            stem={display.stem}
+                            options={display.options}
+                            answer={display.answer}
+                            analysis={display.analysis}
+                          />
+                          {paperQuestion && (
+                            <span className="flex-shrink-0 text-xs font-medium text-gold-700">{paperQuestion.score} 分</span>
+                          )}
+                        </section>
+                      )}
+                      right={paperQuestion ? (
+                        <PreviewQuestionDetails
+                          pq={paperQuestion}
+                          index={questionNumber - 1}
+                          question={linkedQuestion}
+                          progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
+                          knowledgeNameMap={knowledgeNameMap}
+                          defaultBasket={baskets.find((basket) => basket.isDefault)}
+                          isInDefaultBasket={isInDefaultBasket(paperQuestion.questionId)}
+                          onAddToBasket={() => handleAddToDefaultBasket(paperQuestion.questionId)}
+                          onRemoveFromBasket={() => paperQuestion.questionId && handleRemoveFromDefault(paperQuestion.questionId)}
+                        />
+                      ) : undefined}
+                    />
+                  );
+                }
+                return (
+                  <PreviewQuestionPair
+                    key={block.id}
+                    left={(
+                      <MathHtml className="whitespace-pre-wrap text-sm leading-relaxed text-ink-700">{block.content}</MathHtml>
+                    )}
+                  />
+                );
+              })
+            ) : paperQuestions.length === 0 ? (
+              <PreviewQuestionPair
+                left={(
                   <EmptyState
                     icon={<FileText className="w-10 h-10 text-ink-200" />}
                     title="试卷暂无题目"
                     description="切换到编辑模式添加题目"
                   />
-                ) : (
-                  <div className="space-y-6">
-                    {layoutMode === "grouped" ? (
-                      groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex) => {
-                    const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
-                    return (
-                      <div key={group.type}>
-                        <div className="flex items-center gap-3 mb-4 pb-2 border-b border-ink-200">
-                          <h2 className="font-serif text-lg font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
-                          <span className="text-sm text-ink-500">共 {group.questions.length} 题</span>
-                          <span className="text-sm text-gold-600 font-medium">共 {groupScore} 分</span>
-                        </div>
-                        <div className="space-y-4">
-                          {group.questions.map((item) => (
-                            <PreviewQuestionItem
-                              key={item.pq.id}
-                              pq={item.pq}
-                              index={item.index}
-                              question={item.question}
-                              defaultBasket={baskets.find((b) => b.isDefault)}
-                              isInDefaultBasket={isInDefaultBasket(item.pq.questionId)}
-                              onAddToBasket={() => handleAddToDefaultBasket(item.pq.questionId)}
-                              onRemoveFromBasket={() => item.pq.questionId && handleRemoveFromDefault(item.pq.questionId)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                      })
-                    ) : (
-                      <div className="space-y-4">
-                        {paperQuestions.map((pq, index) => {
-                      const q = pq.questionId ? questions[pq.questionId] : undefined;
-                      return (
-                        <PreviewQuestionItem
-                          key={pq.id}
-                          pq={pq}
-                          index={index}
-                          question={q}
-                          defaultBasket={baskets.find((b) => b.isDefault)}
-                          isInDefaultBasket={isInDefaultBasket(pq.questionId)}
-                          onAddToBasket={() => handleAddToDefaultBasket(pq.questionId)}
-                          onRemoveFromBasket={() => pq.questionId && handleRemoveFromDefault(pq.questionId)}
-                        />
-                      );
-                        })}
+                )}
+              />
+            ) : layoutMode === "grouped" ? (
+              groupByType(paperQuestions, questions, groupOrder).flatMap((group, groupIndex) => {
+                const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
+                return [
+                  <PreviewQuestionPair
+                    key={`group-${group.type}`}
+                    leftClassName="pt-3 pb-2"
+                    left={(
+                      <div className="flex items-center gap-3 border-b border-ink-200 pb-2">
+                        <h2 className="font-serif text-lg font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
+                        <span className="text-sm text-ink-500">共 {group.questions.length} 题</span>
+                        <span className="text-sm font-medium text-gold-600">共 {groupScore} 分</span>
                       </div>
                     )}
-                  </div>
-                )}
-              </div>
-            </div>
+                  />,
+                  ...group.questions.map((item) => (
+                    <PreviewQuestionPair
+                      key={item.pq.id}
+                      left={<PreviewQuestionItem pq={item.pq} index={item.index} />}
+                      right={(
+                        <PreviewQuestionDetails
+                          pq={item.pq}
+                          index={item.index}
+                          question={item.question}
+                          progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
+                          knowledgeNameMap={knowledgeNameMap}
+                          defaultBasket={baskets.find((basket) => basket.isDefault)}
+                          isInDefaultBasket={isInDefaultBasket(item.pq.questionId)}
+                          onAddToBasket={() => handleAddToDefaultBasket(item.pq.questionId)}
+                          onRemoveFromBasket={() => item.pq.questionId && handleRemoveFromDefault(item.pq.questionId)}
+                        />
+                      )}
+                    />
+                  )),
+                ];
+              })
+            ) : (
+              paperQuestions.map((paperQuestion, index) => {
+                const linkedQuestion = paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined;
+                return (
+                  <PreviewQuestionPair
+                    key={paperQuestion.id}
+                    left={<PreviewQuestionItem pq={paperQuestion} index={index} />}
+                    right={(
+                      <PreviewQuestionDetails
+                        pq={paperQuestion}
+                        index={index}
+                        question={linkedQuestion}
+                        progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
+                        knowledgeNameMap={knowledgeNameMap}
+                        defaultBasket={baskets.find((basket) => basket.isDefault)}
+                        isInDefaultBasket={isInDefaultBasket(paperQuestion.questionId)}
+                        onAddToBasket={() => handleAddToDefaultBasket(paperQuestion.questionId)}
+                        onRemoveFromBasket={() => paperQuestion.questionId && handleRemoveFromDefault(paperQuestion.questionId)}
+                      />
+                    )}
+                  />
+                );
+              })
+            )}
           </div>
-
-          {previewSidebarOpen && (
-            <aside
-              id="exam-paper-preview-sidebar"
-              className="no-print space-y-4 xl:sticky xl:top-4"
-              aria-label="试卷信息侧栏"
-            >
-              <Card className="p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-gold-600" />
-                  <h2 className="font-serif text-sm font-semibold text-ink-900">难度分布</h2>
-                  <span className="text-xs text-ink-400">共 {paperQuestions.length} 题</span>
-                </div>
-                <div className="space-y-2">
-                  {[1, 2, 3, 4, 5].map((difficulty) => {
-                    const count = difficultyStats[difficulty];
-                    const percentage = paperQuestions.length > 0
-                      ? (count / paperQuestions.length) * 100
-                      : 0;
-                    return (
-                      <div key={difficulty} className="grid grid-cols-[44px_1fr_24px] items-center gap-2 text-[11px]">
-                        <span className="text-ink-500">{difficultyLabel[difficulty]}</span>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-ink-100">
-                          <div
-                            className={cn(
-                              "h-full rounded-full",
-                              difficulty <= 2
-                                ? "bg-emerald-400"
-                                : difficulty === 3
-                                  ? "bg-amber-400"
-                                  : "bg-red-400",
-                            )}
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                        <span className="text-right font-mono text-ink-600">{count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </Card>
-
-              <Card className="p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  <h2 className="font-serif text-sm font-semibold text-ink-900">已发布对象</h2>
-                </div>
-                {activePublications.length === 0 ? (
-                  <div className="text-xs text-ink-400">尚未发布</div>
-                ) : (
-                  <div className="space-y-3">
-                    {activePublications.map((publication) => {
-                      const targetNames = [
-                        ...publication.targetClassIds
-                          .map((classId) => classes.find((item) => item.id === classId)?.name)
-                          .filter(Boolean),
-                        ...(publication.targetStudentIds || [])
-                          .map((studentId) => students.find((item) => item.id === studentId)?.name)
-                          .filter(Boolean),
-                      ] as string[];
-                      if ((publication.targetSchoolIds || []).length > 0) {
-                        targetNames.push(`${publication.targetSchoolIds.length} 所外校`);
-                      }
-                      return (
-                        <div key={publication.id} className="rounded-md border border-ink-100 p-3">
-                          <div className="mb-2 flex items-center gap-2">
-                            <Badge variant="green">发布中</Badge>
-                            {publication.isFormalExam && publication.hasViewPassword && (
-                              <Lock className="h-3.5 w-3.5 text-ink-400" aria-label="已设置访问密码" />
-                            )}
-                          </div>
-                          <div className="text-xs leading-5 text-ink-600">
-                            {targetNames.join("、") || "未知对象"}
-                          </div>
-                          <Button
-                            className="mt-3 w-full"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRevoke(publication.id)}
-                            loading={revoking}
-                          >
-                            撤回发布
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-
-              <Card className="p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Lightbulb className="h-4 w-4 text-teal-600" />
-                  <h2 className="font-serif text-sm font-semibold text-ink-900">包含知识点</h2>
-                  <span className="text-xs text-ink-400">{includedKnowledgePointNames.length}</span>
-                </div>
-                {includedKnowledgePointNames.length === 0 ? (
-                  <div className="text-xs text-ink-400">暂无关联知识点</div>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {includedKnowledgePointNames.map((name, index) => (
-                      <Badge key={`${includedKnowledgePointIds[index]}-${name}`} variant="teal">{name}</Badge>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            </aside>
-          )}
         </div>
-
         {/* 发布弹窗 */}
         <PublishModal
           open={publishOpen}
@@ -1460,9 +1462,15 @@ export default function ExamPaperEditorPage() {
                 制作答题卡
               </Button>
             )}
+            {!prepTaskId && (
+              <Button variant="outline" onClick={() => setPublishOpen(true)}>
+                <Send className="w-4 h-4" />
+                选择发布对象
+              </Button>
+            )}
             <Button
               variant="outline"
-              onClick={() => navigate(`/exam-papers/${id}/preview${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+              onClick={() => navigateWithDraft(`/exam-papers/${id}/preview${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
             >
               <Eye className="w-4 h-4" />
               预览
@@ -2666,47 +2674,111 @@ export default function ExamPaperEditorPage() {
   );
 }
 
-// ===== 预览模式的题目项 =====
-function PreviewQuestionItem({
-  pq, index, question, defaultBasket, isInDefaultBasket, onAddToBasket, onRemoveFromBasket,
+function PreviewQuestionPair({
+  left,
+  right,
+  leftClassName,
+}: {
+  left: ReactNode;
+  right?: ReactNode;
+  leftClassName?: string;
+}) {
+  return (
+    <>
+      <div className={cn("exam-paper-preview-left", leftClassName)}>{left}</div>
+      <aside className="exam-paper-preview-right">{right}</aside>
+    </>
+  );
+}
+
+function PreviewQuestionDetails({
+  pq,
+  index,
+  question,
+  progress,
+  knowledgeNameMap,
+  defaultBasket,
+  isInDefaultBasket,
+  onAddToBasket,
+  onRemoveFromBasket,
 }: {
   pq: ExamPaperQuestion;
   index: number;
   question: Question | null | undefined;
+  progress?: QuestionProgress;
+  knowledgeNameMap: Map<string, string>;
   defaultBasket?: Basket;
   isInDefaultBasket: boolean;
   onAddToBasket: () => void;
   onRemoveFromBasket: () => void;
 }) {
+  const knowledgeNames = (question?.knowledgePointIds || [])
+    .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
+    .filter(Boolean) as string[];
+  const difficulty = question?.difficulty || 3;
+
+  return (
+    <div className="rounded-lg border border-ink-100 bg-paper p-3 shadow-sm" data-testid={`exam-question-details-${index + 1}`}>
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        <span className="font-mono text-xs font-bold text-ink-500">第 {index + 1} 题</span>
+        <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
+        <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
+          {difficultyLabel[difficulty]}
+        </Badge>
+        <Badge variant="gold">{pq.score} 分</Badge>
+      </div>
+
+      <QuestionProgressBadge progress={progress} />
+
+      <div className="mt-2 space-y-1.5 text-[11px] leading-5 text-ink-500">
+        {knowledgeNames.length > 0 ? (
+          <div>
+            <span className="text-ink-400">知识点：</span>
+            {knowledgeNames.join("、")}
+          </div>
+        ) : (
+          <div className="text-ink-400">暂无关联知识点</div>
+        )}
+        {question && question.usageCount > 0 && <div>题库使用 {question.usageCount} 次</div>}
+        {question && question.recommendation >= 4 && <div className="font-medium text-gold-600">高推荐题目</div>}
+      </div>
+
+      {defaultBasket && (
+        <Button
+          variant={isInDefaultBasket ? "outline" : "ghost"}
+          size="sm"
+          onClick={isInDefaultBasket ? onRemoveFromBasket : onAddToBasket}
+          disabled={!pq.questionId}
+          title={pq.questionId ? (isInDefaultBasket ? "已加入，点击移除" : "加入默认试题篮") : "未关联题库"}
+          className="no-print mt-3 w-full text-[11px]"
+        >
+          <ShoppingBasket className="h-3 w-3" />
+          {isInDefaultBasket ? "移出试题篮" : "加入试题篮"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ===== 预览模式的题目项 =====
+function PreviewQuestionItem({
+  pq, index,
+}: {
+  pq: ExamPaperQuestion;
+  index: number;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const typeLabel: Record<string, string> = { single: "单选", multiple: "多选", judge: "判断", short: "填空", essay: "解答" };
   return (
     <div className="border border-ink-100 rounded-md p-4 hover:border-ink-200 transition-colors">
       <div className="flex items-start gap-3">
-        {/* 左侧：难度+题型标注 */}
-        <div className="flex-shrink-0 w-14 pt-0.5">
-          {question && (
-            <>
-              <div className={cn("text-[10px] font-bold text-center px-1 py-0.5 rounded border",
-                question.difficulty <= 2 ? "border-emerald-200 bg-emerald-50 text-emerald-600" :
-                question.difficulty === 3 ? "border-amber-200 bg-amber-50 text-amber-600" :
-                "border-red-200 bg-red-50 text-red-600")}>
-                {difficultyLabel[question.difficulty]}
-              </div>
-              <div className="text-[9px] text-ink-400 text-center mt-0.5">{typeLabel[question.type] || typeLabel[pq.type]}</div>
-            </>
-          )}
-          <div className="text-[10px] text-center text-gold-600 font-medium mt-0.5">{pq.score}分</div>
-        </div>
-        {/* 中间：题目内容 */}
         <div className="flex-1 min-w-0">
           {/* 题干（编号+题目） */}
           <div
             onClick={() => setExpanded(!expanded)}
-            className="text-sm text-ink-900 leading-relaxed cursor-pointer hover:text-gold-700 transition-colors"
+            className="flex cursor-pointer items-start gap-1 text-sm leading-relaxed text-ink-900 transition-colors hover:text-gold-700"
           >
-            <span className="font-mono font-bold text-ink-400 mr-1">{index + 1}.</span>
-            {pq.stem}
+            <span className="flex-shrink-0 font-mono font-bold text-ink-400">{index + 1}.</span>
+            <MathHtml className="min-w-0 flex-1 text-sm leading-relaxed text-ink-900">{pq.stem}</MathHtml>
           </div>
           {/* 选项（按数量自适应列数；答案高亮仅在展开时显示） */}
           {pq.options && pq.options.length > 0 && (
@@ -2722,7 +2794,7 @@ function PreviewQuestionItem({
                     : "border-ink-100",
                 )}>
                   <span className="font-mono font-semibold text-ink-600 flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
-                  <span className="text-ink-800 break-all">{opt}</span>
+                  <MathHtml className="min-w-0 flex-1 text-ink-800">{opt}</MathHtml>
                 </div>
               ))}
             </div>
@@ -2731,10 +2803,12 @@ function PreviewQuestionItem({
           {expanded && (
             <div className="space-y-2 pl-5 mt-2 animate-fade-in">
               <div className="p-2 rounded bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900">
-                <span className="font-bold">答案：</span>{pq.answer}
+                <span className="font-bold">答案：</span>
+                <MathHtml className="inline text-emerald-900">{pq.answer}</MathHtml>
               </div>
               <div className="p-2 rounded bg-gold-50/30 border border-gold-200 text-sm text-ink-800">
-                <span className="font-bold text-gold-700">解析：</span>{pq.analysis}
+                <span className="font-bold text-gold-700">解析：</span>
+                <MathHtml className="inline text-ink-800">{pq.analysis}</MathHtml>
               </div>
             </div>
           )}
@@ -2742,30 +2816,6 @@ function PreviewQuestionItem({
             <button onClick={() => setExpanded(true)} className="no-print text-xs text-gold-600 hover:text-gold-700 ml-5 mt-2">
               展开答案与解析
             </button>
-          )}
-        </div>
-        {/* 右侧：题目信息标注 + 加入试题篮 */}
-        <div className="flex-shrink-0 w-20 pt-0.5">
-          {question && question.usageCount > 0 && (
-            <div className="text-[10px] text-ink-400 text-right mb-1">
-              使用{question.usageCount}次
-            </div>
-          )}
-          {question && question.recommendation >= 4 && (
-            <div className="text-[10px] text-gold-500 font-medium text-right mb-1">★推荐</div>
-          )}
-          {defaultBasket && (
-            <Button
-              variant={isInDefaultBasket ? "outline" : "ghost"}
-              size="sm"
-              onClick={isInDefaultBasket ? onRemoveFromBasket : onAddToBasket}
-              disabled={!pq.questionId}
-              title={pq.questionId ? (isInDefaultBasket ? "已加入，点击移除" : "加入默认试题篮") : "未关联题库"}
-              className="no-print text-[11px] px-2 py-1"
-            >
-              <ShoppingBasket className="w-3 h-3" />
-              {isInDefaultBasket ? "已加入" : "加篮"}
-            </Button>
           )}
         </div>
       </div>
@@ -2863,9 +2913,9 @@ function EditQuestionRow({
           {/* 题干 */}
           <div
             onClick={() => setExpanded(!expanded)}
-            className="text-sm text-ink-900 cursor-pointer hover:text-gold-700 transition-colors whitespace-pre-wrap"
+            className="cursor-pointer transition-colors hover:text-gold-700"
           >
-            {pq.stem}
+            <MathHtml className="whitespace-pre-wrap text-sm text-ink-900">{pq.stem}</MathHtml>
           </div>
           {/* 选项（始终显示，按数量自适应列数；答案高亮仅在展开时显示） */}
           {pq.options && pq.options.length > 0 && (
@@ -2881,7 +2931,7 @@ function EditQuestionRow({
                     : "border-ink-100",
                 )}>
                   <span className="font-mono font-semibold text-ink-500 flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
-                  <span className="break-all">{opt}</span>
+                  <MathHtml className="min-w-0 flex-1 text-xs text-ink-800">{opt}</MathHtml>
                 </div>
               ))}
             </div>
@@ -2890,10 +2940,12 @@ function EditQuestionRow({
           {expanded && (
             <div className="mt-2 space-y-1.5 animate-fade-in pl-4">
               <div className="text-xs p-2 rounded bg-emerald-50/40 border border-emerald-200">
-                <span className="font-bold text-emerald-700">答案：</span>{pq.answer}
+                <span className="font-bold text-emerald-700">答案：</span>
+                <MathHtml className="inline text-emerald-900">{pq.answer}</MathHtml>
               </div>
               <div className="text-xs p-2 rounded bg-gold-50/30 border border-gold-200">
-                <span className="font-bold text-gold-700">解析：</span>{pq.analysis}
+                <span className="font-bold text-gold-700">解析：</span>
+                <MathHtml className="inline text-ink-800">{pq.analysis}</MathHtml>
               </div>
             </div>
           )}

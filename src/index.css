@@ -163,6 +163,42 @@
   break-inside: avoid;
 }
 
+/* 试卷预览：左侧题面与右侧题目信息共享网格行，保持纵向对齐并共同滚动。 */
+.exam-paper-preview-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 210mm minmax(17rem, 1fr);
+  align-items: stretch;
+  min-width: calc(210mm + 17rem);
+  min-height: 297mm;
+  margin: 0 auto;
+  background: linear-gradient(to right, #fff 0, #fff 210mm, transparent 210mm);
+}
+.exam-paper-preview-grid::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 210mm;
+  content: "";
+  pointer-events: none;
+  box-shadow: 0 4px 24px rgba(16, 42, 67, 0.08);
+}
+.exam-paper-preview-left {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: 0.75rem 2.5rem;
+  background: #fff;
+}
+.exam-paper-preview-title {
+  padding-top: 2.5rem;
+  padding-bottom: 1.5rem;
+}
+.exam-paper-preview-right {
+  min-width: 0;
+  border-left: 1px solid rgba(16, 42, 67, 0.2);
+  padding: 0.75rem 0 0.75rem 1.25rem;
+}
+
 /* ===== 打印样式 ===== */
 @media print {
   .no-print { display: none !important; }
@@ -181,6 +217,20 @@
     margin: 0 !important;
     width: 100% !important;
     min-height: auto !important;
+  }
+  .exam-paper-preview-grid {
+    display: block;
+    min-width: 0;
+    min-height: auto;
+    background: #fff;
+  }
+  .exam-paper-preview-grid::before,
+  .exam-paper-preview-right {
+    display: none !important;
+  }
+  .exam-paper-preview-left {
+    padding-right: 0;
+    padding-left: 0;
   }
   body { background: white !important; }
   @page { margin: 12mm; }
