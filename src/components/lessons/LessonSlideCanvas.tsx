@@ -20,6 +20,9 @@ interface LessonSlideCanvasProps {
   onSelectElement?: (id: string | null) => void;
   onElementsChange?: (elements: LessonSlideElement[]) => void;
   className?: string;
+  canvasStyle?: CSSProperties;
+  textColor?: string;
+  textBackgroundColor?: string;
 }
 
 type Interaction = {
@@ -59,6 +62,9 @@ export function LessonSlideCanvas({
   onSelectElement,
   onElementsChange,
   className,
+  canvasStyle,
+  textColor,
+  textBackgroundColor,
 }: LessonSlideCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const interactionRef = useRef<Interaction | null>(null);
@@ -131,6 +137,7 @@ export function LessonSlideCanvas({
         "relative aspect-video w-full overflow-hidden rounded-lg bg-paper shadow-lg",
         className,
       )}
+      style={canvasStyle}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onSelectElement?.(null);
       }}
@@ -148,6 +155,8 @@ export function LessonSlideCanvas({
         const textStyle: CSSProperties = {
           fontSize: `${element.kind === "text" ? element.fontSize || 24 : 24}px`,
           textAlign: element.kind === "text" ? element.textAlign || "left" : "left",
+          color: textColor,
+          backgroundColor: textBackgroundColor,
         };
         return (
           <div
