@@ -603,7 +603,16 @@ export function UploadPage() {
                     </p>
                   </div>
 
-                  <div className="grid md:grid-cols-3 gap-4">
+                  <div
+                    role="group"
+                    aria-label="公共属性"
+                    className={cn(
+                      "grid gap-4",
+                      selectedType === "examPaper" || selectedType === "lecture"
+                        ? "md:grid-cols-3 xl:grid-cols-6"
+                        : "md:grid-cols-2 lg:grid-cols-4",
+                    )}
+                  >
                     <Select
                       label="年级"
                       value={grade}
@@ -622,56 +631,54 @@ export function UploadPage() {
                       onChange={(e) => setSemester(e.target.value as ResourceSemester)}
                       options={semesterOptions}
                     />
+                    {(selectedType === "examPaper" || selectedType === "lecture") && (
+                      <>
+                        {selectedType === "examPaper" ? (
+                          <Select
+                            label="试卷类型"
+                            value={examPaperTypeId}
+                            onChange={(e) => setExamPaperTypeId(e.target.value)}
+                            options={examPaperTypeOptions}
+                          />
+                        ) : (
+                          <Select
+                            label="讲义类型"
+                            value={lectureTypeId}
+                            onChange={(e) => setLectureTypeId(e.target.value)}
+                            options={lectureTypeOptions}
+                          />
+                        )}
+                        <Select
+                          label="来源"
+                          value={questionSourceType}
+                          onChange={(e) => setQuestionSourceType(e.target.value)}
+                          options={sourceOptions}
+                        />
+                        <Select
+                          label="题类"
+                          value={questionCategory}
+                          onChange={(e) => setQuestionCategory(e.target.value)}
+                          options={categoryOptions}
+                        />
+                      </>
+                    )}
+                    {selectedType === "courseware" && (
+                      <Select
+                        label="课件类型（默认）"
+                        value={coursewareType}
+                        onChange={(e) => setCoursewareType(e.target.value)}
+                        options={coursewareTypeOptions}
+                      />
+                    )}
+                    {selectedType === "material" && (
+                      <Select
+                        label="素材类型（默认）"
+                        value={materialType}
+                        onChange={(e) => setMaterialType(e.target.value)}
+                        options={materialTypeOptions}
+                      />
+                    )}
                   </div>
-
-                  {(selectedType === "examPaper" || selectedType === "lecture") && (
-                    <div className="grid md:grid-cols-3 gap-4">
-                      {selectedType === "examPaper" ? (
-                        <Select
-                          label="试卷类型"
-                          value={examPaperTypeId}
-                          onChange={(e) => setExamPaperTypeId(e.target.value)}
-                          options={examPaperTypeOptions}
-                        />
-                      ) : (
-                        <Select
-                          label="讲义类型"
-                          value={lectureTypeId}
-                          onChange={(e) => setLectureTypeId(e.target.value)}
-                          options={lectureTypeOptions}
-                        />
-                      )}
-                      <Select
-                        label="来源"
-                        value={questionSourceType}
-                        onChange={(e) => setQuestionSourceType(e.target.value)}
-                        options={sourceOptions}
-                      />
-                      <Select
-                        label="题类"
-                        value={questionCategory}
-                        onChange={(e) => setQuestionCategory(e.target.value)}
-                        options={categoryOptions}
-                      />
-                    </div>
-                  )}
-
-                  {selectedType === "courseware" && (
-                    <Select
-                      label="课件类型（默认）"
-                      value={coursewareType}
-                      onChange={(e) => setCoursewareType(e.target.value)}
-                      options={coursewareTypeOptions}
-                    />
-                  )}
-                  {selectedType === "material" && (
-                    <Select
-                      label="素材类型（默认）"
-                      value={materialType}
-                      onChange={(e) => setMaterialType(e.target.value)}
-                      options={materialTypeOptions}
-                    />
-                  )}
 
                   {/* 章节目录 + 知识点目录 */}
                   <div className="grid md:grid-cols-2 gap-4">
