@@ -314,6 +314,55 @@ export interface ClassroomChoice {
 
 export type StudentStatus = "active" | "suspended" | "graduated" | "transferred" | "deleted";
 
+export type StudentArchiveStatus =
+  | "attending"
+  | "studyAway"
+  | "visiting"
+  | "leave"
+  | "suspended"
+  | "transferred"
+  | "graduated";
+
+export interface StudentContactInfo {
+  studentPhone?: string;
+  guardianName?: string;
+  guardianPhone?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
+}
+
+export interface StudentArchiveRecord {
+  id: string;
+  studentId: string;
+  schoolId: string;
+  classId: string;
+  type: "contact" | "status";
+  previousStatus?: StudentArchiveStatus;
+  status?: StudentArchiveStatus;
+  contacts?: StudentContactInfo;
+  externalSchool?: string;
+  startDate?: string;
+  endDate?: string;
+  note?: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+}
+
+export interface StudentArchiveStatusInput {
+  status: Exclude<StudentArchiveStatus, "graduated">;
+  externalSchool?: string;
+  startDate?: string;
+  endDate?: string;
+  note?: string;
+}
+
+export interface StudentArchiveOverview {
+  classes: AnyClass[];
+  students: Student[];
+  records: StudentArchiveRecord[];
+}
+
 export interface Student {
   id: string;
   name: string;
@@ -328,6 +377,12 @@ export interface Student {
   externalSchool?: string;
   /** 学生状态：在读 / 挂起 / 已毕业 / 已转校 */
   status: StudentStatus;
+  /** “我的学生-档案记录”中的当前状态；旧数据会由 status/isExternal 推导。 */
+  archiveStatus?: StudentArchiveStatus;
+  /** 请假前的就读状态，用于结束请假时准确恢复借读关系。 */
+  archiveStatusBeforeLeave?: Exclude<StudentArchiveStatus, "leave">;
+  /** 学生及监护人联系方式。 */
+  contacts?: StudentContactInfo;
   /** 挂起时间 */
   suspendedAt?: string;
   /** 恢复时间 */

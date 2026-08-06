@@ -1,7 +1,12 @@
-import type { SchoolClass, PersonalClass, Student, AnyClass, ClassroomChoice } from "../../src/types/index.js";
+import type {
+  SchoolClass, PersonalClass, Student, AnyClass, ClassroomChoice, Teacher,
+  StudentArchiveOverview, StudentArchiveRecord, StudentArchiveStatus,
+  StudentArchiveStatusInput, StudentContactInfo,
+} from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { schoolRosterService } from "./school-roster.js";
+import { getStudentArchiveStatus } from "../../src/lib/student-archive.js";
 
 export interface StudentInput {
   name: string;
@@ -27,6 +32,58 @@ function requireActiveStudent(studentId: string): Student {
   if (!student) throw new Error("学生不存在");
   if (student.status !== "active") throw new Error("仅在读学生可执行该操作");
   return student;
+}
+
+const STUDENT_ARCHIVE_MANAGER_ROLES = new Set([
+  "gradeLeader",
+  "dean",
+  "vicePrincipal",
+  "principal",
+]);
+const STUDENT_ARCHIVE_EDITABLE_STATUSES = new Set<StudentArchiveStatus>([
+  "attending",
+  "studyAway",
+  "visiting",
+  "leave",
+  "suspended",
+  "transferred",
+]);
+
+function currentAffiliation(teacher: Teacher, schoolId: string | null) {
+  return teacher.affiliations?.find((item) => item.schoolId === schoolId)
+    || teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent)
+    || null;
+}
+
+function canManageStudentArchive(teacher: Teacher, schoolId: string | null): boolean {
+  const affiliation = currentAffiliation(teacher, schoolId);
+  const role = affiliation?.role || teacher.role;
+  if (role === "school_admin" || role === "platform_admin") return true;
+  const roles = affiliation?.roles || teacher.roles || [];
+  return roles.some((item) => STUDENT_ARCHIVE_MANAGER_ROLES.has(item));
+}
+
+function appendStudentArchiveRecord(record: StudentArchiveRecord): void {
+  db.update("studentArchiveRecords", (records: StudentArchiveRecord[] | undefined) => [
+    ...(records || []),
+    record,
+  ]);
+}
+
+function cleanOptional(value: string | undefined): string | undefined {
+  const cleaned = value?.trim();
+  return cleaned || undefined;
+}
+
+function normalizeContacts(input: StudentContactInfo): StudentContactInfo {
+  return {
+    studentPhone: cleanOptional(input.studentPhone),
+    guardianName: cleanOptional(input.guardianName),
+    guardianPhone: cleanOptional(input.guardianPhone),
+    emergencyContact: cleanOptional(input.emergencyContact),
+    emergencyPhone: cleanOptional(input.emergencyPhone),
+  };
 }
 
 export const classService = {
@@ -132,6 +189,7 @@ export const classService = {
       isExternal: input.isExternal,
       externalSchool: input.externalSchool,
       status: "active",
+      archiveStatus: input.isExternal ? "visiting" : "attending",
     };
     db.update("students", (list) => [...list, student]);
     // 更新班级学生数
@@ -161,6 +219,7 @@ export const classService = {
       isExternal: true,
       externalSchool: input.externalSchool,
       status: "active",
+      archiveStatus: "visiting",
     };
     db.update("students", (list) => [...list, student]);
     db.update("personalClasses", (list) =>
@@ -265,6 +324,171 @@ export const classService = {
         s.status === "active"
         && (schoolClassIds.has(s.classId) || personalStudentIds.has(s.id)),
     );
+  },
+
+  /**
+   * 列出当前教师可查看的学生档案。普通教师查看任教班级，档案管理员查看全校。
+   */
+  async listMyStudentArchives(
+    schoolId: string | null,
+    teacherId: string,
+  ): Promise<StudentArchiveOverview> {
+    await delay(250);
+    const teacher = db.read("teachers").find((item: Teacher) => item.id === teacherId) as Teacher | undefined;
+    if (!teacher) throw new Error("教师不存在");
+
+    const personalClasses = db.read("personalClasses")
+      .filter((item: PersonalClass) => item.teacherId === teacherId);
+    const schoolClasses = canManageStudentArchive(teacher, schoolId)
+      ? db.read("schoolClasses").filter((item: SchoolClass) =>
+          item.schoolId === schoolId && item.status !== "deleted" && item.status !== "graduated",
+        )
+      : (await this.listMyClasses(schoolId, teacherId))
+          .filter((item): item is SchoolClass => item.type === "school");
+    const classes: AnyClass[] = [...schoolClasses, ...personalClasses];
+    const schoolClassIds = new Set(schoolClasses.map((item) => item.id));
+    const personalStudentIds = new Set(personalClasses.flatMap((item) => item.studentIds));
+    const students = (db.read("students") as Student[])
+      .filter((student) =>
+        student.status !== "deleted"
+        && (schoolClassIds.has(student.classId) || personalStudentIds.has(student.id)),
+      )
+      .map((student) => ({ ...student, archiveStatus: getStudentArchiveStatus(student) }));
+    const studentIds = new Set(students.map((student) => student.id));
+    const records = ((db.read("studentArchiveRecords") || []) as StudentArchiveRecord[])
+      .filter((record) => studentIds.has(record.studentId))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    return { classes, students, records };
+  },
+
+  async updateStudentContacts(
+    studentId: string,
+    input: StudentContactInfo & { note?: string },
+    teacher: Teacher,
+  ): Promise<Student> {
+    await delay(200);
+    maybeThrowError();
+    const student = (db.read("students") as Student[]).find((item) => item.id === studentId);
+    if (!student || student.status === "deleted") throw new Error("学生不存在");
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error("无效的联系方式");
+    }
+    const contacts = normalizeContacts(input);
+    let updated = student;
+    db.update("students", (students: Student[]) => students.map((item) => {
+      if (item.id !== studentId) return item;
+      updated = { ...item, contacts };
+      return updated;
+    }));
+    appendStudentArchiveRecord({
+      id: genId("stu-archive"),
+      studentId,
+      schoolId: student.schoolId,
+      classId: student.classId,
+      type: "contact",
+      contacts,
+      note: cleanOptional(input.note),
+      createdBy: teacher.id,
+      createdByName: teacher.name,
+      createdAt: new Date().toISOString(),
+    });
+    return updated;
+  },
+
+  async updateStudentArchiveStatus(
+    studentId: string,
+    input: StudentArchiveStatusInput,
+    teacher: Teacher,
+  ): Promise<Student> {
+    await delay(250);
+    maybeThrowError();
+    const student = (db.read("students") as Student[]).find((item) => item.id === studentId);
+    if (!student || student.status === "deleted") throw new Error("学生不存在");
+    if (!input || !STUDENT_ARCHIVE_EDITABLE_STATUSES.has(input.status)) {
+      throw new Error("无效的学生档案状态");
+    }
+    const previousStatus = getStudentArchiveStatus(student);
+    if (previousStatus === "graduated" || previousStatus === "transferred") {
+      throw new Error("离校学生档案不能修改当前状态");
+    }
+    const externalSchool = cleanOptional(input.externalSchool);
+    if (["studyAway", "visiting"].includes(input.status) && !externalSchool) {
+      throw new Error("请填写借读学校");
+    }
+    const now = new Date().toISOString();
+    const wasCounted = student.status === "active";
+    let nextStatus = student.status;
+    const archiveStatus: StudentArchiveStatus = input.status;
+    let isExternal = student.isExternal;
+    let suspendedAt = student.suspendedAt;
+    let resumedAt = student.resumedAt;
+    let transferredAt = student.transferredAt;
+    let archiveStatusBeforeLeave = student.archiveStatusBeforeLeave;
+
+    if (input.status === "leave" && previousStatus !== "leave") {
+      archiveStatusBeforeLeave = previousStatus;
+    } else if (previousStatus === "leave" && input.status !== "leave") {
+      archiveStatusBeforeLeave = undefined;
+    }
+
+    if (input.status === "suspended") {
+      nextStatus = "suspended";
+      suspendedAt = now;
+    } else if (input.status === "transferred") {
+      nextStatus = "transferred";
+      transferredAt = now;
+    } else {
+      nextStatus = "active";
+      if (!wasCounted) resumedAt = now;
+      if (input.status === "visiting") isExternal = true;
+      if (input.status === "studyAway" || input.status === "attending") isExternal = false;
+    }
+
+    const isCounted = nextStatus === "active";
+    if (wasCounted !== isCounted && student.classId
+      && db.read("schoolClasses").some((item: SchoolClass) => item.id === student.classId)) {
+      updateSchoolClassStudentCount(student.classId, isCounted ? 1 : -1);
+    }
+
+    let updated = student;
+    db.update("students", (students: Student[]) => students.map((item) => {
+      if (item.id !== studentId) return item;
+      updated = {
+        ...item,
+        status: nextStatus,
+        archiveStatus,
+        archiveStatusBeforeLeave,
+        isExternal,
+        externalSchool: ["studyAway", "visiting"].includes(input.status)
+          ? externalSchool
+          : input.status === "attending"
+            ? undefined
+            : item.externalSchool,
+        suspendedAt,
+        resumedAt,
+        transferredAt,
+      };
+      return updated;
+    }));
+
+    appendStudentArchiveRecord({
+      id: genId("stu-archive"),
+      studentId,
+      schoolId: student.schoolId,
+      classId: student.classId,
+      type: "status",
+      previousStatus,
+      status: archiveStatus,
+      externalSchool,
+      startDate: cleanOptional(input.startDate),
+      endDate: cleanOptional(input.endDate),
+      note: cleanOptional(input.note),
+      createdBy: teacher.id,
+      createdByName: teacher.name,
+      createdAt: now,
+    });
+    return updated;
   },
 
   /**
@@ -479,6 +703,8 @@ export const classService = {
         updated = {
           ...s,
           status: "suspended",
+          archiveStatus: "suspended",
+          archiveStatusBeforeLeave: undefined,
           suspendedAt: now,
         };
         return updated;
@@ -507,6 +733,8 @@ export const classService = {
         updated = {
           ...item,
           status: "graduated",
+          archiveStatus: "graduated",
+          archiveStatusBeforeLeave: undefined,
           graduatedAt: now,
           graduationType: "early",
         };
@@ -534,6 +762,8 @@ export const classService = {
         updated = {
           ...item,
           status: "transferred",
+          archiveStatus: "transferred",
+          archiveStatusBeforeLeave: undefined,
           transferredAt: now,
         };
         return updated;
@@ -567,6 +797,8 @@ export const classService = {
           ? {
               ...student,
               status: "graduated",
+              archiveStatus: "graduated",
+              archiveStatusBeforeLeave: undefined,
               graduatedAt: now,
               graduationType: "regular",
             }
@@ -624,6 +856,8 @@ export const classService = {
           updated = {
             ...s,
             status: "active",
+            archiveStatus: "attending",
+            archiveStatusBeforeLeave: undefined,
             resumedAt: now,
             classId: targetClassId,
             grade: toClass?.grade || s.grade,
@@ -646,6 +880,8 @@ export const classService = {
           updated = {
             ...s,
             status: "active",
+            archiveStatus: "attending",
+            archiveStatusBeforeLeave: undefined,
             resumedAt: now,
           };
           return updated;
