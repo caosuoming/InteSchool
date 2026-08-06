@@ -5,13 +5,16 @@ import type { ExamPaper, ExamPublication, Question, Teacher, TreeNode } from "@/
 
 const mocks = vi.hoisted(() => ({
   getPaper: vi.fn(),
+  updatePaper: vi.fn(),
   listQuestions: vi.fn(),
   listBaskets: vi.fn(),
+  removeQuestion: vi.fn(),
   listAllClasses: vi.fn(),
   listSchoolClasses: vi.fn(),
   listPersonalClasses: vi.fn(),
   listStudentsBySchool: vi.fn(),
   listPublications: vi.fn(),
+  publishExam: vi.fn(),
   listExamPaperTypes: vi.fn(),
   listSettings: vi.fn(),
   getKnowledgeTree: vi.fn(),
@@ -30,6 +33,7 @@ vi.mock("@/stores/auth", () => ({
 vi.mock("@/services/examPaper", () => ({
   examPaperService: {
     getPaper: mocks.getPaper,
+    updatePaper: mocks.updatePaper,
     listPapers: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -41,6 +45,7 @@ vi.mock("@/services/question", () => ({
 vi.mock("@/services/basket", () => ({
   basketService: {
     listBaskets: mocks.listBaskets,
+    removeQuestion: mocks.removeQuestion,
   },
 }));
 vi.mock("@/services/lecture", () => ({
@@ -57,6 +62,7 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/examPublish", () => ({
   examPublishService: {
     listPublications: mocks.listPublications,
+    publishExam: mocks.publishExam,
     revokePublication: vi.fn(),
   },
 }));
@@ -195,6 +201,7 @@ function renderEditorPage() {
     <MemoryRouter initialEntries={[`/exam-papers/${paper.id}`]}>
       <Routes>
         <Route path="/exam-papers/:id" element={<ExamPaperEditorPage />} />
+        <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -206,6 +213,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.getPaper.mockResolvedValue(paper);
     mocks.listQuestions.mockResolvedValue([question]);
     mocks.listBaskets.mockResolvedValue([]);
+    mocks.removeQuestion.mockResolvedValue(undefined);
     mocks.listAllClasses.mockResolvedValue([{ id: "class-1", name: "高一（1）班" }]);
     mocks.listSchoolClasses.mockResolvedValue([]);
     mocks.listPersonalClasses.mockResolvedValue([]);
@@ -217,30 +225,24 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.generateExamPaperDocx.mockResolvedValue(undefined);
   });
 
-  it("uses a collapsible information sidebar and downloads instead of printing", async () => {
+  it("shows the current title first and aligns per-question details beside the paper", async () => {
     renderPage();
 
-    expect(await screen.findByText("文档原始标题")).toBeInTheDocument();
-    const preview = screen.getByTestId("exam-paper-preview");
-    expect(within(preview).queryByText("外层试卷标题")).not.toBeInTheDocument();
+    const preview = await screen.findByTestId("exam-paper-preview");
+    expect(preview.firstElementChild).toHaveClass("exam-paper-preview-title");
+    expect(within(preview.firstElementChild as HTMLElement).getByText("外层试卷标题")).toBeInTheDocument();
+    expect(within(preview).queryByText("文档原始标题")).not.toBeInTheDocument();
     expect(screen.queryByText("版面：")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打印" })).not.toBeInTheDocument();
 
-    const sidebar = screen.getByLabelText("试卷信息侧栏");
-    expect(within(sidebar).queryByText("文档信息")).not.toBeInTheDocument();
-    expect(within(sidebar).getByText("难度分布")).toBeInTheDocument();
-    expect(within(sidebar).getByText("已发布对象")).toBeInTheDocument();
-    expect(within(sidebar).getByText("高一（1）班")).toBeInTheDocument();
-    expect(within(sidebar).getByText("包含知识点")).toBeInTheDocument();
-    expect(within(sidebar).getByText("函数定义域")).toBeInTheDocument();
-    expect(screen.getAllByText("难度分布")).toHaveLength(1);
-    expect(screen.getAllByText("已发布对象")).toHaveLength(1);
-    expect(screen.getAllByText("包含知识点")).toHaveLength(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "收起信息栏" }));
-    expect(screen.queryByLabelText("试卷信息侧栏")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "展开信息栏" }));
-    expect(screen.getByLabelText("试卷信息侧栏")).toBeInTheDocument();
+    expect(screen.getByTestId("exam-paper-preview-details")).toHaveTextContent("题目信息");
+    const questionDetails = screen.getByTestId("exam-question-details-1");
+    expect(questionDetails).toHaveTextContent("第 1 题");
+    expect(questionDetails).toHaveTextContent("较易");
+    expect(questionDetails).toHaveTextContent("5 分");
+    expect(questionDetails).toHaveTextContent("函数定义域");
+    expect(questionDetails.parentElement).toHaveClass("exam-paper-preview-right");
+    expect(screen.queryByRole("button", { name: "收起信息栏" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下载" }));
     await waitFor(() => {
@@ -252,12 +254,68 @@ describe("ExamPaperEditorPage preview", () => {
       contentBlocks: paper.contentBlocks,
     });
   });
+
+  it("previews unsaved edits and keeps them when returning to the editor", async () => {
+    renderEditorPage();
+
+    const titleInput = await screen.findByLabelText<HTMLInputElement>("文档名");
+    fireEvent.change(titleInput, { target: { value: "未保存的新标题" } });
+    fireEvent.change(screen.getByLabelText("题目分值"), { target: { value: "9" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+
+    const preview = await screen.findByTestId("exam-paper-preview");
+    expect(within(preview).getByText("未保存的新标题")).toBeInTheDocument();
+    expect(screen.getByTestId("exam-question-details-1")).toHaveTextContent("9 分");
+    expect(mocks.updatePaper).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑试卷" }));
+    expect(await screen.findByDisplayValue("未保存的新标题")).toBeInTheDocument();
+    expect(screen.getByLabelText<HTMLInputElement>("题目分值")).toHaveValue(9);
+  });
+
+  it("renders formulas in both editor and preview and exposes publishing in the editor", async () => {
+    const formulaQuestion = {
+      ...question,
+      stem: "已知 $x^2=4$，求 $x$。",
+      options: ["$x=2$", "$x=\\pm 2$"],
+      answer: "$x=\\pm 2$",
+      analysis: "由 $x^2=4$ 可得。",
+    } as Question;
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+      questions: [{
+        ...paper.questions[0],
+        stem: formulaQuestion.stem,
+        options: formulaQuestion.options,
+        answer: formulaQuestion.answer,
+        analysis: formulaQuestion.analysis,
+      }],
+    });
+    mocks.listQuestions.mockResolvedValue([formulaQuestion]);
+
+    const { container } = renderEditorPage();
+    await screen.findByLabelText("文档名");
+    await waitFor(() => expect(container.querySelector(".katex")).toBeInTheDocument());
+
+    const publishButtons = screen.getAllByRole("button", { name: "选择发布对象" });
+    fireEvent.click(publishButtons[0]);
+    expect(screen.getByText("发布试卷")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    await screen.findByTestId("exam-paper-preview");
+    await waitFor(() => expect(container.querySelectorAll(".katex").length).toBeGreaterThan(0));
+  });
 });
 
 describe("ExamPaperEditorPage structured editor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listBaskets.mockResolvedValue([]);
+    mocks.removeQuestion.mockResolvedValue(undefined);
     mocks.listAllClasses.mockResolvedValue([]);
     mocks.listSchoolClasses.mockResolvedValue([]);
     mocks.listPersonalClasses.mockResolvedValue([]);
