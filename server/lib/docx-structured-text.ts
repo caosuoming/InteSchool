@@ -2,6 +2,11 @@ import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
 import { extname, posix } from "node:path";
 import { ommlToLatex } from "../../src/lib/omml-to-latex.js";
+import {
+  serializeDocumentTable,
+  type DocumentTable,
+  type DocumentTableCell,
+} from "../../src/lib/document-table.js";
 
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
@@ -255,24 +260,97 @@ function extractParagraph(
   ).trim();
 }
 
-function extractTable(table: Element, imageUrl?: ImageUrlFactory): string[] {
-  const rows = Array.from(table.getElementsByTagNameNS(WORD_NS, "tr"));
-  return rows
-    .map((row) => {
-      const cells = Array.from(row.getElementsByTagNameNS(WORD_NS, "tc"));
-      return cells
-        .map((cell) => {
-          const paragraphs = Array.from(
-            cell.getElementsByTagNameNS(WORD_NS, "p"),
-          );
-          return paragraphs
-            .map((paragraph) => extractParagraph(paragraph, imageUrl))
-            .filter(Boolean)
-            .join(" ");
-        })
-        .join("\t");
+function wordChild(element: Element, localName: string): Element | undefined {
+  return elementChildren(element).find(
+    (child) => child.namespaceURI === WORD_NS && child.localName === localName,
+  );
+}
+
+function wordChildren(element: Element, localName: string): Element[] {
+  return elementChildren(element).filter(
+    (child) => child.namespaceURI === WORD_NS && child.localName === localName,
+  );
+}
+
+function tableCellSpan(cell: Element): number {
+  const properties = wordChild(cell, "tcPr");
+  const gridSpan = properties ? wordChild(properties, "gridSpan") : undefined;
+  const value = gridSpan?.getAttributeNS(WORD_NS, "val")
+    || gridSpan?.getAttribute("w:val")
+    || "";
+  const span = Number(value);
+  return Number.isInteger(span) && span > 1 && span <= 100 ? span : 1;
+}
+
+function tableCellVerticalMerge(cell: Element): "restart" | "continue" | null {
+  const properties = wordChild(cell, "tcPr");
+  const merge = properties ? wordChild(properties, "vMerge") : undefined;
+  if (!merge) return null;
+  const value = merge.getAttributeNS(WORD_NS, "val") || merge.getAttribute("w:val");
+  return value === "restart" ? "restart" : "continue";
+}
+
+function extractTableCell(cell: Element, imageUrl?: ImageUrlFactory): string {
+  return elementChildren(cell)
+    .flatMap((child) => {
+      if (child.namespaceURI !== WORD_NS) return [];
+      if (child.localName === "p") return [extractParagraph(child, imageUrl)];
+      if (child.localName === "tbl") {
+        const nested = extractTable(child, imageUrl);
+        return nested ? [nested] : [];
+      }
+      if (["sdt", "sdtContent", "customXml"].includes(child.localName)) {
+        return extractBlocks(child, imageUrl);
+      }
+      return [];
     })
-    .filter((row) => row.trim().length > 0);
+    .filter(Boolean)
+    .join("\n");
+}
+
+function extractTable(table: Element, imageUrl?: ImageUrlFactory): string {
+  const extracted: DocumentTable = [];
+  const activeVerticalMerges = new Map<number, DocumentTableCell>();
+
+  for (const rowElement of wordChildren(table, "tr")) {
+    const row: DocumentTableCell[] = [];
+    const extendedCells = new Set<DocumentTableCell>();
+    let column = 0;
+
+    for (const cellElement of wordChildren(rowElement, "tc")) {
+      const colSpan = tableCellSpan(cellElement);
+      const verticalMerge = tableCellVerticalMerge(cellElement);
+      if (verticalMerge === "continue") {
+        const merged = activeVerticalMerges.get(column);
+        if (merged) {
+          if (!extendedCells.has(merged)) {
+            merged.rowSpan = (merged.rowSpan || 1) + 1;
+            extendedCells.add(merged);
+          }
+          column += Math.max(colSpan, merged.colSpan || 1);
+          continue;
+        }
+      }
+
+      const cell: DocumentTableCell = {
+        content: extractTableCell(cellElement, imageUrl),
+        colSpan: colSpan > 1 ? colSpan : undefined,
+      };
+      row.push(cell);
+      for (let offset = 0; offset < colSpan; offset += 1) {
+        if (verticalMerge === "restart") {
+          activeVerticalMerges.set(column + offset, cell);
+        } else {
+          activeVerticalMerges.delete(column + offset);
+        }
+      }
+      column += colSpan;
+    }
+
+    if (row.length > 0) extracted.push(row);
+  }
+
+  return extracted.length > 0 ? serializeDocumentTable(extracted) : "";
 }
 
 function extractBlocks(parent: Element, imageUrl?: ImageUrlFactory): string[] {
@@ -285,7 +363,8 @@ function extractBlocks(parent: Element, imageUrl?: ImageUrlFactory): string[] {
       continue;
     }
     if (child.localName === "tbl") {
-      blocks.push(...extractTable(child, imageUrl));
+      const table = extractTable(child, imageUrl);
+      if (table) blocks.push(table);
       continue;
     }
     if (["sdt", "sdtContent", "customXml"].includes(child.localName)) {

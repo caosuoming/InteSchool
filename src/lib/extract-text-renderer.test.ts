@@ -98,6 +98,23 @@ describe("extract text renderer", () => {
     expect(image).not.toHaveClass("border");
   });
 
+  it("renders preserved tables with formulas and safe spans", () => {
+    const html = renderExtractText(
+      '<table class="document-table"><tbody>'
+        + '<tr><td rowspan="2">X</td><td>0</td><td>1</td></tr>'
+        + '<tr><td>$k(1-\\alpha)^2$</td><td>$k\\alpha$</td></tr>'
+        + '</tbody></table>',
+      [],
+      false,
+    );
+    const container = asElement(html);
+
+    expect(container.querySelector("table.document-table")).not.toBeNull();
+    expect(container.querySelector("td[rowspan='2']")).toHaveTextContent("X");
+    expect(container.querySelectorAll(".katex")).toHaveLength(2);
+    expect(container.textContent).not.toContain("<table");
+  });
+
   it("escapes decoded HTML and handles empty input and formulas", () => {
     expect(renderExtractText("")).toBe("");
 

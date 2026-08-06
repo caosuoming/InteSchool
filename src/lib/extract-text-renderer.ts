@@ -1,5 +1,7 @@
 import katex from "katex";
 import { normalizeLegacyOmmlMathText } from "./legacy-omml-formulas";
+import { renderMathHtml } from "./math-html";
+import { splitDocumentTableSegments } from "./document-table";
 import {
   documentImageInlineStyle,
   officeMetafileInlineStyle,
@@ -135,7 +137,10 @@ export function renderExtractText(
   };
 
   const decoded = normalizeLegacyOmmlMathText(decodeHtmlEntities(text));
-  const protectedText = decoded.replace(
+  const tableProtectedText = splitDocumentTableSegments(decoded)
+    .map((segment) => segment.type === "table" ? reserve(renderMathHtml(segment.value)) : segment.value)
+    .join("");
+  const protectedText = tableProtectedText.replace(
     TOKEN_PATTERN,
     (
       _match,
