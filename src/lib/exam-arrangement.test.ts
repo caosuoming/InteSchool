@@ -81,14 +81,22 @@ describe("generateExamAssignments", () => {
     expect(new Set(assignments.map((item) => item.admissionNo)).size).toBe(assignments.length);
   });
 
-  it("creates one seat per student and intersects room rules in combination mode", () => {
+  it("creates one shared seat layout for all combined subjects", () => {
     const assignments = generateExamAssignments(input("combination"), context);
     expect(assignments).toHaveLength(3);
     expect(assignments.find((item) => item.studentId === "student-1")).toMatchObject({
       roomId: "room-a",
       subjectLabel: "物理 / 化学",
     });
-    expect(assignments.find((item) => item.studentId === "student-3")?.roomId).toBe("room-b");
+    expect(assignments.find((item) => item.studentId === "student-2")).toMatchObject({
+      roomId: "room-a",
+      subjectLabel: "物理 / 化学",
+    });
+    expect(assignments.find((item) => item.studentId === "student-3")).toMatchObject({
+      roomId: "room-b",
+      subjectLabel: "物理 / 化学",
+    });
+    expect(new Set(assignments.map((item) => item.sessionKey))).toEqual(new Set(["combined"]));
   });
 
   it("reports the first student that cannot fit into eligible rooms", () => {
@@ -135,23 +143,36 @@ describe("generateExamAssignments", () => {
     ]);
   });
 
+  it("does not split a combined group by each student's selected subject subset", () => {
+    expect(summarizeExamGroups(input("combination"), context)).toEqual([
+      {
+        key: "combined:物理|化学",
+        sessionKey: "combined",
+        subjectLabel: "物理 / 化学",
+        studentCount: 3,
+        classIds: ["class-1", "class-2"],
+      },
+    ]);
+  });
+
   it("uses the user-adjusted room mapping for each exam group", () => {
     const mapped = input("combination");
+    mapped.rooms = [
+      { id: "room-a", name: "第一考场", capacity: 3 },
+      { id: "room-b", name: "第二考场", capacity: 3 },
+    ];
     mapped.classRules = mapped.classRules.map((rule) => ({
       ...rule,
       subjectRoomIds: { 物理: ["room-a", "room-b"], 化学: ["room-a", "room-b"] },
     }));
     mapped.groupRoomIds = {
       "combined:物理|化学": ["room-b"],
-      "combined:化学": ["room-a"],
-      "combined:物理": ["room-a"],
     };
 
     const assignments = generateExamAssignments(mapped, context);
 
-    expect(assignments.find((item) => item.studentId === "student-1")?.roomId).toBe("room-b");
-    expect(assignments.find((item) => item.studentId === "student-2")?.roomId).toBe("room-a");
-    expect(assignments.find((item) => item.studentId === "student-3")?.roomId).toBe("room-a");
+    expect(assignments).toHaveLength(3);
+    expect(assignments.every((item) => item.roomId === "room-b")).toBe(true);
   });
 
   it("does not create seats for students marked absent", () => {

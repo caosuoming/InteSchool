@@ -826,7 +826,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
               <Card>
                 <div className="font-medium text-ink-900">排考场规则</div>
-                <div className="mt-1 text-xs text-ink-500">勾选的科目每个学科单独排考场；未勾选的科目合并安排，同一学生只占一个座位。</div>
+                <div className="mt-1 text-xs text-ink-500">勾选的科目每个学科单独排考场；未勾选的科目固定合并安排，学生缺考其中部分科目时不会拆分考场。</div>
                 <div className="mt-4 flex flex-wrap gap-2">{draft.subjects.map((subject) => (
                   <CheckboxPill key={subject} checked={(draft.separateSubjects || []).includes(subject)} label={`${subject}单独排`} onClick={() => toggleSeparateSubject(subject)} />
                 ))}</div>
