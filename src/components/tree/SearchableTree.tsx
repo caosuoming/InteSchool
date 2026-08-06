@@ -28,6 +28,8 @@ interface SearchableTreeProps {
   headerActions?: ReactNode;
   /** 是否显示标题栏 */
   showHeader?: boolean;
+  /** 是否显示标题文字 */
+  showTitle?: boolean;
   /** 是否显示重置按钮 */
   showResetButton?: boolean;
   /** 目录滚动区域的高度类名 */
@@ -73,6 +75,7 @@ export function SearchableTree({
   onReset,
   headerActions,
   showHeader = true,
+  showTitle = true,
   showResetButton = true,
   treeMaxHeightClassName,
 }: SearchableTreeProps) {
@@ -143,7 +146,9 @@ export function SearchableTree({
                   </button>
                 </div>
               )}
-              <div className="min-w-0 font-serif text-sm font-semibold">{title}</div>
+              {showTitle && (
+                <div className="min-w-0 font-serif text-sm font-semibold">{title}</div>
+              )}
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
               {headerActions}

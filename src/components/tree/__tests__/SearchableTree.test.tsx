@@ -99,4 +99,22 @@ describe("SearchableTree", () => {
     expect(onCheck).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText("搜索目录...")).toHaveValue("");
   });
+
+  it("can hide the title without removing header controls", () => {
+    render(
+      <SearchableTree
+        data={tree}
+        title="章节课目录"
+        showTitle={false}
+        checkable
+        showLogicSelector
+        onCheck={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("章节课目录")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "或" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "且" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重置" })).toBeInTheDocument();
+  });
 });
