@@ -1520,7 +1520,7 @@ export default function LectureEditorPage() {
             </div>
           )}
           {sections.map((sec, idx) => (
-            <PreviewSection
+            <LectureEditorPreviewSection
               key={sec.id}
               section={sec}
               index={idx}
@@ -1874,7 +1874,7 @@ export default function LectureEditorPage() {
                 <span className="font-semibold text-gold-700">{lectureQuestionIds.length} 道题</span>
               </div>
             </div>
-            <div className="grid md:grid-cols-2 xl:grid-cols-6 gap-3">
+            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
               <div className="xl:col-span-2">
                 <Input label="标题" value={title} onChange={(event) => setTitle(event.target.value)} />
               </div>
@@ -1916,9 +1916,9 @@ export default function LectureEditorPage() {
               />
               <details className="md:col-span-2 xl:col-span-4 rounded-lg border border-ink-100 bg-ink-50/40">
                 <summary className="px-3 py-2 text-xs font-medium text-ink-600 cursor-pointer select-none">
-                  章节目录、知识点与适用班级
+                  章节目录与知识点
                 </summary>
-                <div className="grid lg:grid-cols-3 gap-4 p-3 border-t border-ink-100 bg-paper">
+                <div className="grid lg:grid-cols-2 gap-4 p-3 border-t border-ink-100 bg-paper">
                   <div>
                     <div className="text-xs font-medium text-ink-600 mb-1.5">章节目录</div>
                     {chapterTree && (
@@ -1944,38 +1944,6 @@ export default function LectureEditorPage() {
                         className="text-xs max-h-52 overflow-auto"
                       />
                     )}
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-ink-600 mb-1.5">适用班级</div>
-                    <div className="space-y-1 max-h-52 overflow-y-auto">
-                      {classes.map((item) => {
-                        const checked = selectedClassIds.includes(item.id);
-                        return (
-                          <label
-                            key={item.id}
-                            className={cn(
-                              "flex items-center gap-2 p-2 rounded-md border cursor-pointer transition-colors",
-                              checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(event) => {
-                                setSelectedClassIds((previous) =>
-                                  event.target.checked
-                                    ? [...previous, item.id]
-                                    : previous.filter((classId) => classId !== item.id),
-                                );
-                              }}
-                              className="rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                            />
-                            <span className="text-xs text-ink-800 flex-1 truncate">{item.name}</span>
-                            {item.type === "personal" && <Badge variant="teal">个人</Badge>}
-                          </label>
-                        );
-                      })}
-                    </div>
                   </div>
                 </div>
               </details>
@@ -2490,7 +2458,9 @@ export default function LectureEditorPage() {
               : "w-[370mm] min-h-[260mm] mx-auto"
           )}>
             <div className="mb-6 pb-4 border-b border-ink-200">
-              <h1 className="text-xl font-bold text-center text-ink-900 mb-2">{lecture?.title || title}</h1>
+              <MathHtml className="text-xl font-bold text-center text-ink-900 mb-2">
+                {lecture?.title || title}
+              </MathHtml>
               <div className="text-sm text-center text-ink-500">
                 {grade} · {schoolYear}
               </div>
@@ -3638,7 +3608,7 @@ function PreviewContent({
   const renderSectionItem = (sec: LectureSection, localIdx: number) => {
     const globalQuestionIndex = sec.type === "question" ? questionIndexMap.get(sec.id) ?? 0 : 0;
     return (
-      <PreviewSection
+      <LectureEditorPreviewSection
         section={sec}
         index={localIdx}
         globalQuestionIndex={globalQuestionIndex}
@@ -4030,7 +4000,7 @@ function QuestionBasketPicker({
 }
 
 // ============ 预览模式章节 ============
-function PreviewSection({
+export function LectureEditorPreviewSection({
   section,
   index,
   globalQuestionIndex,
@@ -4112,19 +4082,19 @@ function PreviewSection({
     return (
       <div className="pt-6 pb-2">
         <div className="flex items-center gap-2 mb-3">
-          <span className="font-serif text-xl font-bold text-ink-900">
-            {index + 1}. {section.title}
-          </span>
+          <MathHtml className="font-serif text-xl font-bold text-ink-900">
+            {`${index + 1}. ${section.title}`}
+          </MathHtml>
         </div>
         {section.content && (
-          <div className="mb-4 text-sm text-ink-600 leading-relaxed whitespace-pre-wrap">
+          <MathHtml className="mb-4 text-sm text-ink-600 leading-relaxed whitespace-pre-wrap">
             {section.content}
-          </div>
+          </MathHtml>
         )}
         {section.children.length > 0 && (
           <div className="space-y-4 pl-2 border-l-2 border-ink-100 ml-2">
             {section.children.map((child, cIdx) => (
-              <PreviewSection
+              <LectureEditorPreviewSection
                 key={child.id}
                 section={child}
                 index={cIdx}
@@ -4170,14 +4140,14 @@ function PreviewSection({
                 <div
                   onClick={() => section.displayMode !== "stem-only" && setExpanded(!expanded)}
                   className={cn(
-                    "text-sm text-ink-900 leading-relaxed whitespace-pre-wrap select-none flex-1",
+                    "text-sm text-ink-900 leading-relaxed select-none flex-1 flex items-start gap-1.5 min-w-0",
                     section.displayMode !== "stem-only" && "cursor-pointer hover:text-gold-700 transition-colors",
                   )}
                 >
-                  <span className="font-mono text-ink-400 mr-1.5">{section.customLabel || `${questionNumber}.`}</span>
-                  {question.stem}
+                  <span className="font-mono text-ink-400 flex-shrink-0">{section.customLabel || `${questionNumber}.`}</span>
+                  <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{question.stem}</MathHtml>
                   {section.questionId && answeredQuestionIds.has(section.questionId) && (
-                    <span className="tag-gold ml-2 text-[10px] py-0.5">已做过</span>
+                    <span className="tag-gold text-[10px] py-0.5 flex-shrink-0">已做过</span>
                   )}
                 </div>
               </div>
@@ -4231,7 +4201,7 @@ function PreviewSection({
                       <span className="font-mono font-semibold text-ink-700 flex-shrink-0">
                         {String.fromCharCode(65 + i)}.
                       </span>
-                      <span className="text-ink-900 break-all">{opt}</span>
+                      <MathHtml className="min-w-0 text-ink-900 break-all">{opt}</MathHtml>
                     </div>
                   ))}
                 </div>
@@ -4240,14 +4210,14 @@ function PreviewSection({
               {/* 答案与解析 */}
               {section.displayMode !== "stem-only" && expanded && (
                 <div className="space-y-2 animate-fade-in pl-6">
-                  <div className="p-2.5 rounded-md bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900 font-medium whitespace-pre-wrap">
-                    <span className="font-bold">答案：</span>
-                    {question.answer}
+                  <div className="p-2.5 rounded-md bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900 font-medium flex items-start gap-1">
+                    <span className="font-bold flex-shrink-0">答案：</span>
+                    <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{question.answer}</MathHtml>
                   </div>
                   {showSummary && (
-                    <div className="p-2.5 rounded-md bg-gold-50/30 border border-gold-200 text-sm text-ink-900 leading-relaxed whitespace-pre-wrap">
-                      <span className="font-bold text-gold-700">解析：</span>
-                      {question.analysis}
+                    <div className="p-2.5 rounded-md bg-gold-50/30 border border-gold-200 text-sm text-ink-900 leading-relaxed flex items-start gap-1">
+                      <span className="font-bold text-gold-700 flex-shrink-0">解析：</span>
+                      <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{question.analysis}</MathHtml>
                     </div>
                   )}
                 </div>
@@ -4262,11 +4232,11 @@ function PreviewSection({
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1.5">
                 <Sparkles className="w-4 h-4 text-gold-500" />
-                <span className="font-serif font-medium text-ink-900">{section.title}</span>
+                <MathHtml className="font-serif font-medium text-ink-900">{section.title}</MathHtml>
               </div>
-              <div className="text-sm text-ink-800 whitespace-pre-wrap leading-relaxed pl-6">
+              <MathHtml className="text-sm text-ink-800 whitespace-pre-wrap leading-relaxed pl-6">
                 {section.content}
-              </div>
+              </MathHtml>
             </div>
           </div>
         ) : (
@@ -4275,11 +4245,11 @@ function PreviewSection({
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1.5">
                 <Type className="w-4 h-4 text-ink-400" />
-                <span className="font-serif font-medium text-ink-900">{section.title}</span>
+                <MathHtml className="font-serif font-medium text-ink-900">{section.title}</MathHtml>
               </div>
-              <div className="text-sm text-ink-700 whitespace-pre-wrap leading-relaxed pl-6">
+              <MathHtml className="text-sm text-ink-700 whitespace-pre-wrap leading-relaxed pl-6">
                 {section.content}
-              </div>
+              </MathHtml>
             </div>
           </div>
         )}
