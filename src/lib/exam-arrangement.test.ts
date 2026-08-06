@@ -90,11 +90,11 @@ describe("generateExamAssignments", () => {
     });
     expect(assignments.find((item) => item.studentId === "student-2")).toMatchObject({
       roomId: "room-a",
-      subjectLabel: "物理 / 化学",
+      subjectLabel: "化学",
     });
     expect(assignments.find((item) => item.studentId === "student-3")).toMatchObject({
       roomId: "room-b",
-      subjectLabel: "物理 / 化学",
+      subjectLabel: "物理",
     });
     expect(new Set(assignments.map((item) => item.sessionKey))).toEqual(new Set(["combined"]));
   });
@@ -130,6 +130,7 @@ describe("generateExamAssignments", () => {
         key: "combined:化学",
         sessionKey: "combined",
         subjectLabel: "化学",
+        actualSubjectLabels: ["化学"],
         studentCount: 2,
         classIds: ["class-1"],
       },
@@ -137,22 +138,67 @@ describe("generateExamAssignments", () => {
         key: "subject:物理",
         sessionKey: "subject:物理",
         subjectLabel: "物理",
+        actualSubjectLabels: ["物理"],
         studentCount: 2,
         classIds: ["class-1", "class-2"],
       },
     ]);
   });
 
-  it("does not split a combined group by each student's selected subject subset", () => {
-    expect(summarizeExamGroups(input("combination"), context)).toEqual([
-      {
-        key: "combined:物理|化学",
-        sessionKey: "combined",
-        subjectLabel: "物理 / 化学",
-        studentCount: 3,
-        classIds: ["class-1", "class-2"],
-      },
-    ]);
+  it("keeps one combined room group while recording each actual subject subset", () => {
+    const groups = summarizeExamGroups(input("combination"), context);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      key: "combined:物理|化学",
+      sessionKey: "combined",
+      subjectLabel: "物理 / 化学",
+      studentCount: 3,
+      classIds: ["class-1", "class-2"],
+    });
+    expect(groups[0].actualSubjectLabels).toHaveLength(3);
+    expect(groups[0].actualSubjectLabels).toEqual(expect.arrayContaining(["物理 / 化学", "化学", "物理"]));
+  });
+
+  it("only combines the two electives selected by each student", () => {
+    const electiveInput = input("combination");
+    electiveInput.subjects = ["化学", "生物", "政治", "地理"];
+    electiveInput.rooms = [
+      { id: "room-a", name: "第一考场", capacity: 3 },
+      { id: "room-b", name: "第二考场", capacity: 3 },
+    ];
+    electiveInput.classRules = context.classes.map((classItem) => ({
+      classId: classItem.id,
+      defaultSubjects: [...electiveInput.subjects],
+      subjectRoomIds: Object.fromEntries(electiveInput.subjects.map((subject) => [subject, ["room-a", "room-b"]])),
+    }));
+    electiveInput.studentSubjects = [
+      { studentId: "student-1", subjects: ["化学", "生物"] },
+      { studentId: "student-2", subjects: ["政治", "地理"] },
+      { studentId: "student-3", subjects: ["化学", "地理"] },
+    ];
+
+    const assignments = generateExamAssignments(electiveInput, context);
+    const groups = summarizeExamGroups(electiveInput, context);
+
+    expect(assignments.map((item) => item.subjectLabel)).toEqual(expect.arrayContaining([
+      "化学 / 生物",
+      "政治 / 地理",
+      "化学 / 地理",
+    ]));
+    expect(assignments.some((item) => item.subjectLabel === "化学 / 生物 / 政治 / 地理")).toBe(false);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      key: "combined:化学|生物|政治|地理",
+      subjectLabel: "化学 / 生物 / 政治 / 地理",
+      studentCount: 3,
+    });
+    expect(groups[0].actualSubjectLabels).toHaveLength(3);
+    expect(groups[0].actualSubjectLabels).toEqual(expect.arrayContaining([
+      "化学 / 生物",
+      "政治 / 地理",
+      "化学 / 地理",
+    ]));
   });
 
   it("uses the user-adjusted room mapping for each exam group", () => {
