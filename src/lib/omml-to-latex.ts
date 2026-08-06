@@ -338,8 +338,8 @@ function convertDelimiter(el: Element): string {
   if (dPr) {
     const begChrEl = dPr.getElementsByTagNameNS(MATH_NS, "begChr")[0];
     const endChrEl = dPr.getElementsByTagNameNS(MATH_NS, "endChr")[0];
-    beginChr = begChrEl?.getAttribute("m:val") || begChrEl?.getAttribute("val") || "(";
-    endChr = endChrEl?.getAttribute("m:val") || endChrEl?.getAttribute("val") || ")";
+    beginChr = delimiterCharacter(begChrEl, "(");
+    endChr = delimiterCharacter(endChrEl, ")");
   }
 
   const e = getMathChild(el, "e");
@@ -348,6 +348,14 @@ function convertDelimiter(el: Element): string {
   const rightDelim = mapDelimiter(endChr);
 
   return `\\left${leftDelim}${e}\\right${rightDelim}`;
+}
+
+function delimiterCharacter(element: Element | undefined, fallback: string): string {
+  if (!element) return fallback;
+  const namespaced = element.getAttribute("m:val");
+  if (namespaced !== null) return namespaced;
+  const unqualified = element.getAttribute("val");
+  return unqualified ?? fallback;
 }
 
 function mapDelimiter(chr: string): string {
@@ -515,13 +523,9 @@ function convertMatrix(el: Element): string {
     rows.push(cells.join(" & "));
   }
 
-  // 检查是否有括号
-  const mPr = el.getElementsByTagNameNS(MATH_NS, "mPr")[0];
-  const mcsEl = mPr?.getElementsByTagNameNS(MATH_NS, "mcs")[0];
-  const hasBrackets = !!mcsEl;
-
-  const env = hasBrackets ? "pmatrix" : "matrix";
-  return `\\begin{${env}} ${rows.join(" \\\\ ")} \\end{${env}}`;
+  // OMML stores visible delimiters in a surrounding m:d element. m:mcs only
+  // describes matrix columns and must not introduce parentheses by itself.
+  return `\\begin{matrix} ${rows.join(" \\\\ ")} \\end{matrix}`;
 }
 
 /**
