@@ -225,6 +225,41 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.generateExamPaperDocx.mockResolvedValue(undefined);
   });
 
+  it("removes a basket question after adding it to the paper when confirmed", async () => {
+    const basket = {
+      id: "basket-1",
+      teacherId: teacher.id,
+      name: "复习篮",
+      questionIds: [secondQuestion.id],
+      materialIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+    });
+    mocks.listQuestions.mockResolvedValue([question, secondQuestion]);
+    mocks.listBaskets.mockResolvedValue([basket]);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderEditorPage();
+    await screen.findByLabelText("文档名");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "添加题目" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "资源篮" }));
+    fireEvent.click(await screen.findByRole("button", { name: "复习篮 (1)" }));
+    fireEvent.click(await screen.findByText(secondQuestion.stem));
+    fireEvent.click(screen.getByRole("button", { name: "添加选中题目" }));
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledWith("是否移除已引用题目？");
+      expect(mocks.removeQuestion).toHaveBeenCalledWith(basket.id, secondQuestion.id);
+    });
+    confirmSpy.mockRestore();
+  });
+
   it("shows the current title first and aligns per-question details beside the paper", async () => {
     renderPage();
 

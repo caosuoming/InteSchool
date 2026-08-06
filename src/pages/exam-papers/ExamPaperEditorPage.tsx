@@ -13,6 +13,7 @@ import { examPaperService } from "@/services/examPaper";
 import { questionService } from "@/services/question";
 import { basketService } from "@/services/basket";
 import { lectureService } from "@/services/lecture";
+import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import { classService as classSvc } from "@/services/class";
 import { examPublishService } from "@/services/examPublish";
 import { knowledgeService } from "@/services/knowledge";
@@ -959,6 +960,26 @@ export default function ExamPaperEditorPage() {
       toAdd.forEach((q) => { newQMap[q.id] = q; });
       setQuestions(newQMap);
       toast.success(`已添加 ${toAdd.length} 道题目`);
+    }
+
+    if (addSource === "basket" && selectedBasket) {
+      const referencedQuestions = replaceIdx !== null ? toAdd.slice(0, 1) : toAdd;
+      const removal = await promptToRemoveReferencedBasketQuestions(
+        selectedBasket.id,
+        referencedQuestions.map((question) => question.id),
+      );
+      if (removal.removedQuestionIds.length > 0) {
+        const removedQuestionIds = new Set(removal.removedQuestionIds);
+        setBaskets((current) => current.map((basket) => basket.id === selectedBasket.id
+          ? {
+              ...basket,
+              questionIds: basket.questionIds.filter((questionId) => !removedQuestionIds.has(questionId)),
+            }
+          : basket));
+      }
+      if (removal.failedQuestionIds.length > 0) {
+        toast.warning("部分已引用题目未能从资源篮移除");
+      }
     }
 
     closeAddQuestion();

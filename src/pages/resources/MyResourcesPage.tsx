@@ -69,6 +69,7 @@ import {
   resolveBasketAudienceStudentIds,
   treeNameMap,
 } from "@/lib/basket-audience";
+import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import {
   appendUniqueIds,
   batchResourceKey,
@@ -941,6 +942,35 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
+  const promptToRemoveReferencedQuestions = async (questionIds: string[]) => {
+    const result = await promptToRemoveReferencedBasketQuestions(selectedBasketId, questionIds);
+    const removedQuestionIds = new Set(result.removedQuestionIds);
+
+    if (removedQuestionIds.size > 0) {
+      setBasketQuestions((current) => current.filter((question) => !removedQuestionIds.has(question.id)));
+      setSelectedQuestionIds((current) => {
+        const next = new Set(current);
+        removedQuestionIds.forEach((questionId) => next.delete(questionId));
+        return next;
+      });
+      setExpandedBasketQuestionIds((current) => {
+        const next = new Set(current);
+        removedQuestionIds.forEach((questionId) => next.delete(questionId));
+        return next;
+      });
+      setBaskets((current) => current.map((basket) => basket.id === selectedBasketId
+        ? {
+            ...basket,
+            questionIds: basket.questionIds.filter((questionId) => !removedQuestionIds.has(questionId)),
+          }
+        : basket));
+    }
+
+    if (result.failedQuestionIds.length > 0) {
+      toast.warning("部分已引用题目未能从资源篮移除");
+    }
+  };
+
   const handleRemoveBasketMaterial = async (materialId: string) => {
     if (!selectedBasketId) return;
     try {
@@ -1008,6 +1038,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     };
     try {
       const created = await lectureService.createLecture(teacher.id, schoolId, lecture);
+      await promptToRemoveReferencedQuestions(selectedQs.map((question) => question.id));
       toast.success("讲义已生成，正在进入编辑...");
       navigate(`/lectures/${created.id}/edit`);
     } catch (e: any) {
@@ -1052,6 +1083,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     };
     try {
       const created = await examPaperService.createPaper(teacher.id, schoolId, paper);
+      await promptToRemoveReferencedQuestions(selectedQs.map((question) => question.id));
       toast.success("试卷已生成，正在进入编辑...");
       navigate(`/exam-papers/${created.id}`);
     } catch (e: any) {
@@ -1941,7 +1973,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         {allVisibleQuestionsSelected ? "取消全选" : `全选 (${visibleBasketQuestions.length})`}
                       </button>
                     </div>
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 gap-2" data-testid="basket-question-list">
                       {visibleBasketQuestions.map((q) => {
                         const usageRecords = answerRecordsByQuestion.get(q.id) || [];
                         const usedByAudience = usageRecords.length > 0;
@@ -1959,16 +1991,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                   : "border-ink-100 hover:border-ink-200",
                             )}
                           >
-                            <button
-                              onClick={() => toggleQuestionSelection(q.id)}
-                              className="mt-0.5 flex-shrink-0"
-                            >
-                              {selectedQuestionIds.has(q.id) ? (
-                                <CheckSquare className="w-4 h-4 text-gold-600" />
-                              ) : (
-                                <Square className="w-4 h-4 text-ink-300" />
-                              )}
-                            </button>
+                            <input
+                              type="checkbox"
+                              checked={selectedQuestionIds.has(q.id)}
+                              onChange={() => toggleQuestionSelection(q.id)}
+                              aria-label={`选择题目：${q.stem}`}
+                              className="mt-1 h-4 w-4 flex-shrink-0 rounded border-ink-300 text-gold-500 focus:ring-gold-500"
+                            />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <span className="tag-gold">{getQuestionTypeLabel(q.type)}</span>
@@ -2774,7 +2803,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   fileUrl={item.fileUrl}
                   type={item.type}
                   reflections={reflectionsMap[item.id]}
-                  showAddToBasket
+                  showAddToBasket={item.type === "ggb"}
                   basketResourceType="courseware"
                   basketResourceId={item.id}
                   onBasketChanged={loadAll}

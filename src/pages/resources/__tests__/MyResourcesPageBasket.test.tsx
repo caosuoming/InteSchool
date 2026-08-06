@@ -6,12 +6,20 @@ import { useAuthStore } from "@/stores/auth";
 import { analyticsService } from "@/services/analytics";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
+import { coursewareService } from "@/services/courseware";
+import { donationService } from "@/services/donation";
+import { examPaperService } from "@/services/examPaper";
 import { knowledgeService } from "@/services/knowledge";
+import { lectureService } from "@/services/lecture";
 import { materialService } from "@/services/material";
 import { questionService } from "@/services/question";
+import { reflectionService } from "@/services/reflection";
 import type {
   AnswerRecord,
   Basket,
+  Courseware,
+  ExamPaper,
+  Lecture,
   Material,
   Question,
   SchoolClass,
@@ -55,7 +63,10 @@ vi.mock("@/services/question", () => ({
   questionService: { listQuestions: vi.fn() },
 }));
 vi.mock("@/services/examPaper", () => ({
-  examPaperService: { listPapers: vi.fn().mockResolvedValue([]) },
+  examPaperService: {
+    listPapers: vi.fn().mockResolvedValue([]),
+    createPaper: vi.fn(),
+  },
 }));
 vi.mock("@/services/courseware", () => ({
   coursewareService: { listCoursewares: vi.fn().mockResolvedValue([]) },
@@ -64,7 +75,10 @@ vi.mock("@/services/material", () => ({
   materialService: { listMaterials: vi.fn() },
 }));
 vi.mock("@/services/lecture", () => ({
-  lectureService: { listLectures: vi.fn().mockResolvedValue([]) },
+  lectureService: {
+    listLectures: vi.fn().mockResolvedValue([]),
+    createLecture: vi.fn(),
+  },
 }));
 vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: { listCoursewares: vi.fn().mockResolvedValue([]) },
@@ -181,6 +195,31 @@ const basketQuestion: Question = {
   updatedAt: "2026-07-01T00:00:00.000Z",
 };
 
+const ggbCourseware: Courseware = {
+  id: "courseware-ggb",
+  teacherId: "teacher-1",
+  schoolId: "school-1",
+  title: "函数图像",
+  chapterIds: [],
+  knowledgePointIds: [],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  type: "ggb",
+  content: "GeoGebra 课件",
+  tags: [],
+  createdAt: "2026-07-01T00:00:00.000Z",
+  updatedAt: "2026-07-01T00:00:00.000Z",
+};
+
+const pdfCourseware: Courseware = {
+  ...ggbCourseware,
+  id: "courseware-pdf",
+  title: "函数讲义 PDF",
+  type: "pdf",
+  content: "PDF 课件",
+};
+
 const basketMaterial: Material = {
   id: "material-1",
   teacherId: "teacher-1",
@@ -236,7 +275,10 @@ describe("MyResourcesPage resource basket", () => {
     vi.mocked(classService.listMyClasses).mockResolvedValue([classOne]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([studentOne]);
     vi.mocked(questionService.listQuestions).mockResolvedValue([]);
+    vi.mocked(coursewareService.listCoursewares).mockResolvedValue([]);
     vi.mocked(materialService.listMaterials).mockResolvedValue([]);
+    vi.mocked(donationService.listTeacherDonations).mockResolvedValue([]);
+    vi.mocked(reflectionService.listByTeacher).mockResolvedValue([]);
     vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([]);
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([]);
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
@@ -322,6 +364,7 @@ describe("MyResourcesPage resource basket", () => {
     expect(screen.getByText("薄弱 25%")).toBeInTheDocument();
     expect(screen.getByText("平方根")).toBeInTheDocument();
     expect(container.querySelector('[data-math-rendered="true"]')).not.toBeNull();
+    expect(screen.getByTestId("basket-question-list")).toHaveClass("grid", "grid-cols-1");
     expect(screen.getByTestId(`basket-question-options-${basketQuestion.id}`)).toHaveClass(
       "grid",
       "grid-cols-4",
@@ -383,6 +426,101 @@ describe("MyResourcesPage resource basket", () => {
       expect(basketService.removeMaterial).toHaveBeenCalledWith(populatedBasket.id, basketMaterial.id);
     });
     expect(await screen.findByText("资源篮为空")).toBeInTheDocument();
+  });
+
+  it("only shows the basket action for GeoGebra courseware", async () => {
+    vi.mocked(coursewareService.listCoursewares).mockResolvedValue([ggbCourseware, pdfCourseware]);
+    vi.mocked(basketService.listBaskets).mockResolvedValue([{ ...createdBasket, isDefault: true }]);
+
+    render(
+      <MemoryRouter>
+        <MyResourcesPage initialTab="courseware" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(ggbCourseware.title)).toBeInTheDocument();
+    expect(screen.getByText(pdfCourseware.title)).toBeInTheDocument();
+    expect(await screen.findAllByTitle(`点击加入「${createdBasket.name}」`)).toHaveLength(1);
+  });
+
+  it("asks to remove referenced questions after generating a lecture and removes them when confirmed", async () => {
+    const populatedBasket: Basket = {
+      ...createdBasket,
+      questionIds: [basketQuestion.id],
+    };
+    vi.mocked(basketService.listBaskets).mockResolvedValue([populatedBasket]);
+    vi.mocked(basketService.getBasket).mockResolvedValue(populatedBasket);
+    vi.mocked(questionService.listQuestions).mockImplementation(async (filter) =>
+      filter.ids?.includes(basketQuestion.id) ? [basketQuestion] : [],
+    );
+    vi.mocked(lectureService.createLecture).mockImplementation(async (teacherId, schoolId, input) => ({
+      ...input,
+      id: "lecture-created",
+      teacherId,
+      schoolId,
+      version: 1,
+      status: "draft",
+      createdAt: "2026-08-06T00:00:00.000Z",
+      updatedAt: "2026-08-06T00:00:00.000Z",
+    } satisfies Lecture));
+    vi.mocked(basketService.removeQuestion).mockResolvedValue();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <MemoryRouter>
+        <MyResourcesPage initialTab="basket" />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText(createdBasket.name));
+    fireEvent.click(await screen.findByRole("checkbox", { name: `选择题目：${basketQuestion.stem}` }));
+    fireEvent.click(screen.getByRole("button", { name: "生成讲义" }));
+
+    await waitFor(() => {
+      expect(lectureService.createLecture).toHaveBeenCalledOnce();
+      expect(confirmSpy).toHaveBeenCalledWith("是否移除已引用题目？");
+      expect(basketService.removeQuestion).toHaveBeenCalledWith(populatedBasket.id, basketQuestion.id);
+    });
+    confirmSpy.mockRestore();
+  });
+
+  it("asks about removal after generating an exam paper and keeps questions when declined", async () => {
+    const populatedBasket: Basket = {
+      ...createdBasket,
+      questionIds: [basketQuestion.id],
+    };
+    vi.mocked(basketService.listBaskets).mockResolvedValue([populatedBasket]);
+    vi.mocked(basketService.getBasket).mockResolvedValue(populatedBasket);
+    vi.mocked(questionService.listQuestions).mockImplementation(async (filter) =>
+      filter.ids?.includes(basketQuestion.id) ? [basketQuestion] : [],
+    );
+    vi.mocked(examPaperService.createPaper).mockImplementation(async (teacherId, schoolId, input) => ({
+      ...input,
+      id: "exam-created",
+      teacherId,
+      schoolId,
+      status: input.status || "draft",
+      createdAt: "2026-08-06T00:00:00.000Z",
+      updatedAt: "2026-08-06T00:00:00.000Z",
+    } satisfies ExamPaper));
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(
+      <MemoryRouter>
+        <MyResourcesPage initialTab="basket" />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText(createdBasket.name));
+    fireEvent.click(await screen.findByRole("checkbox", { name: `选择题目：${basketQuestion.stem}` }));
+    fireEvent.click(screen.getByRole("button", { name: "生成试卷" }));
+
+    await waitFor(() => {
+      expect(examPaperService.createPaper).toHaveBeenCalledOnce();
+      expect(confirmSpy).toHaveBeenCalledWith("是否移除已引用题目？");
+    });
+    expect(basketService.removeQuestion).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it("updates the audience from an opened basket", async () => {
