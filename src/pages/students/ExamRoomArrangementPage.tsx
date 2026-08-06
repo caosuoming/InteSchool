@@ -48,6 +48,13 @@ const CORE_SUBJECTS = ["语文", "数学", "英语"];
 
 type ViewMode = "settings" | "result";
 type PreviewMode = "class" | "desk";
+const DESK_LABELS_PER_PAGE = 20;
+
+function chunkItems<T>(items: T[], size: number): T[][] {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => (
+    items.slice(index * size, (index + 1) * size)
+  ));
+}
 
 function uniqueSubjects(values: string[]): string[] {
   const selected = new Set(values.map((item) => item.trim()).filter(Boolean));
@@ -286,6 +293,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [previewMode, setPreviewMode] = useState<PreviewMode>("class");
   const [selectedClassIds, setSelectedClassIds] = useState<Set<string>>(new Set());
   const [selectedRoomIds, setSelectedRoomIds] = useState<Set<string>>(new Set());
+  const [showDeskStudentNo, setShowDeskStudentNo] = useState(true);
+  const [showDeskAdmissionNo, setShowDeskAdmissionNo] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState("");
@@ -305,6 +314,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const selectedDeskLabels = useMemo(
     () => deskLabels.filter((label) => selectedRoomIds.has(label.roomId)),
     [deskLabels, selectedRoomIds],
+  );
+  const selectedDeskLabelPages = useMemo(
+    () => chunkItems(selectedDeskLabels, DESK_LABELS_PER_PAGE),
+    [selectedDeskLabels],
   );
   const examGroups = useMemo(() => (
     draft && context ? summarizeExamGroups(draft, context) : []
@@ -662,7 +675,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const downloadSelectedLabels = async () => {
     if (!selectedArrangement) return;
     try {
-      await downloadDeskLabels(selectedArrangement, selectedRoomIds);
+      await downloadDeskLabels(selectedArrangement, selectedRoomIds, {
+        showStudentNo: showDeskStudentNo,
+        showAdmissionNo: showDeskAdmissionNo,
+      });
     } catch (error) {
       toast.error("下载桌贴失败", error instanceof Error ? error.message : undefined);
     }
@@ -963,17 +979,38 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       全选班级
                     </label>
                   ) : (
-                    <label className="inline-flex cursor-pointer items-center gap-2">
-                      <input
-                        type="checkbox"
-                        aria-label="选择全部考场"
-                        checked={deskRoomGroups.length > 0 && selectedRoomIds.size === deskRoomGroups.length}
-                        onChange={(event) => setSelectedRoomIds(event.target.checked
-                          ? new Set(deskRoomGroups.map((group) => group.roomId))
-                          : new Set())}
-                      />
-                      全选考场
-                    </label>
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                      <label className="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          aria-label="选择全部考场"
+                          checked={deskRoomGroups.length > 0 && selectedRoomIds.size === deskRoomGroups.length}
+                          onChange={(event) => setSelectedRoomIds(event.target.checked
+                            ? new Set(deskRoomGroups.map((group) => group.roomId))
+                            : new Set())}
+                        />
+                        全选考场
+                      </label>
+                      <span className="h-4 w-px bg-ink-200" aria-hidden="true" />
+                      <label className="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          aria-label="桌贴显示学号"
+                          checked={showDeskStudentNo}
+                          onChange={(event) => setShowDeskStudentNo(event.target.checked)}
+                        />
+                        显示学号
+                      </label>
+                      <label className="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          aria-label="桌贴显示准考证号"
+                          checked={showDeskAdmissionNo}
+                          onChange={(event) => setShowDeskAdmissionNo(event.target.checked)}
+                        />
+                        显示准考证号
+                      </label>
+                    </div>
                   )}
                   <span>
                     {previewMode === "class"
@@ -1047,29 +1084,29 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     </label>
                     <Badge>{roomGroup.labels.length} 张桌贴</Badge>
                   </div>
-                  <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
+                  <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                     {roomGroup.labels.map((label) => (
-                      <article key={label.key} className="rounded-xl border-2 border-ink-300 bg-paper p-4 shadow-sm">
-                        <div className="text-center font-serif text-base font-semibold text-ink-900">{selectedArrangement?.name}</div>
-                        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-ink-500">
+                      <article key={label.key} data-testid="desk-label-card" className="rounded-xl border-2 border-ink-300 bg-paper p-4 shadow-sm">
+                        <div className="truncate text-center font-serif text-sm font-semibold text-ink-900">{selectedArrangement?.name}</div>
+                        <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-ink-500">
                           <span>{selectedArrangement?.examDate || "考试日期待定"}</span>
                           <span>{label.roomLocation}</span>
                         </div>
-                        <div className="mt-3 flex items-end justify-between border-y border-ink-200 py-2 text-ink-900">
+                        <div className="mt-2 flex items-end justify-between border-y border-ink-200 py-1.5 text-ink-900">
                           <span className="font-medium">{label.roomNumber}</span>
-                          <strong className="text-xl">{label.seatNo} 号</strong>
+                          <strong className="text-lg">{label.seatNo} 号</strong>
                         </div>
                         <div className="divide-y divide-ink-100">{label.assignments.map((assignment) => (
-                          <div key={assignment.id} className="py-3">
+                          <div key={assignment.id} className="py-2">
                             <div className="flex items-start justify-between gap-3">
                               <div className="font-medium text-ink-900">{assignment.studentName}</div>
                               <div className="text-xs font-medium text-ink-600">{assignment.subjectLabel.split(" / ").join("、")}</div>
                             </div>
-                            <div className="mt-1 grid gap-1 text-xs text-ink-500 sm:grid-cols-2">
+                            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
                               <span>班级：{assignment.className}</span>
-                              <span>学号：{assignment.studentNo}</span>
+                              {showDeskStudentNo && <span>学号：{assignment.studentNo}</span>}
                             </div>
-                            <div className="mt-1 font-mono text-xs text-ink-400">准考证号：{assignment.admissionNo}</div>
+                            {showDeskAdmissionNo && <div className="mt-1 font-mono text-xs text-ink-400">准考证号：{assignment.admissionNo}</div>}
                           </div>
                         ))}</div>
                       </article>
@@ -1084,20 +1121,29 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
           {selectedDeskLabels.length > 0 && selectedArrangement && (
             <div className="print-only exam-desk-label-sheet">
-              {selectedDeskLabels.map((group) => (
-                <section key={group.key} className="exam-desk-label">
-                  <div className="exam-desk-label-title">{selectedArrangement.name}</div>
-                  <div className="exam-desk-label-meta"><span>{selectedArrangement.examDate || "考试日期待定"}</span><span>{group.roomLocation}</span></div>
-                  <div className="exam-desk-label-seat"><span>{group.roomNumber}</span><strong>{group.seatNo} 号</strong></div>
-                  {group.assignments.map((assignment) => (
-                    <div key={assignment.id} className="mt-2 border-t border-black/20 pt-2 first:mt-0 first:border-0 first:pt-0">
-                      <div className="exam-desk-label-name">{assignment.studentName}</div>
-                      <div className="text-center text-sm font-medium">{assignment.subjectLabel}</div>
-                      <div className="exam-desk-label-row"><span>班级：{assignment.className}</span><span>学号：{assignment.studentNo}</span></div>
-                      <div className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</div>
-                    </div>
+              {selectedDeskLabelPages.map((page, pageIndex) => (
+                <div key={pageIndex} className="exam-desk-label-page" data-testid="desk-label-print-page">
+                  {page.map((group) => (
+                    <section key={group.key} className="exam-desk-label">
+                      <div className="exam-desk-label-title">{selectedArrangement.name}</div>
+                      <div className="exam-desk-label-meta"><span>{selectedArrangement.examDate || "考试日期待定"}</span><span>{group.roomLocation}</span></div>
+                      <div className="exam-desk-label-seat"><span>{group.roomNumber}</span><strong>{group.seatNo} 号</strong></div>
+                      <div className="exam-desk-label-assignments">
+                        {group.assignments.map((assignment) => (
+                          <div key={assignment.id} className="exam-desk-label-assignment">
+                            <div className="exam-desk-label-name">{assignment.studentName}</div>
+                            <div className="exam-desk-label-subject">{assignment.subjectLabel}</div>
+                            <div className="exam-desk-label-row">
+                              <span>{assignment.className}</span>
+                              {showDeskStudentNo && <span>学号 {assignment.studentNo}</span>}
+                            </div>
+                            {showDeskAdmissionNo && <div className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
                   ))}
-                </section>
+                </div>
               ))}
             </div>
           )}

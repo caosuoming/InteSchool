@@ -191,27 +191,40 @@
 @media print {
   .print-only { display: block !important; }
   .exam-desk-label-sheet {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8mm;
+    display: block !important;
+  }
+  .exam-desk-label-page {
+    page: exam-desk-label;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: repeat(5, 68mm);
+    gap: 2mm;
+    break-after: page;
+  }
+  .exam-desk-label-page:last-child {
+    break-after: auto;
   }
   .exam-desk-label {
     break-inside: avoid;
-    min-height: 74mm;
-    border: 1.2mm solid #111;
-    padding: 7mm;
+    min-width: 0;
+    height: 68mm;
+    overflow: hidden;
+    border: 0.5mm solid #111;
+    padding: 2.4mm;
     color: #111;
     background: #fff;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
   }
   .exam-desk-label-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     text-align: center;
     font-family: "Songti SC", "SimSun", serif;
-    font-size: 18pt;
+    font-size: 9pt;
     font-weight: 700;
-    line-height: 1.25;
+    line-height: 1.15;
   }
   .exam-desk-label-meta,
   .exam-desk-label-row,
@@ -219,27 +232,83 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 4mm;
+    gap: 1.5mm;
   }
   .exam-desk-label-meta,
-  .exam-desk-label-row { font-size: 10pt; }
-  .exam-desk-label-seat { font-size: 15pt; }
-  .exam-desk-label-seat strong { font-size: 22pt; }
+  .exam-desk-label-row {
+    min-width: 0;
+    font-size: 6.5pt;
+    line-height: 1.15;
+  }
+  .exam-desk-label-meta {
+    margin-top: 1mm;
+  }
+  .exam-desk-label-meta span,
+  .exam-desk-label-row span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .exam-desk-label-seat {
+    margin-top: 1mm;
+    border-top: 0.25mm solid #333;
+    border-bottom: 0.25mm solid #333;
+    padding: 0.8mm 0;
+    font-size: 9pt;
+  }
+  .exam-desk-label-seat strong { font-size: 13pt; }
+  .exam-desk-label-assignments {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+  }
+  .exam-desk-label-assignment {
+    min-height: 0;
+    padding-top: 1mm;
+    border-top: 0.2mm solid #aaa;
+  }
+  .exam-desk-label-assignment:first-child {
+    border-top: 0;
+  }
   .exam-desk-label-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     text-align: center;
     font-family: "Songti SC", "SimSun", serif;
-    font-size: 28pt;
+    font-size: 15pt;
     font-weight: 700;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.08em;
+    line-height: 1.1;
+  }
+  .exam-desk-label-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 0.5mm;
+    text-align: center;
+    font-size: 7pt;
+    font-weight: 600;
+    line-height: 1.15;
   }
   .exam-desk-label-admission {
-    border-top: 0.4mm solid #111;
-    padding-top: 2.5mm;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 0.5mm;
     text-align: center;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11pt;
-    letter-spacing: 0.08em;
+    font-size: 6.5pt;
+    line-height: 1.15;
+    letter-spacing: 0.02em;
   }
+}
+
+@page exam-desk-label {
+  size: 260mm 370mm;
+  margin: 7mm;
 }
 
 @keyframes lessonElementFade {

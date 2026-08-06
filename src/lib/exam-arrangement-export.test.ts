@@ -1,10 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExamSeatAssignment } from "@/types";
 import {
+  downloadDeskLabels,
   groupDeskLabels,
   groupDeskLabelsByRoom,
   groupStudentArrangements,
 } from "./exam-arrangement-export";
+
+const { writeXlsxFile, toFile } = vi.hoisted(() => ({
+  writeXlsxFile: vi.fn(),
+  toFile: vi.fn(),
+}));
+
+vi.mock("write-excel-file/browser", () => ({
+  default: writeXlsxFile,
+}));
 
 function assignment(overrides: Partial<ExamSeatAssignment>): ExamSeatAssignment {
   return {
@@ -27,6 +37,11 @@ function assignment(overrides: Partial<ExamSeatAssignment>): ExamSeatAssignment 
 }
 
 describe("groupDeskLabels", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    writeXlsxFile.mockReturnValue({ toFile });
+  });
+
   it("merges different exam sessions assigned to the same physical desk", () => {
     const groups = groupDeskLabels([
       assignment({ id: "physics", studentId: "student-1", studentName: "甲", subjectLabel: "物理" }),
@@ -88,5 +103,48 @@ describe("groupDeskLabels", () => {
     expect(rooms).toHaveLength(2);
     expect(rooms[0]).toMatchObject({ roomNumber: "A01", roomLocation: "教学楼 101" });
     expect(rooms[0].labels.map((label) => label.seatNo)).toEqual([1, 2]);
+  });
+
+  it("omits optional identifiers from downloaded desk-label spreadsheets", async () => {
+    await downloadDeskLabels({
+      id: "arrangement-1",
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      cohortKey: "cohort-1",
+      cohortLabel: "高二",
+      name: "期末考试",
+      examDate: "2026-06-20",
+      mode: "combination",
+      subjectSetupMode: "all",
+      subjects: ["物理"],
+      selectionSubjects: {},
+      separateSubjects: [],
+      seatOrder: "random",
+      rooms: [],
+      classRules: [],
+      studentSubjects: [],
+      assignments: [assignment({})],
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    }, undefined, {
+      showStudentNo: false,
+      showAdmissionNo: false,
+    });
+
+    const workbook = writeXlsxFile.mock.calls[0][0];
+    expect(workbook[0].data[0].map((item: { value: string }) => item.value)).toEqual([
+      "考场号",
+      "考场位置",
+      "座位号",
+      "考试科目与考生",
+      "班级",
+    ]);
+    expect(workbook[0].data[1].map((item: { value: string | number }) => item.value)).toEqual([
+      "A01",
+      "教学楼 101",
+      1,
+      "物理：甲",
+      "高二（1）班",
+    ]);
   });
 });
