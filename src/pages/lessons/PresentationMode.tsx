@@ -401,6 +401,9 @@ export function PresentationMode({
   const currentElements = currentSlide
     ? elementOverrides[currentSlide.id] ?? baseCurrentElements
     : [];
+  const selectedTextElement = currentElements.find((element) => (
+    element.id === selectedElementId && element.kind === "text"
+  ));
   const displayedSlide = currentSlide
     ? {
         ...currentSlide,
@@ -511,20 +514,24 @@ export function PresentationMode({
     }));
   };
 
-  const scaleSelectedElement = (factor: number) => {
+  const scaleSelectedText = (factor: number) => {
     if (!selectedElementId || !currentSlide) return;
     setElementOverrides((current) => {
       const source = current[currentSlide.id] ?? getPresentationElements(currentSlide);
       return {
         ...current,
         [currentSlide.id]: source.map((element) => {
-          if (element.id !== selectedElementId) return element;
+          if (element.id !== selectedElementId || element.kind !== "text") return element;
+          const previousFontSize = element.fontSize || 24;
+          const fontSize = Number(clamp(previousFontSize * factor, 12, 96).toFixed(2));
+          const appliedFactor = fontSize / previousFontSize;
           const centerX = element.x + element.width / 2;
           const centerY = element.y + element.height / 2;
-          const width = Number(clamp(element.width * factor, 6, 100).toFixed(4));
-          const height = Number(clamp(element.height * factor, 6, 100).toFixed(4));
+          const width = Number(clamp(element.width * appliedFactor, 6, 100).toFixed(4));
+          const height = Number(clamp(element.height * appliedFactor, 6, 100).toFixed(4));
           return {
             ...element,
+            fontSize,
             width,
             height,
             x: Number(clamp(centerX - width / 2, 0, 100 - width).toFixed(4)),
@@ -807,20 +814,20 @@ export function PresentationMode({
         onClick={goPrev}
         disabled={currentIndex === 0}
         aria-label={`${side === "left" ? "左侧" : "右侧"}上一页`}
-        className="flex h-9 items-center gap-1 rounded-lg px-3 text-sm transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+        title="上一页"
+        className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
       >
-        <ChevronLeft className="h-4 w-4" />
-        上一页
+        <ChevronLeft className="h-5 w-5" />
       </button>
       <button
         type="button"
         onClick={goNext}
         disabled={currentIndex === slides.length - 1}
         aria-label={`${side === "left" ? "左侧" : "右侧"}下一页`}
-        className="flex h-9 items-center gap-1 rounded-lg px-3 text-sm transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+        title="下一页"
+        className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
       >
-        下一页
-        <ChevronRight className="h-4 w-4" />
+        <ChevronRight className="h-5 w-5" />
       </button>
     </div>
   );
@@ -867,42 +874,6 @@ export function PresentationMode({
         {renderSideRail("right")}
         {renderPageNavigation("left")}
         {renderPageNavigation("right")}
-
-        <div
-          className="absolute right-4 top-4 z-40 flex items-center gap-1 rounded-xl border border-white/60 bg-paper/95 p-1.5 shadow-xl backdrop-blur"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            aria-label="缩小所选对象"
-            onClick={() => scaleSelectedElement(0.9)}
-            disabled={!selectedElementId}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-30"
-            title="缩小所选对象"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="放大所选对象"
-            onClick={() => scaleSelectedElement(1.1)}
-            disabled={!selectedElementId}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-30"
-            title="放大所选对象"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <div className="mx-0.5 h-5 w-px bg-ink-200" />
-          <button
-            type="button"
-            aria-label={isFullscreen ? "退出全屏" : "全屏"}
-            onClick={() => void toggleFullscreen()}
-            className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-ink-700 hover:bg-ink-100"
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            {isFullscreen ? "退出全屏" : "全屏"}
-          </button>
-        </div>
 
         {boards.map((board, index) => {
           const active = activeBoardId === board.id;
@@ -1151,6 +1122,41 @@ export function PresentationMode({
               <Plus className="h-5 w-5" />
             </button>
           )}
+          <div
+            aria-label="文本与全屏控制"
+            className="absolute bottom-0 left-full ml-3 flex items-center gap-1 whitespace-nowrap rounded-xl border border-white/60 bg-paper/95 p-1.5 shadow-xl backdrop-blur"
+          >
+            <button
+              type="button"
+              aria-label="缩小所选文本"
+              onClick={() => scaleSelectedText(0.9)}
+              disabled={!selectedTextElement}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-30"
+              title="缩小所选文本"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="放大所选文本"
+              onClick={() => scaleSelectedText(1.1)}
+              disabled={!selectedTextElement}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-30"
+              title="放大所选文本"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <div className="mx-0.5 h-5 w-px bg-ink-200" />
+            <button
+              type="button"
+              aria-label={isFullscreen ? "退出全屏" : "全屏"}
+              onClick={() => void toggleFullscreen()}
+              className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-ink-700 hover:bg-ink-100"
+            >
+              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              {isFullscreen ? "退出全屏" : "全屏"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
