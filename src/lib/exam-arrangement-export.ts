@@ -31,6 +31,11 @@ export interface ExamClassSelection {
   name: string;
 }
 
+export interface ExamDeskLabelDisplayOptions {
+  showStudentNo?: boolean;
+  showAdmissionNo?: boolean;
+}
+
 function safeFileName(value: string): string {
   return value.replace(/[\\/:*?"<>|]/g, "_").trim() || "考场安排";
 }
@@ -181,7 +186,11 @@ export async function downloadClassArrangement(
   await downloadClassArrangements(arrangement, [{ id: classId, name: className }]);
 }
 
-export async function downloadDeskLabels(arrangement: ExamArrangement, roomIds?: Iterable<string>): Promise<void> {
+export async function downloadDeskLabels(
+  arrangement: ExamArrangement,
+  roomIds?: Iterable<string>,
+  options: ExamDeskLabelDisplayOptions = {},
+): Promise<void> {
   const selectedRoomIds = roomIds ? new Set(roomIds) : null;
   const groups = groupDeskLabels(arrangement.assignments)
     .filter((group) => !selectedRoomIds || selectedRoomIds.has(group.roomId));
@@ -189,7 +198,26 @@ export async function downloadDeskLabels(arrangement: ExamArrangement, roomIds?:
 
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
   const { header, cell } = spreadsheetCells();
-  const columns = ["考场号", "考场位置", "座位号", "考试科目与考生", "班级", "学号", "准考证号"];
+  const showStudentNo = options.showStudentNo ?? true;
+  const showAdmissionNo = options.showAdmissionNo ?? true;
+  const columns = [
+    "考场号",
+    "考场位置",
+    "座位号",
+    "考试科目与考生",
+    "班级",
+    ...(showStudentNo ? ["学号"] : []),
+    ...(showAdmissionNo ? ["准考证号"] : []),
+  ];
+  const columnWidths = [
+    14,
+    20,
+    10,
+    34,
+    20,
+    ...(showStudentNo ? [18] : []),
+    ...(showAdmissionNo ? [24] : []),
+  ];
   await writeXlsxFile([{
     sheet: "桌贴",
     data: [
@@ -200,11 +228,11 @@ export async function downloadDeskLabels(arrangement: ExamArrangement, roomIds?:
         group.seatNo,
         group.assignments.map((item) => `${item.subjectLabel}：${item.studentName}`).join("\n"),
         group.assignments.map((item) => item.className).join("\n"),
-        group.assignments.map((item) => item.studentNo).join("\n"),
-        group.assignments.map((item) => item.admissionNo).join("\n"),
+        ...(showStudentNo ? [group.assignments.map((item) => item.studentNo).join("\n")] : []),
+        ...(showAdmissionNo ? [group.assignments.map((item) => item.admissionNo).join("\n")] : []),
       ].map(cell)),
     ],
     stickyRowsCount: 1,
-    columns: [14, 20, 10, 34, 20, 18, 24].map((width) => ({ width })),
+    columns: columnWidths.map((width) => ({ width })),
   }]).toFile(`${safeFileName(arrangement.name)}${selectedRoomIds ? `_${new Set(groups.map((group) => group.roomId)).size}个考场` : ""}_桌贴.xlsx`);
 }

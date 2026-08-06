@@ -266,11 +266,45 @@ describe("ExamRoomArrangementPage", () => {
     await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("1 张桌贴")).toBeInTheDocument();
+    expect(screen.getAllByTestId("desk-label-card")).toHaveLength(1);
+    expect(screen.getByLabelText("桌贴显示学号")).toBeChecked();
+    expect(screen.getByLabelText("桌贴显示准考证号")).toBeChecked();
+    expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
+
+    await user.click(screen.getByLabelText("桌贴显示学号"));
+    expect(screen.queryByText("学号：001")).not.toBeInTheDocument();
+    expect(screen.queryByText("学号 001")).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("桌贴显示准考证号"));
+    expect(screen.queryByText("准考证号：20260510010001")).not.toBeInTheDocument();
+    expect(screen.queryByText("准考证号 20260510010001")).not.toBeInTheDocument();
+
     const roomCheckbox = screen.getByLabelText("选择高三（1）班");
     expect(roomCheckbox).toBeChecked();
 
     await user.click(roomCheckbox);
     expect(screen.getByRole("button", { name: "下载已选桌贴" })).toBeDisabled();
     expect(screen.getByText("已选择 0 / 1 个考场，共 0 张桌贴")).toBeInTheDocument();
+  });
+
+  it("splits compact desk labels into twenty-item print pages", async () => {
+    const user = userEvent.setup();
+    const assignments = Array.from({ length: 21 }, (_, index) => ({
+      ...savedArrangement.assignments[0],
+      id: `combined:student-${index + 1}`,
+      studentId: `student-${index + 1}`,
+      studentName: `学生${index + 1}`,
+      studentNo: String(index + 1).padStart(3, "0"),
+      seatNo: index + 1,
+      admissionNo: `20260510${String(index + 1).padStart(6, "0")}`,
+    }));
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{ ...savedArrangement, assignments }]);
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+    await user.click(await screen.findByRole("tab", { name: "桌贴预览" }));
+
+    expect(screen.getAllByTestId("desk-label-card")).toHaveLength(21);
+    expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(2);
   });
 });
