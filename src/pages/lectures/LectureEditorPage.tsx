@@ -13,6 +13,7 @@ import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
 import { questionService } from "@/services/question";
 import { basketService } from "@/services/basket";
+import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import { classService as classSvc } from "@/services/class";
 import { knowledgeService } from "@/services/knowledge";
 import { aiService } from "@/services/ai";
@@ -1071,6 +1072,26 @@ export default function LectureEditorPage() {
           ? `已添加 ${knowledgeCount} 个知识块、${questionCount} 道题目`
           : `已添加 ${questionCount} 道题目`,
       );
+    }
+
+    if (addSource === "basket" && selectedBasket) {
+      const referencedQuestions = replacingQuestion ? questionsToAdd.slice(0, 1) : questionsToAdd;
+      const removal = await promptToRemoveReferencedBasketQuestions(
+        selectedBasket.id,
+        referencedQuestions.map((question) => question.id),
+      );
+      if (removal.removedQuestionIds.length > 0) {
+        const removedQuestionIds = new Set(removal.removedQuestionIds);
+        setBaskets((current) => current.map((basket) => basket.id === selectedBasket.id
+          ? {
+              ...basket,
+              questionIds: basket.questionIds.filter((questionId) => !removedQuestionIds.has(questionId)),
+            }
+          : basket));
+      }
+      if (removal.failedQuestionIds.length > 0) {
+        toast.warning("部分已引用题目未能从资源篮移除");
+      }
     }
 
     closeAddSourceModal();
