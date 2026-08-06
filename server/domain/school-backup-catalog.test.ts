@@ -510,4 +510,113 @@ describe("independent school resource catalogs", () => {
       expect(restored.questions[0].questionId).toBe("q-a");
     });
   });
+
+  it("rejects save-as by the resource provider", async () => {
+    const state = baseState();
+    await runWithState(state, async () => {
+      const backup = await schoolBackupService.autoBackupForResource(
+        "school-a",
+        "teacher-a",
+        "question",
+        "q-a",
+        ["class-other"],
+        "跨班级发布",
+      );
+
+      await expect(
+        schoolBackupService.saveAsOwnResource(backup!.id, teacher("teacher-a")),
+      ).rejects.toThrow("资源提供者不能再次另存自己的校本资源");
+    });
+  });
+
+  it("reuses an exact matching personal question instead of creating a duplicate", async () => {
+    const state = baseState();
+    const existing = question(
+      "q-teacher-b-existing",
+      "ch-function-a",
+      "kp-derivative-a",
+      "teacher-b",
+    );
+    state.questions = [...(state.questions as Question[]), existing];
+
+    await runWithState(state, async () => {
+      const backup = await schoolBackupService.autoBackupForResource(
+        "school-a",
+        "teacher-a",
+        "question",
+        "q-a",
+        ["class-other"],
+        "跨班级发布",
+      );
+      const beforeCount = (state.questions as Question[]).length;
+
+      const saved = await schoolBackupService.saveAsOwnResource(
+        backup!.id,
+        teacher("teacher-b"),
+      );
+
+      expect(saved).toEqual({
+        newResourceId: existing.id,
+        resourceType: "question",
+        deduplicated: true,
+      });
+      expect(state.questions).toHaveLength(beforeCount);
+      expect(
+        (state.questions as Question[]).find((item) => item.id === existing.id)
+          ?.schoolSourceBackupIds,
+      ).toEqual([backup!.id]);
+    });
+  });
+
+  it("deduplicates repeated saves of the same paper backup", async () => {
+    const state = baseState();
+    const paper: ExamPaper = {
+      id: "exam-repeat",
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      title: "重复另存测试卷",
+      description: "用于验证校本资源查重",
+      chapterIds: ["ch-function-a"],
+      knowledgePointIds: ["kp-derivative-a"],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期",
+      duration: 60,
+      totalScore: 10,
+      questions: [],
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.examPapers = [paper];
+
+    await runWithState(state, async () => {
+      const backup = await schoolBackupService.autoBackupForResource(
+        "school-a",
+        "teacher-a",
+        "examPaper",
+        paper.id,
+        ["class-other"],
+        "跨班级发布",
+      );
+      const first = await schoolBackupService.saveAsOwnResource(
+        backup!.id,
+        teacher("teacher-b"),
+      );
+      const second = await schoolBackupService.saveAsOwnResource(
+        backup!.id,
+        teacher("teacher-b"),
+      );
+
+      expect(first.deduplicated).toBe(false);
+      expect(second).toEqual({
+        newResourceId: first.newResourceId,
+        resourceType: "examPaper",
+        deduplicated: true,
+      });
+      expect(
+        (state.examPapers as ExamPaper[]).filter((item) => item.teacherId === "teacher-b"),
+      ).toHaveLength(1);
+    });
+  });
 });

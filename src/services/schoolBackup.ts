@@ -27,6 +27,12 @@ export interface BackupInput {
   duplicateHash?: string;
 }
 
+export interface SchoolSaveAsOwnResult {
+  newResourceId: string;
+  resourceType: SchoolBackupResourceType;
+  deduplicated: boolean;
+}
+
 export function canEditSchoolBackup(teacher: Teacher | null | undefined): boolean {
   if (!teacher) return false;
   if (teacher.role === "school_admin" || teacher.role === "platform_admin") return true;
@@ -74,7 +80,7 @@ export const schoolBackupService = {
     return rpcCall("schoolBackup", "autoBackupForResource", [schoolId, fromTeacherId, resourceType, resourceId, targetClassIds, backupReason, targetStudentIds]) as any;
   },
 
-  async saveAsOwnResource(backupId: string, teacher: Teacher): Promise<{ newResourceId: string; resourceType: SchoolBackupResourceType }> {
+  async saveAsOwnResource(backupId: string, teacher: Teacher): Promise<SchoolSaveAsOwnResult> {
     return rpcCall("schoolBackup", "saveAsOwnResource", [backupId, teacher]) as any;
   }
 };

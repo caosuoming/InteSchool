@@ -84,6 +84,131 @@ function sameIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
+type SchoolCopyResource = Question | ExamPaper | Lecture | Courseware | Material;
+type SchoolCopyCollection = "questions" | "examPapers" | "lectures" | "coursewares" | "materials";
+
+const schoolCopyCollections: Record<SchoolBackupResourceType, SchoolCopyCollection> = {
+  question: "questions",
+  examPaper: "examPapers",
+  lecture: "lectures",
+  courseware: "coursewares",
+  material: "materials",
+};
+
+function stripCopySuffix(value: unknown): unknown {
+  return typeof value === "string" ? value.replace(/(?:（副本）)+$/, "") : value;
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, stableValue(entry)]),
+  );
+}
+
+function duplicateComparableResource(
+  resourceType: SchoolBackupResourceType,
+  resource: SchoolCopyResource,
+): string {
+  const comparable = structuredClone(resource) as unknown as Record<string, unknown>;
+  for (const key of [
+    "id",
+    "teacherId",
+    "schoolId",
+    "chapterIds",
+    "knowledgePointIds",
+    "createdAt",
+    "updatedAt",
+    "platformSourceDonationIds",
+    "schoolSourceBackupIds",
+  ]) {
+    delete comparable[key];
+  }
+  if ("title" in comparable) comparable.title = stripCopySuffix(comparable.title);
+  if ("stem" in comparable) comparable.stem = stripCopySuffix(comparable.stem);
+
+  if (resourceType === "question") {
+    for (const key of ["usageCount", "lastUsedAt", "isShared", "sourceType", "hiddenByExamIds"])
+      delete comparable[key];
+  } else if (resourceType === "examPaper") {
+    delete comparable.status;
+  } else if (resourceType === "lecture") {
+    delete comparable.status;
+    delete comparable.version;
+  } else if (resourceType === "courseware") {
+    for (const key of ["lessonCoursewareId", "sourceResourceType", "sourceResourceId", "sourceResourceTitle"])
+      delete comparable[key];
+  }
+
+  return JSON.stringify(stableValue(comparable));
+}
+
+function findExistingPersonalResource(
+  backup: SchoolResourceBackup,
+  teacherId: string,
+  schoolId: string,
+): SchoolCopyResource | undefined {
+  const collection = schoolCopyCollections[backup.resourceType];
+  const owned = (db.read(collection) as SchoolCopyResource[]).filter(
+    (resource) => resource.teacherId === teacherId && resource.schoolId === schoolId,
+  );
+  const backups = db.read("schoolBackups") as SchoolResourceBackup[];
+  const sameSourceBackupIds = new Set(
+    backups
+      .filter((item) =>
+        item.resourceType === backup.resourceType
+        && item.schoolId === backup.schoolId
+        && item.fromTeacherId === backup.fromTeacherId
+        && item.sourceResourceId === backup.sourceResourceId,
+      )
+      .map((item) => item.id),
+  );
+  const byProvenance = owned.find((resource) =>
+    resource.schoolSourceBackupIds?.some((id) => sameSourceBackupIds.has(id)),
+  );
+  if (byProvenance) return byProvenance;
+
+  const snapshot = parseSnapshot<SchoolCopyResource>(backup);
+  if (!snapshot) return undefined;
+  if (backup.resourceType === "question") {
+    const expectedHash = questionBackupHash(backup);
+    if (!expectedHash) return undefined;
+    return (owned as Question[]).find((question) =>
+      question.duplicateHash === expectedHash
+      || computeDuplicateHash(
+        stripCopySuffix(question.stem) as string,
+        question.answer,
+        question.options,
+      ) === expectedHash,
+    );
+  }
+  const expected = duplicateComparableResource(backup.resourceType, snapshot);
+  return owned.find((resource) =>
+    duplicateComparableResource(backup.resourceType, resource) === expected,
+  );
+}
+
+function addSchoolBackupSource(
+  resourceType: SchoolBackupResourceType,
+  resourceId: string,
+  backupId: string,
+): void {
+  const collection = schoolCopyCollections[resourceType];
+  db.update(collection, (list: SchoolCopyResource[]) => list.map((resource) =>
+    resource.id === resourceId
+      ? {
+          ...resource,
+          schoolSourceBackupIds: [
+            ...new Set([...(resource.schoolSourceBackupIds || []), backupId]),
+          ],
+        }
+      : resource,
+  ));
+}
+
 function normalizeSchoolBackups(schoolId: string): SchoolResourceBackup[] {
   const current = db.read("schoolBackups") as SchoolResourceBackup[];
   let changed = false;
@@ -434,15 +559,32 @@ export const schoolBackupService = {
   ): Promise<{
     newResourceId: string;
     resourceType: SchoolBackupResourceType;
+    deduplicated: boolean;
   }> {
     await delay(300);
     maybeThrowError();
-    const backup = db.read("schoolBackups").find((b) => b.id === backupId);
+    const backup = (db.read("schoolBackups") as SchoolResourceBackup[])
+      .find((item) => item.id === backupId);
     if (!backup) throw new Error("备份不存在或已被删除");
+    if (backup.fromTeacherId === teacher.id) {
+      throw new Error("资源提供者不能再次另存自己的校本资源");
+    }
+    if (!teacher.schoolId || teacher.schoolId !== backup.schoolId) {
+      throw new Error("只能另存当前学校的校本资源");
+    }
 
     const now = new Date().toISOString();
     const teacherId = teacher.id;
-    const schoolId = teacher.schoolId || backup.schoolId;
+    const schoolId = teacher.schoolId;
+    const existing = findExistingPersonalResource(backup, teacherId, schoolId);
+    if (existing) {
+      addSchoolBackupSource(backup.resourceType, existing.id, backup.id);
+      return {
+        newResourceId: existing.id,
+        resourceType: backup.resourceType,
+        deduplicated: true,
+      };
+    }
     const directory = syncPersonalResourceDirectories(
       schoolId,
       backup.chapterIds || [],
@@ -499,6 +641,7 @@ export const schoolBackupService = {
           usageCount: 0,
           isShared: false,
           sourceType: "shared",
+          schoolSourceBackupIds: [backup.id],
           duplicateHash: computeDuplicateHash(
             original.stem,
             original.answer,
@@ -549,6 +692,7 @@ export const schoolBackupService = {
           chapterIds: directory.chapterIds,
           knowledgePointIds: directory.knowledgePointIds,
           status: "draft",
+          schoolSourceBackupIds: [backup.id],
           createdAt: now,
           updatedAt: now,
         };
@@ -594,6 +738,7 @@ export const schoolBackupService = {
           knowledgePointIds: directory.knowledgePointIds,
           status: "draft",
           version: 1,
+          schoolSourceBackupIds: [backup.id],
           createdAt: now,
           updatedAt: now,
         };
@@ -618,6 +763,7 @@ export const schoolBackupService = {
           sourceResourceTitle: undefined,
           chapterIds: directory.chapterIds,
           knowledgePointIds: directory.knowledgePointIds,
+          schoolSourceBackupIds: [backup.id],
           createdAt: now,
           updatedAt: now,
         };
@@ -638,6 +784,7 @@ export const schoolBackupService = {
           schoolId,
           chapterIds: directory.chapterIds,
           knowledgePointIds: directory.knowledgePointIds,
+          schoolSourceBackupIds: [backup.id],
           createdAt: now,
           updatedAt: now,
         };
@@ -646,6 +793,10 @@ export const schoolBackupService = {
       }
     }
 
-    return { newResourceId, resourceType: backup.resourceType };
+    return {
+      newResourceId,
+      resourceType: backup.resourceType,
+      deduplicated: false,
+    };
   },
 };
