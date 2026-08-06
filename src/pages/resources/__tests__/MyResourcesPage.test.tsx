@@ -21,10 +21,10 @@ vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
 }));
 
 describe("DocumentResourceGroup", () => {
-  it("wraps related resources in one bordered group and labels the document category", () => {
+  it("wraps related resources without a source label or category header", () => {
     render(
-      <DocumentResourceGroup category="extracted">
-        <div>拆解稿卡片</div>
+      <DocumentResourceGroup>
+        <div>主资源卡片</div>
         <div>原稿行</div>
         <div>课件行</div>
       </DocumentResourceGroup>,
@@ -32,8 +32,9 @@ describe("DocumentResourceGroup", () => {
 
     const group = screen.getByTestId("document-resource-group");
     expect(group).toHaveClass("border", "rounded-xl");
-    expect(within(group).getByText("同源文档")).toBeInTheDocument();
-    expect(within(group).getByText("拆解稿")).toBeInTheDocument();
+    expect(within(group).queryByText("同源文档")).not.toBeInTheDocument();
+    expect(within(group).queryByText("拆解稿")).not.toBeInTheDocument();
+    expect(within(group).getByText("主资源卡片")).toBeInTheDocument();
     expect(within(group).getByText("原稿行")).toBeInTheDocument();
     expect(within(group).getByText("课件行")).toBeInTheDocument();
   });
