@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   listSettings: vi.fn(),
   getKnowledgeTree: vi.fn(),
   generateExamPaperDocx: vi.fn(),
+  createLessonFromExamPaper: vi.fn(),
 }));
 
 const teacher = {
@@ -50,6 +51,11 @@ vi.mock("@/services/basket", () => ({
 }));
 vi.mock("@/services/lecture", () => ({
   lectureService: { listLectures: vi.fn().mockResolvedValue([]) },
+}));
+vi.mock("@/services/lessonCourseware", () => ({
+  lessonCoursewareService: {
+    createFromExamPaper: mocks.createLessonFromExamPaper,
+  },
 }));
 vi.mock("@/services/class", () => ({
   classService: {
@@ -191,6 +197,7 @@ function renderPage() {
     <MemoryRouter initialEntries={[`/exam-papers/${paper.id}/preview`]}>
       <Routes>
         <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
+        <Route path="/my-lessons/:id/edit" element={<div>课件编辑页</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -202,6 +209,7 @@ function renderEditorPage() {
       <Routes>
         <Route path="/exam-papers/:id" element={<ExamPaperEditorPage />} />
         <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
+        <Route path="/my-lessons/:id/edit" element={<div>课件编辑页</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -211,6 +219,7 @@ describe("ExamPaperEditorPage preview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getPaper.mockResolvedValue(paper);
+    mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...paper, ...patch }));
     mocks.listQuestions.mockResolvedValue([question]);
     mocks.listBaskets.mockResolvedValue([]);
     mocks.removeQuestion.mockResolvedValue(undefined);
@@ -223,6 +232,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listSettings.mockResolvedValue([]);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
     mocks.generateExamPaperDocx.mockResolvedValue(undefined);
+    mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
   });
 
   it("removes a basket question after adding it to the paper when confirmed", async () => {
@@ -290,6 +300,22 @@ describe("ExamPaperEditorPage preview", () => {
     });
   });
 
+  it("sends a previewed paper to my lessons and opens the courseware editor", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "发送到我的上课" }));
+
+    await waitFor(() => {
+      expect(mocks.createLessonFromExamPaper).toHaveBeenCalledWith(
+        teacher.id,
+        teacher.schoolId,
+        paper.id,
+      );
+    });
+    expect(mocks.updatePaper).not.toHaveBeenCalled();
+    expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
+  });
+
   it("previews unsaved edits and keeps them when returning to the editor", async () => {
     renderEditorPage();
 
@@ -307,6 +333,26 @@ describe("ExamPaperEditorPage preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑试卷" }));
     expect(await screen.findByDisplayValue("未保存的新标题")).toBeInTheDocument();
     expect(screen.getByLabelText<HTMLInputElement>("题目分值")).toHaveValue(9);
+  });
+
+  it("persists an unsaved preview before sending it to my lessons", async () => {
+    renderEditorPage();
+
+    fireEvent.change(await screen.findByLabelText("文档名"), {
+      target: { value: "发送前的新标题" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    fireEvent.click(await screen.findByRole("button", { name: "发送到我的上课" }));
+
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(
+        paper.id,
+        expect.objectContaining({ title: "发送前的新标题" }),
+      );
+      expect(mocks.createLessonFromExamPaper).toHaveBeenCalledOnce();
+    });
+    expect(mocks.updatePaper.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.createLessonFromExamPaper.mock.invocationCallOrder[0]);
   });
 
   it("renders formulas in both editor and preview and exposes publishing in the editor", async () => {
@@ -343,6 +389,21 @@ describe("ExamPaperEditorPage preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
     await screen.findByTestId("exam-paper-preview");
     await waitFor(() => expect(container.querySelectorAll(".katex").length).toBeGreaterThan(0));
+  });
+
+  it("places secondary editor actions below the title and removes the subtitle", async () => {
+    renderEditorPage();
+
+    await screen.findByLabelText("文档名");
+    expect(screen.queryByText("换题、调整顺序、添加题目")).not.toBeInTheDocument();
+
+    const toolbar = screen.getByRole("toolbar", { name: "试卷辅助操作" });
+    expect(within(toolbar).getByRole("button", { name: "添加到集体备课" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "选择发布对象" })).toBeInTheDocument();
+    expect(toolbar.previousElementSibling).toContainElement(
+      screen.getByRole("heading", { name: `编辑：${paper.title}` }),
+    );
   });
 });
 
