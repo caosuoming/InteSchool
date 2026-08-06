@@ -7,7 +7,7 @@ import {
   FileSpreadsheet, Sparkles, Trash2, Share2, Upload, Filter, Library, FileText,
   PlayCircle, Copy, MessageSquareText, Star, Video,
   ShoppingCart, CheckSquare, Square, Plus, X,
-  Layout, Files,
+  Layout,
   Gift, Users, Pencil, Check,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -88,7 +88,6 @@ import { loadCoursewarePptSlides } from "@/lib/pptx";
 import { openCoursewareInWps } from "@/lib/wps";
 import {
   documentCategory,
-  documentCategoryLabel,
   documentCategoryOptions,
   type DocumentCategory,
 } from "@/lib/document-resource";
@@ -299,23 +298,15 @@ export function LinkedResourceRow({
 }
 
 interface DocumentResourceGroupProps {
-  category: DocumentCategory;
   children: React.ReactNode;
 }
 
-export function DocumentResourceGroup({ category, children }: DocumentResourceGroupProps) {
+export function DocumentResourceGroup({ children }: DocumentResourceGroupProps) {
   return (
     <section
       className="rounded-xl border border-ink-200 bg-ink-50/35 p-3 shadow-sm"
       data-testid="document-resource-group"
     >
-      <div className="mb-2 flex items-center gap-2 px-1 text-xs text-ink-500">
-        <Files className="h-3.5 w-3.5" />
-        <span>同源文档</span>
-        <Badge variant={category === "uploaded" ? "amber" : category === "extracted" ? "gold" : "ink"}>
-          {documentCategoryLabel(category)}
-        </Badge>
-      </div>
       <div className="space-y-2">{children}</div>
     </section>
   );
@@ -2446,10 +2437,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 const lectureWasTaught = hasCompletedLesson("lecture", mainLecture.id)
                   || hasCompletedLesson("lecture", item.id);
                 return (
-                  <DocumentResourceGroup
-                    key={item.id}
-                    category={documentCategory(item, allLectures)}
-                  >
+                  <DocumentResourceGroup key={item.id}>
                     <ResourceCard
                       key={mainLecture.id}
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
@@ -2479,9 +2467,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           )}
                         </>
                       ) : undefined}
-                      description={mainLecture.description || (hasExtractCopy
-                        ? "文档拆解生成的拆解稿，可修改属性；内容与顺序保持原稿结构"
-                        : undefined)}
                       meta={[
                         { label: "类型", value: getLectureTypeLabel(mainLecture.typeId) },
                         { label: "年级", value: `${mainLecture.grade} · ${mainLecture.schoolYear} · ${mainLecture.semester || "上学期"}` },
@@ -2585,10 +2570,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 const isExtracting = item.extractStatus === "extracting"
                   || isExtractTaskRunning(extractTasks, item.id, "examPaper");
                 return (
-                  <DocumentResourceGroup
-                    key={item.id}
-                    category={documentCategory(item, allExamPapers)}
-                  >
+                  <DocumentResourceGroup key={item.id}>
                     {hasExtractCopy && extractCopies.map((copy) => (
                       <div key={copy.id} className="space-y-2">
                         <ResourceCard
@@ -2598,7 +2580,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           || hasCompletedLesson("examPaper", item.id)
                           ? <Badge variant="green">已上课</Badge>
                           : undefined}
-                        description={copy.description || "文档拆解生成的拆解稿，可修改属性和分值；题目与顺序保持原稿结构"}
                         meta={[
                           { label: "类型", value: getExamPaperTypeLabel(copy.typeId) },
                           { label: "年级", value: `${copy.grade} · ${copy.schoolYear} · ${copy.semester || "上学期"}` },
@@ -2675,7 +2656,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                               )}
                             </>
                           ) : undefined}
-                          description={item.description}
                           meta={[
                             { label: "类型", value: getExamPaperTypeLabel(item.typeId) },
                             { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
