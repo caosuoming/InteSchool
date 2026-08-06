@@ -73,23 +73,40 @@ interface WritableCanvasProps {
   ariaLabel?: string;
 }
 
+interface BoardWritingArea {
+  id: string;
+  frameX: number;
+  frameY: number;
+  clearToken: number;
+}
+
 interface BoardPage {
   id: string;
   x: number;
   y: number;
   width: number;
   height: number;
-  frameX: number;
-  frameY: number;
-  clearToken: number;
+  writingAreas: BoardWritingArea[];
+  activeWritingAreaId: string;
 }
+
+type BoardResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 interface BoardInteraction {
   mode: "move" | "resize" | "move-frame";
   boardId: string;
+  writingAreaId?: string;
+  resizeDirection?: BoardResizeDirection;
   startX: number;
   startY: number;
   board: BoardPage;
+}
+
+interface BoardResizeHandle {
+  direction: BoardResizeDirection;
+  label: string;
+  className: string;
+  corner?: boolean;
 }
 
 const INITIAL_DRAWING_PRESETS: DrawingPreset[] = [
@@ -118,6 +135,17 @@ const BOARD_BACKGROUND: CSSProperties = {
   backgroundColor: "#fffef8",
   backgroundImage: "repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(37, 99, 235, 0.13) 32px)",
 };
+
+const BOARD_RESIZE_HANDLES: BoardResizeHandle[] = [
+  { direction: "n", label: "上边", className: "left-4 right-4 top-0 h-2 cursor-ns-resize" },
+  { direction: "ne", label: "右上角", className: "right-0 top-0 h-4 w-4 cursor-nesw-resize", corner: true },
+  { direction: "e", label: "右边", className: "bottom-4 right-0 top-4 w-2 cursor-ew-resize" },
+  { direction: "se", label: "右下角", className: "bottom-0 right-0 h-4 w-4 cursor-nwse-resize", corner: true },
+  { direction: "s", label: "下边", className: "bottom-0 left-4 right-4 h-2 cursor-ns-resize" },
+  { direction: "sw", label: "左下角", className: "bottom-0 left-0 h-4 w-4 cursor-nesw-resize", corner: true },
+  { direction: "w", label: "左边", className: "bottom-4 left-0 top-4 w-2 cursor-ew-resize" },
+  { direction: "nw", label: "左上角", className: "left-0 top-0 h-4 w-4 cursor-nwse-resize", corner: true },
+];
 
 const PRESENTATION_ELEMENT_PREFIX = "presentation-built-in";
 
@@ -567,7 +595,16 @@ export function PresentationMode({
   const clearActiveSurface = () => {
     if (boardsVisible && activeBoardId) {
       setBoards((current) => current.map((board) => (
-        board.id === activeBoardId ? { ...board, clearToken: board.clearToken + 1 } : board
+        board.id === activeBoardId
+          ? {
+              ...board,
+              writingAreas: board.writingAreas.map((area) => (
+                area.id === board.activeWritingAreaId
+                  ? { ...area, clearToken: area.clearToken + 1 }
+                  : area
+              )),
+            }
+          : board
       )));
       return;
     }
@@ -577,19 +614,52 @@ export function PresentationMode({
   const addBoard = () => {
     const index = boards.length;
     const offset = (index % 5) * 3;
-    const board: BoardPage = {
-      id: `board-${Date.now()}-${index}`,
-      x: 16 + offset,
-      y: 10 + offset,
-      width: 68,
-      height: 62,
+    const boardId = `board-${Date.now()}-${index}`;
+    const firstWritingArea: BoardWritingArea = {
+      id: `${boardId}-writing-area-1`,
       frameX: 0,
       frameY: 0,
       clearToken: 0,
     };
+    const board: BoardPage = {
+      id: boardId,
+      x: 16 + offset,
+      y: 10 + offset,
+      width: 68,
+      height: 62,
+      writingAreas: [firstWritingArea],
+      activeWritingAreaId: firstWritingArea.id,
+    };
     setBoards((current) => [...current, board]);
     setActiveBoardId(board.id);
     setBoardsVisible(true);
+  };
+
+  const addWritingArea = (boardId: string) => {
+    setBoards((current) => current.map((board) => {
+      if (board.id !== boardId) return board;
+      const index = board.writingAreas.length;
+      const writingArea: BoardWritingArea = {
+        id: `${board.id}-writing-area-${Date.now()}-${index}`,
+        frameX: 0,
+        frameY: 0,
+        clearToken: 0,
+      };
+      return {
+        ...board,
+        writingAreas: [...board.writingAreas, writingArea],
+        activeWritingAreaId: writingArea.id,
+      };
+    }));
+    setActiveBoardId(boardId);
+    setBoardsVisible(true);
+  };
+
+  const selectWritingArea = (boardId: string, writingAreaId: string) => {
+    setBoards((current) => current.map((board) => (
+      board.id === boardId ? { ...board, activeWritingAreaId: writingAreaId } : board
+    )));
+    setActiveBoardId(boardId);
   };
 
   const toggleBoards = () => {
@@ -611,6 +681,7 @@ export function PresentationMode({
     event: ReactPointerEvent<HTMLElement>,
     board: BoardPage,
     mode: BoardInteraction["mode"],
+    options?: Pick<BoardInteraction, "writingAreaId" | "resizeDirection">,
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -618,6 +689,8 @@ export function PresentationMode({
     boardInteractionRef.current = {
       mode,
       boardId: board.id,
+      writingAreaId: options?.writingAreaId,
+      resizeDirection: options?.resizeDirection,
       startX: event.clientX,
       startY: event.clientY,
       board,
@@ -653,26 +726,60 @@ export function PresentationMode({
         };
       }
       if (interaction.mode === "move-frame") {
+        const sourceArea = interaction.board.writingAreas.find((area) => (
+          area.id === interaction.writingAreaId
+        ));
+        if (!sourceArea || !interaction.writingAreaId) return board;
         const visibleX = Math.min(board.width, (48 / rect.width) * 100);
         const visibleY = Math.min(board.height, (48 / rect.height) * 100);
         return {
           ...board,
-          frameX: Number(clamp(
-            interaction.board.frameX + dx,
-            visibleX - 100,
-            board.width - visibleX,
-          ).toFixed(4)),
-          frameY: Number(clamp(
-            interaction.board.frameY + dy,
-            visibleY - 100,
-            board.height - visibleY,
-          ).toFixed(4)),
+          writingAreas: board.writingAreas.map((area) => (
+            area.id === interaction.writingAreaId
+              ? {
+                  ...area,
+                  frameX: Number(clamp(
+                    sourceArea.frameX + dx,
+                    visibleX - 100,
+                    board.width - visibleX,
+                  ).toFixed(4)),
+                  frameY: Number(clamp(
+                    sourceArea.frameY + dy,
+                    visibleY - 100,
+                    board.height - visibleY,
+                  ).toFixed(4)),
+                }
+              : area
+          )),
         };
+      }
+
+      const direction = interaction.resizeDirection || "se";
+      let x = interaction.board.x;
+      let y = interaction.board.y;
+      let width = interaction.board.width;
+      let height = interaction.board.height;
+
+      if (direction.includes("e")) {
+        width = clamp(interaction.board.width + dx, 28, 100);
+      }
+      if (direction.includes("w")) {
+        width = clamp(interaction.board.width - dx, 28, 100);
+        x = interaction.board.x + interaction.board.width - width;
+      }
+      if (direction.includes("s")) {
+        height = clamp(interaction.board.height + dy, 24, 100);
+      }
+      if (direction.includes("n")) {
+        height = clamp(interaction.board.height - dy, 24, 100);
+        y = interaction.board.y + interaction.board.height - height;
       }
       return {
         ...board,
-        width: Number(clamp(interaction.board.width + dx, 28, 100).toFixed(4)),
-        height: Number(clamp(interaction.board.height + dy, 24, 100).toFixed(4)),
+        x: Number(x.toFixed(4)),
+        y: Number(y.toFixed(4)),
+        width: Number(width.toFixed(4)),
+        height: Number(height.toFixed(4)),
       };
     }));
   };
@@ -781,7 +888,7 @@ export function PresentationMode({
     return (
       <div
         className={cn(
-          "absolute top-1/2 z-30 -translate-y-1/2",
+          "absolute top-1/2 z-[90] -translate-y-1/2",
           side === "left" ? "left-2" : "right-2",
         )}
         onPointerDown={(event) => event.stopPropagation()}
@@ -825,7 +932,7 @@ export function PresentationMode({
   const renderPageNavigation = (side: Side) => (
     <div
       className={cn(
-        "absolute bottom-4 z-40 flex items-center gap-1.5 rounded-xl border border-white/15 bg-ink-900/80 p-1.5 text-paper shadow-xl backdrop-blur",
+        "absolute bottom-4 z-[90] flex items-center gap-1.5 rounded-xl border border-white/15 bg-ink-900/80 p-1.5 text-paper shadow-xl backdrop-blur",
         side === "left" ? "left-4" : "right-4",
       )}
       aria-label={`${side === "left" ? "左侧" : "右侧"}翻页控制`}
@@ -922,8 +1029,9 @@ export function PresentationMode({
               role="region"
               aria-label={label}
               data-active={active}
+              data-board-layer
               className={cn(
-                "absolute overflow-hidden rounded-xl border-2 bg-ink-700/30 shadow-2xl transition-[box-shadow,opacity]",
+                "absolute rounded-xl border-2 bg-ink-700/30 shadow-2xl transition-[box-shadow,opacity]",
                 active ? "border-gold-400 ring-2 ring-gold-300/60" : "border-ink-600",
                 !boardsVisible && "invisible pointer-events-none opacity-0",
               )}
@@ -936,88 +1044,142 @@ export function PresentationMode({
               }}
               onPointerDown={() => setActiveBoardId(board.id)}
             >
-              <div
-                data-board-writing-frame
-                data-draggable={tool === "select"}
-                className={cn(
-                  "absolute touch-none overflow-hidden border border-ink-300/70 shadow-inner",
-                  tool === "select" && "cursor-move",
-                )}
-                style={{
-                  ...BOARD_BACKGROUND,
-                  left: `${(board.frameX / board.width) * 100}%`,
-                  top: `${(board.frameY / board.height) * 100}%`,
-                  width: `${10000 / board.width}%`,
-                  height: `${10000 / board.height}%`,
-                }}
-                onPointerDown={(event) => {
-                  if (tool === "select") startBoardInteraction(event, board, "move-frame");
-                }}
-                onPointerMove={moveBoardInteraction}
-                onPointerUp={endBoardInteraction}
-                onPointerCancel={endBoardInteraction}
-              >
-                <div
-                  data-board-divider="center"
-                  className="pointer-events-none absolute bottom-0 left-1/2 top-0 z-[1] w-px -translate-x-1/2 bg-red-600/20"
-                  aria-hidden="true"
-                />
-                <WritableCanvas
-                  tool={boardsVisible && active ? tool : "none"}
-                  preset={selectedDrawingPreset}
-                  clearToken={board.clearToken}
-                  ariaLabel={`${label}书写区域`}
-                  className="z-10"
-                />
+              <div className="absolute inset-0 overflow-hidden rounded-[10px]">
+                {board.writingAreas.map((writingArea, writingAreaIndex) => {
+                  const activeWritingArea = board.activeWritingAreaId === writingArea.id;
+                  return (
+                    <div
+                      key={writingArea.id}
+                      data-board-writing-frame
+                      data-writing-area-index={writingAreaIndex + 1}
+                      data-active={activeWritingArea}
+                      data-draggable={activeWritingArea && tool === "select"}
+                      className={cn(
+                        "absolute touch-none overflow-hidden border border-ink-300/70 shadow-inner",
+                        activeWritingArea ? "visible" : "invisible pointer-events-none",
+                        activeWritingArea && tool === "select" && "cursor-move",
+                      )}
+                      style={{
+                        ...BOARD_BACKGROUND,
+                        left: `${(writingArea.frameX / board.width) * 100}%`,
+                        top: `${(writingArea.frameY / board.height) * 100}%`,
+                        width: `${10000 / board.width}%`,
+                        height: `${10000 / board.height}%`,
+                      }}
+                      onPointerDown={(event) => {
+                        if (activeWritingArea && tool === "select") {
+                          startBoardInteraction(event, board, "move-frame", {
+                            writingAreaId: writingArea.id,
+                          });
+                        }
+                      }}
+                      onPointerMove={moveBoardInteraction}
+                      onPointerUp={endBoardInteraction}
+                      onPointerCancel={endBoardInteraction}
+                    >
+                      <div
+                        data-board-divider="center"
+                        className="pointer-events-none absolute bottom-0 left-1/2 top-0 z-[1] w-px -translate-x-1/2 bg-red-600/20"
+                        aria-hidden="true"
+                      />
+                      <WritableCanvas
+                        tool={boardsVisible && active && activeWritingArea ? tool : "none"}
+                        preset={selectedDrawingPreset}
+                        clearToken={writingArea.clearToken}
+                        ariaLabel={`${label}书写区 ${writingAreaIndex + 1}`}
+                        className="z-10"
+                      />
+                    </div>
+                  );
+                })}
+
+                <div className="pointer-events-none absolute left-5 right-5 top-3 z-20 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-label={`移动${label}`}
+                    className="pointer-events-auto flex h-9 w-9 shrink-0 cursor-move items-center justify-center rounded-lg bg-ink-900/80 text-paper shadow-lg hover:bg-ink-900"
+                    onPointerDown={(event) => startBoardInteraction(event, board, "move")}
+                    onPointerMove={moveBoardInteraction}
+                    onPointerUp={endBoardInteraction}
+                    onPointerCancel={endBoardInteraction}
+                  >
+                    <Move className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`在${label}中新增书写区`}
+                    onClick={() => addWritingArea(board.id)}
+                    className="pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-paper/90 text-ink-600 shadow-lg hover:bg-teal-50 hover:text-teal-700"
+                    title="新增书写区"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                  <div
+                    role="tablist"
+                    aria-label={`${label}书写区切换`}
+                    className="pointer-events-auto flex min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-lg bg-paper/75 p-0.5 shadow-sm backdrop-blur"
+                  >
+                    {board.writingAreas.map((writingArea, writingAreaIndex) => {
+                      const selected = board.activeWritingAreaId === writingArea.id;
+                      return (
+                        <button
+                          key={writingArea.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={selected}
+                          aria-label={`切换到${label}书写区 ${writingAreaIndex + 1}`}
+                          onClick={() => selectWritingArea(board.id, writingArea.id)}
+                          className={cn(
+                            "flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md px-2 text-xs font-semibold transition-colors",
+                            selected
+                              ? "bg-ink-900 text-paper shadow"
+                              : "text-ink-600 hover:bg-paper hover:text-ink-900",
+                          )}
+                        >
+                          {writingAreaIndex + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`删除${label}`}
+                    onClick={() => removeBoard(board.id)}
+                    className="pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-paper/90 text-ink-500 shadow-lg hover:bg-red-50 hover:text-red-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                aria-label={`移动${label}`}
-                className="absolute left-2 top-2 z-20 flex h-9 w-9 cursor-move items-center justify-center rounded-lg bg-ink-900/80 text-paper shadow-lg hover:bg-ink-900"
-                onPointerDown={(event) => startBoardInteraction(event, board, "move")}
-                onPointerMove={moveBoardInteraction}
-                onPointerUp={endBoardInteraction}
-                onPointerCancel={endBoardInteraction}
-              >
-                <Move className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label={`在${label}后新增一页`}
-                onClick={addBoard}
-                className="absolute left-14 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-lg bg-paper/85 text-ink-600 shadow-lg hover:bg-teal-50 hover:text-teal-700"
-                title="新增板书页"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-              <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2 rounded-lg bg-paper/85 px-3 py-1.5 text-xs font-medium text-ink-600 shadow-sm backdrop-blur">
-                {label}
-              </div>
-              <button
-                type="button"
-                aria-label={`删除${label}`}
-                onClick={() => removeBoard(board.id)}
-                className="absolute right-12 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-lg bg-paper/85 text-ink-500 shadow-lg hover:bg-red-50 hover:text-red-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label={`调整${label}的大小`}
-                className="absolute right-2 top-2 z-20 flex h-9 w-9 cursor-nwse-resize items-center justify-center rounded-lg bg-ink-900/80 text-paper shadow-lg hover:bg-ink-900"
-                onPointerDown={(event) => startBoardInteraction(event, board, "resize")}
-                onPointerMove={moveBoardInteraction}
-                onPointerUp={endBoardInteraction}
-                onPointerCancel={endBoardInteraction}
-              >
-                <Maximize2 className="h-4 w-4" />
-              </button>
+
+              {BOARD_RESIZE_HANDLES.map((handle) => (
+                <button
+                  key={handle.direction}
+                  type="button"
+                  aria-label={`从${handle.label}调整${label}大小`}
+                  data-board-resize-handle={handle.direction}
+                  className={cn(
+                    "absolute z-30 touch-none border-0 bg-transparent p-0",
+                    handle.className,
+                  )}
+                  onPointerDown={(event) => startBoardInteraction(event, board, "resize", {
+                    resizeDirection: handle.direction,
+                  })}
+                  onPointerMove={moveBoardInteraction}
+                  onPointerUp={endBoardInteraction}
+                  onPointerCancel={endBoardInteraction}
+                >
+                  {handle.corner && (
+                    <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-paper bg-gold-400 shadow" />
+                  )}
+                </button>
+              ))}
             </section>
           );
         })}
 
         <div
-          className="absolute bottom-3 left-1/2 z-40 flex -translate-x-1/2 items-end gap-1 rounded-xl border border-white/60 bg-paper/95 px-1.5 py-1.5 shadow-2xl backdrop-blur"
+          className="absolute bottom-3 left-1/2 z-[90] flex -translate-x-1/2 items-end gap-1 rounded-xl border border-white/60 bg-paper/95 px-1.5 py-1.5 shadow-2xl backdrop-blur"
           onPointerDown={(event) => event.stopPropagation()}
           aria-label="书写工具"
         >
