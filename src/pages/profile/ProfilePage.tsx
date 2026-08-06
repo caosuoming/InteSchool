@@ -28,9 +28,11 @@ export default function ProfilePage() {
   const affiliation = teacher?.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
     || teacher?.affiliations?.find((item) => item.isCurrent);
   const [nickname, setNickname] = useState(teacher?.nickname || "");
+  const [email, setEmail] = useState(teacher?.email || "");
   const [subject, setSubject] = useState(affiliation?.subject || teacher?.subject || "数学");
   const [grades, setGrades] = useState<string[]>(affiliation?.teachingGrades || teacher?.teachingGrades || []);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -49,6 +51,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     setNickname(teacher?.nickname || "");
+    setEmail(teacher?.email || "");
     setSubject(affiliation?.subject || teacher?.subject || "数学");
     setGrades(affiliation?.teachingGrades || teacher?.teachingGrades || []);
   }, [
@@ -91,6 +94,20 @@ export default function ProfilePage() {
       toast.error("资料保存失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleEmailSave = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSavingEmail(true);
+    try {
+      await authService.bindEmail(email);
+      await refresh();
+      toast.success(teacher.email ? "邮箱已更新" : "邮箱已绑定");
+    } catch (error) {
+      toast.error("邮箱保存失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingEmail(false);
     }
   };
 
@@ -194,10 +211,26 @@ export default function ProfilePage() {
           <div><div className="text-lg font-semibold text-ink-900">{teacher.name}</div><div className="text-sm text-ink-500">{affiliation?.schoolName || "个人身份"} · {subject}教师</div></div>
         </div>
         <div className="grid sm:grid-cols-3 gap-3 text-sm">
-          <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><Mail className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">邮箱</div><div className="font-medium">{teacher.email}</div></div></div>
+          <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><Mail className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">邮箱</div><div className="font-medium">{teacher.email || "未绑定"}</div></div></div>
           <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><School className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">当前单位</div><div className="font-medium">{affiliation?.schoolName || "个人身份"}</div></div></div>
           <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><ShieldCheck className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">权限</div><div className="font-medium">{activeRole}</div></div></div>
         </div>
+      </Card>
+
+      <Card className="p-6">
+        <div className="flex items-center gap-2 mb-5"><Mail className="w-5 h-5 text-gold-600" /><h2 className="font-serif text-lg font-semibold">账号找回邮箱</h2></div>
+        <form onSubmit={handleEmailSave} className="max-w-md space-y-4">
+          <Input
+            label="邮箱"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            autoComplete="email"
+            hint="绑定后可用于登录和忘记密码时的身份验证。"
+          />
+          <Button type="submit" variant="gold" loading={savingEmail}>{teacher.email ? "更新邮箱" : "绑定邮箱"}</Button>
+        </form>
       </Card>
 
       <Card className="p-6">

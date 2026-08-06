@@ -41,7 +41,7 @@ export const authService = {
 
   async register(
     input: {
-      email: string;
+      email?: string;
       password: string;
       name: string;
       phone: string;
@@ -102,6 +102,15 @@ export const authService = {
       method: "POST",
       body: JSON.stringify({ currentPassword, newPassword }),
     }, true);
+  },
+
+  async bindEmail(email: string): Promise<Teacher> {
+    const teacher = await apiRequest<Teacher>("/api/auth/email", {
+      method: "PATCH",
+      body: JSON.stringify({ email }),
+    }, true);
+    currentTeacher = teacher;
+    return teacher;
   },
 
   async updateProfile(patch: {

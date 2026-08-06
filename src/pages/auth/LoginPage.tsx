@@ -188,13 +188,12 @@ export default function LoginPage({
               <div className="relative">
                 <Mail className="absolute left-3 top-9 w-4 h-4 text-ink-400" />
                 <Input
-                  label="邮箱"
+                  label="邮箱（可选）"
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  required
                   autoComplete="email"
-                  hint="请填写可用邮箱，忘记密码时将用于身份验证"
+                  hint="可稍后在个人中心绑定，用于忘记密码时找回账号"
                   className="pl-10"
                 />
               </div>
@@ -219,7 +218,7 @@ export default function LoginPage({
               </div>
               {showRecoveryHelp && (
                 <div className="mt-2 rounded-md border border-gold-200 bg-gold-50 px-3 py-2 text-xs leading-5 text-ink-600">
-                  请使用注册时绑定的邮箱联系学校管理员，完成身份验证后重置密码。
+                  已绑定邮箱的账号可使用邮箱联系学校管理员完成身份验证；未绑定邮箱时请通过学校登记信息核验身份。
                 </div>
               )}
               {!loginOnly && (

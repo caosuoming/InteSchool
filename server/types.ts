@@ -32,7 +32,7 @@ export interface AppState {
 export interface SessionUser {
   userId: string;
   teacherId: string;
-  email: string;
+  email: string | null;
   csrfToken: string;
   expiresAt: string;
 }
