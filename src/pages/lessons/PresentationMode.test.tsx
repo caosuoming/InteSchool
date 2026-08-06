@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlide } from "@/types";
@@ -57,6 +57,10 @@ const questionSlide: LessonSlide = {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  Object.defineProperty(window, "PointerEvent", {
+    configurable: true,
+    value: MouseEvent,
+  });
   let fullscreenElement: Element | null = null;
   Object.defineProperty(document, "fullscreenElement", {
     configurable: true,
@@ -157,7 +161,7 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "移动板书 1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "调整板书 1的大小" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "清空当前板书" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "新增板书" }));
+    await user.click(screen.getByRole("button", { name: "在板书 1后新增一页" }));
     expect(screen.getByRole("region", { name: "板书 2" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "收起板书" }));
     expect(firstBoard).toHaveClass("invisible");
@@ -170,6 +174,69 @@ describe("PresentationMode", () => {
 
     await user.click(screen.getByRole("button", { name: "下课" }));
     expect(onExit).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the slide writable while board pages move as cards with draggable screen-sized frames", async () => {
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={slides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "红色画笔" }));
+    await user.click(screen.getByRole("button", { name: "打开板书" }));
+
+    const surface = screen.getByTestId("presentation-surface");
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({}),
+    });
+
+    const firstBoard = screen.getByRole("region", { name: "板书 1" });
+    const writingFrame = firstBoard.querySelector<HTMLElement>("[data-board-writing-frame]");
+    expect(writingFrame).not.toBeNull();
+    expect(Number.parseFloat(writingFrame?.style.width || "0")).toBeGreaterThan(100);
+    expect(Number.parseFloat(writingFrame?.style.height || "0")).toBeGreaterThan(100);
+    expect(writingFrame).toHaveAttribute("data-draggable", "false");
+
+    expect(screen.getByLabelText("课件批注画布")).toHaveClass("pointer-events-auto");
+    expect(screen.getByLabelText("板书 1书写区域")).toHaveClass("pointer-events-auto");
+    expect(screen.getByRole("button", { name: "在板书 1后新增一页" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "选择工具" }));
+    expect(writingFrame).toHaveAttribute("data-draggable", "true");
+
+    const frameLeftBeforeBoardMove = writingFrame?.style.left;
+    const moveBoardButton = screen.getByRole("button", { name: "移动板书 1" });
+    fireEvent.pointerDown(moveBoardButton, { pointerId: 1, clientX: 200, clientY: 160 });
+    fireEvent.pointerMove(moveBoardButton, { pointerId: 1, clientX: -500, clientY: 160 });
+    fireEvent.pointerUp(moveBoardButton, { pointerId: 1, clientX: -500, clientY: 160 });
+    expect(Number.parseFloat(firstBoard.style.left)).toBeLessThan(0);
+    expect(writingFrame?.style.left).toBe(frameLeftBeforeBoardMove);
+
+    const frameLeftBefore = writingFrame?.style.left;
+    fireEvent.pointerDown(writingFrame!, { pointerId: 2, clientX: 200, clientY: 160 });
+    fireEvent.pointerMove(writingFrame!, { pointerId: 2, clientX: 350, clientY: 240 });
+    fireEvent.pointerUp(writingFrame!, { pointerId: 2, clientX: 350, clientY: 240 });
+    expect(writingFrame?.style.left).not.toBe(frameLeftBefore);
+
+    await user.click(screen.getByRole("button", { name: "在板书 1后新增一页" }));
+    const secondBoard = screen.getByRole("region", { name: "板书 2" });
+    expect(secondBoard).toHaveAttribute("data-active", "true");
+    fireEvent.pointerDown(firstBoard);
+    expect(firstBoard).toHaveAttribute("data-active", "true");
   });
 
   it("turns legacy knowledge content into a selectable object without showing its title", async () => {
