@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlide } from "@/types";
+import { getMaximumContrastTextColor } from "@/lib/color-contrast";
 import { PresentationMode } from "./PresentationMode";
 
 const slides: LessonSlide[] = [
@@ -57,6 +58,7 @@ const questionSlide: LessonSlide = {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  localStorage.clear();
   Object.defineProperty(window, "PointerEvent", {
     configurable: true,
     value: MouseEvent,
@@ -97,6 +99,55 @@ beforeEach(() => {
 });
 
 describe("PresentationMode", () => {
+  it("combines page, text, and board colors with automatic maximum contrast", async () => {
+    expect(getMaximumContrastTextColor("#ffffff")).toBe("#111827");
+    expect(getMaximumContrastTextColor("#111827")).toBe("#ffffff");
+
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={slides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    const text = screen.getByText("第一页内容");
+    const textBox = text.closest<HTMLElement>('[style*="font-size"]');
+    const slideCanvas = text.closest<HTMLElement>(".aspect-video");
+    expect(textBox).toHaveStyle({ color: "#111827" });
+    expect(textBox?.getAttribute("style")).toContain("background-color: transparent");
+    expect(slideCanvas).toHaveStyle({ backgroundColor: "#fffef8" });
+
+    await user.click(screen.getByRole("button", { name: "页面与板书颜色设置" }));
+    expect(screen.getByRole("dialog", { name: "颜色设置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "文字颜色自动对比" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.change(screen.getByLabelText("页面颜色"), { target: { value: "#111827" } });
+    expect(slideCanvas).toHaveStyle({ backgroundColor: "#111827" });
+    expect(textBox).toHaveStyle({ color: "#ffffff" });
+
+    await user.click(screen.getByRole("button", { name: "自定义文字颜色" }));
+    fireEvent.change(screen.getByLabelText("文字颜色"), { target: { value: "#dc2626" } });
+    expect(textBox).toHaveStyle({ color: "#dc2626" });
+
+    fireEvent.change(screen.getByLabelText("板书背景颜色"), { target: { value: "#eff6ff" } });
+    await user.click(screen.getByRole("button", { name: "关闭颜色设置" }));
+    await user.click(screen.getByRole("button", { name: "打开板书" }));
+    const writingFrame = screen
+      .getByRole("region", { name: "板书 1" })
+      .querySelector<HTMLElement>("[data-board-writing-frame]");
+    expect(writingFrame).toHaveStyle({ backgroundColor: "#eff6ff" });
+
+    await waitFor(() => {
+      expect(localStorage.getItem("inteschool-presentation-color-preferences")).toContain(
+        '"boardBackgroundColor":"#eff6ff"',
+      );
+    });
+  });
+
   it("uses arrow-only mirrored navigation, text resizing, upward pen tips, fullscreen, and formal boards", async () => {
     const user = userEvent.setup();
     const onExit = vi.fn();

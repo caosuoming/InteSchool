@@ -20,7 +20,9 @@ import {
   Move,
   MousePointer2,
   NotebookPen,
+  Palette,
   Plus,
+  RotateCcw,
   Trash2,
   Users,
   X,
@@ -29,6 +31,7 @@ import {
 } from "lucide-react";
 import type { LessonSlide, LessonSlideElement, Question } from "@/types";
 import { cn } from "@/lib/utils";
+import { getMaximumContrastTextColor, normalizeHexColor } from "@/lib/color-contrast";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
@@ -109,6 +112,15 @@ interface BoardResizeHandle {
   corner?: boolean;
 }
 
+type TextColorMode = "auto" | "custom";
+
+interface PresentationColorPreferences {
+  pageBackgroundColor: string;
+  textColorMode: TextColorMode;
+  textColor: string;
+  boardBackgroundColor: string;
+}
+
 const INITIAL_DRAWING_PRESETS: DrawingPreset[] = [
   { id: "pen-red", kind: "pen", label: "红色画笔", color: "#dc2626", width: 3 },
   { id: "pen-blue", kind: "pen", label: "蓝色画笔", color: "#2563eb", width: 3 },
@@ -131,10 +143,14 @@ const questionTypeLabel: Record<string, string> = {
   essay: "解答",
 };
 
-const BOARD_BACKGROUND: CSSProperties = {
-  backgroundColor: "#fffef8",
-  backgroundImage: "repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(37, 99, 235, 0.13) 32px)",
+const PRESENTATION_COLOR_PREFERENCES_KEY = "inteschool-presentation-color-preferences";
+const DEFAULT_COLOR_PREFERENCES: PresentationColorPreferences = {
+  pageBackgroundColor: "#fffef8",
+  textColorMode: "auto",
+  textColor: "#111827",
+  boardBackgroundColor: "#fffef8",
 };
+const COLOR_PRESETS = ["#fffef8", "#ffffff", "#f8fafc", "#fff7ed", "#eff6ff", "#ecfdf5", "#111827"];
 
 const BOARD_RESIZE_HANDLES: BoardResizeHandle[] = [
   { direction: "n", label: "上边", className: "left-4 right-4 top-0 h-2 cursor-ns-resize" },
@@ -151,6 +167,34 @@ const PRESENTATION_ELEMENT_PREFIX = "presentation-built-in";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function readColorPreferences(): PresentationColorPreferences {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PRESENTATION_COLOR_PREFERENCES_KEY) || "null") as Partial<PresentationColorPreferences> | null;
+    if (!stored) return DEFAULT_COLOR_PREFERENCES;
+    return {
+      pageBackgroundColor: normalizeHexColor(
+        stored.pageBackgroundColor,
+        DEFAULT_COLOR_PREFERENCES.pageBackgroundColor,
+      ),
+      textColorMode: stored.textColorMode === "custom" ? "custom" : "auto",
+      textColor: normalizeHexColor(stored.textColor, DEFAULT_COLOR_PREFERENCES.textColor),
+      boardBackgroundColor: normalizeHexColor(
+        stored.boardBackgroundColor,
+        DEFAULT_COLOR_PREFERENCES.boardBackgroundColor,
+      ),
+    };
+  } catch {
+    return DEFAULT_COLOR_PREFERENCES;
+  }
+}
+
+function boardBackgroundStyle(backgroundColor: string): CSSProperties {
+  return {
+    backgroundColor,
+    backgroundImage: "repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(37, 99, 235, 0.13) 32px)",
+  };
 }
 
 function asPresentationText(
@@ -426,9 +470,14 @@ export function PresentationMode({
   const [boardsVisible, setBoardsVisible] = useState(false);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [mainClearToken, setMainClearToken] = useState(0);
+  const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
+  const [colorPreferences, setColorPreferences] = useState<PresentationColorPreferences>(readColorPreferences);
 
   const currentSlide = slides[currentIndex];
   const selectedDrawingPreset = drawingPresets.find((preset) => preset.id === tool);
+  const effectiveTextColor = colorPreferences.textColorMode === "auto"
+    ? getMaximumContrastTextColor(colorPreferences.pageBackgroundColor)
+    : colorPreferences.textColor;
   const baseCurrentElements = currentSlide ? getPresentationElements(currentSlide) : [];
   const currentElements = currentSlide
     ? elementOverrides[currentSlide.id] ?? baseCurrentElements
@@ -493,9 +542,14 @@ export function PresentationMode({
   }, []);
 
   useEffect(() => {
+    localStorage.setItem(PRESENTATION_COLOR_PREFERENCES_KEY, JSON.stringify(colorPreferences));
+  }, [colorPreferences]);
+
+  useEffect(() => {
     setQuestionVisibility({ ...STEM_ONLY_QUESTION_VISIBILITY });
     setSidePanel(null);
     setSelectedElementId(null);
+    setColorSettingsOpen(false);
     setMainClearToken((value) => value + 1);
   }, [currentIndex]);
 
@@ -982,7 +1036,10 @@ export function PresentationMode({
         <div className="absolute inset-0 flex items-center justify-center p-5 sm:p-7 lg:p-9">
           <div className="flex h-full w-full items-center justify-center">
             {displayedSlide?.type === "courseware" ? (
-              <div className="h-full w-full max-w-6xl overflow-hidden rounded-xl bg-paper shadow-2xl">
+              <div
+                className="h-full w-full max-w-6xl overflow-hidden rounded-xl bg-paper shadow-2xl"
+                style={{ backgroundColor: colorPreferences.pageBackgroundColor }}
+              >
                 <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-[60vh]" />
               </div>
             ) : displayedSlide ? (
@@ -996,6 +1053,9 @@ export function PresentationMode({
                   onSelectElement={setSelectedElementId}
                   onElementsChange={updateVisibleElements}
                   className="shadow-2xl"
+                  canvasStyle={{ backgroundColor: colorPreferences.pageBackgroundColor }}
+                  textColor={effectiveTextColor}
+                  textBackgroundColor="transparent"
                 >
                   <LessonSlideContent slide={displayedSlide} questionVisibility={questionVisibility} />
                 </LessonSlideCanvas>
@@ -1060,7 +1120,7 @@ export function PresentationMode({
                         activeWritingArea && tool === "select" && "cursor-move",
                       )}
                       style={{
-                        ...BOARD_BACKGROUND,
+                        ...boardBackgroundStyle(colorPreferences.boardBackgroundColor),
                         left: `${(writingArea.frameX / board.width) * 100}%`,
                         top: `${(writingArea.frameY / board.height) * 100}%`,
                         width: `${10000 / board.width}%`,
@@ -1343,6 +1403,178 @@ export function PresentationMode({
           >
             <NotebookPen className="h-5 w-5" />
           </button>
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="页面与板书颜色设置"
+              aria-expanded={colorSettingsOpen}
+              onClick={() => setColorSettingsOpen((open) => !open)}
+              className={cn(
+                "relative flex h-10 w-9 items-center justify-center rounded-lg transition-colors",
+                colorSettingsOpen
+                  ? "bg-gold-100 text-ink-900 ring-2 ring-gold-400"
+                  : "bg-mist text-ink-600 hover:bg-gold-50 hover:text-gold-700",
+              )}
+              title="页面、文字与板书颜色"
+            >
+              <Palette className="h-5 w-5" />
+              <span
+                className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border border-white shadow"
+                style={{ backgroundColor: colorPreferences.pageBackgroundColor }}
+                aria-hidden="true"
+              />
+            </button>
+
+            {colorSettingsOpen && (
+              <section
+                role="dialog"
+                aria-label="颜色设置"
+                className="absolute bottom-full right-0 mb-2 w-72 rounded-xl border border-ink-100 bg-paper p-3 text-ink-900 shadow-2xl"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold">颜色设置</h2>
+                    <p className="mt-0.5 text-[10px] leading-4 text-ink-400">统一调整课件页面、文字和板书书写区。</p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="关闭颜色设置"
+                    onClick={() => setColorSettingsOpen(false)}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-3 rounded-lg border border-ink-100 p-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <label htmlFor="presentation-page-color" className="text-xs font-medium text-ink-700">页面颜色</label>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] uppercase text-ink-400">{colorPreferences.pageBackgroundColor}</span>
+                      <input
+                        id="presentation-page-color"
+                        type="color"
+                        aria-label="页面颜色"
+                        value={colorPreferences.pageBackgroundColor}
+                        onChange={(event) => setColorPreferences((current) => ({
+                          ...current,
+                          pageBackgroundColor: event.target.value,
+                        }))}
+                        className="h-7 w-9 cursor-pointer rounded border border-ink-100 bg-transparent p-0.5"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {COLOR_PRESETS.map((color) => (
+                      <button
+                        key={`page-${color}`}
+                        type="button"
+                        aria-label={`页面颜色 ${color}`}
+                        aria-pressed={colorPreferences.pageBackgroundColor === color}
+                        onClick={() => setColorPreferences((current) => ({
+                          ...current,
+                          pageBackgroundColor: color,
+                        }))}
+                        className={cn(
+                          "h-6 w-6 rounded-full border-2 shadow-sm",
+                          colorPreferences.pageBackgroundColor === color ? "border-gold-500" : "border-paper",
+                        )}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-2 rounded-lg border border-ink-100 p-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-medium text-ink-700">文字颜色</div>
+                      <div className="mt-0.5 text-[10px] text-ink-400">自动模式选择与页面反差更大的颜色。</div>
+                    </div>
+                    <span
+                      className="h-5 w-5 flex-shrink-0 rounded-full border border-ink-100 shadow-sm"
+                      style={{ backgroundColor: effectiveTextColor }}
+                      aria-label={`当前文字颜色 ${effectiveTextColor}`}
+                    />
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5 rounded-lg bg-mist p-1">
+                    <button
+                      type="button"
+                      aria-label="文字颜色自动对比"
+                      aria-pressed={colorPreferences.textColorMode === "auto"}
+                      onClick={() => setColorPreferences((current) => ({ ...current, textColorMode: "auto" }))}
+                      className={cn(
+                        "h-7 rounded-md text-[11px] font-medium",
+                        colorPreferences.textColorMode === "auto"
+                          ? "bg-paper text-ink-900 shadow-sm"
+                          : "text-ink-500 hover:text-ink-800",
+                      )}
+                    >
+                      自动对比
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="自定义文字颜色"
+                      aria-pressed={colorPreferences.textColorMode === "custom"}
+                      onClick={() => setColorPreferences((current) => ({ ...current, textColorMode: "custom" }))}
+                      className={cn(
+                        "h-7 rounded-md text-[11px] font-medium",
+                        colorPreferences.textColorMode === "custom"
+                          ? "bg-paper text-ink-900 shadow-sm"
+                          : "text-ink-500 hover:text-ink-800",
+                      )}
+                    >
+                      自定义
+                    </button>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span className="font-mono text-[10px] uppercase text-ink-400">{effectiveTextColor}</span>
+                    <input
+                      type="color"
+                      aria-label="文字颜色"
+                      value={colorPreferences.textColor}
+                      disabled={colorPreferences.textColorMode !== "custom"}
+                      onChange={(event) => setColorPreferences((current) => ({
+                        ...current,
+                        textColorMode: "custom",
+                        textColor: event.target.value,
+                      }))}
+                      className="h-7 w-9 cursor-pointer rounded border border-ink-100 bg-transparent p-0.5 disabled:cursor-not-allowed disabled:opacity-35"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-2 rounded-lg border border-ink-100 p-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <label htmlFor="presentation-board-color" className="text-xs font-medium text-ink-700">板书书写区背景</label>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] uppercase text-ink-400">{colorPreferences.boardBackgroundColor}</span>
+                      <input
+                        id="presentation-board-color"
+                        type="color"
+                        aria-label="板书背景颜色"
+                        value={colorPreferences.boardBackgroundColor}
+                        onChange={(event) => setColorPreferences((current) => ({
+                          ...current,
+                          boardBackgroundColor: event.target.value,
+                        }))}
+                        className="h-7 w-9 cursor-pointer rounded border border-ink-100 bg-transparent p-0.5"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setColorPreferences(DEFAULT_COLOR_PREFERENCES)}
+                  className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-[11px] text-ink-500 hover:bg-ink-100 hover:text-ink-800"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  恢复默认颜色
+                </button>
+              </section>
+            )}
+          </div>
           <div
             aria-label="文本与全屏控制"
             className="absolute bottom-0 left-full ml-3 flex items-center gap-1 whitespace-nowrap rounded-xl border border-white/60 bg-paper/95 p-1.5 shadow-xl backdrop-blur"
