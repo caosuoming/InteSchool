@@ -21,6 +21,7 @@ export interface ExamGroupSummary {
   key: string;
   sessionKey: string;
   subjectLabel: string;
+  actualSubjectLabels: string[];
   studentCount: number;
   classIds: string[];
 }
@@ -56,19 +57,27 @@ export function summarizeExamGroups(
   const selections = new Map((input.studentSubjects || []).map((item) => [item.studentId, item]));
   const groups = new Map<string, ExamGroupSummary>();
 
-  const addGroup = (student: Student, sessionKey: string, selectedSubjects: string[]) => {
-    if (selectedSubjects.length === 0) return;
-    const key = examGroupKey(sessionKey, selectedSubjects);
+  const addGroup = (
+    student: Student,
+    sessionKey: string,
+    groupSubjects: string[],
+    actualSubjects: string[] = groupSubjects,
+  ) => {
+    if (actualSubjects.length === 0) return;
+    const key = examGroupKey(sessionKey, groupSubjects);
+    const actualSubjectLabel = actualSubjects.join(" / ");
     const current = groups.get(key);
     if (current) {
       current.studentCount += 1;
       if (!current.classIds.includes(student.classId)) current.classIds.push(student.classId);
+      if (!current.actualSubjectLabels.includes(actualSubjectLabel)) current.actualSubjectLabels.push(actualSubjectLabel);
       return;
     }
     groups.set(key, {
       key,
       sessionKey,
-      subjectLabel: selectedSubjects.join(" / "),
+      subjectLabel: groupSubjects.join(" / "),
+      actualSubjectLabels: [actualSubjectLabel],
       studentCount: 1,
       classIds: [student.classId],
     });
@@ -78,18 +87,22 @@ export function summarizeExamGroups(
     const selection = selections.get(student.id);
     if (selection?.absent) continue;
     const selected = subjects.filter((subject) => (selection?.subjects || subjects).includes(subject));
-    if (combinedSubjects.some((subject) => selected.includes(subject))) {
-      addGroup(student, "combined", combinedSubjects);
-    }
+    const selectedCombinedSubjects = combinedSubjects.filter((subject) => selected.includes(subject));
+    addGroup(student, "combined", combinedSubjects, selectedCombinedSubjects);
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
       addGroup(student, `subject:${subject}`, [subject]);
     }
   }
 
-  return [...groups.values()].sort((left, right) =>
-    left.sessionKey.localeCompare(right.sessionKey, "zh-CN")
-    || left.subjectLabel.localeCompare(right.subjectLabel, "zh-CN"),
-  );
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      actualSubjectLabels: [...group.actualSubjectLabels].sort((left, right) => left.localeCompare(right, "zh-CN")),
+    }))
+    .sort((left, right) =>
+      left.sessionKey.localeCompare(right.sessionKey, "zh-CN")
+      || left.subjectLabel.localeCompare(right.subjectLabel, "zh-CN"),
+    );
 }
 
 function normalizeRooms(rooms: ExamRoomConfig[]): ExamRoomConfig[] {
@@ -198,13 +211,14 @@ function createTask(
   rules: Map<string, ExamClassRoomRule>,
   allRoomIds: string[],
   groupRoomIds: Record<string, string[]>,
+  roomGroupKey?: string,
 ): SeatTask {
   const classRule = rules.get(student.classId);
   const subjectRoomIds = roomIntersection(
     selectedSubjects.map((subject) => classRule?.subjectRoomIds[subject] || allRoomIds),
     allRoomIds,
   );
-  const groupKey = examGroupKey(sessionKey, selectedSubjects);
+  const groupKey = roomGroupKey || examGroupKey(sessionKey, selectedSubjects);
   const configuredRoomIds = groupRoomIds[groupKey];
   const eligibleRoomIds = configuredRoomIds
     ? subjectRoomIds.filter((roomId) => configuredRoomIds.includes(roomId))
@@ -239,6 +253,7 @@ function buildTasks(
     input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
   ).filter((subject) => subjects.includes(subject)));
   const combinedSubjects = subjects.filter((subject) => !separateSubjects.has(subject));
+  const combinedGroupKey = examGroupKey("combined", combinedSubjects);
   const tasks: SeatTask[] = [];
 
   for (const student of context.students) {
@@ -249,8 +264,18 @@ function buildTasks(
     const classItem = classMap.get(student.classId);
     if (!classItem) continue;
 
-    if (combinedSubjects.some((subject) => selected.includes(subject))) {
-      tasks.push(createTask(student, classItem.name, "combined", combinedSubjects, rules, allRoomIds, groupRoomIds));
+    const selectedCombinedSubjects = combinedSubjects.filter((subject) => selected.includes(subject));
+    if (selectedCombinedSubjects.length > 0) {
+      tasks.push(createTask(
+        student,
+        classItem.name,
+        "combined",
+        selectedCombinedSubjects,
+        rules,
+        allRoomIds,
+        groupRoomIds,
+        combinedGroupKey,
+      ));
     }
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
       tasks.push(createTask(student, classItem.name, `subject:${subject}`, [subject], rules, allRoomIds, groupRoomIds));

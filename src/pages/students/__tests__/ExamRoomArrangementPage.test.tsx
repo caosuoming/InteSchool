@@ -212,8 +212,9 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByLabelText("考场号")).toHaveValue("1考场");
     expect(screen.getByLabelText("考场位置")).toHaveValue("高三1班教室");
     expect(screen.getByLabelText("考场可安排人数")).toHaveValue(1);
-    expect(screen.getByText("实际考试组合人数")).toBeInTheDocument();
-    expect(screen.getByText("考试组合对应考场")).toBeInTheDocument();
+    expect(screen.queryByText("实际考试组合人数")).not.toBeInTheDocument();
+    expect(screen.queryByText("考试组合对应考场")).not.toBeInTheDocument();
+    expect(screen.getByText("考试组合使用考场")).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText("批量考场容量"));
     await user.type(screen.getByLabelText("批量考场容量"), "32");
@@ -229,6 +230,19 @@ describe("ExamRoomArrangementPage", () => {
     expect(absent).not.toBeChecked();
     await user.click(absent);
     expect(absent).toBeChecked();
+  });
+
+  it("shows the student's actual combined electives without splitting the shared room group", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("排考场规则");
+    for (const subject of ["语文", "数学", "英语", "物理"]) {
+      await user.click(screen.getByRole("button", { name: `${subject}单独排` }));
+    }
+
+    expect(screen.getByText("实际科目组合：化学、生物")).toBeInTheDocument();
+    expect(screen.getAllByText("合并场次")).toHaveLength(1);
   });
 
   it("summarizes and reuses a saved arrangement without overwriting it", async () => {

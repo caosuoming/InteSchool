@@ -837,55 +837,46 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
               <Card>
                 <div className="font-medium text-ink-900">排考场规则</div>
-                <div className="mt-1 text-xs text-ink-500">勾选的科目每个学科单独排考场；未勾选的科目固定合并安排，学生缺考其中部分科目时不会拆分考场。</div>
+                <div className="mt-1 text-xs text-ink-500">勾选的科目每个学科单独排考场；未勾选的科目按每名学生实际参加的科目组合合并安排。</div>
                 <div className="mt-4 flex flex-wrap gap-2">{draft.subjects.map((subject) => (
                   <CheckboxPill key={subject} checked={(draft.separateSubjects || []).includes(subject)} label={`${subject}单独排`} onClick={() => toggleSeparateSubject(subject)} />
                 ))}</div>
                 <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
-                  合并安排：{draft.subjects.filter((subject) => !(draft.separateSubjects || []).includes(subject)).join("、") || "无"}
+                  参与合并的科目：{draft.subjects.filter((subject) => !(draft.separateSubjects || []).includes(subject)).join("、") || "无"}
+                  {(draft.subjects.length > (draft.separateSubjects || []).length) && "；每名学生仅合并本人实际参加的科目"}
                 </div>
                 <div className="mt-4 border-t border-ink-100 pt-4">
-                  <div className="text-sm font-medium text-ink-800">实际考试组合人数</div>
-                  <div className="mt-1 text-xs text-ink-500">根据当前科目、选科和弃考设置实时计算。</div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="text-sm font-medium text-ink-800">考试组合使用考场</div>
+                  <div className="mt-1 text-xs text-ink-500">系统按参加各组合的班级教室和所有教室外考场自动生成，可逐项微调。</div>
+                  <div className="mt-3 space-y-3">
                     {examGroups.map((group) => (
-                      <div key={group.key} className="rounded-lg border border-ink-100 bg-paper px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="truncate text-sm font-medium text-ink-800">{group.subjectLabel.split(" / ").join("、")}</div>
-                          <Badge>{group.studentCount} 人</Badge>
+                      <div key={group.key} className="rounded-lg border border-ink-100 bg-paper p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium text-ink-900">
+                              {group.sessionKey === "combined" ? "合并场次" : group.subjectLabel.split(" / ").join("、")}
+                            </div>
+                            <div className="mt-0.5 text-xs text-ink-500">
+                              {group.sessionKey === "combined"
+                                ? `实际科目组合：${group.actualSubjectLabels.map((label) => label.split(" / ").join("、")).join("；")}`
+                                : `单独场次 · ${group.classIds.length} 个班级`}
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="sm" onClick={() => resetGroupRooms(group)}><RotateCcw className="h-3.5 w-3.5" />恢复自动分配</Button>
                         </div>
-                        <div className="mt-1 text-xs text-ink-400">{group.sessionKey === "combined" ? "合并场次" : "单独场次"}</div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {draft.rooms.map((room) => (
+                            <CheckboxPill
+                              key={room.id}
+                              checked={(draft.groupRoomIds?.[group.key] || []).includes(room.id)}
+                              label={`${room.number || room.name} · ${room.location || "位置待填写"}`}
+                              onClick={() => toggleGroupRoom(group.key, room.id)}
+                            />
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="font-medium text-ink-900">考试组合对应考场</div>
-                <div className="mt-1 text-xs text-ink-500">系统按参加该组合的班级教室和所有教室外考场自动生成，可逐项微调。</div>
-                <div className="mt-4 space-y-4">
-                  {examGroups.map((group) => (
-                    <div key={group.key} className="rounded-lg border border-ink-100 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-medium text-ink-900">{group.subjectLabel.split(" / ").join("、")}</div>
-                          <div className="mt-0.5 text-xs text-ink-500">{group.studentCount} 人 · {group.classIds.length} 个班级</div>
-                        </div>
-                        <Button variant="ghost" size="sm" onClick={() => resetGroupRooms(group)}><RotateCcw className="h-3.5 w-3.5" />恢复自动分配</Button>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {draft.rooms.map((room) => (
-                          <CheckboxPill
-                            key={room.id}
-                            checked={(draft.groupRoomIds?.[group.key] || []).includes(room.id)}
-                            label={`${room.number || room.name} · ${room.location || "位置待填写"}`}
-                            onClick={() => toggleGroupRoom(group.key, room.id)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </Card>
 
