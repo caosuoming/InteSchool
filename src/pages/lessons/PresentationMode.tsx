@@ -70,6 +70,7 @@ interface WritableCanvasProps {
   preset?: DrawingPreset;
   clearToken: number;
   className?: string;
+  ariaLabel?: string;
 }
 
 interface BoardPage {
@@ -78,11 +79,13 @@ interface BoardPage {
   y: number;
   width: number;
   height: number;
+  frameX: number;
+  frameY: number;
   clearToken: number;
 }
 
 interface BoardInteraction {
-  mode: "move" | "resize";
+  mode: "move" | "resize" | "move-frame";
   boardId: string;
   startX: number;
   startY: number;
@@ -216,7 +219,7 @@ function getPresentationElements(slide: LessonSlide): LessonSlideElement[] {
   ];
 }
 
-function WritableCanvas({ tool, preset, clearToken, className }: WritableCanvasProps) {
+function WritableCanvas({ tool, preset, clearToken, className, ariaLabel }: WritableCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -320,6 +323,7 @@ function WritableCanvas({ tool, preset, clearToken, className }: WritableCanvasP
   return (
     <canvas
       ref={canvasRef}
+      aria-label={ariaLabel}
       className={cn(
         "absolute inset-0 h-full w-full touch-none",
         tool === "none" || tool === "select" ? "pointer-events-none" : "pointer-events-auto cursor-crosshair",
@@ -579,6 +583,8 @@ export function PresentationMode({
       y: 10 + offset,
       width: 68,
       height: 62,
+      frameX: 0,
+      frameY: 0,
       clearToken: 0,
     };
     setBoards((current) => [...current, board]);
@@ -602,7 +608,7 @@ export function PresentationMode({
   };
 
   const startBoardInteraction = (
-    event: ReactPointerEvent<HTMLButtonElement>,
+    event: ReactPointerEvent<HTMLElement>,
     board: BoardPage,
     mode: BoardInteraction["mode"],
   ) => {
@@ -619,7 +625,7 @@ export function PresentationMode({
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
-  const moveBoardInteraction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const moveBoardInteraction = (event: ReactPointerEvent<HTMLElement>) => {
     const interaction = boardInteractionRef.current;
     const surface = surfaceRef.current;
     if (!interaction || !surface) return;
@@ -630,21 +636,48 @@ export function PresentationMode({
     setBoards((current) => current.map((board) => {
       if (board.id !== interaction.boardId) return board;
       if (interaction.mode === "move") {
+        const visibleX = Math.min(board.width, (64 / rect.width) * 100);
+        const visibleY = Math.min(board.height, (64 / rect.height) * 100);
         return {
           ...board,
-          x: Number(clamp(interaction.board.x + dx, 0, 100 - interaction.board.width).toFixed(4)),
-          y: Number(clamp(interaction.board.y + dy, 0, 100 - interaction.board.height).toFixed(4)),
+          x: Number(clamp(
+            interaction.board.x + dx,
+            visibleX - interaction.board.width,
+            100 - visibleX,
+          ).toFixed(4)),
+          y: Number(clamp(
+            interaction.board.y + dy,
+            visibleY - interaction.board.height,
+            100 - visibleY,
+          ).toFixed(4)),
+        };
+      }
+      if (interaction.mode === "move-frame") {
+        const visibleX = Math.min(board.width, (48 / rect.width) * 100);
+        const visibleY = Math.min(board.height, (48 / rect.height) * 100);
+        return {
+          ...board,
+          frameX: Number(clamp(
+            interaction.board.frameX + dx,
+            visibleX - 100,
+            board.width - visibleX,
+          ).toFixed(4)),
+          frameY: Number(clamp(
+            interaction.board.frameY + dy,
+            visibleY - 100,
+            board.height - visibleY,
+          ).toFixed(4)),
         };
       }
       return {
         ...board,
-        width: Number(clamp(interaction.board.width + dx, 28, 100 - interaction.board.x).toFixed(4)),
-        height: Number(clamp(interaction.board.height + dy, 24, 100 - interaction.board.y).toFixed(4)),
+        width: Number(clamp(interaction.board.width + dx, 28, 100).toFixed(4)),
+        height: Number(clamp(interaction.board.height + dy, 24, 100).toFixed(4)),
       };
     }));
   };
 
-  const endBoardInteraction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const endBoardInteraction = (event: ReactPointerEvent<HTMLElement>) => {
     if (!boardInteractionRef.current) return;
     boardInteractionRef.current = null;
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
@@ -834,7 +867,11 @@ export function PresentationMode({
 
   return (
     <div ref={rootRef} className="fixed inset-0 z-50 flex flex-col bg-ink-900">
-      <div ref={surfaceRef} className="relative flex-1 overflow-hidden bg-ink-800">
+      <div
+        ref={surfaceRef}
+        data-testid="presentation-surface"
+        className="relative flex-1 overflow-hidden bg-ink-800"
+      >
         <div className="absolute inset-0 flex items-center justify-center p-5 sm:p-7 lg:p-9">
           <div className="flex h-full w-full items-center justify-center">
             {displayedSlide?.type === "courseware" ? (
@@ -864,9 +901,10 @@ export function PresentationMode({
 
         <WritableCanvas
           key={currentSlide?.id || "empty-slide"}
-          tool={boardsVisible ? "none" : tool}
+          tool={tool}
           preset={selectedDrawingPreset}
           clearToken={mainClearToken}
+          ariaLabel="课件批注画布"
           className="z-10"
         />
 
@@ -883,32 +921,55 @@ export function PresentationMode({
               key={board.id}
               role="region"
               aria-label={label}
+              data-active={active}
               className={cn(
-                "absolute overflow-hidden rounded-xl border-2 shadow-2xl transition-[box-shadow,opacity]",
+                "absolute overflow-hidden rounded-xl border-2 bg-ink-700/30 shadow-2xl transition-[box-shadow,opacity]",
                 active ? "border-gold-400 ring-2 ring-gold-300/60" : "border-ink-600",
                 !boardsVisible && "invisible pointer-events-none opacity-0",
               )}
               style={{
-                ...BOARD_BACKGROUND,
                 left: `${board.x}%`,
                 top: `${board.y}%`,
                 width: `${board.width}%`,
                 height: `${board.height}%`,
-                zIndex: active ? 29 : 26 + index,
+                zIndex: active ? 60 : 26 + index,
               }}
               onPointerDown={() => setActiveBoardId(board.id)}
             >
               <div
-                data-board-divider="center"
-                className="pointer-events-none absolute bottom-0 left-1/2 top-0 z-[1] w-px -translate-x-1/2 bg-red-600/20"
-                aria-hidden="true"
-              />
-              <WritableCanvas
-                tool={boardsVisible && active ? tool : "none"}
-                preset={selectedDrawingPreset}
-                clearToken={board.clearToken}
-                className="z-10"
-              />
+                data-board-writing-frame
+                data-draggable={tool === "select"}
+                className={cn(
+                  "absolute touch-none overflow-hidden border border-ink-300/70 shadow-inner",
+                  tool === "select" && "cursor-move",
+                )}
+                style={{
+                  ...BOARD_BACKGROUND,
+                  left: `${(board.frameX / board.width) * 100}%`,
+                  top: `${(board.frameY / board.height) * 100}%`,
+                  width: `${10000 / board.width}%`,
+                  height: `${10000 / board.height}%`,
+                }}
+                onPointerDown={(event) => {
+                  if (tool === "select") startBoardInteraction(event, board, "move-frame");
+                }}
+                onPointerMove={moveBoardInteraction}
+                onPointerUp={endBoardInteraction}
+                onPointerCancel={endBoardInteraction}
+              >
+                <div
+                  data-board-divider="center"
+                  className="pointer-events-none absolute bottom-0 left-1/2 top-0 z-[1] w-px -translate-x-1/2 bg-red-600/20"
+                  aria-hidden="true"
+                />
+                <WritableCanvas
+                  tool={boardsVisible && active ? tool : "none"}
+                  preset={selectedDrawingPreset}
+                  clearToken={board.clearToken}
+                  ariaLabel={`${label}书写区域`}
+                  className="z-10"
+                />
+              </div>
               <button
                 type="button"
                 aria-label={`移动${label}`}
@@ -919,6 +980,15 @@ export function PresentationMode({
                 onPointerCancel={endBoardInteraction}
               >
                 <Move className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                aria-label={`在${label}后新增一页`}
+                onClick={addBoard}
+                className="absolute left-14 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-lg bg-paper/85 text-ink-600 shadow-lg hover:bg-teal-50 hover:text-teal-700"
+                title="新增板书页"
+              >
+                <Plus className="h-4 w-4" />
               </button>
               <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2 rounded-lg bg-paper/85 px-3 py-1.5 text-xs font-medium text-ink-600 shadow-sm backdrop-blur">
                 {label}
@@ -1111,17 +1181,6 @@ export function PresentationMode({
           >
             <NotebookPen className="h-5 w-5" />
           </button>
-          {boardsVisible && (
-            <button
-              type="button"
-              aria-label="新增板书"
-              onClick={addBoard}
-              className="flex h-10 w-9 items-center justify-center rounded-lg bg-mist text-ink-600 transition-colors hover:bg-teal-50 hover:text-teal-700"
-              title="新增板书"
-            >
-              <Plus className="h-5 w-5" />
-            </button>
-          )}
           <div
             aria-label="文本与全屏控制"
             className="absolute bottom-0 left-full ml-3 flex items-center gap-1 whitespace-nowrap rounded-xl border border-white/60 bg-paper/95 p-1.5 shadow-xl backdrop-blur"
