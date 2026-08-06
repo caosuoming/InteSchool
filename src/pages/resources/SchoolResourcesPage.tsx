@@ -18,8 +18,11 @@ import { Modal } from "@/components/ui/Modal";
 import { Input, Textarea, Select } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { TreeView } from "@/components/tree/TreeView";
+import { ExpandableQuestionContent } from "@/components/resource/ExpandableQuestionContent";
+import { SchoolResourcePreviewModal } from "@/components/resource/SchoolResourcePreviewModal";
+import { parseSchoolResourceSnapshot } from "@/lib/school-resource-snapshot";
 import type {
-  Teacher, TreeNode, FilterLogic,
+  Teacher, TreeNode, FilterLogic, Question,
   SchoolBackupResourceType, SchoolResourceBackup, ResourceSemester,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
@@ -75,6 +78,7 @@ export default function SchoolResourcesPage() {
 
   // 详情/编辑弹窗
   const [viewing, setViewing] = useState<SchoolResourceBackup | null>(null);
+  const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<SchoolResourceBackup | null>(null);
   const [editForm, setEditForm] = useState<{
     title: string;
@@ -283,6 +287,10 @@ export default function SchoolResourcesPage() {
   // 创建个人副本：所有老师均可调用
   const handleSaveAsOwn = async (item: SchoolResourceBackup) => {
     if (!teacher) return;
+    if (item.fromTeacherId === teacher.id) {
+      toast.info("无需另存", "这是您提供的资源");
+      return;
+    }
     if (savedIds.has(item.id)) {
       toast.info("已添加过", "该备份已添加到您的资源库");
       return;
@@ -292,7 +300,11 @@ export default function SchoolResourcesPage() {
       const result = await schoolBackupService.saveAsOwnResource(item.id, teacher);
       setSavedIds((prev) => new Set(prev).add(item.id));
       const typeLabel = resourceTypeLabel[result.resourceType];
-      toast.success(`${typeLabel}副本已创建`, "可在「我的资源」中查看");
+      if (result.deduplicated) {
+        toast.info(`${typeLabel}已存在`, "已通过查重定位到「我的资源」中的现有内容");
+      } else {
+        toast.success(`${typeLabel}副本已创建`, "可在「我的资源」中查看");
+      }
     } catch (e: any) {
       toast.error("创建副本失败", e?.message);
     } finally {
@@ -302,6 +314,15 @@ export default function SchoolResourcesPage() {
         return next;
       });
     }
+  };
+
+  const toggleQuestionDetails = (backupId: string) => {
+    setExpandedQuestionIds((current) => {
+      const next = new Set(current);
+      if (next.has(backupId)) next.delete(backupId);
+      else next.add(backupId);
+      return next;
+    });
   };
 
   return (
@@ -318,8 +339,8 @@ export default function SchoolResourcesPage() {
             </span>
           ) : (
             <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-ink-100 text-ink-600 text-xs">
-              <Lock className="w-3 h-3" />
-              只读模式
+              <Copy className="w-3 h-3" />
+              可查看与另存
             </span>
           )
         }
@@ -332,7 +353,7 @@ export default function SchoolResourcesPage() {
           <div className="font-medium mb-0.5">校本资源备份说明</div>
           当您将试卷、讲义等资源发布给<b>非自己所教班级或学生</b>时，系统会自动将资源及其相关题目<b>同步备份</b>到此处。
           校本资源使用独立的章节课与知识点目录，同名目录自动合并，不同名目录自动新增。
-          备份的目的是保留学校层面的资源沉淀与共享追溯。普通教师仅可查看，<b>备课组长及以上权限</b>可修改资源的属性（章节、知识点、年级等）。
+          备份的目的是保留学校层面的资源沉淀与共享追溯。普通教师可查看并将<b>其他教师提供的资源</b>另存到个人资源库，系统会在另存时自动查重；<b>备课组长及以上权限</b>可修改资源的属性（章节、知识点、年级等）。
         </div>
       </div>
 
@@ -545,6 +566,10 @@ export default function SchoolResourcesPage() {
                 const provider = teacherMap.get(item.fromTeacherId);
                 const chapterNames = resolveChapterNames(item.chapterIds);
                 const knowledgeNames = resolveKnowledgeNames(item.knowledgePointIds);
+                const question = item.resourceType === "question"
+                  ? parseSchoolResourceSnapshot<Question>(item)
+                  : null;
+                const isProvider = teacher?.id === item.fromTeacherId;
                 return (
                   <div key={item.id} className="card-base p-4 hover:shadow-cardHover transition-all group">
                     <div className="flex items-start gap-3">
@@ -564,8 +589,24 @@ export default function SchoolResourcesPage() {
                             </span>
                           )}
                         </div>
-                        <div className="font-medium text-ink-900 mb-1 line-clamp-2">{item.title}</div>
-                        {item.description && (
+                        {question ? (
+                          <ExpandableQuestionContent
+                            question={question}
+                            expanded={expandedQuestionIds.has(item.id)}
+                            onToggle={() => toggleQuestionDetails(item.id)}
+                            optionsTestId={`school-question-options-${item.id}`}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setViewing(item)}
+                            className="mb-1 block w-full rounded-md text-left font-medium text-ink-900 hover:text-gold-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/50"
+                            aria-label={`预览${resourceTypeLabel[item.resourceType]}：${item.title}`}
+                          >
+                            {item.title}
+                          </button>
+                        )}
+                        {item.description && item.resourceType !== "question" && (
                           <div className="text-xs text-ink-500 mb-2 line-clamp-1">{item.description}</div>
                         )}
                         {/* 元数据 */}
@@ -621,26 +662,32 @@ export default function SchoolResourcesPage() {
                           来源：{item.backupReason}
                         </div>
                       </div>
-                      <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex-shrink-0 flex items-center gap-1">
                         <button
                           onClick={() => setViewing(item)}
                           className="p-1.5 rounded text-ink-400 hover:bg-mist hover:text-ink-700"
-                          title="查看详情"
+                          title="预览资源"
+                          aria-label={`打开预览：${resourceTypeLabel[item.resourceType]}：${item.title}`}
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleSaveAsOwn(item)}
-                          disabled={savingIds.has(item.id) || savedIds.has(item.id)}
+                          disabled={isProvider || savingIds.has(item.id) || savedIds.has(item.id)}
                           className={cn(
                             "p-1.5 rounded transition-colors flex items-center gap-1",
-                            savedIds.has(item.id)
+                            isProvider
+                              ? "cursor-not-allowed text-ink-300"
+                              : savedIds.has(item.id)
                               ? "text-emerald-600 bg-emerald-50"
                               : "text-ink-400 hover:bg-teal-50 hover:text-teal-600",
                           )}
-                          title={savedIds.has(item.id) ? "副本已创建" : "创建副本"}
+                          title={isProvider ? "本人提供的资源无需另存" : savedIds.has(item.id) ? "已在我的资源" : "另存到我的资源"}
+                          aria-label={isProvider ? "本人提供的资源" : savedIds.has(item.id) ? "已在我的资源" : `另存${resourceTypeLabel[item.resourceType]}到我的资源`}
                         >
-                          {savedIds.has(item.id) ? (
+                          {isProvider ? (
+                            <Lock className="w-4 h-4" />
+                          ) : savedIds.has(item.id) ? (
                             <Check className="w-4 h-4" />
                           ) : (
                             <Copy className="w-4 h-4" />
@@ -674,69 +721,17 @@ export default function SchoolResourcesPage() {
         </div>
       </div>
 
-      {/* 查看详情弹窗 */}
-      <Modal
-        open={!!viewing}
+      <SchoolResourcePreviewModal
+        backup={viewing}
+        providerName={viewing ? teacherMap.get(viewing.fromTeacherId)?.name : undefined}
+        isProvider={Boolean(viewing && teacher?.id === viewing.fromTeacherId)}
+        saving={Boolean(viewing && savingIds.has(viewing.id))}
+        saved={Boolean(viewing && savedIds.has(viewing.id))}
+        onSave={() => {
+          if (viewing) void handleSaveAsOwn(viewing);
+        }}
         onClose={() => setViewing(null)}
-        title={viewing?.title}
-        description={viewing ? resourceTypeLabel[viewing.resourceType] + " · 校本备份" : undefined}
-        size="lg"
-        footer={
-          <div className="flex justify-end">
-            <Button variant="ghost" onClick={() => setViewing(null)}>关闭</Button>
-          </div>
-        }
-      >
-        {viewing && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <div className="text-xs text-ink-400">资源类型</div>
-                <div>{resourceTypeLabel[viewing.resourceType]}</div>
-              </div>
-              <div>
-                <div className="text-xs text-ink-400">提供者</div>
-                <div>{teacherMap.get(viewing.fromTeacherId)?.name || "未知"}</div>
-              </div>
-              <div>
-                <div className="text-xs text-ink-400">备份时间</div>
-                <div>{new Date(viewing.createdAt).toLocaleString("zh-CN")}</div>
-              </div>
-              <div>
-                <div className="text-xs text-ink-400">最后更新</div>
-                <div>{new Date(viewing.updatedAt).toLocaleString("zh-CN")}</div>
-              </div>
-              <div className="col-span-2">
-                <div className="text-xs text-ink-400">备份原因</div>
-                <div>{viewing.backupReason}</div>
-              </div>
-              {viewing.description && (
-                <div className="col-span-2">
-                  <div className="text-xs text-ink-400">描述</div>
-                  <div>{viewing.description}</div>
-                </div>
-              )}
-            </div>
-            <div>
-              <div className="text-xs text-ink-400 mb-1">内容快照</div>
-              <div className="p-3 rounded-md bg-mist/40 border border-ink-100 text-xs text-ink-700 max-h-[300px] overflow-auto whitespace-pre-wrap break-all">
-                {viewing.contentSnapshot}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-ink-400 mb-1">属性</div>
-              <div className="flex flex-wrap gap-1.5">
-                {Object.entries(viewing.meta).map(([k, v]) => (
-                  <span key={k} className="tag-gold">{k}: {v}</span>
-                ))}
-                {viewing.grade && <span className="tag-teal">年级: {viewing.grade}</span>}
-                {viewing.schoolYear && <span className="tag-teal">学年: {viewing.schoolYear}</span>}
-                <span className="tag-teal">学期: {viewing.semester || "上学期"}</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
+      />
 
       {/* 编辑属性弹窗 */}
       <Modal

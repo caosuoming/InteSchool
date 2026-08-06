@@ -939,6 +939,8 @@ export interface Question {
   sourceType?: string;
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
+  /** 从校本资源另存时记录备份来源，用于阻止重复创建副本。 */
+  schoolSourceBackupIds?: string[];
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
@@ -1045,6 +1047,8 @@ export interface ExamPaper {
   sourceResourceId?: string;
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
+  /** 从校本资源另存时记录备份来源，用于阻止重复创建副本。 */
+  schoolSourceBackupIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
   createdAt: string;
@@ -1088,6 +1092,8 @@ export interface Courseware {
   tags: string[];
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
+  /** 从校本资源另存时记录备份来源，用于阻止重复创建副本。 */
+  schoolSourceBackupIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1120,6 +1126,8 @@ export interface Material {
   sourceResourceId?: string;
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
+  /** 从校本资源另存时记录备份来源，用于阻止重复创建副本。 */
+  schoolSourceBackupIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1559,6 +1567,8 @@ export interface Lecture {
   sourceResourceId?: string;
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
   platformSourceDonationIds?: string[];
+  /** 从校本资源另存时记录备份来源，用于阻止重复创建副本。 */
+  schoolSourceBackupIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
   /** 版本类型：
