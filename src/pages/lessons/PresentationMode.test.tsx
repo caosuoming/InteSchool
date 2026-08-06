@@ -93,7 +93,7 @@ beforeEach(() => {
 });
 
 describe("PresentationMode", () => {
-  it("uses mirrored navigation, object-only transforms, upward pen tips, fullscreen, and formal boards", async () => {
+  it("uses arrow-only mirrored navigation, text resizing, upward pen tips, fullscreen, and formal boards", async () => {
     const user = userEvent.setup();
     const onExit = vi.fn();
     render(
@@ -114,21 +114,26 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "右侧显示内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "左侧提问学生" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "右侧相关题" })).toBeInTheDocument();
-    expect(screen.getAllByText("上一页")).toHaveLength(2);
-    expect(screen.getAllByText("下一页")).toHaveLength(2);
+    expect(screen.queryByText("上一页")).not.toBeInTheDocument();
+    expect(screen.queryByText("下一页")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下课" })).toBeInTheDocument();
+    expect(screen.getByLabelText("文本与全屏控制")).toHaveClass("bottom-0", "left-full");
 
     const selectTool = screen.getByRole("button", { name: "选择工具" });
     expect(selectTool).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "放大所选对象" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "缩小所选对象" })).toBeDisabled();
-    const slideElement = screen.getByText("第一页内容").closest(".absolute") as HTMLElement;
+    expect(screen.getByRole("button", { name: "放大所选文本" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "缩小所选文本" })).toBeDisabled();
+    const slideText = screen.getByText("第一页内容");
+    const slideElement = slideText.closest(".absolute") as HTMLElement;
+    const textBox = slideElement.querySelector('[style*="font-size"]') as HTMLElement;
     expect(slideElement).toHaveStyle({ width: "90%", height: "40%" });
-    await user.click(screen.getByText("第一页内容"));
+    expect(textBox).toHaveStyle({ fontSize: "24px" });
+    await user.click(slideText);
     expect(slideElement).toHaveClass("ring-2");
-    await user.click(screen.getByRole("button", { name: "放大所选对象" }));
+    await user.click(screen.getByRole("button", { name: "放大所选文本" }));
     expect(slideElement).toHaveStyle({ height: "44%" });
     expect(Number.parseFloat(slideElement?.style.width || "0")).toBeCloseTo(99);
+    expect(textBox).toHaveStyle({ fontSize: "26.4px" });
 
     const redPen = screen.getByRole("button", { name: "红色画笔" });
     expect(redPen.querySelector('[data-pen-tip="up"]')).toBeInTheDocument();
@@ -190,7 +195,7 @@ describe("PresentationMode", () => {
     expect(element).toHaveStyle({ left: "5%", top: "6%", width: "90%", height: "88%" });
     await user.click(content);
     expect(element).toHaveClass("ring-2");
-    expect(screen.getByRole("button", { name: "放大所选对象" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "放大所选文本" })).toBeEnabled();
   });
 
   it("reveals question options, answers, and analysis from either mirrored display rail", async () => {
