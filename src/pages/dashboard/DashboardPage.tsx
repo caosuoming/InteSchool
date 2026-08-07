@@ -368,7 +368,7 @@ export default function DashboardPage() {
                   {stats.lectures.slice(0, 4).map((lec) => (
                     <Link
                       key={lec.id}
-                      to={`/lectures/${lec.id}/edit`}
+                      to={`/lectures/${lec.id}/preview`}
                       className="flex items-start gap-3 p-3 rounded-md hover:bg-mist transition-colors"
                     >
                       <div className="w-8 h-8 rounded-md bg-ink-100 text-ink-600 flex items-center justify-center flex-shrink-0">

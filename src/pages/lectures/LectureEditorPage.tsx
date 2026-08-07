@@ -6,7 +6,7 @@ import {
   GraduationCap, Users, Loader2, X, ChevronDown, ChevronRight,
   Type, ListOrdered, CheckCircle2, Edit3, Eye,
   UserCheck, Award, Clock, Presentation, FileBox,
-  Lightbulb, Printer, Layout, LayoutTemplate, FileStack,
+  Lightbulb, Printer, LayoutTemplate, FileStack,
   CheckSquare, Lock,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -1739,6 +1739,15 @@ export default function LectureEditorPage() {
                 添加到集体备课
               </Button>
             )}
+            {lecture && (
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/lectures/${lecture.id}/preview`)}
+              >
+                <Eye className="w-4 h-4" />
+                预览
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setShowStudentPicker(true)}>
               <UserCheck className="w-4 h-4" />
               选择发布对象
@@ -1759,58 +1768,6 @@ export default function LectureEditorPage() {
           </div>
         }
       />
-
-      {/* 版本切换Tab */}
-      <div className="flex items-center gap-1 mb-4 bg-ink-50 p-1 rounded-lg">
-        {currentVersionType === "extract" && (
-          <Button variant="ghost" size="sm" className="bg-white shadow-sm text-gold-700">
-            <Edit3 className="w-3.5 h-3.5" />
-            {lecture?.isExtractCopy ? "拆解稿" : "正稿"}
-          </Button>
-        )}
-        {currentVersionType !== "extract" && (
-          <Button variant="ghost" size="sm" onClick={() => setCurrentVersionType("extract")}>
-            <Edit3 className="w-3.5 h-3.5" />
-            {lecture?.isExtractCopy ? "拆解稿" : "正稿"}
-          </Button>
-        )}
-      {currentVersionType === "preview" && (
-          <Button variant="ghost" size="sm" className="bg-white shadow-sm text-gold-700">
-            <Eye className="w-3.5 h-3.5" />
-            预览稿
-          </Button>
-        )}
-        {currentVersionType !== "preview" && (
-          <Button variant="ghost" size="sm" onClick={() => setCurrentVersionType("preview")}>
-            <Eye className="w-3.5 h-3.5" />
-            预览稿
-          </Button>
-        )}
-        {lecture?.originalFileUrl && currentVersionType === "origin" && (
-          <Button variant="ghost" size="sm" className="bg-white shadow-sm text-gold-700">
-            <FileText className="w-3.5 h-3.5" />
-            原稿
-          </Button>
-        )}
-        {lecture?.originalFileUrl && currentVersionType !== "origin" && (
-          <Button variant="ghost" size="sm" onClick={() => setCurrentVersionType("origin")}>
-            <FileText className="w-3.5 h-3.5" />
-            原稿
-          </Button>
-        )}
-        {currentVersionType === "answer-sheet" && (
-          <Button variant="ghost" size="sm" className="bg-white shadow-sm text-gold-700">
-            <Layout className="w-3.5 h-3.5" />
-            答题卡
-          </Button>
-        )}
-        {currentVersionType !== "answer-sheet" && (
-          <Button variant="ghost" size="sm" onClick={() => setCurrentVersionType("answer-sheet")}>
-            <Layout className="w-3.5 h-3.5" />
-            答题卡
-          </Button>
-        )}
-      </div>
 
       {/* 学生选择器 + 时间周期选择器 */}
       {currentVersionType !== "extract" && (
