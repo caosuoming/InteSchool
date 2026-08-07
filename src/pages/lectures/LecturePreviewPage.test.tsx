@@ -14,6 +14,7 @@ vi.mock("@/services/lecture", () => ({
 vi.mock("@/services/class", () => ({
   classService: {
     getClassesByIds: vi.fn(),
+    listAllClasses: vi.fn(),
     listStudentsByClass: vi.fn(),
     listStudentsBySchool: vi.fn(),
     getStudent: vi.fn(),
@@ -42,7 +43,7 @@ const lecture: Lecture = {
   schoolYear: "2026-2027",
   semester: "上学期",
   classIds: ["class-1"],
-  studentIds: ["student-2"],
+  studentIds: [],
   sections: [
     {
       id: "document-title",
@@ -164,6 +165,7 @@ describe("LecturePreviewPage", () => {
     vi.clearAllMocks();
     vi.mocked(lectureService.getLecture).mockResolvedValue(lecture);
     vi.mocked(classService.getClassesByIds).mockResolvedValue([schoolClass]);
+    vi.mocked(classService.listAllClasses).mockResolvedValue([schoolClass]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([classStudent]);
     vi.mocked(classService.listStudentsBySchool).mockResolvedValue([classStudent, explicitStudent]);
     vi.mocked(classService.getStudent).mockResolvedValue(explicitStudent);
@@ -183,8 +185,9 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByRole("button", { name: /整份讲义/ })).not.toBeInTheDocument();
     expect(screen.getByText("使用对象")).toBeInTheDocument();
     expect(screen.getByText("高一（1）班")).toBeInTheDocument();
-    expect(screen.getByText("张同学")).toBeInTheDocument();
-    expect(screen.getByText("李同学")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择学生")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /张同学/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /李同学/ })).not.toBeInTheDocument();
     expect(screen.getByLabelText("纸张大小")).toHaveValue("A4");
 
     const paper = screen.getByTestId("lecture-paper");
@@ -229,4 +232,41 @@ describe("LecturePreviewPage", () => {
       expect(screen.queryByText("答案：")).not.toBeInTheDocument();
     });
   });
+  it("edits document usage by class only", async () => {
+    renderPage();
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+
+    fireEvent.click(screen.getByRole("button", { name: /高一（1）班/ }));
+    expect(screen.getByRole("heading", { name: "添加使用对象" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox")).toBeChecked();
+    expect(screen.queryByText("李同学")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /确定（0 个班级）/ }));
+    await waitFor(() => {
+      expect(lectureService.updateLecture).toHaveBeenCalledWith(lecture.id, {
+        classIds: [],
+        studentIds: [],
+      });
+    });
+  });
+
+  it("updates one selected student's answer state per question", async () => {
+    renderPage();
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+
+    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: classStudent.id } });
+    fireEvent.change(screen.getByLabelText("答题情况"), { target: { value: "correct" } });
+
+    await waitFor(() => {
+      expect(analyticsService.saveAnswerRecord).toHaveBeenCalledWith({
+        studentId: classStudent.id,
+        questionId: question.id,
+        lectureId: lecture.id,
+        score: "correct",
+        source: "manual",
+      });
+    });
+  });
+
 });

@@ -1039,7 +1039,9 @@ export interface ExamPaper {
   questionCategory?: string;
   /** 题目编排方式：按题型分组或不分题型 */
   layoutMode?: "grouped" | "flat";
-  /** 适用学生 ID（空表示不限定） */
+  /** 使用班级 ID；文档级使用对象只精确到班级。 */
+  classIds?: string[];
+  /** 旧数据兼容字段；新的文档级使用对象以 classIds 为准。 */
   studentIds?: string[];
   /** 原稿文件信息（Word/PDF上传的原件） */
   originalFileUrl?: string;

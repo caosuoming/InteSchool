@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   getKnowledgeTree: vi.fn(),
   generateExamPaperDocx: vi.fn(),
   createLessonFromExamPaper: vi.fn(),
+  listAnswerRecordsByStudents: vi.fn(),
+  saveAnswerRecord: vi.fn(),
+  batchSaveAnswerRecords: vi.fn(),
 }));
 
 const teacher = {
@@ -85,7 +88,12 @@ vi.mock("@/services/settings", () => ({
   },
 }));
 vi.mock("@/services/analytics", () => ({
-  analyticsService: { getAnsweredQuestionIds: vi.fn().mockResolvedValue(new Set()) },
+  analyticsService: {
+    getAnsweredQuestionIds: vi.fn().mockResolvedValue(new Set()),
+    listAnswerRecordsByStudents: mocks.listAnswerRecordsByStudents,
+    saveAnswerRecord: mocks.saveAnswerRecord,
+    batchSaveAnswerRecords: mocks.batchSaveAnswerRecords,
+  },
 }));
 vi.mock("@/lib/docx", () => ({
   generateExamPaperDocx: mocks.generateExamPaperDocx,
@@ -139,6 +147,8 @@ const paper = {
   duration: 90,
   totalScore: 5,
   status: "draft",
+  classIds: [],
+  studentIds: [],
   isExtractCopy: true,
   questions: [{
     id: "paper-question-1",
@@ -223,7 +233,16 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listQuestions.mockResolvedValue([question]);
     mocks.listBaskets.mockResolvedValue([]);
     mocks.removeQuestion.mockResolvedValue(undefined);
-    mocks.listAllClasses.mockResolvedValue([{ id: "class-1", name: "高一（1）班" }]);
+    mocks.listAllClasses.mockResolvedValue([{
+      id: "class-1",
+      type: "school",
+      schoolId: teacher.schoolId,
+      name: "高一（1）班",
+      grade: "高一",
+      studentCount: 1,
+      createdBy: teacher.id,
+      createdAt: timestamp,
+    }]);
     mocks.listSchoolClasses.mockResolvedValue([]);
     mocks.listPersonalClasses.mockResolvedValue([]);
     mocks.listStudentsBySchool.mockResolvedValue([]);
@@ -233,6 +252,9 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
     mocks.generateExamPaperDocx.mockResolvedValue(undefined);
     mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
+    mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
+    mocks.saveAnswerRecord.mockResolvedValue(null);
+    mocks.batchSaveAnswerRecords.mockResolvedValue([]);
   });
 
   it("removes a basket question after adding it to the paper when confirmed", async () => {
@@ -297,6 +319,22 @@ describe("ExamPaperEditorPage preview", () => {
       id: paper.id,
       title: paper.title,
       contentBlocks: paper.contentBlocks,
+    });
+  });
+
+  it("persists class-only usage changes made directly in preview", async () => {
+    renderPage();
+    await screen.findByTestId("exam-paper-preview");
+
+    fireEvent.click(screen.getByRole("button", { name: "添加使用对象" }));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /确定（1 个班级）/ }));
+
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, {
+        classIds: ["class-1"],
+        studentIds: [],
+      });
     });
   });
 
@@ -381,14 +419,45 @@ describe("ExamPaperEditorPage preview", () => {
     await screen.findByLabelText("文档名");
     await waitFor(() => expect(container.querySelector(".katex")).toBeInTheDocument());
 
-    const audienceButton = screen.getAllByRole("button", { name: "选择发布对象" })[0];
+    const audienceButton = screen.getAllByRole("button", { name: "添加使用对象" })[0];
     fireEvent.click(audienceButton);
-    expect(screen.getByText("选择发布对象后，每道题会显示所选时间段内的完成人数与正确率")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /确定（0 人）/ }));
+    expect(screen.getByText("使用对象按班级设置；具体学生的答题情况可在预览中逐题调整。")).toBeInTheDocument();
+    expect(screen.getByText("高一（1）班")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /确定（1 个班级）/ }));
 
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
     await screen.findByTestId("exam-paper-preview");
     await waitFor(() => expect(container.querySelectorAll(".katex").length).toBeGreaterThan(0));
+  });
+
+  it("edits one class student's answer state from the preview", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["class-1"] });
+    mocks.listStudentsBySchool.mockResolvedValue([{
+      id: "student-1",
+      name: "张同学",
+      studentNo: "20260001",
+      classId: "class-1",
+      schoolId: teacher.schoolId,
+      grade: "高一",
+      status: "active",
+    }]);
+
+    renderPage();
+    await screen.findByTestId("exam-paper-preview");
+
+    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: "student-1" } });
+    fireEvent.change(screen.getByLabelText("答题情况"), { target: { value: "partial" } });
+
+    await waitFor(() => {
+      expect(mocks.saveAnswerRecord).toHaveBeenCalledWith({
+        studentId: "student-1",
+        questionId: question.id,
+        lectureId: paper.id,
+        score: "partial",
+        source: "manual",
+      });
+    });
   });
 
   it("places secondary editor actions below the title and removes the subtitle", async () => {
@@ -420,6 +489,9 @@ describe("ExamPaperEditorPage structured editor", () => {
     mocks.listExamPaperTypes.mockResolvedValue([]);
     mocks.listSettings.mockResolvedValue([]);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
+    mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
+    mocks.saveAnswerRecord.mockResolvedValue(null);
+    mocks.batchSaveAnswerRecords.mockResolvedValue([]);
 
     mocks.getPaper.mockResolvedValue({
       ...paper,

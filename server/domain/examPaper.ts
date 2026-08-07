@@ -57,6 +57,7 @@ export interface ExamPaperInput {
   questionSourceType?: string;
   questionCategory?: string;
   layoutMode?: "grouped" | "flat";
+  classIds?: string[];
   status?: "draft" | "published";
   originalFileUrl?: string;
   originalFileName?: string;
@@ -104,6 +105,8 @@ export const examPaperService = {
       questionSourceType: input.questionSourceType,
       questionCategory: input.questionCategory,
       layoutMode: input.layoutMode || "grouped",
+      classIds: input.classIds || [],
+      studentIds: [],
       status: input.status || "draft",
       originalFileUrl: input.originalFileUrl,
       originalFileName: input.originalFileName,
@@ -350,7 +353,7 @@ export const examPaperService = {
       grade: paper.grade,
       schoolYear: paper.schoolYear,
       semester: paper.semester || "上学期",
-      classIds: [],
+      classIds: paper.classIds || [],
       studentIds: [],
       sections,
       typeId: undefined,

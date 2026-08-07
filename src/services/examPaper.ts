@@ -23,6 +23,7 @@ export interface ExamPaperInput {
   questionSourceType?: string;
   questionCategory?: string;
   layoutMode?: "grouped" | "flat";
+  classIds?: string[];
   status?: "draft" | "published";
   originalFileUrl?: string;
   originalFileName?: string;
