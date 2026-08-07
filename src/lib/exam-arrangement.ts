@@ -88,7 +88,7 @@ export function summarizeExamGroups(
     if (selection?.absent) continue;
     const selected = subjects.filter((subject) => (selection?.subjects || subjects).includes(subject));
     const selectedCombinedSubjects = combinedSubjects.filter((subject) => selected.includes(subject));
-    addGroup(student, "combined", combinedSubjects, selectedCombinedSubjects);
+    addGroup(student, "combined", selectedCombinedSubjects);
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
       addGroup(student, `subject:${subject}`, [subject]);
     }
@@ -212,6 +212,7 @@ function createTask(
   allRoomIds: string[],
   groupRoomIds: Record<string, string[]>,
   roomGroupKey?: string,
+  fallbackRoomGroupKey?: string,
 ): SeatTask {
   const classRule = rules.get(student.classId);
   const subjectRoomIds = roomIntersection(
@@ -219,7 +220,8 @@ function createTask(
     allRoomIds,
   );
   const groupKey = roomGroupKey || examGroupKey(sessionKey, selectedSubjects);
-  const configuredRoomIds = groupRoomIds[groupKey];
+  const configuredRoomIds = groupRoomIds[groupKey]
+    || (fallbackRoomGroupKey ? groupRoomIds[fallbackRoomGroupKey] : undefined);
   const eligibleRoomIds = configuredRoomIds
     ? subjectRoomIds.filter((roomId) => configuredRoomIds.includes(roomId))
     : subjectRoomIds;
@@ -253,7 +255,7 @@ function buildTasks(
     input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
   ).filter((subject) => subjects.includes(subject)));
   const combinedSubjects = subjects.filter((subject) => !separateSubjects.has(subject));
-  const combinedGroupKey = examGroupKey("combined", combinedSubjects);
+  const legacyCombinedGroupKey = examGroupKey("combined", combinedSubjects);
   const tasks: SeatTask[] = [];
 
   for (const student of context.students) {
@@ -274,7 +276,8 @@ function buildTasks(
         rules,
         allRoomIds,
         groupRoomIds,
-        combinedGroupKey,
+        undefined,
+        legacyCombinedGroupKey,
       ));
     }
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
