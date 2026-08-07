@@ -1480,13 +1480,33 @@ export default function LectureEditorPage() {
           description={lecture?.description || description || "预览模式"}
           icon={<FileText className="w-5 h-5" />}
           action={
-            <Button
-              variant="outline"
-              onClick={() => navigate(`/lectures/${id}/edit${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
-            >
-              <Edit3 className="w-4 h-4" />
-              返回编辑
-            </Button>
+            <div className="flex items-center gap-2">
+              {!prepTaskId && (
+                <Button variant="outline" onClick={() => setShowStudentPicker(true)}>
+                  <Users className="w-4 h-4" />
+                  <span className="max-w-48 truncate">
+                    {selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择发布对象"}
+                  </span>
+                  {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={handleMarkAllDone}
+                loading={markingAllDone}
+                disabled={selectedStudentIds.length === 0 || lectureQuestionIds.length === 0}
+              >
+                <CheckSquare className="w-4 h-4" />
+                全部设为使用
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/lectures/${id}/edit${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+              >
+                <Edit3 className="w-4 h-4" />
+                返回编辑
+              </Button>
+            </div>
           }
         />
 
@@ -1750,10 +1770,10 @@ export default function LectureEditorPage() {
             )}
             <Button variant="outline" onClick={() => setShowStudentPicker(true)}>
               <UserCheck className="w-4 h-4" />
-              选择发布对象
-              {selectedStudentIds.length > 0 && (
-                <Badge variant="gold">{selectedStudentIds.length}</Badge>
-              )}
+              <span className="max-w-48 truncate">
+                {selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择发布对象"}
+              </span>
+              {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
             </Button>
             <Button variant="outline" onClick={() => handleSave(false)} loading={saving}>
               <Save className="w-4 h-4" />

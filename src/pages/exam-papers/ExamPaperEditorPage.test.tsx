@@ -381,10 +381,10 @@ describe("ExamPaperEditorPage preview", () => {
     await screen.findByLabelText("文档名");
     await waitFor(() => expect(container.querySelector(".katex")).toBeInTheDocument());
 
-    const publishButtons = screen.getAllByRole("button", { name: "选择发布对象" });
-    fireEvent.click(publishButtons[0]);
-    expect(screen.getByText("发布试卷")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    const audienceButton = screen.getAllByRole("button", { name: "选择发布对象" })[0];
+    fireEvent.click(audienceButton);
+    expect(screen.getByText("选择发布对象后，每道题会显示所选时间段内的完成人数与正确率")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /确定（0 人）/ }));
 
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
     await screen.findByTestId("exam-paper-preview");
@@ -400,7 +400,7 @@ describe("ExamPaperEditorPage preview", () => {
     const toolbar = screen.getByRole("toolbar", { name: "试卷辅助操作" });
     expect(within(toolbar).getByRole("button", { name: "添加到集体备课" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
-    expect(within(toolbar).getByRole("button", { name: "选择发布对象" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "发布试卷" })).toBeInTheDocument();
     expect(toolbar.previousElementSibling).toContainElement(
       screen.getByRole("heading", { name: `编辑：${paper.title}` }),
     );
