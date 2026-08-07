@@ -232,6 +232,49 @@ describe("ExamRoomArrangementPage", () => {
     expect(absent).toBeChecked();
   });
 
+  it("switches fixed-room and student settings by class", async () => {
+    const user = userEvent.setup();
+    const secondClass = {
+      ...context.classes[0],
+      id: "class-2",
+      name: "高三（2）班",
+    };
+    const secondStudent = {
+      ...context.students[0],
+      id: "student-2",
+      name: "李同学",
+      studentNo: "002",
+      classId: "class-2",
+    };
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      ...context,
+      cohort: {
+        ...cohort,
+        classIds: ["class-1", "class-2"],
+        studentCount: 2,
+      },
+      classes: [context.classes[0], secondClass],
+      students: [context.students[0], secondStudent],
+    });
+    renderPage();
+
+    const fixedRoomTabs = await screen.findByRole("tablist", { name: "班级学科固定考场班级" });
+    const studentTabs = screen.getByRole("tablist", { name: "学生考试科目班级" });
+    expect(within(fixedRoomTabs).getByRole("tab", { name: "高三（1）班" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("高三（1）班语文固定考场")).toBeInTheDocument();
+    expect(screen.queryByLabelText("高三（2）班语文固定考场")).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "张同学考试设置" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "李同学考试设置" })).not.toBeInTheDocument();
+
+    await user.click(within(studentTabs).getByRole("tab", { name: "高三（2）班" }));
+
+    expect(within(fixedRoomTabs).getByRole("tab", { name: "高三（2）班" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByLabelText("高三（1）班语文固定考场")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("高三（2）班语文固定考场")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "张同学考试设置" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "李同学考试设置" })).toBeInTheDocument();
+  });
+
   it("supports class batch subjects, fixed rooms, special students, and external-student labels", async () => {
     const user = userEvent.setup();
     vi.mocked(examArrangementService.getContext).mockResolvedValue({
