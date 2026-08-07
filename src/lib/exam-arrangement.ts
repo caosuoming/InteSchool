@@ -5,6 +5,7 @@ import type {
   ExamRoomConfig,
   ExamSeatAssignment,
   ExamSeatOrder,
+  ExamStudentSeatPreference,
   ExamStudentSubjectSelection,
   Student,
 } from "../types/index.js";
@@ -15,6 +16,7 @@ interface SeatTask {
   subjectLabel: string;
   sessionKey: string;
   eligibleRoomIds: string[];
+  seatPreference?: ExamStudentSeatPreference;
 }
 
 export interface ExamGroupSummary {
@@ -145,14 +147,22 @@ function normalizeRules(
     if (rules.has(source.classId)) throw new Error("同一班级只能配置一组考场规则");
     const defaultSubjects = uniqueStrings(source.defaultSubjects || []).filter((subject) => subjectSet.has(subject));
     const subjectRoomIds: Record<string, string[]> = {};
+    const fixedSubjectRoomIds: Record<string, string> = {};
     for (const subject of subjects) {
       const configured = uniqueStrings(source.subjectRoomIds?.[subject] || []);
       if (configured.some((roomId) => !roomIds.has(roomId))) {
         throw new Error("班级考场规则引用了不存在的考场");
       }
-      subjectRoomIds[subject] = configured.length > 0 ? configured : rooms.map((room) => room.id);
+      const fixedRoomId = source.fixedSubjectRoomIds?.[subject]?.trim();
+      if (fixedRoomId && !roomIds.has(fixedRoomId)) {
+        throw new Error("班级固定考场规则引用了不存在的考场");
+      }
+      if (fixedRoomId) fixedSubjectRoomIds[subject] = fixedRoomId;
+      subjectRoomIds[subject] = fixedRoomId
+        ? [fixedRoomId]
+        : configured.length > 0 ? configured : rooms.map((room) => room.id);
     }
-    rules.set(source.classId, { classId: source.classId, defaultSubjects, subjectRoomIds });
+    rules.set(source.classId, { classId: source.classId, defaultSubjects, subjectRoomIds, fixedSubjectRoomIds });
   }
 
   for (const classItem of context.classes) {
@@ -184,6 +194,9 @@ function normalizeSelections(
       studentId: source.studentId,
       subjects: uniqueStrings(source.subjects || []).filter((subject) => subjectSet.has(subject)),
       absent: Boolean(source.absent),
+      seatPreference: source.seatPreference === "first" || source.seatPreference === "last"
+        ? source.seatPreference
+        : undefined,
     });
   }
   for (const student of context.students) {
@@ -213,6 +226,7 @@ function createTask(
   groupRoomIds: Record<string, string[]>,
   roomGroupKey?: string,
   fallbackRoomGroupKey?: string,
+  seatPreference?: ExamStudentSeatPreference,
 ): SeatTask {
   const classRule = rules.get(student.classId);
   const subjectRoomIds = roomIntersection(
@@ -229,7 +243,7 @@ function createTask(
   if (eligibleRoomIds.length === 0) {
     throw new Error(`「${className}」学生 ${student.name} 的「${subjectLabel}」没有共同可用考场`);
   }
-  return { student, className, subjectLabel, sessionKey, eligibleRoomIds };
+  return { student, className, subjectLabel, sessionKey, eligibleRoomIds, seatPreference };
 }
 
 function buildTasks(
@@ -278,10 +292,22 @@ function buildTasks(
         groupRoomIds,
         undefined,
         legacyCombinedGroupKey,
+        selection.seatPreference,
       ));
     }
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
-      tasks.push(createTask(student, classItem.name, `subject:${subject}`, [subject], rules, allRoomIds, groupRoomIds));
+      tasks.push(createTask(
+        student,
+        classItem.name,
+        `subject:${subject}`,
+        [subject],
+        rules,
+        allRoomIds,
+        groupRoomIds,
+        undefined,
+        undefined,
+        selection.seatPreference,
+      ));
     }
   }
   return tasks;
@@ -293,7 +319,13 @@ function compareTasks(
   seatOrder: ExamSeatOrder,
   context: ExamArrangementContext,
   seed: string,
+  respectSeatPreference = true,
 ): number {
+  if (respectSeatPreference) {
+    const preferenceRank = (preference?: ExamStudentSeatPreference) => preference === "first" ? 0 : preference === "last" ? 2 : 1;
+    const preferenceDifference = preferenceRank(left.seatPreference) - preferenceRank(right.seatPreference);
+    if (preferenceDifference !== 0) return preferenceDifference;
+  }
   if (seatOrder === "previousRank") {
     const leftRank = context.previousGradeRanks?.[left.student.id] ?? Number.POSITIVE_INFINITY;
     const rightRank = context.previousGradeRanks?.[right.student.id] ?? Number.POSITIVE_INFINITY;
@@ -321,11 +353,11 @@ function allocateSession(
   const seed = `${input.name}:${input.examDate || ""}:${tasks[0]?.sessionKey || sessionIndex}`;
   const sorted = [...tasks].sort((left, right) =>
     left.eligibleRoomIds.length - right.eligibleRoomIds.length
-    || compareTasks(left, right, seatOrder, context, seed),
+    || compareTasks(left, right, seatOrder, context, seed, false),
   );
   const datePrefix = input.examDate?.replace(/\D/g, "").slice(0, 8) || "00000000";
 
-  return sorted.map((task, index) => {
+  const planned = sorted.map((task) => {
     const candidates = task.eligibleRoomIds
       .map((roomId) => roomMap.get(roomId))
       .filter((room): room is ExamRoomConfig => Boolean(room))
@@ -340,27 +372,40 @@ function allocateSession(
     if (!room) {
       throw new Error(`「${task.subjectLabel}」考场容量不足，无法安排 ${task.className} ${task.student.name}`);
     }
-    const seatNo = (used.get(room.id) || 0) + 1;
-    used.set(room.id, seatNo);
-    const roomNumber = room.number || room.name;
-    const roomLocation = room.location || room.name;
-    return {
-      id: `${task.sessionKey}:${task.student.id}`,
-      studentId: task.student.id,
-      studentName: task.student.name,
-      studentNo: task.student.studentNo,
-      classId: task.student.classId,
-      className: task.className,
-      subjectLabel: task.subjectLabel,
-      sessionKey: task.sessionKey,
-      roomId: room.id,
-      roomName: roomNumber,
-      roomNumber,
-      roomLocation,
-      seatNo,
-      admissionNo: `${datePrefix}${String(sessionIndex + 1).padStart(2, "0")}${String(index + 1).padStart(4, "0")}`,
-    };
+    used.set(room.id, (used.get(room.id) || 0) + 1);
+    return { task, room };
   });
+
+  const seatNumbers = new Map<SeatTask, number>();
+  for (const room of rooms) {
+    planned
+      .filter((item) => item.room.id === room.id)
+      .sort((left, right) => compareTasks(left.task, right.task, seatOrder, context, seed))
+      .forEach((item, index) => seatNumbers.set(item.task, index + 1));
+  }
+
+  return planned
+    .sort((left, right) => compareTasks(left.task, right.task, seatOrder, context, seed))
+    .map(({ task, room }, index) => {
+      const roomNumber = room.number || room.name;
+      const roomLocation = room.location || room.name;
+      return {
+        id: `${task.sessionKey}:${task.student.id}`,
+        studentId: task.student.id,
+        studentName: task.student.name,
+        studentNo: task.student.studentNo,
+        classId: task.student.classId,
+        className: task.className,
+        subjectLabel: task.subjectLabel,
+        sessionKey: task.sessionKey,
+        roomId: room.id,
+        roomName: roomNumber,
+        roomNumber,
+        roomLocation,
+        seatNo: seatNumbers.get(task) || 1,
+        admissionNo: `${datePrefix}${String(sessionIndex + 1).padStart(2, "0")}${String(index + 1).padStart(4, "0")}`,
+      };
+    });
 }
 
 export function generateExamAssignments(

@@ -232,6 +232,54 @@ describe("ExamRoomArrangementPage", () => {
     expect(absent).toBeChecked();
   });
 
+  it("supports class batch subjects, fixed rooms, special students, and external-student labels", async () => {
+    const user = userEvent.setup();
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      ...context,
+      cohort: { ...cohort, studentCount: 3 },
+      classes: [{ ...context.classes[0], studentCount: 3 }],
+      students: [
+        context.students[0],
+        {
+          ...context.students[0],
+          id: "student-2",
+          name: "李同学",
+          studentNo: "002",
+          isExternal: true,
+        },
+        {
+          ...context.students[0],
+          id: "student-3",
+          name: "王同学",
+          studentNo: "003",
+        },
+      ],
+    });
+    renderPage();
+
+    const batchSubjects = await screen.findByRole("group", { name: "高三（1）班批量考试科目" });
+    const zhang = screen.getByRole("group", { name: "张同学考试设置" });
+    const li = screen.getByRole("group", { name: "李同学考试设置" });
+    const wang = screen.getByRole("group", { name: "王同学考试设置" });
+    expect(within(li).getByText("借读生")).toBeInTheDocument();
+
+    await user.click(within(batchSubjects).getByRole("button", { name: "物理" }));
+    expect(within(zhang).getByRole("button", { name: "物理" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(li).getByRole("button", { name: "物理" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(wang).getByRole("button", { name: "物理" })).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(within(li).getByRole("button", { name: "物理" }));
+    expect(li).toHaveAttribute("title", "与本班多数学生的考试科目不同");
+
+    await user.selectOptions(screen.getByLabelText("李同学特殊要求"), "last");
+    expect(screen.getByLabelText("李同学特殊要求")).toHaveValue("last");
+
+    const fixedRoom = screen.getByLabelText("高三（1）班语文固定考场");
+    expect(fixedRoom).toHaveValue("");
+    await user.selectOptions(fixedRoom, "room-class-1");
+    expect(fixedRoom).toHaveValue("room-class-1");
+  });
+
   it("shows the student's actual combined electives as a selectable room group", async () => {
     const user = userEvent.setup();
     renderPage();

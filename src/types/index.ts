@@ -443,6 +443,7 @@ export interface GradeCohort {
 export type ExamArrangementMode = "combination" | "subject";
 export type ExamSubjectSetupMode = "all" | "selection";
 export type ExamSeatOrder = "random" | "previousRank";
+export type ExamStudentSeatPreference = "first" | "last";
 
 export interface ExamRoomConfig {
   id: string;
@@ -463,6 +464,8 @@ export interface ExamClassRoomRule {
   defaultSubjects: string[];
   /** 每个科目允许使用的考场 ID。 */
   subjectRoomIds: Record<string, string[]>;
+  /** 显式固定的单一考场；未设置时按 subjectRoomIds 自动分配。 */
+  fixedSubjectRoomIds?: Record<string, string>;
 }
 
 export interface ExamStudentSubjectSelection {
@@ -470,6 +473,8 @@ export interface ExamStudentSubjectSelection {
   subjects: string[];
   /** 弃考学生不生成任何座位。 */
   absent?: boolean;
+  /** 特殊学生可要求排在场次首部或尾部。 */
+  seatPreference?: ExamStudentSeatPreference;
 }
 
 export interface ExamSeatAssignment {
