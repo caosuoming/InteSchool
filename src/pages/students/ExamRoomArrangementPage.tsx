@@ -110,8 +110,13 @@ function normalizeGroupRoomIds(
   context: ExamArrangementContext,
 ): Record<string, string[]> {
   const validRoomIds = new Set(draft.rooms.map((room) => room.id));
+  const separateSubjects = new Set(draft.separateSubjects || []);
+  const combinedSubjects = draft.subjects.filter((subject) => !separateSubjects.has(subject));
+  const legacyCombinedRoomIds = draft.groupRoomIds?.[`combined:${combinedSubjects.join("|")}`] || [];
   return Object.fromEntries(summarizeExamGroups(draft, context).map((group) => {
-    const configured = [...new Set((draft.groupRoomIds?.[group.key] || []).filter((roomId) => validRoomIds.has(roomId)))];
+    const sourceRoomIds = draft.groupRoomIds?.[group.key]
+      || (group.sessionKey === "combined" ? legacyCombinedRoomIds : []);
+    const configured = [...new Set(sourceRoomIds.filter((roomId) => validRoomIds.has(roomId)))];
     return [group.key, configured.length > 0 ? configured : defaultRoomIdsForGroup(group, draft.rooms)];
   }));
 }
@@ -854,12 +859,12 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="text-sm font-medium text-ink-900">
-                              {group.sessionKey === "combined" ? "合并场次" : group.subjectLabel.split(" / ").join("、")}
+                              {group.subjectLabel.split(" / ").join("、")}
                             </div>
                             <div className="mt-0.5 text-xs text-ink-500">
                               {group.sessionKey === "combined"
-                                ? `实际科目组合：${group.actualSubjectLabels.map((label) => label.split(" / ").join("、")).join("；")}`
-                                : `单独场次 · ${group.classIds.length} 个班级`}
+                                ? `合并场次 · ${group.studentCount} 人 · ${group.classIds.length} 个班级`
+                                : `单独场次 · ${group.studentCount} 人 · ${group.classIds.length} 个班级`}
                             </div>
                           </div>
                           <Button variant="ghost" size="sm" onClick={() => resetGroupRooms(group)}><RotateCcw className="h-3.5 w-3.5" />恢复自动分配</Button>

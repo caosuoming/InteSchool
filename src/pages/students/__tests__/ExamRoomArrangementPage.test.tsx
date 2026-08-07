@@ -232,7 +232,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(absent).toBeChecked();
   });
 
-  it("shows the student's actual combined electives without splitting the shared room group", async () => {
+  it("shows the student's actual combined electives as a selectable room group", async () => {
     const user = userEvent.setup();
     renderPage();
 
@@ -241,8 +241,8 @@ describe("ExamRoomArrangementPage", () => {
       await user.click(screen.getByRole("button", { name: `${subject}单独排` }));
     }
 
-    expect(screen.getByText("实际科目组合：化学、生物")).toBeInTheDocument();
-    expect(screen.getAllByText("合并场次")).toHaveLength(1);
+    expect(screen.getByText("化学、生物")).toBeInTheDocument();
+    expect(screen.getByText(/合并场次 · 1 人/)).toBeInTheDocument();
   });
 
   it("summarizes and reuses a saved arrangement without overwriting it", async () => {
