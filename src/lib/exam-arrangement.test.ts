@@ -286,4 +286,33 @@ describe("generateExamAssignments", () => {
     expect(assignments.find((item) => item.studentId === "student-2")?.seatNo).toBe(3);
     expect(assignments[0]).toMatchObject({ roomNumber: "A01", roomLocation: "教学楼 101" });
   });
+
+  it("honors per-student session-start and session-end requirements", () => {
+    const preferred = input("combination");
+    preferred.seatOrder = "previousRank";
+    preferred.rooms = [{ id: "room-a", name: "第一考场", capacity: 3 }];
+    preferred.classRules = preferred.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+    preferred.studentSubjects = preferred.studentSubjects.map((selection) => {
+      if (selection.studentId === "student-1") return { ...selection, seatPreference: "last" };
+      if (selection.studentId === "student-3") return { ...selection, seatPreference: "first" };
+      return selection;
+    });
+    const rankedContext: ExamArrangementContext = {
+      ...context,
+      previousGradeRanks: {
+        "student-1": 1,
+        "student-2": 2,
+        "student-3": 3,
+      },
+    };
+
+    const assignments = generateExamAssignments(preferred, rankedContext);
+
+    expect(assignments.map((item) => item.studentId)).toEqual(["student-3", "student-2", "student-1"]);
+    expect(assignments.find((item) => item.studentId === "student-3")?.seatNo).toBe(1);
+    expect(assignments.find((item) => item.studentId === "student-1")?.seatNo).toBe(3);
+  });
 });
