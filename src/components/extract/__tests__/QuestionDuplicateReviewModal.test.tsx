@@ -106,4 +106,34 @@ describe("QuestionDuplicateReviewModal", () => {
     expect(incoming.querySelector("mark .katex")).not.toBeNull();
     expect(existing).not.toHaveTextContent("<p>");
   });
+
+  it("renders changed document images instead of splitting their markdown syntax", () => {
+    const existingImage = "/api/files/existing-file/assets/rId29?officeWidth=121.86&officeHeight=87.67";
+    const incomingImage = "/api/files/incoming-file/assets/rId29?officeWidth=121.86&officeHeight=87.67";
+    const imageItem: QuestionDuplicateReviewItem = {
+      ...item,
+      existing: {
+        ...item.existing,
+        stem: `观察图像：\n![文档图片](${existingImage})\n选择正确结论`,
+      },
+      incoming: {
+        ...item.incoming,
+        stem: `观察图像：\n![文档图片](${incomingImage})\n选择正确结论`,
+      },
+    };
+
+    render(
+      <QuestionDuplicateReviewModal
+        items={[imageItem]}
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    const existing = screen.getByRole("group", { name: "相似题 1 库中题" });
+    const incoming = screen.getByRole("group", { name: "相似题 1 上传题" });
+    expect(existing.querySelector("img")).toHaveAttribute("src", existingImage);
+    expect(incoming.querySelector("mark img")).toHaveAttribute("src", incomingImage);
+    expect(incoming).not.toHaveTextContent("![文档图片]");
+  });
 });
