@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlide } from "@/types";
@@ -170,17 +170,25 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "右侧显示内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "左侧提问学生" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "右侧相关题" })).toBeInTheDocument();
-    expect(screen.getByLabelText("左侧翻页控制")).toContainElement(
+    const leftSideRail = screen.getByRole("button", { name: "左侧显示内容" }).closest('[data-presentation-side-controls="left"]');
+    const rightSideRail = screen.getByRole("button", { name: "右侧显示内容" }).closest('[data-presentation-side-controls="right"]');
+    expect(leftSideRail).toContainElement(
       screen.getByRole("button", { name: "左侧显示内容" }),
     );
-    expect(screen.getByLabelText("右侧翻页控制")).toContainElement(
+    expect(rightSideRail).toContainElement(
       screen.getByRole("button", { name: "右侧显示内容" }),
     );
-    expect(screen.getByRole("button", { name: "左侧显示内容" })).toHaveClass("h-8", "w-7");
+    expect(leftSideRail).toHaveClass("bottom-[4.25rem]", "left-4");
+    expect(rightSideRail).toHaveClass("bottom-[4.25rem]", "right-4");
+    expect(screen.getByRole("button", { name: "左侧显示内容" })).toHaveClass("h-10", "w-9");
     expect(screen.getByTestId("presentation-slide-page")).toHaveClass("h-full", "w-full");
     expect(screen.queryByText("上一页")).not.toBeInTheDocument();
     expect(screen.queryByText("下一页")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "下课" })).toBeInTheDocument();
+    const leftExit = screen.getByRole("button", { name: "左侧下课" });
+    const rightExit = screen.getByRole("button", { name: "右侧下课" });
+    expect(screen.getByLabelText("左侧翻页控制")).toContainElement(leftExit);
+    expect(screen.getByLabelText("右侧翻页控制")).toContainElement(rightExit);
+    expect(screen.getByLabelText("右侧翻页控制").lastElementChild).toBe(rightExit);
     expect(screen.getByLabelText("文本与全屏控制")).toHaveClass("bottom-0", "left-full");
 
     const selectTool = screen.getByRole("button", { name: "选择工具" });
@@ -221,16 +229,25 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "移动板书 1" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /调整板书 1大小/ })).toHaveLength(8);
     expect(screen.getByRole("button", { name: "清空当前板书" })).toBeInTheDocument();
-    const addWritingAreaButton = screen.getByRole("button", { name: "在板书 1中新增书写区" });
-    const firstWritingAreaTab = screen.getByRole("tab", { name: "切换到板书 1书写区 1" });
-    expect(addWritingAreaButton.closest('[data-board-side-controls="left"]')).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "删除板书 1" })).not.toBeInTheDocument();
+    const leftBoardControls = firstBoard.querySelector<HTMLElement>('[data-board-side-controls="left"]');
+    const rightBoardControls = firstBoard.querySelector<HTMLElement>('[data-board-side-controls="right"]');
+    expect(leftBoardControls).not.toBeNull();
+    expect(rightBoardControls).not.toBeNull();
+    const addWritingAreaButton = within(leftBoardControls!).getByRole("button", { name: "从左侧在板书 1中新增书写区" });
+    const rightAddWritingAreaButton = within(rightBoardControls!).getByRole("button", { name: "从右侧在板书 1中新增书写区" });
+    const firstWritingAreaTab = within(leftBoardControls!).getByRole("tab", { name: "从左侧切换到板书 1书写区 1" });
+    const rightFirstWritingAreaTab = within(rightBoardControls!).getByRole("tab", { name: "从右侧切换到板书 1书写区 1" });
     expect(addWritingAreaButton).toHaveClass("h-7", "w-7", "bg-transparent");
-    expect(firstWritingAreaTab.closest('[data-board-side-controls="right"]')).not.toBeNull();
+    expect(rightAddWritingAreaButton).toHaveClass("h-7", "w-7", "bg-transparent");
     expect(firstWritingAreaTab).toHaveClass("h-6", "w-6");
+    expect(rightFirstWritingAreaTab).toHaveClass("h-6", "w-6");
     expect(firstWritingAreaTab).toHaveAttribute("aria-selected", "true");
+    expect(rightFirstWritingAreaTab).toHaveAttribute("aria-selected", "true");
     await user.click(addWritingAreaButton);
     expect(screen.getAllByRole("region", { name: /板书/ })).toHaveLength(1);
-    expect(screen.getByRole("tab", { name: "切换到板书 1书写区 2" })).toHaveAttribute("aria-selected", "true");
+    expect(within(leftBoardControls!).getByRole("tab", { name: "从左侧切换到板书 1书写区 2" })).toHaveAttribute("aria-selected", "true");
+    expect(within(rightBoardControls!).getByRole("tab", { name: "从右侧切换到板书 1书写区 2" })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("region", { name: "板书 2" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "收起板书" }));
     expect(firstBoard).toHaveClass("invisible");
@@ -241,7 +258,7 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "右侧上一页" })).toBeEnabled();
     expect(screen.getByText("第二页内容")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "下课" }));
+    await user.click(screen.getByRole("button", { name: "右侧下课" }));
     expect(onExit).toHaveBeenCalledOnce();
   });
 
@@ -282,7 +299,8 @@ describe("PresentationMode", () => {
 
     expect(screen.getByLabelText("课件批注画布")).toHaveClass("pointer-events-auto");
     expect(screen.getByLabelText("板书 1书写区 1")).toHaveClass("pointer-events-auto");
-    expect(screen.getByRole("button", { name: "在板书 1中新增书写区" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "从左侧在板书 1中新增书写区" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "从右侧在板书 1中新增书写区" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "选择工具" }));
     expect(writingFrame).toHaveAttribute("data-draggable", "true");
@@ -301,7 +319,7 @@ describe("PresentationMode", () => {
     fireEvent.pointerUp(writingFrame!, { pointerId: 2, clientX: 350, clientY: 240 });
     expect(writingFrame?.style.left).not.toBe(frameLeftBefore);
 
-    await user.click(screen.getByRole("button", { name: "在板书 1中新增书写区" }));
+    await user.click(screen.getByRole("button", { name: "从左侧在板书 1中新增书写区" }));
     const writingFrames = firstBoard.querySelectorAll<HTMLElement>("[data-board-writing-frame]");
     expect(writingFrames).toHaveLength(2);
     expect(writingFrames[0]).toHaveAttribute("data-active", "false");
@@ -310,7 +328,7 @@ describe("PresentationMode", () => {
     expect(screen.getByLabelText("板书 1书写区 1")).toHaveClass("pointer-events-none");
     expect(screen.getByLabelText("板书 1书写区 2")).toHaveClass("pointer-events-auto");
 
-    await user.click(screen.getByRole("tab", { name: "切换到板书 1书写区 1" }));
+    await user.click(screen.getByRole("tab", { name: "从右侧切换到板书 1书写区 1" }));
     expect(writingFrames[0]).toHaveAttribute("data-active", "true");
     expect(writingFrames[1]).toHaveAttribute("data-active", "false");
     expect(screen.getByLabelText("板书 1书写区 1")).toHaveClass("pointer-events-auto");
