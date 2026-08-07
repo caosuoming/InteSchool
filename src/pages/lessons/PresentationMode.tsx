@@ -724,13 +724,6 @@ export function PresentationMode({
     setBoardsVisible((visible) => !visible);
   };
 
-  const removeBoard = (boardId: string) => {
-    const next = boards.filter((board) => board.id !== boardId);
-    setBoards(next);
-    if (activeBoardId === boardId) setActiveBoardId(next.at(-1)?.id || null);
-    if (next.length === 0) setBoardsVisible(false);
-  };
-
   const startBoardInteraction = (
     event: ReactPointerEvent<HTMLElement>,
     board: BoardPage,
@@ -932,7 +925,7 @@ export function PresentationMode({
     );
   };
 
-  const renderSideControls = (side: Side) => {
+  const renderSideRail = (side: Side) => {
     const tabs: Array<{ id: SideTab; short: string; label: string; icon: typeof Eye }> = [
       { id: "display", short: "显", label: "显示内容", icon: Eye },
       { id: "ask", short: "问", label: "提问学生", icon: Users },
@@ -942,33 +935,39 @@ export function PresentationMode({
     return (
       <div
         data-presentation-side-controls={side}
-        className="relative flex items-center gap-0.5"
+        className={cn(
+          "absolute bottom-[4.25rem] z-[90]",
+          side === "left" ? "left-4" : "right-4",
+        )}
+        onPointerDown={(event) => event.stopPropagation()}
       >
-        {tabs.map(({ id, short, label, icon: Icon }) => {
-          const active = activeTab === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-label={`${side === "left" ? "左侧" : "右侧"}${label}`}
-              aria-pressed={active}
-              onClick={() => toggleSidePanel(side, id)}
-              className={cn(
-                "flex h-8 w-7 flex-col items-center justify-center gap-0 text-paper/80 transition-colors",
-                active ? "rounded-md bg-gold-400 text-ink-900" : "rounded-md hover:bg-white/10 hover:text-paper",
-              )}
-              title={label}
-            >
-              <Icon className="h-3 w-3" />
-              <span className="text-[9px] font-semibold leading-3">{short}</span>
-            </button>
-          );
-        })}
+        <div className="flex flex-col overflow-hidden rounded-xl border border-white/60 bg-paper/95 shadow-2xl backdrop-blur">
+          {tabs.map(({ id, short, label, icon: Icon }) => {
+            const active = activeTab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-label={`${side === "left" ? "左侧" : "右侧"}${label}`}
+                aria-pressed={active}
+                onClick={() => toggleSidePanel(side, id)}
+                className={cn(
+                  "flex h-10 w-9 flex-col items-center justify-center gap-0.5 border-b border-ink-100 text-ink-600 transition-colors last:border-b-0",
+                  active ? "bg-gold-400 text-ink-900" : "hover:bg-gold-50",
+                )}
+                title={label}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span className="text-[10px] font-semibold leading-3">{short}</span>
+              </button>
+            );
+          })}
+        </div>
         {activeTab && (
           <section
             className={cn(
-              "absolute bottom-full z-[100] mb-2 w-72 rounded-xl border border-ink-100 bg-paper p-4 text-ink-900 shadow-2xl",
-              side === "left" ? "left-0" : "right-0",
+              "absolute bottom-1/2 z-[100] w-72 translate-y-1/2 rounded-xl border border-ink-100 bg-paper p-4 text-ink-900 shadow-2xl",
+              side === "left" ? "left-full ml-2" : "right-full mr-2",
             )}
           >
             {renderPanelContent(activeTab)}
@@ -991,15 +990,14 @@ export function PresentationMode({
         <button
           type="button"
           onClick={onExit}
-          aria-label="下课"
+          aria-label="左侧下课"
           className="flex h-8 items-center gap-1 rounded-lg bg-red-500/15 px-2.5 text-xs font-medium text-red-100 transition-colors hover:bg-red-500/30"
         >
           <LogOut className="h-3.5 w-3.5" />
           下课
         </button>
       )}
-      {renderSideControls(side)}
-      <div className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />
+      {side === "left" && <div className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />}
       <button
         type="button"
         onClick={goPrev}
@@ -1020,6 +1018,67 @@ export function PresentationMode({
       >
         <ChevronRight className="h-4 w-4" />
       </button>
+      {side === "right" && (
+        <>
+          <div className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={onExit}
+            aria-label="右侧下课"
+            className="flex h-8 items-center gap-1 rounded-lg bg-red-500/15 px-2.5 text-xs font-medium text-red-100 transition-colors hover:bg-red-500/30"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            下课
+          </button>
+        </>
+      )}
+    </div>
+  );
+
+  const renderBoardSideControls = (board: BoardPage, label: string, side: Side) => (
+    <div
+      data-board-side-controls={side}
+      className={cn(
+        "pointer-events-auto absolute top-1/2 z-20 flex max-h-[calc(100%_-_5rem)] -translate-y-1/2 flex-col items-center gap-0.5 overflow-y-auto",
+        side === "left" ? "left-1" : "right-1",
+      )}
+    >
+      <button
+        type="button"
+        aria-label={`从${side === "left" ? "左侧" : "右侧"}在${label}中新增书写区`}
+        onClick={() => addWritingArea(board.id)}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-transparent text-ink-500 drop-shadow-sm transition-colors hover:bg-paper/60 hover:text-teal-700"
+        title="新增书写区"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+      <div
+        role="tablist"
+        aria-label={`${label}${side === "left" ? "左侧" : "右侧"}书写区切换`}
+        className="flex flex-col items-center gap-0.5"
+      >
+        {board.writingAreas.map((writingArea, writingAreaIndex) => {
+          const selected = board.activeWritingAreaId === writingArea.id;
+          return (
+            <button
+              key={writingArea.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-label={`从${side === "left" ? "左侧" : "右侧"}切换到${label}书写区 ${writingAreaIndex + 1}`}
+              onClick={() => selectWritingArea(board.id, writingArea.id)}
+              className={cn(
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-transparent text-[10px] font-semibold drop-shadow-sm transition-colors",
+                selected
+                  ? "bg-ink-900/55 text-paper"
+                  : "text-ink-600 hover:bg-paper/60 hover:text-ink-900",
+              )}
+            >
+              {writingAreaIndex + 1}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 
@@ -1073,6 +1132,8 @@ export function PresentationMode({
           className="z-10"
         />
 
+        {renderSideRail("left")}
+        {renderSideRail("right")}
         {renderPageNavigation("left")}
         {renderPageNavigation("right")}
 
@@ -1149,7 +1210,7 @@ export function PresentationMode({
                   );
                 })}
 
-                <div className="pointer-events-none absolute left-3 right-3 top-3 z-20 flex items-center justify-between">
+                <div className="pointer-events-none absolute left-3 top-3 z-20">
                   <button
                     type="button"
                     aria-label={`移动${label}`}
@@ -1161,59 +1222,10 @@ export function PresentationMode({
                   >
                     <Move className="h-3.5 w-3.5" />
                   </button>
-                  <button
-                    type="button"
-                    aria-label={`删除${label}`}
-                    onClick={() => removeBoard(board.id)}
-                    className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper/50 text-ink-500 shadow hover:bg-red-50/90 hover:text-red-600"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
                 </div>
 
-                <div
-                  data-board-side-controls="left"
-                  className="pointer-events-none absolute left-1 top-1/2 z-20 -translate-y-1/2"
-                >
-                  <button
-                    type="button"
-                    aria-label={`在${label}中新增书写区`}
-                    onClick={() => addWritingArea(board.id)}
-                    className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-ink-500 drop-shadow-sm transition-colors hover:bg-paper/60 hover:text-teal-700"
-                    title="新增书写区"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-
-                <div
-                  data-board-side-controls="right"
-                  role="tablist"
-                  aria-label={`${label}书写区切换`}
-                  className="pointer-events-auto absolute right-1 top-1/2 z-20 flex max-h-[calc(100%_-_5rem)] -translate-y-1/2 flex-col items-center gap-0.5 overflow-y-auto"
-                >
-                  {board.writingAreas.map((writingArea, writingAreaIndex) => {
-                    const selected = board.activeWritingAreaId === writingArea.id;
-                    return (
-                      <button
-                        key={writingArea.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={selected}
-                        aria-label={`切换到${label}书写区 ${writingAreaIndex + 1}`}
-                        onClick={() => selectWritingArea(board.id, writingArea.id)}
-                        className={cn(
-                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-transparent text-[10px] font-semibold drop-shadow-sm transition-colors",
-                          selected
-                            ? "bg-ink-900/55 text-paper"
-                            : "text-ink-600 hover:bg-paper/60 hover:text-ink-900",
-                        )}
-                      >
-                        {writingAreaIndex + 1}
-                      </button>
-                    );
-                  })}
-                </div>
+                {renderBoardSideControls(board, label, "left")}
+                {renderBoardSideControls(board, label, "right")}
               </div>
 
               {BOARD_RESIZE_HANDLES.map((handle) => (
