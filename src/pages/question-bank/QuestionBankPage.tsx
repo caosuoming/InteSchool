@@ -1114,7 +1114,7 @@ export default function QuestionBankPage({
                   onRemoveFromDefault={defaultBasket ? handleRemoveFromDefaultBasket : undefined}
                   isInDefaultBasket={defaultBasket?.questionIds?.includes(q.id) || false}
                   onShowUsageDetail={(question) => setUsageDetailModal({ open: true, question })}
-                  onNavigateToLecture={(lectureId) => navigate(`/lectures/${lectureId}/edit?preview=1`)}
+                  onNavigateToLecture={(lectureId) => navigate(`/lectures/${lectureId}/preview`)}
                   onQuickEdit={setQuickEditQuestion}
                   onShare={setShareQuestion}
                   onAdapt={setAdaptingQuestion}
@@ -1635,7 +1635,7 @@ export default function QuestionBankPage({
                       <button
                         onClick={() => {
                           setUsageDetailModal(null);
-                          navigate(`/lectures/${lec.id}/edit?preview=1`);
+                          navigate(`/lectures/${lec.id}/preview`);
                         }}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-gold-700 hover:bg-gold-100 transition-colors flex-shrink-0 ml-3"
                         title="进入讲义预览"
