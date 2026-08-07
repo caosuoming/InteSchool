@@ -5,20 +5,29 @@ import LecturePreviewPage from "./LecturePreviewPage";
 import { lectureService } from "@/services/lecture";
 import { classService } from "@/services/class";
 import { questionService } from "@/services/question";
+import { analyticsService } from "@/services/analytics";
 import type { Lecture, Question, SchoolClass, Student } from "@/types";
 
 vi.mock("@/services/lecture", () => ({
-  lectureService: { getLecture: vi.fn() },
+  lectureService: { getLecture: vi.fn(), updateLecture: vi.fn() },
 }));
 vi.mock("@/services/class", () => ({
   classService: {
     getClassesByIds: vi.fn(),
     listStudentsByClass: vi.fn(),
+    listStudentsBySchool: vi.fn(),
     getStudent: vi.fn(),
   },
 }));
 vi.mock("@/services/question", () => ({
   questionService: { getQuestion: vi.fn() },
+}));
+vi.mock("@/services/analytics", () => ({
+  analyticsService: {
+    listAnswerRecordsByLecture: vi.fn(),
+    saveAnswerRecord: vi.fn(),
+    batchSaveAnswerRecords: vi.fn(),
+  },
 }));
 
 const lecture: Lecture = {
@@ -156,8 +165,13 @@ describe("LecturePreviewPage", () => {
     vi.mocked(lectureService.getLecture).mockResolvedValue(lecture);
     vi.mocked(classService.getClassesByIds).mockResolvedValue([schoolClass]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([classStudent]);
+    vi.mocked(classService.listStudentsBySchool).mockResolvedValue([classStudent, explicitStudent]);
     vi.mocked(classService.getStudent).mockResolvedValue(explicitStudent);
     vi.mocked(questionService.getQuestion).mockResolvedValue(question);
+    vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([]);
+    vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
+    vi.mocked(analyticsService.batchSaveAnswerRecords).mockResolvedValue([]);
+    vi.mocked(lectureService.updateLecture).mockResolvedValue(lecture);
   });
 
   it("renders a synchronized two-column preview with question metadata", async () => {

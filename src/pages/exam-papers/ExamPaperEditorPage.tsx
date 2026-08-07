@@ -56,6 +56,7 @@ import {
 } from "@/pages/exam-papers/exam-paper-editor-helpers";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type {
+  AnswerRecord,
   AnyClass,
   Basket,
   ExamPaper,
@@ -286,6 +287,7 @@ export default function ExamPaperEditorPage() {
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("all");
   const [answeredQuestionIds, setAnsweredQuestionIds] = useState<Set<string>>(new Set());
   const [questionProgress, setQuestionProgress] = useState<Record<string, QuestionProgress>>({});
+  const [answerRecords, setAnswerRecords] = useState<AnswerRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
@@ -460,24 +462,28 @@ export default function ExamPaperEditorPage() {
     if (selectedStudentIds.length === 0) {
       setAnsweredQuestionIds(new Set());
       setQuestionProgress({});
+      setAnswerRecords([]);
       return;
     }
     let cancelled = false;
     analyticsService.listAnswerRecordsByStudents(selectedStudentIds, dateRange)
       .then((records) => {
         if (cancelled) return;
-        setAnsweredQuestionIds(new Set(records.map((record) => record.questionId)));
-        setQuestionProgress(buildQuestionProgress(records, selectedStudentIds));
+        const paperRecords = records.filter((record) => record.lectureId === id);
+        setAnswerRecords(paperRecords);
+        setAnsweredQuestionIds(new Set(paperRecords.map((record) => record.questionId)));
+        setQuestionProgress(buildQuestionProgress(paperRecords, selectedStudentIds));
       })
       .catch(() => {
         if (cancelled) return;
+        setAnswerRecords([]);
         setAnsweredQuestionIds(new Set());
         setQuestionProgress({});
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedStudentIds, dateRange]);
+  }, [selectedStudentIds, dateRange, id]);
 
   const filteredStudents = useMemo(() => {
     if (!selectedClassId) return students;
@@ -1213,7 +1219,9 @@ export default function ExamPaperEditorPage() {
       if (pendingRecords.length > 0) {
         await analyticsService.batchSaveAnswerRecords(pendingRecords);
       }
-      const refreshedRecords = await analyticsService.listAnswerRecordsByStudents(selectedStudentIds, dateRange);
+      const refreshedRecords = (await analyticsService.listAnswerRecordsByStudents(selectedStudentIds, dateRange))
+        .filter((record) => record.lectureId === paper.id);
+      setAnswerRecords(refreshedRecords);
       setAnsweredQuestionIds(new Set(refreshedRecords.map((record) => record.questionId)));
       setQuestionProgress(buildQuestionProgress(refreshedRecords, selectedStudentIds));
       toast.success(
@@ -1225,6 +1233,26 @@ export default function ExamPaperEditorPage() {
       toast.error("批量标注失败", error instanceof Error ? error.message : undefined);
     } finally {
       setMarkingAllDone(false);
+    }
+  };
+
+  const handleToggleStudentUsage = async (studentId: string, questionId: string, used: boolean) => {
+    if (!paper) return;
+    try {
+      await analyticsService.saveAnswerRecord({
+        studentId,
+        questionId,
+        lectureId: paper.id,
+        score: used ? null : "done",
+        source: "manual",
+      });
+      const refreshedRecords = (await analyticsService.listAnswerRecordsByStudents(selectedStudentIds, dateRange))
+        .filter((record) => record.lectureId === paper.id);
+      setAnswerRecords(refreshedRecords);
+      setAnsweredQuestionIds(new Set(refreshedRecords.map((record) => record.questionId)));
+      setQuestionProgress(buildQuestionProgress(refreshedRecords, selectedStudentIds));
+    } catch (error) {
+      toast.error("更新使用情况失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -1275,6 +1303,15 @@ export default function ExamPaperEditorPage() {
           icon={<FileSpreadsheet className="w-5 h-5" />}
           action={
             <div className="no-print flex items-center gap-2">
+              {!prepTaskId && (
+                <Button variant="outline" onClick={() => setShowStudentPicker(true)}>
+                  <Users className="w-4 h-4" />
+                  <span className="max-w-48 truncate">
+                    {selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择发布对象"}
+                  </span>
+                  {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
+                </Button>
+              )}
               {!prepTaskId && paper?.teacherId === teacher?.id && (
                 <Button variant="outline" onClick={handleSendToMyLessons} loading={sendingToLessons}>
                   <BookOpen className="w-4 h-4" />
@@ -1288,9 +1325,9 @@ export default function ExamPaperEditorPage() {
                 </Button>
               )}
               {!prepTaskId && (
-                <Button variant="outline" onClick={() => setPublishOpen(true)}>
+                <Button variant="outline" onClick={() => setPublishOpen(true)} disabled={selectedStudentIds.length === 0}>
                   <Send className="w-4 h-4" />
-                  选择发布对象
+                  发布试卷
                 </Button>
               )}
               <Button
@@ -1322,8 +1359,22 @@ export default function ExamPaperEditorPage() {
               )}
               right={(
                 <div data-testid="exam-paper-preview-details">
-                  <div className="font-serif text-sm font-semibold text-ink-900">题目信息</div>
-                  <div className="mt-1 text-xs leading-5 text-ink-400">与左侧对应题目同步排列并共同滚动</div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-serif text-sm font-semibold text-ink-900">题目信息与使用情况</div>
+                      <div className="mt-1 text-xs leading-5 text-ink-400">可逐题调整所选学生是否使用该题</div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleMarkAllDone}
+                      loading={markingAllDone}
+                      disabled={selectedStudentIds.length === 0 || paperQuestions.length === 0}
+                    >
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      全部设为使用
+                    </Button>
+                  </div>
                 </div>
               )}
             />
@@ -1401,6 +1452,10 @@ export default function ExamPaperEditorPage() {
                           isInDefaultBasket={isInDefaultBasket(paperQuestion.questionId)}
                           onAddToBasket={() => handleAddToDefaultBasket(paperQuestion.questionId)}
                           onRemoveFromBasket={() => paperQuestion.questionId && handleRemoveFromDefault(paperQuestion.questionId)}
+                          completionQuestionId={getCompletionQuestionId(paperQuestion)}
+                          students={students.filter((student) => selectedStudentIds.includes(student.id))}
+                          answerRecords={answerRecords}
+                          onToggleStudentUsage={handleToggleStudentUsage}
                         />
                       ) : undefined}
                     />
@@ -1455,6 +1510,10 @@ export default function ExamPaperEditorPage() {
                           isInDefaultBasket={isInDefaultBasket(item.pq.questionId)}
                           onAddToBasket={() => handleAddToDefaultBasket(item.pq.questionId)}
                           onRemoveFromBasket={() => item.pq.questionId && handleRemoveFromDefault(item.pq.questionId)}
+                          completionQuestionId={getCompletionQuestionId(item.pq)}
+                          students={students.filter((student) => selectedStudentIds.includes(student.id))}
+                          answerRecords={answerRecords}
+                          onToggleStudentUsage={handleToggleStudentUsage}
                         />
                       )}
                     />
@@ -1479,6 +1538,10 @@ export default function ExamPaperEditorPage() {
                         isInDefaultBasket={isInDefaultBasket(paperQuestion.questionId)}
                         onAddToBasket={() => handleAddToDefaultBasket(paperQuestion.questionId)}
                         onRemoveFromBasket={() => paperQuestion.questionId && handleRemoveFromDefault(paperQuestion.questionId)}
+                        completionQuestionId={getCompletionQuestionId(paperQuestion)}
+                        students={students.filter((student) => selectedStudentIds.includes(student.id))}
+                        answerRecords={answerRecords}
+                        onToggleStudentUsage={handleToggleStudentUsage}
                       />
                     )}
                   />
@@ -1528,6 +1591,15 @@ export default function ExamPaperEditorPage() {
               <Eye className="w-4 h-4" />
               预览
             </Button>
+            {!prepTaskId && (
+              <Button variant="outline" onClick={() => setShowStudentPicker(true)}>
+                <Users className="w-4 h-4" />
+                <span className="max-w-48 truncate">
+                  {selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择发布对象"}
+                </span>
+                {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
+              </Button>
+            )}
             <Button variant="gold" onClick={handleSave} loading={saving}>
               <Save className="w-4 h-4" />
               保存
@@ -1552,9 +1624,9 @@ export default function ExamPaperEditorPage() {
             <Layout className="w-4 h-4" />
             制作答题卡
           </Button>
-          <Button variant="outline" onClick={() => setPublishOpen(true)}>
+          <Button variant="outline" onClick={() => setPublishOpen(true)} disabled={selectedStudentIds.length === 0}>
             <Send className="w-4 h-4" />
-            选择发布对象
+            发布试卷
           </Button>
         </div>
       )}
@@ -2777,6 +2849,10 @@ function PreviewQuestionDetails({
   isInDefaultBasket,
   onAddToBasket,
   onRemoveFromBasket,
+  completionQuestionId,
+  students,
+  answerRecords,
+  onToggleStudentUsage,
 }: {
   pq: ExamPaperQuestion;
   index: number;
@@ -2787,6 +2863,10 @@ function PreviewQuestionDetails({
   isInDefaultBasket: boolean;
   onAddToBasket: () => void;
   onRemoveFromBasket: () => void;
+  completionQuestionId: string;
+  students: Student[];
+  answerRecords: AnswerRecord[];
+  onToggleStudentUsage: (studentId: string, questionId: string, used: boolean) => Promise<void>;
 }) {
   const knowledgeNames = (question?.knowledgePointIds || [])
     .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
@@ -2805,6 +2885,35 @@ function PreviewQuestionDetails({
       </div>
 
       <QuestionProgressBadge progress={progress} />
+
+      {students.length > 0 && (
+        <div className="mt-2 border-t border-ink-100 pt-2">
+          <div className="mb-1.5 text-[11px] font-medium text-ink-500">学生使用情况</div>
+          <div className="flex flex-wrap gap-1.5">
+            {students.map((student) => {
+              const used = answerRecords.some(
+                (record) => record.studentId === student.id && record.questionId === completionQuestionId,
+              );
+              return (
+                <button
+                  key={student.id}
+                  type="button"
+                  onClick={() => onToggleStudentUsage(student.id, completionQuestionId, used)}
+                  className={cn(
+                    "no-print rounded-full border px-2 py-0.5 text-[10px] transition-colors",
+                    used
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-ink-200 bg-white text-ink-500 hover:border-gold-300",
+                  )}
+                  title={`${student.name}：${used ? "已使用，点击取消" : "未使用，点击设为使用"}`}
+                >
+                  {student.name} · {used ? "已使用" : "未使用"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="mt-2 space-y-1.5 text-[11px] leading-5 text-ink-500">
         {knowledgeNames.length > 0 ? (
