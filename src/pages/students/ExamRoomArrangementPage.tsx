@@ -366,6 +366,43 @@ function ChoiceCard({ checked, title, description, onClick }: {
   );
 }
 
+function ClassSwitchTabs({
+  classes,
+  activeClassId,
+  onChange,
+  ariaLabel,
+}: {
+  classes: ExamArrangementContext["classes"];
+  activeClassId: string;
+  onChange: (classId: string) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2" role="tablist" aria-label={ariaLabel}>
+      {classes.map((classItem) => {
+        const active = classItem.id === activeClassId;
+        return (
+          <button
+            key={classItem.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(classItem.id)}
+            className={cn(
+              "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+              active
+                ? "border-gold-300 bg-gold-50 text-gold-800"
+                : "border-ink-200 bg-paper text-ink-500 hover:border-ink-300 hover:text-ink-700",
+            )}
+          >
+            {classItem.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ExamRoomArrangementPage({ embedded = false }: { embedded?: boolean }) {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const schoolId = getCurrentAffiliation()?.schoolId || null;
@@ -384,7 +421,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState("");
-  const [studentClassFilter, setStudentClassFilter] = useState("");
+  const [settingsClassId, setSettingsClassId] = useState("");
   const [bulkCapacity, setBulkCapacity] = useState(30);
   const [newPlanOpen, setNewPlanOpen] = useState(false);
   const [newPlanName, setNewPlanName] = useState("");
@@ -408,6 +445,21 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const examGroups = useMemo(() => (
     draft && context ? summarizeExamGroups(draft, context) : []
   ), [context, draft]);
+  const activeSettingsClassId = context?.classes.some((classItem) => classItem.id === settingsClassId)
+    ? settingsClassId
+    : context?.classes[0]?.id || "";
+  const activeSettingsClass = context?.classes.find((classItem) => classItem.id === activeSettingsClassId) || null;
+  const activeSettingsClassRule = draft?.classRules.find((rule) => rule.classId === activeSettingsClassId) || null;
+  const activeClassMajoritySubjects = useMemo(() => (
+    context && draft && activeSettingsClass
+      ? mostCommonClassSubjects(
+        activeSettingsClass.id,
+        context,
+        draft.studentSubjects,
+        activeSettingsClassRule?.defaultSubjects || draft.subjects,
+      )
+      : []
+  ), [activeSettingsClass, activeSettingsClassRule, context, draft]);
 
   useEffect(() => {
     if (!schoolId) {
@@ -761,18 +813,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     if (!context) return [];
     const keyword = studentKeyword.trim().toLowerCase();
     return context.students.filter((student) => {
-      if (studentClassFilter && student.classId !== studentClassFilter) return false;
+      if (student.classId !== activeSettingsClassId) return false;
       return !keyword || student.name.toLowerCase().includes(keyword) || student.studentNo.toLowerCase().includes(keyword);
     });
-  }, [context, studentClassFilter, studentKeyword]);
-
-  const filteredStudentGroups = useMemo(() => {
-    if (!context) return [];
-    return context.classes.map((classItem) => ({
-      classItem,
-      students: filteredStudents.filter((student) => student.classId === classItem.id),
-    })).filter((group) => group.students.length > 0);
-  }, [context, filteredStudents]);
+  }, [activeSettingsClassId, context, studentKeyword]);
 
   const classAssignmentGroups = useMemo(() => {
     if (!context) return [];
@@ -1035,71 +1079,81 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   <div className="text-sm font-medium text-ink-800">班级学科固定考场</div>
                   <div className="mt-1 text-xs text-ink-500">默认自动分配；个别班级的个别学科可固定到指定考场。</div>
                   <div className="mt-3 space-y-3">
-                    {context.classes.map((classItem) => {
-                      const rule = draft.classRules.find((item) => item.classId === classItem.id);
-                      return (
-                        <div key={classItem.id} className="rounded-lg border border-ink-100 bg-paper p-4">
-                          <div className="mb-3 text-sm font-medium text-ink-900">{classItem.name}</div>
-                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                            {draft.subjects.map((subject) => {
-                              const fixedRoomId = rule?.fixedSubjectRoomIds?.[subject] || "";
-                              return (
-                                <label key={subject} className="flex items-center gap-2 text-xs text-ink-600">
-                                  <span className="w-10 shrink-0">{subject}</span>
-                                  <select
-                                    aria-label={`${classItem.name}${subject}固定考场`}
-                                    value={fixedRoomId}
-                                    onChange={(event) => setClassSubjectRoom(classItem.id, subject, event.target.value)}
-                                    className="min-w-0 flex-1 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700"
-                                  >
-                                    <option value="">自动分配</option>
-                                    {draft.rooms.map((room) => <option key={room.id} value={room.id}>{room.number || room.name}</option>)}
-                                  </select>
-                                </label>
-                              );
-                            })}
-                          </div>
+                    <ClassSwitchTabs
+                      classes={context.classes}
+                      activeClassId={activeSettingsClassId}
+                      onChange={setSettingsClassId}
+                      ariaLabel="班级学科固定考场班级"
+                    />
+                    {activeSettingsClass && (
+                      <div className="rounded-lg border border-ink-100 bg-paper p-4">
+                        <div className="mb-3 text-sm font-medium text-ink-900">{activeSettingsClass.name}</div>
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {draft.subjects.map((subject) => {
+                            const fixedRoomId = activeSettingsClassRule?.fixedSubjectRoomIds?.[subject] || "";
+                            return (
+                              <label key={subject} className="flex items-center gap-2 text-xs text-ink-600">
+                                <span className="w-10 shrink-0">{subject}</span>
+                                <select
+                                  aria-label={`${activeSettingsClass.name}${subject}固定考场`}
+                                  value={fixedRoomId}
+                                  onChange={(event) => setClassSubjectRoom(activeSettingsClass.id, subject, event.target.value)}
+                                  className="min-w-0 flex-1 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700"
+                                >
+                                  <option value="">自动分配</option>
+                                  {draft.rooms.map((room) => <option key={room.id} value={room.id}>{room.number || room.name}</option>)}
+                                </select>
+                              </label>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>
 
               <Card className="p-0 overflow-hidden">
-                <div className="border-b border-ink-100 px-5 py-4"><div className="font-medium text-ink-900">学生考试科目</div><div className="mt-0.5 text-xs text-ink-500">先按班级批量设置，再逐个学生微调；与本班多数学生选科不同的条目会加深背景。</div></div>
-                <div className="grid gap-3 border-b border-ink-100 p-4 md:grid-cols-2">
+                <div className="border-b border-ink-100 px-5 py-4">
+                  <div className="font-medium text-ink-900">学生考试科目</div>
+                  <div className="mt-0.5 text-xs text-ink-500">先切换班级批量设置，再逐个学生微调；与本班多数学生选科不同的条目会加深背景。</div>
+                  <div className="mt-3">
+                    <ClassSwitchTabs
+                      classes={context.classes}
+                      activeClassId={activeSettingsClassId}
+                      onChange={setSettingsClassId}
+                      ariaLabel="学生考试科目班级"
+                    />
+                  </div>
+                </div>
+                <div className="border-b border-ink-100 p-4">
                   <Input value={studentKeyword} onChange={(event) => setStudentKeyword(event.target.value)} placeholder="搜索姓名或学号" aria-label="搜索学生" />
-                  <Select value={studentClassFilter} onChange={(event) => setStudentClassFilter(event.target.value)} placeholder="全部班级" options={context.classes.map((item) => ({ value: item.id, label: item.name }))} />
                 </div>
                 <div className="max-h-[640px] overflow-auto divide-y divide-ink-100">
-                  {filteredStudentGroups.map(({ classItem, students }) => {
-                    const rule = draft.classRules.find((item) => item.classId === classItem.id);
-                    const majoritySubjects = mostCommonClassSubjects(classItem.id, context, draft.studentSubjects, rule?.defaultSubjects || draft.subjects);
-                    return (
-                      <section key={classItem.id}>
+                  {activeSettingsClass && (
+                    <section key={activeSettingsClass.id}>
                         <div className="sticky top-0 z-10 border-b border-ink-100 bg-ink-50/95 px-5 py-3 backdrop-blur">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
-                              <div className="text-sm font-medium text-ink-900">{classItem.name} · {students.length} 人</div>
+                              <div className="text-sm font-medium text-ink-900">{activeSettingsClass.name} · {filteredStudents.length} 人</div>
                               <div className="text-xs text-ink-500">批量设置会同步覆盖本班学生，之后仍可单独微调。</div>
                             </div>
-                            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${classItem.name}批量考试科目`}>
+                            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${activeSettingsClass.name}批量考试科目`}>
                               {draft.subjects.map((subject) => (
                                 <CheckboxPill
                                   key={subject}
-                                  checked={rule?.defaultSubjects.includes(subject) || false}
+                                  checked={activeSettingsClassRule?.defaultSubjects.includes(subject) || false}
                                   label={subject}
-                                  onClick={() => toggleClassSubject(classItem.id, subject)}
+                                  onClick={() => toggleClassSubject(activeSettingsClass.id, subject)}
                                 />
                               ))}
                             </div>
                           </div>
                         </div>
                         <div className="divide-y divide-ink-100">
-                          {students.map((student) => {
+                          {filteredStudents.map((student) => {
                             const selection = draft.studentSubjects.find((item) => item.studentId === student.id);
-                            const classSubjects = rule?.defaultSubjects || majoritySubjects;
+                            const classSubjects = activeSettingsClassRule?.defaultSubjects || activeClassMajoritySubjects;
                             const differsFromClass = Boolean(selection && !sameSubjects(selection.subjects, classSubjects));
                             return (
                               <div
@@ -1119,7 +1173,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                                     <span className="font-normal text-ink-400">{student.studentNo}</span>
                                     {student.isExternal && <Badge>借读生</Badge>}
                                   </div>
-                                  <div className="text-xs text-ink-400">{classItem.name}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div>
+                                  <div className="text-xs text-ink-400">{activeSettingsClass.name}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div>
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
                                 <select
@@ -1140,10 +1194,12 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                               </div>
                             );
                           })}
+                          {filteredStudents.length === 0 && (
+                            <div className="px-5 py-10 text-center text-sm text-ink-400">当前班级没有匹配的学生</div>
+                          )}
                         </div>
                       </section>
-                    );
-                  })}
+                  )}
                 </div>
               </Card>
 
