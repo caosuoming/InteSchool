@@ -80,11 +80,21 @@ function mathRanges(value: string): TextRange[] {
   return ranges;
 }
 
-function keepMathDelimitersIntact(value: string, start: number, end: number): TextRange {
+function markdownImageRanges(value: string): TextRange[] {
+  const ranges: TextRange[] = [];
+  const pattern = /!\[[^\]]*\]\([^)]+\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return ranges;
+}
+
+function keepRichTokensIntact(value: string, start: number, end: number): TextRange {
   let expandedStart = start;
   let expandedEnd = end;
 
-  for (const range of mathRanges(value)) {
+  for (const range of [...mathRanges(value), ...markdownImageRanges(value)]) {
     const touchesRange = expandedStart < range.end && expandedEnd > range.start;
     const startsInsideRange = expandedStart > range.start && expandedStart < range.end;
     const endsInsideRange = expandedEnd > range.start && expandedEnd < range.end;
@@ -119,7 +129,7 @@ function differenceParts(value: string, peer: string): DifferenceParts {
   }
 
   const changedEnd = chars.length - suffixLength;
-  const range = keepMathDelimitersIntact(value, prefixLength, changedEnd);
+  const range = keepRichTokensIntact(value, prefixLength, changedEnd);
 
   return {
     prefix: chars.slice(0, range.start).join(""),
