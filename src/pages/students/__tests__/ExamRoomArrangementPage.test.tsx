@@ -276,6 +276,8 @@ describe("ExamRoomArrangementPage", () => {
     expect(within(classTable).getAllByRole("row")).toHaveLength(2);
     expect(within(classTable).getByText("物理")).toBeInTheDocument();
     expect(screen.getByLabelText("选择高三（1）班")).toBeChecked();
+    expect(screen.getByRole("button", { name: "打印已选班级" })).toBeEnabled();
+    expect(screen.getAllByTestId("class-arrangement-print-page")).toHaveLength(1);
 
     await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
@@ -301,7 +303,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByText("已选择 0 / 1 个考场，共 0 张桌贴")).toBeInTheDocument();
   });
 
-  it("splits compact desk labels into twenty-item print pages", async () => {
+  it("keeps every desk label in one room on one adaptive 8K print page", async () => {
     const user = userEvent.setup();
     const assignments = Array.from({ length: 21 }, (_, index) => ({
       ...savedArrangement.assignments[0],
@@ -319,6 +321,9 @@ describe("ExamRoomArrangementPage", () => {
     await user.click(await screen.findByRole("tab", { name: "桌贴预览" }));
 
     expect(screen.getAllByTestId("desk-label-card")).toHaveLength(21);
-    expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(2);
+    const [printPage] = screen.getAllByTestId("desk-label-print-page");
+    expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
+    expect(printPage).toHaveAttribute("data-density", "compact");
+    expect(printPage.querySelectorAll(".exam-desk-label")).toHaveLength(21);
   });
 });

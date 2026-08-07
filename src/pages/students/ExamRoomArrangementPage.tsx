@@ -48,12 +48,37 @@ const CORE_SUBJECTS = ["语文", "数学", "英语"];
 
 type ViewMode = "settings" | "result";
 type PreviewMode = "class" | "desk";
-const DESK_LABELS_PER_PAGE = 20;
 
-function chunkItems<T>(items: T[], size: number): T[][] {
-  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => (
-    items.slice(index * size, (index + 1) * size)
-  ));
+function getDeskLabelPrintLayout(labelCount: number): {
+  columns: number;
+  rows: number;
+  density: "normal" | "compact" | "dense";
+} {
+  const count = Math.max(1, labelCount);
+  const printableWidth = 246;
+  const printableHeight = 356;
+  const targetCardAspect = 0.9;
+  let best = { columns: 1, rows: count, score: Number.POSITIVE_INFINITY };
+
+  for (let columns = 1; columns <= Math.min(8, count); columns += 1) {
+    const rows = Math.ceil(count / columns);
+    const cardAspect = (printableWidth / columns) / (printableHeight / rows);
+    const unusedCells = columns * rows - count;
+    const score = Math.abs(Math.log(cardAspect / targetCardAspect)) + (unusedCells / count) * 0.12;
+    if (score < best.score) best = { columns, rows, score };
+  }
+
+  return {
+    columns: best.columns,
+    rows: best.rows,
+    density: count <= 20 ? "normal" : count <= 36 ? "compact" : "dense",
+  };
+}
+
+function getClassPrintDensity(studentCount: number): "normal" | "compact" | "dense" {
+  if (studentCount > 45) return "dense";
+  if (studentCount > 30) return "compact";
+  return "normal";
 }
 
 function uniqueSubjects(values: string[]): string[] {
@@ -320,9 +345,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     () => deskLabels.filter((label) => selectedRoomIds.has(label.roomId)),
     [deskLabels, selectedRoomIds],
   );
-  const selectedDeskLabelPages = useMemo(
-    () => chunkItems(selectedDeskLabels, DESK_LABELS_PER_PAGE),
-    [selectedDeskLabels],
+  const selectedDeskRoomGroups = useMemo(
+    () => deskRoomGroups.filter((group) => selectedRoomIds.has(group.roomId)),
+    [deskRoomGroups, selectedRoomIds],
   );
   const examGroups = useMemo(() => (
     draft && context ? summarizeExamGroups(draft, context) : []
@@ -637,6 +662,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       students: groupStudentArrangements(assignments.filter((item) => item.classId === classItem.id)),
     })).filter((group) => group.students.length > 0);
   }, [assignments, context]);
+  const selectedClassAssignmentGroups = useMemo(
+    () => classAssignmentGroups.filter(({ classItem }) => selectedClassIds.has(classItem.id)),
+    [classAssignmentGroups, selectedClassIds],
+  );
 
   useEffect(() => {
     if (view !== "result") return;
@@ -946,9 +975,14 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={() => setView("settings")}><RotateCcw className="h-4 w-4" />重新排考场</Button>
                     {previewMode === "class" ? (
-                      <Button variant="gold" disabled={selectedClassIds.size === 0} onClick={() => void downloadSelectedClasses()}>
-                        <Download className="h-4 w-4" />下载已选班级
-                      </Button>
+                      <>
+                        <Button variant="outline" disabled={selectedClassIds.size === 0} onClick={() => window.print()}>
+                          <Printer className="h-4 w-4" />打印已选班级
+                        </Button>
+                        <Button variant="gold" disabled={selectedClassIds.size === 0} onClick={() => void downloadSelectedClasses()}>
+                          <Download className="h-4 w-4" />下载已选班级
+                        </Button>
+                      </>
                     ) : (
                       <>
                         <Button variant="outline" disabled={selectedDeskLabels.length === 0} onClick={() => window.print()}>
@@ -1035,25 +1069,25 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     <Badge>{students.length} 名学生</Badge>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="min-w-[760px] w-full text-sm">
+                    <table className="min-w-[700px] w-full text-xs">
                       <thead className="bg-ink-50 text-xs text-ink-500">
                         <tr>
-                          <th className="w-36 px-4 py-2.5 text-left font-medium">姓名</th>
-                          <th className="w-40 px-4 py-2.5 text-left font-medium">学号</th>
-                          <th className="px-4 py-2.5 text-left font-medium">考试安排</th>
+                          <th className="w-28 px-3 py-2 text-left font-medium">姓名</th>
+                          <th className="w-32 px-3 py-2 text-left font-medium">学号</th>
+                          <th className="px-3 py-2 text-left font-medium">考试安排</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-ink-100">{students.map((student) => (
                         <tr key={student.key} className="align-top">
-                          <td className="px-4 py-3 font-medium text-ink-900">{student.studentName}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-ink-700">{student.studentNo}</td>
-                          <td className="px-4 py-2">
-                            <div className="divide-y divide-ink-100 rounded-lg border border-ink-100">{student.assignments.map((item) => (
-                              <div key={item.id} className="grid gap-1 px-3 py-2.5 lg:grid-cols-[minmax(9rem,1fr)_minmax(8rem,0.7fr)_minmax(12rem,1.2fr)_auto] lg:items-center">
+                          <td className="px-3 py-2 font-medium text-ink-900">{student.studentName}</td>
+                          <td className="px-3 py-2 font-mono text-[11px] text-ink-700">{student.studentNo}</td>
+                          <td className="px-3 py-1.5">
+                            <div className="divide-y divide-ink-100 rounded-md border border-ink-100">{student.assignments.map((item) => (
+                              <div key={item.id} className="grid gap-0.5 px-2 py-1.5 lg:grid-cols-[minmax(8rem,1fr)_minmax(7rem,0.7fr)_minmax(10rem,1.2fr)_auto] lg:items-center">
                                 <div className="font-medium text-ink-900">{item.subjectLabel.split(" / ").join("、")}</div>
                                 <div className="text-ink-700">{item.roomNumber || item.roomName}</div>
                                 <div className="text-ink-600">{item.roomLocation || item.roomName}</div>
-                                <div className="text-xs text-ink-400">{item.seatNo} 号 · {item.admissionNo}</div>
+                                <div className="text-[11px] text-ink-400">{item.seatNo} 号 · {item.admissionNo}</div>
                               </div>
                             ))}</div>
                           </td>
@@ -1080,29 +1114,29 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     </label>
                     <Badge>{roomGroup.labels.length} 张桌贴</Badge>
                   </div>
-                  <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  <div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                     {roomGroup.labels.map((label) => (
-                      <article key={label.key} data-testid="desk-label-card" className="rounded-xl border-2 border-ink-300 bg-paper p-4 shadow-sm">
-                        <div className="truncate text-center font-serif text-sm font-semibold text-ink-900">{selectedArrangement?.name}</div>
-                        <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-ink-500">
+                      <article key={label.key} data-testid="desk-label-card" className="rounded-lg border border-ink-300 bg-paper p-3 shadow-sm">
+                        <div className="truncate text-center font-serif text-xs font-semibold text-ink-900">{selectedArrangement?.name}</div>
+                        <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-ink-500">
                           <span>{selectedArrangement?.examDate || "考试日期待定"}</span>
                           <span>{label.roomLocation}</span>
                         </div>
-                        <div className="mt-2 flex items-end justify-between border-y border-ink-200 py-1.5 text-ink-900">
-                          <span className="font-medium">{label.roomNumber}</span>
-                          <strong className="text-lg">{label.seatNo} 号</strong>
+                        <div className="mt-1.5 flex items-end justify-between border-y border-ink-200 py-1 text-ink-900">
+                          <span className="text-xs font-medium">{label.roomNumber}</span>
+                          <strong className="text-base">{label.seatNo} 号</strong>
                         </div>
                         <div className="divide-y divide-ink-100">{label.assignments.map((assignment) => (
-                          <div key={assignment.id} className="py-2">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="font-medium text-ink-900">{assignment.studentName}</div>
-                              <div className="text-xs font-medium text-ink-600">{assignment.subjectLabel.split(" / ").join("、")}</div>
+                          <div key={assignment.id} className="py-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="text-sm font-medium text-ink-900">{assignment.studentName}</div>
+                              <div className="text-[11px] font-medium text-ink-600">{assignment.subjectLabel.split(" / ").join("、")}</div>
                             </div>
-                            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500">
+                            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-500">
                               <span>班级：{assignment.className}</span>
                               {showDeskStudentNo && <span>学号：{assignment.studentNo}</span>}
                             </div>
-                            {showDeskAdmissionNo && <div className="mt-1 font-mono text-xs text-ink-400">准考证号：{assignment.admissionNo}</div>}
+                            {showDeskAdmissionNo && <div className="mt-0.5 font-mono text-[10px] text-ink-400">准考证号：{assignment.admissionNo}</div>}
                           </div>
                         ))}</div>
                       </article>
@@ -1115,11 +1149,73 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
             </div>
           )}
 
-          {selectedDeskLabels.length > 0 && selectedArrangement && (
-            <div className="print-only exam-desk-label-sheet">
-              {selectedDeskLabelPages.map((page, pageIndex) => (
-                <div key={pageIndex} className="exam-desk-label-page" data-testid="desk-label-print-page">
-                  {page.map((group) => (
+          {previewMode === "class" && selectedClassAssignmentGroups.length > 0 && selectedArrangement && (
+            <div className="print-only exam-class-arrangement-sheet" aria-hidden="true">
+              {selectedClassAssignmentGroups.map(({ classItem, students }) => (
+                <section
+                  key={classItem.id}
+                  className="exam-class-arrangement-page"
+                  data-density={getClassPrintDensity(students.length)}
+                  data-testid="class-arrangement-print-page"
+                >
+                  <header className="exam-class-arrangement-header">
+                    <div>
+                      <h1>{selectedArrangement.name}</h1>
+                      <p>{classItem.name} · {students.length} 名学生</p>
+                    </div>
+                    <div>{selectedArrangement.examDate || "考试日期待定"}</div>
+                  </header>
+                  <table className="exam-class-arrangement-table">
+                    <thead>
+                      <tr>
+                        <th>姓名</th>
+                        <th>学号</th>
+                        <th>考试安排（科目 / 考场 / 位置 / 座位 / 准考证号）</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {students.map((student) => (
+                        <tr key={student.key}>
+                          <td>{student.studentName}</td>
+                          <td className="exam-class-arrangement-student-no">{student.studentNo}</td>
+                          <td>
+                            <div className="exam-class-arrangement-items">
+                              {student.assignments.map((item) => (
+                                <div key={item.id} className="exam-class-arrangement-item">
+                                  <strong>{item.subjectLabel.split(" / ").join("、")}</strong>
+                                  <span>{item.roomNumber || item.roomName}</span>
+                                  <span>{item.roomLocation || item.roomName}</span>
+                                  <span>{item.seatNo} 号</span>
+                                  <span className="exam-class-arrangement-admission">{item.admissionNo}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              ))}
+            </div>
+          )}
+
+          {previewMode === "desk" && selectedDeskRoomGroups.length > 0 && selectedArrangement && (
+            <div className="print-only exam-desk-label-sheet" aria-hidden="true">
+              {selectedDeskRoomGroups.map((roomGroup) => {
+                const layout = getDeskLabelPrintLayout(roomGroup.labels.length);
+                return (
+                  <div
+                    key={roomGroup.roomId}
+                    className="exam-desk-label-page"
+                    data-density={layout.density}
+                    data-testid="desk-label-print-page"
+                    style={{
+                      gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
+                      gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    {roomGroup.labels.map((group) => (
                     <section key={group.key} className="exam-desk-label">
                       <div className="exam-desk-label-title">{selectedArrangement.name}</div>
                       <div className="exam-desk-label-meta"><span>{selectedArrangement.examDate || "考试日期待定"}</span><span>{group.roomLocation}</span></div>
@@ -1138,9 +1234,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         ))}
                       </div>
                     </section>
-                  ))}
-                </div>
-              ))}
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </>
