@@ -932,7 +932,7 @@ export function PresentationMode({
     );
   };
 
-  const renderSideRail = (side: Side) => {
+  const renderSideControls = (side: Side) => {
     const tabs: Array<{ id: SideTab; short: string; label: string; icon: typeof Eye }> = [
       { id: "display", short: "显", label: "显示内容", icon: Eye },
       { id: "ask", short: "问", label: "提问学生", icon: Users },
@@ -941,39 +941,34 @@ export function PresentationMode({
     const activeTab = sidePanel?.side === side ? sidePanel.tab : null;
     return (
       <div
-        className={cn(
-          "absolute top-1/2 z-[90] -translate-y-1/2",
-          side === "left" ? "left-2" : "right-2",
-        )}
-        onPointerDown={(event) => event.stopPropagation()}
+        data-presentation-side-controls={side}
+        className="relative flex items-center gap-0.5"
       >
-        <div className="flex flex-col overflow-hidden rounded-xl border border-white/60 bg-paper/95 shadow-2xl backdrop-blur">
-          {tabs.map(({ id, short, label, icon: Icon }) => {
-            const active = activeTab === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-label={`${side === "left" ? "左侧" : "右侧"}${label}`}
-                aria-pressed={active}
-                onClick={() => toggleSidePanel(side, id)}
-                className={cn(
-                  "flex h-12 w-11 flex-col items-center justify-center gap-0.5 border-b border-ink-100 text-ink-600 transition-colors last:border-b-0",
-                  active ? "bg-gold-400 text-ink-900" : "hover:bg-gold-50",
-                )}
-                title={label}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span className="text-xs font-semibold">{short}</span>
-              </button>
-            );
-          })}
-        </div>
+        {tabs.map(({ id, short, label, icon: Icon }) => {
+          const active = activeTab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-label={`${side === "left" ? "左侧" : "右侧"}${label}`}
+              aria-pressed={active}
+              onClick={() => toggleSidePanel(side, id)}
+              className={cn(
+                "flex h-8 w-7 flex-col items-center justify-center gap-0 text-paper/80 transition-colors",
+                active ? "rounded-md bg-gold-400 text-ink-900" : "rounded-md hover:bg-white/10 hover:text-paper",
+              )}
+              title={label}
+            >
+              <Icon className="h-3 w-3" />
+              <span className="text-[9px] font-semibold leading-3">{short}</span>
+            </button>
+          );
+        })}
         {activeTab && (
           <section
             className={cn(
-              "absolute top-1/2 w-72 -translate-y-1/2 rounded-xl border border-ink-100 bg-paper p-4 shadow-2xl",
-              side === "left" ? "left-full ml-2" : "right-full mr-2",
+              "absolute bottom-full z-[100] mb-2 w-72 rounded-xl border border-ink-100 bg-paper p-4 text-ink-900 shadow-2xl",
+              side === "left" ? "left-0" : "right-0",
             )}
           >
             {renderPanelContent(activeTab)}
@@ -986,7 +981,7 @@ export function PresentationMode({
   const renderPageNavigation = (side: Side) => (
     <div
       className={cn(
-        "absolute bottom-4 z-[90] flex items-center gap-1.5 rounded-xl border border-white/15 bg-ink-900/80 p-1.5 text-paper shadow-xl backdrop-blur",
+        "absolute bottom-3 z-[90] flex items-center gap-1 rounded-xl border border-white/15 bg-ink-900/80 p-1 text-paper shadow-xl backdrop-blur",
         side === "left" ? "left-4" : "right-4",
       )}
       aria-label={`${side === "left" ? "左侧" : "右侧"}翻页控制`}
@@ -997,21 +992,23 @@ export function PresentationMode({
           type="button"
           onClick={onExit}
           aria-label="下课"
-          className="flex h-9 items-center gap-1.5 rounded-lg bg-red-500/15 px-3 text-sm font-medium text-red-100 transition-colors hover:bg-red-500/30"
+          className="flex h-8 items-center gap-1 rounded-lg bg-red-500/15 px-2.5 text-xs font-medium text-red-100 transition-colors hover:bg-red-500/30"
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-3.5 w-3.5" />
           下课
         </button>
       )}
+      {renderSideControls(side)}
+      <div className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />
       <button
         type="button"
         onClick={goPrev}
         disabled={currentIndex === 0}
         aria-label={`${side === "left" ? "左侧" : "右侧"}上一页`}
         title="上一页"
-        className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+        className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
       >
-        <ChevronLeft className="h-5 w-5" />
+        <ChevronLeft className="h-4 w-4" />
       </button>
       <button
         type="button"
@@ -1019,9 +1016,9 @@ export function PresentationMode({
         disabled={currentIndex === slides.length - 1}
         aria-label={`${side === "left" ? "左侧" : "右侧"}下一页`}
         title="下一页"
-        className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+        className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
       >
-        <ChevronRight className="h-5 w-5" />
+        <ChevronRight className="h-4 w-4" />
       </button>
     </div>
   );
@@ -1033,17 +1030,18 @@ export function PresentationMode({
         data-testid="presentation-surface"
         className="relative flex-1 overflow-hidden bg-ink-800"
       >
-        <div className="absolute inset-0 flex items-center justify-center p-5 sm:p-7 lg:p-9">
+        <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex h-full w-full items-center justify-center">
             {displayedSlide?.type === "courseware" ? (
               <div
-                className="h-full w-full max-w-6xl overflow-hidden rounded-xl bg-paper shadow-2xl"
+                data-testid="presentation-slide-page"
+                className="h-full w-full overflow-hidden bg-paper"
                 style={{ backgroundColor: colorPreferences.pageBackgroundColor }}
               >
-                <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-[60vh]" />
+                <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-0" />
               </div>
             ) : displayedSlide ? (
-              <div className="w-full max-w-6xl">
+              <div data-testid="presentation-slide-page" className="h-full w-full">
                 <LessonSlideCanvas
                   key={displayedSlide.id}
                   elements={visibleSlideElements}
@@ -1052,7 +1050,7 @@ export function PresentationMode({
                   selectedElementId={selectedElementId}
                   onSelectElement={setSelectedElementId}
                   onElementsChange={updateVisibleElements}
-                  className="shadow-2xl"
+                  className="h-full w-full aspect-auto rounded-none shadow-none"
                   canvasStyle={{ backgroundColor: colorPreferences.pageBackgroundColor }}
                   textColor={effectiveTextColor}
                   textBackgroundColor="transparent"
@@ -1075,8 +1073,6 @@ export function PresentationMode({
           className="z-10"
         />
 
-        {renderSideRail("left")}
-        {renderSideRail("right")}
         {renderPageNavigation("left")}
         {renderPageNavigation("right")}
 
@@ -1153,62 +1149,70 @@ export function PresentationMode({
                   );
                 })}
 
-                <div className="pointer-events-none absolute left-5 right-5 top-3 z-20 flex items-center gap-1.5">
+                <div className="pointer-events-none absolute left-3 right-3 top-3 z-20 flex items-center justify-between">
                   <button
                     type="button"
                     aria-label={`移动${label}`}
-                    className="pointer-events-auto flex h-9 w-9 shrink-0 cursor-move items-center justify-center rounded-lg bg-ink-900/80 text-paper shadow-lg hover:bg-ink-900"
+                    className="pointer-events-auto flex h-8 w-8 shrink-0 cursor-move items-center justify-center rounded-lg bg-ink-900/50 text-paper shadow hover:bg-ink-900/80"
                     onPointerDown={(event) => startBoardInteraction(event, board, "move")}
                     onPointerMove={moveBoardInteraction}
                     onPointerUp={endBoardInteraction}
                     onPointerCancel={endBoardInteraction}
                   >
-                    <Move className="h-4 w-4" />
+                    <Move className="h-3.5 w-3.5" />
                   </button>
-                  <button
-                    type="button"
-                    aria-label={`在${label}中新增书写区`}
-                    onClick={() => addWritingArea(board.id)}
-                    className="pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-paper/90 text-ink-600 shadow-lg hover:bg-teal-50 hover:text-teal-700"
-                    title="新增书写区"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                  <div
-                    role="tablist"
-                    aria-label={`${label}书写区切换`}
-                    className="pointer-events-auto flex min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-lg bg-paper/75 p-0.5 shadow-sm backdrop-blur"
-                  >
-                    {board.writingAreas.map((writingArea, writingAreaIndex) => {
-                      const selected = board.activeWritingAreaId === writingArea.id;
-                      return (
-                        <button
-                          key={writingArea.id}
-                          type="button"
-                          role="tab"
-                          aria-selected={selected}
-                          aria-label={`切换到${label}书写区 ${writingAreaIndex + 1}`}
-                          onClick={() => selectWritingArea(board.id, writingArea.id)}
-                          className={cn(
-                            "flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md px-2 text-xs font-semibold transition-colors",
-                            selected
-                              ? "bg-ink-900 text-paper shadow"
-                              : "text-ink-600 hover:bg-paper hover:text-ink-900",
-                          )}
-                        >
-                          {writingAreaIndex + 1}
-                        </button>
-                      );
-                    })}
-                  </div>
                   <button
                     type="button"
                     aria-label={`删除${label}`}
                     onClick={() => removeBoard(board.id)}
-                    className="pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-paper/90 text-ink-500 shadow-lg hover:bg-red-50 hover:text-red-600"
+                    className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper/50 text-ink-500 shadow hover:bg-red-50/90 hover:text-red-600"
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-3.5 w-3.5" />
                   </button>
+                </div>
+
+                <div
+                  data-board-side-controls="left"
+                  className="pointer-events-none absolute left-1 top-1/2 z-20 -translate-y-1/2"
+                >
+                  <button
+                    type="button"
+                    aria-label={`在${label}中新增书写区`}
+                    onClick={() => addWritingArea(board.id)}
+                    className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-ink-500 drop-shadow-sm transition-colors hover:bg-paper/60 hover:text-teal-700"
+                    title="新增书写区"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                <div
+                  data-board-side-controls="right"
+                  role="tablist"
+                  aria-label={`${label}书写区切换`}
+                  className="pointer-events-auto absolute right-1 top-1/2 z-20 flex max-h-[calc(100%_-_5rem)] -translate-y-1/2 flex-col items-center gap-0.5 overflow-y-auto"
+                >
+                  {board.writingAreas.map((writingArea, writingAreaIndex) => {
+                    const selected = board.activeWritingAreaId === writingArea.id;
+                    return (
+                      <button
+                        key={writingArea.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        aria-label={`切换到${label}书写区 ${writingAreaIndex + 1}`}
+                        onClick={() => selectWritingArea(board.id, writingArea.id)}
+                        className={cn(
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-transparent text-[10px] font-semibold drop-shadow-sm transition-colors",
+                          selected
+                            ? "bg-ink-900/55 text-paper"
+                            : "text-ink-600 hover:bg-paper/60 hover:text-ink-900",
+                        )}
+                      >
+                        {writingAreaIndex + 1}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

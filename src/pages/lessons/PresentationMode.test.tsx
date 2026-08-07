@@ -116,10 +116,11 @@ describe("PresentationMode", () => {
 
     const text = screen.getByText("第一页内容");
     const textBox = text.closest<HTMLElement>('[style*="font-size"]');
-    const slideCanvas = text.closest<HTMLElement>(".aspect-video");
+    const slideCanvas = text.closest<HTMLElement>(".aspect-auto");
     expect(textBox).toHaveStyle({ color: "#111827" });
     expect(textBox?.getAttribute("style")).toContain("background-color: transparent");
     expect(slideCanvas).toHaveStyle({ backgroundColor: "#fffef8" });
+    expect(slideCanvas).toHaveClass("h-full", "w-full", "rounded-none", "shadow-none");
 
     await user.click(screen.getByRole("button", { name: "页面与板书颜色设置" }));
     expect(screen.getByRole("dialog", { name: "颜色设置" })).toBeInTheDocument();
@@ -169,6 +170,14 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "右侧显示内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "左侧提问学生" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "右侧相关题" })).toBeInTheDocument();
+    expect(screen.getByLabelText("左侧翻页控制")).toContainElement(
+      screen.getByRole("button", { name: "左侧显示内容" }),
+    );
+    expect(screen.getByLabelText("右侧翻页控制")).toContainElement(
+      screen.getByRole("button", { name: "右侧显示内容" }),
+    );
+    expect(screen.getByRole("button", { name: "左侧显示内容" })).toHaveClass("h-8", "w-7");
+    expect(screen.getByTestId("presentation-slide-page")).toHaveClass("h-full", "w-full");
     expect(screen.queryByText("上一页")).not.toBeInTheDocument();
     expect(screen.queryByText("下一页")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下课" })).toBeInTheDocument();
@@ -212,8 +221,14 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "移动板书 1" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /调整板书 1大小/ })).toHaveLength(8);
     expect(screen.getByRole("button", { name: "清空当前板书" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "切换到板书 1书写区 1" })).toHaveAttribute("aria-selected", "true");
-    await user.click(screen.getByRole("button", { name: "在板书 1中新增书写区" }));
+    const addWritingAreaButton = screen.getByRole("button", { name: "在板书 1中新增书写区" });
+    const firstWritingAreaTab = screen.getByRole("tab", { name: "切换到板书 1书写区 1" });
+    expect(addWritingAreaButton.closest('[data-board-side-controls="left"]')).not.toBeNull();
+    expect(addWritingAreaButton).toHaveClass("h-7", "w-7", "bg-transparent");
+    expect(firstWritingAreaTab.closest('[data-board-side-controls="right"]')).not.toBeNull();
+    expect(firstWritingAreaTab).toHaveClass("h-6", "w-6");
+    expect(firstWritingAreaTab).toHaveAttribute("aria-selected", "true");
+    await user.click(addWritingAreaButton);
     expect(screen.getAllByRole("region", { name: /板书/ })).toHaveLength(1);
     expect(screen.getByRole("tab", { name: "切换到板书 1书写区 2" })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("region", { name: "板书 2" })).not.toBeInTheDocument();
