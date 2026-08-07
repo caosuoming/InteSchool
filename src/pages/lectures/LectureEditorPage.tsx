@@ -38,6 +38,8 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
+import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
+import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
 import { ResourceCommentButton } from "@/components/prep/ResourceCommentButton";
 import { LectureSectionEditorRow } from "@/pages/lectures/LectureSectionEditorRow";
@@ -52,6 +54,7 @@ import { cn, getOptionsGridCols } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
 import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
 import { isDocumentStructureLocked } from "@/lib/document-resource";
+import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -146,6 +149,8 @@ export default function LectureEditorPage() {
   const [selectedPointIds, setSelectedPointIds] = useState<string[]>([]);
   const [classes, setClasses] = useState<AnyClass[]>([]);
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
+  const [audienceClassPickerOpen, setAudienceClassPickerOpen] = useState(false);
+  const [audienceSaving, setAudienceSaving] = useState(false);
   const [sections, setSections] = useState<LectureSection[]>([]);
   const [lectureQuestions, setLectureQuestions] = useState<Record<string, Question>>({});
   const [markingAllDone, setMarkingAllDone] = useState(false);
@@ -263,20 +268,18 @@ export default function LectureEditorPage() {
       : sections.filter((section) => section.type !== "chapter"),
     [sections, selectedColumn],
   );
-  const selectedLectureStudents = useMemo(
-    () => students.filter((student) => selectedStudentIds.includes(student.id)),
-    [students, selectedStudentIds],
+  const lectureStudents = useMemo(
+    () => resolveClassAudienceStudents(selectedClassIds, classes, students),
+    [selectedClassIds, classes, students],
   );
-  const completionByStudentId = useMemo(() => {
-    const completed = new Map<string, Set<string>>();
-    for (const record of answerRecords) {
-      if (!record.questionId || !lectureQuestionIds.includes(record.questionId)) continue;
-      const questionIds = completed.get(record.studentId) || new Set<string>();
-      questionIds.add(record.questionId);
-      completed.set(record.studentId, questionIds);
-    }
-    return completed;
-  }, [answerRecords, lectureQuestionIds]);
+  const lectureStudentIds = useMemo(
+    () => lectureStudents.map((student) => student.id),
+    [lectureStudents],
+  );
+  const selectedClassLabel = useMemo(
+    () => classAudienceLabel(selectedClassIds, classes),
+    [selectedClassIds, classes],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -347,7 +350,7 @@ export default function LectureEditorPage() {
           setSelectedClassIds(lec.classIds);
           setSections(lec.sections);
           setSelectedChapterId(lec.sections.find((section) => section.type === "chapter")?.id || null);
-          setSelectedStudentIds(lec.studentIds || []);
+          setSelectedStudentIds([]);
           setPrepPasswordOpen(false);
 
           const records = await analyticsService.listAnswerRecordsByLecture(lec.id);
@@ -508,7 +511,7 @@ export default function LectureEditorPage() {
         schoolYear,
         semester,
         classIds: selectedClassIds,
-        studentIds: selectedStudentIds,
+        studentIds: [],
         typeId: typeId || undefined,
         ...(isStructureLocked ? {} : { sections }),
       };
@@ -536,6 +539,27 @@ export default function LectureEditorPage() {
     } finally {
       setSaving(false);
       setPublishing(false);
+    }
+  };
+
+  const handleConfirmAudience = async () => {
+    if (!isPreview || !lecture) {
+      setAudienceClassPickerOpen(false);
+      return;
+    }
+    setAudienceSaving(true);
+    try {
+      const updated = await lectureService.updateLecture(lecture.id, {
+        classIds: selectedClassIds,
+        studentIds: [],
+      });
+      setLecture(updated);
+      setAudienceClassPickerOpen(false);
+      toast.success("使用对象已更新");
+    } catch (error) {
+      toast.error("更新使用对象失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setAudienceSaving(false);
     }
   };
 
@@ -1364,8 +1388,8 @@ export default function LectureEditorPage() {
       toast.warning("请先保存讲义，再标注学生完成情况");
       return;
     }
-    if (selectedStudentIds.length === 0) {
-      toast.warning("请先选择学生");
+    if (lectureStudentIds.length === 0) {
+      toast.warning("请先添加使用班级");
       return;
     }
     if (lectureQuestionIds.length === 0) {
@@ -1375,13 +1399,13 @@ export default function LectureEditorPage() {
 
     setMarkingAllDone(true);
     try {
-      const existingRecords = await analyticsService.listAnswerRecordsByStudents(selectedStudentIds);
+      const existingRecords = await analyticsService.listAnswerRecordsByStudents(lectureStudentIds);
       const existingKeys = new Set(
         existingRecords
           .filter((record) => record.lectureId === lecture.id)
           .map((record) => `${record.studentId}:${record.questionId}`),
       );
-      const pendingRecords = selectedStudentIds.flatMap((studentId) =>
+      const pendingRecords = lectureStudentIds.flatMap((studentId) =>
         lectureQuestionIds
           .filter((questionId) => !existingKeys.has(`${studentId}:${questionId}`))
           .map((questionId) => ({
@@ -1397,7 +1421,7 @@ export default function LectureEditorPage() {
       }
       const [records, answeredIds] = await Promise.all([
         analyticsService.listAnswerRecordsByLecture(lecture.id),
-        analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange),
+        analyticsService.getAnsweredQuestionIds(lectureStudentIds, dateRange),
       ]);
       setAnswerRecords(records);
       setAnsweredQuestionIds(answeredIds);
@@ -1412,22 +1436,6 @@ export default function LectureEditorPage() {
       setMarkingAllDone(false);
     }
   };
-
-  // 获取讲义关联的所有学生
-  const lectureStudents = useMemo(() => {
-    const studentIds = new Set<string>(selectedStudentIds);
-    selectedClassIds.forEach((classId) => {
-      const cls = classes.find((c) => c.id === classId);
-      if (cls) {
-        if (cls.type === "school") {
-          students.filter((s) => s.classId === classId).forEach((s) => studentIds.add(s.id));
-        } else {
-          cls.studentIds.forEach((sid) => studentIds.add(sid));
-        }
-      }
-    });
-    return students.filter((s) => studentIds.has(s.id));
-  }, [selectedClassIds, selectedStudentIds, classes, students]);
 
   const lectureFormat = useMemo(() => {
     const type = lectureTypes.find((t) => t.id === typeId);
@@ -1471,6 +1479,42 @@ export default function LectureEditorPage() {
 
   if (prepPasswordOpen && !lecture) return <div>{prepPasswordModal}</div>;
 
+  const audienceClassModal = (
+    <Modal
+      open={audienceClassPickerOpen}
+      onClose={() => setAudienceClassPickerOpen(false)}
+      size="lg"
+      title="添加使用对象"
+      description="使用对象只设置到班级；具体学生的答题情况可在预览中逐题调整。"
+      footer={
+        <div className="flex items-center justify-between w-full">
+          <Button variant="ghost" size="sm" onClick={() => setSelectedClassIds([])}>
+            清空选择
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAudienceClassPickerOpen(false)}>
+              取消
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={() => void handleConfirmAudience()}
+              loading={audienceSaving}
+            >
+              确定（{selectedClassIds.length} 个班级）
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <ClassAudiencePicker
+        classes={classes}
+        selectedClassIds={selectedClassIds}
+        onChange={setSelectedClassIds}
+      />
+    </Modal>
+  );
+
   // ===== 预览模式 =====
   if (isPreview) {
     return (
@@ -1482,19 +1526,19 @@ export default function LectureEditorPage() {
           action={
             <div className="flex items-center gap-2">
               {!prepTaskId && (
-                <Button variant="outline" onClick={() => setShowStudentPicker(true)}>
+                <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)}>
                   <Users className="w-4 h-4" />
                   <span className="max-w-48 truncate">
-                    {selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择发布对象"}
+                    {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
                   </span>
-                  {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
+                  {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
                 </Button>
               )}
               <Button
                 variant="outline"
                 onClick={handleMarkAllDone}
                 loading={markingAllDone}
-                disabled={selectedStudentIds.length === 0 || lectureQuestionIds.length === 0}
+                disabled={lectureStudentIds.length === 0 || lectureQuestionIds.length === 0}
               >
                 <CheckSquare className="w-4 h-4" />
                 全部设为使用
@@ -1733,6 +1777,7 @@ export default function LectureEditorPage() {
             )}
           </div>
         </Modal>
+        {audienceClassModal}
       </div>
     );
   }
@@ -1742,7 +1787,7 @@ export default function LectureEditorPage() {
     <div>
       <PageHeader
         title={lecture ? `编辑：${lecture.title}` : "新建讲义"}
-        description="编排栏目、知识块与题目，并设置讲义使用学生"
+        description="编排栏目、知识块与题目，并设置讲义使用班级"
         icon={<FileText className="w-5 h-5" />}
         action={
           <div className="flex items-center gap-2">
@@ -1768,12 +1813,12 @@ export default function LectureEditorPage() {
                 预览
               </Button>
             )}
-            <Button variant="outline" onClick={() => setShowStudentPicker(true)}>
+            <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)}>
               <UserCheck className="w-4 h-4" />
               <span className="max-w-48 truncate">
-                {selectedStudentIds.length > 0 ? getSelectedStudentNames() : "选择发布对象"}
+                {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
               </span>
-              {selectedStudentIds.length > 0 && <Badge variant="gold">{selectedStudentIds.length}人</Badge>}
+              {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
             </Button>
             <Button variant="outline" onClick={() => handleSave(false)} loading={saving}>
               <Save className="w-4 h-4" />
@@ -1789,7 +1834,7 @@ export default function LectureEditorPage() {
         }
       />
 
-      {/* 学生选择器 + 时间周期选择器 */}
+      {/* 完成情况学生选择器 + 时间周期选择器 */}
       {currentVersionType !== "extract" && (
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <Button
@@ -2311,77 +2356,59 @@ export default function LectureEditorPage() {
                 <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-ink-100">
                   <div className="flex items-center gap-2">
                     <UserCheck className="w-4 h-4 text-emerald-600" />
-                    <h3 className="font-serif font-semibold text-ink-900 text-sm">使用学生</h3>
-                    <Badge variant="ink">{selectedLectureStudents.length}</Badge>
+                    <h3 className="font-serif font-semibold text-ink-900 text-sm">使用班级</h3>
+                    <Badge variant="ink">{selectedClassIds.length}</Badge>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => setShowStudentPicker(true)}>
+                  <Button variant="ghost" size="sm" onClick={() => setAudienceClassPickerOpen(true)}>
                     <Plus className="w-3.5 h-3.5" /> 添加
                   </Button>
                 </div>
 
-                {selectedLectureStudents.length === 0 ? (
+                {selectedClassIds.length === 0 ? (
                   <button
                     type="button"
-                    onClick={() => setShowStudentPicker(true)}
+                    onClick={() => setAudienceClassPickerOpen(true)}
                     className="w-full py-8 rounded-lg border border-dashed border-ink-200 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700"
                   >
-                    添加该讲义使用学生
+                    添加该讲义使用班级
                   </button>
                 ) : (
-                  <div className="space-y-1.5 max-h-[330px] overflow-y-auto pr-1">
-                    {selectedLectureStudents.map((student) => {
-                      const completedCount = completionByStudentId.get(student.id)?.size || 0;
-                      const allDone = lectureQuestionIds.length > 0 && completedCount >= lectureQuestionIds.length;
-                      return (
-                        <div key={student.id} className="flex items-center gap-2 rounded-md border border-ink-100 px-2.5 py-2">
-                          <div className="w-7 h-7 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center text-xs font-medium flex-shrink-0">
-                            {student.name.charAt(0)}
+                  <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+                    {classes.filter((item) => selectedClassIds.includes(item.id)).map((item) => (
+                      <div key={item.id} className="flex items-center gap-2 rounded-md border border-ink-100 px-2.5 py-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-ink-800 truncate">{item.name}</div>
+                          <div className="text-[10px] text-ink-400 truncate">
+                            {item.type === "personal" ? "个人班级" : item.grade || "未设置年级"}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium text-ink-800 truncate">{student.name}</div>
-                            <div className="text-[10px] text-ink-400 truncate">
-                              {lectureQuestionIds.length > 0 ? `${completedCount}/${lectureQuestionIds.length} 题已记录` : "讲义暂无题目"}
-                            </div>
-                          </div>
-                          <Badge variant={allDone ? "green" : completedCount > 0 ? "gold" : "default"}>
-                            {allDone ? "已做" : completedCount > 0 ? "进行中" : "未做"}
-                          </Badge>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedStudentIds((previous) => previous.filter((studentId) => studentId !== student.id))}
-                            className="text-ink-300 hover:text-red-600"
-                            title="移除学生"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
                         </div>
-                      );
-                    })}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedClassIds((previous) => previous.filter((classId) => classId !== item.id))}
+                          className="text-ink-300 hover:text-red-600"
+                          title="移除班级"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {selectedLectureStudents.length > 0 && (
+                {selectedClassIds.length > 0 && (
                   <div className="space-y-2 pt-3 mt-3 border-t border-ink-100">
-                    <select
-                      value={timeRangeKey}
-                      onChange={(event) => setTimeRangeKey(event.target.value as TimeRangeKey)}
-                      className="w-full text-xs border border-ink-200 rounded px-2 py-1.5 bg-paper text-ink-700"
-                    >
-                      {timeRangeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
+                    <div className="text-[11px] text-ink-500">共覆盖 {lectureStudents.length} 名学生</div>
                     <Button
                       variant="gold"
                       size="sm"
                       className="w-full"
                       onClick={handleMarkAllDone}
                       loading={markingAllDone}
-                      disabled={!lecture || lectureQuestionIds.length === 0}
+                      disabled={!lecture || lectureStudentIds.length === 0 || lectureQuestionIds.length === 0}
                     >
-                      <CheckSquare className="w-3.5 h-3.5" /> 一键标记所有学生已做
+                      <CheckSquare className="w-3.5 h-3.5" /> 一键标记全部学生已做
                     </Button>
-                    {!lecture && <div className="text-[11px] text-ink-400">先保存讲义后即可标记学生使用情况。</div>}
+                    {!lecture && <div className="text-[11px] text-ink-400">先保存讲义后即可标记学生答题情况。</div>}
                   </div>
                 )}
               </Card>
@@ -3384,13 +3411,15 @@ export default function LectureEditorPage() {
         )}
       </Modal>
 
-      {/* 学生选择弹窗 */}
+      {audienceClassModal}
+
+      {/* 完成情况分析学生选择弹窗 */}
       <Modal
         open={showStudentPicker}
         onClose={() => setShowStudentPicker(false)}
         size="lg"
-        title="选择发布对象"
-        description="选择讲义发布到的学生，并标注他们在所选时间段内已做过的题目"
+        title="选择学生"
+        description="选择用于查看所选时间段完成情况的学生；不会改变讲义使用对象。"
         footer={
           <div className="flex items-center justify-between w-full">
             <Button variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}>
@@ -3663,6 +3692,7 @@ function QuestionInfoPopover({
   question,
   questionNumber,
   questionAnswerSummary,
+  answerRecords,
   lectureStudents,
   answeredCount,
   correctCount,
@@ -3686,6 +3716,7 @@ function QuestionInfoPopover({
   question: Question;
   questionNumber: number;
   questionAnswerSummary: { student: Student; score: AnswerScore | null }[];
+  answerRecords: AnswerRecord[];
   lectureStudents: Student[];
   answeredCount: number;
   correctCount: number;
@@ -3775,95 +3806,12 @@ function QuestionInfoPopover({
           </span>
         </div>
 
-        {/* 学生标签 */}
-        <div className="flex flex-wrap gap-1.5 pt-2">
-          {questionAnswerSummary.map(({ student, score }) => {
-            const name = student.name;
-            const isSaving = savingStudentId === student.id;
-            if (!answerEditing || !onUpdateStudentAnswer) {
-              if (!score) {
-                return (
-                  <span
-                    key={student.id}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-ink-100 text-ink-500"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-ink-300" />
-                    {name}
-                    <span className="opacity-70">未做</span>
-                  </span>
-                );
-              }
-              const cfg = {
-                done: { label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200", dot: "bg-teal-500" },
-                correct: { label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
-                partial: { label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" },
-                wrong: { label: "做错", cls: "bg-red-50 text-red-700 border-red-200", dot: "bg-red-500" },
-              }[score];
-              return (
-                <span
-                  key={student.id}
-                  className={cn(
-                    "inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border",
-                    cfg.cls,
-                  )}
-                >
-                  <span className={cn("w-1.5 h-1.5 rounded-full", cfg.dot)} />
-                  {name}
-                  <span className="opacity-80">{cfg.label}</span>
-                </span>
-              );
-            }
-            if (!score) {
-              return (
-                <button
-                  key={student.id}
-                  onClick={() => onToggleStudentScore(student.id, null)}
-                  disabled={isSaving}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-ink-100 text-ink-500 hover:bg-ink-200 transition-colors disabled:opacity-50"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-ink-300" />
-                  {name}
-                  <span className="opacity-70">未做</span>
-                </button>
-              );
-            }
-            const cfg = {
-              done: { label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100", dot: "bg-teal-500" },
-              correct: { label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100", dot: "bg-emerald-500" },
-              partial: { label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100", dot: "bg-amber-500" },
-              wrong: { label: "做错", cls: "bg-red-50 text-red-700 border-red-200 hover:bg-red-100", dot: "bg-red-500" },
-            }[score];
-            return (
-              <button
-                key={student.id}
-                onClick={() => onToggleStudentScore(student.id, score)}
-                disabled={isSaving}
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border transition-colors disabled:opacity-50",
-                  cfg.cls,
-                )}
-              >
-                <span className={cn("w-1.5 h-1.5 rounded-full", cfg.dot)} />
-                {name}
-                <span className="opacity-80">{cfg.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {onUpdateStudentAnswer && (
-          <button
-            onClick={() => onSetAnswerEditing(!answerEditing)}
-            className={cn(
-              "text-[11px] px-3 py-1.5 rounded transition-colors w-full text-center",
-              answerEditing
-                ? "bg-gold-100 text-gold-700 font-medium"
-                : "bg-ink-50 text-ink-500 hover:bg-ink-100",
-            )}
-          >
-            {answerEditing ? "完成编辑" : "编辑答题情况（点击学生标签切换）"}
-          </button>
-        )}
+        <StudentAnswerStatusControl
+          students={lectureStudents}
+          answerRecords={answerRecords}
+          questionId={question.id}
+          onChange={(studentId, questionId, score) => onUpdateStudentAnswer?.(studentId, questionId, score)}
+        />
       </div>
 
       {/* 加入资源篮 */}
@@ -3913,13 +3861,6 @@ function QuestionInfoPopover({
             编辑题目
           </button>
         )}
-        <button
-          onClick={() => onEditScore(question.id)}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-ink-50 text-ink-700 hover:bg-ink-100 transition-colors text-[11px]"
-        >
-          <UserCheck className="w-3.5 h-3.5" />
-          编辑答题情况
-        </button>
       </div>
     </div>
   );
@@ -4136,6 +4077,7 @@ export function LectureEditorPreviewSection({
                     question={question}
                     questionNumber={questionNumber}
                     questionAnswerSummary={questionAnswerSummary}
+                    answerRecords={answerRecords}
                     lectureStudents={lectureStudents}
                     answeredCount={answeredCount}
                     correctCount={correctCount}

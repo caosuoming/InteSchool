@@ -16,7 +16,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
 import { MathHtml } from "@/components/ui/MathHtml";
-import type { AnswerRecord, AnyClass, Lecture, LectureSection, Question, Student } from "@/types";
+import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
+import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
+import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, Question, Student } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 
 type PaperSize = "A4" | "8K";
@@ -68,14 +70,14 @@ export default function LecturePreviewPage() {
   const navigate = useNavigate();
   const [lecture, setLecture] = useState<Lecture | null>(null);
   const [classes, setClasses] = useState<AnyClass[]>([]);
+  const [availableClasses, setAvailableClasses] = useState<AnyClass[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
-  const [allSchoolStudents, setAllSchoolStudents] = useState<Student[]>([]);
   const [questions, setQuestions] = useState<Record<string, Question | null>>({});
   const [answerRecords, setAnswerRecords] = useState<AnswerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [paperSize, setPaperSize] = useState<PaperSize>("A4");
   const [audienceOpen, setAudienceOpen] = useState(false);
-  const [audienceStudentIds, setAudienceStudentIds] = useState<string[]>([]);
+  const [audienceClassIds, setAudienceClassIds] = useState<string[]>([]);
   const [savingAudience, setSavingAudience] = useState(false);
   const [markingAllDone, setMarkingAllDone] = useState(false);
 
@@ -94,15 +96,13 @@ export default function LecturePreviewPage() {
           .filter((section) => section.type === "question" && section.questionId)
           .map((section) => section.questionId as string),
       ));
-      const [loadedClasses, classStudentGroups, explicitStudents, loadedQuestions, schoolStudents, records] = await Promise.all([
+      const [loadedClasses, availableClassList, classStudentGroups, loadedQuestions, records] = await Promise.all([
         loadedLecture.classIds.length > 0
           ? classService.getClassesByIds(loadedLecture.classIds)
           : Promise.resolve([]),
+        classService.listAllClasses(loadedLecture.schoolId, loadedLecture.teacherId),
         Promise.all(
           loadedLecture.classIds.map((classId) => classService.listStudentsByClass(classId)),
-        ),
-        Promise.all(
-          loadedLecture.studentIds.map((studentId) => classService.getStudent(studentId)),
         ),
         Promise.all(
           questionIds.map(async (questionId) => [
@@ -110,21 +110,17 @@ export default function LecturePreviewPage() {
             await questionService.getQuestion(questionId).catch(() => null),
           ] as const),
         ),
-        classService.listStudentsBySchool(loadedLecture.schoolId),
         analyticsService.listAnswerRecordsByLecture(loadedLecture.id),
       ]);
       const studentMap = new Map<string, Student>();
-      [
-        ...classStudentGroups.flat(),
-        ...explicitStudents.filter((student): student is Student => Boolean(student)),
-      ].forEach((student) => studentMap.set(student.id, student));
+      classStudentGroups.flat().forEach((student) => studentMap.set(student.id, student));
 
       if (cancelled) return;
       setLecture(loadedLecture);
       setClasses(loadedClasses);
+      setAvailableClasses(availableClassList);
       setStudents(Array.from(studentMap.values()));
-      setAllSchoolStudents(schoolStudents);
-      setAudienceStudentIds(loadedLecture.studentIds);
+      setAudienceClassIds(loadedLecture.classIds);
       setQuestions(Object.fromEntries(loadedQuestions));
       setAnswerRecords(records);
       setLoading(false);
@@ -165,9 +161,7 @@ export default function LecturePreviewPage() {
   );
   const usageTarget = useMemo(() => {
     const classNames = classes.map((item) => item.name).join("、");
-    if (classNames) return `${classNames} · ${students.length} 名学生`;
-    if (students.length > 0) return `${students.length} 名学生`;
-    return "未指定";
+    return classNames ? `${classNames} · ${students.length} 名学生` : "未指定";
   }, [classes, students.length]);
 
   const questionIds = useMemo(
@@ -183,37 +177,45 @@ export default function LecturePreviewPage() {
     if (!lecture) return;
     setSavingAudience(true);
     try {
-      const updated = await lectureService.updateLecture(lecture.id, { studentIds: audienceStudentIds });
-      setLecture(updated);
-      const explicitStudents = allSchoolStudents.filter((student) => audienceStudentIds.includes(student.id));
-      const classStudentGroups = await Promise.all(
-        updated.classIds.map((classId) => classService.listStudentsByClass(classId)),
-      );
+      const updated = await lectureService.updateLecture(lecture.id, {
+        classIds: audienceClassIds,
+        studentIds: [],
+      });
+      const [updatedClasses, classStudentGroups] = await Promise.all([
+        audienceClassIds.length > 0 ? classService.getClassesByIds(audienceClassIds) : Promise.resolve([]),
+        Promise.all(audienceClassIds.map((classId) => classService.listStudentsByClass(classId))),
+      ]);
       const studentMap = new Map<string, Student>();
-      [...classStudentGroups.flat(), ...explicitStudents].forEach((student) => studentMap.set(student.id, student));
+      classStudentGroups.flat().forEach((student) => studentMap.set(student.id, student));
+      setLecture(updated);
+      setClasses(updatedClasses);
       setStudents(Array.from(studentMap.values()));
       setAudienceOpen(false);
-      toast.success("发布对象已更新");
+      toast.success("使用对象已更新");
     } catch (error) {
-      toast.error("更新发布对象失败", error instanceof Error ? error.message : undefined);
+      toast.error("更新使用对象失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSavingAudience(false);
     }
   };
 
-  const toggleQuestionUsage = async (studentId: string, questionId: string, used: boolean) => {
+  const updateStudentAnswer = async (
+    studentId: string,
+    questionId: string,
+    score: AnswerScore | null,
+  ) => {
     if (!lecture) return;
     try {
       await analyticsService.saveAnswerRecord({
         studentId,
         questionId,
         lectureId: lecture.id,
-        score: used ? null : "done",
+        score,
         source: "manual",
       });
       setAnswerRecords(await analyticsService.listAnswerRecordsByLecture(lecture.id));
     } catch (error) {
-      toast.error("更新使用情况失败", error instanceof Error ? error.message : undefined);
+      toast.error("更新答题情况失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -267,7 +269,7 @@ export default function LecturePreviewPage() {
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setAudienceOpen(true)}>
               <Users className="w-4 h-4" />
-              <span className="max-w-48 truncate">{usageTarget === "未指定" ? "选择发布对象" : usageTarget}</span>
+              <span className="max-w-48 truncate">{usageTarget === "未指定" ? "添加使用对象" : usageTarget}</span>
             </Button>
             <Button variant="outline" onClick={() => navigate(`/lectures/${id}/edit`)}>
               <Edit3 className="w-4 h-4" />
@@ -310,37 +312,18 @@ export default function LecturePreviewPage() {
             icon={<Users className="w-3.5 h-3.5" />}
           />
         </div>
-        {(classes.length > 0 || students.length > 0) && (
-          <div className="mt-3 grid gap-3 border-t border-ink-100 pt-3 lg:grid-cols-2">
-            <div>
-              <div className="mb-1.5 text-[11px] font-medium text-ink-500">适用班级</div>
-              <div className="flex flex-wrap gap-1.5">
-                {classes.length > 0 ? classes.map((item) => (
-                  <span
-                    key={item.id}
-                    className="rounded border border-teal-100 bg-teal-50 px-2 py-1 text-xs text-teal-700"
-                  >
-                    {item.name}
-                  </span>
-                )) : (
-                  <span className="text-xs text-ink-400">未指定班级</span>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-medium text-ink-500">学生</div>
-              <div className="flex flex-wrap gap-1.5">
-                {students.length > 0 ? students.map((student) => (
-                  <span
-                    key={student.id}
-                    className="rounded border border-ink-100 bg-ink-50 px-2 py-1 text-xs text-ink-600"
-                  >
-                    {student.name}
-                  </span>
-                )) : (
-                  <span className="text-xs text-ink-400">未指定学生</span>
-                )}
-              </div>
+        {classes.length > 0 && (
+          <div className="mt-3 border-t border-ink-100 pt-3">
+            <div className="mb-1.5 text-[11px] font-medium text-ink-500">适用班级</div>
+            <div className="flex flex-wrap gap-1.5">
+              {classes.map((item) => (
+                <span
+                  key={item.id}
+                  className="rounded border border-teal-100 bg-teal-50 px-2 py-1 text-xs text-teal-700"
+                >
+                  {item.name}
+                </span>
+              ))}
             </div>
           </div>
         )}
@@ -383,7 +366,7 @@ export default function LecturePreviewPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-serif text-sm font-semibold text-ink-900">题目属性与使用情况</div>
-                    <div className="mt-1 text-xs leading-5 text-ink-400">可逐题调整发布对象是否使用该题</div>
+                    <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
                   </div>
                   <Button
                     variant="outline"
@@ -429,7 +412,7 @@ export default function LecturePreviewPage() {
                       questionNumber={row.questionNumber}
                       students={students}
                       answerRecords={answerRecords}
-                      onToggleUsage={toggleQuestionUsage}
+                      onUpdateStudentAnswer={updateStudentAnswer}
                     />
                   ) : undefined}
                 />
@@ -443,40 +426,25 @@ export default function LecturePreviewPage() {
         open={audienceOpen}
         onClose={() => setAudienceOpen(false)}
         size="lg"
-        title="选择发布对象"
-        description="选择讲义直接指定的使用学生；已指定班级中的学生仍会保留。"
+        title="添加使用对象"
+        description="使用对象只设置到班级；具体学生的答题情况可在右侧逐题调整。"
         footer={(
           <div className="flex w-full items-center justify-between">
-            <Button variant="ghost" size="sm" onClick={() => setAudienceStudentIds([])}>清空直接指定</Button>
+            <Button variant="ghost" size="sm" onClick={() => setAudienceClassIds([])}>清空选择</Button>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setAudienceOpen(false)}>取消</Button>
               <Button variant="gold" size="sm" onClick={saveAudience} loading={savingAudience}>
-                确定（{audienceStudentIds.length} 人）
+                确定（{audienceClassIds.length} 个班级）
               </Button>
             </div>
           </div>
         )}
       >
-        <div className="max-h-[420px] overflow-y-auto rounded-md border border-ink-100">
-          {allSchoolStudents.map((student) => {
-            const checked = audienceStudentIds.includes(student.id);
-            return (
-              <label key={student.id} className="flex cursor-pointer items-center gap-3 border-b border-ink-50 px-3 py-2.5 last:border-b-0 hover:bg-ink-50/50">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => setAudienceStudentIds((previous) => checked
-                    ? previous.filter((studentId) => studentId !== student.id)
-                    : [...previous, student.id])}
-                  className="rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                />
-                <span className="text-sm font-medium text-ink-800">{student.name}</span>
-                <span className="text-xs text-ink-400">{student.studentNo}</span>
-              </label>
-            );
-          })}
-          {allSchoolStudents.length === 0 && <div className="p-6 text-center text-sm text-ink-400">暂无可选学生</div>}
-        </div>
+        <ClassAudiencePicker
+          classes={availableClasses}
+          selectedClassIds={audienceClassIds}
+          onChange={setAudienceClassIds}
+        />
       </Modal>
     </div>
   );
@@ -658,13 +626,13 @@ function LectureQuestionDetails({
   questionNumber,
   students,
   answerRecords,
-  onToggleUsage,
+  onUpdateStudentAnswer,
 }: {
   question: Question | null | undefined;
   questionNumber: number;
   students: Student[];
   answerRecords: AnswerRecord[];
-  onToggleUsage: (studentId: string, questionId: string, used: boolean) => Promise<void>;
+  onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
 }) {
   if (!question) {
     return (
@@ -686,33 +654,13 @@ function LectureQuestionDetails({
           {difficultyLabel[question.difficulty]}
         </Badge>
       </div>
-      {students.length > 0 && (
-        <div className="mb-3 border-b border-ink-100 pb-3">
-          <div className="mb-1.5 text-[11px] font-medium text-ink-500">学生使用情况</div>
-          <div className="flex flex-wrap gap-1.5">
-            {students.map((student) => {
-              const used = answerRecords.some(
-                (record) => record.studentId === student.id && record.questionId === question.id,
-              );
-              return (
-                <button
-                  key={student.id}
-                  type="button"
-                  onClick={() => onToggleUsage(student.id, question.id, used)}
-                  className={cn(
-                    "rounded-full border px-2 py-0.5 text-[10px] transition-colors",
-                    used
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-ink-200 bg-white text-ink-500 hover:border-gold-300",
-                  )}
-                >
-                  {student.name} · {used ? "已使用" : "未使用"}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <StudentAnswerStatusControl
+        className="mb-3 border-b border-ink-100 pb-3"
+        students={students}
+        answerRecords={answerRecords}
+        questionId={question.id}
+        onChange={onUpdateStudentAnswer}
+      />
       <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] leading-5">
         <QuestionProperty label="年级" value={question.grade || "未设置"} />
         <QuestionProperty label="学年学期" value={[
