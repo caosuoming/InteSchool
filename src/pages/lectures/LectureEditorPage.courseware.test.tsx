@@ -1,0 +1,211 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Lecture, Teacher, TreeNode } from "@/types";
+
+const mocks = vi.hoisted(() => ({
+  getLecture: vi.fn(),
+  updateLecture: vi.fn(),
+  listColumnTemplates: vi.fn(),
+  getChapterTree: vi.fn(),
+  getKnowledgeTree: vi.fn(),
+  listLectureTypes: vi.fn(),
+  listAllClasses: vi.fn(),
+  listStudentsBySchool: vi.fn(),
+  listSchoolClasses: vi.fn(),
+  listPersonalClasses: vi.fn(),
+  listBaskets: vi.fn(),
+  listAnswerRecordsByLecture: vi.fn(),
+  listQuestions: vi.fn(),
+  getCoursewareBySource: vi.fn(),
+  createFromLecture: vi.fn(),
+}));
+
+const teacher = {
+  id: "teacher-1",
+  schoolId: "school-1",
+  name: "测试教师",
+} as Teacher;
+
+const lecture = {
+  id: "lecture-1",
+  teacherId: teacher.id,
+  schoolId: teacher.schoolId,
+  title: "函数专题讲义",
+  description: "函数基础",
+  chapterIds: [],
+  knowledgePointIds: [],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  classIds: [],
+  studentIds: [],
+  sections: [],
+  version: 1,
+  status: "draft",
+  createdAt: "2026-08-01T00:00:00.000Z",
+  updatedAt: "2026-08-01T00:00:00.000Z",
+} as Lecture;
+
+const emptyTree = {
+  id: "root",
+  name: "目录",
+  children: [],
+} as TreeNode;
+
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: () => ({ teacher }),
+}));
+
+vi.mock("@/hooks/useSchoolResourceOptions", () => ({
+  useSchoolResourceOptions: () => ({
+    gradeOptions: [{ value: "高一", label: "高一" }],
+    schoolYearOptions: [{ value: "2026-2027", label: "2026-2027" }],
+    semesterOptions: [{ value: "上学期", label: "上学期" }],
+    defaultGrade: "高一",
+    defaultSchoolYear: "2026-2027",
+    defaultSemester: "上学期",
+    ready: true,
+  }),
+  includeCurrentOption: (options: unknown[]) => options,
+}));
+
+vi.mock("@/services/lecture", () => ({
+  lectureService: {
+    getLecture: mocks.getLecture,
+    updateLecture: mocks.updateLecture,
+    listColumnTemplates: mocks.listColumnTemplates,
+    listLectures: vi.fn().mockResolvedValue([]),
+    publish: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+vi.mock("@/services/knowledge", () => ({
+  knowledgeService: {
+    getChapterTree: mocks.getChapterTree,
+    getKnowledgeTree: mocks.getKnowledgeTree,
+    listChapters: vi.fn().mockResolvedValue([]),
+    listKnowledgePoints: vi.fn().mockResolvedValue([]),
+  },
+}));
+vi.mock("@/services/settings", () => ({
+  settingsService: { listLectureTypes: mocks.listLectureTypes },
+}));
+vi.mock("@/services/class", () => ({
+  classService: {
+    listAllClasses: mocks.listAllClasses,
+    listStudentsBySchool: mocks.listStudentsBySchool,
+    listSchoolClasses: mocks.listSchoolClasses,
+    listPersonalClasses: mocks.listPersonalClasses,
+  },
+}));
+vi.mock("@/services/basket", () => ({
+  basketService: {
+    listBaskets: mocks.listBaskets,
+  },
+}));
+vi.mock("@/services/analytics", () => ({
+  analyticsService: {
+    listAnswerRecordsByLecture: mocks.listAnswerRecordsByLecture,
+    getAnsweredQuestionIds: vi.fn().mockResolvedValue(new Set()),
+  },
+  inferScore: vi.fn(),
+}));
+vi.mock("@/services/lessonCourseware", () => ({
+  lessonCoursewareService: {
+    getCoursewareBySource: mocks.getCoursewareBySource,
+    createFromLecture: mocks.createFromLecture,
+  },
+}));
+vi.mock("@/services/question", () => ({
+  questionService: {
+    getQuestion: vi.fn().mockResolvedValue(null),
+    listQuestions: mocks.listQuestions,
+  },
+}));
+vi.mock("@/services/courseware", () => ({
+  coursewareService: { listCoursewares: vi.fn().mockResolvedValue([]) },
+}));
+vi.mock("@/services/material", () => ({
+  materialService: { listMaterials: vi.fn().mockResolvedValue([]) },
+}));
+vi.mock("@/services/examPaper", () => ({
+  examPaperService: { listPapers: vi.fn().mockResolvedValue([]) },
+}));
+vi.mock("@/services/ai", () => ({
+  aiService: { generateKnowledgePoint: vi.fn() },
+}));
+vi.mock("@/services/prep", () => ({
+  prepService: {},
+}));
+
+import LectureEditorPage from "./LectureEditorPage";
+
+function CoursewareRouteProbe() {
+  const location = useLocation();
+  return <div>{location.search === "?preview=1" ? "课件预览页" : "课件编辑页"}</div>;
+}
+
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={[`/lectures/${lecture.id}/edit`]}>
+      <Routes>
+        <Route path="/lectures/:id/edit" element={<LectureEditorPage />} />
+        <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("LectureEditorPage courseware action", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getLecture.mockResolvedValue(lecture);
+    mocks.updateLecture.mockImplementation(async (_id, patch) => ({ ...lecture, ...patch }));
+    mocks.listColumnTemplates.mockResolvedValue([]);
+    mocks.getChapterTree.mockResolvedValue(emptyTree);
+    mocks.getKnowledgeTree.mockResolvedValue(emptyTree);
+    mocks.listLectureTypes.mockResolvedValue([]);
+    mocks.listAllClasses.mockResolvedValue([]);
+    mocks.listStudentsBySchool.mockResolvedValue([]);
+    mocks.listSchoolClasses.mockResolvedValue([]);
+    mocks.listPersonalClasses.mockResolvedValue([]);
+    mocks.listBaskets.mockResolvedValue([]);
+    mocks.listAnswerRecordsByLecture.mockResolvedValue([]);
+    mocks.listQuestions.mockResolvedValue([]);
+    mocks.getCoursewareBySource.mockResolvedValue(null);
+    mocks.createFromLecture.mockResolvedValue({ id: "lesson-courseware-1" });
+  });
+
+  it("saves current lecture edits before creating courseware from edit mode", async () => {
+    renderPage();
+
+    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(mocks.updateLecture).toHaveBeenCalledWith(
+        lecture.id,
+        expect.objectContaining({ title: lecture.title }),
+      );
+      expect(mocks.createFromLecture).toHaveBeenCalledWith(
+        teacher.id,
+        teacher.schoolId,
+        lecture.id,
+      );
+    });
+    expect(mocks.updateLecture.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.createFromLecture.mock.invocationCallOrder[0]);
+    expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
+  });
+
+  it("changes the action to courseware and opens an existing courseware in preview", async () => {
+    mocks.getCoursewareBySource.mockResolvedValue({ id: "linked-courseware-1" });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "课件" }));
+
+    expect(await screen.findByText("课件预览页")).toBeInTheDocument();
+    expect(mocks.createFromLecture).not.toHaveBeenCalled();
+  });
+});

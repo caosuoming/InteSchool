@@ -8,6 +8,8 @@ import { lectureService } from "@/services/lecture";
 import { questionService } from "@/services/question";
 import { classService } from "@/services/class";
 import { analyticsService } from "@/services/analytics";
+import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -18,7 +20,7 @@ import { Modal } from "@/components/ui/Modal";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
-import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, Question, Student } from "@/types";
+import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, LessonCourseware, Question, Student } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 
 type PaperSize = "A4" | "8K";
@@ -68,6 +70,7 @@ function buildPreviewRows(
 export default function LecturePreviewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { teacher } = useAuthStore();
   const [lecture, setLecture] = useState<Lecture | null>(null);
   const [classes, setClasses] = useState<AnyClass[]>([]);
   const [availableClasses, setAvailableClasses] = useState<AnyClass[]>([]);
@@ -80,6 +83,9 @@ export default function LecturePreviewPage() {
   const [audienceClassIds, setAudienceClassIds] = useState<string[]>([]);
   const [savingAudience, setSavingAudience] = useState(false);
   const [markingAllDone, setMarkingAllDone] = useState(false);
+  const [sendingToCourseware, setSendingToCourseware] = useState(false);
+  const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
+  const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,6 +136,31 @@ export default function LecturePreviewPage() {
     });
     return () => { cancelled = true; };
   }, [id, navigate]);
+
+  useEffect(() => {
+    if (!lecture || !teacher || lecture.teacherId !== teacher.id || !teacher.schoolId) {
+      setLinkedCourseware(null);
+      setLinkedCoursewareLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLinkedCoursewareLoading(true);
+    lessonCoursewareService.getCoursewareBySource(
+      teacher.id,
+      teacher.schoolId,
+      "lecture",
+      lecture.id,
+    ).then((courseware) => {
+      if (!cancelled) setLinkedCourseware(courseware);
+    }).catch(() => {
+      if (!cancelled) setLinkedCourseware(null);
+    }).finally(() => {
+      if (!cancelled) setLinkedCoursewareLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lecture, teacher]);
 
   const sections = useMemo(() => lecture?.sections || [], [lecture]);
   const allSections = useMemo(() => flattenSections(sections), [sections]);
@@ -196,6 +227,29 @@ export default function LecturePreviewPage() {
       toast.error("更新使用对象失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSavingAudience(false);
+    }
+  };
+
+  const handleSendToMyCourseware = async () => {
+    if (!lecture || !teacher?.schoolId || lecture.teacherId !== teacher.id) return;
+    if (linkedCourseware) {
+      navigate(`/my-lessons/${linkedCourseware.id}/edit?preview=1`);
+      return;
+    }
+    setSendingToCourseware(true);
+    try {
+      const courseware = await lessonCoursewareService.createFromLecture(
+        teacher.id,
+        teacher.schoolId,
+        lecture.id,
+      );
+      setLinkedCourseware(courseware);
+      toast.success("已发送到我的课件", "正在进入课件编辑...");
+      navigate(`/my-lessons/${courseware.id}/edit`);
+    } catch (error) {
+      toast.error("发送失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSendingToCourseware(false);
     }
   };
 
@@ -271,6 +325,17 @@ export default function LecturePreviewPage() {
               <Users className="w-4 h-4" />
               <span className="max-w-48 truncate">{usageTarget === "未指定" ? "添加使用对象" : usageTarget}</span>
             </Button>
+            {lecture.teacherId === teacher?.id && (
+              <Button
+                variant="outline"
+                onClick={handleSendToMyCourseware}
+                loading={sendingToCourseware}
+                disabled={linkedCoursewareLoading}
+              >
+                <BookOpen className="w-4 h-4" />
+                {linkedCourseware ? "课件" : "发送到我的课件"}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => navigate(`/lectures/${id}/edit`)}>
               <Edit3 className="w-4 h-4" />
               编辑讲义

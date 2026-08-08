@@ -43,6 +43,8 @@ function matchFilter(c: LessonCourseware, filter: LessonCoursewareFilter): boole
   if (filter.grade && c.grade !== filter.grade) return false;
   if (filter.schoolYear && c.schoolYear !== filter.schoolYear) return false;
   if (filter.semester && (c.semester || "上学期") !== filter.semester) return false;
+  if (filter.sourceType && c.sourceType !== filter.sourceType) return false;
+  if (filter.sourceId && c.sourceId !== filter.sourceId) return false;
   if (filter.status && c.status !== filter.status) return false;
   if (filter.classId && !c.classIds.includes(filter.classId)) return false;
   if (filter.teacherId && c.teacherId !== filter.teacherId) return false;

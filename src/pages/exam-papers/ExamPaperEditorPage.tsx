@@ -68,6 +68,7 @@ import type {
   ExamPublication,
   ExtractedDocumentBlock,
   Lecture,
+  LessonCourseware,
   PrepResourceComment,
   PrepTask,
   Question,
@@ -207,7 +208,9 @@ export default function ExamPaperEditorPage() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [sendingToLessons, setSendingToLessons] = useState(false);
+  const [sendingToCourseware, setSendingToCourseware] = useState(false);
+  const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
+  const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
   const [prepTask, setPrepTask] = useState<PrepTask | null>(null);
   const [prepComments, setPrepComments] = useState<PrepResourceComment[]>([]);
   const [prepPassword, setPrepPassword] = useState(() =>
@@ -466,6 +469,31 @@ export default function ExamPaperEditorPage() {
       }
     });
   }, [id, teacher, schoolId, loadPaper]);
+
+  useEffect(() => {
+    if (prepTaskId || !paper || !teacher || paper.teacherId !== teacher.id || !teacher.schoolId) {
+      setLinkedCourseware(null);
+      setLinkedCoursewareLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLinkedCoursewareLoading(true);
+    lessonCoursewareService.getCoursewareBySource(
+      teacher.id,
+      teacher.schoolId,
+      "examPaper",
+      paper.id,
+    ).then((courseware) => {
+      if (!cancelled) setLinkedCourseware(courseware);
+    }).catch(() => {
+      if (!cancelled) setLinkedCourseware(null);
+    }).finally(() => {
+      if (!cancelled) setLinkedCoursewareLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [paper, prepTaskId, teacher]);
 
   // 当使用班级或时间周期变化时，加载每道题的完成情况和正确率。
   useEffect(() => {
@@ -1139,11 +1167,15 @@ export default function ExamPaperEditorPage() {
     }
   };
 
-  const handleSendToMyLessons = async () => {
+  const handleSendToMyCourseware = async () => {
     if (!paper || !teacher || prepTaskId) return;
-    setSendingToLessons(true);
+    if (linkedCourseware) {
+      navigate(`/my-lessons/${linkedCourseware.id}/edit?preview=1`);
+      return;
+    }
+    setSendingToCourseware(true);
     try {
-      if (navigationDraft?.paperId === paper.id) {
+      if (!isPreview || navigationDraft?.paperId === paper.id) {
         const updated = await examPaperService.updatePaper(paper.id, buildPaperPatch());
         setPaper(updated);
       }
@@ -1152,12 +1184,13 @@ export default function ExamPaperEditorPage() {
         schoolId,
         paper.id,
       );
-      toast.success("已发送到我的上课", "正在进入课件编辑...");
+      setLinkedCourseware(courseware);
+      toast.success("已发送到我的课件", "正在进入课件编辑...");
       navigate(`/my-lessons/${courseware.id}/edit`);
     } catch (error) {
       toast.error("发送失败", error instanceof Error ? error.message : undefined);
     } finally {
-      setSendingToLessons(false);
+      setSendingToCourseware(false);
     }
   };
 
@@ -1366,9 +1399,14 @@ export default function ExamPaperEditorPage() {
                 </Button>
               )}
               {!prepTaskId && paper?.teacherId === teacher?.id && (
-                <Button variant="outline" onClick={handleSendToMyLessons} loading={sendingToLessons}>
+                <Button
+                  variant="outline"
+                  onClick={handleSendToMyCourseware}
+                  loading={sendingToCourseware}
+                  disabled={linkedCoursewareLoading}
+                >
                   <BookOpen className="w-4 h-4" />
-                  发送到我的上课
+                  {linkedCourseware ? "课件" : "发送到我的课件"}
                 </Button>
               )}
               {!prepTaskId && (
@@ -1672,6 +1710,17 @@ export default function ExamPaperEditorPage() {
             <Button variant="outline" onClick={() => setPrepSetupOpen(true)}>
               <Users className="w-4 h-4" />
               添加到集体备课
+            </Button>
+          )}
+          {paper?.teacherId === teacher?.id && (
+            <Button
+              variant="outline"
+              onClick={handleSendToMyCourseware}
+              loading={sendingToCourseware}
+              disabled={linkedCoursewareLoading}
+            >
+              <BookOpen className="w-4 h-4" />
+              {linkedCourseware ? "课件" : "发送到我的课件"}
             </Button>
           )}
           <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>

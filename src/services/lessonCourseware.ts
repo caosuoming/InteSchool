@@ -48,6 +48,21 @@ export const lessonCoursewareService = {
     return rpcCall("lessonCourseware", "getCourseware", [id]) as any;
   },
 
+  async getCoursewareBySource(
+    teacherId: string,
+    schoolId: string,
+    sourceType: "examPaper" | "lecture",
+    sourceId: string,
+  ): Promise<LessonCourseware | null> {
+    const coursewares = await rpcCall("lessonCourseware", "listCoursewares", [{
+      teacherId,
+      schoolId,
+      sourceType,
+      sourceId,
+    }]) as LessonCourseware[];
+    return coursewares[0] || null;
+  },
+
   async createCourseware(teacherId: string, schoolId: string, input: LessonCoursewareInput): Promise<LessonCourseware> {
     return rpcCall("lessonCourseware", "createCourseware", [teacherId, schoolId, input]) as any;
   },

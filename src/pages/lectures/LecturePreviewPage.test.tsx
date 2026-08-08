@@ -1,12 +1,23 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LecturePreviewPage from "./LecturePreviewPage";
 import { lectureService } from "@/services/lecture";
 import { classService } from "@/services/class";
 import { questionService } from "@/services/question";
 import { analyticsService } from "@/services/analytics";
+import { lessonCoursewareService } from "@/services/lessonCourseware";
 import type { Lecture, Question, SchoolClass, Student } from "@/types";
+
+const teacher = {
+  id: "teacher-1",
+  schoolId: "school-1",
+  name: "测试教师",
+};
+
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: () => ({ teacher }),
+}));
 
 vi.mock("@/services/lecture", () => ({
   lectureService: { getLecture: vi.fn(), updateLecture: vi.fn() },
@@ -28,6 +39,12 @@ vi.mock("@/services/analytics", () => ({
     listAnswerRecordsByLecture: vi.fn(),
     saveAnswerRecord: vi.fn(),
     batchSaveAnswerRecords: vi.fn(),
+  },
+}));
+vi.mock("@/services/lessonCourseware", () => ({
+  lessonCoursewareService: {
+    getCoursewareBySource: vi.fn(),
+    createFromLecture: vi.fn(),
   },
 }));
 
@@ -150,11 +167,17 @@ const question: Question = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 };
 
+function CoursewareRouteProbe() {
+  const location = useLocation();
+  return <div>{location.search === "?preview=1" ? "课件预览页" : "课件编辑页"}</div>;
+}
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/lectures/lecture-1/preview"]}>
       <Routes>
         <Route path="/lectures/:id/preview" element={<LecturePreviewPage />} />
+        <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -174,6 +197,8 @@ describe("LecturePreviewPage", () => {
     vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
     vi.mocked(analyticsService.batchSaveAnswerRecords).mockResolvedValue([]);
     vi.mocked(lectureService.updateLecture).mockResolvedValue(lecture);
+    vi.mocked(lessonCoursewareService.getCoursewareBySource).mockResolvedValue(null);
+    vi.mocked(lessonCoursewareService.createFromLecture).mockResolvedValue({ id: "lesson-courseware-1" } as any);
   });
 
   it("renders a synchronized two-column preview with question metadata", async () => {
@@ -267,6 +292,41 @@ describe("LecturePreviewPage", () => {
         source: "manual",
       });
     });
+  });
+
+  it("sends a previewed lecture to my courseware and opens the editor", async () => {
+    renderPage();
+
+    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(lessonCoursewareService.createFromLecture).toHaveBeenCalledWith(
+        teacher.id,
+        teacher.schoolId,
+        lecture.id,
+      );
+    });
+    expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
+  });
+
+  it("opens an existing lecture courseware in preview without creating another", async () => {
+    vi.mocked(lessonCoursewareService.getCoursewareBySource).mockResolvedValue({
+      id: "linked-lesson-courseware",
+    } as any);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "课件" }));
+
+    expect(await screen.findByText("课件预览页")).toBeInTheDocument();
+    expect(lessonCoursewareService.createFromLecture).not.toHaveBeenCalled();
+    expect(lessonCoursewareService.getCoursewareBySource).toHaveBeenCalledWith(
+      teacher.id,
+      teacher.schoolId,
+      "lecture",
+      lecture.id,
+    );
   });
 
 });
