@@ -71,6 +71,7 @@ interface DrawingPreset {
 interface WritableCanvasProps {
   tool: Tool;
   preset?: DrawingPreset;
+  eraserWidth?: number;
   clearToken: number;
   className?: string;
   ariaLabel?: string;
@@ -129,11 +130,12 @@ const INITIAL_DRAWING_PRESETS: DrawingPreset[] = [
   { id: "highlighter-green", kind: "highlighter", label: "绿色荧光笔", color: "#4ade80", width: 18 },
 ];
 
-const DRAWING_COLORS = ["#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#7c3aed", "#111827"];
+const DRAWING_COLORS = ["#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#ffffff"];
 const DRAWING_WIDTHS: Record<DrawingPreset["kind"], number[]> = {
   pen: [2, 4, 7],
   highlighter: [10, 18, 28],
 };
+const ERASER_WIDTHS = [12, 24, 48];
 
 const questionTypeLabel: Record<string, string> = {
   single: "单选",
@@ -291,7 +293,7 @@ function getPresentationElements(slide: LessonSlide): LessonSlideElement[] {
   ];
 }
 
-function WritableCanvas({ tool, preset, clearToken, className, ariaLabel }: WritableCanvasProps) {
+function WritableCanvas({ tool, preset, eraserWidth = 24, clearToken, className, ariaLabel }: WritableCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -372,7 +374,7 @@ function WritableCanvas({ tool, preset, clearToken, className, ariaLabel }: Writ
     if (tool === "eraser") {
       context.globalCompositeOperation = "destination-out";
       context.globalAlpha = 1;
-      context.lineWidth = 24;
+      context.lineWidth = eraserWidth;
       context.strokeStyle = "rgba(0, 0, 0, 1)";
     } else if (preset) {
       context.globalCompositeOperation = "source-over";
@@ -459,6 +461,8 @@ export function PresentationMode({
   const [tool, setTool] = useState<Tool>("select");
   const [drawingPresets, setDrawingPresets] = useState(INITIAL_DRAWING_PRESETS);
   const [presetMenuToolId, setPresetMenuToolId] = useState<DrawingToolId | null>(null);
+  const [eraserWidth, setEraserWidth] = useState(24);
+  const [eraserSizeMenuOpen, setEraserSizeMenuOpen] = useState(false);
   const [questionVisibility, setQuestionVisibility] = useState<LessonQuestionContentVisibility>({
     ...STEM_ONLY_QUESTION_VISIBILITY,
   });
@@ -546,9 +550,24 @@ export function PresentationMode({
   }, [colorPreferences]);
 
   useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-presentation-popup-root]")) return;
+      setSidePanel(null);
+      setPresetMenuToolId(null);
+      setEraserSizeMenuOpen(false);
+      setColorSettingsOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, []);
+
+  useEffect(() => {
     setQuestionVisibility({ ...STEM_ONLY_QUESTION_VISIBILITY });
     setSidePanel(null);
     setSelectedElementId(null);
+    setPresetMenuToolId(null);
+    setEraserSizeMenuOpen(false);
     setColorSettingsOpen(false);
     setMainClearToken((value) => value + 1);
   }, [currentIndex]);
@@ -641,6 +660,9 @@ export function PresentationMode({
   };
 
   const toggleSidePanel = (side: Side, tab: SideTab) => {
+    setPresetMenuToolId(null);
+    setEraserSizeMenuOpen(false);
+    setColorSettingsOpen(false);
     setSidePanel((current) => (
       current?.side === side && current.tab === tab ? null : { side, tab }
     ));
@@ -677,9 +699,9 @@ export function PresentationMode({
     };
     const board: BoardPage = {
       id: boardId,
-      x: 16 + offset,
+      x: 0,
       y: 10 + offset,
-      width: 68,
+      width: 100,
       height: 62,
       writingAreas: [firstWritingArea],
       activeWritingAreaId: firstWritingArea.id,
@@ -756,19 +778,17 @@ export function PresentationMode({
     setBoards((current) => current.map((board) => {
       if (board.id !== interaction.boardId) return board;
       if (interaction.mode === "move") {
-        const visibleX = Math.min(board.width, (64 / rect.width) * 100);
-        const visibleY = Math.min(board.height, (64 / rect.height) * 100);
         return {
           ...board,
           x: Number(clamp(
             interaction.board.x + dx,
-            visibleX - interaction.board.width,
-            100 - visibleX,
+            0,
+            100 - interaction.board.width,
           ).toFixed(4)),
           y: Number(clamp(
             interaction.board.y + dy,
-            visibleY - interaction.board.height,
-            100 - visibleY,
+            0,
+            100 - interaction.board.height,
           ).toFixed(4)),
         };
       }
@@ -806,20 +826,22 @@ export function PresentationMode({
       let y = interaction.board.y;
       let width = interaction.board.width;
       let height = interaction.board.height;
+      const right = interaction.board.x + interaction.board.width;
+      const bottom = interaction.board.y + interaction.board.height;
 
       if (direction.includes("e")) {
-        width = clamp(interaction.board.width + dx, 28, 100);
+        width = clamp(interaction.board.width + dx, 28, 100 - interaction.board.x);
       }
       if (direction.includes("w")) {
-        width = clamp(interaction.board.width - dx, 28, 100);
-        x = interaction.board.x + interaction.board.width - width;
+        x = clamp(interaction.board.x + dx, 0, right - 28);
+        width = right - x;
       }
       if (direction.includes("s")) {
-        height = clamp(interaction.board.height + dy, 24, 100);
+        height = clamp(interaction.board.height + dy, 24, 100 - interaction.board.y);
       }
       if (direction.includes("n")) {
-        height = clamp(interaction.board.height - dy, 24, 100);
-        y = interaction.board.y + interaction.board.height - height;
+        y = clamp(interaction.board.y + dy, 0, bottom - 24);
+        height = bottom - y;
       }
       return {
         ...board,
@@ -935,6 +957,7 @@ export function PresentationMode({
     return (
       <div
         data-presentation-side-controls={side}
+        data-presentation-popup-root
         className={cn(
           "absolute bottom-[4.25rem] z-[90]",
           side === "left" ? "left-4" : "right-4",
@@ -1039,7 +1062,7 @@ export function PresentationMode({
     <div
       data-board-side-controls={side}
       className={cn(
-        "pointer-events-auto absolute top-1/2 z-20 flex max-h-[calc(100%_-_5rem)] -translate-y-1/2 flex-col items-center gap-0.5 overflow-y-auto",
+        "pointer-events-auto absolute top-1 z-20 flex max-h-[calc(100%_-_0.5rem)] flex-col items-center gap-0.5 overflow-y-auto",
         side === "left" ? "left-1" : "right-1",
       )}
     >
@@ -1105,6 +1128,7 @@ export function PresentationMode({
                   key={displayedSlide.id}
                   elements={visibleSlideElements}
                   editable={tool === "select"}
+                  disableAnimations
                   allowTextEditing={false}
                   selectedElementId={selectedElementId}
                   onSelectElement={setSelectedElementId}
@@ -1127,6 +1151,7 @@ export function PresentationMode({
           key={currentSlide?.id || "empty-slide"}
           tool={tool}
           preset={selectedDrawingPreset}
+          eraserWidth={eraserWidth}
           clearToken={mainClearToken}
           ariaLabel="课件批注画布"
           className="z-10"
@@ -1202,6 +1227,7 @@ export function PresentationMode({
                       <WritableCanvas
                         tool={boardsVisible && active && activeWritingArea ? tool : "none"}
                         preset={selectedDrawingPreset}
+                        eraserWidth={eraserWidth}
                         clearToken={writingArea.clearToken}
                         ariaLabel={`${label}书写区 ${writingAreaIndex + 1}`}
                         className="z-10"
@@ -1210,7 +1236,7 @@ export function PresentationMode({
                   );
                 })}
 
-                <div className="pointer-events-none absolute left-3 top-3 z-20">
+                <div className="pointer-events-none absolute left-10 top-3 z-20">
                   <button
                     type="button"
                     aria-label={`移动${label}`}
@@ -1282,7 +1308,7 @@ export function PresentationMode({
           {drawingPresets.map((preset) => {
             const selected = tool === preset.id;
             return (
-              <div key={preset.id} className="relative">
+              <div key={preset.id} className="relative" data-presentation-popup-root>
                 {presetMenuToolId === preset.id && (
                   <div className="absolute bottom-full left-1/2 mb-2 w-56 -translate-x-1/2 rounded-xl border border-ink-100 bg-paper p-3 shadow-2xl">
                     <div className="text-[10px] font-medium text-ink-400">颜色</div>
@@ -1293,8 +1319,8 @@ export function PresentationMode({
                           type="button"
                           aria-label={`${preset.label}改为${color}`}
                           className={cn(
-                            "h-6 w-6 rounded-full border-2",
-                            preset.color === color ? "border-ink-900" : "border-paper",
+                            "h-6 w-6 rounded-full border-2 shadow-sm",
+                            preset.color === color ? "border-ink-900" : "border-ink-100",
                           )}
                           style={{ backgroundColor: color }}
                           onClick={() => {
@@ -1348,6 +1374,9 @@ export function PresentationMode({
                   onClick={() => {
                     setTool(selected ? "none" : preset.id);
                     setPresetMenuToolId(null);
+                    setEraserSizeMenuOpen(false);
+                    setSidePanel(null);
+                    setColorSettingsOpen(false);
                   }}
                   className={cn(
                     "relative flex h-10 w-9 items-center justify-center rounded-lg transition-all",
@@ -1366,6 +1395,9 @@ export function PresentationMode({
                     className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink-800 text-paper shadow"
                     onClick={(event) => {
                       event.stopPropagation();
+                      setEraserSizeMenuOpen(false);
+                      setSidePanel(null);
+                      setColorSettingsOpen(false);
                       setPresetMenuToolId((current) => current === preset.id ? null : preset.id);
                     }}
                   >
@@ -1377,24 +1409,75 @@ export function PresentationMode({
           })}
 
           <div className="mx-0.5 h-7 w-px self-center bg-ink-200" />
-          <button
-            type="button"
-            aria-label="橡皮擦"
-            aria-pressed={tool === "eraser"}
-            onClick={() => {
-              setTool(tool === "eraser" ? "none" : "eraser");
-              setPresetMenuToolId(null);
-            }}
-            className={cn(
-              "flex h-10 w-9 items-center justify-center rounded-lg transition-all",
-              tool === "eraser"
-                ? "bg-gold-100 text-ink-900 shadow ring-2 ring-gold-400"
-                : "bg-mist text-ink-600 hover:bg-ink-100",
+          <div className="relative" data-presentation-popup-root>
+            {eraserSizeMenuOpen && (
+              <div className="absolute bottom-full left-1/2 mb-2 w-44 -translate-x-1/2 rounded-xl border border-ink-100 bg-paper p-3 shadow-2xl">
+                <div className="text-[10px] font-medium text-ink-400">擦除范围</div>
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  {ERASER_WIDTHS.map((width) => (
+                    <button
+                      key={width}
+                      type="button"
+                      aria-label={`橡皮擦范围${width}`}
+                      aria-pressed={eraserWidth === width}
+                      onClick={() => {
+                        setEraserWidth(width);
+                        setTool("eraser");
+                      }}
+                      className={cn(
+                        "flex h-10 items-center justify-center rounded-lg border",
+                        eraserWidth === width
+                          ? "border-gold-400 bg-gold-50"
+                          : "border-ink-100 hover:border-gold-200",
+                      )}
+                    >
+                      <span
+                        className="block rounded-full bg-ink-500/80"
+                        style={{ width: `${clamp(width / 2, 7, 24)}px`, height: `${clamp(width / 2, 7, 24)}px` }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
-            title="橡皮擦"
-          >
-            <Eraser className="h-5 w-5" />
-          </button>
+            <button
+              type="button"
+              aria-label="橡皮擦"
+              aria-pressed={tool === "eraser"}
+              onClick={() => {
+                setTool(tool === "eraser" ? "none" : "eraser");
+                setPresetMenuToolId(null);
+                setSidePanel(null);
+                setColorSettingsOpen(false);
+                if (tool === "eraser") setEraserSizeMenuOpen(false);
+              }}
+              className={cn(
+                "flex h-10 w-9 items-center justify-center rounded-lg transition-all",
+                tool === "eraser"
+                  ? "bg-gold-100 text-ink-900 shadow ring-2 ring-gold-400"
+                  : "bg-mist text-ink-600 hover:bg-ink-100",
+              )}
+              title={`橡皮擦 · ${eraserWidth}px`}
+            >
+              <Eraser className="h-5 w-5" />
+            </button>
+            {tool === "eraser" && (
+              <button
+                type="button"
+                aria-label="设置橡皮擦范围"
+                className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink-800 text-paper shadow"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPresetMenuToolId(null);
+                  setSidePanel(null);
+                  setColorSettingsOpen(false);
+                  setEraserSizeMenuOpen((open) => !open);
+                }}
+              >
+                <ChevronUp className="h-3 w-3" />
+              </button>
+            )}
+          </div>
           <button
             type="button"
             aria-label={boardsVisible && activeBoardId ? "清空当前板书" : "清空批注"}
@@ -1419,12 +1502,17 @@ export function PresentationMode({
           >
             <NotebookPen className="h-5 w-5" />
           </button>
-          <div className="relative">
+          <div className="relative" data-presentation-popup-root>
             <button
               type="button"
               aria-label="页面与板书颜色设置"
               aria-expanded={colorSettingsOpen}
-              onClick={() => setColorSettingsOpen((open) => !open)}
+              onClick={() => {
+                setPresetMenuToolId(null);
+                setEraserSizeMenuOpen(false);
+                setSidePanel(null);
+                setColorSettingsOpen((open) => !open);
+              }}
               className={cn(
                 "relative flex h-10 w-9 items-center justify-center rounded-lg transition-colors",
                 colorSettingsOpen

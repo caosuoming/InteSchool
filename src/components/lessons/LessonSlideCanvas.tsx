@@ -15,6 +15,7 @@ interface LessonSlideCanvasProps {
   elements?: LessonSlideElement[];
   children: ReactNode;
   editable?: boolean;
+  disableAnimations?: boolean;
   allowTextEditing?: boolean;
   selectedElementId?: string | null;
   onSelectElement?: (id: string | null) => void;
@@ -57,6 +58,7 @@ export function LessonSlideCanvas({
   elements = [],
   children,
   editable = false,
+  disableAnimations = false,
   allowTextEditing = editable,
   selectedElementId,
   onSelectElement,
@@ -172,7 +174,7 @@ export function LessonSlideCanvas({
               top: `${element.y}%`,
               width: `${element.width}%`,
               height: `${element.height}%`,
-              ...animationStyle(element, editable),
+              ...(!disableAnimations ? animationStyle(element, editable) : undefined),
             }}
             onPointerDown={element.kind === "image"
               ? (event) => startInteraction(event, element, "move")
