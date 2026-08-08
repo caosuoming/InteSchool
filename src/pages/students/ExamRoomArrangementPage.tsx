@@ -421,7 +421,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState("");
-  const [settingsClassId, setSettingsClassId] = useState("");
+  const [fixedRoomClassId, setFixedRoomClassId] = useState("");
+  const [studentSettingsClassId, setStudentSettingsClassId] = useState("");
   const [bulkCapacity, setBulkCapacity] = useState(30);
   const [newPlanOpen, setNewPlanOpen] = useState(false);
   const [newPlanName, setNewPlanName] = useState("");
@@ -445,21 +446,26 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const examGroups = useMemo(() => (
     draft && context ? summarizeExamGroups(draft, context) : []
   ), [context, draft]);
-  const activeSettingsClassId = context?.classes.some((classItem) => classItem.id === settingsClassId)
-    ? settingsClassId
+  const activeFixedRoomClassId = context?.classes.some((classItem) => classItem.id === fixedRoomClassId)
+    ? fixedRoomClassId
     : context?.classes[0]?.id || "";
-  const activeSettingsClass = context?.classes.find((classItem) => classItem.id === activeSettingsClassId) || null;
-  const activeSettingsClassRule = draft?.classRules.find((rule) => rule.classId === activeSettingsClassId) || null;
+  const activeFixedRoomClass = context?.classes.find((classItem) => classItem.id === activeFixedRoomClassId) || null;
+  const activeFixedRoomClassRule = draft?.classRules.find((rule) => rule.classId === activeFixedRoomClassId) || null;
+  const activeStudentSettingsClassId = context?.classes.some((classItem) => classItem.id === studentSettingsClassId)
+    ? studentSettingsClassId
+    : context?.classes[0]?.id || "";
+  const activeStudentSettingsClass = context?.classes.find((classItem) => classItem.id === activeStudentSettingsClassId) || null;
+  const activeStudentSettingsClassRule = draft?.classRules.find((rule) => rule.classId === activeStudentSettingsClassId) || null;
   const activeClassMajoritySubjects = useMemo(() => (
-    context && draft && activeSettingsClass
+    context && draft && activeStudentSettingsClass
       ? mostCommonClassSubjects(
-        activeSettingsClass.id,
+        activeStudentSettingsClass.id,
         context,
         draft.studentSubjects,
-        activeSettingsClassRule?.defaultSubjects || draft.subjects,
+        activeStudentSettingsClassRule?.defaultSubjects || draft.subjects,
       )
       : []
-  ), [activeSettingsClass, activeSettingsClassRule, context, draft]);
+  ), [activeStudentSettingsClass, activeStudentSettingsClassRule, context, draft]);
 
   useEffect(() => {
     if (!schoolId) {
@@ -813,10 +819,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     if (!context) return [];
     const keyword = studentKeyword.trim().toLowerCase();
     return context.students.filter((student) => {
-      if (student.classId !== activeSettingsClassId) return false;
+      if (student.classId !== activeStudentSettingsClassId) return false;
       return !keyword || student.name.toLowerCase().includes(keyword) || student.studentNo.toLowerCase().includes(keyword);
     });
-  }, [activeSettingsClassId, context, studentKeyword]);
+  }, [activeStudentSettingsClassId, context, studentKeyword]);
 
   const classAssignmentGroups = useMemo(() => {
     if (!context) return [];
@@ -1081,23 +1087,23 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   <div className="mt-3 space-y-3">
                     <ClassSwitchTabs
                       classes={context.classes}
-                      activeClassId={activeSettingsClassId}
-                      onChange={setSettingsClassId}
+                      activeClassId={activeFixedRoomClassId}
+                      onChange={setFixedRoomClassId}
                       ariaLabel="班级学科固定考场班级"
                     />
-                    {activeSettingsClass && (
+                    {activeFixedRoomClass && (
                       <div className="rounded-lg border border-ink-100 bg-paper p-4">
-                        <div className="mb-3 text-sm font-medium text-ink-900">{activeSettingsClass.name}</div>
+                        <div className="mb-3 text-sm font-medium text-ink-900">{activeFixedRoomClass.name}</div>
                         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                           {draft.subjects.map((subject) => {
-                            const fixedRoomId = activeSettingsClassRule?.fixedSubjectRoomIds?.[subject] || "";
+                            const fixedRoomId = activeFixedRoomClassRule?.fixedSubjectRoomIds?.[subject] || "";
                             return (
                               <label key={subject} className="flex items-center gap-2 text-xs text-ink-600">
                                 <span className="w-10 shrink-0">{subject}</span>
                                 <select
-                                  aria-label={`${activeSettingsClass.name}${subject}固定考场`}
+                                  aria-label={`${activeFixedRoomClass.name}${subject}固定考场`}
                                   value={fixedRoomId}
-                                  onChange={(event) => setClassSubjectRoom(activeSettingsClass.id, subject, event.target.value)}
+                                  onChange={(event) => setClassSubjectRoom(activeFixedRoomClass.id, subject, event.target.value)}
                                   className="min-w-0 flex-1 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700"
                                 >
                                   <option value="">自动分配</option>
@@ -1120,8 +1126,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   <div className="mt-3">
                     <ClassSwitchTabs
                       classes={context.classes}
-                      activeClassId={activeSettingsClassId}
-                      onChange={setSettingsClassId}
+                      activeClassId={activeStudentSettingsClassId}
+                      onChange={setStudentSettingsClassId}
                       ariaLabel="学生考试科目班级"
                     />
                   </div>
@@ -1130,21 +1136,21 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   <Input value={studentKeyword} onChange={(event) => setStudentKeyword(event.target.value)} placeholder="搜索姓名或学号" aria-label="搜索学生" />
                 </div>
                 <div className="max-h-[640px] overflow-auto divide-y divide-ink-100">
-                  {activeSettingsClass && (
-                    <section key={activeSettingsClass.id}>
+                  {activeStudentSettingsClass && (
+                    <section key={activeStudentSettingsClass.id}>
                         <div className="sticky top-0 z-10 border-b border-ink-100 bg-ink-50/95 px-5 py-3 backdrop-blur">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
-                              <div className="text-sm font-medium text-ink-900">{activeSettingsClass.name} · {filteredStudents.length} 人</div>
+                              <div className="text-sm font-medium text-ink-900">{activeStudentSettingsClass.name} · {filteredStudents.length} 人</div>
                               <div className="text-xs text-ink-500">批量设置会同步覆盖本班学生，之后仍可单独微调。</div>
                             </div>
-                            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${activeSettingsClass.name}批量考试科目`}>
+                            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${activeStudentSettingsClass.name}批量考试科目`}>
                               {draft.subjects.map((subject) => (
                                 <CheckboxPill
                                   key={subject}
-                                  checked={activeSettingsClassRule?.defaultSubjects.includes(subject) || false}
+                                  checked={activeStudentSettingsClassRule?.defaultSubjects.includes(subject) || false}
                                   label={subject}
-                                  onClick={() => toggleClassSubject(activeSettingsClass.id, subject)}
+                                  onClick={() => toggleClassSubject(activeStudentSettingsClass.id, subject)}
                                 />
                               ))}
                             </div>
@@ -1153,7 +1159,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         <div className="divide-y divide-ink-100">
                           {filteredStudents.map((student) => {
                             const selection = draft.studentSubjects.find((item) => item.studentId === student.id);
-                            const classSubjects = activeSettingsClassRule?.defaultSubjects || activeClassMajoritySubjects;
+                            const classSubjects = activeStudentSettingsClassRule?.defaultSubjects || activeClassMajoritySubjects;
                             const differsFromClass = Boolean(selection && !sameSubjects(selection.subjects, classSubjects));
                             return (
                               <div
@@ -1173,7 +1179,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                                     <span className="font-normal text-ink-400">{student.studentNo}</span>
                                     {student.isExternal && <Badge>借读生</Badge>}
                                   </div>
-                                  <div className="text-xs text-ink-400">{activeSettingsClass.name}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div>
+                                  <div className="text-xs text-ink-400">{activeStudentSettingsClass.name}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div>
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
                                 <select

@@ -232,7 +232,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(absent).toBeChecked();
   });
 
-  it("switches fixed-room and student settings by class", async () => {
+  it("keeps fixed-room and student class tabs independent", async () => {
     const user = userEvent.setup();
     const secondClass = {
       ...context.classes[0],
@@ -266,11 +266,21 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByRole("group", { name: "张同学考试设置" })).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "李同学考试设置" })).not.toBeInTheDocument();
 
-    await user.click(within(studentTabs).getByRole("tab", { name: "高三（2）班" }));
+    await user.click(within(fixedRoomTabs).getByRole("tab", { name: "高三（2）班" }));
 
     expect(within(fixedRoomTabs).getByRole("tab", { name: "高三（2）班" })).toHaveAttribute("aria-selected", "true");
+    expect(within(studentTabs).getByRole("tab", { name: "高三（1）班" })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByLabelText("高三（1）班语文固定考场")).not.toBeInTheDocument();
     expect(screen.getByLabelText("高三（2）班语文固定考场")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "张同学考试设置" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "李同学考试设置" })).not.toBeInTheDocument();
+
+    await user.click(within(studentTabs).getByRole("tab", { name: "高三（2）班" }));
+    await user.click(within(fixedRoomTabs).getByRole("tab", { name: "高三（1）班" }));
+
+    expect(within(studentTabs).getByRole("tab", { name: "高三（2）班" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("高三（1）班语文固定考场")).toBeInTheDocument();
+    expect(screen.queryByLabelText("高三（2）班语文固定考场")).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "张同学考试设置" })).not.toBeInTheDocument();
     expect(screen.getByRole("group", { name: "李同学考试设置" })).toBeInTheDocument();
   });
