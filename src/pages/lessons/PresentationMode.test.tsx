@@ -213,6 +213,7 @@ describe("PresentationMode", () => {
     expect(redPen).toHaveAttribute("aria-pressed", "true");
     await user.click(screen.getByRole("button", { name: "设置红色画笔" }));
     expect(screen.getByRole("button", { name: "红色画笔改为#2563eb" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "红色画笔改为#ffffff" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "红色画笔粗细7" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "红色画笔粗细7" }));
     expect(screen.getByRole("button", { name: "红色画笔" })).toHaveAttribute("title", "红色画笔 · 7px");
@@ -224,6 +225,7 @@ describe("PresentationMode", () => {
 
     await user.click(screen.getByRole("button", { name: "打开板书" }));
     const firstBoard = screen.getByRole("region", { name: "板书 1" });
+    expect(firstBoard).toHaveStyle({ left: "0%", width: "100%" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(firstBoard.querySelector('[data-board-divider="center"]')).toHaveClass("left-1/2");
     expect(screen.getByRole("button", { name: "移动板书 1" })).toBeInTheDocument();
@@ -234,6 +236,8 @@ describe("PresentationMode", () => {
     const rightBoardControls = firstBoard.querySelector<HTMLElement>('[data-board-side-controls="right"]');
     expect(leftBoardControls).not.toBeNull();
     expect(rightBoardControls).not.toBeNull();
+    expect(leftBoardControls).toHaveClass("top-1");
+    expect(rightBoardControls).toHaveClass("top-1");
     const addWritingAreaButton = within(leftBoardControls!).getByRole("button", { name: "从左侧在板书 1中新增书写区" });
     const rightAddWritingAreaButton = within(rightBoardControls!).getByRole("button", { name: "从右侧在板书 1中新增书写区" });
     const firstWritingAreaTab = within(leftBoardControls!).getByRole("tab", { name: "从左侧切换到板书 1书写区 1" });
@@ -293,7 +297,7 @@ describe("PresentationMode", () => {
     const firstBoard = screen.getByRole("region", { name: "板书 1" });
     const writingFrame = firstBoard.querySelector<HTMLElement>("[data-board-writing-frame]");
     expect(writingFrame).not.toBeNull();
-    expect(Number.parseFloat(writingFrame?.style.width || "0")).toBeGreaterThan(100);
+    expect(Number.parseFloat(writingFrame?.style.width || "0")).toBeGreaterThanOrEqual(100);
     expect(Number.parseFloat(writingFrame?.style.height || "0")).toBeGreaterThan(100);
     expect(writingFrame).toHaveAttribute("data-draggable", "false");
 
@@ -310,7 +314,7 @@ describe("PresentationMode", () => {
     fireEvent.pointerDown(moveBoardButton, { pointerId: 1, clientX: 200, clientY: 160 });
     fireEvent.pointerMove(moveBoardButton, { pointerId: 1, clientX: -500, clientY: 160 });
     fireEvent.pointerUp(moveBoardButton, { pointerId: 1, clientX: -500, clientY: 160 });
-    expect(Number.parseFloat(firstBoard.style.left)).toBeLessThan(0);
+    expect(firstBoard).toHaveStyle({ left: "0%", width: "100%" });
     expect(writingFrame?.style.left).toBe(frameLeftBeforeBoardMove);
 
     const frameLeftBefore = writingFrame?.style.left;
@@ -374,10 +378,11 @@ describe("PresentationMode", () => {
     ]);
 
     const westHandle = screen.getByRole("button", { name: "从左边调整板书 1大小" });
-    fireEvent.pointerDown(westHandle, { pointerId: 3, clientX: 160, clientY: 300 });
-    fireEvent.pointerMove(westHandle, { pointerId: 3, clientX: 60, clientY: 300 });
-    fireEvent.pointerUp(westHandle, { pointerId: 3, clientX: 60, clientY: 300 });
-    expect(board).toHaveStyle({ left: "6%", width: "78%" });
+    expect(board).toHaveStyle({ left: "0%", width: "100%" });
+    fireEvent.pointerDown(westHandle, { pointerId: 3, clientX: 0, clientY: 300 });
+    fireEvent.pointerMove(westHandle, { pointerId: 3, clientX: 100, clientY: 300 });
+    fireEvent.pointerUp(westHandle, { pointerId: 3, clientX: 100, clientY: 300 });
+    expect(board).toHaveStyle({ left: "10%", width: "90%" });
 
     const northHandle = screen.getByRole("button", { name: "从上边调整板书 1大小" });
     fireEvent.pointerDown(northHandle, { pointerId: 4, clientX: 400, clientY: 80 });
@@ -389,7 +394,57 @@ describe("PresentationMode", () => {
     fireEvent.pointerDown(southEastHandle, { pointerId: 5, clientX: 840, clientY: 576 });
     fireEvent.pointerMove(southEastHandle, { pointerId: 5, clientX: 940, clientY: 656 });
     fireEvent.pointerUp(southEastHandle, { pointerId: 5, clientX: 940, clientY: 656 });
-    expect(board).toHaveStyle({ width: "88%", height: "82%" });
+    expect(board).toHaveStyle({ left: "10%", width: "90%", top: "0%", height: "82%" });
+  });
+
+  it("dismisses floating controls outside and configures eraser size without replaying slide animations", async () => {
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={[{
+          id: "animated-slide",
+          type: "knowledge",
+          title: "动画页",
+          freeformLayout: true,
+          elements: [{
+            id: "animated-text",
+            kind: "text",
+            content: "不应闪烁",
+            x: 10,
+            y: 10,
+            width: 40,
+            height: 20,
+            enterAnimation: "fade",
+          }],
+        }]}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    const animatedElement = screen.getByText("不应闪烁").closest<HTMLElement>(".absolute");
+    expect(animatedElement?.style.animation).toBe("");
+    await user.click(screen.getByRole("button", { name: "红色画笔" }));
+    expect(animatedElement?.style.animation).toBe("");
+
+    await user.click(screen.getByRole("button", { name: "橡皮擦" }));
+    expect(screen.getByRole("button", { name: "设置橡皮擦范围" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "设置橡皮擦范围" }));
+    expect(screen.getByRole("button", { name: "橡皮擦范围48" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "橡皮擦范围48" }));
+    expect(screen.getByRole("button", { name: "橡皮擦" })).toHaveAttribute("title", "橡皮擦 · 48px");
+
+    await user.click(screen.getByRole("button", { name: "左侧显示内容" }));
+    expect(screen.getByText("显示内容")).toBeInTheDocument();
+    fireEvent.pointerDown(screen.getByTestId("presentation-surface"));
+    expect(screen.queryByText("显示内容")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "页面与板书颜色设置" }));
+    expect(screen.getByRole("dialog", { name: "颜色设置" })).toBeInTheDocument();
+    fireEvent.pointerDown(screen.getByTestId("presentation-surface"));
+    expect(screen.queryByRole("dialog", { name: "颜色设置" })).not.toBeInTheDocument();
   });
 
   it("turns legacy knowledge content into a selectable object without showing its title", async () => {
