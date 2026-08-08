@@ -89,7 +89,6 @@ export function buildDefaultClassAverageOptions(
   const classMap = new Map(context.classes.map((item) => [item.id, item]));
   const classOrder = [
     ...context.classes
-      .filter((item) => recordClassIds.includes(item.id))
       .sort((left, right) => naturalCompare(left.name, right.name))
       .map((item) => item.id),
     ...recordClassIds.filter((classId) => !classMap.has(classId)),
@@ -234,7 +233,7 @@ export function buildGradeClassAverageReport(
   const contextClassNames = new Map(context.classes.map((item) => [item.id, item.name]));
 
   const classRows = (options.classOrder || [])
-    .filter((classId) => recordsByClass.has(classId) && !hiddenClassIds.has(classId))
+    .filter((classId) => !hiddenClassIds.has(classId))
     .map((classId) => {
       const records = recordsByClass.get(classId) || [];
       const className = contextClassNames.get(classId) || records[0]?.className || "未知班级";
