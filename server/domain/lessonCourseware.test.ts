@@ -527,6 +527,19 @@ describe("courseware lesson flow", () => {
       });
       expect(libraryCourseware?.content).toContain("共 20 页");
 
+      await expect(lessonCoursewareService.listCoursewares({
+        teacherId: "teacher-1",
+        schoolId: "school-1",
+        sourceType: "examPaper",
+        sourceId: paper.id,
+      })).resolves.toEqual([expect.objectContaining({ id: lesson.id })]);
+      await expect(lessonCoursewareService.listCoursewares({
+        teacherId: "teacher-1",
+        schoolId: "school-1",
+        sourceType: "lecture",
+        sourceId: paper.id,
+      })).resolves.toEqual([]);
+
       await lessonCoursewareService.updateCourseware(lesson.id, { title: "函数检测课堂版" });
       await expect(coursewareService.getCourseware(lesson.libraryCoursewareId!))
         .resolves.toMatchObject({ title: "函数检测课堂版" });
@@ -736,6 +749,12 @@ describe("courseware lesson flow", () => {
         title: lesson.title,
       });
       expect(libraryCourseware?.content).toContain("由讲义");
+      await expect(lessonCoursewareService.listCoursewares({
+        teacherId: "teacher-1",
+        schoolId: "school-1",
+        sourceType: "lecture",
+        sourceId: lecture.id,
+      })).resolves.toEqual([expect.objectContaining({ id: lesson.id })]);
     });
   });
 });

@@ -2202,6 +2202,8 @@ export interface LessonCoursewareFilter {
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
+  sourceType?: LessonSourceType;
+  sourceId?: string;
   chapterIds?: string[];
   knowledgePointIds?: string[];
   status?: "draft" | "published";

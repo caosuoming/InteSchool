@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExamPaper, ExamPublication, Question, Teacher, TreeNode } from "@/types";
 
@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   getKnowledgeTree: vi.fn(),
   generateExamPaperDocx: vi.fn(),
   createLessonFromExamPaper: vi.fn(),
+  getLessonCoursewareBySource: vi.fn(),
   listAnswerRecordsByStudents: vi.fn(),
   saveAnswerRecord: vi.fn(),
   batchSaveAnswerRecords: vi.fn(),
@@ -58,6 +59,7 @@ vi.mock("@/services/lecture", () => ({
 vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
     createFromExamPaper: mocks.createLessonFromExamPaper,
+    getCoursewareBySource: mocks.getLessonCoursewareBySource,
   },
 }));
 vi.mock("@/services/class", () => ({
@@ -202,12 +204,17 @@ const publication = {
   updatedAt: timestamp,
 } as ExamPublication;
 
+function CoursewareRouteProbe() {
+  const location = useLocation();
+  return <div>{location.search === "?preview=1" ? "课件预览页" : "课件编辑页"}</div>;
+}
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={[`/exam-papers/${paper.id}/preview`]}>
       <Routes>
         <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
-        <Route path="/my-lessons/:id/edit" element={<div>课件编辑页</div>} />
+        <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -219,7 +226,7 @@ function renderEditorPage() {
       <Routes>
         <Route path="/exam-papers/:id" element={<ExamPaperEditorPage />} />
         <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
-        <Route path="/my-lessons/:id/edit" element={<div>课件编辑页</div>} />
+        <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -252,6 +259,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
     mocks.generateExamPaperDocx.mockResolvedValue(undefined);
     mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
+    mocks.getLessonCoursewareBySource.mockResolvedValue(null);
     mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
     mocks.saveAnswerRecord.mockResolvedValue(null);
     mocks.batchSaveAnswerRecords.mockResolvedValue([]);
@@ -338,10 +346,12 @@ describe("ExamPaperEditorPage preview", () => {
     });
   });
 
-  it("sends a previewed paper to my lessons and opens the courseware editor", async () => {
+  it("sends a previewed paper to my courseware and opens the courseware editor", async () => {
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "发送到我的上课" }));
+    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
 
     await waitFor(() => {
       expect(mocks.createLessonFromExamPaper).toHaveBeenCalledWith(
@@ -373,14 +383,16 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.getByLabelText<HTMLInputElement>("题目分值")).toHaveValue(9);
   });
 
-  it("persists an unsaved preview before sending it to my lessons", async () => {
+  it("persists an unsaved preview before sending it to my courseware", async () => {
     renderEditorPage();
 
     fireEvent.change(await screen.findByLabelText("文档名"), {
       target: { value: "发送前的新标题" },
     });
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
-    fireEvent.click(await screen.findByRole("button", { name: "发送到我的上课" }));
+    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
 
     await waitFor(() => {
       expect(mocks.updatePaper).toHaveBeenCalledWith(
@@ -391,6 +403,48 @@ describe("ExamPaperEditorPage preview", () => {
     });
     expect(mocks.updatePaper.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.createLessonFromExamPaper.mock.invocationCallOrder[0]);
+  });
+
+  it("sends directly from edit mode after saving current changes", async () => {
+    renderEditorPage();
+
+    fireEvent.change(await screen.findByLabelText("文档名"), {
+      target: { value: "编辑状态的新标题" },
+    });
+    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(
+        paper.id,
+        expect.objectContaining({ title: "编辑状态的新标题" }),
+      );
+      expect(mocks.createLessonFromExamPaper).toHaveBeenCalledWith(
+        teacher.id,
+        teacher.schoolId,
+        paper.id,
+      );
+    });
+    expect(mocks.updatePaper.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.createLessonFromExamPaper.mock.invocationCallOrder[0]);
+    expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
+  });
+
+  it("opens an existing linked courseware in preview without creating a duplicate", async () => {
+    mocks.getLessonCoursewareBySource.mockResolvedValue({ id: "linked-courseware-1" });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "课件" }));
+
+    expect(await screen.findByText("课件预览页")).toBeInTheDocument();
+    expect(mocks.createLessonFromExamPaper).not.toHaveBeenCalled();
+    expect(mocks.getLessonCoursewareBySource).toHaveBeenCalledWith(
+      teacher.id,
+      teacher.schoolId,
+      "examPaper",
+      paper.id,
+    );
   });
 
   it("renders formulas in both editor and preview and exposes publishing in the editor", async () => {
@@ -492,6 +546,7 @@ describe("ExamPaperEditorPage structured editor", () => {
     mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
     mocks.saveAnswerRecord.mockResolvedValue(null);
     mocks.batchSaveAnswerRecords.mockResolvedValue([]);
+    mocks.getLessonCoursewareBySource.mockResolvedValue(null);
 
     mocks.getPaper.mockResolvedValue({
       ...paper,

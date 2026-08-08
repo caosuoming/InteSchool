@@ -6,7 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Send, Save,
   FileQuestion, Blocks, Check,
@@ -62,6 +62,7 @@ interface SlideNavigatorResizeState {
 export function LessonEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { teacher } = useAuthStore();
 
   const [courseware, setCourseware] = useState<LessonCourseware | null>(null);
@@ -76,7 +77,7 @@ export function LessonEditorPage() {
   const [relatedQuestionsMap, setRelatedQuestionsMap] = useState<Record<string, Question>>({});
 
   // 预览模式
-  const [previewMode, setPreviewMode] = useState(false);
+  const [previewMode, setPreviewMode] = useState(() => searchParams.get("preview") === "1");
 
   // 题目公式编辑器（编辑题干/答案/解析）
   const [formulaEditTarget, setFormulaEditTarget] = useState<{
