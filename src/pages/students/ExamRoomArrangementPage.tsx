@@ -403,6 +403,47 @@ function ClassSwitchTabs({
   );
 }
 
+function PreviewSwitchTabs({
+  items,
+  activeId,
+  onChange,
+  ariaLabel,
+}: {
+  items: Array<{ id: string; label: string; detail?: string }>;
+  activeId: string;
+  onChange: (id: string) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2" role="tablist" aria-label={ariaLabel}>
+      {items.map((item) => {
+        const active = item.id === activeId;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-label={item.label}
+            aria-selected={active}
+            onClick={() => onChange(item.id)}
+            className={cn(
+              "rounded-md border px-3 py-1.5 text-left transition-colors",
+              active
+                ? "border-gold-300 bg-gold-50 text-gold-800"
+                : "border-ink-200 bg-paper text-ink-500 hover:border-ink-300 hover:text-ink-700",
+            )}
+          >
+            <span className="block text-sm font-medium">{item.label}</span>
+            {item.detail && (
+              <span className={cn("mt-0.5 block text-[11px]", active ? "text-gold-700" : "text-ink-400")}>{item.detail}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ExamRoomArrangementPage({ embedded = false }: { embedded?: boolean }) {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const schoolId = getCurrentAffiliation()?.schoolId || null;
@@ -416,6 +457,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [previewMode, setPreviewMode] = useState<PreviewMode>("class");
   const [selectedClassIds, setSelectedClassIds] = useState<Set<string>>(new Set());
   const [selectedRoomIds, setSelectedRoomIds] = useState<Set<string>>(new Set());
+  const [previewClassId, setPreviewClassId] = useState("");
+  const [previewRoomId, setPreviewRoomId] = useState("");
   const [showDeskStudentNo, setShowDeskStudentNo] = useState(true);
   const [showDeskAdmissionNo, setShowDeskAdmissionNo] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -829,12 +872,20 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     () => classAssignmentGroups.filter(({ classItem }) => selectedClassIds.has(classItem.id)),
     [classAssignmentGroups, selectedClassIds],
   );
+  const activeClassAssignmentGroup = classAssignmentGroups.find(({ classItem }) => classItem.id === previewClassId)
+    || classAssignmentGroups[0]
+    || null;
+  const activeDeskRoomGroup = deskRoomGroups.find((group) => group.roomId === previewRoomId)
+    || deskRoomGroups[0]
+    || null;
 
   useEffect(() => {
     if (view !== "result") return;
     setPreviewMode("class");
     setSelectedClassIds(new Set(classAssignmentGroups.map(({ classItem }) => classItem.id)));
     setSelectedRoomIds(new Set(deskRoomGroups.map((group) => group.roomId)));
+    setPreviewClassId(classAssignmentGroups[0]?.classItem.id || "");
+    setPreviewRoomId(deskRoomGroups[0]?.roomId || "");
   }, [classAssignmentGroups, deskRoomGroups, selectedArrangementId, view]);
 
   const toggleClassSelection = (classId: string) => {
@@ -1315,23 +1366,36 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 </div>
               </Card>
 
-              {previewMode === "class" ? classAssignmentGroups.map(({ classItem, students }) => (
-                <Card key={classItem.id} className="p-0 overflow-hidden">
+              {previewMode === "class" && activeClassAssignmentGroup ? (
+                <Card className="p-0 overflow-hidden">
+                  <div className="border-b border-ink-100 bg-ink-50/60 px-5 py-4">
+                    <div className="mb-2 text-xs font-medium text-ink-500">按班级切换预览</div>
+                    <PreviewSwitchTabs
+                      items={classAssignmentGroups.map(({ classItem, students }) => ({
+                        id: classItem.id,
+                        label: classItem.name,
+                        detail: `${students.length} 名学生`,
+                      }))}
+                      activeId={activeClassAssignmentGroup.classItem.id}
+                      onChange={setPreviewClassId}
+                      ariaLabel="班级考场安排班级"
+                    />
+                  </div>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
                     <label className="inline-flex cursor-pointer items-start gap-3">
                       <input
                         className="mt-1"
                         type="checkbox"
-                        aria-label={`选择${classItem.name}`}
-                        checked={selectedClassIds.has(classItem.id)}
-                        onChange={() => toggleClassSelection(classItem.id)}
+                        aria-label={`选择${activeClassAssignmentGroup.classItem.name}`}
+                        checked={selectedClassIds.has(activeClassAssignmentGroup.classItem.id)}
+                        onChange={() => toggleClassSelection(activeClassAssignmentGroup.classItem.id)}
                       />
                       <span>
-                        <span className="block font-medium text-ink-900">{classItem.name}</span>
+                        <span className="block font-medium text-ink-900">{activeClassAssignmentGroup.classItem.name}</span>
                         <span className="mt-0.5 block text-xs text-ink-500">每名学生只显示一条记录，所有考试科目、考场号和位置集中列出。</span>
                       </span>
                     </label>
-                    <Badge>{students.length} 名学生</Badge>
+                    <Badge>{activeClassAssignmentGroup.students.length} 名学生</Badge>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="min-w-[700px] w-full text-xs">
@@ -1342,7 +1406,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                           <th className="px-3 py-2 text-left font-medium">考试安排</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-ink-100">{students.map((student) => (
+                      <tbody className="divide-y divide-ink-100">{activeClassAssignmentGroup.students.map((student) => (
                         <tr key={student.key} className="align-top">
                           <td className="px-3 py-2 font-medium text-ink-900">{student.studentName}</td>
                           <td className="px-3 py-2 font-mono text-[11px] text-ink-700">{student.studentNo}</td>
@@ -1361,26 +1425,39 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     </table>
                   </div>
                 </Card>
-              )) : deskRoomGroups.map((roomGroup) => (
-                <Card key={roomGroup.roomId} className="p-0 overflow-hidden">
+              ) : previewMode === "desk" && activeDeskRoomGroup ? (
+                <Card className="p-0 overflow-hidden">
+                  <div className="border-b border-ink-100 bg-ink-50/60 px-5 py-4">
+                    <div className="mb-2 text-xs font-medium text-ink-500">按考场切换预览</div>
+                    <PreviewSwitchTabs
+                      items={deskRoomGroups.map((roomGroup) => ({
+                        id: roomGroup.roomId,
+                        label: roomGroup.roomNumber,
+                        detail: `${roomGroup.roomLocation} · ${roomGroup.labels.length} 张桌贴`,
+                      }))}
+                      activeId={activeDeskRoomGroup.roomId}
+                      onChange={setPreviewRoomId}
+                      ariaLabel="桌贴预览考场"
+                    />
+                  </div>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
                     <label className="inline-flex cursor-pointer items-start gap-3">
                       <input
                         className="mt-1"
                         type="checkbox"
-                        aria-label={`选择${roomGroup.roomNumber}`}
-                        checked={selectedRoomIds.has(roomGroup.roomId)}
-                        onChange={() => toggleRoomSelection(roomGroup.roomId)}
+                        aria-label={`选择${activeDeskRoomGroup.roomNumber}`}
+                        checked={selectedRoomIds.has(activeDeskRoomGroup.roomId)}
+                        onChange={() => toggleRoomSelection(activeDeskRoomGroup.roomId)}
                       />
                       <span>
-                        <span className="block font-medium text-ink-900">{roomGroup.roomNumber}</span>
-                        <span className="mt-0.5 block text-xs text-ink-500">{roomGroup.roomLocation}</span>
+                        <span className="block font-medium text-ink-900">{activeDeskRoomGroup.roomNumber}</span>
+                        <span className="mt-0.5 block text-xs text-ink-500">{activeDeskRoomGroup.roomLocation}</span>
                       </span>
                     </label>
-                    <Badge>{roomGroup.labels.length} 张桌贴</Badge>
+                    <Badge>{activeDeskRoomGroup.labels.length} 张桌贴</Badge>
                   </div>
                   <div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                    {roomGroup.labels.map((label) => (
+                    {activeDeskRoomGroup.labels.map((label) => (
                       <article key={label.key} data-testid="desk-label-card" className="rounded-lg border border-ink-300 bg-paper p-3 shadow-sm">
                         <div className="truncate text-center font-serif text-xs font-semibold text-ink-900">{selectedArrangement?.name}</div>
                         <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-ink-500">
@@ -1408,7 +1485,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     ))}
                   </div>
                 </Card>
-              ))}
+              ) : null}
 
               {selectedArrangement && <Button variant="ghost" onClick={handleDelete}><Trash2 className="h-4 w-4 text-red-500" />删除当前方案</Button>}
             </div>

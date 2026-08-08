@@ -394,6 +394,91 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByText("已选择 0 / 1 个考场，共 0 张桌贴")).toBeInTheDocument();
   });
 
+  it("switches result previews one class and one room at a time", async () => {
+    const user = userEvent.setup();
+    const secondClass = {
+      ...context.classes[0],
+      id: "class-2",
+      name: "高三（2）班",
+    };
+    const secondStudent = {
+      ...context.students[0],
+      id: "student-2",
+      name: "李同学",
+      studentNo: "002",
+      classId: "class-2",
+    };
+    const secondRoom = {
+      id: "room-2",
+      name: "2考场",
+      number: "2考场",
+      location: "教学楼 302",
+      capacity: 30,
+    };
+    const secondAssignment = {
+      ...savedArrangement.assignments[0],
+      id: "combined:student-2",
+      studentId: "student-2",
+      studentName: "李同学",
+      studentNo: "002",
+      classId: "class-2",
+      className: "高三（2）班",
+      roomId: secondRoom.id,
+      roomName: secondRoom.name,
+      roomNumber: secondRoom.number,
+      roomLocation: secondRoom.location,
+      admissionNo: "20260510020001",
+    };
+    const arrangement = {
+      ...savedArrangement,
+      rooms: [...savedArrangement.rooms, secondRoom],
+      assignments: [...savedArrangement.assignments, secondAssignment],
+    };
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      ...context,
+      cohort: {
+        ...cohort,
+        classIds: ["class-1", "class-2"],
+        studentCount: 2,
+      },
+      classes: [context.classes[0], secondClass],
+      students: [context.students[0], secondStudent],
+    });
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([arrangement]);
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+
+    const classSwitch = await screen.findByRole("tablist", { name: "班级考场安排班级" });
+    const classOne = within(classSwitch).getByRole("tab", { name: "高三（1）班" });
+    const classTwo = within(classSwitch).getByRole("tab", { name: "高三（2）班" });
+    expect(classOne).toHaveAttribute("aria-selected", "true");
+    expect(classTwo).toHaveAttribute("aria-selected", "false");
+    expect(within(screen.getByRole("table")).getByText("张同学")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).queryByText("李同学")).not.toBeInTheDocument();
+
+    await user.click(classTwo);
+    expect(classTwo).toHaveAttribute("aria-selected", "true");
+    expect(within(screen.getByRole("table")).getByText("李同学")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).queryByText("张同学")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
+    const roomSwitch = await screen.findByRole("tablist", { name: "桌贴预览考场" });
+    const roomOne = within(roomSwitch).getByRole("tab", { name: "高三（1）班" });
+    const roomTwo = within(roomSwitch).getByRole("tab", { name: "2考场" });
+    expect([roomOne, roomTwo].filter((tab) => tab.getAttribute("aria-selected") === "true")).toHaveLength(1);
+
+    await user.click(roomOne);
+    expect(roomOne).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByTestId("desk-label-card")).toHaveLength(1);
+    expect(screen.getByTestId("desk-label-card")).toHaveTextContent("张同学");
+
+    await user.click(roomTwo);
+    expect(roomTwo).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByTestId("desk-label-card")).toHaveLength(1);
+    expect(screen.getByTestId("desk-label-card")).toHaveTextContent("李同学");
+  });
+
   it("keeps every desk label in one room on one adaptive 8K print page", async () => {
     const user = userEvent.setup();
     const assignments = Array.from({ length: 21 }, (_, index) => ({
