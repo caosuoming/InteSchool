@@ -1164,6 +1164,27 @@ describe("production backend", () => {
     expect(roomAllowed.statusCode).toBe(200);
     expect(roomAllowed.json<{ result: Array<{ key: string }> }>().result)
       .toEqual(expect.arrayContaining([expect.objectContaining({ key: cohortKey })]));
+
+    const beforeLegacyRoles = built.store.loadState();
+    const legacyRolesState = structuredClone(beforeLegacyRoles);
+    legacyRolesState.teachers = legacyRolesState.teachers.map((item) => item.id === teacherId
+      ? {
+          ...item,
+          roles: ["teacher" as const, "gradeLeader" as const],
+          affiliations: item.affiliations.map((affiliation) => affiliation.id === item.currentAffiliationId
+            ? { ...affiliation, roles: [] }
+            : affiliation),
+        }
+      : item);
+    built.store.saveState(beforeLegacyRoles, legacyRolesState);
+
+    const allowedWithLegacyRoles = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload,
+    });
+    expect(allowedWithLegacyRoles.statusCode, allowedWithLegacyRoles.body).toBe(200);
   });
 
   it("returns an empty student list without losing the service method receiver", async () => {

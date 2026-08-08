@@ -190,6 +190,68 @@ describe("grade class average report", () => {
     expect(report.overallAverage).toEqual(group.average);
   });
 
+  it("keeps every cohort class in the class-average template even without imported scores", () => {
+    const contextWithUnscoredClass: GradeImportContext = {
+      ...context,
+      cohort: {
+        ...context.cohort,
+        classIds: [...context.cohort.classIds, "class-3"],
+      },
+      classes: [
+        ...context.classes,
+        {
+          id: "class-3",
+          type: "school",
+          schoolId: "school-1",
+          name: "高三(3)班",
+          grade: "高三",
+          studentCount: 2,
+          createdBy: "teacher-1",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      teachers: [
+        ...context.teachers,
+        {
+          id: "teacher-english",
+          name: "英语教师丙",
+          subject: "英语",
+          teachingClassIds: ["class-3"],
+        },
+      ],
+      classProfiles: {
+        ...context.classProfiles,
+        "class-3": {
+          classTypeName: "实验班",
+          subjectSelections: ["物化生"],
+          scoreSubjects: [],
+          hasImportedScores: false,
+        },
+      },
+    };
+    const settings = {
+      ...exam.settings,
+      classSubjectTeacherIds: {
+        ...exam.settings.classSubjectTeacherIds,
+        "class-3": { 数学: [], 英语: ["teacher-english"] },
+      },
+    };
+
+    const options = buildDefaultClassAverageOptions(exam, contextWithUnscoredClass);
+    expect(options.classOrder).toEqual(["class-2", "class-3", "class-10"]);
+
+    const report = buildGradeClassAverageReport(exam, template, contextWithUnscoredClass, settings);
+    const unscored = report.groups[0].rows.find((row) => row.classId === "class-3");
+    expect(unscored).toMatchObject({
+      classLabel: "3班",
+      category: "实验班",
+      studentCount: 0,
+      subjectTeachers: { 数学: [], 英语: ["英语教师丙"] },
+      subjectAverages: { 数学: null, 英语: null },
+      totalAverage: null,
+    });
+  });
+
   it("honors user class labels, categories, order, and hidden classes", () => {
     const adjusted: GradeStatisticsTemplate = {
       ...template,

@@ -151,7 +151,9 @@ function canManageExams(teacher: TeacherRecord): boolean {
   if (isAdmin(teacher)) return true;
   const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
     || teacher.affiliations?.find((item) => item.isCurrent);
-  const roles = Array.isArray(affiliation?.roles) ? affiliation.roles : teacher.roles;
+  const roles = Array.isArray(affiliation?.roles) && affiliation.roles.length > 0
+    ? affiliation.roles
+    : teacher.roles;
   return roles.some((role) => EXAM_MANAGER_ROLES.includes(role as (typeof EXAM_MANAGER_ROLES)[number]));
 }
 
