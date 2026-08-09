@@ -460,20 +460,12 @@ export function LessonEditorPage() {
     });
   };
 
-  const moveAnimationOrder = (elementId: string, direction: -1 | 1) => {
+  const setAnimationOrder = (elementId: string, order: number) => {
     if (!currentSlide) return;
     const sourceElements = currentSlide.elements || [];
-    const ordered = [...sourceElements].sort((left, right) =>
-      (left.animationOrder || sourceElements.indexOf(left) + 1)
-      - (right.animationOrder || sourceElements.indexOf(right) + 1));
-    const index = ordered.findIndex((element) => element.id === elementId);
-    const target = index + direction;
-    if (index < 0 || target < 0 || target >= ordered.length) return;
-    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
-    const orderById = new Map(ordered.map((element, order) => [element.id, order + 1]));
     updateCurrentElements(sourceElements.map((element) => ({
       ...element,
-      animationOrder: orderById.get(element.id),
+      animationOrder: element.id === elementId ? order : element.animationOrder,
     })));
   };
 
@@ -944,7 +936,7 @@ export function LessonEditorPage() {
                     onMergeSlide={mergeWithNext}
                     onDeleteSlide={() => deleteSlide(currentIndex)}
                     onOpenFormulaEditor={openFormulaEditor}
-                    onMoveAnimationOrder={moveAnimationOrder}
+                    onSetAnimationOrder={setAnimationOrder}
                     onToggleStudent={toggleStudent}
                     onLoadRelatedQuestions={loadRelatedQuestions}
                     onAddRelatedQuestion={addRelatedQuestion}
