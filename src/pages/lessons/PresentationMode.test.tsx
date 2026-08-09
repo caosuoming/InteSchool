@@ -99,6 +99,96 @@ beforeEach(() => {
 });
 
 describe("PresentationMode", () => {
+  it("reveals animation steps before changing pages and groups equal orders", async () => {
+    const user = userEvent.setup();
+    const animatedSlides: LessonSlide[] = [
+      {
+        id: "animated-slide",
+        type: "knowledge",
+        title: "动画页",
+        freeformLayout: true,
+        elements: [
+          {
+            id: "first-step",
+            kind: "text",
+            content: "第一步",
+            x: 5,
+            y: 5,
+            width: 30,
+            height: 15,
+            enterAnimation: "fade",
+            animationOrder: 1,
+          },
+          {
+            id: "second-step-a",
+            kind: "text",
+            content: "第二步甲",
+            x: 5,
+            y: 25,
+            width: 30,
+            height: 15,
+            enterAnimation: "rise",
+            animationOrder: 2,
+          },
+          {
+            id: "second-step-b",
+            kind: "text",
+            content: "第二步乙",
+            x: 40,
+            y: 25,
+            width: 30,
+            height: 15,
+            enterAnimation: "zoom",
+            animationOrder: 2,
+          },
+        ],
+      },
+      {
+        id: "plain-slide",
+        type: "knowledge",
+        title: "下一张",
+        freeformLayout: true,
+        elements: [{
+          id: "plain-element",
+          kind: "text",
+          content: "下一张内容",
+          x: 5,
+          y: 5,
+          width: 90,
+          height: 40,
+        }],
+      },
+    ];
+
+    render(
+      <PresentationMode
+        slides={animatedSlides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("第一步")).not.toBeInTheDocument();
+    expect(screen.queryByText("第二步甲")).not.toBeInTheDocument();
+
+    const next = screen.getByRole("button", { name: "左侧下一页" });
+    await user.click(next);
+    const firstStep = screen.getByText("第一步").closest<HTMLElement>(".absolute");
+    expect(firstStep?.style.animation).toContain("lessonElementFade");
+    expect(firstStep?.style.animationDelay).toBe("");
+    expect(screen.queryByText("第二步甲")).not.toBeInTheDocument();
+
+    await user.click(next);
+    expect(screen.getByText("第二步甲")).toBeInTheDocument();
+    expect(screen.getByText("第二步乙")).toBeInTheDocument();
+    expect(screen.queryByText("下一张内容")).not.toBeInTheDocument();
+
+    await user.click(next);
+    expect(screen.getByText("下一张内容")).toBeInTheDocument();
+  });
+
   it("combines page, text, and board colors with automatic maximum contrast", async () => {
     expect(getMaximumContrastTextColor("#ffffff")).toBe("#111827");
     expect(getMaximumContrastTextColor("#111827")).toBe("#ffffff");

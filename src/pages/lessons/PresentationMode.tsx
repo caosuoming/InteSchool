@@ -292,6 +292,33 @@ function getPresentationElements(slide: LessonSlide): LessonSlideElement[] {
   ];
 }
 
+function animationOrderOf(element: LessonSlideElement): number | null {
+  const order = element.animationOrder;
+  return typeof order === "number" && Number.isFinite(order) && order > 0 ? order : null;
+}
+
+function getAnimationSteps(elements: LessonSlideElement[]): number[] {
+  return [...new Set(elements
+    .map(animationOrderOf)
+    .filter((order): order is number => order !== null))]
+    .sort((left, right) => left - right);
+}
+
+function getElementsAtAnimationProgress(
+  elements: LessonSlideElement[],
+  steps: number[],
+  revealedStepCount: number,
+): LessonSlideElement[] {
+  if (steps.length === 0) return elements;
+  const lastRevealedOrder = revealedStepCount > 0
+    ? steps[Math.min(revealedStepCount, steps.length) - 1]
+    : null;
+  return elements.filter((element) => {
+    const order = animationOrderOf(element);
+    return order === null || (lastRevealedOrder !== null && order <= lastRevealedOrder);
+  });
+}
+
 function WritableCanvas({ tool, preset, eraserWidth = 24, clearToken, className, ariaLabel }: WritableCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
@@ -468,6 +495,7 @@ export function PresentationMode({
   const [sidePanel, setSidePanel] = useState<{ side: Side; tab: SideTab } | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [elementOverrides, setElementOverrides] = useState<Record<string, LessonSlideElement[]>>({});
+  const [animationProgress, setAnimationProgress] = useState<Record<string, number>>({});
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [boards, setBoards] = useState<BoardPage[]>([]);
   const [boardsVisible, setBoardsVisible] = useState(false);
@@ -502,9 +530,18 @@ export function PresentationMode({
   const relatedQuestions = (currentSlide?.relatedQuestionIds || [])
     .map((id) => relatedQuestionsById[id])
     .filter((question): question is Question => Boolean(question));
-  const visibleSlideElements = displayedSlide
+  const animationCandidateElements = displayedSlide
     ? getVisibleLessonSlideElements(displayedSlide, questionVisibility)
     : [];
+  const currentAnimationSteps = getAnimationSteps(animationCandidateElements);
+  const currentAnimationProgress = currentSlide
+    ? Math.min(animationProgress[currentSlide.id] || 0, currentAnimationSteps.length)
+    : 0;
+  const visibleSlideElements = getElementsAtAnimationProgress(
+    animationCandidateElements,
+    currentAnimationSteps,
+    currentAnimationProgress,
+  );
 
   const questionContentControls = currentSlide?.questionSnapshot
     ? [
@@ -571,6 +608,28 @@ export function PresentationMode({
     setMainClearToken((value) => value + 1);
   }, [currentIndex]);
 
+  const goPrev = useCallback(() => {
+    if (currentSlide && currentAnimationProgress > 0) {
+      setAnimationProgress((current) => ({
+        ...current,
+        [currentSlide.id]: currentAnimationProgress - 1,
+      }));
+      return;
+    }
+    setCurrentIndex((index) => Math.max(0, index - 1));
+  }, [currentAnimationProgress, currentSlide]);
+
+  const goNext = useCallback(() => {
+    if (currentSlide && currentAnimationProgress < currentAnimationSteps.length) {
+      setAnimationProgress((current) => ({
+        ...current,
+        [currentSlide.id]: currentAnimationProgress + 1,
+      }));
+      return;
+    }
+    setCurrentIndex((index) => Math.min(slides.length - 1, index + 1));
+  }, [currentAnimationProgress, currentAnimationSteps.length, currentSlide, slides.length]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
@@ -589,21 +648,15 @@ export function PresentationMode({
       }
       if (event.key === "ArrowRight" || event.key === " " || event.key === "PageDown") {
         event.preventDefault();
-        setCurrentIndex((index) => Math.min(slides.length - 1, index + 1));
+        goNext();
       } else if (event.key === "ArrowLeft" || event.key === "PageUp") {
         event.preventDefault();
-        setCurrentIndex((index) => Math.max(0, index - 1));
+        goPrev();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [boardsVisible, onExit, sidePanel, slides.length]);
-
-  const goPrev = useCallback(() => setCurrentIndex((index) => Math.max(0, index - 1)), []);
-  const goNext = useCallback(
-    () => setCurrentIndex((index) => Math.min(slides.length - 1, index + 1)),
-    [slides.length],
-  );
+  }, [boardsVisible, goNext, goPrev, onExit, sidePanel]);
 
   const toggleQuestionContent = (section: keyof LessonQuestionContentVisibility) => {
     setQuestionVisibility((current) => ({ ...current, [section]: !current[section] }));
@@ -1017,7 +1070,7 @@ export function PresentationMode({
       <button
         type="button"
         onClick={goPrev}
-        disabled={currentIndex === 0}
+        disabled={currentIndex === 0 && currentAnimationProgress === 0}
         aria-label={`${side === "left" ? "左侧" : "右侧"}上一页`}
         title="上一页"
         className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
@@ -1027,7 +1080,7 @@ export function PresentationMode({
       <button
         type="button"
         onClick={goNext}
-        disabled={currentIndex === slides.length - 1}
+        disabled={currentIndex === slides.length - 1 && currentAnimationProgress >= currentAnimationSteps.length}
         aria-label={`${side === "left" ? "左侧" : "右侧"}下一页`}
         title="下一页"
         className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
@@ -1121,7 +1174,7 @@ export function PresentationMode({
                   key={displayedSlide.id}
                   elements={visibleSlideElements}
                   editable={tool === "select"}
-                  disableAnimations
+                  animationMode="step"
                   allowTextEditing={false}
                   selectedElementId={selectedElementId}
                   onSelectElement={setSelectedElementId}
