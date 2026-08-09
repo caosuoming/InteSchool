@@ -205,6 +205,7 @@ describe("LecturePreviewPage", () => {
     const { container } = renderPage();
 
     expect(await screen.findByText("预览：函数专题讲义_2026（拆解版）")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑讲义" })).toBeInTheDocument();
     expect(screen.getByText("讲义属性")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "栏目" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /整份讲义/ })).not.toBeInTheDocument();
@@ -233,6 +234,19 @@ describe("LecturePreviewPage", () => {
     await waitFor(() => {
       expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4);
     });
+  });
+
+  it("keeps extracted lecture copies preview-only", async () => {
+    vi.mocked(lectureService.getLecture).mockResolvedValue({
+      ...lecture,
+      isExtractCopy: true,
+      sourceResourceId: "lecture-source-1",
+    });
+
+    renderPage();
+
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+    expect(screen.queryByRole("button", { name: "编辑讲义" })).not.toBeInTheDocument();
   });
 
   it("toggles answer and analysis by clicking the question stem", async () => {
