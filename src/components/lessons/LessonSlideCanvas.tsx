@@ -1,6 +1,8 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
+  useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -14,6 +16,7 @@ import { MathHtml } from "@/components/ui/MathHtml";
 interface LessonSlideCanvasProps {
   elements?: LessonSlideElement[];
   children: ReactNode;
+  referenceSize?: { width: number; height: number };
   editable?: boolean;
   disableAnimations?: boolean;
   animationMode?: "default" | "step";
@@ -68,6 +71,7 @@ function animationStyle(
 export function LessonSlideCanvas({
   elements = [],
   children,
+  referenceSize,
   editable = false,
   disableAnimations = false,
   animationMode = "default",
@@ -83,6 +87,36 @@ export function LessonSlideCanvas({
   const canvasRef = useRef<HTMLDivElement>(null);
   const interactionRef = useRef<Interaction | null>(null);
   const textElementRefs = useRef(new Map<string, HTMLDivElement>());
+  const [contentScale, setContentScale] = useState(1);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !referenceSize) {
+      setContentScale(1);
+      return;
+    }
+
+    const updateScale = () => {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const nextScale = Math.min(
+        rect.width / referenceSize.width,
+        rect.height / referenceSize.height,
+      );
+      if (Number.isFinite(nextScale) && nextScale > 0) setContentScale(nextScale);
+    };
+
+    updateScale();
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateScale);
+    resizeObserver?.observe(canvas);
+    window.addEventListener("resize", updateScale);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateScale);
+    };
+  }, [referenceSize]);
 
   useEffect(() => {
     if (!editable || !allowTextEditing || !selectedElementId) return;
@@ -145,6 +179,8 @@ export function LessonSlideCanvas({
     }
   };
 
+  const layoutScale = referenceSize ? contentScale : 1;
+
   return (
     <div
       ref={canvasRef}
@@ -152,13 +188,27 @@ export function LessonSlideCanvas({
         "relative aspect-video w-full overflow-hidden rounded-lg bg-paper shadow-lg",
         className,
       )}
-      style={canvasStyle}
+      style={{
+        ...(referenceSize
+          ? { aspectRatio: `${referenceSize.width} / ${referenceSize.height}` }
+          : undefined),
+        ...canvasStyle,
+      }}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onSelectElement?.(null);
       }}
     >
       <div
-        className="absolute inset-0 overflow-hidden"
+        className={cn("absolute overflow-hidden", referenceSize ? "left-0 top-0" : "inset-0")}
+        data-testid="lesson-slide-content-layer"
+        style={referenceSize
+          ? {
+              width: `${100 / contentScale}%`,
+              height: `${100 / contentScale}%`,
+              transform: `scale(${contentScale})`,
+              transformOrigin: "top left",
+            }
+          : undefined}
         onPointerDown={(event) => {
           if (event.target === event.currentTarget) onSelectElement?.(null);
         }}
@@ -188,8 +238,14 @@ export function LessonSlideCanvas({
             style={{
               left: `${element.x}%`,
               top: `${element.y}%`,
-              width: `${element.width}%`,
-              height: `${element.height}%`,
+              width: `${element.width / layoutScale}%`,
+              height: `${element.height / layoutScale}%`,
+              ...(referenceSize
+                ? {
+                    transform: `scale(${layoutScale})`,
+                    transformOrigin: "top left",
+                  }
+                : undefined),
               ...(!disableAnimations
                 ? animationStyle(
                     element,

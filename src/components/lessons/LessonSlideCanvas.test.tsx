@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlideElement } from "@/types";
@@ -39,6 +39,47 @@ beforeEach(() => {
 });
 
 describe("LessonSlideCanvas", () => {
+  it("scales fixed-size slide content to match the fullscreen reference size", async () => {
+    render(
+      <LessonSlideCanvas
+        elements={elements}
+        referenceSize={{ width: 1920, height: 1080 }}
+      >
+        <div>基础课件内容</div>
+      </LessonSlideCanvas>,
+    );
+
+    const layer = screen.getByTestId("lesson-slide-content-layer");
+    const canvas = layer.parentElement as HTMLDivElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 960,
+      height: 540,
+      top: 0,
+      right: 960,
+      bottom: 540,
+      left: 0,
+      toJSON: () => ({}),
+    });
+
+    fireEvent(window, new Event("resize"));
+
+    await waitFor(() => {
+      expect(layer).toHaveStyle({
+        width: "200%",
+        height: "200%",
+        transform: "scale(0.5)",
+      });
+    });
+    expect(canvas).toHaveStyle({ aspectRatio: "1920 / 1080" });
+    expect(screen.getByText("课堂重点").closest(".absolute")).toHaveStyle({
+      width: "60%",
+      height: "24%",
+      transform: "scale(0.5)",
+    });
+  });
+
   it("renders positioned text and image elements with presentation animations", () => {
     render(
       <LessonSlideCanvas elements={elements}>

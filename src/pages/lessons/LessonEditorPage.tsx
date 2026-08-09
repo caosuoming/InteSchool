@@ -49,6 +49,15 @@ const SLIDE_NAV_MIN_WIDTH = 144;
 const SLIDE_NAV_MAX_WIDTH = 320;
 const SLIDE_NAV_DEFAULT_WIDTH = 176;
 
+function getPresentationReferenceSize() {
+  const screenWidth = window.screen?.width || window.innerWidth;
+  const screenHeight = window.screen?.height || window.innerHeight;
+  return {
+    width: Math.max(1, screenWidth),
+    height: Math.max(1, screenHeight),
+  };
+}
+
 interface InspectorResizeState {
   startX: number;
   startWidth: number;
@@ -94,8 +103,21 @@ export function LessonEditorPage() {
   const [slideNavigatorCollapsed, setSlideNavigatorCollapsed] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [presentationReferenceSize, setPresentationReferenceSize] = useState(
+    getPresentationReferenceSize,
+  );
   const slideNavigatorResizeRef = useRef<SlideNavigatorResizeState | null>(null);
   const inspectorResizeRef = useRef<InspectorResizeState | null>(null);
+
+  useEffect(() => {
+    const updateReferenceSize = () => setPresentationReferenceSize(getPresentationReferenceSize());
+    window.addEventListener("resize", updateReferenceSize);
+    window.screen?.orientation?.addEventListener?.("change", updateReferenceSize);
+    return () => {
+      window.removeEventListener("resize", updateReferenceSize);
+      window.screen?.orientation?.removeEventListener?.("change", updateReferenceSize);
+    };
+  }, []);
 
   const loadCourseware = useCallback(async () => {
     if (!id) return;
@@ -795,6 +817,7 @@ export function LessonEditorPage() {
                 ) : (
                   <LessonSlideCanvas
                     elements={visibleCurrentElements}
+                    referenceSize={presentationReferenceSize}
                     editable
                     selectedElementId={selectedElementId}
                     onSelectElement={(elementId) => {
