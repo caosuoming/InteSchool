@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlideElement } from "@/types";
 import { LessonSlideCanvas } from "./LessonSlideCanvas";
 
@@ -30,6 +30,13 @@ const elements: LessonSlideElement[] = [
     animation: "fade",
   },
 ];
+
+beforeEach(() => {
+  Object.defineProperty(window, "PointerEvent", {
+    configurable: true,
+    value: MouseEvent,
+  });
+});
 
 describe("LessonSlideCanvas", () => {
   it("renders positioned text and image elements with presentation animations", () => {
@@ -140,6 +147,43 @@ describe("LessonSlideCanvas", () => {
         id: "text-1",
         content: "直接输入的新内容",
       }),
+    ]));
+  });
+
+  it("moves a text object by dragging anywhere on it when text editing is disabled", () => {
+    const onElementsChange = vi.fn();
+    const { container } = render(
+      <LessonSlideCanvas
+        elements={elements}
+        editable
+        allowTextEditing={false}
+        onSelectElement={vi.fn()}
+        onElementsChange={onElementsChange}
+      >
+        <div>基础课件内容</div>
+      </LessonSlideCanvas>,
+    );
+
+    const canvas = container.querySelector<HTMLElement>(".aspect-video");
+    vi.spyOn(canvas!, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({}),
+    });
+
+    const text = screen.getByText("课堂重点");
+    const element = text.closest<HTMLElement>(".absolute");
+    fireEvent.pointerDown(text, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(element!, { pointerId: 1, clientX: 200, clientY: 180 });
+
+    expect(onElementsChange).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: "text-1", x: 20, y: 25 }),
     ]));
   });
 

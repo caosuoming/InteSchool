@@ -214,8 +214,9 @@ describe("PresentationMode", () => {
     await user.click(screen.getByRole("button", { name: "设置红色画笔" }));
     expect(screen.getByRole("button", { name: "红色画笔改为#2563eb" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "红色画笔改为#ffffff" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "红色画笔粗细7" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "红色画笔粗细7" }));
+    const penWidth = screen.getByRole("slider", { name: "红色画笔粗细" });
+    expect(penWidth).toHaveValue("3");
+    fireEvent.change(penWidth, { target: { value: "7" } });
     expect(screen.getByRole("button", { name: "红色画笔" })).toHaveAttribute("title", "红色画笔 · 7px");
 
     await user.click(screen.getByRole("button", { name: "全屏" }));
@@ -437,9 +438,9 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "橡皮擦" })).toHaveAttribute("title", "橡皮擦 · 48px");
 
     await user.click(screen.getByRole("button", { name: "左侧显示内容" }));
-    expect(screen.getByText("显示内容")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "显示内容开关" })).toBeInTheDocument();
     fireEvent.pointerDown(screen.getByTestId("presentation-surface"));
-    expect(screen.queryByText("显示内容")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "显示内容开关" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "页面与板书颜色设置" }));
     expect(screen.getByRole("dialog", { name: "颜色设置" })).toBeInTheDocument();
@@ -487,6 +488,9 @@ describe("PresentationMode", () => {
 
     expect(screen.queryByText("选项 A")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "左侧显示内容" }));
+    const displayPanel = screen.getByRole("group", { name: "显示内容开关" });
+    expect(displayPanel).toHaveClass("flex", "items-center");
+    expect(screen.queryByText("按需显示当前题目的内容。")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "选项" }));
     await user.click(screen.getByRole("button", { name: "答案" }));
     await user.click(screen.getByRole("button", { name: "解析" }));
