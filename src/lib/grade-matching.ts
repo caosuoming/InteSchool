@@ -80,7 +80,6 @@ export function gradeRowResolutionError(row: GradeImportRow): string | null {
   if (row.studentId) return null;
   if (!row.createStudent) return "尚未匹配学生";
   if (!row.createStudent.name.trim()) return "新增学生姓名不能为空";
-  if (!row.createStudent.studentNo.trim()) return "新增学生学号不能为空";
   if (!row.createStudent.classId) return "请选择新增学生所属班级";
   return null;
 }
