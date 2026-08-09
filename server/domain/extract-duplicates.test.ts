@@ -128,4 +128,92 @@ describe("extracted question duplicate merge", () => {
       )).rejects.toThrow("只能将上传题合并到自己的题目");
     });
   });
+
+  it("does not reclassify questions created earlier in the same reviewed batch as library duplicates", async () => {
+    await runWithState(state([]), async () => {
+      const result = await extractService.confirmExtract(
+        "teacher-1",
+        "school-1",
+        {
+          questions: [
+            {
+              id: "uploaded-question-1",
+              type: "short",
+              stem: "已知函数 f(x)=x²，求其最小值。",
+              answer: "0",
+              analysis: "当 x=0 时取得最小值。",
+              summary: "二次函数最值",
+              difficulty: 2,
+              status: "new",
+            },
+            {
+              id: "uploaded-question-2",
+              type: "short",
+              stem: "已知函数 f(x)=x²，求其最小值。",
+              answer: "0",
+              analysis: "当 x=0 时取得最小值。",
+              summary: "二次函数最值",
+              difficulty: 2,
+              status: "new",
+            },
+          ],
+          knowledgeBlocks: [],
+        },
+        [],
+        [],
+        "高一",
+        "2026-2027",
+        "上学期",
+        "lecture-1",
+      );
+
+      expect(result.createdQuestions).toHaveLength(2);
+      expect(result.questionIdByItemId["uploaded-question-1"]).toBeTruthy();
+      expect(result.questionIdByItemId["uploaded-question-2"]).toBeTruthy();
+    });
+  });
+
+  it("checks all unresolved library duplicates before writing any question", async () => {
+    const appState = state([existingQuestion()]);
+    await runWithState(appState, async () => {
+      await expect(extractService.confirmExtract(
+        "teacher-1",
+        "school-1",
+        {
+          questions: [
+            {
+              id: "safe-question",
+              type: "short",
+              stem: "计算 1+1。",
+              answer: "2",
+              analysis: "直接计算。",
+              summary: "整数加法",
+              difficulty: 1,
+              status: "new",
+            },
+            {
+              id: "unresolved-duplicate",
+              type: "short",
+              stem: "已知函数 f(x)=x²，求其最小值。",
+              answer: "0",
+              analysis: "当 x=0 时取得最小值。",
+              summary: "二次函数最值",
+              difficulty: 2,
+              status: "new",
+            },
+          ],
+          knowledgeBlocks: [],
+        },
+        [],
+        [],
+        "高一",
+        "2026-2027",
+        "上学期",
+        "lecture-1",
+      )).rejects.toThrow(/发现高度相似题目/);
+
+      expect(appState.questions).toHaveLength(1);
+      expect(appState.questions[0].id).toBe("question-existing");
+    });
+  });
 });

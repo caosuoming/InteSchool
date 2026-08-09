@@ -7,7 +7,10 @@ import type {
   Material,
   ResourceSemester,
 } from "../../src/types/index.js";
-import { questionService } from "./question.js";
+import {
+  createDuplicateConfirmationError,
+  questionService,
+} from "./question.js";
 import { materialService } from "./material.js";
 import {
   HIGH_SIMILARITY_THRESHOLD,
@@ -72,11 +75,26 @@ export const extractService = {
     questionIdByItemId: Record<string, string>;
     materialIdByItemId: Record<string, string>;
   }> {
+    for (const item of items.questions) {
+      if (item.duplicateAction === "merge" || (item.status === "duplicate" && item.duplicateOf)) {
+        continue;
+      }
+      if (!item.stem.trim()) throw new Error("题干不能为空");
+      if (item.duplicateAction === "add" || item.status === "confirmed") continue;
+      const existingCandidate = (
+        await questionService.findSimilarQuestions(item.stem, schoolId)
+      )[0];
+      if (existingCandidate) throw createDuplicateConfirmationError(existingCandidate);
+    }
+
     const createdQuestions: Question[] = [];
     const mergedQuestions: Question[] = [];
     const createdMaterials: Material[] = [];
     const questionIdByItemId: Record<string, string> = {};
     const materialIdByItemId: Record<string, string> = {};
+    // Duplicate review compares uploads with the library before this loop starts.
+    // Do not let writes from the same reviewed batch become new library conflicts.
+    const mutatedQuestionIds = new Set<string>();
 
     for (const item of items.questions) {
       if (item.duplicateAction === "merge") {
@@ -102,6 +120,7 @@ export const extractService = {
           "add",
         );
         mergedQuestions.push(updated);
+        mutatedQuestionIds.add(updated.id);
         questionIdByItemId[item.id] = updated.id;
         continue;
       }
@@ -113,25 +132,32 @@ export const extractService = {
       const answer = normalizeQuestionField(item.answer, ["待教师补充"]);
       const analysis = normalizeQuestionField(item.analysis, ["待教师补充解析"]);
       const summary = normalizeQuestionField(item.summary);
-      const created = await questionService.createQuestion(teacherId, schoolId, {
-        type: item.type,
-        stem: item.stem,
-        options: item.options,
-        answer,
-        analysis,
-        summary,
-        chapterIds,
-        knowledgePointIds,
-        grade,
-        schoolYear,
-        semester,
-        sourceType: questionSourceType,
-        category: questionCategory,
-        difficulty: item.difficulty as 1 | 2 | 3 | 4 | 5,
-        recommendation: 3,
-        duplicateDecision: item.status === "confirmed" ? "add" : undefined,
-      });
+      const created = await questionService.createQuestion(
+        teacherId,
+        schoolId,
+        {
+          type: item.type,
+          stem: item.stem,
+          options: item.options,
+          answer,
+          analysis,
+          summary,
+          chapterIds,
+          knowledgePointIds,
+          grade,
+          schoolYear,
+          semester,
+          sourceType: questionSourceType,
+          category: questionCategory,
+          difficulty: item.difficulty as 1 | 2 | 3 | 4 | 5,
+          recommendation: 3,
+          duplicateDecision:
+            item.duplicateAction === "add" || item.status === "confirmed" ? "add" : undefined,
+        },
+        Array.from(mutatedQuestionIds),
+      );
       createdQuestions.push(created);
+      mutatedQuestionIds.add(created.id);
       questionIdByItemId[item.id] = created.id;
     }
 
