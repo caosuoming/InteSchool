@@ -6,6 +6,7 @@ import type { Lecture, Teacher, TreeNode } from "@/types";
 const mocks = vi.hoisted(() => ({
   getLecture: vi.fn(),
   updateLecture: vi.fn(),
+  listLectures: vi.fn(),
   listColumnTemplates: vi.fn(),
   getChapterTree: vi.fn(),
   getKnowledgeTree: vi.fn(),
@@ -75,7 +76,7 @@ vi.mock("@/services/lecture", () => ({
     getLecture: mocks.getLecture,
     updateLecture: mocks.updateLecture,
     listColumnTemplates: mocks.listColumnTemplates,
-    listLectures: vi.fn().mockResolvedValue([]),
+    listLectures: mocks.listLectures,
     publish: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -161,6 +162,7 @@ describe("LectureEditorPage courseware action", () => {
     vi.clearAllMocks();
     mocks.getLecture.mockResolvedValue(lecture);
     mocks.updateLecture.mockImplementation(async (_id, patch) => ({ ...lecture, ...patch }));
+    mocks.listLectures.mockResolvedValue([]);
     mocks.listColumnTemplates.mockResolvedValue([]);
     mocks.getChapterTree.mockResolvedValue(emptyTree);
     mocks.getKnowledgeTree.mockResolvedValue(emptyTree);
@@ -207,5 +209,57 @@ describe("LectureEditorPage courseware action", () => {
 
     expect(await screen.findByText("课件预览页")).toBeInTheDocument();
     expect(mocks.createFromLecture).not.toHaveBeenCalled();
+  });
+
+  it("shows another lecture's selectable contents in the right pane", async () => {
+    mocks.getLecture.mockResolvedValue({
+      ...lecture,
+      sections: [
+        {
+          id: "chapter-current",
+          title: "当前栏目",
+          type: "chapter",
+          content: "",
+          children: [],
+        },
+      ],
+    });
+    mocks.listLectures.mockResolvedValue([
+      {
+        ...lecture,
+        id: "lecture-2",
+        title: "参考讲义",
+        sections: [
+          {
+            id: "chapter-reference",
+            title: "参考栏目",
+            type: "chapter",
+            content: "",
+            children: [
+              {
+                id: "knowledge-reference",
+                title: "函数单调性",
+                type: "knowledge",
+                content: "单调性的定义与判断方法",
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    renderPage();
+
+    const otherLectureButtons = await screen.findAllByRole("button", { name: "其它讲义" });
+    fireEvent.click(otherLectureButtons[0]);
+    expect(await screen.findByText("选择讲义")).toBeInTheDocument();
+    expect(screen.getByText("点击左侧讲义后，在这里选择要添加的知识块或题目")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "参考讲义" }));
+
+    expect(await screen.findByText("函数单调性")).toBeInTheDocument();
+    expect(screen.getByText("单调性的定义与判断方法")).toBeInTheDocument();
+    expect(screen.queryByText("点击左侧讲义后，在这里选择要添加的知识块或题目")).not.toBeInTheDocument();
   });
 });

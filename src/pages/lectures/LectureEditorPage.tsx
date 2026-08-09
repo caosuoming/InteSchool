@@ -1863,57 +1863,61 @@ export default function LectureEditorPage() {
         description="编排栏目、知识块与题目，并设置讲义使用班级"
         icon={<FileText className="w-5 h-5" />}
         action={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => navigate(prepTaskId ? `/prep/tasks/${prepTaskId}` : "/my-resources/lectures")}
-            >
-              <ArrowLeft className="w-4 h-4" />
-              返回
-            </Button>
-            {!prepTaskId && lecture?.teacherId === teacher?.id && (
-              <Button variant="outline" onClick={() => setPrepSetupOpen(true)}>
-                <Users className="w-4 h-4" />
-                添加到集体备课
-              </Button>
-            )}
-            {lecture && (
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
-                variant="outline"
-                onClick={() => navigate(`/lectures/${lecture.id}/preview`)}
+                variant="ghost"
+                onClick={() => navigate(prepTaskId ? `/prep/tasks/${prepTaskId}` : "/my-resources/lectures")}
               >
-                <Eye className="w-4 h-4" />
-                预览
+                <ArrowLeft className="w-4 h-4" />
+                返回
               </Button>
-            )}
-            {!prepTaskId && lecture?.teacherId === teacher?.id && (
-              <Button
-                variant="outline"
-                onClick={handleSendToMyCourseware}
-                loading={sendingToCourseware}
-                disabled={linkedCoursewareLoading}
-              >
-                <Presentation className="w-4 h-4" />
-                {linkedCourseware ? "课件" : "发送到我的课件"}
+              {lecture && (
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/lectures/${lecture.id}/preview`)}
+                >
+                  <Eye className="w-4 h-4" />
+                  预览
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => handleSave(false)} loading={saving}>
+                <Save className="w-4 h-4" />
+                保存
               </Button>
-            )}
-            <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)}>
-              <UserCheck className="w-4 h-4" />
-              <span className="max-w-48 truncate">
-                {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
-              </span>
-              {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
-            </Button>
-            <Button variant="outline" onClick={() => handleSave(false)} loading={saving}>
-              <Save className="w-4 h-4" />
-              保存
-            </Button>
-            {!prepTaskId && (
-              <Button variant="gold" onClick={() => handleSave(true)} loading={publishing}>
-                <Send className="w-4 h-4" />
-                发布
+              {!prepTaskId && (
+                <Button variant="gold" onClick={() => handleSave(true)} loading={publishing}>
+                  <Send className="w-4 h-4" />
+                  发布
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!prepTaskId && lecture?.teacherId === teacher?.id && (
+                <Button variant="outline" onClick={() => setPrepSetupOpen(true)}>
+                  <Users className="w-4 h-4" />
+                  添加到集体备课
+                </Button>
+              )}
+              {!prepTaskId && lecture?.teacherId === teacher?.id && (
+                <Button
+                  variant="outline"
+                  onClick={handleSendToMyCourseware}
+                  loading={sendingToCourseware}
+                  disabled={linkedCoursewareLoading}
+                >
+                  <Presentation className="w-4 h-4" />
+                  {linkedCourseware ? "课件" : "发送到我的课件"}
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)}>
+                <UserCheck className="w-4 h-4" />
+                <span className="max-w-48 truncate">
+                  {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
+                </span>
+                {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
               </Button>
-            )}
+            </div>
           </div>
         }
       />
@@ -1980,11 +1984,11 @@ export default function LectureEditorPage() {
                 <span className="font-semibold text-gold-700">{lectureQuestionIds.length} 道题</span>
               </div>
             </div>
-            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
-              <div className="xl:col-span-2">
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="lg:col-span-2">
                 <Input label="标题" value={title} onChange={(event) => setTitle(event.target.value)} />
               </div>
-              <div className="xl:col-span-2">
+              <div className="lg:col-span-2">
                 <Textarea
                   label="描述"
                   value={description}
@@ -2020,7 +2024,7 @@ export default function LectureEditorPage() {
                   ...lectureTypeOptions,
                 ]}
               />
-              <details className="md:col-span-2 xl:col-span-4 rounded-lg border border-ink-100 bg-ink-50/40">
+              <details className="md:col-span-2 lg:col-span-4 rounded-lg border border-ink-100 bg-ink-50/40">
                 <summary className="px-3 py-2 text-xs font-medium text-ink-600 cursor-pointer select-none">
                   章节目录与知识点
                 </summary>
@@ -3236,74 +3240,101 @@ export default function LectureEditorPage() {
         )}
 
         {addSource === "lecture" && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {otherLectures.map((l) => (
-                <button
-                  key={l.id}
-                  onClick={() => {
-                    setSelectedOtherLecture(l);
-                    setSelectedLectureSectionIds([]);
-                  }}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md text-sm border transition-all",
-                    selectedOtherLecture?.id === l.id
-                      ? "bg-gold-400 border-gold-400 text-ink-900"
-                      : "border-ink-200 hover:border-ink-300",
-                  )}
-                >
-                  {l.title}
-                </button>
-              ))}
-            </div>
-            {selectedOtherLecture && (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {flattenLectureSections(selectedOtherLecture.sections)
-                  .filter((s) => s.type === "knowledge" || (s.type === "question" && s.questionId))
-                  .map((s) => {
-                    const checked = selectedLectureSectionIds.includes(s.id);
-                    return (
-                      <label
-                        key={s.id}
-                        className={cn(
-                          "flex items-start gap-2 p-3 rounded-md border cursor-pointer transition-colors",
-                          checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedLectureSectionIds((prev) => [...prev, s.id]);
-                            } else {
-                              setSelectedLectureSectionIds((prev) => prev.filter((id) => id !== s.id));
-                            }
-                          }}
-                          className="mt-1 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="mb-1 flex items-center gap-2">
-                            <Badge variant={s.type === "knowledge" ? "gold" : "teal"}>
-                              {s.type === "knowledge" ? "知识块" : "题目"}
-                            </Badge>
-                            <MathHtml className="min-w-0 flex-1 text-sm font-medium text-ink-900">
-                              {s.title || (s.type === "knowledge" ? "未命名知识块" : "未命名题目")}
-                            </MathHtml>
-                          </div>
-                          {s.type === "knowledge" && s.content && (
-                            <MathHtml className="line-clamp-3 text-xs text-ink-500">{s.content}</MathHtml>
-                          )}
-                        </div>
-                      </label>
-                    );
-                  })}
-                {flattenLectureSections(selectedOtherLecture.sections)
-                  .filter((s) => s.type === "knowledge" || (s.type === "question" && s.questionId)).length === 0 && (
-                  <div className="py-8 text-center text-sm text-ink-400">该讲义暂无可添加的知识块或题目</div>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] md:min-h-96">
+            <div className="min-w-0 overflow-hidden rounded-lg border border-ink-100 bg-ink-50/40">
+              <div className="border-b border-ink-100 px-3 py-2 text-xs font-medium text-ink-600">
+                选择讲义
+              </div>
+              <div className="max-h-96 space-y-1 overflow-y-auto p-2">
+                {otherLectures.map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedOtherLecture(l);
+                      setSelectedLectureSectionIds([]);
+                    }}
+                    className={cn(
+                      "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                      selectedOtherLecture?.id === l.id
+                        ? "border-gold-300 bg-gold-50 text-ink-900"
+                        : "border-transparent bg-paper text-ink-700 hover:border-ink-200 hover:bg-mist",
+                    )}
+                  >
+                    <span className="block truncate">{l.title}</span>
+                  </button>
+                ))}
+                {otherLectures.length === 0 && (
+                  <div className="py-8 text-center text-sm text-ink-400">暂无可引用的讲义</div>
                 )}
               </div>
-            )}
+            </div>
+
+            <div className="min-w-0 overflow-hidden rounded-lg border border-ink-100 bg-paper">
+              {selectedOtherLecture ? (
+                <>
+                  <div className="flex items-center justify-between gap-3 border-b border-ink-100 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-ink-900">{selectedOtherLecture.title}</div>
+                      <div className="mt-0.5 text-[11px] text-ink-400">选择要添加到当前讲义的内容</div>
+                    </div>
+                    {selectedLectureSectionIds.length > 0 && (
+                      <Badge variant="gold">已选 {selectedLectureSectionIds.length}</Badge>
+                    )}
+                  </div>
+                  <div className="max-h-96 space-y-2 overflow-y-auto p-2">
+                    {flattenLectureSections(selectedOtherLecture.sections)
+                      .filter((s) => s.type === "knowledge" || (s.type === "question" && s.questionId))
+                      .map((s) => {
+                        const checked = selectedLectureSectionIds.includes(s.id);
+                        return (
+                          <label
+                            key={s.id}
+                            className={cn(
+                              "flex items-start gap-2 rounded-md border p-3 cursor-pointer transition-colors",
+                              checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedLectureSectionIds((prev) => [...prev, s.id]);
+                                } else {
+                                  setSelectedLectureSectionIds((prev) => prev.filter((sectionId) => sectionId !== s.id));
+                                }
+                              }}
+                              className="mt-1 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="mb-1 flex items-center gap-2">
+                                <Badge variant={s.type === "knowledge" ? "gold" : "teal"}>
+                                  {s.type === "knowledge" ? "知识块" : "题目"}
+                                </Badge>
+                                <MathHtml className="min-w-0 flex-1 text-sm font-medium text-ink-900">
+                                  {s.title || (s.type === "knowledge" ? "未命名知识块" : "未命名题目")}
+                                </MathHtml>
+                              </div>
+                              {s.type === "knowledge" && s.content && (
+                                <MathHtml className="line-clamp-3 text-xs text-ink-500">{s.content}</MathHtml>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    {flattenLectureSections(selectedOtherLecture.sections)
+                      .filter((s) => s.type === "knowledge" || (s.type === "question" && s.questionId)).length === 0 && (
+                      <div className="py-8 text-center text-sm text-ink-400">该讲义暂无可添加的知识块或题目</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex min-h-64 items-center justify-center px-4 text-center text-sm text-ink-400 md:min-h-96">
+                  点击左侧讲义后，在这里选择要添加的知识块或题目
+                </div>
+              )}
+            </div>
           </div>
         )}
 
