@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
+  ArrowUpDown,
   Check,
   FileSpreadsheet,
   Link2,
@@ -38,9 +41,12 @@ import {
   applyGradeRowBatchResolution,
   autoMatchGradeRows,
   createGradeStudentDraft,
-  gradeRowResolutionError,
+  gradeImportRowIssues,
   orderGradeImportRows,
+  sortGradeImportRows,
   unclaimedGradeStudents,
+  type GradeImportSortDirection,
+  type GradeImportSortKey,
 } from "@/lib/grade-matching";
 import {
   buildDefaultGradeSettings,
@@ -103,9 +109,46 @@ function withoutImportedAssignmentRules(
   return { ...settings, assignmentRules };
 }
 
-function MatchStatus({ row }: { row: GradeImportRow }) {
-  const error = gradeRowResolutionError(row);
-  if (error) return <Badge variant="red">待处理</Badge>;
+interface SortableGradeHeaderProps {
+  label: string;
+  sortKey: GradeImportSortKey;
+  activeSortKey: GradeImportSortKey | null;
+  direction: GradeImportSortDirection;
+  onSort: (key: GradeImportSortKey) => void;
+  rowSpan?: number;
+}
+
+function SortableGradeHeader({
+  label,
+  sortKey,
+  activeSortKey,
+  direction,
+  onSort,
+  rowSpan,
+}: SortableGradeHeaderProps) {
+  const active = activeSortKey === sortKey;
+  const Icon = active ? (direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th
+      rowSpan={rowSpan}
+      aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}
+      className="px-3 py-2.5 text-left font-medium align-middle"
+    >
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap hover:text-ink-800"
+        onClick={() => onSort(sortKey)}
+        title={`按${label}排序`}
+      >
+        {label}
+        <Icon className={cn("h-3.5 w-3.5", active ? "text-gold-600" : "text-ink-300")} />
+      </button>
+    </th>
+  );
+}
+
+function MatchStatus({ row, issue }: { row: GradeImportRow; issue?: string }) {
+  if (issue) return <Badge variant="red">待处理</Badge>;
   if (row.createStudent) return <Badge variant="teal">新增学生</Badge>;
   if (row.updateStudentName) return <Badge variant="amber">改名匹配</Badge>;
   return <Badge variant="green">已匹配</Badge>;
@@ -134,6 +177,8 @@ export function GradeImportWizard({
   const [examDate, setExamDate] = useState("");
   const [rows, setRows] = useState<GradeImportRow[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
+  const [sortKey, setSortKey] = useState<GradeImportSortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<GradeImportSortDirection>("asc");
   const [settings, setSettings] = useState<GradeExamSettings | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -150,6 +195,8 @@ export function GradeImportWizard({
     setExamDate("");
     setRows([]);
     setSelectedRowKeys(new Set());
+    setSortKey(null);
+    setSortDirection("asc");
     setSettings(null);
     setSubmitting(false);
   };
@@ -194,10 +241,19 @@ export function GradeImportWizard({
     () => scoreAvailability.filter((item) => item.hasAssigned).map((item) => item.subject),
     [scoreAvailability],
   );
-  const orderedRows = useMemo(() => orderGradeImportRows(rows), [rows]);
+  const rowIssues = useMemo(
+    () => context ? gradeImportRowIssues(rows, context) : new Map<string, string>(),
+    [context, rows],
+  );
+  const orderedRows = useMemo(
+    () => sortKey
+      ? sortGradeImportRows(rows, sortKey, sortDirection, rowIssues)
+      : orderGradeImportRows(rows, rowIssues),
+    [rowIssues, rows, sortDirection, sortKey],
+  );
   const unresolvedRows = useMemo(
-    () => orderedRows.filter((row) => gradeRowResolutionError(row)),
-    [orderedRows],
+    () => orderedRows.filter((row) => rowIssues.has(row.rowKey)),
+    [orderedRows, rowIssues],
   );
   const studentById = useMemo(
     () => new Map((context?.students || []).map((student) => [student.id, student])),
@@ -269,6 +325,8 @@ export function GradeImportWizard({
       const matched = autoMatchGradeRows(parsed, context);
       setRows(matched);
       setSelectedRowKeys(new Set());
+      setSortKey(null);
+      setSortDirection("asc");
       const importedSubjects = mappedSubjects(mappings);
       const studentClassIds = new Map<string, string>(
         context.students.map((student): [string, string] => [student.id, student.classId]),
@@ -359,6 +417,20 @@ export function GradeImportWizard({
     });
   };
 
+  const toggleSort = (key: GradeImportSortKey) => {
+    if (sortKey === key) {
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else {
+        setSortKey(null);
+        setSortDirection("asc");
+      }
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("asc");
+  };
+
   const applyBatchResolution = (resolution: "create" | "clear") => {
     if (!context || selectedRowKeys.size === 0) return;
     setRows((current) => applyGradeRowBatchResolution(current, selectedRowKeys, resolution, context));
@@ -380,19 +452,11 @@ export function GradeImportWizard({
 
   const continueFromMatching = () => {
     if (unresolvedCount > 0) {
-      toast.error(`仍有 ${unresolvedCount} 行学生未完成匹配`);
-      return;
-    }
-    const existingIds = rows.map((row) => row.studentId).filter(Boolean);
-    if (new Set(existingIds).size !== existingIds.length) {
-      toast.error("同一名已有学生不能匹配多行成绩");
-      return;
-    }
-    const importedNos = rows
-      .map((row) => row.createStudent?.studentNo.trim())
-      .filter((value): value is string => Boolean(value));
-    if (new Set(importedNos).size !== importedNos.length) {
-      toast.error("新增学生学号存在重复");
+      const firstRow = unresolvedRows[0];
+      toast.error(
+        `仍有 ${unresolvedCount} 行学生需要处理`,
+        firstRow ? `Excel 第 ${firstRow.sourceRowNumber} 行：${rowIssues.get(firstRow.rowKey)}` : undefined,
+      );
       return;
     }
     setStep(3);
@@ -678,7 +742,7 @@ export function GradeImportWizard({
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-sm font-medium text-ink-800">学生名单对应</div>
-                <div className="mt-0.5 text-xs text-ink-400">待处理记录优先显示；系统按学号、班级和姓名自动匹配，剩余记录可逐行或批量处理。</div>
+                <div className="mt-0.5 text-xs text-ink-400">默认待处理记录优先；点击上传表格字段可升序、降序，再次点击恢复默认排序。</div>
               </div>
               <div className="flex gap-2">
                 <Badge variant="green">已完成 {rows.length - unresolvedCount}</Badge>
@@ -716,10 +780,10 @@ export function GradeImportWizard({
             </div>
           </div>
           <div className="max-h-[58vh] overflow-auto">
-            <table className="min-w-[1100px] w-full text-xs">
+            <table className="min-w-[1240px] w-full text-xs">
               <thead className="sticky top-0 z-10 bg-ink-50 text-ink-500 shadow-sm">
                 <tr>
-                  <th className="w-10 px-3 py-2.5 text-center font-medium">
+                  <th rowSpan={2} className="w-10 px-3 py-2.5 text-center font-medium align-middle">
                     <input
                       type="checkbox"
                       aria-label="选择全部待处理记录"
@@ -729,21 +793,73 @@ export function GradeImportWizard({
                       className="h-4 w-4 accent-gold-500"
                     />
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium">Excel 行</th>
-                  <th className="px-3 py-2.5 text-left font-medium">原班级</th>
-                  <th className="px-3 py-2.5 text-left font-medium">姓名</th>
-                  <th className="px-3 py-2.5 text-left font-medium">学号/考号</th>
-                  <th className="px-3 py-2.5 text-left font-medium">选科</th>
-                  <th className="px-3 py-2.5 text-left font-medium">班型</th>
-                  <th className="px-3 py-2.5 text-left font-medium">处理方式</th>
-                  <th className="px-3 py-2.5 text-left font-medium">匹配或新增信息</th>
-                  <th className="px-3 py-2.5 text-left font-medium">状态</th>
+                  <th colSpan={6} className="border-b border-ink-100 px-3 py-2 text-left font-medium text-sky-700">
+                    <span className="inline-flex items-center rounded bg-sky-50 px-2 py-1">上传表格字段</span>
+                  </th>
+                  <th rowSpan={2} className="px-3 py-2.5 text-left font-medium align-middle">处理方式</th>
+                  <th rowSpan={2} className="px-3 py-2.5 text-left font-medium align-middle">
+                    <div>学生库 / 待新增数据</div>
+                    <div className="mt-0.5 text-[10px] font-normal text-ink-400">确认最终学生档案</div>
+                  </th>
+                  <SortableGradeHeader
+                    label="状态"
+                    sortKey="status"
+                    activeSortKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    rowSpan={2}
+                  />
+                </tr>
+                <tr>
+                  <SortableGradeHeader
+                    label="Excel 行"
+                    sortKey="sourceRowNumber"
+                    activeSortKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                  />
+                  <SortableGradeHeader
+                    label="原班级"
+                    sortKey="sourceClassName"
+                    activeSortKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                  />
+                  <SortableGradeHeader
+                    label="姓名"
+                    sortKey="sourceName"
+                    activeSortKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                  />
+                  <SortableGradeHeader
+                    label="学号/考号"
+                    sortKey="sourceStudentNo"
+                    activeSortKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                  />
+                  <SortableGradeHeader
+                    label="选科"
+                    sortKey="subjectSelection"
+                    activeSortKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                  />
+                  <SortableGradeHeader
+                    label="班型"
+                    sortKey="classType"
+                    activeSortKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                  />
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
                 {orderedRows.map((row) => {
                   const selectedStudent = row.studentId ? studentById.get(row.studentId) : undefined;
-                  const unresolved = Boolean(gradeRowResolutionError(row));
+                  const issue = rowIssues.get(row.rowKey);
+                  const unresolved = Boolean(issue);
                   return (
                     <tr key={row.rowKey} className={unresolved ? "bg-red-50/40" : undefined}>
                       <td className="px-3 py-3 text-center">
@@ -770,13 +886,13 @@ export function GradeImportWizard({
                           <option value="">请选择处理方式</option>
                           {selectedStudent && (
                             <option value={selectedStudent.id}>
-                              当前匹配 · {classNameById.get(selectedStudent.classId) || "未分班"} · {selectedStudent.name} · {selectedStudent.studentNo}
+                              当前匹配 · {classNameById.get(selectedStudent.classId) || "未分班"} · {selectedStudent.name} · {selectedStudent.studentNo || "无学号"}
                             </option>
                           )}
                           <optgroup label={`名单库中尚未匹配（${unclaimedStudents.length}）`}>
                             {unclaimedStudents.length > 0 ? unclaimedStudents.map((student) => (
                               <option key={student.id} value={student.id}>
-                                {classNameById.get(student.classId) || "未分班"} · {student.name} · {student.studentNo}
+                                {classNameById.get(student.classId) || "未分班"} · {student.name} · {student.studentNo || "无学号"}
                               </option>
                             )) : (
                               <option disabled>名单库学生均已匹配</option>
@@ -787,35 +903,41 @@ export function GradeImportWizard({
                       </td>
                       <td className="px-3 py-3">
                         {row.createStudent ? (
-                          <div className="grid min-w-[360px] grid-cols-3 gap-2">
-                            <input
-                              aria-label={`${row.sourceName}新增姓名`}
-                              value={row.createStudent.name}
-                              onChange={(event) => updateNewStudent(row.rowKey, { name: event.target.value })}
-                              placeholder="姓名"
-                              className="rounded border border-ink-200 px-2 py-1.5 outline-none focus:border-gold-400"
-                            />
-                            <input
-                              aria-label={`${row.sourceName}新增学号`}
-                              value={row.createStudent.studentNo}
-                              onChange={(event) => updateNewStudent(row.rowKey, { studentNo: event.target.value })}
-                              placeholder="学号（可空）"
-                              className="rounded border border-ink-200 px-2 py-1.5 outline-none focus:border-gold-400"
-                            />
-                            <select
-                              aria-label={`${row.sourceName}新增班级`}
-                              value={row.createStudent.classId}
-                              onChange={(event) => updateNewStudent(row.rowKey, { classId: event.target.value })}
-                              className="rounded border border-ink-200 px-2 py-1.5 outline-none focus:border-gold-400"
-                            >
-                              <option value="">选择班级</option>
-                              {context.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                            </select>
+                          <div className="min-w-[360px]">
+                            <div className="mb-1.5 text-[10px] font-medium text-teal-700">待新增数据</div>
+                            <div className="grid grid-cols-3 gap-2">
+                              <input
+                                aria-label={`${row.sourceName}新增姓名`}
+                                value={row.createStudent.name}
+                                onChange={(event) => updateNewStudent(row.rowKey, { name: event.target.value })}
+                                placeholder="姓名"
+                                className="rounded border border-ink-200 px-2 py-1.5 outline-none focus:border-gold-400"
+                              />
+                              <input
+                                aria-label={`${row.sourceName}新增学号`}
+                                value={row.createStudent.studentNo}
+                                onChange={(event) => updateNewStudent(row.rowKey, { studentNo: event.target.value })}
+                                placeholder="学号（可空）"
+                                className="rounded border border-ink-200 px-2 py-1.5 outline-none focus:border-gold-400"
+                              />
+                              <select
+                                aria-label={`${row.sourceName}新增班级`}
+                                value={row.createStudent.classId}
+                                onChange={(event) => updateNewStudent(row.rowKey, { classId: event.target.value })}
+                                className="rounded border border-ink-200 px-2 py-1.5 outline-none focus:border-gold-400"
+                              >
+                                <option value="">选择班级</option>
+                                {context.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                              </select>
+                            </div>
                           </div>
                         ) : selectedStudent ? (
                           <div className="min-w-[260px]">
+                            <div className="mb-1 text-[10px] font-medium text-sky-700">学生库数据</div>
                             <div className="text-ink-700">
-                              {classNameById.get(selectedStudent.classId) || "未分班"} · {selectedStudent.name}
+                              {classNameById.get(selectedStudent.classId) || "未分班"}
+                              {" · "}{selectedStudent.name}
+                              {" · "}{selectedStudent.studentNo || "无学号"}
                             </div>
                             {selectedStudent.name.trim() !== row.sourceName.trim() && (
                               <label className="mt-1.5 flex items-center gap-2 text-amber-700">
@@ -832,7 +954,12 @@ export function GradeImportWizard({
                           </div>
                         ) : <span className="text-ink-300">—</span>}
                       </td>
-                      <td className="px-3 py-3"><MatchStatus row={row} /></td>
+                      <td className="px-3 py-3">
+                        <div className="min-w-[220px]">
+                          <MatchStatus row={row} issue={issue} />
+                          {issue && <div className="mt-1.5 leading-4 text-red-700">{issue}</div>}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
