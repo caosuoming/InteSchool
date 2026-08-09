@@ -72,6 +72,7 @@ interface WritableCanvasProps {
   preset?: DrawingPreset;
   eraserWidth?: number;
   clearToken: number;
+  cancelToken?: number;
   className?: string;
   ariaLabel?: string;
 }
@@ -80,7 +81,9 @@ interface BoardWritingArea {
   id: string;
   frameX: number;
   frameY: number;
+  scale: number;
   clearToken: number;
+  cancelDrawingToken: number;
 }
 
 interface BoardPage {
@@ -103,6 +106,17 @@ interface BoardInteraction {
   startX: number;
   startY: number;
   board: BoardPage;
+}
+
+interface BoardPinchInteraction {
+  boardId: string;
+  writingAreaId: string;
+  startDistance: number;
+  startScale: number;
+  startFrameX: number;
+  startFrameY: number;
+  startCenterX: number;
+  startCenterY: number;
 }
 
 interface BoardResizeHandle {
@@ -135,6 +149,10 @@ const DRAWING_WIDTH_RANGES: Record<DrawingPreset["kind"], { min: number; max: nu
   highlighter: { min: 6, max: 36 },
 };
 const ERASER_WIDTHS = [12, 24, 48];
+const BOARD_WRITING_AREA_MIN_SCALE = 1;
+const BOARD_WRITING_AREA_MAX_SCALE = 2;
+const BOARD_WRITING_AREA_VISIBLE_MARGIN_PX = 48;
+const BOARD_WRITING_AREA_WHEEL_ZOOM_SPEED = 0.0015;
 
 const questionTypeLabel: Record<string, string> = {
   single: "单选",
@@ -319,7 +337,15 @@ function getElementsAtAnimationProgress(
   });
 }
 
-function WritableCanvas({ tool, preset, eraserWidth = 24, clearToken, className, ariaLabel }: WritableCanvasProps) {
+function WritableCanvas({
+  tool,
+  preset,
+  eraserWidth = 24,
+  clearToken,
+  cancelToken = 0,
+  className,
+  ariaLabel,
+}: WritableCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -329,7 +355,9 @@ function WritableCanvas({ tool, preset, eraserWidth = 24, clearToken, className,
     const parent = canvas?.parentElement;
     if (!canvas || !parent) return;
     const rect = parent.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    const width = parent.clientWidth || rect.width;
+    const height = parent.clientHeight || rect.height;
+    if (width <= 0 || height <= 0) return;
 
     const snapshot = document.createElement("canvas");
     snapshot.width = canvas.width;
@@ -339,8 +367,8 @@ function WritableCanvas({ tool, preset, eraserWidth = 24, clearToken, className,
       snapshotContext.drawImage(canvas, 0, 0);
     }
 
-    canvas.width = Math.round(rect.width);
-    canvas.height = Math.round(rect.height);
+    canvas.width = Math.round(width);
+    canvas.height = Math.round(height);
     const context = canvas.getContext("2d");
     if (context && snapshot.width > 0 && snapshot.height > 0) {
       context.drawImage(snapshot, 0, 0, canvas.width, canvas.height);
@@ -367,11 +395,21 @@ function WritableCanvas({ tool, preset, eraserWidth = 24, clearToken, className,
     if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
   }, [clearToken]);
 
+  useEffect(() => {
+    drawingRef.current = false;
+    lastPointRef.current = null;
+  }, [cancelToken]);
+
   const pointFromEvent = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+    return {
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
+    };
   };
 
   const startDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -483,6 +521,14 @@ export function PresentationMode({
   const rootRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const boardInteractionRef = useRef<BoardInteraction | null>(null);
+  const boardTouchPointersRef = useRef(new Map<number, {
+    boardId: string;
+    writingAreaId: string;
+    clientX: number;
+    clientY: number;
+  }>());
+  const boardPinchRef = useRef<BoardPinchInteraction | null>(null);
+  const suppressBoardTouchDrawingRef = useRef(false);
   const [currentIndex, setCurrentIndex] = useState(() => clamp(initialIndex, 0, Math.max(0, slides.length - 1)));
   const [tool, setTool] = useState<Tool>("select");
   const [drawingPresets, setDrawingPresets] = useState(INITIAL_DRAWING_PRESETS);
@@ -747,7 +793,9 @@ export function PresentationMode({
       id: `${boardId}-writing-area-1`,
       frameX: 0,
       frameY: 0,
+      scale: BOARD_WRITING_AREA_MIN_SCALE,
       clearToken: 0,
+      cancelDrawingToken: 0,
     };
     const board: BoardPage = {
       id: boardId,
@@ -771,7 +819,9 @@ export function PresentationMode({
         id: `${board.id}-writing-area-${Date.now()}-${index}`,
         frameX: 0,
         frameY: 0,
+        scale: BOARD_WRITING_AREA_MIN_SCALE,
         clearToken: 0,
+        cancelDrawingToken: 0,
       };
       return {
         ...board,
@@ -819,6 +869,217 @@ export function PresentationMode({
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
+  const writingAreaFrameBounds = (
+    board: BoardPage,
+    scale: number,
+    surfaceRect: DOMRect,
+  ) => {
+    const visibleX = Math.min(
+      board.width,
+      (BOARD_WRITING_AREA_VISIBLE_MARGIN_PX / surfaceRect.width) * 100,
+    );
+    const visibleY = Math.min(
+      board.height,
+      (BOARD_WRITING_AREA_VISIBLE_MARGIN_PX / surfaceRect.height) * 100,
+    );
+    return {
+      minX: visibleX - 100 * scale,
+      maxX: board.width - visibleX,
+      minY: visibleY - 100 * scale,
+      maxY: board.height - visibleY,
+    };
+  };
+
+  const scaleWritingAreaAtClientPoint = (
+    boardId: string,
+    writingAreaId: string,
+    clientX: number,
+    clientY: number,
+    scaleFactor: number,
+  ) => {
+    const surface = surfaceRef.current;
+    if (!surface || !Number.isFinite(scaleFactor) || scaleFactor <= 0) return;
+    const rect = surface.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    setBoards((current) => current.map((board) => {
+      if (board.id !== boardId) return board;
+      const focalX = ((clientX - rect.left) / rect.width) * 100 - board.x;
+      const focalY = ((clientY - rect.top) / rect.height) * 100 - board.y;
+      return {
+        ...board,
+        writingAreas: board.writingAreas.map((area) => {
+          if (area.id !== writingAreaId) return area;
+          const nextScale = clamp(
+            area.scale * scaleFactor,
+            BOARD_WRITING_AREA_MIN_SCALE,
+            BOARD_WRITING_AREA_MAX_SCALE,
+          );
+          if (Math.abs(nextScale - area.scale) < 0.0001) return area;
+          const ratio = nextScale / area.scale;
+          const bounds = writingAreaFrameBounds(board, nextScale, rect);
+          return {
+            ...area,
+            scale: Number(nextScale.toFixed(4)),
+            frameX: Number(clamp(
+              focalX - (focalX - area.frameX) * ratio,
+              bounds.minX,
+              bounds.maxX,
+            ).toFixed(4)),
+            frameY: Number(clamp(
+              focalY - (focalY - area.frameY) * ratio,
+              bounds.minY,
+              bounds.maxY,
+            ).toFixed(4)),
+          };
+        }),
+      };
+    }));
+  };
+
+  const beginWritingAreaTouch = (
+    event: ReactPointerEvent<HTMLElement>,
+    board: BoardPage,
+    writingArea: BoardWritingArea,
+  ) => {
+    if (event.pointerType !== "touch") return;
+    boardTouchPointersRef.current.set(event.pointerId, {
+      boardId: board.id,
+      writingAreaId: writingArea.id,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+    const pointers = [...boardTouchPointersRef.current.values()].filter((pointer) => (
+      pointer.boardId === board.id && pointer.writingAreaId === writingArea.id
+    ));
+    if (pointers.length < 2) return;
+
+    const [first, second] = pointers;
+    const startDistance = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+    const surface = surfaceRef.current;
+    if (!surface || startDistance <= 0) return;
+    const rect = surface.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const centerClientX = (first.clientX + second.clientX) / 2;
+    const centerClientY = (first.clientY + second.clientY) / 2;
+
+    boardInteractionRef.current = null;
+    setBoards((current) => current.map((currentBoard) => (
+      currentBoard.id === board.id
+        ? {
+            ...currentBoard,
+            writingAreas: currentBoard.writingAreas.map((area) => (
+              area.id === writingArea.id
+                ? { ...area, cancelDrawingToken: area.cancelDrawingToken + 1 }
+                : area
+            )),
+          }
+        : currentBoard
+    )));
+    boardPinchRef.current = {
+      boardId: board.id,
+      writingAreaId: writingArea.id,
+      startDistance,
+      startScale: writingArea.scale,
+      startFrameX: writingArea.frameX,
+      startFrameY: writingArea.frameY,
+      startCenterX: ((centerClientX - rect.left) / rect.width) * 100 - board.x,
+      startCenterY: ((centerClientY - rect.top) / rect.height) * 100 - board.y,
+    };
+    suppressBoardTouchDrawingRef.current = true;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const moveWritingAreaTouch = (
+    event: ReactPointerEvent<HTMLElement>,
+    board: BoardPage,
+    writingArea: BoardWritingArea,
+  ) => {
+    if (event.pointerType !== "touch") return;
+    const tracked = boardTouchPointersRef.current.get(event.pointerId);
+    if (tracked) {
+      boardTouchPointersRef.current.set(event.pointerId, {
+        ...tracked,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+    }
+    const pinch = boardPinchRef.current;
+    if (!pinch || pinch.boardId !== board.id || pinch.writingAreaId !== writingArea.id) {
+      if (suppressBoardTouchDrawingRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+
+    const pointers = [...boardTouchPointersRef.current.values()].filter((pointer) => (
+      pointer.boardId === board.id && pointer.writingAreaId === writingArea.id
+    ));
+    if (pointers.length < 2) return;
+    const [first, second] = pointers;
+    const distance = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+    const surface = surfaceRef.current;
+    if (!surface || distance <= 0) return;
+    const rect = surface.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const nextScale = clamp(
+      pinch.startScale * (distance / pinch.startDistance),
+      BOARD_WRITING_AREA_MIN_SCALE,
+      BOARD_WRITING_AREA_MAX_SCALE,
+    );
+    const centerClientX = (first.clientX + second.clientX) / 2;
+    const centerClientY = (first.clientY + second.clientY) / 2;
+    const centerX = ((centerClientX - rect.left) / rect.width) * 100 - board.x;
+    const centerY = ((centerClientY - rect.top) / rect.height) * 100 - board.y;
+    const contentX = (pinch.startCenterX - pinch.startFrameX) / pinch.startScale;
+    const contentY = (pinch.startCenterY - pinch.startFrameY) / pinch.startScale;
+    const bounds = writingAreaFrameBounds(board, nextScale, rect);
+    const nextFrameX = clamp(centerX - contentX * nextScale, bounds.minX, bounds.maxX);
+    const nextFrameY = clamp(centerY - contentY * nextScale, bounds.minY, bounds.maxY);
+
+    setBoards((current) => current.map((currentBoard) => (
+      currentBoard.id === board.id
+        ? {
+            ...currentBoard,
+            writingAreas: currentBoard.writingAreas.map((area) => (
+              area.id === writingArea.id
+                ? {
+                    ...area,
+                    scale: Number(nextScale.toFixed(4)),
+                    frameX: Number(nextFrameX.toFixed(4)),
+                    frameY: Number(nextFrameY.toFixed(4)),
+                  }
+                : area
+            )),
+          }
+        : currentBoard
+    )));
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const endWritingAreaTouch = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType !== "touch") return;
+    const wasSuppressing = suppressBoardTouchDrawingRef.current;
+    boardTouchPointersRef.current.delete(event.pointerId);
+    const pinch = boardPinchRef.current;
+    if (pinch) {
+      const remaining = [...boardTouchPointersRef.current.values()].filter((pointer) => (
+        pointer.boardId === pinch.boardId && pointer.writingAreaId === pinch.writingAreaId
+      ));
+      if (remaining.length < 2) boardPinchRef.current = null;
+    }
+    if (boardTouchPointersRef.current.size === 0) {
+      suppressBoardTouchDrawingRef.current = false;
+    }
+    if (wasSuppressing) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
   const moveBoardInteraction = (event: ReactPointerEvent<HTMLElement>) => {
     const interaction = boardInteractionRef.current;
     const surface = surfaceRef.current;
@@ -849,8 +1110,7 @@ export function PresentationMode({
           area.id === interaction.writingAreaId
         ));
         if (!sourceArea || !interaction.writingAreaId) return board;
-        const visibleX = Math.min(board.width, (48 / rect.width) * 100);
-        const visibleY = Math.min(board.height, (48 / rect.height) * 100);
+        const bounds = writingAreaFrameBounds(board, sourceArea.scale, rect);
         return {
           ...board,
           writingAreas: board.writingAreas.map((area) => (
@@ -859,13 +1119,13 @@ export function PresentationMode({
                   ...area,
                   frameX: Number(clamp(
                     sourceArea.frameX + dx,
-                    visibleX - 100,
-                    board.width - visibleX,
+                    bounds.minX,
+                    bounds.maxX,
                   ).toFixed(4)),
                   frameY: Number(clamp(
                     sourceArea.frameY + dy,
-                    visibleY - 100,
-                    board.height - visibleY,
+                    bounds.minY,
+                    bounds.maxY,
                   ).toFixed(4)),
                 }
               : area
@@ -1176,6 +1436,7 @@ export function PresentationMode({
                   editable={tool === "select"}
                   animationMode="step"
                   allowTextEditing={false}
+                  allowVerticalElementOverflow
                   selectedElementId={selectedElementId}
                   onSelectElement={setSelectedElementId}
                   onElementsChange={updateVisibleElements}
@@ -1242,6 +1503,7 @@ export function PresentationMode({
                       data-writing-area-index={writingAreaIndex + 1}
                       data-active={activeWritingArea}
                       data-draggable={activeWritingArea && tool === "select"}
+                      data-board-writing-scale={writingArea.scale}
                       className={cn(
                         "absolute touch-none overflow-hidden border border-ink-300/70 shadow-inner",
                         activeWritingArea ? "visible" : "invisible pointer-events-none",
@@ -1253,7 +1515,26 @@ export function PresentationMode({
                         top: `${(writingArea.frameY / board.height) * 100}%`,
                         width: `${10000 / board.width}%`,
                         height: `${10000 / board.height}%`,
+                        transform: `scale(${writingArea.scale})`,
+                        transformOrigin: "top left",
                       }}
+                      onWheel={(event) => {
+                        if (!activeWritingArea) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setActiveBoardId(board.id);
+                        scaleWritingAreaAtClientPoint(
+                          board.id,
+                          writingArea.id,
+                          event.clientX,
+                          event.clientY,
+                          Math.exp(-event.deltaY * BOARD_WRITING_AREA_WHEEL_ZOOM_SPEED),
+                        );
+                      }}
+                      onPointerDownCapture={(event) => beginWritingAreaTouch(event, board, writingArea)}
+                      onPointerMoveCapture={(event) => moveWritingAreaTouch(event, board, writingArea)}
+                      onPointerUpCapture={endWritingAreaTouch}
+                      onPointerCancelCapture={endWritingAreaTouch}
                       onPointerDown={(event) => {
                         if (activeWritingArea && tool === "select") {
                           startBoardInteraction(event, board, "move-frame", {
@@ -1275,6 +1556,7 @@ export function PresentationMode({
                         preset={selectedDrawingPreset}
                         eraserWidth={eraserWidth}
                         clearToken={writingArea.clearToken}
+                        cancelToken={writingArea.cancelDrawingToken}
                         ariaLabel={`${label}书写区 ${writingAreaIndex + 1}`}
                         className="z-10"
                       />
