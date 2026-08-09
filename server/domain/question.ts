@@ -45,12 +45,13 @@ export interface QuestionInput {
 function similarQuestionCandidates(
   stem: string,
   schoolId: string,
-  excludeQuestionId?: string,
+  excludeQuestionIds: readonly string[] = [],
 ): SimilarQuestionCandidate[] {
+  const excludedQuestionIds = new Set(excludeQuestionIds);
   return db
     .read("questions")
     .filter((question) =>
-      question.id !== excludeQuestionId
+      !excludedQuestionIds.has(question.id)
       && (question.schoolId === schoolId || question.isShared),
     )
     .map((question) => ({
@@ -62,7 +63,7 @@ function similarQuestionCandidates(
     .slice(0, 5);
 }
 
-function duplicateConfirmationError(candidate: SimilarQuestionCandidate): Error {
+export function createDuplicateConfirmationError(candidate: SimilarQuestionCandidate): Error {
   return new Error(
     `发现高度相似题目（相似度 ${(candidate.similarity * 100).toFixed(1)}%，ID：${candidate.question.id}），请先确认使用已有题目或仍然新增`,
   );
@@ -183,19 +184,28 @@ export const questionService = {
     excludeQuestionId?: string,
   ): Promise<SimilarQuestionCandidate[]> {
     await delay(100);
-    return similarQuestionCandidates(stem, schoolId, excludeQuestionId);
+    return similarQuestionCandidates(
+      stem,
+      schoolId,
+      excludeQuestionId ? [excludeQuestionId] : [],
+    );
   },
 
   async createQuestion(
     teacherId: string,
     schoolId: string,
     input: QuestionInput,
+    excludeDuplicateQuestionIds: readonly string[] = [],
   ): Promise<Question> {
     await delay(400);
     maybeThrowError();
-    const similar = similarQuestionCandidates(input.stem, schoolId);
+    const similar = similarQuestionCandidates(
+      input.stem,
+      schoolId,
+      excludeDuplicateQuestionIds,
+    );
     if (similar.length > 0 && input.duplicateDecision !== "add") {
-      throw duplicateConfirmationError(similar[0]);
+      throw createDuplicateConfirmationError(similar[0]);
     }
     const now = new Date().toISOString();
     const duplicateHash = computeDuplicateHash(input.stem, input.answer, input.options);
@@ -293,9 +303,9 @@ export const questionService = {
     const existing = db.read("questions").find((question) => question.id === id);
     if (!existing) throw new Error("题目不存在");
     if (patch.stem !== undefined && patch.stem !== existing.stem) {
-      const similar = similarQuestionCandidates(patch.stem, existing.schoolId, id);
+      const similar = similarQuestionCandidates(patch.stem, existing.schoolId, [id]);
       if (similar.length > 0 && duplicateDecision !== "add") {
-        throw duplicateConfirmationError(similar[0]);
+        throw createDuplicateConfirmationError(similar[0]);
       }
     }
     let updated: Question | null = null;
@@ -421,7 +431,7 @@ export const questionService = {
         (stem) => questionStemSimilarity(input.stem, stem) >= HIGH_SIMILARITY_THRESHOLD,
       );
       if ((existingSimilar || batchSimilarStem) && input.duplicateDecision !== "add") {
-        if (existingSimilar) throw duplicateConfirmationError(existingSimilar);
+        if (existingSimilar) throw createDuplicateConfirmationError(existingSimilar);
         throw new Error("本次导入中存在高度相似题目，请先确认是否仍然新增");
       }
       acceptedStems.push(input.stem);
