@@ -21,6 +21,7 @@ interface LessonSlideCanvasProps {
   disableAnimations?: boolean;
   animationMode?: "default" | "step";
   allowTextEditing?: boolean;
+  allowVerticalElementOverflow?: boolean;
   selectedElementId?: string | null;
   onSelectElement?: (id: string | null) => void;
   onElementsChange?: (elements: LessonSlideElement[]) => void;
@@ -76,6 +77,7 @@ export function LessonSlideCanvas({
   disableAnimations = false,
   animationMode = "default",
   allowTextEditing = editable,
+  allowVerticalElementOverflow = false,
   selectedElementId,
   onSelectElement,
   onElementsChange,
@@ -160,7 +162,9 @@ export function LessonSlideCanvas({
         return {
           ...element,
           x: clamp(interaction.element.x + dx, 0, 100 - interaction.element.width),
-          y: clamp(interaction.element.y + dy, 0, 100 - interaction.element.height),
+          y: allowVerticalElementOverflow
+            ? interaction.element.y + dy
+            : clamp(interaction.element.y + dy, 0, 100 - interaction.element.height),
         };
       }
       return {

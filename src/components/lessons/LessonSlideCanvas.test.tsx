@@ -228,6 +228,51 @@ describe("LessonSlideCanvas", () => {
     ]));
   });
 
+  it("allows text and image objects to move beyond the top and bottom edges when enabled", () => {
+    const onElementsChange = vi.fn();
+    const { container } = render(
+      <LessonSlideCanvas
+        elements={elements}
+        editable
+        allowTextEditing={false}
+        allowVerticalElementOverflow
+        onSelectElement={vi.fn()}
+        onElementsChange={onElementsChange}
+      >
+        <div>基础课件内容</div>
+      </LessonSlideCanvas>,
+    );
+
+    const canvas = container.querySelector<HTMLElement>(".aspect-video");
+    vi.spyOn(canvas!, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({}),
+    });
+
+    const text = screen.getByText("课堂重点");
+    const textElement = text.closest<HTMLElement>(".absolute");
+    fireEvent.pointerDown(text, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(textElement!, { pointerId: 1, clientX: 100, clientY: -300 });
+    expect(onElementsChange).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: "text-1", y: -35 }),
+    ]));
+
+    const image = screen.getByAltText("函数图像");
+    const imageElement = image.closest<HTMLElement>(".absolute");
+    fireEvent.pointerDown(image, { pointerId: 2, clientX: 600, clientY: 200 });
+    fireEvent.pointerMove(imageElement!, { pointerId: 2, clientX: 600, clientY: 1000 });
+    expect(onElementsChange).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: "image-1", y: 120 }),
+    ]));
+  });
+
   it("renders formulas while editing and stores compact LaTeX after blur", () => {
     const onElementsChange = vi.fn();
     const formulaElement: LessonSlideElement = {

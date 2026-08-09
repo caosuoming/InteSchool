@@ -431,6 +431,84 @@ describe("PresentationMode", () => {
     expect(screen.getAllByRole("region", { name: /板书/ })).toHaveLength(1);
   });
 
+  it("zooms a board writing area from 100% to 200% with the wheel and a two-finger pinch", async () => {
+    class TestPointerEvent extends MouseEvent {
+      pointerId: number;
+      pointerType: string;
+
+      constructor(type: string, init: PointerEventInit = {}) {
+        super(type, init);
+        this.pointerId = init.pointerId || 0;
+        this.pointerType = init.pointerType || "mouse";
+      }
+    }
+    Object.defineProperty(window, "PointerEvent", {
+      configurable: true,
+      value: TestPointerEvent,
+    });
+
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={slides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "打开板书" }));
+    const surface = screen.getByTestId("presentation-surface");
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({}),
+    });
+
+    const board = screen.getByRole("region", { name: "板书 1" });
+    const writingFrame = board.querySelector<HTMLElement>("[data-board-writing-frame]");
+    expect(writingFrame).not.toBeNull();
+    expect(writingFrame).toHaveAttribute("data-board-writing-scale", "1");
+    expect(writingFrame).toHaveStyle({ transform: "scale(1)" });
+
+    fireEvent.wheel(writingFrame!, { deltaY: -500, clientX: 500, clientY: 300 });
+    expect(Number(writingFrame?.dataset.boardWritingScale)).toBeGreaterThan(1);
+    fireEvent.wheel(writingFrame!, { deltaY: -10000, clientX: 500, clientY: 300 });
+    expect(writingFrame).toHaveAttribute("data-board-writing-scale", "2");
+    expect(writingFrame).toHaveStyle({ transform: "scale(2)" });
+    fireEvent.wheel(writingFrame!, { deltaY: 10000, clientX: 500, clientY: 300 });
+    expect(writingFrame).toHaveAttribute("data-board-writing-scale", "1");
+
+    fireEvent.pointerDown(writingFrame!, {
+      pointerId: 10,
+      pointerType: "touch",
+      clientX: 400,
+      clientY: 300,
+    });
+    fireEvent.pointerDown(writingFrame!, {
+      pointerId: 11,
+      pointerType: "touch",
+      clientX: 600,
+      clientY: 300,
+    });
+    fireEvent.pointerMove(writingFrame!, {
+      pointerId: 11,
+      pointerType: "touch",
+      clientX: 800,
+      clientY: 300,
+    });
+    expect(writingFrame).toHaveAttribute("data-board-writing-scale", "2");
+    fireEvent.pointerUp(writingFrame!, { pointerId: 11, pointerType: "touch", clientX: 800, clientY: 300 });
+    fireEvent.pointerUp(writingFrame!, { pointerId: 10, pointerType: "touch", clientX: 400, clientY: 300 });
+  });
+
   it("keeps classroom controls above boards and resizes from every edge and corner", async () => {
     const user = userEvent.setup();
     render(
