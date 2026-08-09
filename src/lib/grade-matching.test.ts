@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { GradeImportContext, GradeImportRow } from "@/types";
 import {
   applyGradeRowBatchResolution,
+  autoMatchGradeRows,
   createGradeStudentDraft,
+  gradeImportRowIssues,
   orderGradeImportRows,
+  sortGradeImportRows,
 } from "./grade-matching";
 
 function row(
@@ -30,6 +33,24 @@ const context = {
   ],
   students: [],
   teachers: [],
+} as GradeImportContext;
+
+const matchingContext = {
+  ...context,
+  students: [
+    {
+      id: "student-1",
+      name: "张三",
+      studentNo: "20260001",
+      classId: "class-1",
+    },
+    {
+      id: "student-2",
+      name: "李四",
+      studentNo: "20260002",
+      classId: "class-2",
+    },
+  ],
 } as GradeImportContext;
 
 describe("grade matching batch helpers", () => {
@@ -97,5 +118,78 @@ describe("grade matching batch helpers", () => {
       updateStudentName: false,
     });
     expect(result[1]).toBe(rows[1]);
+  });
+
+  it("explains when two imported rows point to the same database student", () => {
+    const imported = [
+      row("row-1", 2, {
+        sourceName: "张三",
+        sourceStudentNo: "20260001",
+        studentId: "student-1",
+      }),
+      row("row-2", 7, {
+        sourceName: "张三",
+        sourceStudentNo: "20260001",
+        studentId: "student-1",
+      }),
+    ];
+
+    const issues = gradeImportRowIssues(imported, matchingContext);
+
+    expect(issues.get("row-1")).toContain("一名学生匹配了多行成绩");
+    expect(issues.get("row-1")).toContain("Excel 第 7 行");
+    expect(issues.get("row-2")).toContain("Excel 第 2 行");
+    expect(issues.get("row-1")).toContain("高一1班 · 张三 · 20260001");
+  });
+
+  it("explains a duplicate row blocked by automatic matching", () => {
+    const imported = autoMatchGradeRows([
+      row("row-1", 2, {
+        sourceName: "张三",
+        sourceStudentNo: "20260001",
+      }),
+      row("row-2", 3, {
+        sourceName: "张三",
+        sourceStudentNo: "20260001",
+      }),
+    ], matchingContext);
+
+    expect(imported[0].studentId).toBe("student-1");
+    expect(imported[1].studentId).toBeUndefined();
+    expect(gradeImportRowIssues(imported, matchingContext).get("row-2")).toContain(
+      "疑似重复成绩：与 Excel 第 2 行都指向学生库中的",
+    );
+  });
+
+  it("sorts imported source fields in both directions", () => {
+    const imported = [
+      row("row-10", 10, { sourceName: "王五", sourceClassName: "高一10班" }),
+      row("row-2", 2, { sourceName: "李四", sourceClassName: "高一2班" }),
+      row("row-3", 3, { sourceName: "张三", sourceClassName: "高一1班" }),
+    ];
+
+    expect(sortGradeImportRows(imported, "sourceClassName", "asc").map((item) => item.rowKey)).toEqual([
+      "row-3",
+      "row-2",
+      "row-10",
+    ]);
+    expect(sortGradeImportRows(imported, "sourceRowNumber", "desc").map((item) => item.rowKey)).toEqual([
+      "row-10",
+      "row-3",
+      "row-2",
+    ]);
+  });
+
+  it("sorts rows by validation status", () => {
+    const imported = [
+      row("ok", 2, { studentId: "student-1" }),
+      row("bad", 3),
+    ];
+    const issues = new Map([["bad", "尚未匹配"]]);
+
+    expect(sortGradeImportRows(imported, "status", "desc", issues).map((item) => item.rowKey)).toEqual([
+      "bad",
+      "ok",
+    ]);
   });
 });
