@@ -40,6 +40,7 @@ import {
   createGradeStudentDraft,
   gradeRowResolutionError,
   orderGradeImportRows,
+  unclaimedGradeStudents,
 } from "@/lib/grade-matching";
 import {
   buildDefaultGradeSettings,
@@ -197,6 +198,18 @@ export function GradeImportWizard({
   const unresolvedRows = useMemo(
     () => orderedRows.filter((row) => gradeRowResolutionError(row)),
     [orderedRows],
+  );
+  const studentById = useMemo(
+    () => new Map((context?.students || []).map((student) => [student.id, student])),
+    [context],
+  );
+  const classNameById = useMemo(
+    () => new Map((context?.classes || []).map((classItem) => [classItem.id, classItem.name])),
+    [context],
+  );
+  const unclaimedStudents = useMemo(
+    () => context ? unclaimedGradeStudents(rows, context.students) : [],
+    [context, rows],
   );
   const unresolvedCount = unresolvedRows.length;
   const allUnresolvedSelected = unresolvedCount > 0
@@ -729,7 +742,7 @@ export function GradeImportWizard({
               </thead>
               <tbody className="divide-y divide-ink-100">
                 {orderedRows.map((row) => {
-                  const selectedStudent = context.students.find((item) => item.id === row.studentId);
+                  const selectedStudent = row.studentId ? studentById.get(row.studentId) : undefined;
                   const unresolved = Boolean(gradeRowResolutionError(row));
                   return (
                     <tr key={row.rowKey} className={unresolved ? "bg-red-50/40" : undefined}>
@@ -755,17 +768,21 @@ export function GradeImportWizard({
                           className="w-64 rounded border border-ink-200 bg-paper px-2 py-2 text-xs text-ink-700 outline-none focus:border-gold-400"
                         >
                           <option value="">请选择处理方式</option>
-                          <option value="__new__">＋ 作为新增学生导入</option>
-                          <optgroup label="匹配已有学生">
-                            {context.students.map((student) => {
-                              const classItem = context.classes.find((item) => item.id === student.classId);
-                              return (
-                                <option key={student.id} value={student.id}>
-                                  {classItem?.name || "未分班"} · {student.name} · {student.studentNo}
-                                </option>
-                              );
-                            })}
+                          {selectedStudent && (
+                            <option value={selectedStudent.id}>
+                              当前匹配 · {classNameById.get(selectedStudent.classId) || "未分班"} · {selectedStudent.name} · {selectedStudent.studentNo}
+                            </option>
+                          )}
+                          <optgroup label={`名单库中尚未匹配（${unclaimedStudents.length}）`}>
+                            {unclaimedStudents.length > 0 ? unclaimedStudents.map((student) => (
+                              <option key={student.id} value={student.id}>
+                                {classNameById.get(student.classId) || "未分班"} · {student.name} · {student.studentNo}
+                              </option>
+                            )) : (
+                              <option disabled>名单库学生均已匹配</option>
+                            )}
                           </optgroup>
+                          <option value="__new__">＋ 作为新增学生导入</option>
                         </select>
                       </td>
                       <td className="px-3 py-3">
@@ -798,7 +815,7 @@ export function GradeImportWizard({
                         ) : selectedStudent ? (
                           <div className="min-w-[260px]">
                             <div className="text-ink-700">
-                              {context.classes.find((item) => item.id === selectedStudent.classId)?.name} · {selectedStudent.name}
+                              {classNameById.get(selectedStudent.classId) || "未分班"} · {selectedStudent.name}
                             </div>
                             {selectedStudent.name.trim() !== row.sourceName.trim() && (
                               <label className="mt-1.5 flex items-center gap-2 text-amber-700">
