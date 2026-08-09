@@ -58,7 +58,7 @@ function renderInspector(overrides: Partial<ComponentProps<typeof LessonEditorIn
     onMergeSlide: vi.fn(),
     onDeleteSlide: vi.fn(),
     onOpenFormulaEditor: vi.fn(),
-    onMoveAnimationOrder: vi.fn(),
+    onSetAnimationOrder: vi.fn(),
     onToggleStudent: vi.fn(),
     onLoadRelatedQuestions: vi.fn(),
     onAddRelatedQuestion: vi.fn(),
@@ -118,5 +118,31 @@ describe("LessonEditorInspector", () => {
     expect(screen.getByRole("button", { name: "相关学生" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "相关题" }));
     expect(onLoadRelatedQuestions).toHaveBeenCalled();
+  });
+
+  it("lets multiple objects share one appearance step", async () => {
+    const user = userEvent.setup();
+    const secondElement: LessonSlideElement = {
+      ...element,
+      id: "element-2",
+      content: "图示说明",
+      animationOrder: 2,
+    };
+    const onSetAnimationOrder = vi.fn();
+    renderInspector({
+      elements: [element, secondElement],
+      selectedElement: null,
+      onSetAnimationOrder,
+    });
+
+    await user.click(screen.getByRole("button", { name: "动画" }));
+    await user.click(screen.getByRole("button", { name: "顺序" }));
+
+    expect(screen.getByText(/步骤号相同的对象/)).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "补充说明出现步骤" })).toHaveValue(1);
+    const secondOrder = screen.getByRole("spinbutton", { name: "图示说明出现步骤" });
+    expect(secondOrder).toHaveValue(2);
+    fireEvent.change(secondOrder, { target: { value: "1" } });
+    expect(onSetAnimationOrder).toHaveBeenCalledWith("element-2", 1);
   });
 });

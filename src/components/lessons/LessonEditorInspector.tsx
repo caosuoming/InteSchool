@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ArrowDown,
-  ArrowUp,
   Check,
   FileQuestion,
   Image as ImageIcon,
@@ -54,7 +52,7 @@ interface LessonEditorInspectorProps {
   onMergeSlide: () => void;
   onDeleteSlide: () => void;
   onOpenFormulaEditor: (field: "stem" | "answer" | "analysis") => void;
-  onMoveAnimationOrder: (elementId: string, direction: -1 | 1) => void;
+  onSetAnimationOrder: (elementId: string, order: number) => void;
   onToggleStudent: (studentId: string) => void;
   onLoadRelatedQuestions: () => void;
   onAddRelatedQuestion: (question: Question) => void;
@@ -112,7 +110,7 @@ export function LessonEditorInspector({
   onMergeSlide,
   onDeleteSlide,
   onOpenFormulaEditor,
-  onMoveAnimationOrder,
+  onSetAnimationOrder,
   onToggleStudent,
   onLoadRelatedQuestions,
   onAddRelatedQuestion,
@@ -512,20 +510,31 @@ export function LessonEditorInspector({
 
             {animationPanel === "order" && (
               <div className="space-y-2">
+                <div className="rounded-lg bg-mist px-2.5 py-2 text-[11px] leading-5 text-ink-500">
+                  设置每个对象的出现步骤。步骤号相同的对象会在同一次“下一页”操作中同时出现。
+                </div>
                 {orderedElements.length === 0 ? (
                   <div className="py-6 text-center text-xs text-ink-400">暂无自由元素</div>
                 ) : orderedElements.map((element, index) => (
                   <div key={element.id} className="flex items-center gap-2 rounded-lg border border-ink-100 p-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded bg-ink-900 font-mono text-xs text-paper">{index + 1}</span>
                     <button type="button" className="min-w-0 flex-1 truncate text-left text-xs text-ink-700" onClick={() => selectElement(element.id)}>
                       {elementLabel(element, index)}
                     </button>
-                    <button type="button" disabled={index === 0} onClick={() => onMoveAnimationOrder(element.id, -1)} className="text-ink-400 disabled:opacity-25" aria-label="提前">
-                      <ArrowUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button type="button" disabled={index === orderedElements.length - 1} onClick={() => onMoveAnimationOrder(element.id, 1)} className="text-ink-400 disabled:opacity-25" aria-label="延后">
-                      <ArrowDown className="h-3.5 w-3.5" />
-                    </button>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={Math.max(1, elements.length)}
+                      value={element.animationOrder || index + 1}
+                      aria-label={`${elementLabel(element, index)}出现步骤`}
+                      className="h-8 w-16 px-2 text-center font-mono text-xs"
+                      onChange={(event) => {
+                        const order = Math.max(1, Math.min(
+                          Math.max(1, elements.length),
+                          Number.parseInt(event.target.value, 10) || 1,
+                        ));
+                        onSetAnimationOrder(element.id, order);
+                      }}
+                    />
                   </div>
                 ))}
               </div>

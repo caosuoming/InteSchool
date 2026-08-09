@@ -16,6 +16,7 @@ interface LessonSlideCanvasProps {
   children: ReactNode;
   editable?: boolean;
   disableAnimations?: boolean;
+  animationMode?: "default" | "step";
   allowTextEditing?: boolean;
   selectedElementId?: string | null;
   onSelectElement?: (id: string | null) => void;
@@ -40,9 +41,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function animationStyle(element: LessonSlideElement, editable: boolean): CSSProperties | undefined {
+function animationStyle(
+  element: LessonSlideElement,
+  editable: boolean,
+  animationMode: "default" | "step",
+): CSSProperties | undefined {
   const enterAnimation = element.enterAnimation || element.animation;
-  if (editable || !enterAnimation || enterAnimation === "none") return undefined;
+  const stepMode = animationMode === "step";
+  if (stepMode && !(typeof element.animationOrder === "number" && element.animationOrder > 0)) {
+    return undefined;
+  }
+  if ((editable && !stepMode) || !enterAnimation || enterAnimation === "none") return undefined;
   const animation = {
     fade: "lessonElementFade 420ms ease-out both",
     rise: "lessonElementRise 460ms cubic-bezier(0.16, 1, 0.3, 1) both",
@@ -50,7 +59,9 @@ function animationStyle(element: LessonSlideElement, editable: boolean): CSSProp
   }[enterAnimation];
   return animation ? {
     animation,
-    animationDelay: `${Math.max(0, (element.animationOrder || 1) - 1) * 160}ms`,
+    ...(!stepMode
+      ? { animationDelay: `${Math.max(0, (element.animationOrder || 1) - 1) * 160}ms` }
+      : undefined),
   } : undefined;
 }
 
@@ -59,6 +70,7 @@ export function LessonSlideCanvas({
   children,
   editable = false,
   disableAnimations = false,
+  animationMode = "default",
   allowTextEditing = editable,
   selectedElementId,
   onSelectElement,
@@ -178,7 +190,13 @@ export function LessonSlideCanvas({
               top: `${element.y}%`,
               width: `${element.width}%`,
               height: `${element.height}%`,
-              ...(!disableAnimations ? animationStyle(element, editable) : undefined),
+              ...(!disableAnimations
+                ? animationStyle(
+                    element,
+                    editable,
+                    animationMode,
+                  )
+                : undefined),
             }}
             onPointerDown={dragFromObject
               ? (event) => startInteraction(event, element, "move")
