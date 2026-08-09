@@ -174,6 +174,18 @@ describe("ExamRoomArrangementPage", () => {
     vi.mocked(examArrangementService.listArrangements).mockResolvedValue([]);
   });
 
+  it("shows the exam setup sections in execution order", async () => {
+    renderPage();
+
+    const stepTitles = await screen.findAllByText(/^第[一二三四]步：/);
+    expect(stepTitles.map((title) => title.textContent)).toEqual([
+      "第一步：选择考试科目",
+      "第二步：学生考试科目",
+      "第三步：设置可用考场",
+      "第四步：排考场规则",
+    ]);
+  });
+
   it("asks for an exam name before creating a new arrangement", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -337,7 +349,7 @@ describe("ExamRoomArrangementPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByText("排考场规则");
+    await screen.findByText("第四步：排考场规则");
     for (const subject of ["语文", "数学", "英语", "物理"]) {
       await user.click(screen.getByRole("button", { name: `${subject}单独排` }));
     }

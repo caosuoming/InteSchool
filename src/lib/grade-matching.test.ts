@@ -5,8 +5,10 @@ import {
   autoMatchGradeRows,
   createGradeStudentDraft,
   gradeImportRowIssues,
+  gradeRowResolutionError,
   orderGradeImportRows,
   sortGradeImportRows,
+  unclaimedGradeStudents,
 } from "./grade-matching";
 
 function row(
@@ -54,12 +56,44 @@ const matchingContext = {
 } as GradeImportContext;
 
 describe("grade matching batch helpers", () => {
+  it("returns only roster students not claimed by imported rows", () => {
+    const students = [
+      { id: "student-1", name: "甲", studentNo: "001", classId: "class-1" },
+      { id: "student-2", name: "乙", studentNo: "002", classId: "class-1" },
+      { id: "student-3", name: "丙", studentNo: "003", classId: "class-2" },
+    ] as GradeImportContext["students"];
+
+    expect(unclaimedGradeStudents([
+      row("matched", 2, { studentId: "student-2" }),
+      row("new", 3, { createStudent: { name: "新生", studentNo: "004", classId: "class-1" } }),
+      row("unresolved", 4),
+    ], students).map((student) => student.id)).toEqual(["student-1", "student-3"]);
+  });
+
+  it("keeps automatic matching unique while using roster indexes", () => {
+    const indexedContext = {
+      ...context,
+      students: [
+        { id: "student-1", name: "张三", studentNo: "001", classId: "class-1" },
+        { id: "student-2", name: "李四", studentNo: "002", classId: "class-1" },
+      ],
+    } as GradeImportContext;
+
+    const result = autoMatchGradeRows([
+      row("first", 2, { sourceName: "张三", sourceStudentNo: "001" }),
+      row("duplicate", 3, { sourceName: "张三", sourceStudentNo: "001" }),
+      row("second", 4, { sourceName: "李四", sourceStudentNo: "" }),
+    ], indexedContext);
+
+    expect(result.map((item) => item.studentId)).toEqual(["student-1", undefined, "student-2"]);
+  });
+
   it("places unresolved rows first without changing order within each group", () => {
     const rows = [
       row("resolved-1", 2, { studentId: "student-1" }),
       row("unresolved-1", 3),
       row("resolved-2", 4, { createStudent: { name: "学生4", studentNo: "20264", classId: "class-1" } }),
-      row("unresolved-2", 5, { createStudent: { name: "学生5", studentNo: "", classId: "class-1" } }),
+      row("unresolved-2", 5, { createStudent: { name: "学生5", studentNo: "", classId: "" } }),
     ];
 
     expect(orderGradeImportRows(rows).map((item) => item.rowKey)).toEqual([
@@ -82,6 +116,23 @@ describe("grade matching batch helpers", () => {
       studentNo: "20262",
       classId: "class-1",
     });
+  });
+
+  it("treats a new student without a student number as resolved", () => {
+    const pending = row("row-blank-no", 2, { sourceStudentNo: "" });
+    const resolved = applyGradeRowBatchResolution(
+      [pending],
+      new Set([pending.rowKey]),
+      "create",
+      context,
+    )[0];
+
+    expect(resolved.createStudent).toEqual({
+      name: "学生2",
+      studentNo: "",
+      classId: "class-1",
+    });
+    expect(gradeRowResolutionError(resolved)).toBeNull();
   });
 
   it("applies new-student handling only to selected rows", () => {

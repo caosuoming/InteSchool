@@ -44,6 +44,7 @@ import {
   gradeImportRowIssues,
   orderGradeImportRows,
   sortGradeImportRows,
+  unclaimedGradeStudents,
   type GradeImportSortDirection,
   type GradeImportSortKey,
 } from "@/lib/grade-matching";
@@ -253,6 +254,18 @@ export function GradeImportWizard({
   const unresolvedRows = useMemo(
     () => orderedRows.filter((row) => rowIssues.has(row.rowKey)),
     [orderedRows, rowIssues],
+  );
+  const studentById = useMemo(
+    () => new Map((context?.students || []).map((student) => [student.id, student])),
+    [context],
+  );
+  const classNameById = useMemo(
+    () => new Map((context?.classes || []).map((classItem) => [classItem.id, classItem.name])),
+    [context],
+  );
+  const unclaimedStudents = useMemo(
+    () => context ? unclaimedGradeStudents(rows, context.students) : [],
+    [context, rows],
   );
   const unresolvedCount = unresolvedRows.length;
   const allUnresolvedSelected = unresolvedCount > 0
@@ -844,7 +857,7 @@ export function GradeImportWizard({
               </thead>
               <tbody className="divide-y divide-ink-100">
                 {orderedRows.map((row) => {
-                  const selectedStudent = context.students.find((item) => item.id === row.studentId);
+                  const selectedStudent = row.studentId ? studentById.get(row.studentId) : undefined;
                   const issue = rowIssues.get(row.rowKey);
                   const unresolved = Boolean(issue);
                   return (
@@ -871,17 +884,21 @@ export function GradeImportWizard({
                           className="w-64 rounded border border-ink-200 bg-paper px-2 py-2 text-xs text-ink-700 outline-none focus:border-gold-400"
                         >
                           <option value="">请选择处理方式</option>
-                          <option value="__new__">＋ 作为新增学生导入</option>
-                          <optgroup label="学生库：匹配已有学生">
-                            {context.students.map((student) => {
-                              const classItem = context.classes.find((item) => item.id === student.classId);
-                              return (
-                                <option key={student.id} value={student.id}>
-                                  {classItem?.name || "未分班"} · {student.name} · {student.studentNo}
-                                </option>
-                              );
-                            })}
+                          {selectedStudent && (
+                            <option value={selectedStudent.id}>
+                              当前匹配 · {classNameById.get(selectedStudent.classId) || "未分班"} · {selectedStudent.name} · {selectedStudent.studentNo || "无学号"}
+                            </option>
+                          )}
+                          <optgroup label={`名单库中尚未匹配（${unclaimedStudents.length}）`}>
+                            {unclaimedStudents.length > 0 ? unclaimedStudents.map((student) => (
+                              <option key={student.id} value={student.id}>
+                                {classNameById.get(student.classId) || "未分班"} · {student.name} · {student.studentNo || "无学号"}
+                              </option>
+                            )) : (
+                              <option disabled>名单库学生均已匹配</option>
+                            )}
                           </optgroup>
+                          <option value="__new__">＋ 作为新增学生导入</option>
                         </select>
                       </td>
                       <td className="px-3 py-3">
@@ -900,7 +917,7 @@ export function GradeImportWizard({
                                 aria-label={`${row.sourceName}新增学号`}
                                 value={row.createStudent.studentNo}
                                 onChange={(event) => updateNewStudent(row.rowKey, { studentNo: event.target.value })}
-                                placeholder="学号"
+                                placeholder="学号（可空）"
                                 className="rounded border border-ink-200 px-2 py-1.5 outline-none focus:border-gold-400"
                               />
                               <select
@@ -918,7 +935,7 @@ export function GradeImportWizard({
                           <div className="min-w-[260px]">
                             <div className="mb-1 text-[10px] font-medium text-sky-700">学生库数据</div>
                             <div className="text-ink-700">
-                              {context.classes.find((item) => item.id === selectedStudent.classId)?.name || "未分班"}
+                              {classNameById.get(selectedStudent.classId) || "未分班"}
                               {" · "}{selectedStudent.name}
                               {" · "}{selectedStudent.studentNo || "无学号"}
                             </div>

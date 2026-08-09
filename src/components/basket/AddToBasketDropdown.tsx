@@ -12,6 +12,7 @@ interface AddToBasketDropdownProps {
   resourceTitle?: string;
   size?: "sm" | "md";
   variant?: "gold" | "outline" | "ghost";
+  quickLabel?: string;
   onAdded?: () => void;
 }
 
@@ -21,6 +22,7 @@ export function AddToBasketDropdown({
   resourceTitle,
   size = "sm",
   variant = "gold",
+  quickLabel,
   onAdded,
 }: AddToBasketDropdownProps) {
   const { teacher } = useAuthStore();
@@ -146,10 +148,14 @@ export function AddToBasketDropdown({
           title={defaultBasket ? `点击加入「${defaultBasket.name}」` : "暂无默认资源篮"}
         >
           <ShoppingBasket className={size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} />
-          {isInDefault ? "已加入" : defaultBasket?.name || "加入资源篮"}
+          {isInDefault ? "已加入" : quickLabel || defaultBasket?.name || "加入资源篮"}
         </button>
         <button
           onClick={() => setOpen(!open)}
+          aria-label="选择其它资源篮"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          title="选择其它资源篮"
           className={cn(
             "transition-colors flex items-center justify-center border-l",
             sizeClasses[size],

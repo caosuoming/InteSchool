@@ -44,8 +44,38 @@ export function createGradeStudentDraft(
   };
 }
 
-function uniqueStudent(candidates: Student[]): Student | undefined {
-  return candidates.length === 1 ? candidates[0] : undefined;
+function pushStudentIndex(
+  index: Map<string, Student[]>,
+  key: string,
+  student: Student,
+) {
+  const current = index.get(key);
+  if (current) current.push(student);
+  else index.set(key, [student]);
+}
+
+function uniqueUnclaimedStudent(
+  candidates: Student[] | undefined,
+  claimed: ReadonlySet<string>,
+): Student | undefined {
+  if (!candidates) return undefined;
+  let match: Student | undefined;
+  for (const student of candidates) {
+    if (claimed.has(student.id)) continue;
+    if (match) return undefined;
+    match = student;
+  }
+  return match;
+}
+
+export function unclaimedGradeStudents(
+  rows: GradeImportRow[],
+  students: Student[],
+): Student[] {
+  const claimed = new Set(
+    rows.map((row) => row.studentId).filter((studentId): studentId is string => Boolean(studentId)),
+  );
+  return students.filter((student) => !claimed.has(student.id));
 }
 
 interface GradeMatchCandidates {
@@ -162,6 +192,18 @@ export function autoMatchGradeRows(
   context: GradeImportContext,
 ): GradeImportRow[] {
   const claimed = new Set<string>();
+  const studentsByNo = new Map<string, Student[]>();
+  const studentsByName = new Map<string, Student[]>();
+  const studentsByClassAndName = new Map<string, Student[]>();
+
+  context.students.forEach((student) => {
+    const studentNo = student.studentNo.trim();
+    const studentName = normalizeName(student.name);
+    if (studentNo) pushStudentIndex(studentsByNo, studentNo, student);
+    pushStudentIndex(studentsByName, studentName, student);
+    pushStudentIndex(studentsByClassAndName, `${student.classId}\u0000${studentName}`, student);
+  });
+
   return rows.map((row) => {
     const normalizedNo = row.sourceStudentNo.trim();
     const normalizedName = normalizeName(row.sourceName);
@@ -169,21 +211,16 @@ export function autoMatchGradeRows(
     let matched: Student | undefined;
 
     if (normalizedNo) {
-      matched = uniqueStudent(context.students.filter((student) =>
-        student.studentNo.trim() === normalizedNo && !claimed.has(student.id),
-      ));
+      matched = uniqueUnclaimedStudent(studentsByNo.get(normalizedNo), claimed);
     }
     if (!matched && classId) {
-      matched = uniqueStudent(context.students.filter((student) =>
-        student.classId === classId
-        && normalizeName(student.name) === normalizedName
-        && !claimed.has(student.id),
-      ));
+      matched = uniqueUnclaimedStudent(
+        studentsByClassAndName.get(`${classId}\u0000${normalizedName}`),
+        claimed,
+      );
     }
     if (!matched) {
-      matched = uniqueStudent(context.students.filter((student) =>
-        normalizeName(student.name) === normalizedName && !claimed.has(student.id),
-      ));
+      matched = uniqueUnclaimedStudent(studentsByName.get(normalizedName), claimed);
     }
 
     if (matched) {
@@ -203,7 +240,6 @@ export function gradeRowResolutionError(row: GradeImportRow): string | null {
   if (row.studentId) return null;
   if (!row.createStudent) return "尚未匹配学生";
   if (!row.createStudent.name.trim()) return "新增学生姓名不能为空";
-  if (!row.createStudent.studentNo.trim()) return "新增学生学号不能为空";
   if (!row.createStudent.classId) return "请选择新增学生所属班级";
   return null;
 }

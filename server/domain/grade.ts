@@ -758,9 +758,10 @@ export const gradeService = {
         const studentName = create.name.trim();
         const studentNo = create.studentNo.trim();
         if (!studentName) throw new Error(`第 ${sourceRowNumber} 行的新学生姓名不能为空`);
-        if (!studentNo) throw new Error(`第 ${sourceRowNumber} 行的新学生学号不能为空`);
-        if (usedStudentNos.has(studentNo)) throw new Error(`学号「${studentNo}」已存在，不能重复新增`);
-        usedStudentNos.add(studentNo);
+        if (studentNo) {
+          if (usedStudentNos.has(studentNo)) throw new Error(`学号「${studentNo}」已存在，不能重复新增`);
+          usedStudentNos.add(studentNo);
+        }
         student = {
           id: genId("stu"),
           name: studentName,
