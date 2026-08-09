@@ -12,7 +12,6 @@ import {
   ChevronUp,
   Eraser,
   Eye,
-  EyeOff,
   Link2,
   LogOut,
   Maximize2,
@@ -131,9 +130,9 @@ const INITIAL_DRAWING_PRESETS: DrawingPreset[] = [
 ];
 
 const DRAWING_COLORS = ["#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#ffffff"];
-const DRAWING_WIDTHS: Record<DrawingPreset["kind"], number[]> = {
-  pen: [2, 4, 7],
-  highlighter: [10, 18, 28],
+const DRAWING_WIDTH_RANGES: Record<DrawingPreset["kind"], { min: number; max: number }> = {
+  pen: { min: 1, max: 12 },
+  highlighter: { min: 6, max: 36 },
 };
 const ERASER_WIDTHS = [12, 24, 48];
 
@@ -864,35 +863,28 @@ export function PresentationMode({
   const renderPanelContent = (tab: SideTab) => {
     if (tab === "display") {
       return (
-        <div>
-          <h2 className="text-sm font-semibold text-ink-900">显示内容</h2>
-          <p className="mt-1 text-xs text-ink-400">按需显示当前题目的内容。</p>
-          <div className="mt-3 space-y-2">
-            {questionContentControls.length === 0 ? (
-              <div className="rounded-lg bg-mist px-3 py-5 text-center text-xs text-ink-400">
-                当前页面没有可切换内容
-              </div>
-            ) : questionContentControls.map(({ key, label }) => {
-              const visible = questionVisibility[key];
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={visible}
-                  onClick={() => toggleQuestionContent(key)}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-sm transition-colors",
-                    visible
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                      : "border-ink-100 text-ink-700 hover:border-emerald-200",
-                  )}
-                >
-                  <span>{label}</span>
-                  {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                </button>
-              );
-            })}
-          </div>
+        <div role="group" aria-label="显示内容开关" className="flex items-center gap-1 whitespace-nowrap">
+          {questionContentControls.length === 0 ? (
+            <span className="px-2 py-1 text-xs text-ink-400">当前页面没有可切换内容</span>
+          ) : questionContentControls.map(({ key, label }) => {
+            const visible = questionVisibility[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={visible}
+                onClick={() => toggleQuestionContent(key)}
+                className={cn(
+                  "flex h-8 items-center rounded-md border px-2.5 text-xs font-medium transition-colors",
+                  visible
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                    : "border-ink-100 text-ink-700 hover:border-emerald-200",
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       );
     }
@@ -989,7 +981,8 @@ export function PresentationMode({
         {activeTab && (
           <section
             className={cn(
-              "absolute bottom-1/2 z-[100] w-72 translate-y-1/2 rounded-xl border border-ink-100 bg-paper p-4 text-ink-900 shadow-2xl",
+              "absolute bottom-1/2 z-[100] translate-y-1/2 rounded-xl border border-ink-100 bg-paper text-ink-900 shadow-2xl",
+              activeTab === "display" ? "w-max max-w-[calc(100vw-7rem)] p-2" : "w-72 p-4",
               side === "left" ? "left-full ml-2" : "right-full mr-2",
             )}
           >
@@ -1332,38 +1325,35 @@ export function PresentationMode({
                         />
                       ))}
                     </div>
-                    <div className="mt-3 text-[10px] font-medium text-ink-400">粗细</div>
-                    <div className="mt-1.5 grid grid-cols-3 gap-1.5">
-                      {DRAWING_WIDTHS[preset.kind].map((width) => (
-                        <button
-                          key={width}
-                          type="button"
-                          aria-label={`${preset.label}粗细${width}`}
-                          aria-pressed={preset.width === width}
-                          onClick={() => {
-                            setDrawingPresets((current) => current.map((item) => (
-                              item.id === preset.id ? { ...item, width } : item
-                            )));
-                            setTool(preset.id);
-                          }}
-                          className={cn(
-                            "flex h-8 items-center justify-center rounded-lg border",
-                            preset.width === width
-                              ? "border-gold-400 bg-gold-50"
-                              : "border-ink-100 hover:border-gold-200",
-                          )}
-                        >
-                          <span
-                            className="block rounded-full"
-                            style={{
-                              width: "32px",
-                              height: `${clamp(preset.kind === "pen" ? width : width / 2, 2, 12)}px`,
-                              backgroundColor: preset.color,
-                              opacity: preset.kind === "highlighter" ? 0.65 : 1,
-                            }}
-                          />
-                        </button>
-                      ))}
+                    <div className="mt-3 flex items-center justify-between text-[10px] font-medium text-ink-400">
+                      <span>粗细</span>
+                      <span>{preset.width}px</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: preset.color }} />
+                      <input
+                        type="range"
+                        aria-label={`${preset.label}粗细`}
+                        min={DRAWING_WIDTH_RANGES[preset.kind].min}
+                        max={DRAWING_WIDTH_RANGES[preset.kind].max}
+                        step={1}
+                        value={preset.width}
+                        onChange={(event) => {
+                          const width = Number(event.target.value);
+                          setDrawingPresets((current) => current.map((item) => (
+                            item.id === preset.id ? { ...item, width } : item
+                          )));
+                          setTool(preset.id);
+                        }}
+                        className="h-5 min-w-0 flex-1 cursor-pointer"
+                      />
+                      <span
+                        className="h-3 w-3 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: preset.color,
+                          opacity: preset.kind === "highlighter" ? 0.65 : 1,
+                        }}
+                      />
                     </div>
                   </div>
                 )}

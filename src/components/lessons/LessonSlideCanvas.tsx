@@ -96,7 +96,7 @@ export function LessonSlideCanvas({
       startY: event.clientY,
       element,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   const moveInteraction = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -105,6 +105,7 @@ export function LessonSlideCanvas({
     if (!editable || !interaction || !canvas || !onElementsChange) return;
 
     const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
     const dx = ((event.clientX - interaction.startX) / rect.width) * 100;
     const dy = ((event.clientY - interaction.startY) / rect.height) * 100;
     const next = elements.map((element) => {
@@ -127,7 +128,7 @@ export function LessonSlideCanvas({
 
   const endInteraction = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (interactionRef.current) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
       interactionRef.current = null;
     }
   };
@@ -154,6 +155,9 @@ export function LessonSlideCanvas({
       </div>
       {elements.map((element) => {
         const selected = editable && selectedElementId === element.id;
+        const dragFromObject = editable && (
+          element.kind === "image" || (element.kind === "text" && !allowTextEditing)
+        );
         const textStyle: CSSProperties = {
           fontSize: `${element.kind === "text" ? element.fontSize || 24 : 24}px`,
           textAlign: element.kind === "text" ? element.textAlign || "left" : "left",
@@ -165,8 +169,8 @@ export function LessonSlideCanvas({
             key={element.id}
             className={cn(
               "absolute touch-none",
-              element.kind === "text" ? "select-text" : "select-none",
-              editable && element.kind === "image" && "cursor-move",
+              element.kind === "text" && !dragFromObject ? "select-text" : "select-none",
+              dragFromObject && "cursor-move",
               selected && "ring-2 ring-gold-400 ring-offset-1",
             )}
             style={{
@@ -176,7 +180,7 @@ export function LessonSlideCanvas({
               height: `${element.height}%`,
               ...(!disableAnimations ? animationStyle(element, editable) : undefined),
             }}
-            onPointerDown={element.kind === "image"
+            onPointerDown={dragFromObject
               ? (event) => startInteraction(event, element, "move")
               : undefined}
             onClick={(event) => {
