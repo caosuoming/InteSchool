@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   getPaper: vi.fn(),
   updatePaper: vi.fn(),
   listQuestions: vi.fn(),
+  updateQuestion: vi.fn(),
   listBaskets: vi.fn(),
+  addQuestion: vi.fn(),
   removeQuestion: vi.fn(),
   listAllClasses: vi.fn(),
   listSchoolClasses: vi.fn(),
@@ -17,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   publishExam: vi.fn(),
   listExamPaperTypes: vi.fn(),
   listSettings: vi.fn(),
+  getChapterTree: vi.fn(),
   getKnowledgeTree: vi.fn(),
   generateExamPaperDocx: vi.fn(),
   createLessonFromExamPaper: vi.fn(),
@@ -45,11 +48,13 @@ vi.mock("@/services/examPaper", () => ({
 vi.mock("@/services/question", () => ({
   questionService: {
     listQuestions: mocks.listQuestions,
+    updateQuestion: mocks.updateQuestion,
   },
 }));
 vi.mock("@/services/basket", () => ({
   basketService: {
     listBaskets: mocks.listBaskets,
+    addQuestion: mocks.addQuestion,
     removeQuestion: mocks.removeQuestion,
   },
 }));
@@ -80,7 +85,7 @@ vi.mock("@/services/examPublish", () => ({
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getKnowledgeTree: mocks.getKnowledgeTree,
-    getChapterTree: vi.fn().mockResolvedValue([]),
+    getChapterTree: mocks.getChapterTree,
   },
 }));
 vi.mock("@/services/settings", () => ({
@@ -186,6 +191,17 @@ const knowledgeTree = {
   }],
 } as TreeNode;
 
+const chapterTree = {
+  id: "root",
+  name: "章节课",
+  children: [{
+    id: "chapter-1",
+    name: "函数与方程",
+    type: "chapter",
+    children: [],
+  }],
+} as TreeNode;
+
 const publication = {
   id: "publication-1",
   examPaperId: paper.id,
@@ -238,7 +254,9 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.getPaper.mockResolvedValue(paper);
     mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...paper, ...patch }));
     mocks.listQuestions.mockResolvedValue([question]);
+    mocks.updateQuestion.mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
     mocks.listBaskets.mockResolvedValue([]);
+    mocks.addQuestion.mockResolvedValue(undefined);
     mocks.removeQuestion.mockResolvedValue(undefined);
     mocks.listAllClasses.mockResolvedValue([{
       id: "class-1",
@@ -256,6 +274,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listPublications.mockResolvedValue([publication]);
     mocks.listExamPaperTypes.mockResolvedValue([]);
     mocks.listSettings.mockResolvedValue([]);
+    mocks.getChapterTree.mockResolvedValue(chapterTree);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
     mocks.generateExamPaperDocx.mockResolvedValue(undefined);
     mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
@@ -327,6 +346,67 @@ describe("ExamPaperEditorPage preview", () => {
       id: paper.id,
       title: paper.title,
       contentBlocks: paper.contentBlocks,
+    });
+  });
+
+  it("edits a preview question's chapter course and knowledge-point catalogs", async () => {
+    renderPage();
+
+    const details = await screen.findByTestId("exam-question-details-1");
+    expect(details).toHaveTextContent("暂无关联章节课");
+    expect(details).toHaveTextContent("函数定义域");
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题章节课和知识点" }));
+    expect(await screen.findByRole("heading", { name: "编辑第 1 题章节课和知识点" })).toBeInTheDocument();
+
+    const chapterRow = screen.getByTitle("函数与方程").parentElement as HTMLElement;
+    fireEvent.click(within(chapterRow).getByRole("button"));
+    const knowledgeRow = screen.getByTitle("函数定义域").parentElement as HTMLElement;
+    fireEvent.click(within(knowledgeRow).getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(mocks.updateQuestion).toHaveBeenCalledWith(question.id, {
+        chapterIds: ["chapter-1"],
+        knowledgePointIds: [],
+      });
+    });
+    expect(details).toHaveTextContent("函数与方程");
+    expect(details).toHaveTextContent("暂无关联知识点");
+  });
+
+  it("quick-adds to the default basket and uses the arrow for other baskets", async () => {
+    const defaultBasket = {
+      id: "basket-default",
+      teacherId: teacher.id,
+      name: "默认资源篮",
+      isDefault: true,
+      questionIds: [],
+      materialIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const otherBasket = {
+      ...defaultBasket,
+      id: "basket-other",
+      name: "拓展篮",
+      isDefault: false,
+    };
+    mocks.listBaskets.mockResolvedValue([defaultBasket, otherBasket]);
+
+    renderPage();
+
+    const quickAddButton = await screen.findByRole("button", { name: "加入试题篮" });
+    await waitFor(() => expect(quickAddButton).toBeEnabled());
+    fireEvent.click(quickAddButton);
+    await waitFor(() => {
+      expect(mocks.addQuestion).toHaveBeenCalledWith(defaultBasket.id, question.id);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "选择其它资源篮" }));
+    fireEvent.click(await screen.findByRole("button", { name: /拓展篮/ }));
+    await waitFor(() => {
+      expect(mocks.addQuestion).toHaveBeenCalledWith(otherBasket.id, question.id);
     });
   });
 
@@ -534,6 +614,7 @@ describe("ExamPaperEditorPage structured editor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listBaskets.mockResolvedValue([]);
+    mocks.addQuestion.mockResolvedValue(undefined);
     mocks.removeQuestion.mockResolvedValue(undefined);
     mocks.listAllClasses.mockResolvedValue([]);
     mocks.listSchoolClasses.mockResolvedValue([]);
@@ -542,6 +623,7 @@ describe("ExamPaperEditorPage structured editor", () => {
     mocks.listPublications.mockResolvedValue([]);
     mocks.listExamPaperTypes.mockResolvedValue([]);
     mocks.listSettings.mockResolvedValue([]);
+    mocks.getChapterTree.mockResolvedValue(chapterTree);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
     mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
     mocks.saveAnswerRecord.mockResolvedValue(null);
@@ -583,6 +665,7 @@ describe("ExamPaperEditorPage structured editor", () => {
       ],
     });
     mocks.listQuestions.mockResolvedValue([question, secondQuestion]);
+    mocks.updateQuestion.mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
   });
 
   it("keeps paper properties and scores editable while locking extracted document structure", async () => {

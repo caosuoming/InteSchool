@@ -32,6 +32,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionCard } from "@/components/question/QuestionCard";
+import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
@@ -237,6 +238,7 @@ export default function ExamPaperEditorPage() {
   const [contentBlocks, setContentBlocks] = useState<ExtractedDocumentBlock[]>([]);
   const [layoutMode, setLayoutMode] = useState<"grouped" | "flat">("grouped");
   const [markingAllDone, setMarkingAllDone] = useState(false);
+  const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
 
   // 试题篮
@@ -460,6 +462,7 @@ export default function ExamPaperEditorPage() {
       classSvc.listStudentsBySchool(schoolId).then(setStudents);
       // 加载试卷类型
       settingsService.listExamPaperTypes(schoolId).then(setExamPaperTypes);
+      knowledgeService.getChapterTree(schoolId).then(setChapterTree);
       knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
     }
     // 加载发布记录
@@ -634,6 +637,7 @@ export default function ExamPaperEditorPage() {
     [publications],
   );
 
+  const chapterNameMap = useMemo(() => treeNameMap(chapterTree), [chapterTree]);
   const knowledgeNameMap = useMemo(() => treeNameMap(knowledgeTree), [knowledgeTree]);
   const includedKnowledgePointIds = useMemo(() => {
     const ids = new Set(paper?.knowledgePointIds || []);
@@ -750,34 +754,28 @@ export default function ExamPaperEditorPage() {
   const getCompletionQuestionId = (paperQuestion: ExamPaperQuestion) =>
     paperQuestion.questionId || `exam-item:${paper?.id || id}:${paperQuestion.id}`;
 
-  // 加入默认试题篮
-  const handleAddToDefaultBasket = async (questionId?: string) => {
+  const refreshBaskets = useCallback(async () => {
     if (!teacher) return;
-    const def = baskets.find((b) => b.isDefault);
-    if (!def) { toast.error("未设置默认试题篮"); return; }
-    const targetQId = questionId;
-    if (!targetQId) { toast.error("该题未关联题库题目"); return; }
-    await basketService.addQuestion(def.id, targetQId);
-    const bs = await basketService.listBaskets(teacher.id);
-    setBaskets(bs);
-    toast.success("已加入默认试题篮");
-  };
+    setBaskets(await basketService.listBaskets(teacher.id));
+  }, [teacher]);
 
-  const isInDefaultBasket = (questionId?: string) => {
-    if (!questionId) return false;
-    const def = baskets.find((b) => b.isDefault);
-    return def?.questionIds?.includes(questionId) || false;
-  };
-
-  const handleRemoveFromDefault = async (questionId: string) => {
-    if (!teacher) return;
-    const def = baskets.find((b) => b.isDefault);
-    if (!def) return;
-    await basketService.removeQuestion(def.id, questionId);
-    const bs = await basketService.listBaskets(teacher.id);
-    setBaskets(bs);
-    toast.success("已从默认试题篮移除");
-  };
+  const handleUpdateQuestionCatalogs = useCallback(async (
+    questionId: string,
+    chapterIds: string[],
+    knowledgePointIds: string[],
+  ) => {
+    try {
+      const updated = await questionService.updateQuestion(questionId, {
+        chapterIds,
+        knowledgePointIds,
+      });
+      setQuestions((previous) => ({ ...previous, [questionId]: updated }));
+      toast.success("章节课和知识点已更新");
+    } catch (error) {
+      toast.error("更新失败", error instanceof Error ? error.message : "请稍后重试");
+      throw error;
+    }
+  }, []);
 
   // 编辑模式：调整顺序
   const handleMove = (idx: number, dir: "up" | "down") => {
@@ -1538,11 +1536,12 @@ export default function ExamPaperEditorPage() {
                           index={questionNumber - 1}
                           question={linkedQuestion}
                           progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
+                          chapterTree={chapterTree}
+                          knowledgeTree={knowledgeTree}
+                          chapterNameMap={chapterNameMap}
                           knowledgeNameMap={knowledgeNameMap}
-                          defaultBasket={baskets.find((basket) => basket.isDefault)}
-                          isInDefaultBasket={isInDefaultBasket(paperQuestion.questionId)}
-                          onAddToBasket={() => handleAddToDefaultBasket(paperQuestion.questionId)}
-                          onRemoveFromBasket={() => paperQuestion.questionId && handleRemoveFromDefault(paperQuestion.questionId)}
+                          onUpdateCatalogs={handleUpdateQuestionCatalogs}
+                          onBasketChanged={refreshBaskets}
                           completionQuestionId={getCompletionQuestionId(paperQuestion)}
                           students={audienceStudents}
                           answerRecords={answerRecords}
@@ -1596,11 +1595,12 @@ export default function ExamPaperEditorPage() {
                           index={item.index}
                           question={item.question}
                           progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
+                          chapterTree={chapterTree}
+                          knowledgeTree={knowledgeTree}
+                          chapterNameMap={chapterNameMap}
                           knowledgeNameMap={knowledgeNameMap}
-                          defaultBasket={baskets.find((basket) => basket.isDefault)}
-                          isInDefaultBasket={isInDefaultBasket(item.pq.questionId)}
-                          onAddToBasket={() => handleAddToDefaultBasket(item.pq.questionId)}
-                          onRemoveFromBasket={() => item.pq.questionId && handleRemoveFromDefault(item.pq.questionId)}
+                          onUpdateCatalogs={handleUpdateQuestionCatalogs}
+                          onBasketChanged={refreshBaskets}
                           completionQuestionId={getCompletionQuestionId(item.pq)}
                           students={audienceStudents}
                           answerRecords={answerRecords}
@@ -1624,11 +1624,12 @@ export default function ExamPaperEditorPage() {
                         index={index}
                         question={linkedQuestion}
                         progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
+                        chapterTree={chapterTree}
+                        knowledgeTree={knowledgeTree}
+                        chapterNameMap={chapterNameMap}
                         knowledgeNameMap={knowledgeNameMap}
-                        defaultBasket={baskets.find((basket) => basket.isDefault)}
-                        isInDefaultBasket={isInDefaultBasket(paperQuestion.questionId)}
-                        onAddToBasket={() => handleAddToDefaultBasket(paperQuestion.questionId)}
-                        onRemoveFromBasket={() => paperQuestion.questionId && handleRemoveFromDefault(paperQuestion.questionId)}
+                        onUpdateCatalogs={handleUpdateQuestionCatalogs}
+                        onBasketChanged={refreshBaskets}
                         completionQuestionId={getCompletionQuestionId(paperQuestion)}
                         students={audienceStudents}
                         answerRecords={answerRecords}
@@ -2817,11 +2818,12 @@ function PreviewQuestionDetails({
   index,
   question,
   progress,
+  chapterTree,
+  knowledgeTree,
+  chapterNameMap,
   knowledgeNameMap,
-  defaultBasket,
-  isInDefaultBasket,
-  onAddToBasket,
-  onRemoveFromBasket,
+  onUpdateCatalogs,
+  onBasketChanged,
   completionQuestionId,
   students,
   answerRecords,
@@ -2831,69 +2833,176 @@ function PreviewQuestionDetails({
   index: number;
   question: Question | null | undefined;
   progress?: QuestionProgress;
+  chapterTree: TreeNode | null;
+  knowledgeTree: TreeNode | null;
+  chapterNameMap: Map<string, string>;
   knowledgeNameMap: Map<string, string>;
-  defaultBasket?: Basket;
-  isInDefaultBasket: boolean;
-  onAddToBasket: () => void;
-  onRemoveFromBasket: () => void;
+  onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[]) => Promise<void>;
+  onBasketChanged: () => Promise<void>;
   completionQuestionId: string;
   students: Student[];
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
 }) {
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
+  const [draftKnowledgePointIds, setDraftKnowledgePointIds] = useState<string[]>([]);
+  const [savingCatalogs, setSavingCatalogs] = useState(false);
+  const chapterNames = (question?.chapterIds || [])
+    .map((chapterId) => chapterNameMap.get(chapterId))
+    .filter(Boolean) as string[];
   const knowledgeNames = (question?.knowledgePointIds || [])
     .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
     .filter(Boolean) as string[];
   const difficulty = question?.difficulty || 3;
 
+  const openCatalogEditor = () => {
+    if (!question) return;
+    setDraftChapterIds(question.chapterIds);
+    setDraftKnowledgePointIds(question.knowledgePointIds);
+    setCatalogOpen(true);
+  };
+
+  const saveCatalogs = async () => {
+    if (!question) return;
+    setSavingCatalogs(true);
+    try {
+      await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds);
+      setCatalogOpen(false);
+    } finally {
+      setSavingCatalogs(false);
+    }
+  };
+
   return (
-    <div className="rounded-lg border border-ink-100 bg-paper p-3 shadow-sm" data-testid={`exam-question-details-${index + 1}`}>
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        <span className="font-mono text-xs font-bold text-ink-500">第 {index + 1} 题</span>
-        <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
-        <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
-          {difficultyLabel[difficulty]}
-        </Badge>
-        <Badge variant="gold">{pq.score} 分</Badge>
-      </div>
+    <>
+      <div className="rounded-lg border border-ink-100 bg-paper p-3 shadow-sm" data-testid={`exam-question-details-${index + 1}`}>
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-xs font-bold text-ink-500">第 {index + 1} 题</span>
+          <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
+          <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
+            {difficultyLabel[difficulty]}
+          </Badge>
+          <Badge variant="gold">{pq.score} 分</Badge>
+        </div>
 
-      <QuestionProgressBadge progress={progress} />
+        <QuestionProgressBadge progress={progress} />
 
-      <StudentAnswerStatusControl
-        className="mt-2 border-t border-ink-100 pt-2"
-        students={students}
-        answerRecords={answerRecords}
-        questionId={completionQuestionId}
-        onChange={onUpdateStudentAnswer}
-      />
+        <StudentAnswerStatusControl
+          className="mt-2 border-t border-ink-100 pt-2"
+          students={students}
+          answerRecords={answerRecords}
+          questionId={completionQuestionId}
+          onChange={onUpdateStudentAnswer}
+        />
 
-      <div className="mt-2 space-y-1.5 text-[11px] leading-5 text-ink-500">
-        {knowledgeNames.length > 0 ? (
+        <div className="mt-2 border-t border-ink-100 pt-2 text-[11px] leading-5 text-ink-500">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-medium text-ink-600">章节课与知识点</span>
+            <button
+              type="button"
+              onClick={openCatalogEditor}
+              disabled={!question}
+              className="no-print inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
+              aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
+              title={question ? "编辑章节课和知识点" : "该题未关联题库，无法编辑"}
+            >
+              <Edit3 className="h-3 w-3" />
+              编辑
+            </button>
+          </div>
+          <div>
+            <span className="text-ink-400">章节课：</span>
+            {chapterNames.length > 0 ? chapterNames.join("、") : "暂无关联章节课"}
+          </div>
           <div>
             <span className="text-ink-400">知识点：</span>
-            {knowledgeNames.join("、")}
+            {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
           </div>
-        ) : (
-          <div className="text-ink-400">暂无关联知识点</div>
-        )}
-        {question && question.usageCount > 0 && <div>题库使用 {question.usageCount} 次</div>}
-        {question && question.recommendation >= 4 && <div className="font-medium text-gold-600">高推荐题目</div>}
+          {question && question.usageCount > 0 && <div>题库使用 {question.usageCount} 次</div>}
+          {question && question.recommendation >= 4 && <div className="font-medium text-gold-600">高推荐题目</div>}
+        </div>
+
+        <div className="no-print mt-3">
+          {pq.questionId ? (
+            <AddToBasketDropdown
+              resourceType="question"
+              resourceId={pq.questionId}
+              resourceTitle={question?.stem || pq.stem}
+              size="sm"
+              variant="outline"
+              quickLabel="加入试题篮"
+              onAdded={onBasketChanged}
+            />
+          ) : (
+            <Button variant="ghost" size="sm" disabled className="text-[11px]">
+              <ShoppingBasket className="h-3 w-3" />
+              加入试题篮
+            </Button>
+          )}
+        </div>
       </div>
 
-      {defaultBasket && (
-        <Button
-          variant={isInDefaultBasket ? "outline" : "ghost"}
-          size="sm"
-          onClick={isInDefaultBasket ? onRemoveFromBasket : onAddToBasket}
-          disabled={!pq.questionId}
-          title={pq.questionId ? (isInDefaultBasket ? "已加入，点击移除" : "加入默认试题篮") : "未关联题库"}
-          className="no-print mt-3 w-full text-[11px]"
-        >
-          <ShoppingBasket className="h-3 w-3" />
-          {isInDefaultBasket ? "移出试题篮" : "加入试题篮"}
-        </Button>
-      )}
-    </div>
+      <Modal
+        open={catalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        title={`编辑第 ${index + 1} 题章节课和知识点`}
+        description="修改会同步保存到题库中的原题。"
+        size="lg"
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => setCatalogOpen(false)}>取消</Button>
+            <Button variant="gold" onClick={saveCatalogs} loading={savingCatalogs}>保存</Button>
+          </>
+        )}
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-gold-100 p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-800">
+              <BookOpen className="h-4 w-4 text-gold-600" />
+              章节课目录
+            </div>
+            {chapterTree ? (
+              <SearchableTree
+                data={chapterTree}
+                title="章节课目录"
+                checkable
+                checkedIds={draftChapterIds}
+                onCheck={setDraftChapterIds}
+                expandLevel={2}
+                searchPlaceholder="搜索章节课..."
+                showHeader={false}
+                treeMaxHeightClassName="max-h-[320px]"
+              />
+            ) : (
+              <div className="py-8 text-center text-xs text-ink-400">章节课目录加载中...</div>
+            )}
+          </div>
+          <div className="rounded-lg border border-teal-100 p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-800">
+              <Lightbulb className="h-4 w-4 text-teal-600" />
+              知识点目录
+            </div>
+            {knowledgeTree ? (
+              <SearchableTree
+                data={knowledgeTree}
+                title="知识点目录"
+                accent="teal"
+                checkable
+                checkedIds={draftKnowledgePointIds}
+                onCheck={setDraftKnowledgePointIds}
+                expandLevel={2}
+                searchPlaceholder="搜索知识点..."
+                showHeader={false}
+                treeMaxHeightClassName="max-h-[320px]"
+              />
+            ) : (
+              <div className="py-8 text-center text-xs text-ink-400">知识点目录加载中...</div>
+            )}
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 
