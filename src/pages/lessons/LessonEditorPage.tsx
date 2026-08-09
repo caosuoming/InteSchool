@@ -461,12 +461,16 @@ export function LessonEditorPage() {
   };
 
   const setAnimationOrder = (elementId: string, order: number) => {
-    if (!currentSlide) return;
-    const sourceElements = currentSlide.elements || [];
-    updateCurrentElements(sourceElements.map((element) => ({
-      ...element,
-      animationOrder: element.id === elementId ? order : element.animationOrder,
-    })));
+    setSlides((previous) => previous.map((slide, index) => {
+      if (index !== currentIndex) return slide;
+      return {
+        ...slide,
+        elements: (slide.elements || []).map((element) => ({
+          ...element,
+          animationOrder: element.id === elementId ? order : element.animationOrder,
+        })),
+      };
+    }));
   };
 
   const toggleStudent = (stuId: string) => {

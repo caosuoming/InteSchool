@@ -117,6 +117,8 @@ describe("LessonSlideCanvas", () => {
 
     expect(screen.getByTitle("拖动调整大小")).toBeInTheDocument();
     expect(screen.getAllByRole("img")).toHaveLength(1);
+    expect(screen.getByLabelText("动画顺序 2")).toHaveTextContent("2");
+    expect(screen.queryByLabelText("动画顺序 1")).not.toBeInTheDocument();
   });
 
   it("renders hyperlinks in presentation mode and keeps text selectable in editor mode", async () => {
