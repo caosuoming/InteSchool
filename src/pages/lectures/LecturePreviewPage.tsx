@@ -336,10 +336,12 @@ export default function LecturePreviewPage() {
                 {linkedCourseware ? "课件" : "发送到我的课件"}
               </Button>
             )}
-            <Button variant="outline" onClick={() => navigate(`/lectures/${id}/edit`)}>
-              <Edit3 className="w-4 h-4" />
-              编辑讲义
-            </Button>
+            {!lecture.isExtractCopy && (
+              <Button variant="outline" onClick={() => navigate(`/lectures/${id}/edit`)}>
+                <Edit3 className="w-4 h-4" />
+                编辑讲义
+              </Button>
+            )}
             <Button variant="gold" onClick={() => window.print()}>
               <Printer className="w-4 h-4" />
               打印
