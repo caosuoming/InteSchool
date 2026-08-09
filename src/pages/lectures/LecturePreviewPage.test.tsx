@@ -7,6 +7,7 @@ import { classService } from "@/services/class";
 import { questionService } from "@/services/question";
 import { analyticsService } from "@/services/analytics";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { knowledgeService } from "@/services/knowledge";
 import type { Lecture, Question, SchoolClass, Student } from "@/types";
 
 const teacher = {
@@ -32,7 +33,13 @@ vi.mock("@/services/class", () => ({
   },
 }));
 vi.mock("@/services/question", () => ({
-  questionService: { getQuestion: vi.fn() },
+  questionService: { getQuestion: vi.fn(), updateQuestion: vi.fn() },
+}));
+vi.mock("@/services/knowledge", () => ({
+  knowledgeService: {
+    getChapterTree: vi.fn(),
+    getKnowledgeTree: vi.fn(),
+  },
 }));
 vi.mock("@/services/analytics", () => ({
   analyticsService: {
@@ -167,6 +174,34 @@ const question: Question = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 };
 
+const chapterTree = {
+  id: "root",
+  name: "全部章节",
+  type: "chapter" as const,
+  count: 1,
+  children: [{
+    id: "chapter-1",
+    name: "函数章节",
+    type: "chapter" as const,
+    count: 1,
+    children: [],
+  }],
+};
+
+const knowledgeTree = {
+  id: "root",
+  name: "全部知识点",
+  type: "knowledge" as const,
+  count: 1,
+  children: [{
+    id: "knowledge-point-1",
+    name: "函数单调性",
+    type: "knowledge" as const,
+    count: 1,
+    children: [],
+  }],
+};
+
 function CoursewareRouteProbe() {
   const location = useLocation();
   return <div>{location.search === "?preview=1" ? "课件预览页" : "课件编辑页"}</div>;
@@ -193,6 +228,9 @@ describe("LecturePreviewPage", () => {
     vi.mocked(classService.listStudentsBySchool).mockResolvedValue([classStudent, explicitStudent]);
     vi.mocked(classService.getStudent).mockResolvedValue(explicitStudent);
     vi.mocked(questionService.getQuestion).mockResolvedValue(question);
+    vi.mocked(questionService.updateQuestion).mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
+    vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
+    vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([]);
     vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
     vi.mocked(analyticsService.batchSaveAnswerRecords).mockResolvedValue([]);
@@ -247,6 +285,7 @@ describe("LecturePreviewPage", () => {
 
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
     expect(screen.queryByRole("button", { name: "编辑讲义" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "编辑第 1 题章节与知识点" })).not.toBeInTheDocument();
   });
 
   it("toggles answer and analysis by clicking the question stem", async () => {
@@ -271,6 +310,33 @@ describe("LecturePreviewPage", () => {
       expect(screen.queryByText("答案：")).not.toBeInTheDocument();
     });
   });
+
+  it("edits a question's chapter and knowledge-point directories from preview", async () => {
+    renderPage();
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题章节与知识点" }));
+    expect(screen.getByRole("heading", { name: "编辑题目目录" })).toBeInTheDocument();
+    expect(screen.getByText("章节目录")).toBeInTheDocument();
+    expect(screen.getByText("知识点目录")).toBeInTheDocument();
+
+    const chapterRow = screen.getByText("函数章节").parentElement;
+    const knowledgeRow = screen.getByText("函数单调性").parentElement;
+    expect(chapterRow).not.toBeNull();
+    expect(knowledgeRow).not.toBeNull();
+    fireEvent.click(chapterRow!.querySelector("button")!);
+    fireEvent.click(knowledgeRow!.querySelector("button")!);
+    fireEvent.click(screen.getByRole("button", { name: "保存目录" }));
+
+    await waitFor(() => {
+      expect(questionService.updateQuestion).toHaveBeenCalledWith(question.id, {
+        chapterIds: ["chapter-1"],
+        knowledgePointIds: ["knowledge-point-1"],
+      });
+    });
+    expect(screen.getByTestId("lecture-question-details-1")).toHaveTextContent("1 项");
+  });
+
   it("edits document usage by class only", async () => {
     renderPage();
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
