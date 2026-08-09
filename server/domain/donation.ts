@@ -16,6 +16,7 @@ import type {
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { shareService } from "./share.js";
+import { createNotification } from "./notification.js";
 
 const resourceCollections: Record<ShareableResourceType, string> = {
   question: "questions",
@@ -166,7 +167,18 @@ export const donationService = {
           },
         };
       });
+    const beforePrivileges = await shareService.getDonationPrivileges(teacherId);
     const records = await shareService.donateResources(teacherId, schoolId, requests);
+    const afterPrivileges = await shareService.getDonationPrivileges(teacherId);
+    if (records.length > 0 && !beforePrivileges.isTopContributor && afterPrivileges.isTopContributor) {
+      createNotification({
+        recipientTeacherId: teacherId,
+        type: "reward",
+        title: "平台资源贡献奖励已解锁",
+        content: `你已进入平台资源贡献榜前 30 名，当前排名第 ${afterPrivileges.rank} 名。`,
+        actionUrl: "/platform-resources",
+      });
+    }
     return { created: records.map(toPlatformDonation), skipped };
   },
 

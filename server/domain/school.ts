@@ -6,6 +6,7 @@ import type {
 import type { TeacherRecord } from "../types.js";
 import { db } from "../runtime-db.js";
 import { delay } from "../domain-shared.js";
+import { createNotification } from "./notification.js";
 
 interface SchoolCreationInput {
   name: string;
@@ -149,6 +150,15 @@ export const schoolService = {
     application.status = approved ? "approved" : "rejected";
     application.reviewedAt = new Date().toISOString();
     application.reviewedBy = teacher.id;
+    createNotification({
+      recipientTeacherId: application.requesterId,
+      type: "approval",
+      title: approved ? "新增学校申请已通过" : "新增学校申请未通过",
+      content: approved
+        ? `“${application.name}”已创建，可以继续提交学校认证。`
+        : `“${application.name}”的新增学校申请未通过。`,
+      actionUrl: "/school-auth",
+    });
     return application;
   },
 };

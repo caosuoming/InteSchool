@@ -16,6 +16,7 @@ import { canManageSchoolExams } from "@/lib/exam-permissions";
 import { BrandMark } from "@/components/brand/BrandMark";
 import { ExtractTaskCenter } from "@/components/extract/ExtractTaskCenter";
 import { useExtractTasksStore } from "@/stores/extractTasks";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 
 interface NavItem {
   path: string;
@@ -159,7 +160,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         )}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-ink-800">
+        <div className="relative h-16 flex items-center justify-between px-4 border-b border-ink-800">
           <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0">
             <BrandMark className="w-9 h-9" />
             {!sidebarCollapsed && (
@@ -169,6 +170,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </div>
             )}
           </Link>
+          <NotificationBell teacherId={teacher.id} collapsed={sidebarCollapsed} />
         </div>
 
         {/* 身份切换（所属单位） */}

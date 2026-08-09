@@ -1,4 +1,16 @@
 export const serviceParameters = {
+  "notification": {
+    "listNotifications": [
+      "teacherId"
+    ],
+    "markNotificationRead": [
+      "notificationId",
+      "teacherId"
+    ],
+    "markAllNotificationsRead": [
+      "teacherId"
+    ]
+  },
   "classroomNotice": {
     "listNotices": [
       "filter"
