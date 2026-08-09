@@ -16,6 +16,7 @@ import { lectureService } from "./domain/lecture.js";
 import { lessonCoursewareService } from "./domain/lessonCourseware.js";
 import { materialService } from "./domain/material.js";
 import { onlineResourceService } from "./domain/onlineResource.js";
+import { notificationService } from "./domain/notification.js";
 import { organizationService } from "./domain/organization.js";
 import { prepService } from "./domain/prep.js";
 import { questionService } from "./domain/question.js";
@@ -45,6 +46,7 @@ export const serviceRegistry = {
   lessonCourseware: lessonCoursewareService,
   material: materialService,
   onlineResource: onlineResourceService,
+  notification: notificationService,
   organization: organizationService,
   prep: prepService,
   question: questionService,

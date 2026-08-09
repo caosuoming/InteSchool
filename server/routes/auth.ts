@@ -8,6 +8,7 @@ import { withSerializedState } from "../rpc.js";
 import { canManageTeachingProfiles } from "../../src/lib/teaching-profile-permissions.js";
 import { normalizeTeacherRoles, TEACHER_ROLES } from "../../src/lib/teacher-roles.js";
 import type { TeacherRole } from "../../src/types/index.js";
+import { createNotificationInState } from "../domain/notification.js";
 
 export const SESSION_COOKIE = "inteschool_session";
 
@@ -667,6 +668,15 @@ export async function registerAuthRoutes(
           role: (current?.role || target.role) as TeacherRecord["role"],
         };
       }
+      createNotificationInState(state, {
+        recipientTeacherId: String(application.teacherId),
+        type: "approval",
+        title: approved ? "学校管理员申请已通过" : "学校管理员申请未通过",
+        content: approved
+          ? `你在 ${String(application.schoolName || "当前学校")} 的学校管理员申请已通过。`
+          : `你在 ${String(application.schoolName || "当前学校")} 的学校管理员申请未通过。`,
+        actionUrl: approved ? "/admin" : "/profile",
+      });
       return { ok: true };
     });
   });
@@ -757,6 +767,13 @@ export async function registerAuthRoutes(
           input.requestSchoolAdmin,
           input.roles,
         );
+        createNotificationInState(state, {
+          recipientTeacherId: session.teacherId,
+          type: "approval",
+          title: "学校认证已通过",
+          content: `你加入 ${school.name} 的认证已自动通过。`,
+          actionUrl: "/dashboard",
+        });
       }
       return application;
     });
@@ -831,6 +848,15 @@ export async function registerAuthRoutes(
             : ["teacher"],
         );
       }
+      createNotificationInState(state, {
+        recipientTeacherId: String(application.teacherId),
+        type: "approval",
+        title: approved ? "学校认证已通过" : "学校认证未通过",
+        content: approved
+          ? `你加入 ${String(application.schoolName || "学校")} 的认证已通过。`
+          : `你加入 ${String(application.schoolName || "学校")} 的认证未通过。`,
+        actionUrl: approved ? "/dashboard" : "/school-auth",
+      });
       return { ok: true };
     });
   });

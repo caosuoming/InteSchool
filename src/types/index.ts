@@ -2275,6 +2275,22 @@ export interface ClassroomNoticeFilter {
   activeOnly?: boolean;
 }
 
+// ============ 消息中心 ============
+
+export type AppNotificationType = "system" | "admin" | "approval" | "reward";
+
+/** 面向单个教师账号的持久化站内消息。 */
+export interface AppNotification {
+  id: string;
+  recipientTeacherId: string;
+  type: AppNotificationType;
+  title: string;
+  content: string;
+  actionUrl?: string;
+  createdAt: string;
+  readAt: string | null;
+}
+
 // ============ 课后反思 ============
 
 /** 反思关联的资源类型 */

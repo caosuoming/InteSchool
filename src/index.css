@@ -611,6 +611,21 @@
   to { opacity: 1; transform: scale(1); }
 }
 
+
+@keyframes notificationBellRing {
+  0%, 55%, 100% { transform: rotate(0deg); }
+  60% { transform: rotate(14deg); }
+  68% { transform: rotate(-12deg); }
+  76% { transform: rotate(9deg); }
+  84% { transform: rotate(-6deg); }
+  92% { transform: rotate(3deg); }
+}
+
+.notification-bell-unread {
+  transform-origin: 50% 12%;
+  animation: notificationBellRing 1.8s ease-in-out infinite;
+}
+
 @keyframes classroomNoticeScroll {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
@@ -625,5 +640,8 @@
   .classroom-notice-track {
     animation: none;
     transform: none;
+  }
+  .notification-bell-unread {
+    animation: none;
   }
 }
