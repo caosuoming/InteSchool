@@ -144,5 +144,14 @@ describe("LessonEditorInspector", () => {
     expect(secondOrder).toHaveValue(2);
     fireEvent.change(secondOrder, { target: { value: "1" } });
     expect(onSetAnimationOrder).toHaveBeenCalledWith("element-2", 1);
+
+    onSetAnimationOrder.mockClear();
+    await user.click(screen.getByRole("checkbox", { name: "图示说明与上一动画同时" }));
+    expect(onSetAnimationOrder).toHaveBeenCalledWith("element-2", 1);
+
+    onSetAnimationOrder.mockClear();
+    await user.click(screen.getByRole("button", { name: "图示说明上移" }));
+    expect(onSetAnimationOrder).toHaveBeenCalledWith("element-1", 2);
+    expect(onSetAnimationOrder).toHaveBeenCalledWith("element-2", 1);
   });
 });

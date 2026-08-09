@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
+  ChevronDown,
+  ChevronUp,
   FileQuestion,
   Image as ImageIcon,
   Link as LinkIcon,
@@ -143,9 +145,50 @@ export function LessonEditorInspector({
     onAddImage(file);
   };
 
-  const orderedElements = [...elements].sort((left, right) =>
-    (left.animationOrder || elements.indexOf(left) + 1)
-    - (right.animationOrder || elements.indexOf(right) + 1));
+  const animationOrderOf = (element: LessonSlideElement) => {
+    const order = element.animationOrder;
+    return typeof order === "number" && Number.isFinite(order) && order > 0
+      ? order
+      : elements.indexOf(element) + 1;
+  };
+  const orderedElements = [...elements].sort((left, right) => {
+    const orderDifference = animationOrderOf(left) - animationOrderOf(right);
+    return orderDifference || elements.indexOf(left) - elements.indexOf(right);
+  });
+  const animationOrders = [...new Set(orderedElements.map(animationOrderOf))];
+
+  const moveAnimationGroup = (element: LessonSlideElement, direction: -1 | 1) => {
+    const currentOrder = animationOrderOf(element);
+    const currentGroupIndex = animationOrders.indexOf(currentOrder);
+    const targetOrder = animationOrders[currentGroupIndex + direction];
+    if (targetOrder === undefined) return;
+
+    elements.forEach((item) => {
+      const order = animationOrderOf(item);
+      if (order === currentOrder) onSetAnimationOrder(item.id, targetOrder);
+      if (order === targetOrder) onSetAnimationOrder(item.id, currentOrder);
+    });
+  };
+
+  const setAnimationWithPrevious = (
+    element: LessonSlideElement,
+    previousElement: LessonSlideElement,
+    withPrevious: boolean,
+  ) => {
+    const previousOrder = animationOrderOf(previousElement);
+    if (withPrevious) {
+      onSetAnimationOrder(element.id, previousOrder);
+      return;
+    }
+
+    const splitOrder = previousOrder + 1;
+    elements.forEach((item) => {
+      if (item.id === element.id) return;
+      const order = animationOrderOf(item);
+      if (order >= splitOrder) onSetAnimationOrder(item.id, order + 1);
+    });
+    onSetAnimationOrder(element.id, splitOrder);
+  };
   const canInsertElements = slide.type !== "courseware";
 
   return (
@@ -515,28 +558,80 @@ export function LessonEditorInspector({
                 </div>
                 {orderedElements.length === 0 ? (
                   <div className="py-6 text-center text-xs text-ink-400">暂无自由元素</div>
-                ) : orderedElements.map((element, index) => (
-                  <div key={element.id} className="flex items-center gap-2 rounded-lg border border-ink-100 p-2">
-                    <button type="button" className="min-w-0 flex-1 truncate text-left text-xs text-ink-700" onClick={() => selectElement(element.id)}>
-                      {elementLabel(element, index)}
-                    </button>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={Math.max(1, elements.length)}
-                      value={element.animationOrder || index + 1}
-                      aria-label={`${elementLabel(element, index)}出现步骤`}
-                      className="h-8 w-16 px-2 text-center font-mono text-xs"
-                      onChange={(event) => {
-                        const order = Math.max(1, Math.min(
-                          Math.max(1, elements.length),
-                          Number.parseInt(event.target.value, 10) || 1,
-                        ));
-                        onSetAnimationOrder(element.id, order);
-                      }}
-                    />
-                  </div>
-                ))}
+                ) : orderedElements.map((element, index) => {
+                  const label = elementLabel(element, elements.indexOf(element));
+                  const order = animationOrderOf(element);
+                  const groupIndex = animationOrders.indexOf(order);
+                  const previousElement = orderedElements[index - 1];
+                  const withPrevious = previousElement
+                    ? animationOrderOf(previousElement) === order
+                    : false;
+
+                  return (
+                    <div key={element.id} className="rounded-lg border border-ink-100 p-2">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 min-w-7 items-center justify-center rounded border border-ink-200 bg-mist px-1 font-mono text-xs font-semibold text-ink-600">
+                          {order}
+                        </span>
+                        <button type="button" className="min-w-0 flex-1 truncate text-left text-xs text-ink-700" onClick={() => selectElement(element.id)}>
+                          {label}
+                        </button>
+                        <div className="flex overflow-hidden rounded border border-ink-200">
+                          <button
+                            type="button"
+                            className="p-1.5 text-ink-500 transition-colors hover:bg-mist disabled:cursor-not-allowed disabled:text-ink-200"
+                            aria-label={`${label}上移`}
+                            title="提前一个动画步骤"
+                            disabled={groupIndex <= 0}
+                            onClick={() => moveAnimationGroup(element, -1)}
+                          >
+                            <ChevronUp className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="border-l border-ink-200 p-1.5 text-ink-500 transition-colors hover:bg-mist disabled:cursor-not-allowed disabled:text-ink-200"
+                            aria-label={`${label}下移`}
+                            title="延后一个动画步骤"
+                            disabled={groupIndex < 0 || groupIndex >= animationOrders.length - 1}
+                            onClick={() => moveAnimationGroup(element, 1)}
+                          >
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={Math.max(1, elements.length)}
+                          value={order}
+                          aria-label={`${label}出现步骤`}
+                          className="h-8 w-14 px-1 text-center font-mono text-xs"
+                          onChange={(event) => {
+                            const nextOrder = Math.max(1, Math.min(
+                              Math.max(1, elements.length),
+                              Number.parseInt(event.target.value, 10) || 1,
+                            ));
+                            onSetAnimationOrder(element.id, nextOrder);
+                          }}
+                        />
+                      </div>
+                      {previousElement && (
+                        <label className="mt-2 flex cursor-pointer items-center gap-2 pl-9 text-[11px] text-ink-500">
+                          <input
+                            type="checkbox"
+                            checked={withPrevious}
+                            aria-label={`${label}与上一动画同时`}
+                            onChange={(event) => setAnimationWithPrevious(
+                              element,
+                              previousElement,
+                              event.target.checked,
+                            )}
+                          />
+                          与上一动画同时
+                        </label>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
