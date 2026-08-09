@@ -1021,9 +1021,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 )}
               </Card>
 
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+              <div className="grid gap-5">
                 <Card>
-                  <div className="font-medium text-ink-900">考试科目</div>
+                  <div className="font-medium text-ink-900">第一步：选择考试科目</div>
                   <div className="mt-1 text-xs text-ink-500">选择全部学科，或按“语数外 + 选科”配置各选科组合。</div>
                   <div className="mt-4 grid gap-3 md:grid-cols-2" role="radiogroup" aria-label="考试科目配置方式">
                     <ChoiceCard checked={draft.subjectSetupMode === "all"} title="所有学科" description="所有学生默认参加勾选的学科。" onClick={() => setSubjectSetupMode("all")} />
@@ -1061,8 +1061,98 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 </Card>
 
                 <Card className="p-0 overflow-hidden">
+                  <div className="border-b border-ink-100 px-5 py-4">
+                    <div className="font-medium text-ink-900">第二步：学生考试科目</div>
+                    <div className="mt-0.5 text-xs text-ink-500">先切换班级批量设置，再逐个学生微调；与本班多数学生选科不同的条目会加深背景。</div>
+                    <div className="mt-3">
+                      <ClassSwitchTabs
+                        classes={context.classes}
+                        activeClassId={activeStudentSettingsClassId}
+                        onChange={setStudentSettingsClassId}
+                        ariaLabel="学生考试科目班级"
+                      />
+                    </div>
+                  </div>
+                  <div className="border-b border-ink-100 p-4">
+                    <Input value={studentKeyword} onChange={(event) => setStudentKeyword(event.target.value)} placeholder="搜索姓名或学号" aria-label="搜索学生" />
+                  </div>
+                  <div className="max-h-[640px] overflow-auto divide-y divide-ink-100">
+                    {activeStudentSettingsClass && (
+                      <section key={activeStudentSettingsClass.id}>
+                          <div className="sticky top-0 z-10 border-b border-ink-100 bg-ink-50/95 px-5 py-3 backdrop-blur">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-sm font-medium text-ink-900">{activeStudentSettingsClass.name} · {filteredStudents.length} 人</div>
+                                <div className="text-xs text-ink-500">批量设置会同步覆盖本班学生，之后仍可单独微调。</div>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${activeStudentSettingsClass.name}批量考试科目`}>
+                                {draft.subjects.map((subject) => (
+                                  <CheckboxPill
+                                    key={subject}
+                                    checked={activeStudentSettingsClassRule?.defaultSubjects.includes(subject) || false}
+                                    label={subject}
+                                    onClick={() => toggleClassSubject(activeStudentSettingsClass.id, subject)}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="divide-y divide-ink-100">
+                            {filteredStudents.map((student) => {
+                              const selection = draft.studentSubjects.find((item) => item.studentId === student.id);
+                              const classSubjects = activeStudentSettingsClassRule?.defaultSubjects || activeClassMajoritySubjects;
+                              const differsFromClass = Boolean(selection && !sameSubjects(selection.subjects, classSubjects));
+                              return (
+                                <div
+                                  key={student.id}
+                                  role="group"
+                                  aria-label={`${student.name}考试设置`}
+                                  title={differsFromClass ? "与本班多数学生的考试科目不同" : undefined}
+                                  className={cn(
+                                    "grid gap-3 px-5 py-3 xl:grid-cols-[14rem_1fr_11rem_auto] xl:items-center",
+                                    differsFromClass && "bg-amber-100/70",
+                                    selection?.absent && "bg-red-50/80",
+                                  )}
+                                >
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink-900">
+                                      <span>{student.name}</span>
+                                      <span className="font-normal text-ink-400">{student.studentNo}</span>
+                                      {student.isExternal && <Badge>借读生</Badge>}
+                                    </div>
+                                    <div className="text-xs text-ink-400">{activeStudentSettingsClass.name}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
+                                  <select
+                                    aria-label={`${student.name}特殊要求`}
+                                    value={selection?.seatPreference || ""}
+                                    disabled={selection?.absent}
+                                    onChange={(event) => setStudentSeatPreference(student.id, (event.target.value || undefined) as ExamStudentSeatPreference | undefined)}
+                                    className="rounded-md border border-ink-200 bg-paper px-2 py-2 text-xs text-ink-700 disabled:opacity-50"
+                                  >
+                                    <option value="">无特殊要求</option>
+                                    <option value="first">排场次首</option>
+                                    <option value="last">排场次尾</option>
+                                  </select>
+                                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-red-700">
+                                    <input aria-label={`${student.name}弃考`} type="checkbox" checked={Boolean(selection?.absent)} onChange={() => toggleStudentAbsent(student.id)} />
+                                    弃考
+                                  </label>
+                                </div>
+                              );
+                            })}
+                            {filteredStudents.length === 0 && (
+                              <div className="px-5 py-10 text-center text-sm text-ink-400">当前班级没有匹配的学生</div>
+                            )}
+                          </div>
+                        </section>
+                    )}
+                  </div>
+                </Card>
+
+                <Card className="p-0 overflow-hidden">
                   <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div><div className="font-medium text-ink-900">可用考场</div><div className="mt-0.5 text-xs text-ink-500">班级教室默认生成“1考场”“2考场”等，可继续增加教室外考场。</div></div>
+                    <div><div className="font-medium text-ink-900">第三步：设置可用考场</div><div className="mt-0.5 text-xs text-ink-500">班级教室默认生成“1考场”“2考场”等，可继续增加教室外考场。</div></div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="w-28">
                         <Input aria-label="批量考场容量" type="number" min={1} max={1000} value={bulkCapacity} onChange={(event) => setBulkCapacity(Number(event.target.value))} />
@@ -1090,7 +1180,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
               </div>
 
               <Card>
-                <div className="font-medium text-ink-900">排考场规则</div>
+                <div className="font-medium text-ink-900">第四步：排考场规则</div>
                 <div className="mt-1 text-xs text-ink-500">勾选的科目每个学科单独排考场；未勾选的科目按每名学生实际参加的科目组合合并安排。</div>
                 <div className="mt-4 flex flex-wrap gap-2">{draft.subjects.map((subject) => (
                   <CheckboxPill key={subject} checked={(draft.separateSubjects || []).includes(subject)} label={`${subject}单独排`} onClick={() => toggleSeparateSubject(subject)} />
@@ -1170,95 +1260,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 </div>
               </Card>
 
-              <Card className="p-0 overflow-hidden">
-                <div className="border-b border-ink-100 px-5 py-4">
-                  <div className="font-medium text-ink-900">学生考试科目</div>
-                  <div className="mt-0.5 text-xs text-ink-500">先切换班级批量设置，再逐个学生微调；与本班多数学生选科不同的条目会加深背景。</div>
-                  <div className="mt-3">
-                    <ClassSwitchTabs
-                      classes={context.classes}
-                      activeClassId={activeStudentSettingsClassId}
-                      onChange={setStudentSettingsClassId}
-                      ariaLabel="学生考试科目班级"
-                    />
-                  </div>
-                </div>
-                <div className="border-b border-ink-100 p-4">
-                  <Input value={studentKeyword} onChange={(event) => setStudentKeyword(event.target.value)} placeholder="搜索姓名或学号" aria-label="搜索学生" />
-                </div>
-                <div className="max-h-[640px] overflow-auto divide-y divide-ink-100">
-                  {activeStudentSettingsClass && (
-                    <section key={activeStudentSettingsClass.id}>
-                        <div className="sticky top-0 z-10 border-b border-ink-100 bg-ink-50/95 px-5 py-3 backdrop-blur">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <div className="text-sm font-medium text-ink-900">{activeStudentSettingsClass.name} · {filteredStudents.length} 人</div>
-                              <div className="text-xs text-ink-500">批量设置会同步覆盖本班学生，之后仍可单独微调。</div>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${activeStudentSettingsClass.name}批量考试科目`}>
-                              {draft.subjects.map((subject) => (
-                                <CheckboxPill
-                                  key={subject}
-                                  checked={activeStudentSettingsClassRule?.defaultSubjects.includes(subject) || false}
-                                  label={subject}
-                                  onClick={() => toggleClassSubject(activeStudentSettingsClass.id, subject)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="divide-y divide-ink-100">
-                          {filteredStudents.map((student) => {
-                            const selection = draft.studentSubjects.find((item) => item.studentId === student.id);
-                            const classSubjects = activeStudentSettingsClassRule?.defaultSubjects || activeClassMajoritySubjects;
-                            const differsFromClass = Boolean(selection && !sameSubjects(selection.subjects, classSubjects));
-                            return (
-                              <div
-                                key={student.id}
-                                role="group"
-                                aria-label={`${student.name}考试设置`}
-                                title={differsFromClass ? "与本班多数学生的考试科目不同" : undefined}
-                                className={cn(
-                                  "grid gap-3 px-5 py-3 xl:grid-cols-[14rem_1fr_11rem_auto] xl:items-center",
-                                  differsFromClass && "bg-amber-100/70",
-                                  selection?.absent && "bg-red-50/80",
-                                )}
-                              >
-                                <div>
-                                  <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink-900">
-                                    <span>{student.name}</span>
-                                    <span className="font-normal text-ink-400">{student.studentNo}</span>
-                                    {student.isExternal && <Badge>借读生</Badge>}
-                                  </div>
-                                  <div className="text-xs text-ink-400">{activeStudentSettingsClass.name}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
-                                <select
-                                  aria-label={`${student.name}特殊要求`}
-                                  value={selection?.seatPreference || ""}
-                                  disabled={selection?.absent}
-                                  onChange={(event) => setStudentSeatPreference(student.id, (event.target.value || undefined) as ExamStudentSeatPreference | undefined)}
-                                  className="rounded-md border border-ink-200 bg-paper px-2 py-2 text-xs text-ink-700 disabled:opacity-50"
-                                >
-                                  <option value="">无特殊要求</option>
-                                  <option value="first">排场次首</option>
-                                  <option value="last">排场次尾</option>
-                                </select>
-                                <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-red-700">
-                                  <input aria-label={`${student.name}弃考`} type="checkbox" checked={Boolean(selection?.absent)} onChange={() => toggleStudentAbsent(student.id)} />
-                                  弃考
-                                </label>
-                              </div>
-                            );
-                          })}
-                          {filteredStudents.length === 0 && (
-                            <div className="px-5 py-10 text-center text-sm text-ink-400">当前班级没有匹配的学生</div>
-                          )}
-                        </div>
-                      </section>
-                  )}
-                </div>
-              </Card>
+
 
               <div className="flex justify-end">
                 <Button variant="gold" onClick={handleSave} loading={saving}><Save className="h-4 w-4" />预览</Button>
