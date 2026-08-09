@@ -9,6 +9,7 @@ import { questionService } from "@/services/question";
 import { classService } from "@/services/class";
 import { analyticsService } from "@/services/analytics";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { knowledgeService } from "@/services/knowledge";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -20,7 +21,8 @@ import { Modal } from "@/components/ui/Modal";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
-import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, LessonCourseware, Question, Student } from "@/types";
+import { SearchableTree } from "@/components/tree/SearchableTree";
+import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, LessonCourseware, Question, Student, TreeNode } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 
 type PaperSize = "A4" | "8K";
@@ -86,6 +88,12 @@ export default function LecturePreviewPage() {
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
   const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
   const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
+  const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
+  const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
+  const [metadataQuestion, setMetadataQuestion] = useState<Question | null>(null);
+  const [metadataChapterIds, setMetadataChapterIds] = useState<string[]>([]);
+  const [metadataKnowledgePointIds, setMetadataKnowledgePointIds] = useState<string[]>([]);
+  const [savingQuestionMetadata, setSavingQuestionMetadata] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +144,32 @@ export default function LecturePreviewPage() {
     });
     return () => { cancelled = true; };
   }, [id, navigate]);
+
+  useEffect(() => {
+    if (!lecture?.schoolId) {
+      setChapterTree(null);
+      setKnowledgeTree(null);
+      return;
+    }
+
+    let cancelled = false;
+    Promise.all([
+      knowledgeService.getChapterTree(lecture.schoolId),
+      knowledgeService.getKnowledgeTree(lecture.schoolId),
+    ]).then(([nextChapterTree, nextKnowledgeTree]) => {
+      if (cancelled) return;
+      setChapterTree(nextChapterTree);
+      setKnowledgeTree(nextKnowledgeTree);
+    }).catch(() => {
+      if (cancelled) return;
+      setChapterTree(null);
+      setKnowledgeTree(null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lecture?.schoolId]);
 
   useEffect(() => {
     if (!lecture || !teacher || lecture.teacherId !== teacher.id || !teacher.schoolId) {
@@ -270,6 +304,34 @@ export default function LecturePreviewPage() {
       setAnswerRecords(await analyticsService.listAnswerRecordsByLecture(lecture.id));
     } catch (error) {
       toast.error("更新答题情况失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const openQuestionMetadataEditor = (question: Question) => {
+    setMetadataQuestion(question);
+    setMetadataChapterIds([...question.chapterIds]);
+    setMetadataKnowledgePointIds([...question.knowledgePointIds]);
+  };
+
+  const closeQuestionMetadataEditor = () => {
+    if (!savingQuestionMetadata) setMetadataQuestion(null);
+  };
+
+  const saveQuestionMetadata = async () => {
+    if (!metadataQuestion) return;
+    setSavingQuestionMetadata(true);
+    try {
+      const updated = await questionService.updateQuestion(metadataQuestion.id, {
+        chapterIds: metadataChapterIds,
+        knowledgePointIds: metadataKnowledgePointIds,
+      });
+      setQuestions((current) => ({ ...current, [updated.id]: updated }));
+      setMetadataQuestion(null);
+      toast.success("题目目录已更新");
+    } catch (error) {
+      toast.error("更新题目目录失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingQuestionMetadata(false);
     }
   };
 
@@ -480,6 +542,9 @@ export default function LecturePreviewPage() {
                       students={students}
                       answerRecords={answerRecords}
                       onUpdateStudentAnswer={updateStudentAnswer}
+                      onEditMetadata={lecture.teacherId === teacher?.id && !lecture.isExtractCopy
+                        ? openQuestionMetadataEditor
+                        : undefined}
                     />
                   ) : undefined}
                 />
@@ -512,6 +577,59 @@ export default function LecturePreviewPage() {
           selectedClassIds={audienceClassIds}
           onChange={setAudienceClassIds}
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(metadataQuestion)}
+        onClose={closeQuestionMetadataEditor}
+        size="xl"
+        title="编辑题目目录"
+        description="调整当前题目关联的章节与知识点。"
+        footer={(
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={closeQuestionMetadataEditor} disabled={savingQuestionMetadata}>
+              取消
+            </Button>
+            <Button variant="gold" size="sm" onClick={saveQuestionMetadata} loading={savingQuestionMetadata}>
+              保存目录
+            </Button>
+          </div>
+        )}
+      >
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="overflow-hidden rounded-lg border border-ink-150">
+            {chapterTree ? (
+              <SearchableTree
+                data={chapterTree}
+                title="章节目录"
+                accent="gold"
+                checkable
+                checkedIds={metadataChapterIds}
+                onCheck={setMetadataChapterIds}
+                searchPlaceholder="搜索章节..."
+                treeMaxHeightClassName="max-h-[420px]"
+              />
+            ) : (
+              <div className="p-6 text-center text-xs text-ink-400">章节目录加载失败</div>
+            )}
+          </div>
+          <div className="overflow-hidden rounded-lg border border-ink-150">
+            {knowledgeTree ? (
+              <SearchableTree
+                data={knowledgeTree}
+                title="知识点目录"
+                accent="teal"
+                checkable
+                checkedIds={metadataKnowledgePointIds}
+                onCheck={setMetadataKnowledgePointIds}
+                searchPlaceholder="搜索知识点..."
+                treeMaxHeightClassName="max-h-[420px]"
+              />
+            ) : (
+              <div className="p-6 text-center text-xs text-ink-400">知识点目录加载失败</div>
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   );
@@ -694,12 +812,14 @@ function LectureQuestionDetails({
   students,
   answerRecords,
   onUpdateStudentAnswer,
+  onEditMetadata,
 }: {
   question: Question | null | undefined;
   questionNumber: number;
   students: Student[];
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
+  onEditMetadata?: (question: Question) => void;
 }) {
   if (!question) {
     return (
@@ -720,6 +840,17 @@ function LectureQuestionDetails({
         <Badge variant={difficultyVariant[question.difficulty] as "green" | "amber" | "red"}>
           {difficultyLabel[question.difficulty]}
         </Badge>
+        {onEditMetadata && (
+          <button
+            type="button"
+            onClick={() => onEditMetadata(question)}
+            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-800"
+            aria-label={`编辑第 ${questionNumber} 题章节与知识点`}
+          >
+            <Edit3 className="h-3 w-3" />
+            编辑目录
+          </button>
+        )}
       </div>
       <StudentAnswerStatusControl
         className="mb-3 border-b border-ink-100 pb-3"
