@@ -4,6 +4,7 @@ import {
   applyGradeRowBatchResolution,
   autoMatchGradeRows,
   createGradeStudentDraft,
+  gradeRowResolutionError,
   orderGradeImportRows,
   unclaimedGradeStudents,
 } from "./grade-matching";
@@ -72,7 +73,7 @@ describe("grade matching batch helpers", () => {
       row("resolved-1", 2, { studentId: "student-1" }),
       row("unresolved-1", 3),
       row("resolved-2", 4, { createStudent: { name: "学生4", studentNo: "20264", classId: "class-1" } }),
-      row("unresolved-2", 5, { createStudent: { name: "学生5", studentNo: "", classId: "class-1" } }),
+      row("unresolved-2", 5, { createStudent: { name: "学生5", studentNo: "", classId: "" } }),
     ];
 
     expect(orderGradeImportRows(rows).map((item) => item.rowKey)).toEqual([
@@ -95,6 +96,23 @@ describe("grade matching batch helpers", () => {
       studentNo: "20262",
       classId: "class-1",
     });
+  });
+
+  it("treats a new student without a student number as resolved", () => {
+    const pending = row("row-blank-no", 2, { sourceStudentNo: "" });
+    const resolved = applyGradeRowBatchResolution(
+      [pending],
+      new Set([pending.rowKey]),
+      "create",
+      context,
+    )[0];
+
+    expect(resolved.createStudent).toEqual({
+      name: "学生2",
+      studentNo: "",
+      classId: "class-1",
+    });
+    expect(gradeRowResolutionError(resolved)).toBeNull();
   });
 
   it("applies new-student handling only to selected rows", () => {

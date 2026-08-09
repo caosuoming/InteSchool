@@ -799,7 +799,7 @@ export function GradeImportWizard({
                               aria-label={`${row.sourceName}新增学号`}
                               value={row.createStudent.studentNo}
                               onChange={(event) => updateNewStudent(row.rowKey, { studentNo: event.target.value })}
-                              placeholder="学号"
+                              placeholder="学号（可空）"
                               className="rounded border border-ink-200 px-2 py-1.5 outline-none focus:border-gold-400"
                             />
                             <select

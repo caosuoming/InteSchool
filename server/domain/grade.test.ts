@@ -233,6 +233,43 @@ describe("grade service", () => {
     });
   });
 
+  it("allows importing multiple new students without student numbers", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "缺少学号的成绩",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects: ["数学"],
+        rows: [
+          {
+            rowKey: "row-new-1",
+            sourceRowNumber: 2,
+            sourceName: "新增甲",
+            sourceStudentNo: "",
+            sourceClassName: "高三(2)班",
+            createStudent: { name: "新增甲", studentNo: "", classId: "class-2" },
+            scores: { 数学: 100 },
+          },
+          {
+            rowKey: "row-new-2",
+            sourceRowNumber: 3,
+            sourceName: "新增乙",
+            sourceStudentNo: "",
+            sourceClassName: "高三(2)班",
+            createStudent: { name: "新增乙", studentNo: "", classId: "class-2" },
+            scores: { 数学: 90 },
+          },
+        ],
+      });
+
+      expect(exam.records.map((item) => item.studentNo)).toEqual(["", ""]);
+      expect((appState.students as any[]).filter((item) => item.classId === "class-2")).toHaveLength(2);
+    });
+  });
+
   it("imports assigned scores and preserves them across recalculation", async () => {
     const appState = state();
 
