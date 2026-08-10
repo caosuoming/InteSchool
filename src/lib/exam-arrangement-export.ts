@@ -36,8 +36,72 @@ export interface ExamDeskLabelDisplayOptions {
   showAdmissionNo?: boolean;
 }
 
+export type ExamPdfPaperSize = "A4" | "8K";
+
+const PDF_PAPER_SIZES: Record<ExamPdfPaperSize, { width: number; height: number }> = {
+  A4: { width: 210, height: 297 },
+  "8K": { width: 260, height: 370 },
+};
+
 function safeFileName(value: string): string {
   return value.replace(/[\\/:*?"<>|]/g, "_").trim() || "考场安排";
+}
+
+export async function downloadExamPreviewPdf(
+  pages: HTMLElement[],
+  fileName: string,
+  paperSize: ExamPdfPaperSize,
+): Promise<void> {
+  if (pages.length === 0) throw new Error("暂无可下载的预览内容");
+
+  const [{ jsPDF }, { default: html2canvas }] = await Promise.all([
+    import("jspdf"),
+    import("html2canvas"),
+  ]);
+  const paper = PDF_PAPER_SIZES[paperSize];
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: [paper.width, paper.height],
+    compress: true,
+  });
+  const host = document.createElement("div");
+  host.setAttribute("aria-hidden", "true");
+  Object.assign(host.style, {
+    position: "fixed",
+    left: "-100000px",
+    top: "0",
+    width: `${paper.width}mm`,
+    background: "#fff",
+    pointerEvents: "none",
+  });
+  document.body.append(host);
+
+  try {
+    if (document.fonts?.ready) await document.fonts.ready;
+    const windowWidth = Math.round((paper.width / 25.4) * 96);
+    const windowHeight = Math.round((paper.height / 25.4) * 96);
+
+    for (const [index, source] of pages.entries()) {
+      if (index > 0) pdf.addPage([paper.width, paper.height], "portrait");
+      const page = source.cloneNode(true) as HTMLElement;
+      page.style.breakAfter = "auto";
+      host.replaceChildren(page);
+      const canvas = await html2canvas(page, {
+        backgroundColor: "#ffffff",
+        logging: false,
+        scale: 2,
+        useCORS: true,
+        windowWidth,
+        windowHeight,
+      });
+      pdf.addImage(canvas, "PNG", 0, 0, paper.width, paper.height, undefined, "FAST");
+    }
+
+    pdf.save(`${safeFileName(fileName)}.pdf`);
+  } finally {
+    host.remove();
+  }
 }
 
 function compareAssignments(left: ExamSeatAssignment, right: ExamSeatAssignment): number {

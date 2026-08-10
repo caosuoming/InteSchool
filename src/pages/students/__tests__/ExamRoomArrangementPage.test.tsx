@@ -235,6 +235,9 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByLabelText("考场号")).toHaveValue("1考场");
     expect(screen.getByLabelText("考场位置")).toHaveValue("高三1班教室");
     expect(screen.getByLabelText("考场可安排人数")).toHaveValue(1);
+    expect(screen.getByText("最多可安排 1 个位置")).toBeInTheDocument();
+    expect(screen.getAllByText(/所选考场最多可安排 1 个位置/).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /1考场（物化生） · 高三1班教室/ }).length).toBeGreaterThan(0);
     expect(screen.queryByText("实际考试组合人数")).not.toBeInTheDocument();
     expect(screen.queryByText("考试组合对应考场")).not.toBeInTheDocument();
     expect(screen.getByText("考试组合使用考场")).toBeInTheDocument();
@@ -243,6 +246,8 @@ describe("ExamRoomArrangementPage", () => {
     await user.type(screen.getByLabelText("批量考场容量"), "32");
     await user.click(screen.getByRole("button", { name: "批量设置容量" }));
     expect(screen.getByLabelText("考场可安排人数")).toHaveValue(32);
+    expect(screen.getByText("最多可安排 32 个位置")).toBeInTheDocument();
+    expect(screen.getAllByText(/所选考场最多可安排 32 个位置/).length).toBeGreaterThan(0);
   });
 
   it("allows an individual student to be marked absent", async () => {
@@ -401,7 +406,9 @@ describe("ExamRoomArrangementPage", () => {
     expect(within(classTable).getByText("物理")).toBeInTheDocument();
     expect(screen.getByLabelText("选择高三（1）班")).toBeChecked();
     expect(screen.getByRole("button", { name: "打印已选班级" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "下载班级 PDF" })).toBeEnabled();
     expect(screen.getAllByTestId("class-arrangement-print-page")).toHaveLength(1);
+    expect(screen.getByTestId("class-arrangement-print-page")).toHaveAttribute("data-columns", "3");
 
     await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
@@ -410,6 +417,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByLabelText("桌贴显示学号")).toBeChecked();
     expect(screen.getByLabelText("桌贴显示准考证号")).toBeChecked();
     expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "下载桌贴 PDF" })).toBeEnabled();
 
     await user.click(screen.getByLabelText("桌贴显示学号"));
     expect(screen.queryByText("学号：001")).not.toBeInTheDocument();
@@ -424,6 +432,7 @@ describe("ExamRoomArrangementPage", () => {
 
     await user.click(roomCheckbox);
     expect(screen.getByRole("button", { name: "下载已选桌贴" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下载桌贴 PDF" })).toBeDisabled();
     expect(screen.getByText("已选择 0 / 1 个考场，共 0 张桌贴")).toBeInTheDocument();
   });
 
@@ -533,6 +542,7 @@ describe("ExamRoomArrangementPage", () => {
     const [printPage] = screen.getAllByTestId("desk-label-print-page");
     expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
     expect(printPage).toHaveAttribute("data-density", "compact");
+    expect(printPage).toHaveAttribute("data-columns", "3");
     expect(printPage.querySelectorAll(".exam-desk-label")).toHaveLength(21);
   });
 });
