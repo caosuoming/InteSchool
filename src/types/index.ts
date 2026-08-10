@@ -441,7 +441,7 @@ export interface GradeCohort {
 // ============ 考场安排 ============
 
 export type ExamArrangementMode = "combination" | "subject";
-export type ExamSubjectSetupMode = "all" | "selection";
+export type ExamSubjectSetupMode = "all" | "selection" | "academicNonSelection";
 export type ExamSeatOrder = "random" | "previousRank";
 export type ExamStudentSeatPreference = "first" | "last";
 
@@ -503,7 +503,7 @@ export interface ExamArrangementInput {
   examDate?: string;
   /** 旧方案兼容字段；新方案使用 separateSubjects 表达混合编排。 */
   mode: ExamArrangementMode;
-  /** 全部学科，或语数外加选科组合。 */
+  /** 全部学科、高考六门（语数外加选科），或学测科目中的非选科。 */
   subjectSetupMode?: ExamSubjectSetupMode;
   subjects: string[];
   /** 学生选科名称对应的实际考试科目。 */
