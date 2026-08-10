@@ -214,9 +214,20 @@ describe("ExamRoomArrangementPage", () => {
     expect(arrangementSelect).toHaveDisplayValue("新建考场安排");
     expect(screen.getAllByRole("option")[1]).toHaveTextContent("新建考场安排");
 
-    const selectionMode = screen.getByRole("radio", { name: /语数外 \+ 选科/ });
+    const selectionMode = screen.getByRole("radio", { name: /高考六门.*语数外 \+ 选科/ });
     expect(selectionMode).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("物化生")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /学测科目中非选修科目/ }));
+    expect(screen.getByRole("radio", { name: /学测科目中非选修科目/ })).toHaveAttribute("aria-checked", "true");
+    const selectionSection = screen.getByText("物化生").closest<HTMLElement>("div.rounded-lg");
+    expect(selectionSection).not.toBeNull();
+    expect(within(selectionSection!).getByRole("button", { name: "政治" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(selectionSection!).getByRole("button", { name: "历史" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(selectionSection!).getByRole("button", { name: "地理" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(selectionSection!).getByRole("button", { name: "物理" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(selectionSection!).getByRole("button", { name: "化学" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(selectionSection!).getByRole("button", { name: "生物" })).toHaveAttribute("aria-pressed", "false");
 
     await user.click(screen.getByRole("radio", { name: /所有学科/ }));
     expect(screen.getByRole("radio", { name: /所有学科/ })).toHaveAttribute("aria-checked", "true");
