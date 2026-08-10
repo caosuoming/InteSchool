@@ -24,6 +24,10 @@ import type {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
+import {
+  getLessonElementAnimationOrder,
+  hasLessonElementAnimation,
+} from "@/lib/lesson-animation";
 import { cn } from "@/lib/utils";
 
 export type LessonEditorInspectorTab = "content" | "properties" | "animation" | "association";
@@ -145,17 +149,32 @@ export function LessonEditorInspector({
     onAddImage(file);
   };
 
-  const animationOrderOf = (element: LessonSlideElement) => {
-    const order = element.animationOrder;
-    return typeof order === "number" && Number.isFinite(order) && order > 0
-      ? order
-      : elements.indexOf(element) + 1;
-  };
-  const orderedElements = [...elements].sort((left, right) => {
+  const animatedElements = elements.filter(hasLessonElementAnimation);
+  const animationOrderOf = (element: LessonSlideElement) => (
+    getLessonElementAnimationOrder(element) ?? animatedElements.indexOf(element) + 1
+  );
+  const orderedElements = [...animatedElements].sort((left, right) => {
     const orderDifference = animationOrderOf(left) - animationOrderOf(right);
     return orderDifference || elements.indexOf(left) - elements.indexOf(right);
   });
   const animationOrders = [...new Set(orderedElements.map(animationOrderOf))];
+
+  const updateSelectedAnimation = (patch: Partial<LessonSlideElement>) => {
+    if (!selectedElement) return;
+    const nextElement = { ...selectedElement, ...patch } as LessonSlideElement;
+    const hasAnimation = hasLessonElementAnimation(nextElement);
+    const existingOrder = hasLessonElementAnimation(selectedElement)
+      ? getLessonElementAnimationOrder(selectedElement)
+      : null;
+    const nextOrder = animatedElements.reduce(
+      (maximum, element) => Math.max(maximum, animationOrderOf(element)),
+      0,
+    ) + 1;
+    onUpdateElement({
+      ...patch,
+      animationOrder: hasAnimation ? existingOrder ?? nextOrder : undefined,
+    });
+  };
 
   const moveAnimationGroup = (element: LessonSlideElement, direction: -1 | 1) => {
     const currentOrder = animationOrderOf(element);
@@ -163,7 +182,7 @@ export function LessonEditorInspector({
     const targetOrder = animationOrders[currentGroupIndex + direction];
     if (targetOrder === undefined) return;
 
-    elements.forEach((item) => {
+    animatedElements.forEach((item) => {
       const order = animationOrderOf(item);
       if (order === currentOrder) onSetAnimationOrder(item.id, targetOrder);
       if (order === targetOrder) onSetAnimationOrder(item.id, currentOrder);
@@ -182,7 +201,7 @@ export function LessonEditorInspector({
     }
 
     const splitOrder = previousOrder + 1;
-    elements.forEach((item) => {
+    animatedElements.forEach((item) => {
       if (item.id === element.id) return;
       const order = animationOrderOf(item);
       if (order >= splitOrder) onSetAnimationOrder(item.id, order + 1);
@@ -495,7 +514,7 @@ export function LessonEditorInspector({
                     <select
                       className="input-base"
                       value={selectedElement.enterAnimation || selectedElement.animation || "none"}
-                      onChange={(event) => onUpdateElement({
+                      onChange={(event) => updateSelectedAnimation({
                         enterAnimation: event.target.value as LessonElementAnimation,
                         animation: event.target.value as LessonElementAnimation,
                       })}
@@ -511,7 +530,7 @@ export function LessonEditorInspector({
                     <select
                       className="input-base"
                       value={selectedElement.actionAnimation || "none"}
-                      onChange={(event) => onUpdateElement({ actionAnimation: event.target.value as LessonElementActionAnimation })}
+                      onChange={(event) => updateSelectedAnimation({ actionAnimation: event.target.value as LessonElementActionAnimation })}
                     >
                       <option value="none">无</option>
                       <option value="pulse">脉冲</option>
@@ -524,7 +543,7 @@ export function LessonEditorInspector({
                     <select
                       className="input-base"
                       value={selectedElement.exitAnimation || "none"}
-                      onChange={(event) => onUpdateElement({ exitAnimation: event.target.value as LessonElementExitAnimation })}
+                      onChange={(event) => updateSelectedAnimation({ exitAnimation: event.target.value as LessonElementExitAnimation })}
                     >
                       <option value="none">无</option>
                       <option value="fade">淡出</option>
@@ -554,10 +573,10 @@ export function LessonEditorInspector({
             {animationPanel === "order" && (
               <div className="space-y-2">
                 <div className="rounded-lg bg-mist px-2.5 py-2 text-[11px] leading-5 text-ink-500">
-                  设置每个对象的出现步骤。步骤号相同的对象会在同一次“下一页”操作中同时出现。
+                  只排列已添加动画的对象。步骤号相同的对象会在同一次“下一页”操作中同时执行。
                 </div>
                 {orderedElements.length === 0 ? (
-                  <div className="py-6 text-center text-xs text-ink-400">暂无自由元素</div>
+                  <div className="py-6 text-center text-xs text-ink-400">暂无已添加动画的对象</div>
                 ) : orderedElements.map((element, index) => {
                   const label = elementLabel(element, elements.indexOf(element));
                   const order = animationOrderOf(element);
