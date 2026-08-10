@@ -509,6 +509,13 @@ describe("courseware lesson flow", () => {
           ?.filter((element) => element.kind === "image")
           .map((element) => element.y),
       ).size).toBe(3);
+      for (const generatedElement of lesson.slides.flatMap((slide) => slide.elements || [])) {
+        expect(generatedElement.animation ?? "none").toBe("none");
+        expect(generatedElement.enterAnimation ?? "none").toBe("none");
+        expect(generatedElement.actionAnimation ?? "none").toBe("none");
+        expect(generatedElement.exitAnimation ?? "none").toBe("none");
+        expect(generatedElement.animationOrder).toBeUndefined();
+      }
       expect(lesson.slides.at(-1)).toMatchObject({
         type: "question",
         title: "第 19 题",

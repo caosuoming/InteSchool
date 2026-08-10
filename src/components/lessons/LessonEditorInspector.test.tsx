@@ -31,6 +31,7 @@ const element: LessonSlideElement = {
   width: 30,
   height: 12,
   fontSize: 24,
+  enterAnimation: "fade",
   animationOrder: 1,
 };
 
@@ -153,5 +154,50 @@ describe("LessonEditorInspector", () => {
     await user.click(screen.getByRole("button", { name: "图示说明上移" }));
     expect(onSetAnimationOrder).toHaveBeenCalledWith("element-1", 2);
     expect(onSetAnimationOrder).toHaveBeenCalledWith("element-2", 1);
+  });
+
+  it("only orders animated objects and assigns an order when animation is added", async () => {
+    const user = userEvent.setup();
+    const plainElement: LessonSlideElement = {
+      ...element,
+      id: "element-plain",
+      content: "默认无动画",
+      enterAnimation: "none",
+      animation: "none",
+      animationOrder: 9,
+    };
+    const onUpdateElement = vi.fn();
+    renderInspector({
+      elements: [element, plainElement],
+      selectedElement: plainElement,
+      onUpdateElement,
+    });
+
+    await user.click(screen.getByRole("button", { name: "动画" }));
+    fireEvent.change(screen.getByLabelText("出现"), { target: { value: "rise" } });
+    expect(onUpdateElement).toHaveBeenLastCalledWith(expect.objectContaining({
+      animation: "rise",
+      enterAnimation: "rise",
+      animationOrder: 2,
+    }));
+
+    await user.click(screen.getByRole("button", { name: "顺序" }));
+    expect(screen.getByRole("spinbutton", { name: "补充说明出现步骤" })).toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "默认无动画出现步骤" })).not.toBeInTheDocument();
+  });
+
+  it("clears the animation order when the last animation is removed", async () => {
+    const user = userEvent.setup();
+    const onUpdateElement = vi.fn();
+    renderInspector({ selectedElement: element, onUpdateElement });
+
+    await user.click(screen.getByRole("button", { name: "动画" }));
+    fireEvent.change(screen.getByLabelText("出现"), { target: { value: "none" } });
+
+    expect(onUpdateElement).toHaveBeenLastCalledWith(expect.objectContaining({
+      animation: "none",
+      enterAnimation: "none",
+      animationOrder: undefined,
+    }));
   });
 });

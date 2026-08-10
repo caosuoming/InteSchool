@@ -141,6 +141,17 @@ describe("PresentationMode", () => {
             enterAnimation: "zoom",
             animationOrder: 2,
           },
+          {
+            id: "plain-with-stale-order",
+            kind: "text",
+            content: "默认无动画",
+            x: 5,
+            y: 45,
+            width: 30,
+            height: 15,
+            enterAnimation: "none",
+            animationOrder: 3,
+          },
         ],
       },
       {
@@ -172,12 +183,14 @@ describe("PresentationMode", () => {
 
     expect(screen.queryByText("第一步")).not.toBeInTheDocument();
     expect(screen.queryByText("第二步甲")).not.toBeInTheDocument();
+    expect(screen.getByText("默认无动画")).toBeInTheDocument();
 
     const next = screen.getByRole("button", { name: "左侧下一页" });
     await user.click(next);
     const firstStep = screen.getByText("第一步").closest<HTMLElement>(".absolute");
     expect(firstStep?.style.animation).toContain("lessonElementFade");
     expect(firstStep?.style.animationDelay).toBe("");
+    expect(screen.queryByLabelText("动画顺序 1")).not.toBeInTheDocument();
     expect(screen.queryByText("第二步甲")).not.toBeInTheDocument();
 
     await user.click(next);
