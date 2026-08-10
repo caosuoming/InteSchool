@@ -72,7 +72,7 @@ function template(
   name: string,
   scoreMode: GradeStatisticsTemplate["scoreMode"],
   subjects: string[],
-  extras: Pick<GradeStatisticsTemplate, "segmentSize" | "bestElectiveCount"> = {},
+  extras: Pick<GradeStatisticsTemplate, "segmentSize" | "segmentMax" | "segmentMin" | "bestElectiveCount"> = {},
 ): GradeStatisticsTemplate {
   return {
     id,
@@ -154,8 +154,10 @@ export function buildDefaultGradeSettings(
     templates: [
       template("student-ranking", "studentRanking", "学生名次表", "assigned", normalizedSubjects),
       template("class-average", "classAverage", "班级平均分表", "assigned", normalizedSubjects),
-      template("total-score-segment", "totalScoreSegment", "总分分数（赋分）", "assigned", normalizedSubjects, {
-        segmentSize: 20,
+      template("total-score-segment", "totalScoreSegment", "总分分数段汇总表", "assigned", normalizedSubjects, {
+        segmentSize: 10,
+        segmentMax: 700,
+        segmentMin: 400,
       }),
       template(
         "core-best-elective-segment",
@@ -339,12 +341,37 @@ export function normalizeGradeSettings(
     const classAverageOptions = item.kind === "classAverage" && item.classAverageOptions
       ? normalizeClassAverageOptions(item.classAverageOptions, classSet)
       : undefined;
+    const isLegacyTotalScoreSegment = item.kind === "totalScoreSegment"
+      && (!Number.isFinite(item.segmentMax) || !Number.isFinite(item.segmentMin));
+    const segmentSize = item.kind === "totalScoreSegment" && isLegacyTotalScoreSegment
+      ? 10
+      : item.segmentSize && item.segmentSize > 0
+        ? Math.max(1, Math.min(500, Number(item.segmentSize)))
+        : undefined;
+    const rawSegmentMax = item.kind === "totalScoreSegment"
+      ? Number.isFinite(item.segmentMax)
+        ? Math.max(0, Math.min(2000, Number(item.segmentMax)))
+        : 700
+      : undefined;
+    const rawSegmentMin = item.kind === "totalScoreSegment"
+      ? Number.isFinite(item.segmentMin)
+        ? Math.max(0, Math.min(2000, Number(item.segmentMin)))
+        : 400
+      : undefined;
+    const segmentMax = rawSegmentMax === undefined || rawSegmentMin === undefined
+      ? undefined
+      : Math.max(rawSegmentMax, rawSegmentMin);
+    const segmentMin = rawSegmentMax === undefined || rawSegmentMin === undefined
+      ? undefined
+      : Math.min(rawSegmentMax, rawSegmentMin);
     return {
       ...item,
       id,
       name: item.name.trim() || `统计表 ${index + 1}`,
       subjects: unique(item.subjects || []).filter((subject) => subjectSet.has(subject)),
-      segmentSize: item.segmentSize && item.segmentSize > 0 ? item.segmentSize : undefined,
+      segmentSize,
+      segmentMax,
+      segmentMin,
       bestElectiveCount: item.bestElectiveCount && item.bestElectiveCount > 0
         ? Math.floor(item.bestElectiveCount)
         : undefined,

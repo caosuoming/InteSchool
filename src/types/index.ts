@@ -637,6 +637,10 @@ export interface GradeStatisticsTemplate {
   subjects: string[];
   /** 分数段宽度，仅分数段模板使用。 */
   segmentSize?: number;
+  /** 总分分数段汇总表的最高统计阈值。 */
+  segmentMax?: number;
+  /** 总分分数段汇总表的最低统计阈值。 */
+  segmentMin?: number;
   /** 选取最高分的选修科目数量。 */
   bestElectiveCount?: number;
   /** 自定义在线表格列，仅 customTable 模板使用。 */

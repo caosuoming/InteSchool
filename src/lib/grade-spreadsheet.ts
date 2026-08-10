@@ -1,5 +1,6 @@
 import type { GradeExam, GradeImportRow } from "../types/index.js";
 import type { GradeClassAverageReport } from "./grade-class-average.js";
+import type { GradeTotalScoreSegmentReport } from "./grade-total-score-segment.js";
 import { buildGradeReportTable } from "./grade-reports.js";
 import {
   ASSIGNABLE_GRADE_SUBJECTS,
@@ -463,6 +464,50 @@ export async function exportGradeClassAverageReport(report: GradeClassAverageRep
       { width: 18 },
       ...report.subjects.map(() => ({ width: 14 })),
       { width: 14 },
+    ],
+    stickyRowsCount: 2,
+  }).toFile(`${safeName}.xlsx`);
+}
+
+export async function exportGradeTotalScoreSegmentReport(
+  report: GradeTotalScoreSegmentReport,
+): Promise<void> {
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const border = { borderStyle: "thin" as const, borderColor: "#9CA3AF" };
+  const cell = (value: string | number | null, options: Record<string, unknown> = {}) => ({
+    value: value ?? undefined,
+    type: typeof value === "number" ? Number : String,
+    align: "center" as const,
+    alignVertical: "center" as const,
+    height: 22,
+    ...border,
+    ...options,
+  });
+  const rows: Array<Array<ReturnType<typeof cell>>> = [];
+  rows.push([
+    cell(report.title, { fontWeight: "bold", fontSize: 16, align: "left" }),
+    ...Array.from({ length: Math.max(0, report.classes.length - 1) }, () => cell(null)),
+    cell(report.reportDate.replace(/-/g, "."), { fontWeight: "bold" }),
+  ]);
+  rows.push([
+    cell("总分分数段", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+    ...report.classes.map((classItem) => cell(classItem.classLabel, {
+      fontWeight: "bold",
+      backgroundColor: "#F3F4F6",
+    })),
+  ]);
+  report.rows.forEach((row) => {
+    rows.push([
+      cell(`${row.threshold}分以上`, { fontWeight: "bold" }),
+      ...report.classes.map((classItem) => cell(row.counts[classItem.classId] || 0)),
+    ]);
+  });
+
+  const safeName = report.title.replace(/[\\/:*?"<>|]/g, "_") || "总分分数段汇总表";
+  await writeXlsxFile(rows, {
+    columns: [
+      { width: 16 },
+      ...report.classes.map(() => ({ width: 12 })),
     ],
     stickyRowsCount: 2,
   }).toFile(`${safeName}.xlsx`);

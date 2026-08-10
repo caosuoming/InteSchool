@@ -568,7 +568,7 @@ function addCustomTemplate(settings: GradeExamSettings, subjects: string[]): Gra
 const templateKindLabels: Record<GradeStatisticsTemplate["kind"], string> = {
   studentRanking: "学生名次表",
   classAverage: "班级平均分表",
-  totalScoreSegment: "总分汇总表",
+  totalScoreSegment: "总分分数段汇总表",
   coreAndBestElectiveSegment: "语数外分数段表",
   electiveGradeSegment: "选修等级表",
   customTable: "公式自定义表",
