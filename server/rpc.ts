@@ -52,6 +52,9 @@ const READ_METHODS = new Set([
   "webAnalyzeQuestion",
   "generateKnowledgePoint",
 ]);
+const MUTATING_READ_PREFIX_CALLS = new Set([
+  "examPublish.checkExpiry",
+]);
 
 const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   ai: "documents",
@@ -133,7 +136,15 @@ export function withSerializedState<T>(
   });
 }
 
-function isReadOnly(method: string): boolean {
+export async function withReadOnlyState<T>(
+  store: DatabaseStore,
+  task: (state: AppState) => Promise<T> | T,
+): Promise<T> {
+  return task(store.loadState());
+}
+
+function isReadOnly(service: ServiceName, method: string): boolean {
+  if (MUTATING_READ_PREFIX_CALLS.has(`${service}.${method}`)) return false;
   return READ_METHODS.has(method) || READ_PREFIXES.some((prefix) => method.startsWith(prefix));
 }
 
@@ -338,7 +349,7 @@ function authorize(
     };
   }
 
-  if (ADMIN_SERVICE_MUTATIONS.has(service) && !isReadOnly(method) && !admin) {
+  if (ADMIN_SERVICE_MUTATIONS.has(service) && !isReadOnly(service, method) && !admin) {
     throw new Error("该操作需要学校管理员权限");
   }
   if (service === "grade" && EXAM_MANAGER_MUTATIONS.has(method) && !canManageExams(teacher)) {
@@ -473,7 +484,7 @@ function authorize(
       if (
         !authorizedShareMutation
         && !authorizedPrepMutation
-        && !isReadOnly(method)
+        && !isReadOnly(service, method)
         && owner
         && owner !== teacher.id
         && !admin
@@ -520,7 +531,9 @@ export async function invokeRpc(
   const method = service[methodName];
   if (typeof method !== "function" || methodName.startsWith("_")) throw new Error("未知服务方法");
 
-  return withSerializedState(store, async (state) => {
+  const serviceKey = serviceName as ServiceName;
+  const runWithDatabaseState = isReadOnly(serviceKey, methodName) ? withReadOnlyState : withSerializedState;
+  return runWithDatabaseState(store, async (state) => {
     const authorized = authorize(state, session, serviceName as ServiceName, methodName, args);
     const result = await runWithState(state, () => Reflect.apply(
       method as (...values: unknown[]) => unknown,
