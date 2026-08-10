@@ -56,6 +56,7 @@ import { inferScore } from "@/services/analytics";
 import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
 import { isDocumentStructureLocked } from "@/lib/document-resource";
 import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
+import { buildLectureEditorLayout } from "@/pages/lectures/lecture-editor-layout";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -257,6 +258,10 @@ export default function LectureEditorPage() {
         .map((section) => section.questionId!),
     )),
     [sections],
+  );
+  const editorLayout = useMemo(
+    () => buildLectureEditorLayout(sections, isStructureLocked),
+    [isStructureLocked, sections],
   );
   const lectureQuestionList = useMemo(
     () => lectureQuestionIds.map((questionId) => lectureQuestions[questionId]).filter(Boolean),
@@ -2142,8 +2147,7 @@ export default function LectureEditorPage() {
                 </div>
               ) : (
                 <div className="space-y-5">
-                  {sections.map((section, sectionIndex) => {
-                    if (section.type !== "chapter") return null;
+                  {editorLayout.chapters.map(({ chapter: section, rootIndex: sectionIndex, items }) => {
                     const selected = selectedChapterId === section.id;
                     return (
                       <section
@@ -2255,7 +2259,7 @@ export default function LectureEditorPage() {
                           </Button>
                         </div>}
 
-                        {section.children.length === 0 ? (
+                        {items.length === 0 ? (
                           <button
                             type="button"
                             disabled={isStructureLocked}
@@ -2269,11 +2273,20 @@ export default function LectureEditorPage() {
                           </button>
                         ) : (
                           <div className="space-y-3">
-                            {section.children.map((child, childIndex) => {
-                              const questionIndex = section.children
-                                .slice(0, childIndex + 1)
-                                .filter((item) => item.type === "question").length - 1;
+                            {items.map((layoutItem, itemIndex) => {
+                              const child = layoutItem.section;
+                              const questionIndex = items
+                                .slice(0, itemIndex + 1)
+                                .filter((item) => item.section.type === "question").length - 1;
                               const question = child.questionId ? lectureQuestions[child.questionId] : undefined;
+                              const isNestedChild = layoutItem.storage === "child";
+                              const rootIndex = isNestedChild ? -1 : layoutItem.rootIndex;
+                              const canMoveRootUp = !isNestedChild
+                                && rootIndex > sectionIndex + 1
+                                && sections[rootIndex - 1]?.type !== "chapter";
+                              const canMoveRootDown = !isNestedChild
+                                && rootIndex < sections.length - 1
+                                && sections[rootIndex + 1]?.type !== "chapter";
                               return (
                                 <div key={child.id} className="space-y-1">
                                   <LectureSectionEditorRow
@@ -2281,11 +2294,29 @@ export default function LectureEditorPage() {
                                     index={Math.max(0, questionIndex)}
                                     question={question}
                                     answered={Boolean(child.questionId && answeredQuestionIds.has(child.questionId))}
-                                    canMoveUp={childIndex > 0}
-                                    canMoveDown={childIndex < section.children.length - 1}
-                                    onLabelChange={(label) => handleUpdateSectionLabel(child.id, label, section.id)}
-                                    onMoveUp={() => handleMoveChildSection(section.id, childIndex, "up")}
-                                    onMoveDown={() => handleMoveChildSection(section.id, childIndex, "down")}
+                                    canMoveUp={isNestedChild ? layoutItem.childIndex > 0 : canMoveRootUp}
+                                    canMoveDown={isNestedChild
+                                      ? layoutItem.childIndex < section.children.length - 1
+                                      : canMoveRootDown}
+                                    onLabelChange={(label) => handleUpdateSectionLabel(
+                                      child.id,
+                                      label,
+                                      isNestedChild ? section.id : undefined,
+                                    )}
+                                    onMoveUp={() => {
+                                      if (isNestedChild) {
+                                        handleMoveChildSection(section.id, layoutItem.childIndex, "up");
+                                      } else {
+                                        handleMoveSection(layoutItem.rootIndex, "up");
+                                      }
+                                    }}
+                                    onMoveDown={() => {
+                                      if (isNestedChild) {
+                                        handleMoveChildSection(section.id, layoutItem.childIndex, "down");
+                                      } else {
+                                        handleMoveSection(layoutItem.rootIndex, "down");
+                                      }
+                                    }}
                                     onEditSection={() => {
                                       setEditingSection(child);
                                       setSectionTitle(child.title);
@@ -2293,11 +2324,17 @@ export default function LectureEditorPage() {
                                       setSectionLabel(child.customLabel || "");
                                     }}
                                     onReplaceQuestion={question ? () => {
-                                      setReplacingQuestion({ sectionId: child.id, parentId: section.id });
+                                      setReplacingQuestion({
+                                        sectionId: child.id,
+                                        parentId: isNestedChild ? section.id : undefined,
+                                      });
                                       setSelectedQuestionIds([]);
                                       setAddSource("bank");
                                     } : undefined}
-                                    onRemove={() => handleRemoveSection(child.id, section.id)}
+                                    onRemove={() => handleRemoveSection(
+                                      child.id,
+                                      isNestedChild ? section.id : undefined,
+                                    )}
                                     readOnly={isStructureLocked}
                                   />
                                   {prepTaskId && (
@@ -2321,17 +2358,18 @@ export default function LectureEditorPage() {
                     );
                   })}
 
-                  {sections.some((section) => section.type !== "chapter") && (
+                  {editorLayout.ungrouped.length > 0 && (
                     <section className="rounded-xl border border-ink-100 bg-paper p-3">
                       <div className="mb-3 flex items-center gap-2 border-b border-ink-100 pb-3">
                         <FileText className="w-4 h-4 text-ink-500" />
                         <h2 className="font-serif font-bold text-ink-900">未归入栏目内容</h2>
                       </div>
                       <div className="space-y-3">
-                        {sections.filter((section) => section.type !== "chapter").map((section, rootIndex, ungrouped) => {
-                          const questionIndex = ungrouped
-                            .slice(0, rootIndex + 1)
-                            .filter((item) => item.type === "question").length - 1;
+                        {editorLayout.ungrouped.map((layoutItem, itemIndex) => {
+                          const section = layoutItem.section;
+                          const questionIndex = editorLayout.ungrouped
+                            .slice(0, itemIndex + 1)
+                            .filter((item) => item.section.type === "question").length - 1;
                           const question = section.questionId ? lectureQuestions[section.questionId] : undefined;
                           return (
                             <LectureSectionEditorRow
@@ -2340,11 +2378,11 @@ export default function LectureEditorPage() {
                               index={Math.max(0, questionIndex)}
                               question={question}
                               answered={Boolean(section.questionId && answeredQuestionIds.has(section.questionId))}
-                              canMoveUp={rootIndex > 0}
-                              canMoveDown={rootIndex < ungrouped.length - 1}
+                              canMoveUp={itemIndex > 0}
+                              canMoveDown={itemIndex < editorLayout.ungrouped.length - 1}
                               onLabelChange={(label) => handleUpdateSectionLabel(section.id, label)}
-                              onMoveUp={() => handleMoveSection(sections.indexOf(section), "up")}
-                              onMoveDown={() => handleMoveSection(sections.indexOf(section), "down")}
+                              onMoveUp={() => handleMoveSection(layoutItem.rootIndex, "up")}
+                              onMoveDown={() => handleMoveSection(layoutItem.rootIndex, "down")}
                               onEditSection={() => {
                                 setEditingSection(section);
                                 setSectionTitle(section.title);
