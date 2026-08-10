@@ -596,6 +596,7 @@ export type GradeTemplateKind =
   | "customTable";
 
 export type GradeScoreMode = "raw" | "assigned";
+export type GradeClassAverageSubjectScoreMode = GradeScoreMode | "both";
 
 export interface GradeTemplateColumn {
   id: string;
@@ -622,6 +623,10 @@ export interface GradeClassAverageOptions {
   classCategories?: Record<string, string>;
   /** 可由用户调整的班级简称。 */
   classLabels?: Record<string, string>;
+  /** 每个班级、每个学科在班级平均分表中的分数显示方式。 */
+  subjectScoreModes?: Record<string, Record<string, GradeClassAverageSubjectScoreMode>>;
+  /** 班级总分平均显示原始总分还是赋分总分。 */
+  totalScoreMode?: GradeScoreMode;
   showTeacherRows?: boolean;
   showGroupDifference?: boolean;
   showGroupAverage?: boolean;
