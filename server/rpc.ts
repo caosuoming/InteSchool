@@ -72,6 +72,7 @@ const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   prep: "prepTasks",
   question: "questions",
   reflection: "reflections",
+  resourceFolder: "resourceFolders",
   schoolBackup: "schoolBackups",
   settings: "schoolSettings",
   share: "shareRecords",
