@@ -21,6 +21,7 @@ import { organizationService } from "./domain/organization.js";
 import { prepService } from "./domain/prep.js";
 import { questionService } from "./domain/question.js";
 import { reflectionService } from "./domain/reflection.js";
+import { resourceFolderService } from "./domain/resourceFolder.js";
 import { schoolService } from "./domain/school.js";
 import { schoolBackupService } from "./domain/schoolBackup.js";
 import { settingsService } from "./domain/settings.js";
@@ -51,6 +52,7 @@ export const serviceRegistry = {
   prep: prepService,
   question: questionService,
   reflection: reflectionService,
+  resourceFolder: resourceFolderService,
   school: schoolService,
   schoolBackup: schoolBackupService,
   settings: settingsService,

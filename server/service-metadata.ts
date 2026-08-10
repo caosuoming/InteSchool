@@ -289,6 +289,43 @@ export const serviceParameters = {
       "questionId"
     ]
   },
+  "resourceFolder": {
+    "listFolders": [
+      "teacherId",
+      "resourceType"
+    ],
+    "createFolder": [
+      "teacherId",
+      "schoolId",
+      "resourceType",
+      "name",
+      "resourceIds"
+    ],
+    "updateFolder": [
+      "id",
+      "patch"
+    ],
+    "deleteFolder": [
+      "id"
+    ],
+    "moveResources": [
+      "folderId",
+      "resourceIds"
+    ],
+    "removeResource": [
+      "folderId",
+      "resourceId"
+    ],
+    "reorderResources": [
+      "folderId",
+      "resourceIds"
+    ],
+    "removeResourceFromAll": [
+      "teacherId",
+      "resourceType",
+      "resourceId"
+    ]
+  },
   "class": {
     "listSchoolGrades": [
       "schoolId"

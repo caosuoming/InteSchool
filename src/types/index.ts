@@ -1167,6 +1167,21 @@ export interface ResourceFilter {
 /** 资源类型（用于分享/发布） */
 export type ShareableResourceType = "question" | "examPaper" | "lecture" | "courseware" | "material";
 
+/** 我的资源中支持文件夹整理的资源类型。 */
+export type ResourceFolderType = "examPaper" | "lecture" | "courseware";
+
+export interface ResourceFolder {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  resourceType: ResourceFolderType;
+  name: string;
+  resourceIds: string[];
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** 分享目标范围 */
 export type ShareScope = "school" | "friends" | "public";
 

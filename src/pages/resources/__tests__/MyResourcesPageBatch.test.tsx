@@ -13,6 +13,7 @@ import { lectureService } from "@/services/lecture";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { materialService } from "@/services/material";
 import { questionService } from "@/services/question";
+import { resourceFolderService } from "@/services/resourceFolder";
 import { shareService } from "@/services/share";
 import type { ExamPaper, LessonCourseware, Material, Teacher, TreeNode } from "@/types";
 
@@ -143,6 +144,18 @@ vi.mock("@/services/share", () => ({
     createShare: vi.fn(),
   },
 }));
+vi.mock("@/services/resourceFolder", () => ({
+  resourceFolderService: {
+    listFolders: vi.fn(),
+    createFolder: vi.fn(),
+    updateFolder: vi.fn(),
+    deleteFolder: vi.fn(),
+    moveResources: vi.fn(),
+    removeResource: vi.fn(),
+    reorderResources: vi.fn(),
+    removeResourceFromAll: vi.fn(),
+  },
+}));
 vi.mock("@/stores/ui", () => ({
   toast: {
     success: vi.fn(),
@@ -186,6 +199,14 @@ const examPaper: ExamPaper = {
   status: "draft",
   createdAt: "2026-07-30T00:00:00.000Z",
   updatedAt: "2026-07-30T00:00:00.000Z",
+};
+
+const examPaperTwo: ExamPaper = {
+  ...examPaper,
+  id: "paper-2",
+  title: "函数综合测验",
+  createdAt: "2026-07-31T00:00:00.000Z",
+  updatedAt: "2026-07-31T00:00:00.000Z",
 };
 
 const completedLesson: LessonCourseware = {
@@ -256,6 +277,24 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(materialService.updateMaterial).mockResolvedValue(material);
     vi.mocked(materialService.deleteMaterial).mockResolvedValue(undefined);
     vi.mocked(shareService.createShare).mockResolvedValue({} as never);
+    vi.mocked(resourceFolderService.listFolders).mockResolvedValue([]);
+    vi.mocked(resourceFolderService.createFolder).mockImplementation(async (
+      teacherId,
+      schoolId,
+      resourceType,
+      name,
+      resourceIds,
+    ) => ({
+      id: "folder-1",
+      teacherId,
+      schoolId,
+      resourceType,
+      name,
+      resourceIds,
+      pinned: false,
+      createdAt: "2026-08-10T00:00:00.000Z",
+      updatedAt: "2026-08-10T00:00:00.000Z",
+    }));
     vi.mocked(donationService.listTeacherDonations).mockResolvedValue([]);
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
@@ -277,6 +316,63 @@ describe("MyResourcesPage batch actions", () => {
       schoolId: "school-1",
       lifecycleStatus: "completed",
     }));
+  });
+
+  it("creates a folder from two selected exam papers", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, examPaperTwo]);
+
+    renderPage("examPaper");
+
+    fireEvent.click(await screen.findByRole("button", { name: `选择资源：${examPaper.title}` }));
+    fireEvent.click(screen.getByRole("button", { name: `选择资源：${examPaperTwo.title}` }));
+
+    const actionSelect = screen.getByRole("combobox", { name: "选择批量操作" });
+    expect(screen.getByRole("option", { name: "创建文件夹" })).toBeInTheDocument();
+    fireEvent.change(actionSelect, { target: { value: "folder" } });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "文件夹名称" }), {
+      target: { value: "函数单元资料" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+
+    await waitFor(() => {
+      expect(resourceFolderService.createFolder).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        "examPaper",
+        "函数单元资料",
+        ["paper-1", "paper-2"],
+      );
+    });
+    expect(screen.queryByRole("region", { name: "批量操作" })).not.toBeInTheDocument();
+  });
+
+  it("groups folder documents and collapses them from the folder name", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, examPaperTwo]);
+    vi.mocked(resourceFolderService.listFolders).mockResolvedValue([{
+      id: "folder-existing",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      resourceType: "examPaper",
+      name: "函数资料",
+      resourceIds: [examPaper.id, examPaperTwo.id],
+      pinned: false,
+      createdAt: "2026-08-10T00:00:00.000Z",
+      updatedAt: "2026-08-10T00:00:00.000Z",
+    }]);
+
+    renderPage("examPaper");
+
+    expect(await screen.findByRole("group", { name: "文件夹：函数资料" })).toBeInTheDocument();
+    expect(screen.getByText(examPaper.title)).toBeInTheDocument();
+    expect(screen.getByText(examPaperTwo.title)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "函数资料" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(examPaper.title)).not.toBeInTheDocument();
+      expect(screen.queryByText(examPaperTwo.title)).not.toBeInTheDocument();
+    });
   });
 
   it("shows the floating panel only after selecting a resource", async () => {
