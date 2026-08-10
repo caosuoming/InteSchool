@@ -441,7 +441,7 @@ export interface GradeCohort {
 // ============ 考场安排 ============
 
 export type ExamArrangementMode = "combination" | "subject";
-export type ExamSubjectSetupMode = "all" | "selection";
+export type ExamSubjectSetupMode = "all" | "selection" | "academicNonSelection";
 export type ExamSeatOrder = "random" | "previousRank";
 export type ExamStudentSeatPreference = "first" | "last";
 
@@ -503,7 +503,7 @@ export interface ExamArrangementInput {
   examDate?: string;
   /** 旧方案兼容字段；新方案使用 separateSubjects 表达混合编排。 */
   mode: ExamArrangementMode;
-  /** 全部学科，或语数外加选科组合。 */
+  /** 全部学科、高考六门（语数外加选科），或学测科目中的非选科。 */
   subjectSetupMode?: ExamSubjectSetupMode;
   subjects: string[];
   /** 学生选科名称对应的实际考试科目。 */
@@ -596,6 +596,7 @@ export type GradeTemplateKind =
   | "customTable";
 
 export type GradeScoreMode = "raw" | "assigned";
+export type GradeClassAverageSubjectScoreMode = GradeScoreMode | "both";
 
 export interface GradeTemplateColumn {
   id: string;
@@ -622,6 +623,10 @@ export interface GradeClassAverageOptions {
   classCategories?: Record<string, string>;
   /** 可由用户调整的班级简称。 */
   classLabels?: Record<string, string>;
+  /** 每个班级、每个学科在班级平均分表中的分数显示方式。 */
+  subjectScoreModes?: Record<string, Record<string, GradeClassAverageSubjectScoreMode>>;
+  /** 班级总分平均显示原始总分还是赋分总分。 */
+  totalScoreMode?: GradeScoreMode;
   showTeacherRows?: boolean;
   showGroupDifference?: boolean;
   showGroupAverage?: boolean;
@@ -1161,6 +1166,21 @@ export interface ResourceFilter {
 
 /** 资源类型（用于分享/发布） */
 export type ShareableResourceType = "question" | "examPaper" | "lecture" | "courseware" | "material";
+
+/** 我的资源中支持文件夹整理的资源类型。 */
+export type ResourceFolderType = "examPaper" | "lecture" | "courseware";
+
+export interface ResourceFolder {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  resourceType: ResourceFolderType;
+  name: string;
+  resourceIds: string[];
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 /** 分享目标范围 */
 export type ShareScope = "school" | "friends" | "public";

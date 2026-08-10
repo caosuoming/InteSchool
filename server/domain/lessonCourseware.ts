@@ -128,7 +128,6 @@ function createImageElement(
     y: 18 + row * 24,
     width: 30,
     height: 20,
-    animation: "fade",
     questionSection,
   };
 }
@@ -140,7 +139,6 @@ function createTextElement(
     fontSize?: number;
     textAlign?: "left" | "center" | "right";
     questionSection?: LessonQuestionContentSection;
-    animationOrder?: number;
   } = {},
 ): LessonSlideElement {
   return {
@@ -150,11 +148,6 @@ function createTextElement(
     ...position,
     fontSize: options.fontSize || 24,
     textAlign: options.textAlign || "left",
-    animation: "rise",
-    enterAnimation: "rise",
-    actionAnimation: "none",
-    exitAnimation: "none",
-    animationOrder: options.animationOrder,
     questionSection: options.questionSection,
   };
 }
@@ -231,7 +224,6 @@ function questionSlide(
     }, {
       fontSize: 26,
       questionSection: "stem",
-      animationOrder: 1,
     }));
   }
   options?.forEach((option, index) => {
@@ -251,7 +243,6 @@ function questionSlide(
       {
         fontSize: 20,
         questionSection: "options",
-        animationOrder: textElements.length + 1,
       },
     ));
   });
@@ -264,7 +255,6 @@ function questionSlide(
     }, {
       fontSize: 18,
       questionSection: "answer",
-      animationOrder: textElements.length + 1,
     }));
   }
   if (analysis.content || question.summary) {
@@ -281,7 +271,6 @@ function questionSlide(
       {
         fontSize: 18,
         questionSection: "analysis",
-        animationOrder: textElements.length + 1,
       },
     ));
   }
@@ -295,11 +284,6 @@ function questionSlide(
     y: 38,
     width: 34,
     height: 26,
-    animation: "fade",
-    enterAnimation: "fade",
-    actionAnimation: "none",
-    exitAnimation: "none",
-    animationOrder: textElements.length + 1,
     questionSection: "analysis",
   }] : [];
 
@@ -349,7 +333,6 @@ function titleSlide(title: string, subtitle: string): LessonSlide {
       }, {
         fontSize: 42,
         textAlign: "center",
-        animationOrder: 1,
       }),
       ...(subtitle ? [createTextElement(subtitle, {
         x: 15,
@@ -359,7 +342,6 @@ function titleSlide(title: string, subtitle: string): LessonSlide {
       }, {
         fontSize: 22,
         textAlign: "center",
-        animationOrder: 2,
       })] : []),
     ],
     relatedQuestionIds: [],
@@ -381,7 +363,6 @@ function knowledgeSlide(title: string, content: string): LessonSlide {
       height: 88,
     }, {
       fontSize: 24,
-      animationOrder: 1,
     })] : [],
     relatedQuestionIds: [],
     askableStudentIds: [],

@@ -87,6 +87,9 @@ vi.mock("@/services/share", () => ({ shareService: {} }));
 vi.mock("@/services/donation", () => ({
   donationService: { listTeacherDonations: vi.fn().mockResolvedValue([]) },
 }));
+vi.mock("@/services/resourceFolder", () => ({
+  resourceFolderService: { listFolders: vi.fn().mockResolvedValue([]) },
+}));
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
@@ -441,6 +444,7 @@ describe("MyResourcesPage resource basket", () => {
     expect(await screen.findByText(ggbCourseware.title)).toBeInTheDocument();
     expect(screen.getByText(pdfCourseware.title)).toBeInTheDocument();
     expect(await screen.findAllByTitle(`点击加入「${createdBasket.name}」`)).toHaveLength(1);
+    expect(screen.getAllByTitle("加入文件夹")).toHaveLength(2);
   });
 
   it("asks to remove referenced questions after generating a lecture and removes them when confirmed", async () => {

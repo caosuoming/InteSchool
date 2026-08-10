@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type {
   GradeClassAverageOptions,
+  GradeClassAverageSubjectScoreMode,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -17,6 +18,7 @@ import type {
 import {
   buildDefaultClassAverageOptions,
   buildGradeClassAverageReport,
+  classAverageScoreCellValue,
   resolveClassAverageOptions,
 } from "@/lib/grade-class-average";
 import { exportGradeClassAverageReport } from "@/lib/grade-spreadsheet";
@@ -35,8 +37,12 @@ interface GradeClassAverageTableProps {
   onChange: (settings: GradeExamSettings) => void;
 }
 
-function displayNumber(value: number | null): string {
-  return typeof value === "number" ? value.toFixed(2) : "—";
+function displayScore(
+  values: { raw: number | null; assigned: number | null },
+  mode: GradeClassAverageSubjectScoreMode,
+): string {
+  const value = classAverageScoreCellValue(values, mode);
+  return typeof value === "number" ? value.toFixed(2) : value || "—";
 }
 
 function classRangeLabel(labels: string[]): string {
@@ -57,8 +63,13 @@ export function GradeClassAverageTable({
     [settings.templates, template],
   );
   const resolvedOptions = useMemo(
-    () => resolveClassAverageOptions(exam, context, effectiveTemplate.classAverageOptions),
-    [context, effectiveTemplate.classAverageOptions, exam],
+    () => resolveClassAverageOptions(
+      exam,
+      context,
+      effectiveTemplate.classAverageOptions,
+      effectiveTemplate.scoreMode,
+    ),
+    [context, effectiveTemplate.classAverageOptions, effectiveTemplate.scoreMode, exam],
   );
   const report = useMemo(
     () => buildGradeClassAverageReport(exam, effectiveTemplate, context, settings),
@@ -76,6 +87,16 @@ export function GradeClassAverageTable({
       classLabels: {
         ...resolvedOptions.classLabels,
         ...patch.classLabels,
+      },
+      subjectScoreModes: {
+        ...resolvedOptions.subjectScoreModes,
+        ...Object.fromEntries(Object.entries(patch.subjectScoreModes || {}).map(([classId, modes]) => [
+          classId,
+          {
+            ...resolvedOptions.subjectScoreModes?.[classId],
+            ...modes,
+          },
+        ])),
       },
     };
     onChange({
@@ -103,8 +124,28 @@ export function GradeClassAverageTable({
   };
 
   const reset = () => {
-    updateOptions(buildDefaultClassAverageOptions(exam, context));
+    updateOptions(buildDefaultClassAverageOptions(exam, context, effectiveTemplate.scoreMode));
     toast.success("已恢复默认表格布局");
+  };
+
+  const toggleSubjectScoreMode = (
+    classId: string,
+    subject: string,
+    scoreMode: "raw" | "assigned",
+    checked: boolean,
+  ) => {
+    const current = resolvedOptions.subjectScoreModes?.[classId]?.[subject] || effectiveTemplate.scoreMode;
+    let showRaw = current === "raw" || current === "both";
+    let showAssigned = current === "assigned" || current === "both";
+    if (scoreMode === "raw") showRaw = checked;
+    else showAssigned = checked;
+    if (!showRaw && !showAssigned) return;
+    const nextMode: GradeClassAverageSubjectScoreMode = showRaw && showAssigned
+      ? "both"
+      : showRaw
+        ? "raw"
+        : "assigned";
+    updateOptions({ subjectScoreModes: { [classId]: { [subject]: nextMode } } });
   };
 
   const exportReport = async () => {
@@ -192,6 +233,24 @@ export function GradeClassAverageTable({
             ))}
           </div>
 
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-ink-600">
+            <span className="font-medium text-ink-700">总分平均</span>
+            {([
+              ["raw", "原始总分"],
+              ["assigned", "赋分总分"],
+            ] as const).map(([mode, label]) => (
+              <label key={mode} className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name={`${effectiveTemplate.id}-class-average-total-mode`}
+                  checked={resolvedOptions.totalScoreMode === mode}
+                  onChange={() => updateOptions({ totalScoreMode: mode })}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+
           <div className="overflow-x-auto rounded-lg border border-ink-200 bg-paper">
             <table className="min-w-[760px] w-full text-xs">
               <thead className="bg-ink-50 text-ink-500">
@@ -268,6 +327,81 @@ export function GradeClassAverageTable({
               </tbody>
             </table>
           </div>
+
+          <div className="space-y-2">
+            <div>
+              <div className="text-xs font-medium text-ink-700">学科分数显示</div>
+              <div className="mt-0.5 text-xs text-ink-500">
+                每个班级、每个学科可分别显示原始分、赋分或两者；两者同时显示时使用“原始分|赋分”。
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-ink-200 bg-paper">
+              <table className="min-w-[760px] w-full text-xs">
+                <thead className="bg-ink-50 text-ink-500">
+                  <tr>
+                    <th className="sticky left-0 z-10 min-w-28 border-r border-ink-200 bg-ink-50 px-3 py-2 text-left font-medium">
+                      班级
+                    </th>
+                    {report.subjects.map((subject) => (
+                      <th key={subject} className="min-w-36 px-3 py-2 text-center font-medium">{subject}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink-100">
+                  {classRows.map((row) => {
+                    const hidden = (resolvedOptions.hiddenClassIds || []).includes(row.classId);
+                    return (
+                      <tr key={row.classId} className={cn(hidden && "bg-ink-50/60 text-ink-400")}>
+                        <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-3 py-2 font-medium text-ink-700">
+                          {row.className}
+                        </td>
+                        {report.subjects.map((subject) => {
+                          const mode = resolvedOptions.subjectScoreModes?.[row.classId]?.[subject]
+                            || effectiveTemplate.scoreMode;
+                          const showRaw = mode === "raw" || mode === "both";
+                          const showAssigned = mode === "assigned" || mode === "both";
+                          return (
+                            <td key={subject} className="px-3 py-2">
+                              <div className="flex items-center justify-center gap-3">
+                                <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`${row.className}${subject}原始分`}
+                                    checked={showRaw}
+                                    onChange={(event) => toggleSubjectScoreMode(
+                                      row.classId,
+                                      subject,
+                                      "raw",
+                                      event.target.checked,
+                                    )}
+                                  />
+                                  原始
+                                </label>
+                                <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`${row.className}${subject}赋分`}
+                                    checked={showAssigned}
+                                    onChange={(event) => toggleSubjectScoreMode(
+                                      row.classId,
+                                      subject,
+                                      "assigned",
+                                      event.target.checked,
+                                    )}
+                                  />
+                                  赋分
+                                </label>
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
@@ -341,11 +475,11 @@ export function GradeClassAverageTable({
                         <td className="border border-ink-300 px-3 py-2 text-center text-ink-500">{row.studentCount} 人</td>
                         {report.subjects.map((subject) => (
                           <td key={subject} className="border border-ink-300 px-3 py-2 text-right font-semibold tabular-nums text-ink-900">
-                            {displayNumber(row.subjectAverages[subject])}
+                            {displayScore(row.subjectAverages[subject], row.subjectScoreModes[subject])}
                           </td>
                         ))}
                         <td className="border border-ink-300 px-3 py-2 text-right font-bold tabular-nums text-ink-900">
-                          {displayNumber(row.totalAverage)}
+                          {displayScore(row.totalAverages, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                         </td>
                       </tr>
                     );
@@ -357,11 +491,11 @@ export function GradeClassAverageTable({
                       <td className="border border-ink-300 px-3 py-2" />
                       {report.subjects.map((subject) => (
                         <td key={subject} className="border border-ink-300 px-3 py-2 text-right tabular-nums">
-                          {displayNumber(group.difference.subjectValues[subject])}
+                          {displayScore(group.difference.subjectValues[subject], group.subjectScoreModes[subject])}
                         </td>
                       ))}
                       <td className="border border-ink-300 px-3 py-2 text-right font-semibold tabular-nums">
-                        {displayNumber(group.difference.totalValue)}
+                        {displayScore(group.difference.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                       </td>
                     </tr>
                   )] : []),
@@ -373,11 +507,11 @@ export function GradeClassAverageTable({
                       <td className="border border-ink-300 px-3 py-2" />
                       {report.subjects.map((subject) => (
                         <td key={subject} className="border border-ink-300 px-3 py-2 text-right font-semibold tabular-nums">
-                          {displayNumber(group.average.subjectValues[subject])}
+                          {displayScore(group.average.subjectValues[subject], group.subjectScoreModes[subject])}
                         </td>
                       ))}
                       <td className="border border-ink-300 px-3 py-2 text-right font-bold tabular-nums">
-                        {displayNumber(group.average.totalValue)}
+                        {displayScore(group.average.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                       </td>
                     </tr>
                   )] : []),
@@ -388,11 +522,17 @@ export function GradeClassAverageTable({
                   <td colSpan={3} className="border border-ink-300 px-3 py-2 text-center font-bold text-ink-900">全校平均</td>
                   {report.subjects.map((subject) => (
                     <td key={subject} className="border border-ink-300 px-3 py-2 text-right font-bold tabular-nums text-ink-900">
-                      {displayNumber(report.overallAverage.subjectValues[subject])}
+                      {displayScore(
+                        report.overallAverage.subjectValues[subject],
+                        report.overallSubjectScoreModes[subject],
+                      )}
                     </td>
                   ))}
                   <td className="border border-ink-300 px-3 py-2 text-right font-bold tabular-nums text-ink-900">
-                    {displayNumber(report.overallAverage.totalValue)}
+                    {displayScore(
+                      report.overallAverage.totalValues,
+                      report.options.totalScoreMode || effectiveTemplate.scoreMode,
+                    )}
                   </td>
                 </tr>
               )}

@@ -214,6 +214,11 @@ describe("grade statistics", () => {
       hiddenClassIds: ["class-1", "removed-class"],
       classCategories: { "class-1": "  强基班  ", "removed-class": "旧班级" },
       classLabels: { "class-2": "  二班  " },
+      subjectScoreModes: {
+        "class-1": { 数学: "both", 不存在学科: "raw" },
+        "removed-class": { 数学: "assigned" },
+      },
+      totalScoreMode: "raw",
       showTeacherRows: false,
     };
 
@@ -226,6 +231,8 @@ describe("grade statistics", () => {
       hiddenClassIds: ["class-1"],
       classCategories: { "class-1": "强基班" },
       classLabels: { "class-2": "二班" },
+      subjectScoreModes: { "class-1": { 数学: "both" } },
+      totalScoreMode: "raw",
       showTeacherRows: false,
     });
     expect(options?.reportDate).toBeUndefined();

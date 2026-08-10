@@ -375,6 +375,46 @@ describe("ExamPaperEditorPage preview", () => {
     expect(details).toHaveTextContent("暂无关联知识点");
   });
 
+  it("controls which per-question sidebar sections are visible", async () => {
+    renderPage();
+    await screen.findByTestId("exam-question-details-1");
+
+    const propertiesToggle = screen.getByRole("button", { name: "题目属性" });
+    const answerToggle = screen.getByRole("button", { name: "答题情况" });
+    const basketToggle = screen.getByRole("button", { name: "添加资源篮" });
+    expect(propertiesToggle).toHaveAttribute("aria-pressed", "true");
+    expect(answerToggle).toHaveAttribute("aria-pressed", "true");
+    expect(basketToggle).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(answerToggle);
+    expect(screen.queryByTestId("exam-question-answer-status-1")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
+
+    fireEvent.click(propertiesToggle);
+    expect(screen.queryByTestId("exam-question-properties-1")).not.toBeInTheDocument();
+
+    fireEvent.click(basketToggle);
+    expect(screen.queryByTestId("exam-question-details-1")).not.toBeInTheDocument();
+  });
+
+  it("edits and persists a question score directly from preview properties", async () => {
+    renderPage();
+
+    const details = await screen.findByTestId("exam-question-details-1");
+    fireEvent.click(within(details).getByRole("button", { name: "编辑第 1 题分值" }));
+    const scoreInput = within(details).getByLabelText("第 1 题分值");
+    fireEvent.change(scoreInput, { target: { value: "8" } });
+    fireEvent.click(within(details).getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, {
+        questions: [{ ...paper.questions[0], score: 8 }],
+        totalScore: 8,
+      });
+    });
+    expect(details).toHaveTextContent("8 分");
+  });
+
   it("quick-adds to the default basket and uses the arrow for other baskets", async () => {
     const defaultBasket = {
       id: "basket-default",

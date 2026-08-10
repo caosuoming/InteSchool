@@ -1,12 +1,19 @@
 import type {
   GradeClassAverageOptions,
+  GradeClassAverageSubjectScoreMode,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
+  GradeScoreMode,
   GradeScoreRecord,
   GradeStatisticsTemplate,
 } from "../types/index.js";
 import { averageGradeValues } from "./grade-reports.js";
+
+export interface GradeClassAverageScorePair {
+  raw: number | null;
+  assigned: number | null;
+}
 
 export interface GradeClassAverageRow {
   classId: string;
@@ -16,13 +23,14 @@ export interface GradeClassAverageRow {
   studentCount: number;
   homeroomTeachers: string[];
   subjectTeachers: Record<string, string[]>;
-  subjectAverages: Record<string, number | null>;
-  totalAverage: number | null;
+  subjectAverages: Record<string, GradeClassAverageScorePair>;
+  subjectScoreModes: Record<string, GradeClassAverageSubjectScoreMode>;
+  totalAverages: GradeClassAverageScorePair;
 }
 
 export interface GradeClassAverageSummary {
-  subjectValues: Record<string, number | null>;
-  totalValue: number | null;
+  subjectValues: Record<string, GradeClassAverageScorePair>;
+  totalValues: GradeClassAverageScorePair;
 }
 
 export interface GradeClassAverageGroup {
@@ -30,6 +38,7 @@ export interface GradeClassAverageGroup {
   rows: GradeClassAverageRow[];
   difference: GradeClassAverageSummary;
   average: GradeClassAverageSummary;
+  subjectScoreModes: Record<string, GradeClassAverageSubjectScoreMode>;
 }
 
 export interface GradeClassAverageReport {
@@ -45,6 +54,7 @@ export interface GradeClassAverageReport {
   >> & GradeClassAverageOptions;
   groups: GradeClassAverageGroup[];
   overallAverage: GradeClassAverageSummary;
+  overallSubjectScoreModes: Record<string, GradeClassAverageSubjectScoreMode>;
 }
 
 function unique(values: string[]): string[] {
@@ -84,6 +94,7 @@ function defaultCategory(
 export function buildDefaultClassAverageOptions(
   exam: GradeExam,
   context: GradeImportContext,
+  scoreMode: GradeScoreMode = "assigned",
 ): GradeClassAverageOptions {
   const recordClassIds = unique(exam.records.map((record) => record.classId));
   const classMap = new Map(context.classes.map((item) => [item.id, item]));
@@ -108,6 +119,11 @@ export function buildDefaultClassAverageOptions(
       classId,
       compactGradeClassLabel(classMap.get(classId)?.name || classNames.get(classId) || "未知班级"),
     ])),
+    subjectScoreModes: Object.fromEntries(classOrder.map((classId) => [
+      classId,
+      Object.fromEntries(exam.subjects.map((subject) => [subject, scoreMode])),
+    ])),
+    totalScoreMode: scoreMode,
     showTeacherRows: true,
     showGroupDifference: true,
     showGroupAverage: true,
@@ -119,8 +135,9 @@ export function resolveClassAverageOptions(
   exam: GradeExam,
   context: GradeImportContext,
   options?: GradeClassAverageOptions,
+  scoreMode: GradeScoreMode = "assigned",
 ): GradeClassAverageReport["options"] {
-  const defaults = buildDefaultClassAverageOptions(exam, context);
+  const defaults = buildDefaultClassAverageOptions(exam, context, scoreMode);
   const defaultOrder = defaults.classOrder || [];
   const requestedOrder = unique(options?.classOrder || []).filter((classId) => defaultOrder.includes(classId));
   const classOrder = [
@@ -142,6 +159,14 @@ export function resolveClassAverageOptions(
       ...defaults.classLabels,
       ...options?.classLabels,
     },
+    subjectScoreModes: Object.fromEntries((classOrder || []).map((classId) => [
+      classId,
+      {
+        ...defaults.subjectScoreModes?.[classId],
+        ...options?.subjectScoreModes?.[classId],
+      },
+    ])),
+    totalScoreMode: options?.totalScoreMode || scoreMode,
     showTeacherRows: options?.showTeacherRows ?? true,
     showGroupDifference: options?.showGroupDifference ?? true,
     showGroupAverage: options?.showGroupAverage ?? true,
@@ -152,7 +177,7 @@ export function resolveClassAverageOptions(
 function recordSubjectValue(
   record: GradeScoreRecord,
   subject: string,
-  scoreMode: GradeStatisticsTemplate["scoreMode"],
+  scoreMode: GradeScoreMode,
 ): number | null {
   return scoreMode === "raw" ? record.scores[subject] : record.assignedScores[subject];
 }
@@ -160,7 +185,7 @@ function recordSubjectValue(
 function recordTotal(
   record: GradeScoreRecord,
   subjects: string[],
-  scoreMode: GradeStatisticsTemplate["scoreMode"],
+  scoreMode: GradeScoreMode,
 ): number | null {
   const values = subjects
     .map((subject) => recordSubjectValue(record, subject, scoreMode))
@@ -171,14 +196,19 @@ function recordTotal(
 function summaryForRecords(
   records: GradeScoreRecord[],
   subjects: string[],
-  scoreMode: GradeStatisticsTemplate["scoreMode"],
 ): GradeClassAverageSummary {
   return {
     subjectValues: Object.fromEntries(subjects.map((subject) => [
       subject,
-      averageGradeValues(records.map((record) => recordSubjectValue(record, subject, scoreMode))),
+      {
+        raw: averageGradeValues(records.map((record) => recordSubjectValue(record, subject, "raw"))),
+        assigned: averageGradeValues(records.map((record) => recordSubjectValue(record, subject, "assigned"))),
+      },
     ])),
-    totalValue: averageGradeValues(records.map((record) => recordTotal(record, subjects, scoreMode))),
+    totalValues: {
+      raw: averageGradeValues(records.map((record) => recordTotal(record, subjects, "raw"))),
+      assigned: averageGradeValues(records.map((record) => recordTotal(record, subjects, "assigned"))),
+    },
   };
 }
 
@@ -193,10 +223,58 @@ function differenceForRows(
   return {
     subjectValues: Object.fromEntries(subjects.map((subject) => [
       subject,
-      difference(rows.map((row) => row.subjectAverages[subject])),
+      {
+        raw: difference(rows.map((row) => row.subjectAverages[subject].raw)),
+        assigned: difference(rows.map((row) => row.subjectAverages[subject].assigned)),
+      },
     ])),
-    totalValue: difference(rows.map((row) => row.totalAverage)),
+    totalValues: {
+      raw: difference(rows.map((row) => row.totalAverages.raw)),
+      assigned: difference(rows.map((row) => row.totalAverages.assigned)),
+    },
   };
+}
+
+function subjectScoreModeForClass(
+  options: GradeClassAverageReport["options"],
+  classId: string,
+  subject: string,
+  fallback: GradeScoreMode,
+): GradeClassAverageSubjectScoreMode {
+  return options.subjectScoreModes?.[classId]?.[subject] || fallback;
+}
+
+function combinedSubjectScoreModes(
+  rows: GradeClassAverageRow[],
+  subjects: string[],
+  fallback: GradeScoreMode,
+): Record<string, GradeClassAverageSubjectScoreMode> {
+  return Object.fromEntries(subjects.map((subject) => {
+    let hasRaw = false;
+    let hasAssigned = false;
+    rows.forEach((row) => {
+      const mode = row.subjectScoreModes[subject] || fallback;
+      hasRaw ||= mode === "raw" || mode === "both";
+      hasAssigned ||= mode === "assigned" || mode === "both";
+    });
+    const mode: GradeClassAverageSubjectScoreMode = hasRaw && hasAssigned
+      ? "both"
+      : hasRaw
+        ? "raw"
+        : "assigned";
+    return [subject, mode];
+  }));
+}
+
+export function classAverageScoreCellValue(
+  values: GradeClassAverageScorePair,
+  mode: GradeClassAverageSubjectScoreMode,
+): number | string | null {
+  if (mode === "raw") return values.raw;
+  if (mode === "assigned") return values.assigned;
+  if (values.raw === null && values.assigned === null) return null;
+  const display = (value: number | null) => value === null ? "—" : value.toFixed(2);
+  return `${display(values.raw)}|${display(values.assigned)}`;
 }
 
 function teacherNamesForSubject(
@@ -220,7 +298,7 @@ export function buildGradeClassAverageReport(
   context: GradeImportContext,
   settings: GradeExamSettings = exam.settings,
 ): GradeClassAverageReport {
-  const options = resolveClassAverageOptions(exam, context, template.classAverageOptions);
+  const options = resolveClassAverageOptions(exam, context, template.classAverageOptions, template.scoreMode);
   const subjects = template.subjects.filter((subject) => exam.subjects.includes(subject));
   const effectiveSubjects = subjects.length > 0 ? subjects : [...exam.subjects];
   const hiddenClassIds = new Set(options.hiddenClassIds || []);
@@ -237,7 +315,7 @@ export function buildGradeClassAverageReport(
     .map((classId) => {
       const records = recordsByClass.get(classId) || [];
       const className = contextClassNames.get(classId) || records[0]?.className || "未知班级";
-      const summary = summaryForRecords(records, effectiveSubjects, template.scoreMode);
+      const summary = summaryForRecords(records, effectiveSubjects);
       return {
         classId,
         className,
@@ -252,7 +330,11 @@ export function buildGradeClassAverageReport(
           teacherNamesForSubject(classId, subject, settings, context),
         ])),
         subjectAverages: summary.subjectValues,
-        totalAverage: summary.totalValue,
+        subjectScoreModes: Object.fromEntries(effectiveSubjects.map((subject) => [
+          subject,
+          subjectScoreModeForClass(options, classId, subject, template.scoreMode),
+        ])),
+        totalAverages: summary.totalValues,
       } satisfies GradeClassAverageRow;
     });
 
@@ -264,7 +346,8 @@ export function buildGradeClassAverageReport(
       category,
       rows,
       difference: differenceForRows(rows, effectiveSubjects),
-      average: summaryForRecords(groupRecords, effectiveSubjects, template.scoreMode),
+      average: summaryForRecords(groupRecords, effectiveSubjects),
+      subjectScoreModes: combinedSubjectScoreModes(rows, effectiveSubjects, template.scoreMode),
     } satisfies GradeClassAverageGroup;
   });
   const reportRecords = classRows.flatMap((row) => recordsByClass.get(row.classId) || []);
@@ -275,6 +358,7 @@ export function buildGradeClassAverageReport(
     subjects: effectiveSubjects,
     options,
     groups,
-    overallAverage: summaryForRecords(reportRecords, effectiveSubjects, template.scoreMode),
+    overallAverage: summaryForRecords(reportRecords, effectiveSubjects),
+    overallSubjectScoreModes: combinedSubjectScoreModes(classRows, effectiveSubjects, template.scoreMode),
   };
 }

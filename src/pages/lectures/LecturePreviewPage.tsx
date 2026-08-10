@@ -21,6 +21,11 @@ import { Modal } from "@/components/ui/Modal";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
+import {
+  PreviewSidebarControls,
+  type PreviewSidebarVisibility,
+} from "@/components/editor/PreviewSidebarControls";
+import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, LessonCourseware, Question, Student, TreeNode } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
@@ -94,6 +99,9 @@ export default function LecturePreviewPage() {
   const [metadataChapterIds, setMetadataChapterIds] = useState<string[]>([]);
   const [metadataKnowledgePointIds, setMetadataKnowledgePointIds] = useState<string[]>([]);
   const [savingQuestionMetadata, setSavingQuestionMetadata] = useState(false);
+  const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
+    { properties: true, answerStatus: true, basket: true },
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -497,17 +505,23 @@ export default function LecturePreviewPage() {
                     <div className="font-serif text-sm font-semibold text-ink-900">题目属性与使用情况</div>
                     <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={markAllQuestionsUsed}
-                    loading={markingAllDone}
-                    disabled={students.length === 0 || questionIds.length === 0}
-                  >
-                    <CheckSquare className="w-3.5 h-3.5" />
-                    全部设为使用
-                  </Button>
+                  {previewSidebarVisibility.answerStatus && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={markAllQuestionsUsed}
+                      loading={markingAllDone}
+                      disabled={students.length === 0 || questionIds.length === 0}
+                    >
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      全部设为使用
+                    </Button>
+                  )}
                 </div>
+                <PreviewSidebarControls
+                  value={previewSidebarVisibility}
+                  onChange={setPreviewSidebarVisibility}
+                />
               </div>
             )}
           />
@@ -545,6 +559,7 @@ export default function LecturePreviewPage() {
                       onEditMetadata={lecture.teacherId === teacher?.id && !lecture.isExtractCopy
                         ? openQuestionMetadataEditor
                         : undefined}
+                      visibility={previewSidebarVisibility}
                     />
                   ) : undefined}
                 />
@@ -813,6 +828,7 @@ function LectureQuestionDetails({
   answerRecords,
   onUpdateStudentAnswer,
   onEditMetadata,
+  visibility,
 }: {
   question: Question | null | undefined;
   questionNumber: number;
@@ -820,6 +836,7 @@ function LectureQuestionDetails({
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
   onEditMetadata?: (question: Question) => void;
+  visibility: PreviewSidebarVisibility;
 }) {
   if (!question) {
     return (
@@ -829,60 +846,89 @@ function LectureQuestionDetails({
     );
   }
 
+  if (!visibility.properties && !visibility.answerStatus && !visibility.basket) return null;
+
   return (
     <div
       className="rounded-lg border border-ink-100 bg-paper p-3 shadow-sm"
       data-testid={`lecture-question-details-${questionNumber}`}
     >
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <span className="font-mono text-xs font-bold text-ink-500">第 {questionNumber} 题</span>
-        <Badge variant="ink">{typeLabel[question.type] || question.type}</Badge>
-        <Badge variant={difficultyVariant[question.difficulty] as "green" | "amber" | "red"}>
-          {difficultyLabel[question.difficulty]}
-        </Badge>
-        {onEditMetadata && (
-          <button
-            type="button"
-            onClick={() => onEditMetadata(question)}
-            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-800"
-            aria-label={`编辑第 ${questionNumber} 题章节与知识点`}
-          >
-            <Edit3 className="h-3 w-3" />
-            编辑目录
-          </button>
-        )}
-      </div>
-      <StudentAnswerStatusControl
-        className="mb-3 border-b border-ink-100 pb-3"
-        students={students}
-        answerRecords={answerRecords}
-        questionId={question.id}
-        onChange={onUpdateStudentAnswer}
-      />
-      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] leading-5">
-        <QuestionProperty label="年级" value={question.grade || "未设置"} />
-        <QuestionProperty label="学年学期" value={[
-          question.schoolYear,
-          question.semester,
-        ].filter(Boolean).join(" · ") || "未设置"} />
-        <QuestionProperty label="使用次数" value={`${question.usageCount} 次`} />
-        <QuestionProperty label="推荐度" value={`${question.recommendation} / 5`} />
-        <QuestionProperty label="章节关联" value={question.chapterIds.length > 0 ? `${question.chapterIds.length} 项` : "未关联"} />
-        <QuestionProperty label="知识点" value={question.knowledgePointIds.length > 0 ? `${question.knowledgePointIds.length} 项` : "未关联"} />
-      </div>
-      {question.category && (
-        <div className="mt-2 text-[11px] leading-5 text-ink-500">
-          <span className="text-ink-400">题类：</span>{question.category}
+      {visibility.properties && (
+        <div data-testid={`lecture-question-properties-${questionNumber}`}>
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-xs font-bold text-ink-500">第 {questionNumber} 题</span>
+            <Badge variant="ink">{typeLabel[question.type] || question.type}</Badge>
+            <Badge variant={difficultyVariant[question.difficulty] as "green" | "amber" | "red"}>
+              {difficultyLabel[question.difficulty]}
+            </Badge>
+            {onEditMetadata && (
+              <button
+                type="button"
+                onClick={() => onEditMetadata(question)}
+                className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-800"
+                aria-label={`编辑第 ${questionNumber} 题章节与知识点`}
+              >
+                <Edit3 className="h-3 w-3" />
+                编辑目录
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] leading-5">
+            <QuestionProperty label="年级" value={question.grade || "未设置"} />
+            <QuestionProperty label="学年学期" value={[
+              question.schoolYear,
+              question.semester,
+            ].filter(Boolean).join(" · ") || "未设置"} />
+            <QuestionProperty label="使用次数" value={`${question.usageCount} 次`} />
+            <QuestionProperty label="推荐度" value={`${question.recommendation} / 5`} />
+            <QuestionProperty label="章节关联" value={question.chapterIds.length > 0 ? `${question.chapterIds.length} 项` : "未关联"} />
+            <QuestionProperty label="知识点" value={question.knowledgePointIds.length > 0 ? `${question.knowledgePointIds.length} 项` : "未关联"} />
+          </div>
+          {question.category && (
+            <div className="mt-2 text-[11px] leading-5 text-ink-500">
+              <span className="text-ink-400">题类：</span>{question.category}
+            </div>
+          )}
+          {question.sourceType && (
+            <div className="text-[11px] leading-5 text-ink-500">
+              <span className="text-ink-400">来源：</span>{question.sourceType}
+            </div>
+          )}
+          {question.remark && (
+            <div className="mt-2 rounded-md bg-ink-50 px-2 py-1.5 text-[11px] leading-5 text-ink-500">
+              {question.remark}
+            </div>
+          )}
         </div>
       )}
-      {question.sourceType && (
-        <div className="text-[11px] leading-5 text-ink-500">
-          <span className="text-ink-400">来源：</span>{question.sourceType}
-        </div>
+      {visibility.answerStatus && (
+        <StudentAnswerStatusControl
+          className={cn(
+            "mt-3",
+            visibility.properties && "border-t border-ink-100 pt-3",
+          )}
+          students={students}
+          answerRecords={answerRecords}
+          questionId={question.id}
+          onChange={onUpdateStudentAnswer}
+        />
       )}
-      {question.remark && (
-        <div className="mt-2 rounded-md bg-ink-50 px-2 py-1.5 text-[11px] leading-5 text-ink-500">
-          {question.remark}
+      {visibility.basket && (
+        <div
+          className={cn(
+            "no-print mt-3",
+            (visibility.properties || visibility.answerStatus) && "border-t border-ink-100 pt-3",
+          )}
+          data-testid={`lecture-question-basket-${questionNumber}`}
+        >
+          <AddToBasketDropdown
+            resourceType="question"
+            resourceId={question.id}
+            resourceTitle={question.stem}
+            size="sm"
+            variant="outline"
+            quickLabel="加入试题篮"
+          />
         </div>
       )}
     </div>

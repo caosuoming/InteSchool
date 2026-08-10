@@ -38,9 +38,9 @@ const exam: GradeExam = {
       classId: "class-1",
       className: "高三(1)班",
       scores: { 数学: 90 },
-      assignedScores: { 数学: 90 },
+      assignedScores: { 数学: 96 },
       rawTotal: 90,
-      assignedTotal: 90,
+      assignedTotal: 96,
       gradeRank: 1,
       classRank: 1,
     },
@@ -118,9 +118,25 @@ describe("GradeClassAverageTable", () => {
 
     expect(screen.getByText("2026届高三期末考试班级平均分统计表")).toBeInTheDocument();
     expect(screen.getAllByText("数学教师").length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("cell", { name: "90.00" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("cell", { name: "96.00" }).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "调整表格" }));
+    const rawCheckbox = screen.getByRole("checkbox", { name: "高三(1)班数学原始分" });
+    const assignedCheckbox = screen.getByRole("checkbox", { name: "高三(1)班数学赋分" });
+    expect(rawCheckbox).not.toBeChecked();
+    expect(assignedCheckbox).toBeChecked();
+
+    await user.click(rawCheckbox);
+    expect(screen.getAllByRole("cell", { name: "90.00|96.00" }).length).toBeGreaterThan(0);
+    const scoreModeSettings = onChange.mock.lastCall?.[0];
+    expect(scoreModeSettings.templates[0].classAverageOptions.subjectScoreModes["class-1"].数学)
+      .toBe("both");
+
+    await user.click(screen.getByRole("radio", { name: "原始总分" }));
+    const totalModeSettings = onChange.mock.lastCall?.[0];
+    expect(totalModeSettings.templates[0].classAverageOptions.totalScoreMode).toBe("raw");
+    expect(screen.getAllByRole("cell", { name: "90.00" }).length).toBeGreaterThan(0);
+
     const categoryInput = screen.getByRole("textbox", { name: "高三(1)班类别" });
     await user.clear(categoryInput);
     await user.type(categoryInput, "物化实验");

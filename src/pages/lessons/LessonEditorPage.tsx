@@ -298,11 +298,10 @@ export function LessonEditorPage() {
       height: 14,
       fontSize: 24,
       textAlign: "left",
-      animation: "rise",
-      enterAnimation: "rise",
+      animation: "none",
+      enterAnimation: "none",
       actionAnimation: "none",
       exitAnimation: "none",
-      animationOrder: (currentSlide.elements || []).length + 1,
     };
     updateCurrentElements([...(currentSlide.elements || []), element]);
     setSelectedElementId(element.id);
@@ -322,11 +321,10 @@ export function LessonEditorPage() {
         y: 4,
         width: 36,
         height: 30,
-        animation: "fade",
-        enterAnimation: "fade",
+        animation: "none",
+        enterAnimation: "none",
         actionAnimation: "none",
         exitAnimation: "none",
-        animationOrder: (currentSlide.elements || []).length + 1,
       };
       updateCurrentElements([...(currentSlide.elements || []), element]);
       setSelectedElementId(element.id);
@@ -349,11 +347,10 @@ export function LessonEditorPage() {
       height: 12,
       fontSize: 22,
       textAlign: "left",
-      animation: "fade",
-      enterAnimation: "fade",
+      animation: "none",
+      enterAnimation: "none",
       actionAnimation: "none",
       exitAnimation: "none",
-      animationOrder: (currentSlide.elements || []).length + 1,
     };
     updateCurrentElements([...(currentSlide.elements || []), element]);
     setSelectedElementId(element.id);

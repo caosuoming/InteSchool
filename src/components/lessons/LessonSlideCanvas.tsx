@@ -11,6 +11,7 @@ import { GripVertical, Maximize2 } from "lucide-react";
 import type { LessonSlideElement } from "@/types";
 import { cn } from "@/lib/utils";
 import { renderMathHtml, serializeMathHtml } from "@/lib/math-html";
+import { hasLessonElementAnimation } from "@/lib/lesson-animation";
 import { MathHtml } from "@/components/ui/MathHtml";
 
 interface LessonSlideCanvasProps {
@@ -18,6 +19,7 @@ interface LessonSlideCanvasProps {
   children: ReactNode;
   referenceSize?: { width: number; height: number };
   editable?: boolean;
+  showAnimationOrder?: boolean;
   disableAnimations?: boolean;
   animationMode?: "default" | "step";
   allowTextEditing?: boolean;
@@ -69,20 +71,12 @@ function animationStyle(
   } : undefined;
 }
 
-function hasConfiguredAnimation(element: LessonSlideElement): boolean {
-  const enterAnimation = element.enterAnimation || element.animation;
-  return Boolean(
-    (enterAnimation && enterAnimation !== "none")
-    || (element.actionAnimation && element.actionAnimation !== "none")
-    || (element.exitAnimation && element.exitAnimation !== "none"),
-  );
-}
-
 export function LessonSlideCanvas({
   elements = [],
   children,
   referenceSize,
   editable = false,
+  showAnimationOrder = true,
   disableAnimations = false,
   animationMode = "default",
   allowTextEditing = editable,
@@ -280,10 +274,11 @@ export function LessonSlideCanvas({
             onPointerCancel={endInteraction}
           >
             {editable
+              && showAnimationOrder
               && typeof element.animationOrder === "number"
               && Number.isFinite(element.animationOrder)
               && element.animationOrder > 0
-              && hasConfiguredAnimation(element) && (
+              && hasLessonElementAnimation(element) && (
                 <span
                   className="pointer-events-none absolute left-0 top-0 z-20 flex h-5 min-w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border border-ink-300 bg-paper px-1 font-mono text-[11px] font-semibold leading-none text-ink-700 shadow-sm"
                   aria-label={`动画顺序 ${element.animationOrder}`}

@@ -31,6 +31,10 @@ import {
 import type { LessonSlide, LessonSlideElement, Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { getMaximumContrastTextColor, normalizeHexColor } from "@/lib/color-contrast";
+import {
+  getLessonElementAnimationOrder,
+  hasLessonElementAnimation,
+} from "@/lib/lesson-animation";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
@@ -311,8 +315,8 @@ function getPresentationElements(slide: LessonSlide): LessonSlideElement[] {
 }
 
 function animationOrderOf(element: LessonSlideElement): number | null {
-  const order = element.animationOrder;
-  return typeof order === "number" && Number.isFinite(order) && order > 0 ? order : null;
+  if (!hasLessonElementAnimation(element)) return null;
+  return getLessonElementAnimationOrder(element);
 }
 
 function getAnimationSteps(elements: LessonSlideElement[]): number[] {
@@ -1434,6 +1438,7 @@ export function PresentationMode({
                   key={displayedSlide.id}
                   elements={visibleSlideElements}
                   editable={tool === "select"}
+                  showAnimationOrder={false}
                   animationMode="step"
                   allowTextEditing={false}
                   allowVerticalElementOverflow
