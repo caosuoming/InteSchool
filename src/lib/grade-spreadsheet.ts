@@ -1,5 +1,8 @@
 import type { GradeExam, GradeImportRow } from "../types/index.js";
-import type { GradeClassAverageReport } from "./grade-class-average.js";
+import {
+  classAverageScoreCellValue,
+  type GradeClassAverageReport,
+} from "./grade-class-average.js";
 import type { GradeTotalScoreSegmentReport } from "./grade-total-score-segment.js";
 import { buildGradeReportTable } from "./grade-reports.js";
 import {
@@ -423,8 +426,14 @@ export async function exportGradeClassAverageReport(report: GradeClassAverageRep
         textCell(report.options.showTeacherRows ? "" : group.category),
         textCell(row.classLabel),
         textCell(`${row.studentCount} 人`),
-        ...report.subjects.map((subject) => textCell(row.subjectAverages[subject])),
-        textCell(row.totalAverage, { fontWeight: "bold" }),
+        ...report.subjects.map((subject) => textCell(classAverageScoreCellValue(
+          row.subjectAverages[subject],
+          row.subjectScoreModes[subject],
+        ))),
+        textCell(classAverageScoreCellValue(
+          row.totalAverages,
+          report.options.totalScoreMode || "assigned",
+        ), { fontWeight: "bold" }),
       ]);
     });
     if (group.rows.length > 1 && report.options.showGroupDifference) {
@@ -432,8 +441,14 @@ export async function exportGradeClassAverageReport(report: GradeClassAverageRep
         textCell(group.category),
         textCell("分差", { fontWeight: "bold" }),
         textCell(""),
-        ...report.subjects.map((subject) => textCell(group.difference.subjectValues[subject])),
-        textCell(group.difference.totalValue, { fontWeight: "bold" }),
+        ...report.subjects.map((subject) => textCell(classAverageScoreCellValue(
+          group.difference.subjectValues[subject],
+          group.subjectScoreModes[subject],
+        ))),
+        textCell(classAverageScoreCellValue(
+          group.difference.totalValues,
+          report.options.totalScoreMode || "assigned",
+        ), { fontWeight: "bold" }),
       ]);
     }
     if (group.rows.length > 1 && report.options.showGroupAverage) {
@@ -441,8 +456,14 @@ export async function exportGradeClassAverageReport(report: GradeClassAverageRep
         textCell(group.category),
         textCell(`平均（${group.rows.map((row) => row.classLabel).join("、")}）`, { fontWeight: "bold" }),
         textCell(""),
-        ...report.subjects.map((subject) => textCell(group.average.subjectValues[subject], { fontWeight: "bold" })),
-        textCell(group.average.totalValue, { fontWeight: "bold" }),
+        ...report.subjects.map((subject) => textCell(classAverageScoreCellValue(
+          group.average.subjectValues[subject],
+          group.subjectScoreModes[subject],
+        ), { fontWeight: "bold" })),
+        textCell(classAverageScoreCellValue(
+          group.average.totalValues,
+          report.options.totalScoreMode || "assigned",
+        ), { fontWeight: "bold" }),
       ]);
     }
   });
@@ -451,8 +472,14 @@ export async function exportGradeClassAverageReport(report: GradeClassAverageRep
       textCell("全校平均", { fontWeight: "bold" }),
       textCell(""),
       textCell(""),
-      ...report.subjects.map((subject) => textCell(report.overallAverage.subjectValues[subject], { fontWeight: "bold" })),
-      textCell(report.overallAverage.totalValue, { fontWeight: "bold" }),
+      ...report.subjects.map((subject) => textCell(classAverageScoreCellValue(
+        report.overallAverage.subjectValues[subject],
+        report.overallSubjectScoreModes[subject],
+      ), { fontWeight: "bold" })),
+      textCell(classAverageScoreCellValue(
+        report.overallAverage.totalValues,
+        report.options.totalScoreMode || "assigned",
+      ), { fontWeight: "bold" }),
     ]);
   }
 

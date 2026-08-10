@@ -47,6 +47,7 @@ import { summarizeExamGroups, type ExamGroupSummary } from "@/lib/exam-arrangeme
 
 const DEFAULT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 const CORE_SUBJECTS = ["语文", "数学", "英语"];
+const ACADEMIC_TEST_SUBJECTS = ["物理", "化学", "生物", "政治", "历史", "地理"];
 
 type ViewMode = "settings" | "result";
 type PreviewMode = "class" | "desk";
@@ -96,7 +97,7 @@ function subjectSelectionNames(context: ExamArrangementContext): string[] {
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
 }
 
-function inferSelectionSubjects(name: string): string[] {
+function inferSelectedAcademicSubjects(name: string): string[] {
   const aliases: Array<[string, string]> = [
     ["物", "物理"],
     ["化", "化学"],
@@ -105,10 +106,26 @@ function inferSelectionSubjects(name: string): string[] {
     ["史", "历史"],
     ["地", "地理"],
   ];
-  return uniqueSubjects([
-    ...CORE_SUBJECTS,
-    ...aliases.filter(([alias, subject]) => name.includes(alias) || name.includes(subject)).map(([, subject]) => subject),
-  ]);
+  return aliases
+    .filter(([alias, subject]) => name.includes(alias) || name.includes(subject))
+    .map(([, subject]) => subject);
+}
+
+function inferSelectionSubjects(name: string): string[] {
+  return uniqueSubjects([...CORE_SUBJECTS, ...inferSelectedAcademicSubjects(name)]);
+}
+
+function inferAcademicNonSelectionSubjects(name: string): string[] {
+  const selected = new Set(inferSelectedAcademicSubjects(name));
+  return ACADEMIC_TEST_SUBJECTS.filter((subject) => !selected.has(subject));
+}
+
+function subjectsForSetupMode(mode: ExamSubjectSetupMode, selectionName: string | undefined, enabledSubjects: string[]): string[] {
+  if (!selectionName || mode === "all") return [...enabledSubjects];
+  const inferred = mode === "academicNonSelection"
+    ? inferAcademicNonSelectionSubjects(selectionName)
+    : inferSelectionSubjects(selectionName);
+  return inferred.filter((subject) => enabledSubjects.includes(subject));
 }
 
 function sameSubjects(left: string[], right: string[]): boolean {
@@ -250,6 +267,7 @@ function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInp
 
 function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementContext): ExamArrangementInput {
   const subjects = uniqueSubjects(current.subjects);
+  const subjectSetupMode = current.subjectSetupMode || "all";
   const rooms = current.rooms.map((room) => ({
     ...room,
     name: room.number || room.name,
@@ -258,14 +276,19 @@ function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementC
     classroomClassId: room.classroomClassId
       || context.classes.find((classItem) => room.id === `room-${classItem.id}`)?.id,
   }));
-  const selectionSubjects = Object.fromEntries(Object.entries(current.selectionSubjects || {}).map(([name, items]) => [
-    name,
-    uniqueSubjects(items).filter((subject) => subjects.includes(subject)),
-  ]));
+  const selectionSubjects = Object.fromEntries(subjectSelectionNames(context).map((name) => {
+    const existing = current.selectionSubjects?.[name];
+    return [
+      name,
+      existing
+        ? uniqueSubjects(existing).filter((subject) => subjects.includes(subject))
+        : subjectsForSetupMode(subjectSetupMode, name, subjects),
+    ];
+  }));
   const normalized: ExamArrangementInput = {
     ...current,
     mode: current.mode || "combination",
-    subjectSetupMode: current.subjectSetupMode || "all",
+    subjectSetupMode,
     subjects,
     selectionSubjects,
     separateSubjects: uniqueSubjects(current.separateSubjects || []).filter((subject) => subjects.includes(subject)),
@@ -274,8 +297,8 @@ function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementC
     classRules: normalizeClassRules(current.classRules, context, subjects, rooms),
     studentSubjects: context.students.map((student) => {
       const existing = current.studentSubjects.find((item) => item.studentId === student.id);
-      const defaults = current.subjectSetupMode === "selection" && student.subjectSelection
-        ? selectionSubjects[student.subjectSelection] || subjects
+      const defaults = subjectSetupMode !== "all" && student.subjectSelection
+        ? selectionSubjects[student.subjectSelection] || subjectsForSetupMode(subjectSetupMode, student.subjectSelection, subjects)
         : subjects;
       const selected = uniqueSubjects(existing?.subjects || defaults).filter((subject) => subjects.includes(subject));
       return {
@@ -641,17 +664,33 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
   const setSubjectSetupMode = (mode: ExamSubjectSetupMode) => {
     if (!context) return;
-    updateDraft((current) => ({
-      ...current,
-      subjectSetupMode: mode,
-      studentSubjects: context.students.map((student) => {
+    updateDraft((current) => {
+      const selectionSubjects = mode === "all"
+        ? current.selectionSubjects
+        : Object.fromEntries(subjectSelectionNames(context).map((selectionName) => [
+          selectionName,
+          subjectsForSetupMode(mode, selectionName, current.subjects),
+        ]));
+      const studentSubjects = context.students.map((student) => {
         const existing = current.studentSubjects.find((item) => item.studentId === student.id);
-        const subjects = mode === "selection" && student.subjectSelection
-          ? current.selectionSubjects?.[student.subjectSelection] || current.subjects
-          : current.subjects;
+        const subjects = mode === "all"
+          ? current.subjects
+          : student.subjectSelection
+            ? selectionSubjects?.[student.subjectSelection] || current.subjects
+            : current.subjects;
         return { studentId: student.id, subjects: [...subjects], absent: Boolean(existing?.absent) };
-      }),
-    }));
+      });
+      return {
+        ...current,
+        subjectSetupMode: mode,
+        selectionSubjects,
+        classRules: current.classRules.map((rule) => ({
+          ...rule,
+          defaultSubjects: mostCommonClassSubjects(rule.classId, context, studentSubjects, current.subjects),
+        })),
+        studentSubjects,
+      };
+    });
   };
 
   const toggleSubject = (subject: string) => {
@@ -1024,10 +1063,11 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
               <div className="grid gap-5">
                 <Card>
                   <div className="font-medium text-ink-900">第一步：选择考试科目</div>
-                  <div className="mt-1 text-xs text-ink-500">选择全部学科，或按“语数外 + 选科”配置各选科组合。</div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-2" role="radiogroup" aria-label="考试科目配置方式">
+                  <div className="mt-1 text-xs text-ink-500">选择全部学科、高考六门，或学测科目中自己未选修的三门。</div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3" role="radiogroup" aria-label="考试科目配置方式">
                     <ChoiceCard checked={draft.subjectSetupMode === "all"} title="所有学科" description="所有学生默认参加勾选的学科。" onClick={() => setSubjectSetupMode("all")} />
-                    <ChoiceCard checked={draft.subjectSetupMode === "selection"} title="语数外 + 选科" description="根据学生档案中的选科名称分配考试科目。" onClick={() => setSubjectSetupMode("selection")} />
+                    <ChoiceCard checked={draft.subjectSetupMode === "selection"} title="高考六门（语数外 + 选科）" description="语文、数学、英语，加上学生自己的三门选科。" onClick={() => setSubjectSetupMode("selection")} />
+                    <ChoiceCard checked={draft.subjectSetupMode === "academicNonSelection"} title="学测科目中非选修科目" description="物化生史政地中，排除学生自己的三门选科。" onClick={() => setSubjectSetupMode("academicNonSelection")} />
                   </div>
                   <div className="mt-4">
                     <div className="mb-2 text-xs font-medium text-ink-500">勾选本次考试包含的学科</div>
@@ -1035,7 +1075,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       <CheckboxPill key={subject} checked={draft.subjects.includes(subject)} label={subject} onClick={() => toggleSubject(subject)} />
                     ))}</div>
                   </div>
-                  {draft.subjectSetupMode === "selection" && (
+                  {draft.subjectSetupMode !== "all" && (
                     <div className="mt-5 space-y-3 border-t border-ink-100 pt-4">
                       <div>
                         <div className="text-sm font-medium text-ink-800">各选科对应的考试科目确认</div>

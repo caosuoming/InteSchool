@@ -10,6 +10,12 @@ import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { knowledgeService } from "@/services/knowledge";
 import type { Lecture, Question, SchoolClass, Student } from "@/types";
 
+const basketMocks = vi.hoisted(() => ({
+  listBaskets: vi.fn(),
+  addQuestion: vi.fn(),
+  removeQuestion: vi.fn(),
+}));
+
 const teacher = {
   id: "teacher-1",
   schoolId: "school-1",
@@ -52,6 +58,13 @@ vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
     getCoursewareBySource: vi.fn(),
     createFromLecture: vi.fn(),
+  },
+}));
+vi.mock("@/services/basket", () => ({
+  basketService: {
+    listBaskets: basketMocks.listBaskets,
+    addQuestion: basketMocks.addQuestion,
+    removeQuestion: basketMocks.removeQuestion,
   },
 }));
 
@@ -237,6 +250,9 @@ describe("LecturePreviewPage", () => {
     vi.mocked(lectureService.updateLecture).mockResolvedValue(lecture);
     vi.mocked(lessonCoursewareService.getCoursewareBySource).mockResolvedValue(null);
     vi.mocked(lessonCoursewareService.createFromLecture).mockResolvedValue({ id: "lesson-courseware-1" } as any);
+    basketMocks.listBaskets.mockResolvedValue([]);
+    basketMocks.addQuestion.mockResolvedValue(undefined);
+    basketMocks.removeQuestion.mockResolvedValue(undefined);
   });
 
   it("renders a synchronized two-column preview with question metadata", async () => {
@@ -371,6 +387,51 @@ describe("LecturePreviewPage", () => {
         score: "correct",
         source: "manual",
       });
+    });
+  });
+
+  it("controls which per-question sidebar sections are visible", async () => {
+    renderPage();
+    await screen.findByTestId("lecture-question-details-1");
+
+    const propertiesToggle = screen.getByRole("button", { name: "题目属性" });
+    const answerToggle = screen.getByRole("button", { name: "答题情况" });
+    const basketToggle = screen.getByRole("button", { name: "添加资源篮" });
+    expect(propertiesToggle).toHaveAttribute("aria-pressed", "true");
+    expect(answerToggle).toHaveAttribute("aria-pressed", "true");
+    expect(basketToggle).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(answerToggle);
+    expect(screen.queryByLabelText("选择学生")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
+
+    fireEvent.click(propertiesToggle);
+    expect(screen.queryByTestId("lecture-question-properties-1")).not.toBeInTheDocument();
+
+    fireEvent.click(basketToggle);
+    expect(screen.queryByTestId("lecture-question-details-1")).not.toBeInTheDocument();
+  });
+
+  it("adds a lecture question to the default basket from the preview sidebar", async () => {
+    basketMocks.listBaskets.mockResolvedValue([{
+      id: "basket-default",
+      teacherId: teacher.id,
+      name: "默认资源篮",
+      isDefault: true,
+      questionIds: [],
+      materialIds: [],
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    }]);
+
+    renderPage();
+
+    const addButton = await screen.findByRole("button", { name: "加入试题篮" });
+    await waitFor(() => expect(addButton).toBeEnabled());
+    fireEvent.click(addButton);
+
+    await waitFor(() => {
+      expect(basketMocks.addQuestion).toHaveBeenCalledWith("basket-default", question.id);
     });
   });
 

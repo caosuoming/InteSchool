@@ -176,18 +176,62 @@ describe("grade class average report", () => {
         数学: ["数学教师乙", "外聘数学教师"],
         英语: ["英语教师"],
       },
-      subjectAverages: { 数学: 90, 英语: 80 },
-      totalAverage: 170,
+      subjectAverages: {
+        数学: { raw: 90, assigned: 90 },
+        英语: { raw: 80, assigned: 80 },
+      },
+      subjectScoreModes: { 数学: "assigned", 英语: "assigned" },
+      totalAverages: { raw: 170, assigned: 170 },
     });
     expect(group.difference).toEqual({
-      subjectValues: { 数学: 20, 英语: 20 },
-      totalValue: 0,
+      subjectValues: {
+        数学: { raw: 20, assigned: 20 },
+        英语: { raw: 20, assigned: 20 },
+      },
+      totalValues: { raw: 0, assigned: 0 },
     });
     expect(group.average).toEqual({
-      subjectValues: { 数学: 83.33, 英语: 86.67 },
-      totalValue: 170,
+      subjectValues: {
+        数学: { raw: 83.33, assigned: 83.33 },
+        英语: { raw: 86.67, assigned: 86.67 },
+      },
+      totalValues: { raw: 170, assigned: 170 },
     });
     expect(report.overallAverage).toEqual(group.average);
+  });
+
+  it("supports per-class raw/assigned/both subject display and an independent total mode", () => {
+    const scoredExam: GradeExam = {
+      ...exam,
+      records: exam.records.map((record) => record.classId === "class-2"
+        ? {
+            ...record,
+            assignedScores: {
+              ...record.assignedScores,
+              英语: (record.assignedScores.英语 || 0) + 5,
+            },
+          }
+        : record),
+    };
+    const adjusted: GradeStatisticsTemplate = {
+      ...template,
+      classAverageOptions: {
+        subjectScoreModes: {
+          "class-2": { 数学: "raw", 英语: "both" },
+          "class-10": { 数学: "assigned", 英语: "assigned" },
+        },
+        totalScoreMode: "raw",
+      },
+    };
+
+    const report = buildGradeClassAverageReport(scoredExam, adjusted, context);
+    const class2 = report.groups[0].rows.find((row) => row.classId === "class-2")!;
+
+    expect(class2.subjectScoreModes).toEqual({ 数学: "raw", 英语: "both" });
+    expect(class2.subjectAverages.英语).toEqual({ raw: 80, assigned: 85 });
+    expect(report.options.totalScoreMode).toBe("raw");
+    expect(report.groups[0].subjectScoreModes.数学).toBe("both");
+    expect(report.groups[0].subjectScoreModes.英语).toBe("both");
   });
 
   it("keeps every cohort class in the class-average template even without imported scores", () => {
@@ -247,8 +291,11 @@ describe("grade class average report", () => {
       category: "实验班",
       studentCount: 0,
       subjectTeachers: { 数学: [], 英语: ["英语教师丙"] },
-      subjectAverages: { 数学: null, 英语: null },
-      totalAverage: null,
+      subjectAverages: {
+        数学: { raw: null, assigned: null },
+        英语: { raw: null, assigned: null },
+      },
+      totalAverages: { raw: null, assigned: null },
     });
   });
 

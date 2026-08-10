@@ -215,6 +215,7 @@ export function validateAssignmentRules(rules: GradeBandRule[]): void {
 function normalizeClassAverageOptions(
   options: GradeClassAverageOptions,
   classSet: Set<string>,
+  subjectSet: Set<string>,
 ): GradeClassAverageOptions {
   const knownClassIds = [...classSet];
   const requestedOrder = unique(options.classOrder || []).filter((classId) => classSet.has(classId));
@@ -230,6 +231,20 @@ function normalizeClassAverageOptions(
   const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(options.reportDate || "")
     ? options.reportDate
     : undefined;
+  const subjectScoreModes = Object.fromEntries(
+    Object.entries(options.subjectScoreModes || {})
+      .filter(([classId]) => classSet.has(classId))
+      .map(([classId, modes]) => [
+        classId,
+        Object.fromEntries(Object.entries(modes || {})
+          .filter(([subject, mode]) =>
+            subjectSet.has(subject) && (mode === "raw" || mode === "assigned" || mode === "both"),
+          )),
+      ]),
+  );
+  const totalScoreMode = options.totalScoreMode === "raw" || options.totalScoreMode === "assigned"
+    ? options.totalScoreMode
+    : undefined;
 
   return {
     title: options.title?.trim().slice(0, 120) || undefined,
@@ -241,6 +256,8 @@ function normalizeClassAverageOptions(
     hiddenClassIds: unique(options.hiddenClassIds || []).filter((classId) => classSet.has(classId)),
     classCategories: normalizeLabels(options.classCategories, 30),
     classLabels: normalizeLabels(options.classLabels, 30),
+    subjectScoreModes,
+    totalScoreMode,
     showTeacherRows: optionalBoolean(options.showTeacherRows),
     showGroupDifference: optionalBoolean(options.showGroupDifference),
     showGroupAverage: optionalBoolean(options.showGroupAverage),
@@ -339,7 +356,7 @@ export function normalizeGradeSettings(
       throw new Error(`模板“${item.name || index + 1}”至少需要一列`);
     }
     const classAverageOptions = item.kind === "classAverage" && item.classAverageOptions
-      ? normalizeClassAverageOptions(item.classAverageOptions, classSet)
+      ? normalizeClassAverageOptions(item.classAverageOptions, classSet, subjectSet)
       : undefined;
     const isLegacyTotalScoreSegment = item.kind === "totalScoreSegment"
       && (!Number.isFinite(item.segmentMax) || !Number.isFinite(item.segmentMin));
