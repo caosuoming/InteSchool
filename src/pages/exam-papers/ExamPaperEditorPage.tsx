@@ -37,6 +37,10 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
+import {
+  PreviewSidebarControls,
+  type PreviewSidebarVisibility,
+} from "@/components/editor/PreviewSidebarControls";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
 import { ResourceCommentButton } from "@/components/prep/ResourceCommentButton";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
@@ -238,6 +242,9 @@ export default function ExamPaperEditorPage() {
   const [contentBlocks, setContentBlocks] = useState<ExtractedDocumentBlock[]>([]);
   const [layoutMode, setLayoutMode] = useState<"grouped" | "flat">("grouped");
   const [markingAllDone, setMarkingAllDone] = useState(false);
+  const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
+    { properties: true, answerStatus: true, basket: true },
+  );
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
 
@@ -834,6 +841,30 @@ export default function ExamPaperEditorPage() {
   // 编辑模式：修改分值
   const handleUpdateScore = (pqId: string, score: number) => {
     setPaperQuestions((prev) => prev.map((q) => q.id === pqId ? { ...q, score } : q));
+  };
+
+  const handlePreviewUpdateScore = async (pqId: string, score: number) => {
+    if (!paper || !Number.isFinite(score) || score < 0) return;
+    const previousQuestions = paperQuestions;
+    const nextQuestions = paperQuestions.map((question) =>
+      question.id === pqId ? { ...question, score } : question,
+    );
+    if (nextQuestions.every((question, index) => question.score === previousQuestions[index]?.score)) return;
+
+    setPaperQuestions(nextQuestions);
+    try {
+      const updated = await examPaperService.updatePaper(paper.id, {
+        questions: nextQuestions,
+        totalScore: nextQuestions.reduce((sum, question) => sum + question.score, 0),
+      });
+      setPaper(updated);
+      setPaperQuestions(updated.questions);
+      toast.success("题目分值已更新");
+    } catch (error) {
+      setPaperQuestions(previousQuestions);
+      toast.error("更新分值失败", error instanceof Error ? error.message : "请稍后重试");
+      throw error;
+    }
   };
 
   const handleUpdateHeadingScore = (headingId: string, score: number) => {
@@ -1453,17 +1484,23 @@ export default function ExamPaperEditorPage() {
                       <div className="font-serif text-sm font-semibold text-ink-900">题目信息与使用情况</div>
                       <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMarkAllDone}
-                      loading={markingAllDone}
-                      disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}
-                    >
-                      <CheckSquare className="w-3.5 h-3.5" />
-                      全部设为使用
-                    </Button>
+                    {previewSidebarVisibility.answerStatus && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMarkAllDone}
+                        loading={markingAllDone}
+                        disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}
+                      >
+                        <CheckSquare className="w-3.5 h-3.5" />
+                        全部设为使用
+                      </Button>
+                    )}
                   </div>
+                  <PreviewSidebarControls
+                    value={previewSidebarVisibility}
+                    onChange={setPreviewSidebarVisibility}
+                  />
                 </div>
               )}
             />
@@ -1546,6 +1583,9 @@ export default function ExamPaperEditorPage() {
                           students={audienceStudents}
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                          visibility={previewSidebarVisibility}
+                          canEditScore={paper?.teacherId === teacher?.id}
+                          onUpdateScore={handlePreviewUpdateScore}
                         />
                       ) : undefined}
                     />
@@ -1605,6 +1645,9 @@ export default function ExamPaperEditorPage() {
                           students={audienceStudents}
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                          visibility={previewSidebarVisibility}
+                          canEditScore={paper?.teacherId === teacher?.id}
+                          onUpdateScore={handlePreviewUpdateScore}
                         />
                       )}
                     />
@@ -1634,6 +1677,9 @@ export default function ExamPaperEditorPage() {
                         students={audienceStudents}
                         answerRecords={answerRecords}
                         onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                        visibility={previewSidebarVisibility}
+                        canEditScore={paper?.teacherId === teacher?.id}
+                        onUpdateScore={handlePreviewUpdateScore}
                       />
                     )}
                   />
@@ -2828,6 +2874,9 @@ function PreviewQuestionDetails({
   students,
   answerRecords,
   onUpdateStudentAnswer,
+  visibility,
+  canEditScore,
+  onUpdateScore,
 }: {
   pq: ExamPaperQuestion;
   index: number;
@@ -2843,11 +2892,17 @@ function PreviewQuestionDetails({
   students: Student[];
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
+  visibility: PreviewSidebarVisibility;
+  canEditScore: boolean;
+  onUpdateScore: (pqId: string, score: number) => Promise<void>;
 }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
   const [draftKnowledgePointIds, setDraftKnowledgePointIds] = useState<string[]>([]);
   const [savingCatalogs, setSavingCatalogs] = useState(false);
+  const [scoreEditing, setScoreEditing] = useState(false);
+  const [scoreDraft, setScoreDraft] = useState(String(pq.score));
+  const [savingScore, setSavingScore] = useState(false);
   const chapterNames = (question?.chapterIds || [])
     .map((chapterId) => chapterNameMap.get(chapterId))
     .filter(Boolean) as string[];
@@ -2855,6 +2910,10 @@ function PreviewQuestionDetails({
     .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
     .filter(Boolean) as string[];
   const difficulty = question?.difficulty || 3;
+
+  useEffect(() => {
+    if (!scoreEditing) setScoreDraft(String(pq.score));
+  }, [pq.score, scoreEditing]);
 
   const openCatalogEditor = () => {
     if (!question) return;
@@ -2874,74 +2933,160 @@ function PreviewQuestionDetails({
     }
   };
 
+  const saveScore = async () => {
+    const score = Number(scoreDraft);
+    if (!Number.isFinite(score) || score < 0) {
+      setScoreDraft(String(pq.score));
+      setScoreEditing(false);
+      toast.warning("分值必须是大于等于 0 的数字");
+      return;
+    }
+    if (score === pq.score) {
+      setScoreEditing(false);
+      return;
+    }
+    setSavingScore(true);
+    try {
+      await onUpdateScore(pq.id, score);
+      setScoreEditing(false);
+    } catch {
+      setScoreDraft(String(pq.score));
+    } finally {
+      setSavingScore(false);
+    }
+  };
+
   return (
     <>
-      <div className="rounded-lg border border-ink-100 bg-paper p-3 shadow-sm" data-testid={`exam-question-details-${index + 1}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-xs font-bold text-ink-500">第 {index + 1} 题</span>
-          <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
-          <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
-            {difficultyLabel[difficulty]}
-          </Badge>
-          <Badge variant="gold">{pq.score} 分</Badge>
-        </div>
+      {(visibility.properties || visibility.answerStatus || visibility.basket) && (
+        <div className="rounded-lg border border-ink-100 bg-paper p-3 shadow-sm" data-testid={`exam-question-details-${index + 1}`}>
+          {visibility.properties && (
+            <div data-testid={`exam-question-properties-${index + 1}`}>
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <span className="font-mono text-xs font-bold text-ink-500">第 {index + 1} 题</span>
+                <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
+                <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
+                  {difficultyLabel[difficulty]}
+                </Badge>
+                {scoreEditing ? (
+                  <div className="no-print inline-flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={scoreDraft}
+                      onChange={(event) => setScoreDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void saveScore();
+                        if (event.key === "Escape") {
+                          setScoreDraft(String(pq.score));
+                          setScoreEditing(false);
+                        }
+                      }}
+                      aria-label={`第 ${index + 1} 题分值`}
+                      className="h-7 w-16 px-2 py-1 text-xs"
+                      disabled={savingScore}
+                      autoFocus
+                    />
+                    <span className="text-xs text-ink-500">分</span>
+                    <button
+                      type="button"
+                      onClick={() => void saveScore()}
+                      disabled={savingScore}
+                      className="rounded px-1.5 py-1 text-[11px] text-gold-700 hover:bg-gold-50 disabled:opacity-50"
+                    >
+                      {savingScore ? "保存中" : "保存"}
+                    </button>
+                  </div>
+                ) : canEditScore ? (
+                  <button
+                    type="button"
+                    onClick={() => setScoreEditing(true)}
+                    aria-label={`编辑第 ${index + 1} 题分值`}
+                    title="编辑分值"
+                    className="no-print inline-flex items-center gap-1 rounded transition-opacity hover:opacity-80"
+                  >
+                    <Badge variant="gold">{pq.score} 分</Badge>
+                    <Edit3 className="h-3 w-3 text-gold-600" />
+                  </button>
+                ) : (
+                  <Badge variant="gold">{pq.score} 分</Badge>
+                )}
+              </div>
 
-        <QuestionProgressBadge progress={progress} />
+              <div className="mt-2 border-t border-ink-100 pt-2 text-[11px] leading-5 text-ink-500">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="font-medium text-ink-600">章节课与知识点</span>
+                  <button
+                    type="button"
+                    onClick={openCatalogEditor}
+                    disabled={!question}
+                    className="no-print inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
+                    aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
+                    title={question ? "编辑章节课和知识点" : "该题未关联题库，无法编辑"}
+                  >
+                    <Edit3 className="h-3 w-3" />
+                    编辑
+                  </button>
+                </div>
+                <div>
+                  <span className="text-ink-400">章节课：</span>
+                  {chapterNames.length > 0 ? chapterNames.join("、") : "暂无关联章节课"}
+                </div>
+                <div>
+                  <span className="text-ink-400">知识点：</span>
+                  {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
+                </div>
+                {question && question.usageCount > 0 && <div>题库使用 {question.usageCount} 次</div>}
+                {question && question.recommendation >= 4 && <div className="font-medium text-gold-600">高推荐题目</div>}
+              </div>
+            </div>
+          )}
 
-        <StudentAnswerStatusControl
-          className="mt-2 border-t border-ink-100 pt-2"
-          students={students}
-          answerRecords={answerRecords}
-          questionId={completionQuestionId}
-          onChange={onUpdateStudentAnswer}
-        />
-
-        <div className="mt-2 border-t border-ink-100 pt-2 text-[11px] leading-5 text-ink-500">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="font-medium text-ink-600">章节课与知识点</span>
-            <button
-              type="button"
-              onClick={openCatalogEditor}
-              disabled={!question}
-              className="no-print inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
-              aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
-              title={question ? "编辑章节课和知识点" : "该题未关联题库，无法编辑"}
+          {visibility.answerStatus && (
+            <div
+              className={cn("mt-2", visibility.properties && "border-t border-ink-100 pt-2")}
+              data-testid={`exam-question-answer-status-${index + 1}`}
             >
-              <Edit3 className="h-3 w-3" />
-              编辑
-            </button>
-          </div>
-          <div>
-            <span className="text-ink-400">章节课：</span>
-            {chapterNames.length > 0 ? chapterNames.join("、") : "暂无关联章节课"}
-          </div>
-          <div>
-            <span className="text-ink-400">知识点：</span>
-            {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
-          </div>
-          {question && question.usageCount > 0 && <div>题库使用 {question.usageCount} 次</div>}
-          {question && question.recommendation >= 4 && <div className="font-medium text-gold-600">高推荐题目</div>}
-        </div>
+              <QuestionProgressBadge progress={progress} />
+              <StudentAnswerStatusControl
+                className="mt-2"
+                students={students}
+                answerRecords={answerRecords}
+                questionId={completionQuestionId}
+                onChange={onUpdateStudentAnswer}
+              />
+            </div>
+          )}
 
-        <div className="no-print mt-3">
-          {pq.questionId ? (
-            <AddToBasketDropdown
-              resourceType="question"
-              resourceId={pq.questionId}
-              resourceTitle={question?.stem || pq.stem}
-              size="sm"
-              variant="outline"
-              quickLabel="加入试题篮"
-              onAdded={onBasketChanged}
-            />
-          ) : (
-            <Button variant="ghost" size="sm" disabled className="text-[11px]">
-              <ShoppingBasket className="h-3 w-3" />
-              加入试题篮
-            </Button>
+          {visibility.basket && (
+            <div
+              className={cn(
+                "no-print mt-3",
+                (visibility.properties || visibility.answerStatus) && "border-t border-ink-100 pt-3",
+              )}
+              data-testid={`exam-question-basket-${index + 1}`}
+            >
+              {pq.questionId ? (
+                <AddToBasketDropdown
+                  resourceType="question"
+                  resourceId={pq.questionId}
+                  resourceTitle={question?.stem || pq.stem}
+                  size="sm"
+                  variant="outline"
+                  quickLabel="加入试题篮"
+                  onAdded={onBasketChanged}
+                />
+              ) : (
+                <Button variant="ghost" size="sm" disabled className="text-[11px]">
+                  <ShoppingBasket className="h-3 w-3" />
+                  加入试题篮
+                </Button>
+              )}
+            </div>
           )}
         </div>
-      </div>
+      )}
 
       <Modal
         open={catalogOpen}
