@@ -40,6 +40,7 @@ import {
 import { GradeSettingsEditor } from "@/pages/students/GradeSettingsEditor";
 import { GradeImportWizard } from "@/pages/students/GradeImportWizard";
 import { GradeClassAverageTable } from "@/pages/students/GradeClassAverageTable";
+import { GradeTotalScoreSegmentTable } from "@/pages/students/GradeTotalScoreSegmentTable";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { GRADE_SUBJECT_OPTIONS } from "@/lib/grade-spreadsheet";
 
@@ -246,6 +247,10 @@ function GradePreprocessing({
     () => draft?.templates.find((item) => item.kind === "classAverage") || null,
     [draft?.templates],
   );
+  const totalScoreSegmentTemplate = useMemo(
+    () => draft?.templates.find((item) => item.kind === "totalScoreSegment") || null,
+    [draft?.templates],
+  );
 
   const handleImported = (exam: GradeExam) => {
     setImportOpen(false);
@@ -418,7 +423,7 @@ function GradePreprocessing({
           <EmptyState
             icon={<TableProperties className="h-8 w-8" />}
             title="尚未上传该年级成绩"
-            description="导入成绩后，系统会在这里自动生成可调整的班级平均分统计表。"
+            description="导入成绩后，系统会在这里自动生成可调整的班级平均分和总分分数段统计表。"
             action={(
               <Button variant="outline" onClick={() => setImportOpen(true)}>
                 <Upload className="h-4 w-4" />导入成绩
@@ -431,7 +436,7 @@ function GradePreprocessing({
           <Card className="p-4">
             <div className="grid gap-3 md:grid-cols-[minmax(0,26rem)_1fr] md:items-end">
               <Select
-                label="班级平均分数据来源"
+                label="统计数据来源"
                 value={selectedExam?.id || ""}
                 onChange={(event) => setSelectedExamId(event.target.value)}
                 options={exams.map((exam) => ({
@@ -449,6 +454,16 @@ function GradePreprocessing({
               exam={selectedExam}
               settings={draft}
               template={classAverageTemplate}
+              context={context}
+              onChange={setDraft}
+            />
+          )}
+          {selectedExam && totalScoreSegmentTemplate && (
+            <GradeTotalScoreSegmentTable
+              exam={selectedExam}
+              settings={draft}
+              template={totalScoreSegmentTemplate}
+              classAverageTemplate={classAverageTemplate || undefined}
               context={context}
               onChange={setDraft}
             />
