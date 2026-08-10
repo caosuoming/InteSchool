@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import {
   downloadClassArrangements,
   downloadDeskLabels,
+  downloadExamPreviewPdf,
   groupDeskLabels,
   groupDeskLabelsByRoom,
   groupStudentArrangements,
@@ -55,32 +56,35 @@ function getDeskLabelPrintLayout(labelCount: number): {
   columns: number;
   rows: number;
   density: "normal" | "compact" | "dense";
+  rowHeight: number;
 } {
   const count = Math.max(1, labelCount);
-  const printableWidth = 246;
-  const printableHeight = 356;
-  const targetCardAspect = 0.9;
-  let best = { columns: 1, rows: count, score: Number.POSITIVE_INFINITY };
-
-  for (let columns = 1; columns <= Math.min(8, count); columns += 1) {
-    const rows = Math.ceil(count / columns);
-    const cardAspect = (printableWidth / columns) / (printableHeight / rows);
-    const unusedCells = columns * rows - count;
-    const score = Math.abs(Math.log(cardAspect / targetCardAspect)) + (unusedCells / count) * 0.12;
-    if (score < best.score) best = { columns, rows, score };
-  }
+  const columns = count <= 36 ? 3 : 4;
+  const rows = Math.ceil(count / columns);
 
   return {
-    columns: best.columns,
-    rows: best.rows,
-    density: count <= 20 ? "normal" : count <= 36 ? "compact" : "dense",
+    columns,
+    rows,
+    rowHeight: Math.min(48, 340 / rows),
+    density: count <= 18 ? "normal" : count <= 36 ? "compact" : "dense",
   };
 }
 
-function getClassPrintDensity(studentCount: number): "normal" | "compact" | "dense" {
-  if (studentCount > 45) return "dense";
-  if (studentCount > 30) return "compact";
-  return "normal";
+function getClassPrintLayout(studentCount: number): {
+  columns: 3 | 4;
+  rows: number;
+  density: "normal" | "compact" | "dense";
+  rowHeight: number;
+} {
+  const count = Math.max(1, studentCount);
+  const columns = count <= 36 ? 3 : 4;
+  const rows = Math.ceil(count / columns);
+  return {
+    columns,
+    rows,
+    density: rows <= 9 ? "normal" : rows <= 13 ? "compact" : "dense",
+    rowHeight: Math.min(26, 250 / rows),
+  };
 }
 
 function uniqueSubjects(values: string[]): string[] {
@@ -94,6 +98,35 @@ function uniqueSubjects(values: string[]): string[] {
 function subjectSelectionNames(context: ExamArrangementContext): string[] {
   return [...new Set(context.students.map((student) => student.subjectSelection?.trim()).filter((value): value is string => Boolean(value)))]
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+function classSubjectSelectionLabel(classId: string, context: ExamArrangementContext): string {
+  const counts = new Map<string, number>();
+  for (const student of context.students) {
+    if (student.classId !== classId) continue;
+    const selection = student.subjectSelection?.trim();
+    if (!selection) continue;
+    counts.set(selection, (counts.get(selection) || 0) + 1);
+  }
+  const ordered = [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "zh-CN"));
+  if (ordered.length === 0) return "";
+  if (ordered.length === 1) return ordered[0][0];
+  return ordered.length === 2 ? ordered.map(([name]) => name).join("/") : `${ordered[0][0]}等${ordered.length}种`;
+}
+
+function roomChoiceLabel(room: ExamRoomConfig, context: ExamArrangementContext): string {
+  const selection = room.classroomClassId ? classSubjectSelectionLabel(room.classroomClassId, context) : "";
+  const roomName = `${room.number || room.name}${selection ? `（${selection}）` : ""}`;
+  return `${roomName} · ${room.location || "位置待填写"}`;
+}
+
+function roomCapacityTotal(rooms: ExamRoomConfig[], roomIds?: Iterable<string>): number {
+  const selected = roomIds ? new Set(roomIds) : null;
+  return rooms.reduce((total, room) => (
+    !selected || selected.has(room.id)
+      ? total + (Number.isFinite(room.capacity) && room.capacity > 0 ? room.capacity : 0)
+      : total
+  ), 0);
 }
 
 function inferSelectionSubjects(name: string): string[] {
@@ -469,6 +502,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [bulkCapacity, setBulkCapacity] = useState(30);
   const [newPlanOpen, setNewPlanOpen] = useState(false);
   const [newPlanName, setNewPlanName] = useState("");
+  const classPrintRef = useRef<HTMLDivElement>(null);
+  const deskPrintRef = useRef<HTMLDivElement>(null);
 
   const selectedArrangement = arrangements.find((item) => item.id === selectedArrangementId) || null;
   const assignments = useMemo(() => (
@@ -489,6 +524,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const examGroups = useMemo(() => (
     draft && context ? summarizeExamGroups(draft, context) : []
   ), [context, draft]);
+  const totalRoomCapacity = useMemo(() => draft ? roomCapacityTotal(draft.rooms) : 0, [draft]);
   const activeFixedRoomClassId = context?.classes.some((classItem) => classItem.id === fixedRoomClassId)
     ? fixedRoomClassId
     : context?.classes[0]?.id || "";
@@ -938,6 +974,34 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     }
   };
 
+  const downloadSelectedClassPdf = async () => {
+    if (!selectedArrangement || !classPrintRef.current) return;
+    try {
+      const pages = [...classPrintRef.current.querySelectorAll<HTMLElement>(".exam-class-arrangement-page")];
+      await downloadExamPreviewPdf(
+        pages,
+        `${selectedArrangement.name}_${selectedClassIds.size}个班级_考场安排`,
+        "A4",
+      );
+    } catch (error) {
+      toast.error("下载班级安排 PDF 失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const downloadSelectedDeskPdf = async () => {
+    if (!selectedArrangement || !deskPrintRef.current) return;
+    try {
+      const pages = [...deskPrintRef.current.querySelectorAll<HTMLElement>(".exam-desk-label-page")];
+      await downloadExamPreviewPdf(
+        pages,
+        `${selectedArrangement.name}_${selectedRoomIds.size}个考场_桌贴`,
+        "8K",
+      );
+    } catch (error) {
+      toast.error("下载桌贴 PDF 失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
   const pageActions = draft ? (
     <Button variant="outline" onClick={handleNew}><RotateCcw className="h-4 w-4" />新建方案</Button>
   ) : undefined;
@@ -1109,7 +1173,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                                   aria-label={`${student.name}考试设置`}
                                   title={differsFromClass ? "与本班多数学生的考试科目不同" : undefined}
                                   className={cn(
-                                    "grid gap-3 px-5 py-3 xl:grid-cols-[14rem_1fr_11rem_auto] xl:items-center",
+                                    "grid gap-3 px-5 py-3 lg:grid-cols-[14rem_minmax(0,1fr)] lg:items-center",
                                     differsFromClass && "bg-amber-100/70",
                                     selection?.absent && "bg-red-50/80",
                                   )}
@@ -1122,22 +1186,26 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                                     </div>
                                     <div className="text-xs text-ink-400">{activeStudentSettingsClass.name}{student.subjectSelection ? ` · ${student.subjectSelection}` : ""}</div>
                                   </div>
-                                  <div className="flex flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
-                                  <select
-                                    aria-label={`${student.name}特殊要求`}
-                                    value={selection?.seatPreference || ""}
-                                    disabled={selection?.absent}
-                                    onChange={(event) => setStudentSeatPreference(student.id, (event.target.value || undefined) as ExamStudentSeatPreference | undefined)}
-                                    className="rounded-md border border-ink-200 bg-paper px-2 py-2 text-xs text-ink-700 disabled:opacity-50"
-                                  >
-                                    <option value="">无特殊要求</option>
-                                    <option value="first">排场次首</option>
-                                    <option value="last">排场次尾</option>
-                                  </select>
-                                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-red-700">
-                                    <input aria-label={`${student.name}弃考`} type="checkbox" checked={Boolean(selection?.absent)} onChange={() => toggleStudentAbsent(student.id)} />
-                                    弃考
-                                  </label>
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{draft.subjects.map((subject) => <CheckboxPill key={subject} checked={selection?.subjects.includes(subject) || false} label={subject} disabled={selection?.absent} onClick={() => toggleStudentSubject(student.id, subject)} />)}</div>
+                                    <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-3">
+                                      <select
+                                        aria-label={`${student.name}特殊要求`}
+                                        value={selection?.seatPreference || ""}
+                                        disabled={selection?.absent}
+                                        onChange={(event) => setStudentSeatPreference(student.id, (event.target.value || undefined) as ExamStudentSeatPreference | undefined)}
+                                        className="w-36 rounded-md border border-ink-200 bg-paper px-2 py-2 text-xs text-ink-700 disabled:opacity-50"
+                                      >
+                                        <option value="">无特殊要求</option>
+                                        <option value="first">排场次首</option>
+                                        <option value="last">排场次尾</option>
+                                      </select>
+                                      <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-red-700">
+                                        <input aria-label={`${student.name}弃考`} type="checkbox" checked={Boolean(selection?.absent)} onChange={() => toggleStudentAbsent(student.id)} />
+                                        弃考
+                                      </label>
+                                    </div>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1152,7 +1220,13 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
                 <Card className="p-0 overflow-hidden">
                   <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div><div className="font-medium text-ink-900">第三步：设置可用考场</div><div className="mt-0.5 text-xs text-ink-500">班级教室默认生成“1考场”“2考场”等，可继续增加教室外考场。</div></div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium text-ink-900">第三步：设置可用考场</div>
+                        <Badge><span aria-live="polite">最多可安排 {totalRoomCapacity} 个位置</span></Badge>
+                      </div>
+                      <div className="mt-0.5 text-xs text-ink-500">班级教室默认生成“1考场”“2考场”等，可继续增加教室外考场。</div>
+                    </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="w-28">
                         <Input aria-label="批量考场容量" type="number" min={1} max={1000} value={bulkCapacity} onChange={(event) => setBulkCapacity(Number(event.target.value))} />
@@ -1204,6 +1278,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                               {group.sessionKey === "combined"
                                 ? `合并场次 · ${group.studentCount} 人 · ${group.classIds.length} 个班级`
                                 : `单独场次 · ${group.studentCount} 人 · ${group.classIds.length} 个班级`}
+                              <span aria-live="polite"> · 所选考场最多可安排 {roomCapacityTotal(draft.rooms, draft.groupRoomIds?.[group.key] || [])} 个位置</span>
                             </div>
                           </div>
                           <Button variant="ghost" size="sm" onClick={() => resetGroupRooms(group)}><RotateCcw className="h-3.5 w-3.5" />恢复自动分配</Button>
@@ -1213,7 +1288,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                             <CheckboxPill
                               key={room.id}
                               checked={(draft.groupRoomIds?.[group.key] || []).includes(room.id)}
-                              label={`${room.number || room.name} · ${room.location || "位置待填写"}`}
+                              label={roomChoiceLabel(room, context)}
                               onClick={() => toggleGroupRoom(group.key, room.id)}
                             />
                           ))}
@@ -1303,8 +1378,11 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         <Button variant="outline" disabled={selectedClassIds.size === 0} onClick={() => window.print()}>
                           <Printer className="h-4 w-4" />打印已选班级
                         </Button>
-                        <Button variant="gold" disabled={selectedClassIds.size === 0} onClick={() => void downloadSelectedClasses()}>
+                        <Button variant="outline" disabled={selectedClassIds.size === 0} onClick={() => void downloadSelectedClasses()}>
                           <Download className="h-4 w-4" />下载已选班级
+                        </Button>
+                        <Button variant="gold" disabled={selectedClassIds.size === 0} onClick={() => void downloadSelectedClassPdf()}>
+                          <Download className="h-4 w-4" />下载班级 PDF
                         </Button>
                       </>
                     ) : (
@@ -1312,8 +1390,11 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         <Button variant="outline" disabled={selectedDeskLabels.length === 0} onClick={() => window.print()}>
                           <Printer className="h-4 w-4" />打印已选桌贴
                         </Button>
-                        <Button variant="gold" disabled={selectedDeskLabels.length === 0} onClick={() => void downloadSelectedLabels()}>
+                        <Button variant="outline" disabled={selectedDeskLabels.length === 0} onClick={() => void downloadSelectedLabels()}>
                           <Download className="h-4 w-4" />下载已选桌贴
+                        </Button>
+                        <Button variant="gold" disabled={selectedDeskLabels.length === 0} onClick={() => void downloadSelectedDeskPdf()}>
+                          <Download className="h-4 w-4" />下载桌贴 PDF
                         </Button>
                       </>
                     )}
@@ -1500,58 +1581,57 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           )}
 
           {previewMode === "class" && selectedClassAssignmentGroups.length > 0 && selectedArrangement && (
-            <div className="print-only exam-class-arrangement-sheet" aria-hidden="true">
-              {selectedClassAssignmentGroups.map(({ classItem, students }) => (
-                <section
-                  key={classItem.id}
-                  className="exam-class-arrangement-page"
-                  data-density={getClassPrintDensity(students.length)}
-                  data-testid="class-arrangement-print-page"
-                >
-                  <header className="exam-class-arrangement-header">
-                    <div>
-                      <h1>{selectedArrangement.name}</h1>
-                      <p>{classItem.name} · {students.length} 名学生</p>
-                    </div>
-                    <div>{selectedArrangement.examDate || "考试日期待定"}</div>
-                  </header>
-                  <table className="exam-class-arrangement-table">
-                    <thead>
-                      <tr>
-                        <th>姓名</th>
-                        <th>学号</th>
-                        <th>考试安排（科目 / 考场 / 位置 / 座位 / 准考证号）</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+            <div ref={classPrintRef} className="print-only exam-class-arrangement-sheet" aria-hidden="true">
+              {selectedClassAssignmentGroups.map(({ classItem, students }) => {
+                const layout = getClassPrintLayout(students.length);
+                return (
+                  <section
+                    key={classItem.id}
+                    className="exam-class-arrangement-page"
+                    data-density={layout.density}
+                    data-columns={layout.columns}
+                    data-testid="class-arrangement-print-page"
+                  >
+                    <header className="exam-class-arrangement-header">
+                      <div>
+                        <h1>{selectedArrangement.name}</h1>
+                        <p>{classItem.name} · {students.length} 名学生</p>
+                      </div>
+                      <div>{selectedArrangement.examDate || "考试日期待定"}</div>
+                    </header>
+                    <div
+                      className="exam-class-arrangement-grid"
+                      style={{
+                        gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
+                        gridAutoRows: `${layout.rowHeight}mm`,
+                      }}
+                    >
                       {students.map((student) => (
-                        <tr key={student.key}>
-                          <td>{student.studentName}</td>
-                          <td className="exam-class-arrangement-student-no">{student.studentNo}</td>
-                          <td>
-                            <div className="exam-class-arrangement-items">
-                              {student.assignments.map((item) => (
-                                <div key={item.id} className="exam-class-arrangement-item">
-                                  <strong>{item.subjectLabel.split(" / ").join("、")}</strong>
-                                  <span>{item.roomNumber || item.roomName}</span>
-                                  <span>{item.roomLocation || item.roomName}</span>
-                                  <span>{item.seatNo} 号</span>
-                                  <span className="exam-class-arrangement-admission">{item.admissionNo}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
+                        <article key={student.key} className="exam-class-arrangement-student">
+                          <div className="exam-class-arrangement-student-header">
+                            <strong>{student.studentName}</strong>
+                            <span>{student.studentNo}</span>
+                          </div>
+                          <div className="exam-class-arrangement-items">
+                            {student.assignments.map((item) => (
+                              <div key={item.id} className="exam-class-arrangement-item" title={item.admissionNo}>
+                                <strong>{item.subjectLabel.split(" / ").join("、")}</strong>
+                                <span>{item.roomNumber || item.roomName} · {item.seatNo}号</span>
+                                <span>{item.roomLocation || item.roomName}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </article>
                       ))}
-                    </tbody>
-                  </table>
-                </section>
-              ))}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           )}
 
           {previewMode === "desk" && selectedDeskRoomGroups.length > 0 && selectedArrangement && (
-            <div className="print-only exam-desk-label-sheet" aria-hidden="true">
+            <div ref={deskPrintRef} className="print-only exam-desk-label-sheet" aria-hidden="true">
               {selectedDeskRoomGroups.map((roomGroup) => {
                 const layout = getDeskLabelPrintLayout(roomGroup.labels.length);
                 return (
@@ -1559,10 +1639,11 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     key={roomGroup.roomId}
                     className="exam-desk-label-page"
                     data-density={layout.density}
+                    data-columns={layout.columns}
                     data-testid="desk-label-print-page"
                     style={{
                       gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
-                      gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))`,
+                      gridAutoRows: `${layout.rowHeight}mm`,
                     }}
                   >
                     {roomGroup.labels.map((group) => (

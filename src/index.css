@@ -321,12 +321,18 @@
   .exam-desk-label-sheet {
     display: block !important;
   }
+}
+
   .exam-class-arrangement-page {
-    --class-print-font-size: 6.8pt;
-    --class-print-cell-padding: 0.65mm;
+    --class-print-font-size: 6.2pt;
+    --class-print-gap: 1.2mm;
     page: exam-class-arrangement;
-    width: 100%;
+    width: 210mm;
+    height: 297mm;
+    box-sizing: border-box;
+    padding: 7mm;
     break-after: page;
+    overflow: hidden;
     color: #111;
     background: #fff;
   }
@@ -355,53 +361,68 @@
     margin: 0.7mm 0 0;
     font-size: 7pt;
   }
-  .exam-class-arrangement-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    font-size: var(--class-print-font-size);
-    line-height: 1.08;
+  .exam-class-arrangement-grid {
+    display: grid;
+    align-content: start;
+    gap: var(--class-print-gap);
   }
-  .exam-class-arrangement-table th,
-  .exam-class-arrangement-table td {
+  .exam-class-arrangement-student {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     border: 0.2mm solid #777;
-    padding: var(--class-print-cell-padding);
-    vertical-align: top;
+    border-radius: 0.8mm;
+    padding: 1mm;
+    background: #fff;
   }
-  .exam-class-arrangement-table th {
-    font-size: 6.2pt;
-    font-weight: 700;
-    text-align: left;
+  .exam-class-arrangement-student-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1mm;
+    border-bottom: 0.15mm solid #aaa;
+    padding-bottom: 0.45mm;
+    font-size: calc(var(--class-print-font-size) + 0.8pt);
+    line-height: 1.05;
   }
-  .exam-class-arrangement-table th:nth-child(1) { width: 17mm; }
-  .exam-class-arrangement-table th:nth-child(2) { width: 24mm; }
-  .exam-class-arrangement-student-no,
-  .exam-class-arrangement-admission {
+  .exam-class-arrangement-student-header strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .exam-class-arrangement-student-header span {
+    flex: 0 0 auto;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--class-print-font-size);
   }
   .exam-class-arrangement-items {
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 0.35mm;
+    gap: 0.22mm;
+    padding-top: 0.5mm;
   }
   .exam-class-arrangement-item {
     display: grid;
     min-width: 0;
-    grid-template-columns: minmax(0, 1.45fr) minmax(15mm, 0.7fr) minmax(20mm, 0.9fr) 8mm 30mm;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.85fr) minmax(0, 1fr);
     align-items: baseline;
-    gap: 0.8mm;
+    gap: 0.5mm;
+    font-size: var(--class-print-font-size);
+    line-height: 1.04;
   }
   .exam-class-arrangement-item > * {
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .exam-class-arrangement-item strong {
     font-weight: 700;
   }
   .exam-class-arrangement-page[data-density="compact"] {
-    --class-print-font-size: 5.7pt;
-    --class-print-cell-padding: 0.38mm;
+    --class-print-font-size: 5.3pt;
+    --class-print-gap: 0.9mm;
   }
   .exam-class-arrangement-page[data-density="compact"] .exam-class-arrangement-header {
     margin-bottom: 1.4mm;
@@ -410,15 +431,12 @@
   .exam-class-arrangement-page[data-density="compact"] .exam-class-arrangement-header h1 {
     font-size: 10pt;
   }
-  .exam-class-arrangement-page[data-density="compact"] .exam-class-arrangement-table th {
-    font-size: 5.5pt;
-  }
   .exam-class-arrangement-page[data-density="compact"] .exam-class-arrangement-items {
-    gap: 0.2mm;
+    gap: 0.12mm;
   }
   .exam-class-arrangement-page[data-density="dense"] {
-    --class-print-font-size: 4.9pt;
-    --class-print-cell-padding: 0.22mm;
+    --class-print-font-size: 4.4pt;
+    --class-print-gap: 0.65mm;
   }
   .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-header {
     margin-bottom: 1mm;
@@ -428,8 +446,7 @@
   .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-header h1 {
     font-size: 9pt;
   }
-  .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-header p,
-  .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-table th {
+  .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-header p {
     font-size: 5pt;
   }
   .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-items {
@@ -449,10 +466,16 @@
     --desk-subline-spacing: 0.5mm;
     page: exam-desk-label;
     display: grid;
-    width: 100%;
-    height: 356mm;
+    width: 260mm;
+    height: 370mm;
+    box-sizing: border-box;
+    align-content: start;
+    padding: 7mm;
     gap: var(--desk-label-gap);
     break-after: page;
+    overflow: hidden;
+    color: #111;
+    background: #fff;
   }
   .exam-desk-label-page:last-child {
     break-after: auto;
@@ -584,16 +607,15 @@
     line-height: 1.15;
     letter-spacing: 0.02em;
   }
-}
 
 @page exam-class-arrangement {
   size: A4 portrait;
-  margin: 7mm;
+  margin: 0;
 }
 
 @page exam-desk-label {
   size: 260mm 370mm;
-  margin: 7mm;
+  margin: 0;
 }
 
 @keyframes lessonElementFade {
