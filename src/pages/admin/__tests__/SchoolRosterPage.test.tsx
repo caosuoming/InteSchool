@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SchoolRosterPage from "@/pages/admin/SchoolRosterPage";
+import { readStudentRosterFile } from "@/lib/student-roster-spreadsheet";
 import { authService } from "@/services/auth";
 import { classService } from "@/services/class";
 import { settingsService } from "@/services/settings";
@@ -15,8 +16,11 @@ vi.mock("@/services/class", () => ({
     listStudentsBySchool: vi.fn(),
     listSchoolRosterRecycleBin: vi.fn(),
     createSchoolGrade: vi.fn(),
+    updateSchoolGrade: vi.fn(),
     bulkCreateSchoolClasses: vi.fn(),
     advanceSchoolGrade: vi.fn(),
+    decreaseSchoolGrade: vi.fn(),
+    graduateSchoolGrade: vi.fn(),
     bulkImportStudents: vi.fn(),
     deleteClass: vi.fn(),
     deleteStudent: vi.fn(),
@@ -38,6 +42,11 @@ vi.mock("@/services/settings", () => ({
   settingsService: {
     listClassTypes: vi.fn(),
   },
+}));
+
+vi.mock("@/lib/student-roster-spreadsheet", () => ({
+  downloadStudentRosterTemplate: vi.fn(),
+  readStudentRosterFile: vi.fn(),
 }));
 
 vi.mock("@/stores/ui", () => ({
@@ -168,9 +177,32 @@ describe("SchoolRosterPage", () => {
     vi.mocked(classService.listSchoolRosterRecycleBin).mockResolvedValue({ classes: [], students: [] });
     vi.mocked(settingsService.listClassTypes).mockResolvedValue([classType]);
     vi.mocked(authService.listTeachers).mockResolvedValue(managedTeachers);
+    vi.mocked(classService.updateSchoolGrade).mockResolvedValue(grade);
+    vi.mocked(classService.advanceSchoolGrade).mockResolvedValue({
+      grade: { ...grade, grade: "高三" },
+      updatedClasses: classes.length,
+      updatedStudents: 1,
+    });
+    vi.mocked(classService.decreaseSchoolGrade).mockResolvedValue({
+      grade: { ...grade, grade: "高一" },
+      updatedClasses: classes.length,
+      updatedStudents: 1,
+    });
+    vi.mocked(classService.graduateSchoolGrade).mockResolvedValue({
+      grade: { ...grade, status: "graduated" },
+      updatedClasses: classes.length,
+      graduatedStudents: 1,
+    });
     vi.mocked(classService.updateSchoolClass).mockResolvedValue(classes[0]);
     vi.mocked(authService.updateTeacherTeachingProfile).mockResolvedValue(managedTeachers[0]);
     vi.mocked(classService.updateStudent).mockResolvedValue(student);
+    vi.mocked(classService.bulkImportStudents).mockResolvedValue({
+      createdClasses: 0,
+      createdStudents: 1,
+      updatedStudents: 0,
+      deletedStudents: 0,
+      skippedStudents: 0,
+    });
   });
 
   it("renders classes in a compact ten-column selector", async () => {
@@ -214,6 +246,28 @@ describe("SchoolRosterPage", () => {
         homeroomClassIds: [classes[0].id],
       });
     });
+  });
+
+  it("edits, raises, lowers, and graduates a grade", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑年级" }));
+    fireEvent.change(screen.getByLabelText("年级名称"), { target: { value: "高二创新年级" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => {
+      expect(classService.updateSchoolGrade).toHaveBeenCalledWith(grade.id, { name: "高二创新年级" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "降学年" }));
+    await waitFor(() => expect(classService.decreaseSchoolGrade).toHaveBeenCalledWith(grade.id));
+
+    fireEvent.click(screen.getByRole("button", { name: "升学年" }));
+    await waitFor(() => expect(classService.advanceSchoolGrade).toHaveBeenCalledWith(grade.id));
+
+    fireEvent.click(screen.getByRole("button", { name: "毕业" }));
+    await waitFor(() => expect(classService.graduateSchoolGrade).toHaveBeenCalledWith(grade.id));
+    expect(confirm).toHaveBeenCalledTimes(3);
   });
 
   it("emphasizes subject selections and student types that differ from the class majority", async () => {
@@ -260,6 +314,65 @@ describe("SchoolRosterPage", () => {
         grade: "高三",
         gender: "female",
       });
+    });
+  });
+
+  it("asks whether to keep old students missing from a repeated roster import", async () => {
+    const importedRows = [
+      { className: classes[1].name, name: "李同学", studentNo: "20260002" },
+    ];
+    vi.mocked(readStudentRosterFile).mockResolvedValue(importedRows);
+    const { container } = renderPage();
+    await screen.findByRole("button", { name: "导入学生" });
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["roster"], "students.xlsx")] },
+    });
+
+    expect(await screen.findByText("发现旧名单中未匹配的学生")).toBeInTheDocument();
+    expect(screen.getAllByText("张同学")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "保留未匹配学生" }));
+
+    await waitFor(() => {
+      expect(classService.bulkImportStudents).toHaveBeenCalledWith(
+        grade.id,
+        "teacher-1",
+        importedRows,
+        { missingStudents: "keep" },
+      );
+    });
+  });
+
+  it("can delete old students missing from a repeated roster import", async () => {
+    const importedRows = [
+      { className: classes[1].name, name: "李同学", studentNo: "20260002" },
+    ];
+    vi.mocked(readStudentRosterFile).mockResolvedValue(importedRows);
+    vi.mocked(classService.bulkImportStudents).mockResolvedValue({
+      createdClasses: 0,
+      createdStudents: 1,
+      updatedStudents: 0,
+      deletedStudents: 1,
+      skippedStudents: 0,
+    });
+    const { container } = renderPage();
+    await screen.findByRole("button", { name: "导入学生" });
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["roster"], "students.xlsx")] },
+    });
+    await screen.findByText("发现旧名单中未匹配的学生");
+    fireEvent.click(screen.getByRole("button", { name: "删除未匹配学生" }));
+
+    await waitFor(() => {
+      expect(classService.bulkImportStudents).toHaveBeenCalledWith(
+        grade.id,
+        "teacher-1",
+        importedRows,
+        { missingStudents: "delete" },
+      );
     });
   });
 

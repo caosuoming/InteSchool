@@ -56,52 +56,69 @@ type PreviewMode = "class" | "desk";
 function getDeskLabelPrintLayout(labelCount: number, maxAssignments: number): {
   columns: number;
   rows: number;
-  density: "normal" | "compact" | "dense";
+  density: "normal" | "compact";
   rowHeight: number;
+  pageCapacity: number;
 } {
   const count = Math.max(1, labelCount);
-  const columns = count <= 36 ? 3 : 4;
-  const rows = Math.ceil(count / columns);
-  const density = count <= 18 ? "normal" : count <= 36 ? "compact" : "dense";
+  const columns = 5;
   const assignmentCount = Math.max(1, maxAssignments);
+  const density = assignmentCount <= 2 ? "normal" : "compact";
   const contentHeight = density === "normal"
-    ? 16 + assignmentCount * 10.5
-    : density === "compact"
-      ? 13 + assignmentCount * 8
-      : 11 + assignmentCount * 6.5;
-  const pageFitHeight = (340 - Math.max(0, rows - 1) * (density === "normal" ? 1.5 : density === "compact" ? 1 : 0.7)) / rows;
+    ? 23 + assignmentCount * 9.5
+    : 20 + assignmentCount * 8.2;
+  const gap = density === "normal" ? 1.4 : 1;
+  const availableHeight = 356;
+  const maxRows = Math.max(1, Math.floor((availableHeight + gap) / (contentHeight + gap)));
+  const pageCapacity = columns * maxRows;
+  const rows = Math.min(maxRows, Math.ceil(count / columns));
+  const pageFitHeight = (availableHeight - Math.max(0, rows - 1) * gap) / rows;
 
   return {
     columns,
     rows,
     rowHeight: Math.min(contentHeight, pageFitHeight),
     density,
+    pageCapacity,
   };
 }
 
 function getClassPrintLayout(studentCount: number, maxAssignments: number): {
-  columns: 3 | 4;
+  columns: 3;
   rows: number;
-  density: "normal" | "compact" | "dense";
+  density: "normal" | "compact";
   rowHeight: number;
+  pageCapacity: number;
 } {
   const count = Math.max(1, studentCount);
-  const columns = count <= 36 ? 3 : 4;
-  const rows = Math.ceil(count / columns);
-  const density = rows <= 9 ? "normal" : rows <= 13 ? "compact" : "dense";
+  const columns = 3;
   const assignmentCount = Math.max(1, maxAssignments);
+  const density = assignmentCount <= 4 ? "normal" : "compact";
   const contentHeight = density === "normal"
-    ? 5.8 + assignmentCount * 2.55
-    : density === "compact"
-      ? 5.3 + assignmentCount * 2.2
-      : 4.8 + assignmentCount * 1.85;
-  const pageFitHeight = (250 - Math.max(0, rows - 1) * (density === "normal" ? 1.2 : density === "compact" ? 0.9 : 0.65)) / rows;
+    ? 8 + assignmentCount * 3.25
+    : 7.2 + assignmentCount * 2.8;
+  const gap = density === "normal" ? 1.8 : 1.4;
+  const availableHeight = 277;
+  const maxRows = Math.max(1, Math.min(10, Math.floor((availableHeight + gap) / (contentHeight + gap))));
+  const pageCapacity = columns * maxRows;
+  const rows = Math.min(maxRows, Math.ceil(count / columns));
+  const pageFitHeight = (availableHeight - Math.max(0, rows - 1) * gap) / rows;
   return {
     columns,
     rows,
     density,
     rowHeight: Math.min(contentHeight, pageFitHeight),
+    pageCapacity,
   };
+}
+
+function chunkForPrint<T>(items: T[], pageCapacity: number): T[][] {
+  const capacity = Math.max(1, pageCapacity);
+  const pages: T[][] = [];
+  for (let index = 0; index < items.length; index += capacity) {
+    pages.push(items.slice(index, index + capacity));
+  }
+  return pages;
 }
 
 function uniqueSubjects(values: string[]): string[] {
@@ -1279,6 +1296,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="font-medium text-ink-900">第三步：设置可用考场</div>
+                        <Badge><span aria-live="polite">本届学生 {context.students.length} 人</span></Badge>
                         <Badge><span aria-live="polite">最多可安排 {totalRoomCapacity} 个位置</span></Badge>
                       </div>
                       <div className="mt-0.5 text-xs text-ink-500">班级教室默认生成“1考场”“2考场”等，可继续增加教室外考场。</div>
@@ -1638,25 +1656,34 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
           {previewMode === "class" && selectedClassAssignmentGroups.length > 0 && selectedArrangement && (
             <div ref={classPrintRef} className="print-only exam-class-arrangement-sheet" aria-hidden="true">
-              {selectedClassAssignmentGroups.map(({ classItem, students }) => {
-                const layout = getClassPrintLayout(
+              {selectedClassAssignmentGroups.flatMap(({ classItem, students }) => {
+                const maxAssignments = Math.max(...students.map((student) => student.assignments.length), 1);
+                const baseLayout = getClassPrintLayout(
                   students.length,
-                  Math.max(...students.map((student) => student.assignments.length), 1),
+                  maxAssignments,
                 );
-                return (
+                const pages = chunkForPrint(students, baseLayout.pageCapacity);
+                return pages.map((pageStudents, pageIndex) => {
+                  const layout = getClassPrintLayout(pageStudents.length, maxAssignments);
+                  return (
                   <section
-                    key={classItem.id}
+                    key={`${classItem.id}-${pageIndex}`}
                     className="exam-class-arrangement-page"
                     data-density={layout.density}
                     data-columns={layout.columns}
+                    data-class-id={classItem.id}
+                    data-page-index={pageIndex + 1}
                     data-testid="class-arrangement-print-page"
                   >
                     <header className="exam-class-arrangement-header">
-                      <div>
-                        <h1>{selectedArrangement.name}</h1>
-                        <p>{classItem.name} · {students.length} 名学生</p>
+                      <h1>{selectedArrangement.name}</h1>
+                      <div className="exam-class-arrangement-header-meta">
+                        <strong>
+                          {classItem.name} · {students.length} 名学生
+                          {pages.length > 1 && ` · 第 ${pageIndex + 1}/${pages.length} 页`}
+                        </strong>
+                        <span>{selectedArrangement.examDate || "考试日期待定"}</span>
                       </div>
-                      <div>{selectedArrangement.examDate || "考试日期待定"}</div>
                     </header>
                     <div
                       className="exam-class-arrangement-grid"
@@ -1665,7 +1692,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         gridAutoRows: `${layout.rowHeight}mm`,
                       }}
                     >
-                      {students.map((student) => (
+                      {pageStudents.map((student) => (
                         <article key={student.key} className="exam-class-arrangement-student">
                           <div className="exam-class-arrangement-student-header">
                             <strong>{student.studentName}</strong>
@@ -1684,31 +1711,34 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       ))}
                     </div>
                   </section>
-                );
+                  );
+                });
               })}
             </div>
           )}
 
-          {previewMode === "desk" && selectedDeskRoomGroups.length > 0 && selectedArrangement && (
+          {previewMode === "desk" && selectedDeskLabels.length > 0 && selectedArrangement && (
             <div ref={deskPrintRef} className="print-only exam-desk-label-sheet" aria-hidden="true">
-              {selectedDeskRoomGroups.map((roomGroup) => {
-                const layout = getDeskLabelPrintLayout(
-                  roomGroup.labels.length,
-                  Math.max(...roomGroup.labels.map((label) => label.assignments.length), 1),
-                );
-                return (
+              {(() => {
+                const maxAssignments = Math.max(...selectedDeskLabels.map((label) => label.assignments.length), 1);
+                const baseLayout = getDeskLabelPrintLayout(selectedDeskLabels.length, maxAssignments);
+                const pages = chunkForPrint(selectedDeskLabels, baseLayout.pageCapacity);
+                return pages.map((pageLabels, pageIndex) => {
+                  const layout = getDeskLabelPrintLayout(pageLabels.length, maxAssignments);
+                  return (
                   <div
-                    key={roomGroup.roomId}
+                    key={`desk-label-page-${pageIndex}`}
                     className="exam-desk-label-page"
                     data-density={layout.density}
                     data-columns={layout.columns}
+                    data-page-index={pageIndex + 1}
                     data-testid="desk-label-print-page"
                     style={{
                       gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
                       gridAutoRows: `${layout.rowHeight}mm`,
                     }}
                   >
-                    {roomGroup.labels.map((group) => (
+                    {pageLabels.map((group) => (
                     <section key={group.key} className="exam-desk-label">
                       <div className="exam-desk-label-title">{selectedArrangement.name}</div>
                       <div className="exam-desk-label-meta"><span>{selectedArrangement.examDate || "考试日期待定"}</span><span>{group.roomLocation}</span></div>
@@ -1731,8 +1761,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     </section>
                     ))}
                   </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           )}
         </>

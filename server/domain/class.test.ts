@@ -210,7 +210,13 @@ describe("class lifecycle service", () => {
         { className: "高二(4)班", name: "新学生乙", studentNo: "102", isExternal: true },
       ]);
 
-      expect(result).toEqual({ createdClasses: 2, createdStudents: 2, skippedStudents: 1 });
+      expect(result).toEqual({
+        createdClasses: 2,
+        createdStudents: 2,
+        updatedStudents: 0,
+        deletedStudents: 0,
+        skippedStudents: 1,
+      });
       const classes = state.schoolClasses as Array<Record<string, unknown>>;
       expect(classes.filter((item) => item.gradeId === "grade-2027")).toEqual(expect.arrayContaining([
         expect.objectContaining({ name: "高二(3)班", studentCount: 1 }),
@@ -232,7 +238,13 @@ describe("class lifecycle service", () => {
         { className: "1", name: "无学号学生乙", subjectSelection: "史政地" },
       ]);
 
-      expect(result).toEqual({ createdClasses: 1, createdStudents: 2, skippedStudents: 0 });
+      expect(result).toEqual({
+        createdClasses: 1,
+        createdStudents: 2,
+        updatedStudents: 0,
+        deletedStudents: 0,
+        skippedStudents: 0,
+      });
       expect(state.schoolClasses).toEqual(expect.arrayContaining([
         expect.objectContaining({ name: "1班", studentCount: 2 }),
       ]));
@@ -240,6 +252,139 @@ describe("class lifecycle service", () => {
         expect.objectContaining({ name: "无学号学生甲", studentNo: "", subjectSelection: "物化生" }),
         expect.objectContaining({ name: "无学号学生乙", studentNo: "", subjectSelection: "史政地" }),
       ]));
+    });
+  });
+
+  it("reconciles a repeated grade roster by name and keeps unmatched old students when requested", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push(
+      {
+        id: "class-2027-a",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(1)班",
+        grade: "高二",
+        studentCount: 2,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+      {
+        id: "class-2027-b",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(2)班",
+        grade: "高二",
+        studentCount: 0,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+    );
+    (state.students as Array<Record<string, unknown>>).push(
+      {
+        id: "student-match",
+        name: "张三",
+        studentNo: "OLD-001",
+        classId: "class-2027-a",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+      {
+        id: "student-missing",
+        name: "旧名单学生",
+        studentNo: "OLD-002",
+        classId: "class-2027-a",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+    );
+
+    await runWithState(state, async () => {
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(2)班", name: "张三", studentNo: "NEW-001", subjectSelection: "物化地" },
+        { className: "高二(2)班", name: "新增学生", studentNo: "NEW-002" },
+      ], { missingStudents: "keep" });
+
+      expect(result).toEqual({
+        createdClasses: 0,
+        createdStudents: 1,
+        updatedStudents: 1,
+        deletedStudents: 0,
+        skippedStudents: 0,
+      });
+      expect(getStudent(state, "student-match")).toMatchObject({
+        id: "student-match",
+        name: "张三",
+        studentNo: "NEW-001",
+        classId: "class-2027-b",
+        subjectSelection: "物化地",
+        status: "active",
+        classHistory: [expect.objectContaining({
+          fromClassId: "class-2027-a",
+          toClassId: "class-2027-b",
+          studentNoChanged: true,
+        })],
+      });
+      expect(getStudent(state, "student-missing")).toMatchObject({ status: "active" });
+      expect(getClass(state, "class-2027-a")).toMatchObject({ studentCount: 1 });
+      expect(getClass(state, "class-2027-b")).toMatchObject({ studentCount: 2 });
+    });
+  });
+
+  it("moves old roster students unmatched by name to the recycle bin when requested", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "class-2027",
+      type: "school",
+      schoolId: "school-1",
+      gradeId: "grade-2027",
+      name: "高二(1)班",
+      grade: "高二",
+      studentCount: 2,
+      status: "active",
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    });
+    (state.students as Array<Record<string, unknown>>).push(
+      {
+        id: "student-keep",
+        name: "保留学生",
+        studentNo: "201",
+        classId: "class-2027",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+      {
+        id: "student-remove",
+        name: "名单外学生",
+        studentNo: "202",
+        classId: "class-2027",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+    );
+
+    await runWithState(state, async () => {
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(1)班", name: "保留学生", studentNo: "201" },
+      ], { missingStudents: "delete" });
+
+      expect(result).toMatchObject({ updatedStudents: 1, deletedStudents: 1 });
+      expect(getStudent(state, "student-remove")).toMatchObject({
+        status: "deleted",
+        deletedFromStatus: "active",
+        deletedAt: expect.any(String),
+      });
+      expect(getClass(state, "class-2027")).toMatchObject({ studentCount: 1 });
+      const recycleBin = await classService.listSchoolRosterRecycleBin("school-1");
+      expect(recycleBin.students.map((item) => item.id)).toContain("student-remove");
     });
   });
 
@@ -275,6 +420,62 @@ describe("class lifecycle service", () => {
       expect(result.grade).toMatchObject({ name: "2027届高三", grade: "高三" });
       expect(getClass(state, "class-2027")).toMatchObject({ name: "高三(1)班", grade: "高三" });
       expect(getStudent(state, "student-2027")).toMatchObject({ grade: "高三" });
+    });
+  });
+
+  it("decreases a whole grade while preserving a customized grade name", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "class-2027",
+      type: "school",
+      schoolId: "school-1",
+      gradeId: "grade-2027",
+      name: "高二(1)班",
+      grade: "高二",
+      gradYear: 2027,
+      studentCount: 1,
+      status: "active",
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    });
+    (state.students as Array<Record<string, unknown>>).push({
+      id: "student-2027",
+      name: "待调整学生",
+      studentNo: "201",
+      classId: "class-2027",
+      schoolId: "school-1",
+      grade: "高二",
+      status: "active",
+    });
+
+    await runWithState(state, async () => {
+      const renamed = await classService.updateSchoolGrade("grade-2027", { name: "创新年级" });
+      const result = await classService.decreaseSchoolGrade("grade-2027");
+
+      expect(renamed.name).toBe("创新年级");
+      expect(result).toMatchObject({ updatedClasses: 1, updatedStudents: 1 });
+      expect(result.grade).toMatchObject({ name: "创新年级", grade: "高一" });
+      expect(getClass(state, "class-2027")).toMatchObject({ name: "高一(1)班", grade: "高一" });
+      expect(getStudent(state, "student-2027")).toMatchObject({ grade: "高一" });
+      await expect(classService.decreaseSchoolGrade("grade-2027")).rejects.toThrow("高一年级不能继续降学年");
+    });
+  });
+
+  it("graduates a whole grade and archives its active classes and students", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      const result = await classService.graduateSchoolGrade("grade-2026");
+
+      expect(result).toMatchObject({ updatedClasses: 2, graduatedStudents: 3 });
+      expect(result.grade).toMatchObject({ status: "graduated" });
+      expect(getClass(state, "class-1")).toMatchObject({ status: "graduated", studentCount: 0 });
+      expect(getClass(state, "class-2")).toMatchObject({ status: "graduated", studentCount: 0 });
+      expect(getStudent(state, "student-early")).toMatchObject({ status: "graduated", graduationType: "regular" });
+      expect(getStudent(state, "student-transfer")).toMatchObject({ status: "graduated", graduationType: "regular" });
+      expect(getStudent(state, "student-regular")).toMatchObject({ status: "graduated", graduationType: "regular" });
+      expect(getStudent(state, "student-suspended")).toMatchObject({ status: "suspended" });
+      await expect(classService.advanceSchoolGrade("grade-2026")).rejects.toThrow("已毕业年级不能调整学年");
     });
   });
 

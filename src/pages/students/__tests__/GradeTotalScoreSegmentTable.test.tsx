@@ -141,6 +141,9 @@ describe("GradeTotalScoreSegmentTable", () => {
       ?.totalScoreSegmentOptions?.classTargets?.["class-1"]?.highScore1).toBe(2);
 
     await user.click(screen.getByRole("button", { name: "调整分数段" }));
+    expect(screen.getByTestId("total-score-settings")).toHaveClass("sticky", "top-0");
+    const settingsRow = screen.getByTestId("total-score-settings-row");
+    expect(within(settingsRow).getAllByRole("spinbutton")).toHaveLength(7);
     const interval = screen.getByRole("spinbutton", { name: "分数间隔" });
     await user.clear(interval);
     await user.type(interval, "5");

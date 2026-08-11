@@ -8,6 +8,7 @@ import type {
   AnyClass,
   ClassroomChoice,
   StudentRosterImportRow,
+  StudentRosterImportOptions,
   StudentRosterImportResult,
   SchoolRosterRecycleBin,
   StudentArchiveOverview,
@@ -33,16 +34,33 @@ export const classService = {
     return rpcCall("class", "createSchoolGrade", [schoolId, teacherId, gradYear, grade]) as any;
   },
 
+  async updateSchoolGrade(gradeId: string, patch: { name: string }): Promise<SchoolGrade> {
+    return rpcCall("class", "updateSchoolGrade", [gradeId, patch]) as any;
+  },
+
   async advanceSchoolGrade(gradeId: string): Promise<{ grade: SchoolGrade; updatedClasses: number; updatedStudents: number }> {
     return rpcCall("class", "advanceSchoolGrade", [gradeId]) as any;
+  },
+
+  async decreaseSchoolGrade(gradeId: string): Promise<{ grade: SchoolGrade; updatedClasses: number; updatedStudents: number }> {
+    return rpcCall("class", "decreaseSchoolGrade", [gradeId]) as any;
+  },
+
+  async graduateSchoolGrade(gradeId: string): Promise<{ grade: SchoolGrade; updatedClasses: number; graduatedStudents: number }> {
+    return rpcCall("class", "graduateSchoolGrade", [gradeId]) as any;
   },
 
   async bulkCreateSchoolClasses(gradeId: string, teacherId: string, names: string[]): Promise<SchoolClass[]> {
     return rpcCall("class", "bulkCreateSchoolClasses", [gradeId, teacherId, names]) as any;
   },
 
-  async bulkImportStudents(gradeId: string, teacherId: string, rows: StudentRosterImportRow[]): Promise<StudentRosterImportResult> {
-    return rpcCall("class", "bulkImportStudents", [gradeId, teacherId, rows]) as any;
+  async bulkImportStudents(
+    gradeId: string,
+    teacherId: string,
+    rows: StudentRosterImportRow[],
+    options?: StudentRosterImportOptions,
+  ): Promise<StudentRosterImportResult> {
+    return rpcCall("class", "bulkImportStudents", [gradeId, teacherId, rows, options]) as any;
   },
 
   async listSchoolRosterRecycleBin(schoolId: string): Promise<SchoolRosterRecycleBin> {

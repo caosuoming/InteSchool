@@ -384,6 +384,14 @@ function AssignmentSettings({
         ) : assignedSubjects.map((subject) => {
           const rules = settings.assignmentRules[subject];
           const comparison = scoreComparisons[subject] || [];
+          const comparisonRowCount = Math.max(1, rules.length);
+          const comparisonColumns = Array.from(
+            { length: Math.ceil(comparison.length / comparisonRowCount) },
+            (_, columnIndex) => comparison.slice(
+              columnIndex * comparisonRowCount,
+              (columnIndex + 1) * comparisonRowCount,
+            ),
+          );
           return (
             <div key={subject} className="rounded-lg border border-ink-200 overflow-hidden">
               <div className="flex items-center justify-between bg-mist/70 px-4 py-2.5">
@@ -403,17 +411,17 @@ function AssignmentSettings({
                   改用原始分
                 </button>
               </div>
-              <div className="grid xl:grid-cols-2">
-                <div className="overflow-x-auto border-b border-ink-100 xl:border-b-0 xl:border-r">
+              <div className="grid lg:grid-cols-[max-content_minmax(0,1fr)]">
+                <div className="overflow-x-auto border-b border-ink-100 lg:border-b-0 lg:border-r">
                   <div className="border-b border-ink-100 bg-paper px-3 py-2 text-xs font-medium text-ink-600">赋分规则</div>
-                  <table className="min-w-[680px] w-full text-xs">
+                  <table className="w-max text-xs" data-testid={`assignment-rules-${subject}`}>
                     <thead className="bg-ink-50 text-ink-500">
                       <tr>
-                        <th className="px-3 py-2 text-left font-medium">等级</th>
-                        <th className="px-3 py-2 text-left font-medium">累计百分位起点</th>
-                        <th className="px-3 py-2 text-left font-medium">累计百分位终点</th>
-                        <th className="px-3 py-2 text-left font-medium">赋分下限</th>
-                        <th className="px-3 py-2 text-left font-medium">赋分上限</th>
+                        <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">等级</th>
+                        <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">百分位起点</th>
+                        <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">百分位终点</th>
+                        <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">赋分下限</th>
+                        <th className="whitespace-nowrap px-2 py-1.5 text-left font-medium">赋分上限</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-ink-100">
@@ -426,7 +434,7 @@ function AssignmentSettings({
                             ["assignedMin", "number"],
                             ["assignedMax", "number"],
                           ] as const).map(([key, type]) => (
-                            <td key={key} className="px-3 py-2">
+                            <td key={key} className="px-1.5 py-1.5">
                               <input
                                 type={type}
                                 min={type === "number" ? 0 : undefined}
@@ -441,7 +449,10 @@ function AssignmentSettings({
                                     assignmentRules: { ...settings.assignmentRules, [subject]: updated },
                                   });
                                 }}
-                                className="w-full min-w-[5rem] rounded border border-ink-200 bg-paper px-2 py-1.5 text-ink-800 outline-none focus:border-gold-400"
+                                className={cn(
+                                  "rounded border border-ink-200 bg-paper px-2 py-1.5 text-ink-800 outline-none focus:border-gold-400",
+                                  key === "label" ? "w-14" : "w-[4.5rem]",
+                                )}
                               />
                             </td>
                           ))}
@@ -457,20 +468,48 @@ function AssignmentSettings({
                       暂无已上传成绩可生成对照。
                     </div>
                   ) : (
-                    <table className="w-full min-w-[320px] text-xs">
+                    <table className="w-max min-w-full text-xs" data-testid={`score-comparison-${subject}`}>
                       <thead className="bg-ink-50 text-ink-500">
                         <tr>
-                          <th className="px-4 py-2 text-right font-medium">原始分</th>
-                          <th className="px-4 py-2 text-right font-medium">赋分</th>
+                          {comparisonColumns.flatMap((_, columnIndex) => [
+                            <th
+                              key={`${subject}-raw-heading-${columnIndex}`}
+                              className={cn(
+                                "whitespace-nowrap py-1.5 pr-2 text-right font-medium",
+                                columnIndex === 0 ? "pl-2" : "border-l-8 border-l-paper pl-4",
+                              )}
+                            >
+                              原始分
+                            </th>,
+                            <th key={`${subject}-assigned-heading-${columnIndex}`} className="whitespace-nowrap px-2 py-1.5 text-right font-medium">
+                              赋分
+                            </th>,
+                          ])}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-ink-100">
-                        {comparison.map(({ raw, assigned }) => (
-                          <tr key={`${subject}-comparison-${raw}`}>
-                            <td className="px-4 py-2 text-right font-medium tabular-nums text-ink-800">{raw}</td>
-                            <td className="px-4 py-2 text-right font-semibold tabular-nums text-gold-800">
-                              {assigned.join(" / ")}
-                            </td>
+                        {Array.from({ length: comparisonRowCount }, (_, rowIndex) => (
+                          <tr key={`${subject}-comparison-row-${rowIndex}`}>
+                            {comparisonColumns.flatMap((column, columnIndex) => {
+                              const item = column[rowIndex];
+                              return [
+                                <td
+                                  key={`${subject}-raw-${columnIndex}-${rowIndex}`}
+                                  className={cn(
+                                    "whitespace-nowrap py-1.5 pr-2 text-right font-medium tabular-nums text-ink-800",
+                                    columnIndex === 0 ? "pl-2" : "border-l-8 border-l-paper pl-4",
+                                  )}
+                                >
+                                  {item?.raw ?? ""}
+                                </td>,
+                                <td
+                                  key={`${subject}-assigned-${columnIndex}-${rowIndex}`}
+                                  className="whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums text-gold-800"
+                                >
+                                  {item?.assigned.join(" / ") || ""}
+                                </td>,
+                              ];
+                            })}
                           </tr>
                         ))}
                       </tbody>

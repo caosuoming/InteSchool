@@ -938,11 +938,17 @@ export function ExtractReviewModal({
               </div>
 
               {block.type === "documentTitle" && (
-                <div className="font-serif text-xl font-bold text-ink-900">{block.content}</div>
+                <div
+                  className="font-serif text-xl font-bold text-ink-900"
+                  dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
+                />
               )}
 
               {block.type === "groupTitle" && (
-                <div className="font-serif text-lg font-bold text-ink-900">{block.content}</div>
+                <div
+                  className="font-serif text-lg font-bold text-ink-900"
+                  dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
+                />
               )}
 
               {block.type === "documentInfo" && (
@@ -955,9 +961,10 @@ export function ExtractReviewModal({
               {block.type === "knowledge" && (
                 <div className="space-y-1">
                   {block.knowledgeTitle && (
-                    <div className="text-sm font-semibold text-ink-900">
-                      {block.knowledgeTitle}
-                    </div>
+                    <div
+                      className="text-sm font-semibold text-ink-900"
+                      dangerouslySetInnerHTML={{ __html: renderExtractText(block.knowledgeTitle, allKeywords, true) }}
+                    />
                   )}
                   <div
                     className="whitespace-pre-wrap text-sm leading-relaxed text-ink-700"

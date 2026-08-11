@@ -353,8 +353,8 @@
 }
 
   .exam-class-arrangement-page {
-    --class-print-font-size: 6.2pt;
-    --class-print-gap: 1.2mm;
+    --class-print-font-size: 5.7pt;
+    --class-print-gap: 1.8mm;
     page: exam-class-arrangement;
     width: 210mm;
     height: 297mm;
@@ -370,14 +370,14 @@
   }
   .exam-class-arrangement-header {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
     gap: 4mm;
     margin-bottom: 2mm;
     border-bottom: 0.3mm solid #333;
     padding-bottom: 1.2mm;
     font-size: 7pt;
-    line-height: 1.1;
+    line-height: 1.25;
   }
   .exam-class-arrangement-header h1 {
     margin: 0;
@@ -386,9 +386,17 @@
     font-weight: 700;
     line-height: 1.05;
   }
-  .exam-class-arrangement-header p {
-    margin: 0.7mm 0 0;
+  .exam-class-arrangement-header-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 3mm;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .exam-class-arrangement-header-meta strong {
     font-size: 7pt;
+    font-weight: 700;
   }
   .exam-class-arrangement-grid {
     display: grid;
@@ -401,7 +409,7 @@
     overflow: hidden;
     border: 0.2mm solid #777;
     border-radius: 0.8mm;
-    padding: 1mm;
+    padding: 1.15mm;
     background: #fff;
   }
   .exam-class-arrangement-student-header {
@@ -410,9 +418,9 @@
     justify-content: space-between;
     gap: 1mm;
     border-bottom: 0.15mm solid #aaa;
-    padding-bottom: 0.45mm;
+    padding-bottom: 0.6mm;
     font-size: calc(var(--class-print-font-size) + 0.8pt);
-    line-height: 1.05;
+    line-height: 1.22;
   }
   .exam-class-arrangement-student-header strong {
     overflow: hidden;
@@ -428,17 +436,17 @@
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 0.22mm;
-    padding-top: 0.5mm;
+    gap: 0.38mm;
+    padding-top: 0.65mm;
   }
   .exam-class-arrangement-item {
     display: grid;
     min-width: 0;
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.85fr) minmax(0, 1fr);
     align-items: baseline;
-    gap: 0.5mm;
+    gap: 0.7mm;
     font-size: var(--class-print-font-size);
-    line-height: 1.04;
+    line-height: 1.28;
   }
   .exam-class-arrangement-item > * {
     min-width: 0;
@@ -450,8 +458,8 @@
     font-weight: 700;
   }
   .exam-class-arrangement-page[data-density="compact"] {
-    --class-print-font-size: 5.3pt;
-    --class-print-gap: 0.9mm;
+    --class-print-font-size: 5.05pt;
+    --class-print-gap: 1.4mm;
   }
   .exam-class-arrangement-page[data-density="compact"] .exam-class-arrangement-header {
     margin-bottom: 1.4mm;
@@ -461,45 +469,27 @@
     font-size: 10pt;
   }
   .exam-class-arrangement-page[data-density="compact"] .exam-class-arrangement-items {
-    gap: 0.12mm;
-  }
-  .exam-class-arrangement-page[data-density="dense"] {
-    --class-print-font-size: 4.4pt;
-    --class-print-gap: 0.65mm;
-  }
-  .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-header {
-    margin-bottom: 1mm;
-    padding-bottom: 0.6mm;
-    font-size: 6pt;
-  }
-  .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-header h1 {
-    font-size: 9pt;
-  }
-  .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-header p {
-    font-size: 5pt;
-  }
-  .exam-class-arrangement-page[data-density="dense"] .exam-class-arrangement-items {
-    gap: 0.1mm;
+    gap: 0.28mm;
   }
   .exam-desk-label-page {
-    --desk-label-gap: 1.5mm;
-    --desk-label-padding: 2.2mm;
-    --desk-title-size: 9pt;
-    --desk-detail-size: 6.5pt;
-    --desk-seat-size: 9pt;
-    --desk-seat-strong-size: 13pt;
-    --desk-name-size: 15pt;
-    --desk-subject-size: 7pt;
-    --desk-section-spacing: 1mm;
-    --desk-seat-padding: 0.8mm;
-    --desk-subline-spacing: 0.5mm;
+    --desk-label-gap: 1.4mm;
+    --desk-label-padding: 1.7mm;
+    --desk-title-size: 7.2pt;
+    --desk-detail-size: 5.8pt;
+    --desk-seat-size: 7.5pt;
+    --desk-seat-strong-size: 10pt;
+    --desk-name-size: 10.5pt;
+    --desk-subject-size: 6.2pt;
+    --desk-section-spacing: 1.15mm;
+    --desk-seat-padding: 0.9mm;
+    --desk-subline-spacing: 0.65mm;
     page: exam-desk-label;
     display: grid;
     width: 260mm;
     height: 370mm;
     box-sizing: border-box;
     align-content: start;
-    padding: 7mm;
+    padding: 5mm;
     gap: var(--desk-label-gap);
     break-after: page;
     overflow: hidden;
@@ -511,29 +501,16 @@
   }
   .exam-desk-label-page[data-density="compact"] {
     --desk-label-gap: 1mm;
-    --desk-label-padding: 1.35mm;
-    --desk-title-size: 7.5pt;
-    --desk-detail-size: 5.5pt;
-    --desk-seat-size: 7.5pt;
-    --desk-seat-strong-size: 10.5pt;
-    --desk-name-size: 11.5pt;
-    --desk-subject-size: 5.8pt;
-    --desk-section-spacing: 0.65mm;
-    --desk-seat-padding: 0.5mm;
-    --desk-subline-spacing: 0.3mm;
-  }
-  .exam-desk-label-page[data-density="dense"] {
-    --desk-label-gap: 0.7mm;
-    --desk-label-padding: 0.8mm;
-    --desk-title-size: 6.3pt;
-    --desk-detail-size: 4.8pt;
-    --desk-seat-size: 6.3pt;
-    --desk-seat-strong-size: 8.8pt;
-    --desk-name-size: 9.5pt;
-    --desk-subject-size: 4.9pt;
-    --desk-section-spacing: 0.4mm;
-    --desk-seat-padding: 0.3mm;
-    --desk-subline-spacing: 0.2mm;
+    --desk-label-padding: 1.25mm;
+    --desk-title-size: 6.5pt;
+    --desk-detail-size: 5pt;
+    --desk-seat-size: 6.6pt;
+    --desk-seat-strong-size: 9pt;
+    --desk-name-size: 9pt;
+    --desk-subject-size: 5.4pt;
+    --desk-section-spacing: 0.8mm;
+    --desk-seat-padding: 0.65mm;
+    --desk-subline-spacing: 0.45mm;
   }
   .exam-desk-label {
     break-inside: avoid;
@@ -556,22 +533,21 @@
     font-family: "Songti SC", "SimSun", serif;
     font-size: var(--desk-title-size);
     font-weight: 700;
-    line-height: 1.15;
+    line-height: 1.3;
   }
   .exam-desk-label-meta,
   .exam-desk-label-seat {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 1.5mm;
+    text-align: center;
   }
   .exam-desk-label-meta {
     min-width: 0;
-    font-size: var(--desk-detail-size);
-    line-height: 1.15;
-  }
-  .exam-desk-label-meta {
     margin-top: var(--desk-section-spacing);
+    font-size: var(--desk-detail-size);
+    line-height: 1.35;
   }
   .exam-desk-label-meta span {
     overflow: hidden;
@@ -584,6 +560,7 @@
     border-bottom: 0.25mm solid #333;
     padding: var(--desk-seat-padding) 0;
     font-size: var(--desk-seat-size);
+    line-height: 1.35;
   }
   .exam-desk-label-seat strong { font-size: var(--desk-seat-strong-size); }
   .exam-desk-label-assignments {
@@ -604,39 +581,42 @@
   .exam-desk-label-assignment-main {
     display: grid;
     min-width: 0;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-    align-items: baseline;
-    gap: 1mm;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 0.55mm;
+    text-align: center;
   }
   .exam-desk-label-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    text-align: left;
+    text-align: center;
     font-family: "Songti SC", "SimSun", serif;
     font-size: var(--desk-name-size);
     font-weight: 700;
     letter-spacing: 0.04em;
-    line-height: 1.1;
+    line-height: 1.3;
   }
   .exam-desk-label-subject {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    text-align: right;
+    text-align: center;
     font-size: var(--desk-subject-size);
     font-weight: 600;
-    line-height: 1.15;
+    line-height: 1.3;
   }
   .exam-desk-label-assignment-meta {
     display: flex;
     min-width: 0;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 0.8mm;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.45mm 1.1mm;
     margin-top: var(--desk-subline-spacing);
     font-size: var(--desk-detail-size);
-    line-height: 1.15;
+    line-height: 1.35;
+    text-align: center;
   }
   .exam-desk-label-assignment-meta span {
     min-width: 0;
@@ -645,8 +625,8 @@
     white-space: nowrap;
   }
   .exam-desk-label-admission {
-    flex: 1 1 auto;
-    text-align: right;
+    flex: 0 1 auto;
+    text-align: center;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: 0.02em;
   }

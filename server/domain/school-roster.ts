@@ -3,6 +3,7 @@ import type {
   SchoolGrade,
   SchoolRosterRecycleBin,
   Student,
+  StudentRosterImportOptions,
   StudentRosterImportResult,
   StudentRosterImportRow,
   StudentStatus,
@@ -21,6 +22,21 @@ function normalizeName(value: string): string {
 function normalizeClassName(value: string): string {
   const normalized = normalizeName(value);
   return /^\d+$/.test(normalized) ? `${normalized}班` : normalized;
+}
+
+function canonicalGradeName(gradYear: number, grade: string): string {
+  return `${gradYear}届${grade}`;
+}
+
+function classBelongsToGrade(item: SchoolClass, grade: SchoolGrade): boolean {
+  if (item.gradeId) return item.gradeId === grade.id;
+  return item.gradYear === grade.gradYear && item.grade === grade.grade;
+}
+
+function shiftedGradeName(current: SchoolGrade, nextGrade: string): string {
+  return current.name === canonicalGradeName(current.gradYear, current.grade)
+    ? canonicalGradeName(current.gradYear, nextGrade)
+    : current.name;
 }
 
 function requireGrade(gradeId: string): SchoolGrade {
@@ -61,6 +77,59 @@ function createClassForGrade(grade: SchoolGrade, teacherId: string, name: string
 
 function restoreStatus(student: Student): ActiveStudentStatus {
   return student.deletedFromStatus || "active";
+}
+
+function shiftSchoolGrade(gradeId: string, offset: -1 | 1): {
+  grade: SchoolGrade;
+  updatedClasses: number;
+  updatedStudents: number;
+} {
+  const current = requireGrade(gradeId);
+  if (current.status === "graduated") throw new Error("已毕业年级不能调整学年");
+
+  const index = GRADE_SEQUENCE.indexOf(current.grade as (typeof GRADE_SEQUENCE)[number]);
+  const targetIndex = index + offset;
+  if (index < 0 || targetIndex < 0 || targetIndex >= GRADE_SEQUENCE.length) {
+    throw new Error(offset > 0
+      ? "高三年级不能继续升学年，请使用毕业功能"
+      : "高一年级不能继续降学年");
+  }
+
+  const nextGrade = GRADE_SEQUENCE[targetIndex];
+  const now = new Date().toISOString();
+  let updatedGrade = current;
+
+  db.update("schoolGrades", (list: SchoolGrade[]) => list.map((item) => {
+    if (item.id !== gradeId) return item;
+    updatedGrade = {
+      ...item,
+      grade: nextGrade,
+      name: shiftedGradeName(item, nextGrade),
+      updatedAt: now,
+    };
+    return updatedGrade;
+  }));
+
+  const classIds = new Set<string>();
+  let updatedClasses = 0;
+  db.update("schoolClasses", (list: SchoolClass[]) => list.map((item) => {
+    if (!classBelongsToGrade(item, current) || item.status === "deleted") return item;
+    classIds.add(item.id);
+    updatedClasses += 1;
+    const renamed = item.name.startsWith(current.grade)
+      ? `${nextGrade}${item.name.slice(current.grade.length)}`
+      : item.name;
+    return { ...item, gradeId, grade: nextGrade, name: renamed };
+  }));
+
+  let updatedStudents = 0;
+  db.update("students", (list: Student[]) => list.map((item) => {
+    if (!classIds.has(item.classId) || item.status === "deleted") return item;
+    updatedStudents += 1;
+    return { ...item, grade: nextGrade };
+  }));
+
+  return { grade: updatedGrade, updatedClasses, updatedStudents };
 }
 
 export const schoolRosterService = {
@@ -105,6 +174,29 @@ export const schoolRosterService = {
     return created;
   },
 
+  async updateSchoolGrade(gradeId: string, patch: { name: string }): Promise<SchoolGrade> {
+    await delay(180);
+    maybeThrowError();
+    const current = requireGrade(gradeId);
+    const name = normalizeName(patch.name || "");
+    if (!name) throw new Error("请填写年级名称");
+    if (name.length > 100) throw new Error("年级名称不能超过 100 个字符");
+    const duplicate = (db.read("schoolGrades") as SchoolGrade[]).some((item) =>
+      item.id !== gradeId
+      && item.schoolId === current.schoolId
+      && normalizeName(item.name).toLocaleLowerCase("zh-CN") === name.toLocaleLowerCase("zh-CN"),
+    );
+    if (duplicate) throw new Error("年级名称已存在");
+
+    let updated = current;
+    db.update("schoolGrades", (list: SchoolGrade[]) => list.map((item) => {
+      if (item.id !== gradeId) return item;
+      updated = { ...item, name, updatedAt: new Date().toISOString() };
+      return updated;
+    }));
+    return updated;
+  },
+
   async advanceSchoolGrade(gradeId: string): Promise<{
     grade: SchoolGrade;
     updatedClasses: number;
@@ -112,46 +204,68 @@ export const schoolRosterService = {
   }> {
     await delay(300);
     maybeThrowError();
+    return shiftSchoolGrade(gradeId, 1);
+  },
+
+  async decreaseSchoolGrade(gradeId: string): Promise<{
+    grade: SchoolGrade;
+    updatedClasses: number;
+    updatedStudents: number;
+  }> {
+    await delay(300);
+    maybeThrowError();
+    return shiftSchoolGrade(gradeId, -1);
+  },
+
+  async graduateSchoolGrade(gradeId: string): Promise<{
+    grade: SchoolGrade;
+    updatedClasses: number;
+    graduatedStudents: number;
+  }> {
+    await delay(380);
+    maybeThrowError();
     const current = requireGrade(gradeId);
-    const index = GRADE_SEQUENCE.indexOf(current.grade as (typeof GRADE_SEQUENCE)[number]);
-    if (index < 0 || index === GRADE_SEQUENCE.length - 1) {
-      throw new Error("高三年级不能继续升学年，请使用整班毕业功能");
-    }
-    const nextGrade = GRADE_SEQUENCE[index + 1];
+    if (current.status === "graduated") throw new Error("年级已毕业");
+
     const now = new Date().toISOString();
-    let updatedGrade = current;
-
-    db.update("schoolGrades", (list: SchoolGrade[]) => list.map((item) => {
-      if (item.id !== gradeId) return item;
-      updatedGrade = {
-        ...item,
-        grade: nextGrade,
-        name: `${item.gradYear}届${nextGrade}`,
-        updatedAt: now,
-      };
-      return updatedGrade;
-    }));
-
     const classIds = new Set<string>();
     let updatedClasses = 0;
     db.update("schoolClasses", (list: SchoolClass[]) => list.map((item) => {
-      if (item.gradeId !== gradeId || item.status === "deleted") return item;
+      if (!classBelongsToGrade(item, current) || item.status === "deleted") return item;
       classIds.add(item.id);
+      if (item.status === "graduated") return item;
       updatedClasses += 1;
-      const renamed = item.name.startsWith(current.grade)
-        ? `${nextGrade}${item.name.slice(current.grade.length)}`
-        : item.name;
-      return { ...item, grade: nextGrade, name: renamed };
+      return {
+        ...item,
+        gradeId,
+        status: "graduated",
+        graduatedAt: now,
+        studentCount: 0,
+      };
     }));
 
-    let updatedStudents = 0;
+    let graduatedStudents = 0;
     db.update("students", (list: Student[]) => list.map((item) => {
-      if (!classIds.has(item.classId) || item.status === "deleted") return item;
-      updatedStudents += 1;
-      return { ...item, grade: nextGrade };
+      if (!classIds.has(item.classId) || item.status !== "active") return item;
+      graduatedStudents += 1;
+      return {
+        ...item,
+        status: "graduated",
+        archiveStatus: "graduated",
+        archiveStatusBeforeLeave: undefined,
+        graduatedAt: now,
+        graduationType: "regular",
+      };
     }));
 
-    return { grade: updatedGrade, updatedClasses, updatedStudents };
+    let updatedGrade = current;
+    db.update("schoolGrades", (list: SchoolGrade[]) => list.map((item) => {
+      if (item.id !== gradeId) return item;
+      updatedGrade = { ...item, status: "graduated", updatedAt: now };
+      return updatedGrade;
+    }));
+
+    return { grade: updatedGrade, updatedClasses, graduatedStudents };
   },
 
   async bulkCreateSchoolClasses(
@@ -185,6 +299,7 @@ export const schoolRosterService = {
     gradeId: string,
     teacherId: string,
     rows: StudentRosterImportRow[],
+    options?: StudentRosterImportOptions,
   ): Promise<StudentRosterImportResult> {
     await delay(350);
     maybeThrowError();
@@ -192,6 +307,10 @@ export const schoolRosterService = {
     if (grade.status === "graduated") throw new Error("已毕业年级不能导入学生");
     if (!Array.isArray(rows) || rows.length === 0) throw new Error("导入文件中没有学生数据");
     if (rows.length > 5000) throw new Error("单次最多导入 5000 名学生");
+    const missingStudents = options?.missingStudents || "keep";
+    if (!(["keep", "delete"] as const).includes(missingStudents)) {
+      throw new Error("无效的旧名单学生处理方式");
+    }
 
     const normalizedRows = rows.map((row, index) => {
       const className = normalizeClassName(row.className || "");
@@ -218,56 +337,165 @@ export const schoolRosterService = {
     const createdClasses = missingNames.map((name) => createClassForGrade(grade, teacherId, name));
     createdClasses.forEach((item) => classMap.set(item.name.toLocaleLowerCase("zh-CN"), item));
 
-    const existingNumbers = new Set(
-      (db.read("students") as Student[])
-        .filter((item) => item.schoolId === grade.schoolId)
-        .map((item) => item.studentNo.trim().toLocaleLowerCase("zh-CN"))
-        .filter(Boolean),
+    const allStudents = db.read("students") as Student[];
+    const gradeClassIds = new Set(gradeClasses.map((item) => item.id));
+    const existingGradeStudents = allStudents.filter((item) =>
+      item.schoolId === grade.schoolId
+      && item.status === "active"
+      && gradeClassIds.has(item.classId),
     );
-    const seenNumbers = new Set<string>();
-    const createdStudents: Student[] = [];
-    const classIncrements = new Map<string, number>();
-    let skippedStudents = 0;
+    const existingByName = new Map<string, Student[]>();
+    for (const student of existingGradeStudents) {
+      const key = normalizeName(student.name).toLocaleLowerCase("zh-CN");
+      existingByName.set(key, [...(existingByName.get(key) || []), student]);
+    }
 
-    normalizedRows.forEach((row) => {
+    const seenNumbers = new Set<string>();
+    let skippedStudents = 0;
+    const effectiveRows = normalizedRows.filter((row) => {
       const numberKey = row.studentNo.toLocaleLowerCase("zh-CN");
-      if (numberKey && (existingNumbers.has(numberKey) || seenNumbers.has(numberKey))) {
+      if (!numberKey) return true;
+      if (seenNumbers.has(numberKey)) {
         skippedStudents += 1;
-        return;
+        return false;
       }
+      seenNumbers.add(numberKey);
+      return true;
+    });
+
+    const matchedExistingIds = new Set<string>();
+    const assignments = effectiveRows.map((row) => {
       const targetClass = classMap.get(row.className.toLocaleLowerCase("zh-CN"));
       if (!targetClass) throw new Error(`班级不存在：${row.className}`);
-      if (numberKey) seenNumbers.add(numberKey);
-      classIncrements.set(targetClass.id, (classIncrements.get(targetClass.id) || 0) + 1);
-      createdStudents.push({
-        id: genId("stu"),
+      const nameKey = row.name.toLocaleLowerCase("zh-CN");
+      const candidates = (existingByName.get(nameKey) || [])
+        .filter((student) => !matchedExistingIds.has(student.id));
+
+      let matched: Student | undefined;
+      if (candidates.length === 1) {
+        matched = candidates[0];
+      } else if (candidates.length > 1) {
+        if (row.studentNo) {
+          const sameNumber = candidates.filter((student) =>
+            student.studentNo.trim().toLocaleLowerCase("zh-CN") === row.studentNo.toLocaleLowerCase("zh-CN"),
+          );
+          if (sameNumber.length === 1) matched = sameNumber[0];
+        }
+        if (!matched) {
+          const sameClass = candidates.filter((student) => student.classId === targetClass.id);
+          if (sameClass.length === 1) matched = sameClass[0];
+        }
+        if (!matched) {
+          throw new Error(`同一年级存在多名“${row.name}”，无法仅按姓名确定对应学生；请补充可区分的学号或班级`);
+        }
+      }
+      if (matched) matchedExistingIds.add(matched.id);
+      return { row, targetClass, matched };
+    });
+
+    const unmatchedExistingIds = new Set(
+      existingGradeStudents
+        .filter((student) => !matchedExistingIds.has(student.id))
+        .map((student) => student.id),
+    );
+
+    const importedNumbers = new Map<string, string>();
+    for (const { row } of assignments) {
+      const key = row.studentNo.toLocaleLowerCase("zh-CN");
+      if (key) importedNumbers.set(key, row.name);
+    }
+    for (const student of allStudents) {
+      if (student.schoolId !== grade.schoolId || student.status === "deleted") continue;
+      const numberKey = student.studentNo.trim().toLocaleLowerCase("zh-CN");
+      if (!numberKey || !importedNumbers.has(numberKey)) continue;
+      if (matchedExistingIds.has(student.id)) continue;
+      if (missingStudents === "delete" && unmatchedExistingIds.has(student.id)) continue;
+      throw new Error(`学号 ${student.studentNo} 已被“${student.name}”使用，无法导入“${importedNumbers.get(numberKey)}”`);
+    }
+
+    const now = new Date().toISOString();
+    const updatedById = new Map<string, Student>();
+    const createdStudents: Student[] = [];
+
+    for (const { row, targetClass, matched } of assignments) {
+      if (!matched) {
+        createdStudents.push({
+          id: genId("stu"),
+          name: row.name,
+          studentNo: row.studentNo,
+          classId: targetClass.id,
+          schoolId: grade.schoolId,
+          grade: grade.grade,
+          gender: row.gender,
+          subjectSelection: row.subjectSelection,
+          isExternal: row.isExternal,
+          status: "active",
+        });
+        continue;
+      }
+
+      const classChanged = matched.classId !== targetClass.id;
+      const studentNoChanged = matched.studentNo !== row.studentNo;
+      updatedById.set(matched.id, {
+        ...matched,
         name: row.name,
         studentNo: row.studentNo,
         classId: targetClass.id,
-        schoolId: grade.schoolId,
         grade: grade.grade,
-        gender: row.gender,
+        gender: row.gender ?? matched.gender,
         subjectSelection: row.subjectSelection,
         isExternal: row.isExternal,
-        status: "active",
+        classHistory: classChanged
+          ? [
+              ...(matched.classHistory || []),
+              {
+                fromClassId: matched.classId,
+                toClassId: targetClass.id,
+                changedAt: now,
+                studentNoChanged,
+              },
+            ]
+          : matched.classHistory,
       });
+    }
+
+    const deletedStudentIds = missingStudents === "delete" ? unmatchedExistingIds : new Set<string>();
+    const nextStudents = allStudents.map((student) => {
+      const updated = updatedById.get(student.id);
+      if (updated) return updated;
+      if (!deletedStudentIds.has(student.id)) return student;
+      return {
+        ...student,
+        deletedFromStatus: student.status,
+        status: "deleted" as const,
+        deletedAt: now,
+      };
     });
+    nextStudents.push(...createdStudents);
+
+    const activeCountByClass = new Map<string, number>();
+    for (const student of nextStudents) {
+      if (student.status !== "active") continue;
+      activeCountByClass.set(student.classId, (activeCountByClass.get(student.classId) || 0) + 1);
+    }
 
     db.update("schoolClasses", (list: SchoolClass[]) => [
       ...list.map((item) => {
-        const increment = classIncrements.get(item.id);
-        return increment ? { ...item, studentCount: item.studentCount + increment } : item;
+        if (!gradeClassIds.has(item.id)) return item;
+        return { ...item, studentCount: activeCountByClass.get(item.id) || 0 };
       }),
       ...createdClasses.map((item) => ({
         ...item,
-        studentCount: classIncrements.get(item.id) || 0,
+        studentCount: activeCountByClass.get(item.id) || 0,
       })),
     ]);
-    db.update("students", (list: Student[]) => [...list, ...createdStudents]);
+    db.update("students", () => nextStudents);
 
     return {
       createdClasses: createdClasses.length,
       createdStudents: createdStudents.length,
+      updatedStudents: updatedById.size,
+      deletedStudents: deletedStudentIds.size,
       skippedStudents,
     };
   },

@@ -204,4 +204,39 @@ describe("GradeSettingsEditor", () => {
     expect(within(comparison).getByRole("cell", { name: "100" })).toBeInTheDocument();
     expect(within(comparison).getAllByRole("cell", { name: "70" })).toHaveLength(2);
   });
+
+  it("wraps long assignment comparisons into column pairs beside the rule table", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学"], classes.map((item) => item.id));
+    const records = Array.from({ length: 8 }, (_, index): GradeScoreRecord => ({
+      ...sampleRecord,
+      id: `score-${index + 1}`,
+      studentId: `student-${index + 1}`,
+      studentName: `学生${index + 1}`,
+      studentNo: `2026${String(index + 1).padStart(4, "0")}`,
+      scores: { 数学: 90 - index, 化学: 100 - index * 5 },
+      assignedScores: { 数学: 90 - index, 化学: 100 - index * 5 },
+      rawTotal: 190 - index * 6,
+      assignedTotal: 190 - index * 6,
+      gradeRank: index + 1,
+      classRank: index + 1,
+    }));
+
+    render(
+      <GradeSettingsEditor
+        settings={settings}
+        subjects={["数学", "化学"]}
+        context={context}
+        onChange={vi.fn()}
+        section="settings"
+        records={records}
+      />,
+    );
+
+    const ruleTable = screen.getByTestId("assignment-rules-化学");
+    const comparisonTable = screen.getByTestId("score-comparison-化学");
+    expect(within(ruleTable).getAllByRole("row").slice(1)).toHaveLength(5);
+    expect(within(comparisonTable).getAllByRole("row").slice(1)).toHaveLength(5);
+    expect(within(comparisonTable).getAllByRole("columnheader", { name: "原始分" }).length).toBeGreaterThan(1);
+    expect(within(comparisonTable).getAllByRole("columnheader", { name: "赋分" }).length).toBeGreaterThan(1);
+  });
 });

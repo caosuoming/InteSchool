@@ -336,7 +336,17 @@ export const serviceParameters = {
       "gradYear",
       "grade"
     ],
+    "updateSchoolGrade": [
+      "gradeId",
+      "patch"
+    ],
     "advanceSchoolGrade": [
+      "gradeId"
+    ],
+    "decreaseSchoolGrade": [
+      "gradeId"
+    ],
+    "graduateSchoolGrade": [
       "gradeId"
     ],
     "bulkCreateSchoolClasses": [
@@ -347,7 +357,8 @@ export const serviceParameters = {
     "bulkImportStudents": [
       "gradeId",
       "teacherId",
-      "rows"
+      "rows",
+      "options"
     ],
     "listSchoolRosterRecycleBin": [
       "schoolId"
