@@ -166,85 +166,95 @@ export function GradeTotalScoreSegmentTable({
       </div>
 
       {adjusting && (
-        <div className="border-b border-ink-100 bg-ink-50/40 p-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[12rem_12rem_12rem_auto] lg:items-end">
-            <Input
-              label="最高分值"
-              type="number"
-              min={0}
-              max={2000}
-              value={effectiveTemplate.segmentMax ?? DEFAULT_TOTAL_SCORE_SEGMENT_MAX}
-              onChange={(event) => updateTemplate({ segmentMax: Number(event.target.value) })}
-            />
-            <Input
-              label="最低分值"
-              type="number"
-              min={0}
-              max={2000}
-              value={effectiveTemplate.segmentMin ?? DEFAULT_TOTAL_SCORE_SEGMENT_MIN}
-              onChange={(event) => updateTemplate({ segmentMin: Number(event.target.value) })}
-            />
-            <Input
-              label="分数间隔"
-              type="number"
-              min={1}
-              max={500}
-              value={effectiveTemplate.segmentSize ?? DEFAULT_TOTAL_SCORE_SEGMENT_SIZE}
-              onChange={(event) => updateTemplate({ segmentSize: Number(event.target.value) })}
-            />
-            <Button variant="ghost" size="sm" onClick={reset}>
-              <RotateCcw className="h-3.5 w-3.5" />恢复默认
-            </Button>
-          </div>
-          <div className="mt-2 text-xs text-ink-400">
-            默认从 700 分递减到 400 分，每 10 分一档；每行统计总分大于等于该阈值的学生人数。
-          </div>
-          <div className="mt-4 border-t border-ink-200 pt-4">
-            <div className="mb-3">
-              <div className="text-xs font-medium text-ink-700">达线标准</div>
-              <div className="mt-0.5 text-xs text-ink-500">
-                高分、一本和二本标准按当前总分口径统计；修改后自动保存到当前届年级。
-                {autoSaving && <span className="ml-2 text-emerald-700">正在自动保存…</span>}
+        <div
+          data-testid="total-score-settings"
+          className="sticky top-0 z-30 border-b border-ink-200 bg-paper/95 px-5 py-3 shadow-sm backdrop-blur"
+        >
+          <div className="overflow-x-auto pb-1">
+            <div data-testid="total-score-settings-row" className="flex min-w-max items-end gap-3">
+              <div className="w-28">
+                <Input
+                  label="最高分值"
+                  type="number"
+                  min={0}
+                  max={2000}
+                  value={effectiveTemplate.segmentMax ?? DEFAULT_TOTAL_SCORE_SEGMENT_MAX}
+                  onChange={(event) => updateTemplate({ segmentMax: Number(event.target.value) })}
+                />
               </div>
+              <div className="w-28">
+                <Input
+                  label="最低分值"
+                  type="number"
+                  min={0}
+                  max={2000}
+                  value={effectiveTemplate.segmentMin ?? DEFAULT_TOTAL_SCORE_SEGMENT_MIN}
+                  onChange={(event) => updateTemplate({ segmentMin: Number(event.target.value) })}
+                />
+              </div>
+              <div className="w-28">
+                <Input
+                  label="分数间隔"
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={effectiveTemplate.segmentSize ?? DEFAULT_TOTAL_SCORE_SEGMENT_SIZE}
+                  onChange={(event) => updateTemplate({ segmentSize: Number(event.target.value) })}
+                />
+              </div>
+              <span className="mb-1 h-9 w-px bg-ink-200" aria-hidden="true" />
+              <div className="w-32">
+                <Input
+                  label="高分1达线标准"
+                  type="number"
+                  min={0}
+                  max={2000}
+                  value={effectiveTemplate.totalScoreSegmentOptions?.highScore1Threshold ?? ""}
+                  onChange={(event) => updateSegmentOptions({ highScore1Threshold: optionalNumber(event.target.value) })}
+                  onBlur={() => void autoSave()}
+                />
+              </div>
+              <div className="w-32">
+                <Input
+                  label="高分2达线标准"
+                  type="number"
+                  min={0}
+                  max={2000}
+                  value={effectiveTemplate.totalScoreSegmentOptions?.highScore2Threshold ?? ""}
+                  onChange={(event) => updateSegmentOptions({ highScore2Threshold: optionalNumber(event.target.value) })}
+                  onBlur={() => void autoSave()}
+                />
+              </div>
+              <div className="w-32">
+                <Input
+                  label="一本达线标准"
+                  type="number"
+                  min={0}
+                  max={2000}
+                  value={effectiveTemplate.totalScoreSegmentOptions?.firstTierThreshold ?? ""}
+                  onChange={(event) => updateSegmentOptions({ firstTierThreshold: optionalNumber(event.target.value) })}
+                  onBlur={() => void autoSave()}
+                />
+              </div>
+              <div className="w-32">
+                <Input
+                  label="二本达线标准"
+                  type="number"
+                  min={0}
+                  max={2000}
+                  value={effectiveTemplate.totalScoreSegmentOptions?.undergraduateThreshold ?? ""}
+                  onChange={(event) => updateSegmentOptions({ undergraduateThreshold: optionalNumber(event.target.value) })}
+                  onBlur={() => void autoSave()}
+                />
+              </div>
+              <Button variant="ghost" size="sm" onClick={reset}>
+                <RotateCcw className="h-3.5 w-3.5" />恢复默认
+              </Button>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Input
-                label="高分1达线标准"
-                type="number"
-                min={0}
-                max={2000}
-                value={effectiveTemplate.totalScoreSegmentOptions?.highScore1Threshold ?? ""}
-                onChange={(event) => updateSegmentOptions({ highScore1Threshold: optionalNumber(event.target.value) })}
-                onBlur={() => void autoSave()}
-              />
-              <Input
-                label="高分2达线标准"
-                type="number"
-                min={0}
-                max={2000}
-                value={effectiveTemplate.totalScoreSegmentOptions?.highScore2Threshold ?? ""}
-                onChange={(event) => updateSegmentOptions({ highScore2Threshold: optionalNumber(event.target.value) })}
-                onBlur={() => void autoSave()}
-              />
-              <Input
-                label="一本达线标准"
-                type="number"
-                min={0}
-                max={2000}
-                value={effectiveTemplate.totalScoreSegmentOptions?.firstTierThreshold ?? ""}
-                onChange={(event) => updateSegmentOptions({ firstTierThreshold: optionalNumber(event.target.value) })}
-                onBlur={() => void autoSave()}
-              />
-              <Input
-                label="二本达线标准"
-                type="number"
-                min={0}
-                max={2000}
-                value={effectiveTemplate.totalScoreSegmentOptions?.undergraduateThreshold ?? ""}
-                onChange={(event) => updateSegmentOptions({ undergraduateThreshold: optionalNumber(event.target.value) })}
-                onBlur={() => void autoSave()}
-              />
-            </div>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 text-[11px] text-ink-400">
+            <span>分数段按当前总分口径累计人数；达线标准失焦后自动保存到当前届年级。</span>
+            {autoSaving && <span className="text-emerald-700">正在自动保存…</span>}
           </div>
         </div>
       )}
@@ -257,21 +267,18 @@ export function GradeTotalScoreSegmentTable({
         />
       ) : (
         <div className="overflow-x-auto p-5">
-          <div className="mb-3 flex min-w-[640px] items-end justify-between gap-4 px-1">
+          <div className="mb-3 flex min-w-max items-end justify-between gap-4 px-1">
             <h3 className="font-serif text-lg font-semibold text-ink-900">{report.title}</h3>
             <div className="shrink-0 text-sm font-medium text-ink-600">{report.reportDate.replace(/-/g, ".")}</div>
           </div>
-          <table
-            className="w-full border-collapse text-xs"
-            style={{ minWidth: Math.max(640, 150 + report.classes.length * 88) }}
-          >
+          <table className="w-max min-w-full table-auto border-collapse text-[11px]">
             <thead>
               <tr className="bg-ink-50 text-ink-700">
-                <th className="sticky left-0 z-10 border border-ink-300 bg-ink-50 px-3 py-2 text-center font-semibold">
+                <th className="sticky left-0 z-10 whitespace-nowrap border border-ink-300 bg-ink-50 px-2 py-1.5 text-center font-semibold">
                   总分分数段
                 </th>
                 {report.classes.map((classItem) => (
-                  <th key={classItem.classId} className="border border-ink-300 px-3 py-2 text-center font-semibold">
+                  <th key={classItem.classId} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">
                     {classItem.classLabel}
                   </th>
                 ))}
@@ -280,13 +287,13 @@ export function GradeTotalScoreSegmentTable({
             <tbody>
               {report.rows.map((row) => (
                 <tr key={row.threshold} className="bg-paper">
-                  <th className="sticky left-0 z-[5] border border-ink-300 bg-paper px-3 py-2 text-center font-semibold text-ink-800">
+                  <th className="sticky left-0 z-[5] whitespace-nowrap border border-ink-300 bg-paper px-2 py-1.5 text-center font-semibold text-ink-800">
                     {row.threshold}分以上
                   </th>
                   {report.classes.map((classItem) => (
                     <td
                       key={classItem.classId}
-                      className="border border-ink-300 px-3 py-2 text-center font-semibold tabular-nums text-ink-900"
+                      className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900"
                     >
                       {row.counts[classItem.classId] || 0}
                     </td>
@@ -294,7 +301,7 @@ export function GradeTotalScoreSegmentTable({
                 </tr>
               ))}
               {[0, 1].map((index) => (
-                <tr key={`summary-spacer-${index}`} aria-hidden="true" className="h-7 bg-paper">
+                <tr key={`summary-spacer-${index}`} aria-hidden="true" className="h-5 bg-paper">
                   <th className="sticky left-0 z-[5] border-x border-ink-300 bg-paper" />
                   {report.classes.map((classItem) => (
                     <td key={classItem.classId} className="border-x border-ink-300" />
@@ -303,14 +310,14 @@ export function GradeTotalScoreSegmentTable({
               ))}
               {report.summaryRows.map((row) => (
                 <tr key={row.key} className="bg-paper">
-                  <th className="sticky left-0 z-[5] border border-ink-300 bg-paper px-3 py-2 text-center font-semibold text-ink-800">
+                  <th className="sticky left-0 z-[5] whitespace-nowrap border border-ink-300 bg-paper px-2 py-1.5 text-center font-semibold text-ink-800">
                     {row.label}
                   </th>
                   {report.classes.map((classItem) => {
                     const value = row.values[classItem.classId];
                     if (row.kind === "target" && row.targetKey) {
                       return (
-                        <td key={classItem.classId} className="border border-ink-300 px-2 py-1.5 text-center">
+                        <td key={classItem.classId} className="whitespace-nowrap border border-ink-300 px-1.5 py-1 text-center">
                           <input
                             type="number"
                             min={0}
@@ -320,7 +327,7 @@ export function GradeTotalScoreSegmentTable({
                             value={typeof value === "number" ? value : ""}
                             onChange={(event) => updateTarget(classItem.classId, row.targetKey!, event.target.value)}
                             onBlur={() => void autoSave()}
-                            className="w-20 rounded border border-ink-200 bg-paper px-2 py-1 text-center font-semibold tabular-nums text-ink-900 outline-none focus:border-gold-400"
+                            className="w-14 rounded border border-ink-200 bg-paper px-1.5 py-1 text-center font-semibold tabular-nums text-ink-900 outline-none focus:border-gold-400"
                           />
                         </td>
                       );
@@ -328,7 +335,7 @@ export function GradeTotalScoreSegmentTable({
                     return (
                       <td
                         key={classItem.classId}
-                        className="border border-ink-300 px-3 py-2 text-center font-semibold tabular-nums text-ink-900"
+                        className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900"
                       >
                         {value ?? "—"}
                       </td>

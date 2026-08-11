@@ -419,20 +419,20 @@ export function GradeClassAverageTable({
         />
       ) : (
         <div className="overflow-x-auto p-5">
-          <div className="mb-3 flex min-w-[780px] items-end justify-between gap-4 px-1">
+          <div className="mb-3 flex min-w-max items-end justify-between gap-4 px-1">
             <h3 className="font-serif text-lg font-semibold text-ink-900">{report.title}</h3>
             <div className="shrink-0 text-sm font-medium text-ink-600">{report.reportDate.replace(/-/g, ".")}</div>
           </div>
-          <table className="min-w-[780px] w-full border-collapse text-xs">
+          <table className="w-max min-w-full table-auto border-collapse text-[11px]">
             <thead>
               <tr className="bg-ink-50 text-ink-700">
-                <th className="border border-ink-300 px-3 py-2 text-center font-semibold">类别</th>
-                <th className="border border-ink-300 px-3 py-2 text-center font-semibold">班级</th>
-                <th className="border border-ink-300 px-3 py-2 text-center font-semibold">班主任 / 人数</th>
+                <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">类别</th>
+                <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">班级</th>
+                <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">班主任 / 人数</th>
                 {report.subjects.map((subject) => (
-                  <th key={subject} className="border border-ink-300 px-3 py-2 text-center font-semibold">{subject}</th>
+                  <th key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">{subject}</th>
                 ))}
-                <th className="border border-ink-300 px-3 py-2 text-center font-semibold">总分平均</th>
+                <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">总分平均</th>
               </tr>
             </thead>
             <tbody>
@@ -447,7 +447,7 @@ export function GradeClassAverageTable({
                     const categoryCell = !categoryRendered ? (
                       <td
                         rowSpan={rowSpan}
-                        className="border border-ink-300 bg-ink-50/70 px-3 py-2 text-center align-middle font-medium text-ink-800"
+                        className="whitespace-nowrap border border-ink-300 bg-ink-50/70 px-2 py-1.5 text-center align-middle font-medium text-ink-800"
                       >
                         {group.category}
                       </td>
@@ -456,14 +456,14 @@ export function GradeClassAverageTable({
                     const teacherRow = report.options.showTeacherRows ? (
                       <tr key={`${row.classId}-teachers`}>
                         {categoryCell}
-                        <td rowSpan={2} className="border border-ink-300 px-3 py-2 text-center font-semibold text-ink-800">
+                        <td rowSpan={2} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold text-ink-800">
                           {row.classLabel}
                         </td>
-                        <td className="border border-ink-300 px-3 py-2 text-center text-ink-600">
+                        <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-600">
                           {row.homeroomTeachers.join("、") || "—"}
                         </td>
                         {report.subjects.map((subject) => (
-                          <td key={subject} className="border border-ink-300 px-3 py-2 text-center text-ink-600">
+                          <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-600">
                             {row.subjectTeachers[subject]?.join("、") || "—"}
                           </td>
                         ))}
@@ -474,17 +474,17 @@ export function GradeClassAverageTable({
                       <tr key={`${row.classId}-scores`} className="bg-paper">
                         {!report.options.showTeacherRows && categoryCell}
                         {!report.options.showTeacherRows && (
-                          <td className="border border-ink-300 px-3 py-2 text-center font-semibold text-ink-800">
+                          <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold text-ink-800">
                             {row.classLabel}
                           </td>
                         )}
-                        <td className="border border-ink-300 px-3 py-2 text-center text-ink-500">{row.studentCount} 人</td>
+                        <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-500">{row.studentCount} 人</td>
                         {report.subjects.map((subject) => (
-                          <td key={subject} className="border border-ink-300 px-3 py-2 text-right font-semibold tabular-nums text-ink-900">
+                          <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums text-ink-900">
                             {displayScore(row.subjectAverages[subject], row.subjectScoreModes[subject])}
                           </td>
                         ))}
-                        <td className="border border-ink-300 px-3 py-2 text-right font-bold tabular-nums text-ink-900">
+                        <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
                           {displayScore(row.totalAverages, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                         </td>
                       </tr>
@@ -493,30 +493,30 @@ export function GradeClassAverageTable({
                   }),
                   ...(group.rows.length > 1 && report.options.showGroupDifference ? [(
                     <tr key={`${group.category}-difference`} className="bg-amber-50/40">
-                      <td className="border border-ink-300 px-3 py-2 text-center font-medium">分差</td>
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-medium">分差</td>
                       <td className="border border-ink-300 px-3 py-2" />
                       {report.subjects.map((subject) => (
-                        <td key={subject} className="border border-ink-300 px-3 py-2 text-right tabular-nums">
+                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right tabular-nums">
                           {displayScore(group.difference.subjectValues[subject], group.subjectScoreModes[subject])}
                         </td>
                       ))}
-                      <td className="border border-ink-300 px-3 py-2 text-right font-semibold tabular-nums">
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums">
                         {displayScore(group.difference.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                       </td>
                     </tr>
                   )] : []),
                   ...(group.rows.length > 1 && report.options.showGroupAverage ? [(
                     <tr key={`${group.category}-average`} className="bg-blue-50/40">
-                      <td className="border border-ink-300 px-3 py-2 text-center font-medium">
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-medium">
                         平均（{classRangeLabel(group.rows.map((row) => row.classLabel))}）
                       </td>
                       <td className="border border-ink-300 px-3 py-2" />
                       {report.subjects.map((subject) => (
-                        <td key={subject} className="border border-ink-300 px-3 py-2 text-right font-semibold tabular-nums">
+                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums">
                           {displayScore(group.average.subjectValues[subject], group.subjectScoreModes[subject])}
                         </td>
                       ))}
-                      <td className="border border-ink-300 px-3 py-2 text-right font-bold tabular-nums">
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums">
                         {displayScore(group.average.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                       </td>
                     </tr>
@@ -525,16 +525,16 @@ export function GradeClassAverageTable({
               })}
               {report.options.showOverallAverage && (
                 <tr className="bg-ink-100/70">
-                  <td colSpan={3} className="border border-ink-300 px-3 py-2 text-center font-bold text-ink-900">全校平均</td>
+                  <td colSpan={3} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold text-ink-900">全校平均</td>
                   {report.subjects.map((subject) => (
-                    <td key={subject} className="border border-ink-300 px-3 py-2 text-right font-bold tabular-nums text-ink-900">
+                    <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
                       {displayScore(
                         report.overallAverage.subjectValues[subject],
                         report.overallSubjectScoreModes[subject],
                       )}
                     </td>
                   ))}
-                  <td className="border border-ink-300 px-3 py-2 text-right font-bold tabular-nums text-ink-900">
+                  <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
                     {displayScore(
                       report.overallAverage.totalValues,
                       report.options.totalScoreMode || effectiveTemplate.scoreMode,
