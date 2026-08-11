@@ -106,6 +106,62 @@ function state(): AppState {
 }
 
 describe("platform resource donations", () => {
+  it("donates a complete album with its source library note and reuses existing donations", async () => {
+    const appState = state();
+    const base = {
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期" as const,
+      duration: 60,
+      totalScore: 100,
+      questions: [],
+      status: "draft" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    (appState.examPapers as ExamPaper[]).push(
+      { ...base, id: "paper-album-1", title: "函数专题一" },
+      { ...base, id: "paper-album-2", title: "函数专题二" },
+    );
+    appState.resourceFolders = [{
+      id: "album-1",
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      resourceType: "examPaper",
+      name: "函数专题",
+      resourceIds: ["paper-album-1", "paper-album-2"],
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    }];
+
+    await runWithState(appState, async () => {
+      const requests = [
+        { resourceType: "examPaper" as const, resourceId: "paper-album-1", albumId: "album-1" },
+        { resourceType: "examPaper" as const, resourceId: "paper-album-2", albumId: "album-1" },
+      ];
+      const first = await shareService.donateResources("teacher-a", "school-a", requests);
+      expect(first).toHaveLength(2);
+      expect(first.map((record) => record.donationAlbum)).toEqual([
+        { id: "album-1", name: "函数专题", resourceType: "examPaper", libraryLabel: "试卷库" },
+        { id: "album-1", name: "函数专题", resourceType: "examPaper", libraryLabel: "试卷库" },
+      ]);
+
+      const repeated = await shareService.donateResources("teacher-a", "school-a", requests);
+      expect(repeated).toHaveLength(2);
+      expect((appState.shareRecords as ShareRecord[])).toHaveLength(2);
+      expect((await shareService.listPublicDonations()).every((record) => record.donationAlbum?.libraryLabel === "试卷库"))
+        .toBe(true);
+
+      await expect(shareService.donateResources("teacher-a", "school-a", [requests[0]]))
+        .rejects.toThrow("捐赠专辑必须包含专辑内全部文档");
+    });
+  });
+
   it("detects >80% duplicate questions, merges selected fields, and preserves both directory paths", async () => {
     const appState = state();
     await runWithState(appState, async () => {

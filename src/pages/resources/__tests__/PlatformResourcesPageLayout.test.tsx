@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import PlatformResourcesPage from "@/pages/resources/PlatformResourcesPage";
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
-import type { Material, Question, ShareRecord, Teacher, TreeNode } from "@/types";
+import type { ExamPaper, Material, Question, ShareRecord, Teacher, TreeNode } from "@/types";
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
   includeCurrentOption: (options: Array<{ value: string; label: string }>) => options,
@@ -108,6 +108,24 @@ const essayQuestion: Question = {
   category: "exam",
   sourceType: "imported",
   grade: "高二",
+};
+
+const albumPaper: ExamPaper = {
+  id: "paper-album",
+  teacherId: "teacher-other",
+  schoolId: "school-1",
+  title: "函数专题试卷",
+  chapterIds: [],
+  knowledgePointIds: [],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  duration: 60,
+  totalScore: 100,
+  questions: [],
+  status: "draft",
+  createdAt: "2026-08-01T00:00:00.000Z",
+  updatedAt: "2026-08-01T00:00:00.000Z",
 };
 
 const material: Material = {
@@ -215,6 +233,22 @@ describe("PlatformResourcesPage layout and filters", () => {
     expect(headerRow).toBeTruthy();
     expect(within(headerRow as HTMLElement).getByRole("button", { name: /修改属性/ })).toBeInTheDocument();
     expect(within(headerRow as HTMLElement).getByRole("button", { name: /本人捐赠/ })).toBeInTheDocument();
+  });
+
+  it("shows the album name and source resource library on donated documents", async () => {
+    const albumDonation = donationRecord("donation-album", "teacher-other", "examPaper", albumPaper);
+    albumDonation.donationAlbum = {
+      id: "album-1",
+      name: "函数专题",
+      resourceType: "examPaper",
+      libraryLabel: "试卷库",
+    };
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([albumDonation]);
+
+    renderPage();
+
+    expect(await screen.findByText("函数专题试卷")).toBeInTheDocument();
+    expect(screen.getByText("专辑：函数专题 · 试卷库")).toBeInTheDocument();
   });
 
   it("derives type-specific filter choices from donated resources", async () => {

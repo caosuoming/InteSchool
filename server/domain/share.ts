@@ -4,6 +4,7 @@ import { schoolBackupService } from "./schoolBackup.js";
 import type {
   Chapter,
   Courseware,
+  DonationAlbumSnapshot,
   DonationContributor,
   DonationDirectoryEntry,
   DonationDirectorySnapshot,
@@ -23,6 +24,7 @@ import type {
   PlatformSaveDecision,
   PlatformSaveResult,
   Question,
+  ResourceFolder,
   ShareRecord,
   ShareableResourceType,
   ShareScope,
@@ -132,6 +134,49 @@ function nextPlatformOrder(subject: string): number {
 
 function resourceTitle(type: ShareableResourceType, resource: ShareableResource): string {
   return type === "question" ? (resource as Question).stem : (resource as Exclude<ShareableResource, Question>).title;
+}
+
+const albumLibraryLabels: Record<ResourceFolder["resourceType"], DonationAlbumSnapshot["libraryLabel"]> = {
+  examPaper: "试卷库",
+  lecture: "讲义库",
+  courseware: "课件库",
+};
+
+function validateDonationAlbums(
+  teacherId: string,
+  schoolId: string,
+  requests: DonationRequest[],
+): Map<string, DonationAlbumSnapshot> {
+  const albumIds = [...new Set(requests.map((request) => request.albumId).filter((id): id is string => Boolean(id)))];
+  if (albumIds.length === 0) return new Map();
+
+  const folders = db.read("resourceFolders") as ResourceFolder[];
+  const snapshots = new Map<string, DonationAlbumSnapshot>();
+  for (const albumId of albumIds) {
+    const folder = folders.find((item) => item.id === albumId);
+    if (!folder || folder.teacherId !== teacherId || folder.schoolId !== schoolId) {
+      throw new Error("待捐赠专辑不存在或无权访问");
+    }
+    const albumRequests = requests.filter((request) => request.albumId === albumId);
+    if (albumRequests.some((request) => request.resourceType !== folder.resourceType)) {
+      throw new Error("专辑中的文档类型与资源库不一致");
+    }
+    const requestedIds = new Set(albumRequests.map((request) => request.resourceId));
+    const folderIds = new Set(folder.resourceIds);
+    if (
+      requestedIds.size !== folderIds.size
+      || folder.resourceIds.some((resourceId) => !requestedIds.has(resourceId))
+    ) {
+      throw new Error("捐赠专辑必须包含专辑内全部文档");
+    }
+    snapshots.set(albumId, {
+      id: folder.id,
+      name: folder.name,
+      resourceType: folder.resourceType,
+      libraryLabel: albumLibraryLabels[folder.resourceType],
+    });
+  }
+  return snapshots;
 }
 
 function findOwnedResource(
@@ -815,15 +860,28 @@ export const shareService = {
     const now = new Date().toISOString();
     const existingRecords = contributionDonations();
     const created: ShareRecord[] = [];
+    const albumSnapshots = validateDonationAlbums(teacherId, schoolId, requests);
 
     for (const request of requests) {
       const resource = findOwnedResource(request.resourceType, request.resourceId, teacherId, schoolId);
+      const donationAlbum = request.albumId ? albumSnapshots.get(request.albumId) : undefined;
       const duplicateDonation = existingRecords.find((item) =>
         item.fromTeacherId === teacherId
         && item.resourceType === request.resourceType
         && item.sourceResourceId === request.resourceId,
       );
-      if (duplicateDonation) continue;
+      if (duplicateDonation) {
+        if (donationAlbum) {
+          const updated = { ...duplicateDonation, donationAlbum };
+          db.update("shareRecords", (list: ShareRecord[]) => list.map((item) =>
+            item.id === duplicateDonation.id ? updated : item,
+          ));
+          const index = existingRecords.findIndex((item) => item.id === duplicateDonation.id);
+          if (index >= 0) existingRecords[index] = updated;
+          created.push(updated);
+        }
+        continue;
+      }
 
       const directorySnapshot = collectDirectorySnapshot(resource);
       if (request.resourceType === "question" && request.duplicateAction === "merge") {
@@ -895,6 +953,7 @@ export const shareService = {
         resourceTitle: resourceTitle(request.resourceType, resource),
         resourceSnapshot: snapshot,
         directorySnapshot,
+        donationAlbum,
         platformSubject: subject,
         platformOrder: nextPlatformOrder(subject),
         status: "pending",

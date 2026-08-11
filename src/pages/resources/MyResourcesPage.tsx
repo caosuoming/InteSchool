@@ -353,7 +353,7 @@ function ResourceFolderHeader({
   const save = async () => {
     const next = draft.trim();
     if (!next) {
-      toast.warning("文件夹名称不能为空");
+      toast.warning("专辑名称不能为空");
       return;
     }
     if (next === folder.name) {
@@ -373,7 +373,7 @@ function ResourceFolderHeader({
     <div
       className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2"
       role="group"
-      aria-label={`文件夹：${folder.name}`}
+      aria-label={`专辑：${folder.name}`}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <button
@@ -381,7 +381,7 @@ function ResourceFolderHeader({
           className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
           onClick={onToggle}
           aria-expanded={!collapsed}
-          aria-label={`${collapsed ? "展开" : "收拢"}文件夹：${folder.name}`}
+          aria-label={`${collapsed ? "展开" : "收拢"}专辑：${folder.name}`}
         >
           {collapsed
             ? <ChevronRight className="h-4 w-4" />
@@ -398,7 +398,7 @@ function ResourceFolderHeader({
             }}
             className="min-w-32 max-w-sm flex-1 rounded border border-amber-300 bg-paper px-2 py-1 text-sm font-medium outline-none focus:border-gold-400"
             autoFocus
-            aria-label={`重命名文件夹：${folder.name}`}
+            aria-label={`重命名专辑：${folder.name}`}
           />
         ) : (
           <button
@@ -425,7 +425,7 @@ function ResourceFolderHeader({
             className="rounded p-1.5 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
             onClick={() => void save()}
             disabled={saving}
-            title="保存文件夹名称"
+            title="保存专辑名称"
           >
             <Check className="h-4 w-4" />
           </button>
@@ -443,7 +443,7 @@ function ResourceFolderHeader({
           type="button"
           className="rounded p-1.5 text-ink-500 hover:bg-paper hover:text-ink-800"
           onClick={() => setRenaming(true)}
-          title="修改文件夹名称"
+          title="修改专辑名称"
         >
           <Pencil className="h-4 w-4" />
         </button>
@@ -460,7 +460,7 @@ function ResourceFolderHeader({
         type="button"
         className="rounded p-1.5 text-ink-500 hover:bg-paper hover:text-teal-700"
         onClick={onShare}
-        title="分享文件夹内文档"
+        title="分享专辑（含全部文档）"
       >
         <Share2 className="h-4 w-4" />
       </button>
@@ -468,7 +468,7 @@ function ResourceFolderHeader({
         type="button"
         className="rounded p-1.5 text-ink-500 hover:bg-paper hover:text-amber-700"
         onClick={onDonate}
-        title="捐赠文件夹内文档"
+        title="捐赠专辑（含全部文档）"
       >
         <Gift className="h-4 w-4" />
       </button>
@@ -476,7 +476,7 @@ function ResourceFolderHeader({
         type="button"
         className="rounded p-1.5 text-ink-500 hover:bg-red-50 hover:text-red-600"
         onClick={onDelete}
-        title="删除文件夹（保留文档）"
+        title="删除专辑（保留文档）"
       >
         <Trash2 className="h-4 w-4" />
       </button>
@@ -1663,8 +1663,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const selectedResourceRefs = (): BatchResourceRef[] =>
     [...resourceSelections].map(parseBatchResourceKey);
 
-  const donationItemsFor = (refs: BatchResourceRef[]): DonationItem[] => refs
-    .filter((item) => !platformCopyKeys.has(batchResourceKey(item.resourceType, item.resourceId)));
+  const donationItemsFor = (refs: BatchResourceRef[], albumId?: string): DonationItem[] => refs
+    .filter((item) => !platformCopyKeys.has(batchResourceKey(item.resourceType, item.resourceId)))
+    .map((item) => albumId ? { ...item, albumId } : item);
 
   const completeDonation = async (items: DonationItem[], decisions: DonationDecision[] = []) => {
     if (!teacher || items.length === 0) return;
@@ -1689,10 +1690,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
-  const handlePrepareDonation = async (refsOverride?: BatchResourceRef[]) => {
+  const handlePrepareDonation = async (refsOverride?: BatchResourceRef[], albumId?: string) => {
     if (!teacher) return;
     const selectedItems = refsOverride || selectedResourceRefs();
-    const items = donationItemsFor(selectedItems);
+    const items = donationItemsFor(selectedItems, albumId);
     if (items.length === 0) {
       toast.warning(selectedItems.length === 0 ? "请先选择资源" : "所选资源不可捐赠");
       return;
@@ -1705,9 +1706,15 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     try {
       const check = await donationService.checkDonation(teacher.id, schoolId, items);
       const already = new Set(check.alreadyDonated.map((item) => batchResourceKey(item.resourceType, item.resourceId)));
-      const pending = items.filter((item) => !already.has(batchResourceKey(item.resourceType, item.resourceId)));
+      const pending = items.filter((item) =>
+        item.albumId || !already.has(batchResourceKey(item.resourceType, item.resourceId)),
+      );
       if (check.alreadyDonated.length > 0) {
-        toast.warning("已跳过重复捐赠", `${check.alreadyDonated.length} 个资源已经捐赠过`);
+        if (albumId) {
+          toast.info("专辑包含已捐赠文档", `${check.alreadyDonated.length} 个已有平台资源会关联到该专辑`);
+        } else {
+          toast.warning("已跳过重复捐赠", `${check.alreadyDonated.length} 个资源已经捐赠过`);
+        }
       }
       if (pending.length === 0) {
         setResourceSelections(new Set());
@@ -2004,17 +2011,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const openCreateFolderFromSelection = () => {
     const refs = selectedResourceRefs();
     if (refs.length < 2) {
-      toast.warning("请至少选择两个文档后创建文件夹");
+      toast.warning("请至少选择两个文档后创建专辑");
       return;
     }
     const resourceTypes = new Set(refs.map((ref) => ref.resourceType));
     if (resourceTypes.size !== 1) {
-      toast.warning("创建文件夹时请选择同一资源库中的文档");
+      toast.warning("创建专辑时请选择同一资源库中的文档");
       return;
     }
     const resourceType = refs[0].resourceType;
     if (!isResourceFolderType(resourceType as MyResourceTab)) {
-      toast.warning("文件夹仅支持试卷库、讲义库和课件库");
+      toast.warning("专辑仅支持试卷库、讲义库和课件库");
       return;
     }
     const folderType = resourceType as ResourceFolderType;
@@ -2022,7 +2029,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       refs.map((ref) => normalizeFolderResourceId(folderType, ref.resourceId)),
     ));
     if (resourceIds.length < 2) {
-      toast.warning("请至少选择两个不同文档后创建文件夹");
+      toast.warning("请至少选择两个不同文档后创建专辑");
       return;
     }
     setFolderCreateType(folderType);
@@ -2034,7 +2041,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     if (!teacher || !folderCreateType) return;
     const nextName = folderName.trim();
     if (!nextName) {
-      toast.warning("请输入文件夹名称");
+      toast.warning("请输入专辑名称");
       return;
     }
     setFolderWorking(true);
@@ -2056,9 +2063,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       setFolderCreateType(null);
       setFolderCreateResourceIds([]);
       setFolderName("");
-      toast.success("文件夹已创建", `已加入 ${created.resourceIds.length} 个文档`);
+      toast.success("专辑已创建", `已加入 ${created.resourceIds.length} 个文档`);
     } catch (error) {
-      toast.error("创建文件夹失败", error instanceof Error ? error.message : undefined);
+      toast.error("创建专辑失败", error instanceof Error ? error.message : undefined);
     } finally {
       setFolderWorking(false);
     }
@@ -2068,9 +2075,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     try {
       await resourceFolderService.updateFolder(folder.id, { name });
       await loadResourceFolders();
-      toast.success("文件夹名称已更新");
+      toast.success("专辑名称已更新");
     } catch (error) {
-      toast.error("修改文件夹名称失败", error instanceof Error ? error.message : undefined);
+      toast.error("修改专辑名称失败", error instanceof Error ? error.message : undefined);
       throw error;
     }
   };
@@ -2085,7 +2092,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   };
 
   const handleDeleteFolder = async (folder: ResourceFolder) => {
-    if (!confirm(`确定删除文件夹“${folder.name}”吗？文件夹内文档会保留。`)) return;
+    if (!confirm(`确定删除专辑“${folder.name}”吗？专辑内文档会保留。`)) return;
     try {
       await resourceFolderService.deleteFolder(folder.id);
       await loadResourceFolders();
@@ -2094,9 +2101,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         next.delete(folder.id);
         return next;
       });
-      toast.success("文件夹已删除", "文档已保留在资源库中");
+      toast.success("专辑已删除", "文档已保留在资源库中");
     } catch (error) {
-      toast.error("删除文件夹失败", error instanceof Error ? error.message : undefined);
+      toast.error("删除专辑失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -2113,7 +2120,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const handleApplyFolderMove = async () => {
     if (!folderMoveTarget || !folderMoveId) {
-      toast.warning("请选择文件夹");
+      toast.warning("请选择专辑");
       return;
     }
     setFolderWorking(true);
@@ -2122,7 +2129,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       await loadResourceFolders();
       setFolderMoveTarget(null);
       setFolderMoveId("");
-      toast.success("文档已加入文件夹");
+      toast.success("文档已加入专辑");
     } catch (error) {
       toast.error("移动文档失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -2140,9 +2147,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     try {
       await resourceFolderService.removeResource(folder.id, normalizedId);
       await loadResourceFolders();
-      toast.success("文档已移出文件夹");
+      toast.success("文档已移出专辑");
     } catch (error) {
-      toast.error("移出文件夹失败", error instanceof Error ? error.message : undefined);
+      toast.error("移出专辑失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -2163,7 +2170,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       await resourceFolderService.reorderResources(folder.id, nextIds);
       await loadResourceFolders();
     } catch (error) {
-      toast.error("调整文档顺序失败", error instanceof Error ? error.message : undefined);
+      toast.error("调整专辑内文档顺序失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -2177,11 +2184,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     const index = folder?.resourceIds.indexOf(normalizedId) ?? -1;
     const actions: ConfigurableResourceAction[] = [{
       key: "folderMove",
-      label: folder ? "移动到文件夹" : "加入文件夹",
+      label: folder ? "移动到专辑" : "加入专辑",
       icon: <FolderPlus />,
       onClick: () => {
         if (resourceFolders.length === 0) {
-          toast.warning("请先选择至少两个文档，通过批量操作创建文件夹");
+          toast.warning("请先选择至少两个文档，通过批量操作创建专辑");
           return;
         }
         openFolderMove(resourceType, normalizedId, resourceTitle);
@@ -2191,14 +2198,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     if (folder) {
       actions.push({
         key: "folderRemove",
-        label: "移出文件夹",
+        label: "移出专辑",
         icon: <FolderMinus />,
         onClick: () => void handleRemoveResourceFromFolder(resourceType, normalizedId),
       });
       if (index > 0) {
         actions.push({
           key: "folderMoveUp",
-          label: "在文件夹内上移",
+          label: "在专辑内上移",
           icon: <ArrowUp />,
           onClick: () => void handleMoveFolderResource(resourceType, normalizedId, -1),
         });
@@ -2206,7 +2213,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       if (index >= 0 && index < folder.resourceIds.length - 1) {
         actions.push({
           key: "folderMoveDown",
-          label: "在文件夹内下移",
+          label: "在专辑内下移",
           icon: <ArrowDown />,
           onClick: () => void handleMoveFolderResource(resourceType, normalizedId, 1),
         });
@@ -2244,7 +2251,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             onRename={(name) => handleRenameFolder(folder, name)}
             onTogglePin={() => void handleToggleFolderPin(folder)}
             onShare={() => void handleBatchShare(folderRefs(folder))}
-            onDonate={() => void handlePrepareDonation(folderRefs(folder))}
+            onDonate={() => void handlePrepareDonation(folderRefs(folder), folder.id)}
             onDelete={() => void handleDeleteFolder(folder)}
           />
         )}
@@ -3508,7 +3515,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <option value="share">批量分享</option>
             <option value="delete">批量删除</option>
             <option value="donate">捐赠到平台</option>
-            {resourceSelections.size >= 2 && <option value="folder">创建文件夹</option>}
+            {resourceSelections.size >= 2 && <option value="folder">创建专辑</option>}
             <option value="chapter">新增统一章节</option>
             <option value="knowledge">新增统一知识点</option>
           </select>
@@ -3613,8 +3620,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           setFolderCreateResourceIds([]);
           setFolderName("");
         }}
-        title="创建文件夹"
-        description={`将选中的 ${folderCreateResourceIds.length} 个文档加入新文件夹。`}
+        title="创建专辑"
+        description={`将选中的 ${folderCreateResourceIds.length} 个文档加入新专辑。`}
         size="sm"
         footer={
           <div className="flex justify-end gap-2">
@@ -3642,10 +3649,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         }
       >
         <Input
-          label="文件夹名称"
+          label="专辑名称"
           value={folderName}
           onChange={(event) => setFolderName(event.target.value)}
-          placeholder="输入文件夹名称"
+          placeholder="输入专辑名称"
           autoFocus
           onKeyDown={(event) => {
             if (event.key === "Enter" && folderName.trim()) void handleCreateFolder();
@@ -3663,7 +3670,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         title={folderMoveTarget && folderForResource(
           folderMoveTarget.resourceType,
           folderMoveTarget.resourceId,
-        ) ? "移动到文件夹" : "加入文件夹"}
+        ) ? "移动到专辑" : "加入专辑"}
         description={folderMoveTarget?.resourceTitle}
         size="sm"
         footer={
@@ -3690,12 +3697,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         }
       >
         <label className="block text-sm text-ink-700">
-          <span className="mb-1.5 block font-medium">目标文件夹</span>
+          <span className="mb-1.5 block font-medium">目标专辑</span>
           <select
             value={folderMoveId}
             onChange={(event) => setFolderMoveId(event.target.value)}
             className="w-full rounded-md border border-ink-200 bg-paper px-3 py-2 outline-none focus:border-gold-400"
-            aria-label="目标文件夹"
+            aria-label="目标专辑"
           >
             {resourceFolders.map((folder) => (
               <option key={folder.id} value={folder.id}>{folder.name}</option>

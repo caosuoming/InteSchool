@@ -41,6 +41,7 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import type {
   Courseware,
   CoursewareType,
+  DonationAlbumSnapshot,
   DonationContributor,
   DonationPrivileges,
   ExamPaper,
@@ -91,6 +92,7 @@ interface PlatformResourceItem {
   updatedAt: string;
   meta: { label: string; value: string }[];
   snapshot: ShareableResource;
+  donationAlbum?: DonationAlbumSnapshot;
   question?: Question;
 }
 
@@ -274,6 +276,7 @@ function snapshotToItem(share: ShareRecord): PlatformResourceItem | null {
     schoolYear: snapshot.schoolYear,
     semester: snapshot.semester || "上学期",
     snapshot,
+    donationAlbum: share.donationAlbum,
     chapterIds: share.directorySnapshot?.chapters.filter((item) => item.selected).map((item) => item.id) || [],
     knowledgePointIds: share.directorySnapshot?.knowledgePoints.filter((item) => item.selected).map((item) => item.id) || [],
   };
@@ -1189,6 +1192,11 @@ export default function PlatformResourcesPage() {
                   <div key={item.shareId} className="card-base p-4 hover:shadow-cardHover transition-all group">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
                       <span className="tag-gold">{resourceTypeLabel[item.resourceType]}</span>
+                      {item.donationAlbum && (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                          专辑：{item.donationAlbum.name} · {item.donationAlbum.libraryLabel}
+                        </span>
+                      )}
                       <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">{item.subject}</span>
                       <span className="flex items-center gap-1 text-xs text-ink-500">
                         捐赠者：{contributor?.nickname || "匿名用户"}
