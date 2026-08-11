@@ -77,6 +77,8 @@ interface WritableCanvasProps {
   eraserWidth?: number;
   clearToken: number;
   cancelToken?: number;
+  strokes?: DrawingStroke[];
+  onStrokesChange?: (strokes: DrawingStroke[]) => void;
   className?: string;
   ariaLabel?: string;
 }
@@ -102,6 +104,7 @@ interface BoardWritingArea {
   scale: number;
   clearToken: number;
   cancelDrawingToken: number;
+  strokes: DrawingStroke[];
 }
 
 interface BoardPage {
@@ -171,6 +174,29 @@ const BOARD_WRITING_AREA_MIN_SCALE = 1;
 const BOARD_WRITING_AREA_MAX_SCALE = 2;
 const BOARD_WRITING_AREA_VISIBLE_MARGIN_PX = 48;
 const BOARD_WRITING_AREA_WHEEL_ZOOM_SPEED = 0.0015;
+
+function createBoardPage(slideId: string, index: number): BoardPage {
+  const offset = (index % 5) * 3;
+  const boardId = `board-${slideId}-${Date.now()}-${index}`;
+  const firstWritingArea: BoardWritingArea = {
+    id: `${boardId}-writing-area-1`,
+    frameX: 0,
+    frameY: 0,
+    scale: BOARD_WRITING_AREA_MIN_SCALE,
+    clearToken: 0,
+    cancelDrawingToken: 0,
+    strokes: [],
+  };
+  return {
+    id: boardId,
+    x: 0,
+    y: 10 + offset,
+    width: 100,
+    height: 62,
+    writingAreas: [firstWritingArea],
+    activeWritingAreaId: firstWritingArea.id,
+  };
+}
 
 const questionTypeLabel: Record<string, string> = {
   single: "单选",
@@ -401,14 +427,17 @@ function WritableCanvas({
   eraserWidth = 24,
   clearToken,
   cancelToken = 0,
+  strokes,
+  onStrokesChange,
   className,
   ariaLabel,
 }: WritableCanvasProps) {
   const highlighterCanvasRef = useRef<HTMLCanvasElement>(null);
   const inkCanvasRef = useRef<HTMLCanvasElement>(null);
   const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
-  const strokesRef = useRef<DrawingStroke[]>([]);
+  const strokesRef = useRef<DrawingStroke[]>(strokes || []);
   const activeStrokeRef = useRef<DrawingStroke | null>(null);
+  const previousClearTokenRef = useRef(clearToken);
 
   const redraw = useCallback(() => {
     const highlighterCanvas = highlighterCanvasRef.current;
@@ -470,10 +499,20 @@ function WritableCanvas({
   }, [resizeCanvases]);
 
   useEffect(() => {
+    if (previousClearTokenRef.current === clearToken) return;
+    previousClearTokenRef.current = clearToken;
     strokesRef.current = [];
     activeStrokeRef.current = null;
+    onStrokesChange?.([]);
     redraw();
-  }, [clearToken, redraw]);
+  }, [clearToken, onStrokesChange, redraw]);
+
+  useEffect(() => {
+    if (!strokes) return;
+    strokesRef.current = strokes;
+    activeStrokeRef.current = null;
+    redraw();
+  }, [redraw, strokes]);
 
   useEffect(() => {
     activeStrokeRef.current = null;
@@ -515,8 +554,10 @@ function WritableCanvas({
   const stopDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const stroke = activeStrokeRef.current;
     if (stroke) {
-      strokesRef.current.push(stroke);
+      const nextStrokes = [...strokesRef.current, stroke];
+      strokesRef.current = nextStrokes;
       activeStrokeRef.current = null;
+      onStrokesChange?.(nextStrokes);
       redraw();
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
@@ -541,6 +582,7 @@ function WritableCanvas({
         ref={interactionCanvasRef}
         aria-label={ariaLabel}
         data-drawing-layer="interaction"
+        data-recorded-stroke-count={strokes?.length ?? strokesRef.current.length}
         className={cn(
           "absolute inset-0 h-full w-full touch-none",
           tool === "none" || tool === "select"
@@ -624,14 +666,30 @@ export function PresentationMode({
   const [elementOverrides, setElementOverrides] = useState<Record<string, LessonSlideElement[]>>({});
   const [animationProgress, setAnimationProgress] = useState<Record<string, number>>({});
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
-  const [boards, setBoards] = useState<BoardPage[]>([]);
+  const [boardsBySlide, setBoardsBySlide] = useState<Record<string, BoardPage[]>>({});
+  const [activeBoardIdsBySlide, setActiveBoardIdsBySlide] = useState<Record<string, string | null>>({});
+  const [annotationStrokesBySlide, setAnnotationStrokesBySlide] = useState<Record<string, DrawingStroke[]>>({});
   const [boardsVisible, setBoardsVisible] = useState(false);
-  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [mainClearToken, setMainClearToken] = useState(0);
   const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
   const [colorPreferences, setColorPreferences] = useState<PresentationColorPreferences>(readColorPreferences);
 
   const currentSlide = slides[currentIndex];
+  const currentSlideStateKey = currentSlide?.id || "__empty-slide__";
+  const boards = boardsBySlide[currentSlideStateKey] || [];
+  const activeBoardId = activeBoardIdsBySlide[currentSlideStateKey] || null;
+  const currentAnnotationStrokes = annotationStrokesBySlide[currentSlideStateKey] || [];
+  const setBoards = useCallback((update: BoardPage[] | ((current: BoardPage[]) => BoardPage[])) => {
+    setBoardsBySlide((current) => {
+      const currentBoards = current[currentSlideStateKey] || [];
+      const nextBoards = typeof update === "function" ? update(currentBoards) : update;
+      if (nextBoards === currentBoards) return current;
+      return { ...current, [currentSlideStateKey]: nextBoards };
+    });
+  }, [currentSlideStateKey]);
+  const setActiveBoardId = useCallback((boardId: string | null) => {
+    setActiveBoardIdsBySlide((current) => ({ ...current, [currentSlideStateKey]: boardId }));
+  }, [currentSlideStateKey]);
   const selectedDrawingPreset = drawingPresets.find((preset) => preset.id === tool);
   const effectiveTextColor = colorPreferences.textColorMode === "auto"
     ? getMaximumContrastTextColor(colorPreferences.pageBackgroundColor)
@@ -661,8 +719,18 @@ export function PresentationMode({
     ? getVisibleLessonSlideElements(displayedSlide, questionVisibility)
     : [];
   const currentAnimationSteps = getAnimationSteps(animationCandidateElements);
+  const minimumAnimationProgress = currentAnimationSteps.length > 0
+    && getElementsAtAnimationProgress(animationCandidateElements, currentAnimationSteps, 0).length === 0
+    ? 1
+    : 0;
   const currentAnimationProgress = currentSlide
-    ? Math.min(animationProgress[currentSlide.id] || 0, currentAnimationSteps.length)
+    ? Math.max(
+        minimumAnimationProgress,
+        Math.min(
+          animationProgress[currentSlide.id] ?? minimumAnimationProgress,
+          currentAnimationSteps.length,
+        ),
+      )
     : 0;
   const visibleSlideElements = getElementsAtAnimationProgress(
     animationCandidateElements,
@@ -732,11 +800,17 @@ export function PresentationMode({
     setPresetMenuToolId(null);
     setEraserSizeMenuOpen(false);
     setColorSettingsOpen(false);
-    setMainClearToken((value) => value + 1);
   }, [currentIndex]);
 
+  useEffect(() => {
+    if (!boardsVisible || !currentSlide || boards.length > 0) return;
+    const board = createBoardPage(currentSlide.id, 0);
+    setBoards([board]);
+    setActiveBoardId(board.id);
+  }, [boards.length, boardsVisible, currentSlide, setActiveBoardId, setBoards]);
+
   const goPrev = useCallback(() => {
-    if (currentSlide && currentAnimationProgress > 0) {
+    if (currentSlide && currentAnimationProgress > minimumAnimationProgress) {
       setAnimationProgress((current) => ({
         ...current,
         [currentSlide.id]: currentAnimationProgress - 1,
@@ -744,7 +818,7 @@ export function PresentationMode({
       return;
     }
     setCurrentIndex((index) => Math.max(0, index - 1));
-  }, [currentAnimationProgress, currentSlide]);
+  }, [currentAnimationProgress, currentSlide, minimumAnimationProgress]);
 
   const goNext = useCallback(() => {
     if (currentSlide && currentAnimationProgress < currentAnimationSteps.length) {
@@ -868,25 +942,7 @@ export function PresentationMode({
 
   const addBoard = () => {
     const index = boards.length;
-    const offset = (index % 5) * 3;
-    const boardId = `board-${Date.now()}-${index}`;
-    const firstWritingArea: BoardWritingArea = {
-      id: `${boardId}-writing-area-1`,
-      frameX: 0,
-      frameY: 0,
-      scale: BOARD_WRITING_AREA_MIN_SCALE,
-      clearToken: 0,
-      cancelDrawingToken: 0,
-    };
-    const board: BoardPage = {
-      id: boardId,
-      x: 0,
-      y: 10 + offset,
-      width: 100,
-      height: 62,
-      writingAreas: [firstWritingArea],
-      activeWritingAreaId: firstWritingArea.id,
-    };
+    const board = createBoardPage(currentSlideStateKey, index);
     setBoards((current) => [...current, board]);
     setActiveBoardId(board.id);
     setBoardsVisible(true);
@@ -903,6 +959,7 @@ export function PresentationMode({
         scale: BOARD_WRITING_AREA_MIN_SCALE,
         clearToken: 0,
         cancelDrawingToken: 0,
+        strokes: [],
       };
       return {
         ...board,
@@ -1542,6 +1599,11 @@ export function PresentationMode({
           preset={selectedDrawingPreset}
           eraserWidth={eraserWidth}
           clearToken={mainClearToken}
+          strokes={currentAnnotationStrokes}
+          onStrokesChange={(strokes) => setAnnotationStrokesBySlide((current) => ({
+            ...current,
+            [currentSlideStateKey]: strokes,
+          }))}
           ariaLabel="课件批注画布"
           className="z-10"
         />
@@ -1639,6 +1701,17 @@ export function PresentationMode({
                         eraserWidth={eraserWidth}
                         clearToken={writingArea.clearToken}
                         cancelToken={writingArea.cancelDrawingToken}
+                        strokes={writingArea.strokes}
+                        onStrokesChange={(strokes) => setBoards((current) => current.map((currentBoard) => (
+                          currentBoard.id === board.id
+                            ? {
+                                ...currentBoard,
+                                writingAreas: currentBoard.writingAreas.map((area) => (
+                                  area.id === writingArea.id ? { ...area, strokes } : area
+                                )),
+                              }
+                            : currentBoard
+                        )))}
                         ariaLabel={`${label}书写区 ${writingAreaIndex + 1}`}
                         className="z-10"
                       />

@@ -202,6 +202,103 @@ describe("PresentationMode", () => {
     expect(screen.getByText("下一张内容")).toBeInTheDocument();
   });
 
+  it("shows the first animation step immediately when an animated page would otherwise be blank", async () => {
+    const user = userEvent.setup();
+    const animatedSlides: LessonSlide[] = [{
+      id: "animated-only",
+      type: "knowledge",
+      title: "动画页",
+      freeformLayout: true,
+      elements: [{
+        id: "step-one",
+        kind: "text",
+        content: "第一步直接显示",
+        x: 5,
+        y: 5,
+        width: 30,
+        height: 15,
+        enterAnimation: "fade",
+        animationOrder: 1,
+      }, {
+        id: "step-two",
+        kind: "text",
+        content: "第二步再显示",
+        x: 5,
+        y: 25,
+        width: 30,
+        height: 15,
+        enterAnimation: "rise",
+        animationOrder: 2,
+      }],
+    }, slides[1]];
+
+    render(
+      <PresentationMode
+        slides={animatedSlides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("第一步直接显示")).toBeInTheDocument();
+    expect(screen.queryByText("第二步再显示")).not.toBeInTheDocument();
+
+    const next = screen.getByRole("button", { name: "左侧下一页" });
+    await user.click(next);
+    expect(screen.getByText("第二步再显示")).toBeInTheDocument();
+    await user.click(next);
+    expect(screen.getByText("第二页内容")).toBeInTheDocument();
+  });
+
+  it("restores slide annotations and board writing independently per page", async () => {
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={slides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "红色画笔" }));
+    const mainCanvas = screen.getByLabelText("课件批注画布") as HTMLCanvasElement;
+    vi.spyOn(mainCanvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800,
+      width: 1000, height: 800, toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(mainCanvas, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(mainCanvas, { pointerId: 1, clientX: 180, clientY: 140 });
+    fireEvent.pointerUp(mainCanvas, { pointerId: 1, clientX: 180, clientY: 140 });
+    expect(screen.getByLabelText("课件批注画布")).toHaveAttribute("data-recorded-stroke-count", "1");
+
+    await user.click(screen.getByRole("button", { name: "打开板书" }));
+    const boardCanvas = screen.getByLabelText("板书 1书写区 1") as HTMLCanvasElement;
+    vi.spyOn(boardCanvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800,
+      width: 1000, height: 800, toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(boardCanvas, { pointerId: 2, clientX: 200, clientY: 200 });
+    fireEvent.pointerMove(boardCanvas, { pointerId: 2, clientX: 260, clientY: 250 });
+    fireEvent.pointerUp(boardCanvas, { pointerId: 2, clientX: 260, clientY: 250 });
+    expect(screen.getByLabelText("板书 1书写区 1")).toHaveAttribute("data-recorded-stroke-count", "1");
+
+    await user.click(screen.getByRole("button", { name: "左侧下一页" }));
+    expect(screen.getByText("第二页内容")).toBeInTheDocument();
+    expect(screen.getByLabelText("课件批注画布")).toHaveAttribute("data-recorded-stroke-count", "0");
+    await waitFor(() => {
+      expect(screen.getByLabelText("板书 1书写区 1")).toHaveAttribute("data-recorded-stroke-count", "0");
+    });
+
+    await user.click(screen.getByRole("button", { name: "左侧上一页" }));
+    expect(screen.getByText("第一页内容")).toBeInTheDocument();
+    expect(screen.getByLabelText("课件批注画布")).toHaveAttribute("data-recorded-stroke-count", "1");
+    expect(screen.getByLabelText("板书 1书写区 1")).toHaveAttribute("data-recorded-stroke-count", "1");
+  });
+
   it("combines page, text, and board colors with automatic maximum contrast", async () => {
     expect(getMaximumContrastTextColor("#ffffff")).toBe("#111827");
     expect(getMaximumContrastTextColor("#111827")).toBe("#ffffff");
