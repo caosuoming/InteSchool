@@ -530,15 +530,13 @@
     line-height: 1.15;
   }
   .exam-desk-label-meta,
-  .exam-desk-label-row,
   .exam-desk-label-seat {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1.5mm;
   }
-  .exam-desk-label-meta,
-  .exam-desk-label-row {
+  .exam-desk-label-meta {
     min-width: 0;
     font-size: var(--desk-detail-size);
     line-height: 1.15;
@@ -546,8 +544,7 @@
   .exam-desk-label-meta {
     margin-top: var(--desk-section-spacing);
   }
-  .exam-desk-label-meta span,
-  .exam-desk-label-row span {
+  .exam-desk-label-meta span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -561,11 +558,11 @@
   }
   .exam-desk-label-seat strong { font-size: var(--desk-seat-strong-size); }
   .exam-desk-label-assignments {
-    flex: 1;
+    flex: 0 0 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    justify-content: space-evenly;
+    justify-content: flex-start;
   }
   .exam-desk-label-assignment {
     min-height: 0;
@@ -575,36 +572,53 @@
   .exam-desk-label-assignment:first-child {
     border-top: 0;
   }
+  .exam-desk-label-assignment-main {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    align-items: baseline;
+    gap: 1mm;
+  }
   .exam-desk-label-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    text-align: center;
+    text-align: left;
     font-family: "Songti SC", "SimSun", serif;
     font-size: var(--desk-name-size);
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.04em;
     line-height: 1.1;
   }
   .exam-desk-label-subject {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin-top: var(--desk-subline-spacing);
-    text-align: center;
+    text-align: right;
     font-size: var(--desk-subject-size);
     font-weight: 600;
     line-height: 1.15;
   }
-  .exam-desk-label-admission {
+  .exam-desk-label-assignment-meta {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.8mm;
+    margin-top: var(--desk-subline-spacing);
+    font-size: var(--desk-detail-size);
+    line-height: 1.15;
+  }
+  .exam-desk-label-assignment-meta span {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin-top: var(--desk-subline-spacing);
-    text-align: center;
+  }
+  .exam-desk-label-admission {
+    flex: 1 1 auto;
+    text-align: right;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: var(--desk-detail-size);
-    line-height: 1.15;
     letter-spacing: 0.02em;
   }
 

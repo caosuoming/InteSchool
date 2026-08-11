@@ -53,7 +53,7 @@ const ACADEMIC_TEST_SUBJECTS = ["物理", "化学", "生物", "政治", "历史"
 type ViewMode = "settings" | "result";
 type PreviewMode = "class" | "desk";
 
-function getDeskLabelPrintLayout(labelCount: number): {
+function getDeskLabelPrintLayout(labelCount: number, maxAssignments: number): {
   columns: number;
   rows: number;
   density: "normal" | "compact" | "dense";
@@ -62,16 +62,24 @@ function getDeskLabelPrintLayout(labelCount: number): {
   const count = Math.max(1, labelCount);
   const columns = count <= 36 ? 3 : 4;
   const rows = Math.ceil(count / columns);
+  const density = count <= 18 ? "normal" : count <= 36 ? "compact" : "dense";
+  const assignmentCount = Math.max(1, maxAssignments);
+  const contentHeight = density === "normal"
+    ? 16 + assignmentCount * 10.5
+    : density === "compact"
+      ? 13 + assignmentCount * 8
+      : 11 + assignmentCount * 6.5;
+  const pageFitHeight = (340 - Math.max(0, rows - 1) * (density === "normal" ? 1.5 : density === "compact" ? 1 : 0.7)) / rows;
 
   return {
     columns,
     rows,
-    rowHeight: Math.min(48, 340 / rows),
-    density: count <= 18 ? "normal" : count <= 36 ? "compact" : "dense",
+    rowHeight: Math.min(contentHeight, pageFitHeight),
+    density,
   };
 }
 
-function getClassPrintLayout(studentCount: number): {
+function getClassPrintLayout(studentCount: number, maxAssignments: number): {
   columns: 3 | 4;
   rows: number;
   density: "normal" | "compact" | "dense";
@@ -80,11 +88,19 @@ function getClassPrintLayout(studentCount: number): {
   const count = Math.max(1, studentCount);
   const columns = count <= 36 ? 3 : 4;
   const rows = Math.ceil(count / columns);
+  const density = rows <= 9 ? "normal" : rows <= 13 ? "compact" : "dense";
+  const assignmentCount = Math.max(1, maxAssignments);
+  const contentHeight = density === "normal"
+    ? 5.8 + assignmentCount * 2.55
+    : density === "compact"
+      ? 5.3 + assignmentCount * 2.2
+      : 4.8 + assignmentCount * 1.85;
+  const pageFitHeight = (250 - Math.max(0, rows - 1) * (density === "normal" ? 1.2 : density === "compact" ? 0.9 : 0.65)) / rows;
   return {
     columns,
     rows,
-    density: rows <= 9 ? "normal" : rows <= 13 ? "compact" : "dense",
-    rowHeight: Math.min(26, 250 / rows),
+    density,
+    rowHeight: Math.min(contentHeight, pageFitHeight),
   };
 }
 
@@ -1623,7 +1639,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           {previewMode === "class" && selectedClassAssignmentGroups.length > 0 && selectedArrangement && (
             <div ref={classPrintRef} className="print-only exam-class-arrangement-sheet" aria-hidden="true">
               {selectedClassAssignmentGroups.map(({ classItem, students }) => {
-                const layout = getClassPrintLayout(students.length);
+                const layout = getClassPrintLayout(
+                  students.length,
+                  Math.max(...students.map((student) => student.assignments.length), 1),
+                );
                 return (
                   <section
                     key={classItem.id}
@@ -1673,7 +1692,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           {previewMode === "desk" && selectedDeskRoomGroups.length > 0 && selectedArrangement && (
             <div ref={deskPrintRef} className="print-only exam-desk-label-sheet" aria-hidden="true">
               {selectedDeskRoomGroups.map((roomGroup) => {
-                const layout = getDeskLabelPrintLayout(roomGroup.labels.length);
+                const layout = getDeskLabelPrintLayout(
+                  roomGroup.labels.length,
+                  Math.max(...roomGroup.labels.map((label) => label.assignments.length), 1),
+                );
                 return (
                   <div
                     key={roomGroup.roomId}
@@ -1694,13 +1716,15 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       <div className="exam-desk-label-assignments">
                         {group.assignments.map((assignment) => (
                           <div key={assignment.id} className="exam-desk-label-assignment">
-                            <div className="exam-desk-label-name">{assignment.studentName}</div>
-                            <div className="exam-desk-label-subject">{assignment.subjectLabel}</div>
-                            <div className="exam-desk-label-row">
+                            <div className="exam-desk-label-assignment-main">
+                              <div className="exam-desk-label-name">{assignment.studentName}</div>
+                              <div className="exam-desk-label-subject">{assignment.subjectLabel}</div>
+                            </div>
+                            <div className="exam-desk-label-assignment-meta">
                               <span>{assignment.className}</span>
                               {showDeskStudentNo && <span>学号 {assignment.studentNo}</span>}
+                              {showDeskAdmissionNo && <span className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</span>}
                             </div>
-                            {showDeskAdmissionNo && <div className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</div>}
                           </div>
                         ))}
                       </div>

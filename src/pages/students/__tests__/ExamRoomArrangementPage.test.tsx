@@ -408,7 +408,10 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByRole("button", { name: "打印已选班级" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "下载班级 PDF" })).toBeEnabled();
     expect(screen.getAllByTestId("class-arrangement-print-page")).toHaveLength(1);
-    expect(screen.getByTestId("class-arrangement-print-page")).toHaveAttribute("data-columns", "3");
+    const classPrintPage = screen.getByTestId("class-arrangement-print-page");
+    expect(classPrintPage).toHaveAttribute("data-columns", "3");
+    const classGrid = classPrintPage.querySelector<HTMLElement>(".exam-class-arrangement-grid");
+    expect(Number.parseFloat(classGrid?.style.gridAutoRows || "0")).toBeLessThan(15);
 
     await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
@@ -418,6 +421,10 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByLabelText("桌贴显示准考证号")).toBeChecked();
     expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "下载桌贴 PDF" })).toBeEnabled();
+    const deskPrintPage = screen.getByTestId("desk-label-print-page");
+    expect(Number.parseFloat(deskPrintPage.style.gridAutoRows)).toBeLessThan(48);
+    expect(deskPrintPage.querySelector(".exam-desk-label-assignment-main")).toHaveTextContent("张同学");
+    expect(deskPrintPage.querySelector(".exam-desk-label-assignment-meta")).toHaveTextContent("高三（1）班");
 
     await user.click(screen.getByLabelText("桌贴显示学号"));
     expect(screen.queryByText("学号：001")).not.toBeInTheDocument();
@@ -544,5 +551,6 @@ describe("ExamRoomArrangementPage", () => {
     expect(printPage).toHaveAttribute("data-density", "compact");
     expect(printPage).toHaveAttribute("data-columns", "3");
     expect(printPage.querySelectorAll(".exam-desk-label")).toHaveLength(21);
+    expect(Number.parseFloat(printPage.style.gridAutoRows)).toBeLessThan(30);
   });
 });
