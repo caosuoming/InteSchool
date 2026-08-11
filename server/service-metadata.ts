@@ -357,7 +357,8 @@ export const serviceParameters = {
     "bulkImportStudents": [
       "gradeId",
       "teacherId",
-      "rows"
+      "rows",
+      "options"
     ],
     "listSchoolRosterRecycleBin": [
       "schoolId"

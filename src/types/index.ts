@@ -432,9 +432,15 @@ export interface StudentRosterImportRow {
   gender?: "male" | "female";
 }
 
+export interface StudentRosterImportOptions {
+  missingStudents?: "keep" | "delete";
+}
+
 export interface StudentRosterImportResult {
   createdClasses: number;
   createdStudents: number;
+  updatedStudents: number;
+  deletedStudents: number;
   skippedStudents: number;
 }
 

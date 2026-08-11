@@ -8,6 +8,7 @@ import type {
   AnyClass,
   ClassroomChoice,
   StudentRosterImportRow,
+  StudentRosterImportOptions,
   StudentRosterImportResult,
   SchoolRosterRecycleBin,
   StudentArchiveOverview,
@@ -53,8 +54,13 @@ export const classService = {
     return rpcCall("class", "bulkCreateSchoolClasses", [gradeId, teacherId, names]) as any;
   },
 
-  async bulkImportStudents(gradeId: string, teacherId: string, rows: StudentRosterImportRow[]): Promise<StudentRosterImportResult> {
-    return rpcCall("class", "bulkImportStudents", [gradeId, teacherId, rows]) as any;
+  async bulkImportStudents(
+    gradeId: string,
+    teacherId: string,
+    rows: StudentRosterImportRow[],
+    options?: StudentRosterImportOptions,
+  ): Promise<StudentRosterImportResult> {
+    return rpcCall("class", "bulkImportStudents", [gradeId, teacherId, rows, options]) as any;
   },
 
   async listSchoolRosterRecycleBin(schoolId: string): Promise<SchoolRosterRecycleBin> {
