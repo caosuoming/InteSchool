@@ -318,6 +318,7 @@ type QuestionFieldPattern = [
 
 const solutionMarkerPattern = /^(?:【\s*)?(解答|解|证明)(?:\s*】)?(?:(?:\s*[:：]\s*)|(?:\s+(?=\S))|\s*$)/;
 const numberedProofSolutionPattern = /^(?:[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]|[①-⑳])\s*(?:证明|证)(?:\s*[:：]\s*)?/i;
+const numberedSubQuestionSolutionPattern = /^(?:[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]|[①-⑳])\s*(?:解答|解析|详解|分析|解)(?:(?:\s*[:：]\s*)|(?:\s+(?=\S))|\s*$)/i;
 const implicitSolutionLeadPattern = /^(?:由|因为|由于|根据|联立|解得|可得|所以|故|从而|于是|设|令|作|易知|显然|不妨|将|把|代入|整理|消去|同理|又由|证明如下)/;
 
 function appendQuestionField(
@@ -756,7 +757,8 @@ function extractExplicitSolution(
   block: Partial<DocumentBlock>,
 ): string | undefined {
   const questionText = block.content || "";
-  if (numberedProofSolutionPattern.test(line) && /(?:证明|求证|请证)/.test(questionText)) {
+  const proofPrompt = /(?:证明|求证|请证)/.test(questionText);
+  if ((numberedProofSolutionPattern.test(line) || numberedSubQuestionSolutionPattern.test(line)) && proofPrompt) {
     return line;
   }
 

@@ -703,6 +703,43 @@ describe("document block parser", () => {
     });
   });
 
+  it.each([
+    "（1）解 由导数符号可知函数单调。",
+    "（2）解析：由零点存在定理可得结论。",
+    "①详解 根据题设整理即可。",
+  ])(
+    "treats numbered solution line %s as analysis when the stem contains a proof request",
+    (solutionLine) => {
+      const blocks = parseDocumentBlocks(
+        [
+          "18. 已知函数 f(x)，（1）证明 f(x) 在区间上单调；（2）求参数范围。",
+          solutionLine,
+          "所以命题成立。",
+        ].join("\n"),
+        config,
+      );
+
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].content).toBe("18. 已知函数 f(x)，（1）证明 f(x) 在区间上单调；（2）求参数范围。");
+      expect(blocks[0].analysis).toBe(`${solutionLine}\n所以命题成立。`);
+    },
+  );
+
+  it("keeps a numbered 解 prompt in the stem when it is not a solution marker", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "18. 已知函数 f(x)，完成下列各题。",
+        "（1）解方程 f(x)=0；（2）证明 f(x)≥0。",
+        "解析：分别使用方程与导数方法。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].content).toContain("（1）解方程 f(x)=0；（2）证明 f(x)≥0。");
+    expect(blocks[0].analysis).toBe("分别使用方程与导数方法。");
+  });
+
   it.each(["（1）证明 命题成立。", "（2）证明：命题成立。", "（1）证 命题成立。", "（2）证明由导数符号可得。"]) (
     "treats proof sub-question line %s as analysis when the stem asks for a proof",
     (solutionLine) => {
