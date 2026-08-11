@@ -148,7 +148,7 @@ export function GradeTotalScoreSegmentTable({
             <Table2 className="h-4 w-4" />
           </div>
           <div>
-            <div className="font-medium text-ink-900">总分分数段汇总表</div>
+            <div className="font-medium text-ink-900">表二、总分分数段汇总表</div>
             <div className="mt-0.5 text-xs text-ink-500">
               按班级横向汇总达到各总分阈值的累计人数；班级顺序、简称和隐藏状态与上方班级平均分表保持一致。
             </div>

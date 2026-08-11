@@ -38,15 +38,25 @@ interface DocxOptions {
   progId?: string;
   ole?: Buffer;
   preview?: Buffer;
+  legacyPreviewRelationship?: boolean;
 }
 
 async function createDocx({
   progId = "Equation.DSMT4",
   ole = Buffer.from("fake-mathtype-ole"),
   preview = Buffer.from("preview"),
+  legacyPreviewRelationship = false,
 }: DocxOptions = {}): Promise<Buffer> {
   const zip = new JSZip();
-  zip.file("word/document.xml", DOCUMENT_TEMPLATE.replace("__PROG_ID__", progId));
+  zip.file(
+    "word/document.xml",
+    DOCUMENT_TEMPLATE
+      .replace("__PROG_ID__", progId)
+      .replace(
+        'r:id="rIdPreview"',
+        legacyPreviewRelationship ? 'o:relid="rIdPreview"' : 'r:id="rIdPreview"',
+      ),
+  );
   zip.file("word/_rels/document.xml.rels", RELATIONSHIPS_XML);
   zip.file("word/embeddings/oleObject1.bin", ole);
   zip.file("word/media/image1.wmf", preview);
@@ -160,6 +170,34 @@ describe("MathType DOCX conversion", () => {
       failedCount: 0,
       warnings: [],
     });
+  });
+
+  it("resolves legacy VML o:relid previews when falling back from OLE", async () => {
+    const preview = Buffer.concat([
+      Buffer.from("wmf-header"),
+      Buffer.from("MathTypeUU"),
+      Buffer.from("mtef"),
+    ]);
+    const decoder: MathTypeDecoder = vi.fn(async (equations) => {
+      const equation = equations[0];
+      if (equation.format === "ole") {
+        return {
+          mathml: new Map(),
+          errors: new Map([[equation.relationshipId, "damaged OLE stream"]]),
+        };
+      }
+      expect(equation).toMatchObject({ relationshipId: "rIdEquation", format: "wmf" });
+      expect(equation.data).toEqual(preview);
+      return new Map([[equation.relationshipId, SIMPLE_MATHML]]);
+    });
+
+    const result = await convertMathTypeDocxToOmml(await createDocx({
+      preview,
+      legacyPreviewRelationship: true,
+    }), decoder);
+
+    expect(decoder).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ detectedCount: 1, convertedCount: 1, failedCount: 0 });
   });
 
   it("converts standalone MathType WMF images without an OLE object", async () => {

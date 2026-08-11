@@ -497,6 +497,7 @@ function GradePreprocessing({
         subjects={subjects}
         context={context}
         onChange={setDraft}
+        records={selectedExam?.records || []}
       />
 
       <GradeImportWizard

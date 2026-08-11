@@ -253,19 +253,47 @@ function isHeading(text: string, config: DocumentParseConfig): boolean {
   );
 }
 
+const builtInSummaryKeywords = [
+  "规律方法",
+  "【规律方法】",
+  "易错提醒",
+  "【易错提醒】",
+];
+
+function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
+  const categorizedKeywords = categorizedQuestionFieldKeywords(config);
+  const structuredFieldPattern = keywordPattern([
+    ...config.answerKeywords,
+    ...categorizedKeywords.analysisKeywords,
+    ...categorizedKeywords.summaryKeywords,
+  ]);
+  if (structuredFieldPattern?.test(text)) return false;
+
+  const normalized = normalizeStructuralText(text).trim();
+  if (/^[【［[][^】］\]\n]{1,40}[】］\]](?:\s*[:：]?\s*)$/.test(normalized)) return true;
+  return /^热点\s*(?:第\s*)?(?:[\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})(?:\s|[、.．:：)）]|$)/.test(normalized);
+}
+
+function questionKeywordPrefixes(config: DocumentParseConfig): string[] {
+  return [...new Set([
+    ...config.questionKeywords,
+    "训练",
+    "巩固题",
+  ]
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword && keyword !== "第"))]
+    .sort((left, right) => right.length - left.length);
+}
+
 function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
   if (/^第\s*[\d０-９]+\s*题(?:\s|[、.．:：)）]|$)/.test(text)) return true;
   if (/^[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)\s*\S/.test(text)) return true;
 
-  const prefixes = [...new Set(config.questionKeywords
-    .map((keyword) => keyword.trim())
-    .filter((keyword) => keyword && keyword !== "第"))]
-    .sort((left, right) => right.length - left.length)
-    .map(escapeRegex);
+  const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
   if (!prefixes.length) return false;
   const index = "[\\d０-９零〇一二三四五六七八九十百两]+";
   return new RegExp(
-    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")}|巩固题)\\s*(?:第\\s*)?[（(]?\\s*${index}\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?`,
+    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:第\\s*)?[（(]?\\s*${index}\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?`,
   ).test(text);
 }
 
@@ -288,7 +316,8 @@ type QuestionFieldPattern = [
   { preserveMarker?: boolean }?,
 ];
 
-const solutionMarkerPattern = /^(?:【\s*)?(解答|解|证明)(?:\s*】)?\s*[:：]\s*/;
+const solutionMarkerPattern = /^(?:【\s*)?(解答|解|证明)(?:\s*】)?(?:(?:\s*[:：]\s*)|(?:\s+(?=\S))|\s*$)/;
+const numberedProofSolutionPattern = /^(?:[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]|[①-⑳])\s*(?:证明|证)(?:\s*[:：]\s*)?/i;
 const implicitSolutionLeadPattern = /^(?:由|因为|由于|根据|联立|解得|可得|所以|故|从而|于是|设|令|作|易知|显然|不妨|将|把|代入|整理|消去|同理|又由|证明如下)/;
 
 function appendQuestionField(
@@ -349,14 +378,10 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
   const direct = extractLeadingQuestionNumber(text);
   if (direct) return direct.number;
 
-  const prefixes = [...new Set(config.questionKeywords
-    .map((keyword) => keyword.trim())
-    .filter((keyword) => keyword && keyword !== "第"))]
-    .sort((left, right) => right.length - left.length)
-    .map(escapeRegex);
+  const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
   if (!prefixes.length) return undefined;
   const match = new RegExp(
-    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")}|巩固题)\\s*(?:第\\s*)?[（(]?\\s*([\\d０-９]{1,4})\\s*[）)]?`,
+    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:第\\s*)?[（(]?\\s*([\\d０-９]{1,4})\\s*[）)]?`,
   ).exec(text);
   return match ? normalizeQuestionNumber(match[1]) : undefined;
 }
@@ -392,6 +417,7 @@ function categorizedQuestionFieldKeywords(config: DocumentParseConfig): {
     summaryKeywords: [
       ...config.summaryKeywords,
       ...builtInAnalysisAsSummaryKeywords,
+      ...builtInSummaryKeywords,
     ],
   };
 }
@@ -728,14 +754,17 @@ function shouldStartImplicitAnalysis(
 function extractExplicitSolution(
   line: string,
   block: Partial<DocumentBlock>,
-  hasFutureStructuredField: boolean,
 ): string | undefined {
+  const questionText = block.content || "";
+  if (numberedProofSolutionPattern.test(line) && /(?:证明|求证|请证)/.test(questionText)) {
+    return line;
+  }
+
   const match = solutionMarkerPattern.exec(line);
   if (!match) return undefined;
 
   if (match[1] === "证明") {
-    const questionText = block.content || "";
-    if (!hasFutureStructuredField || !/(?:证明|求证|请证)/.test(questionText)) {
+    if (!/(?:证明|求证|请证)/.test(questionText)) {
       return undefined;
     }
   }
@@ -809,7 +838,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     const line = originalLine.trim();
     if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
 
-    if (isHeading(line, config)) {
+    if (isHeading(line, config) || isProjectHeading(line, config)) {
       submitCurrent();
       sectionQuestionType = detectSectionQuestionType(line);
       blocks.push({
@@ -840,7 +869,6 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       const explicitSolution = extractExplicitSolution(
         line,
         currentBlock,
-        hasFutureStructuredField(lineIndex),
       );
       if (explicitSolution !== undefined) {
         appendQuestionField(currentBlock, "analysis", explicitSolution);

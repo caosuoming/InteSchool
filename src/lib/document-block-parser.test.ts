@@ -646,4 +646,98 @@ describe("document block parser", () => {
       analysis: "由连续性和端点异号可得结论。",
     });
   });
+
+  it("treats bare 解 as the start of analysis", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "2. 已知数列 {an}，求其通项公式。",
+        "解 （1）因为 $4S_n+1=3S_n-9$，",
+        "所以可得 $a_n=-\\frac{3^{n+1}}{4^n}$。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "2. 已知数列 {an}，求其通项公式。",
+      analysis: "（1）因为 $4S_n+1=3S_n-9$，\n所以可得 $a_n=-\\frac{3^{n+1}}{4^n}$。",
+    });
+  });
+
+  it.each(["（1）证明 命题成立。", "（2）证明：命题成立。", "（1）证 命题成立。", "（2）证明由导数符号可得。"]) (
+    "treats proof sub-question line %s as analysis when the stem asks for a proof",
+    (solutionLine) => {
+      const blocks = parseDocumentBlocks(
+        [
+          "18. 已知函数 f(x)，（1）求单调区间；（2）求证 f(x)≥0。",
+          solutionLine,
+          "由导数符号即可得到结论。",
+        ].join("\n"),
+        config,
+      );
+
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].content).toBe("18. 已知函数 f(x)，（1）求单调区间；（2）求证 f(x)≥0。");
+      expect(blocks[0].analysis).toBe(`${solutionLine}\n由导数符号即可得到结论。`);
+    },
+  );
+
+  it("recognizes 训练 labels as question starts even with an older saved keyword config", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "训练1 已知 x+1=3，求 x。",
+        "解 x=2。",
+        "训练2 求证两个偶数之和仍为偶数。",
+        "（1）证 设两个偶数分别为 2m、2n。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: "question", analysis: "x=2。" });
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      analysis: "（1）证 设两个偶数分别为 2m、2n。",
+    });
+  });
+
+  it.each([
+    "规律方法：注意等价转化。",
+    "【规律方法】注意等价转化。",
+    "易错提醒：不要漏掉端点。",
+    "【易错提醒】不要漏掉端点。",
+  ])("classifies %s as summary", (summaryLine) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 计算 1+1。",
+        "解 直接计算可得 2。",
+        summaryLine,
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[0].summary).toMatch(/注意等价转化|不要漏掉端点/);
+  });
+
+  it("classifies bracketed and 热点 headings as project group titles", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 求数列的最值。",
+        "解 由单调性可得。",
+        "【热点突破】",
+        "热点一 求数列和式的最值、范围",
+        "训练1 求数列的最大项。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["question", "1. 求数列的最值。"],
+      ["groupTitle", "【热点突破】"],
+      ["groupTitle", "热点一 求数列和式的最值、范围"],
+      ["question", "训练1 求数列的最大项。"],
+    ]);
+    expect(blocks[0].analysis).toBe("由单调性可得。");
+  });
 });

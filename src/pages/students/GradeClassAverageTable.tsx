@@ -179,7 +179,7 @@ export function GradeClassAverageTable({
             <Table2 className="h-4 w-4" />
           </div>
           <div>
-            <div className="font-medium text-ink-900">班级平均分统计表</div>
+            <div className="font-medium text-ink-900">表一、班级平均分统计表</div>
             <div className="mt-0.5 text-xs text-ink-500">
               数据来自“{exam.name}”已上传成绩；平均分自动计算，表格布局可调整后随年级配置保存。
             </div>

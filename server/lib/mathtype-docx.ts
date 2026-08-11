@@ -78,6 +78,9 @@ function elementChildren(node: Node): Element[] {
 function relationshipId(element: Element, attribute = "id"): string {
   return element.getAttributeNS(OFFICE_REL_NS, attribute)
     || element.getAttribute(`r:${attribute}`)
+    || (attribute === "id"
+      ? element.getAttributeNS(OFFICE_NS, "relid") || element.getAttribute("o:relid")
+      : "")
     || "";
 }
 

@@ -12,6 +12,7 @@ const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const VML_NS = "urn:schemas-microsoft-com:vml";
+const OFFICE_NS = "urn:schemas-microsoft-com:office:office";
 const WORDPROCESSING_DRAWING_NS =
   "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 const OFFICE_REL_NS =
@@ -205,6 +206,9 @@ function relationshipId(element: Element, attribute: "embed" | "id"): string {
   return (
     element.getAttributeNS(OFFICE_REL_NS, attribute) ||
     element.getAttribute(`r:${attribute}`) ||
+    (attribute === "id"
+      ? element.getAttributeNS(OFFICE_NS, "relid") || element.getAttribute("o:relid")
+      : "") ||
     ""
   );
 }
