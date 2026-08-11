@@ -14,6 +14,52 @@ const FULL_WIDTH_MATH: Record<string, string> = {
   "…": "\\cdots ",
 };
 
+export interface WordEqInstructionRun {
+  text: string;
+  verticalAlign?: string | null;
+}
+
+function instructionSourceFromRuns(runs: WordEqInstructionRun[]): string {
+  const nonEmptyRuns = runs.filter(({ text }) => text.length > 0);
+  if (nonEmptyRuns.length === 0) return "";
+
+  // Some legacy DOCX files apply one vertical alignment to the whole EQ
+  // instruction while also encoding that script explicitly with `\\s`.
+  // Treat the first run as the field baseline and only encode alignment
+  // changes inside the instruction.
+  const baselineAlign = nonEmptyRuns[0].verticalAlign || "";
+  let source = "";
+  let pendingAlign = "";
+  let pendingText = "";
+
+  const flushPending = () => {
+    if (!pendingText) return;
+    if (pendingAlign === "subscript") {
+      source += `\\s\\do0(${pendingText})`;
+    } else if (pendingAlign === "superscript") {
+      source += `\\s\\up0(${pendingText})`;
+    } else {
+      source += pendingText;
+    }
+    pendingText = "";
+  };
+
+  for (const run of runs) {
+    const rawAlign = run.verticalAlign || "";
+    const relativeAlign = rawAlign === baselineAlign ? "" : rawAlign;
+    const scriptAlign = relativeAlign === "subscript" || relativeAlign === "superscript"
+      ? relativeAlign
+      : "";
+    if (scriptAlign !== pendingAlign) {
+      flushPending();
+      pendingAlign = scriptAlign;
+    }
+    pendingText += run.text;
+  }
+  flushPending();
+  return source;
+}
+
 function splitArguments(value: string): string[] {
   const parts: string[] = [];
   let start = 0;
@@ -231,4 +277,12 @@ export function wordEqFieldToLatex(instruction: string): string | null {
   if (!source) return null;
   const latex = new EqParser(source).parse().trim();
   return latex || null;
+}
+
+/**
+ * Converts a fragmented Word EQ instruction while preserving run-level
+ * superscript/subscript formatting used by older DOCX generators.
+ */
+export function wordEqFieldRunsToLatex(runs: WordEqInstructionRun[]): string | null {
+  return wordEqFieldToLatex(instructionSourceFromRuns(runs));
 }

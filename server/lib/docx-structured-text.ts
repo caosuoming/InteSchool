@@ -7,7 +7,10 @@ import {
   type DocumentTable,
   type DocumentTableCell,
 } from "../../src/lib/document-table.js";
-import { wordEqFieldToLatex } from "./word-eq.js";
+import {
+  wordEqFieldRunsToLatex,
+  type WordEqInstructionRun,
+} from "./word-eq.js";
 
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
@@ -195,6 +198,45 @@ function elementChildren(node: Node): Element[] {
   );
 }
 
+function wordRunVerticalAlign(element: Element): string {
+  const properties = elementChildren(element).find(
+    (child) => child.namespaceURI === WORD_NS && child.localName === "rPr",
+  );
+  const verticalAlign = properties
+    ? elementChildren(properties).find(
+        (child) => child.namespaceURI === WORD_NS && child.localName === "vertAlign",
+      )
+    : undefined;
+  return verticalAlign?.getAttributeNS(WORD_NS, "val")
+    || verticalAlign?.getAttribute("w:val")
+    || "";
+}
+
+function nearestWordRun(element: Element): Element | undefined {
+  let current: Node | null = element;
+  while (current?.nodeType === ELEMENT_NODE) {
+    const currentElement = current as Element;
+    if (currentElement.namespaceURI === WORD_NS && currentElement.localName === "r") {
+      return currentElement;
+    }
+    current = current.parentNode;
+  }
+  return undefined;
+}
+
+function instructionRuns(element: Element): WordEqInstructionRun[] {
+  const instructions = element.namespaceURI === WORD_NS && element.localName === "instrText"
+    ? [element]
+    : Array.from(element.getElementsByTagNameNS(WORD_NS, "instrText"));
+  return instructions.map((entry) => {
+    const run = nearestWordRun(entry);
+    return {
+      text: entry.textContent || "",
+      verticalAlign: run ? wordRunVerticalAlign(run) : "",
+    };
+  });
+}
+
 function normalizeText(value: string): string {
   return value
     .normalize("NFC")
@@ -222,14 +264,7 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
     const properties = elementChildren(element).find((child) =>
       child.namespaceURI === WORD_NS && child.localName === "rPr"
     );
-    const verticalAlign = properties
-      ? elementChildren(properties).find((child) =>
-          child.namespaceURI === WORD_NS && child.localName === "vertAlign"
-        )
-      : undefined;
-    const verticalValue = verticalAlign?.getAttributeNS(WORD_NS, "val")
-      || verticalAlign?.getAttribute("w:val")
-      || "";
+    const verticalValue = wordRunVerticalAlign(element);
     const content = elementChildren(element)
       .filter((child) => child !== properties)
       .map((child) => extractInlineContent(child, imageUrl))
@@ -281,7 +316,7 @@ function extractParagraph(
 ): string {
   let field: {
     depth: number;
-    instruction: string;
+    instruction: WordEqInstructionRun[];
     result: string;
     phase: "instruction" | "result";
   } | null = null;
@@ -295,15 +330,9 @@ function extractParagraph(
       .map((entry) => entry.getAttributeNS(WORD_NS, "fldCharType") || entry.getAttribute("w:fldCharType") || "")
       .filter(Boolean);
   };
-  const instructionText = (element: Element): string => {
-    const instructions = element.namespaceURI === WORD_NS && element.localName === "instrText"
-      ? [element]
-      : Array.from(element.getElementsByTagNameNS(WORD_NS, "instrText"));
-    return instructions.map((entry) => entry.textContent || "").join("");
-  };
   const finishField = () => {
     if (!field) return;
-    const latex = wordEqFieldToLatex(field.instruction);
+    const latex = wordEqFieldRunsToLatex(field.instruction);
     content.push(latex ? `$${latex}$` : field.result);
     field = null;
   };
@@ -317,13 +346,13 @@ function extractParagraph(
     }
 
     if (!field) {
-      field = { depth: beginCount, instruction: "", result: "", phase: "instruction" };
+      field = { depth: beginCount, instruction: [], result: "", phase: "instruction" };
     } else {
       field.depth += beginCount;
     }
 
     if (field.phase === "instruction") {
-      field.instruction += instructionText(child);
+      field.instruction.push(...instructionRuns(child));
     } else {
       field.result += extractInlineContent(child, imageUrl);
     }
