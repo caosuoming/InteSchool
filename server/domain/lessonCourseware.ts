@@ -214,12 +214,22 @@ function questionSlide(
     stem.elements.length + optionImageCount + answer.elements.length,
   );
 
-  const textElements: LessonSlideElement[] = [];
-  if (stem.content) {
-    textElements.push(createTextElement(stem.content, {
+  const textElements: LessonSlideElement[] = [
+    createTextElement(title, {
       x: 5,
       y: 5,
-      width: 90,
+      width: 14,
+      height: 10,
+    }, {
+      fontSize: 22,
+      questionSection: "stem",
+    }),
+  ];
+  if (stem.content) {
+    textElements.push(createTextElement(stem.content, {
+      x: 20,
+      y: 5,
+      width: 75,
       height: options?.length ? 24 : 42,
     }, {
       fontSize: 26,
