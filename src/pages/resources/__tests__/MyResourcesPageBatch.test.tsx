@@ -296,6 +296,8 @@ describe("MyResourcesPage batch actions", () => {
       updatedAt: "2026-08-10T00:00:00.000Z",
     }));
     vi.mocked(donationService.listTeacherDonations).mockResolvedValue([]);
+    vi.mocked(donationService.checkDonation).mockResolvedValue({ alreadyDonated: [], conflicts: [] });
+    vi.mocked(donationService.donateResources).mockResolvedValue({ created: [], skipped: [] });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
@@ -318,7 +320,7 @@ describe("MyResourcesPage batch actions", () => {
     }));
   });
 
-  it("creates a folder from two selected exam papers", async () => {
+  it("creates an album from two selected exam papers", async () => {
     vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, examPaperTwo]);
 
     renderPage("examPaper");
@@ -327,10 +329,10 @@ describe("MyResourcesPage batch actions", () => {
     fireEvent.click(screen.getByRole("button", { name: `选择资源：${examPaperTwo.title}` }));
 
     const actionSelect = screen.getByRole("combobox", { name: "选择批量操作" });
-    expect(screen.getByRole("option", { name: "创建文件夹" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "创建专辑" })).toBeInTheDocument();
     fireEvent.change(actionSelect, { target: { value: "folder" } });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "文件夹名称" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "专辑名称" }), {
       target: { value: "函数单元资料" },
     });
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
@@ -347,7 +349,7 @@ describe("MyResourcesPage batch actions", () => {
     expect(screen.queryByRole("region", { name: "批量操作" })).not.toBeInTheDocument();
   });
 
-  it("groups folder documents and collapses them from the folder name", async () => {
+  it("groups album documents and collapses them from the album name", async () => {
     vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, examPaperTwo]);
     vi.mocked(resourceFolderService.listFolders).mockResolvedValue([{
       id: "folder-existing",
@@ -363,7 +365,7 @@ describe("MyResourcesPage batch actions", () => {
 
     renderPage("examPaper");
 
-    expect(await screen.findByRole("group", { name: "文件夹：函数资料" })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "专辑：函数资料" })).toBeInTheDocument();
     expect(screen.getByText(examPaper.title)).toBeInTheDocument();
     expect(screen.getByText(examPaperTwo.title)).toBeInTheDocument();
 
@@ -372,6 +374,45 @@ describe("MyResourcesPage batch actions", () => {
     await waitFor(() => {
       expect(screen.queryByText(examPaper.title)).not.toBeInTheDocument();
       expect(screen.queryByText(examPaperTwo.title)).not.toBeInTheDocument();
+    });
+  });
+
+  it("donates every album document with the album id", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, examPaperTwo]);
+    vi.mocked(resourceFolderService.listFolders).mockResolvedValue([{
+      id: "album-existing",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      resourceType: "examPaper",
+      name: "函数资料",
+      resourceIds: [examPaper.id, examPaperTwo.id],
+      pinned: false,
+      createdAt: "2026-08-10T00:00:00.000Z",
+      updatedAt: "2026-08-10T00:00:00.000Z",
+    }]);
+
+    renderPage("examPaper");
+
+    fireEvent.click(await screen.findByTitle("捐赠专辑（含全部文档）"));
+
+    await waitFor(() => {
+      expect(donationService.checkDonation).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        [
+          { resourceType: "examPaper", resourceId: examPaper.id, albumId: "album-existing" },
+          { resourceType: "examPaper", resourceId: examPaperTwo.id, albumId: "album-existing" },
+        ],
+      );
+      expect(donationService.donateResources).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        [
+          { resourceType: "examPaper", resourceId: examPaper.id, albumId: "album-existing" },
+          { resourceType: "examPaper", resourceId: examPaperTwo.id, albumId: "album-existing" },
+        ],
+        [],
+      );
     });
   });
 

@@ -67,6 +67,7 @@ function toPlatformDonation(record: ShareRecord): PlatformDonation {
     status: record.mergedIntoDonationId ? "merged" : "active",
     mergedIntoDonationId: record.mergedIntoDonationId,
     snapshot,
+    donationAlbum: record.donationAlbum,
     contributorTeacherIds: [record.fromTeacherId],
     createdAt: record.createdAt,
     updatedAt: snapshot.updatedAt || record.createdAt,
@@ -145,8 +146,11 @@ export const donationService = {
   ): Promise<{ created: PlatformDonation[]; skipped: DonationItem[] }> {
     const decisionsById = new Map(decisions.map((decision) => [decision.sourceResourceId, decision]));
     const previews = await shareService.checkDonationCandidates(teacherId, items);
+    const albumItemKeys = new Set(items
+      .filter((item) => item.albumId)
+      .map((item) => `${item.resourceType}:${item.resourceId}`));
     const skipped = previews
-      .filter((preview) => preview.alreadyDonated)
+      .filter((preview) => preview.alreadyDonated && !albumItemKeys.has(`${preview.resourceType}:${preview.resourceId}`))
       .map((preview) => ({ resourceType: preview.resourceType, resourceId: preview.resourceId }));
     const requests = items
       .filter((item) => !skipped.some((entry) => entry.resourceType === item.resourceType && entry.resourceId === item.resourceId))

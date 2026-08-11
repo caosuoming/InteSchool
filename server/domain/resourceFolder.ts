@@ -47,7 +47,7 @@ export const resourceFolderService = {
     await delay(120);
     maybeThrowError();
     const trimmedName = name.trim();
-    if (!trimmedName) throw new Error("文件夹名称不能为空");
+    if (!trimmedName) throw new Error("专辑名称不能为空");
     const now = new Date().toISOString();
     const folder: ResourceFolder = {
       id: genId("folder"),
@@ -76,7 +76,7 @@ export const resourceFolderService = {
     db.update("resourceFolders", (list) => list.map((folder) => {
       if (folder.id !== id) return folder;
       const name = patch.name === undefined ? folder.name : patch.name.trim();
-      if (!name) throw new Error("文件夹名称不能为空");
+      if (!name) throw new Error("专辑名称不能为空");
       updated = {
         ...folder,
         ...patch,
@@ -85,7 +85,7 @@ export const resourceFolderService = {
       };
       return updated;
     }));
-    if (!updated) throw new Error("文件夹不存在");
+    if (!updated) throw new Error("专辑不存在");
     return updated;
   },
 
@@ -100,7 +100,7 @@ export const resourceFolderService = {
     let target: ResourceFolder | null = null;
     db.update("resourceFolders", (list) => {
       const found = list.find((folder) => folder.id === folderId);
-      if (!found) throw new Error("文件夹不存在");
+      if (!found) throw new Error("专辑不存在");
       const cleaned = removeFromSiblingFolders(list, found, new Set(additions));
       const now = new Date().toISOString();
       return cleaned.map((folder) => {
@@ -113,7 +113,7 @@ export const resourceFolderService = {
         return target;
       });
     });
-    if (!target) throw new Error("文件夹不存在");
+    if (!target) throw new Error("专辑不存在");
     return target;
   },
 
@@ -129,7 +129,7 @@ export const resourceFolderService = {
       };
       return updated;
     }));
-    if (!updated) throw new Error("文件夹不存在");
+    if (!updated) throw new Error("专辑不存在");
     return updated;
   },
 
@@ -142,11 +142,11 @@ export const resourceFolderService = {
       if (
         nextIds.length !== folder.resourceIds.length
         || nextIds.some((id) => !folder.resourceIds.includes(id))
-      ) throw new Error("排序列表与文件夹内容不一致");
+      ) throw new Error("排序列表与专辑内容不一致");
       updated = { ...folder, resourceIds: nextIds, updatedAt: new Date().toISOString() };
       return updated;
     }));
-    if (!updated) throw new Error("文件夹不存在");
+    if (!updated) throw new Error("专辑不存在");
     return updated;
   },
 

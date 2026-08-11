@@ -444,7 +444,7 @@ describe("MyResourcesPage resource basket", () => {
     expect(await screen.findByText(ggbCourseware.title)).toBeInTheDocument();
     expect(screen.getByText(pdfCourseware.title)).toBeInTheDocument();
     expect(await screen.findAllByTitle(`点击加入「${createdBasket.name}」`)).toHaveLength(1);
-    expect(screen.getAllByTitle("加入文件夹")).toHaveLength(2);
+    expect(screen.getAllByTitle("加入专辑")).toHaveLength(2);
   });
 
   it("asks to remove referenced questions after generating a lecture and removes them when confirmed", async () => {

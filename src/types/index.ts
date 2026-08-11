@@ -1171,7 +1171,7 @@ export interface ResourceFilter {
 /** 资源类型（用于分享/发布） */
 export type ShareableResourceType = "question" | "examPaper" | "lecture" | "courseware" | "material";
 
-/** 我的资源中支持文件夹整理的资源类型。 */
+/** 我的资源中支持专辑整理的资源类型。 */
 export type ResourceFolderType = "examPaper" | "lecture" | "courseware";
 
 export interface ResourceFolder {
@@ -1184,6 +1184,14 @@ export interface ResourceFolder {
   pinned: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 捐赠到平台时保存的专辑快照。 */
+export interface DonationAlbumSnapshot {
+  id: string;
+  name: string;
+  resourceType: ResourceFolderType;
+  libraryLabel: "试卷库" | "讲义库" | "课件库";
 }
 
 /** 分享目标范围 */
@@ -1213,6 +1221,8 @@ export interface DonationDirectorySnapshot {
 export interface DonationRequest {
   resourceType: ShareableResourceType;
   resourceId: string;
+  /** 从专辑发起捐赠时携带专辑 ID；服务端会校验并补全快照。 */
+  albumId?: string;
   duplicateAction?: "add" | "merge";
   duplicateTargetDonationId?: string;
   mergeFields?: Partial<Record<DonationMergeField, DonationMergeChoice>>;
@@ -1332,6 +1342,8 @@ export interface ShareRecord {
   platformOrder?: number;
   /** 合并贡献指向的主捐赠记录；该记录只计贡献，不重复展示资源 */
   mergedIntoDonationId?: string;
+  /** 专辑捐赠时保存专辑名称、来源资源库等信息。 */
+  donationAlbum?: DonationAlbumSnapshot;
   /** 分享附言 */
   message?: string;
   status: ShareStatus;
@@ -1351,6 +1363,8 @@ export type PlatformResourceSnapshot = Question | ExamPaper | Lecture | Coursewa
 export interface DonationItem {
   resourceType: ShareableResourceType;
   resourceId: string;
+  /** 从专辑发起捐赠时携带专辑 ID。 */
+  albumId?: string;
 }
 
 export type DonationMergeFieldSource = "source" | "target" | "both";
@@ -1379,6 +1393,7 @@ export interface PlatformDonation {
   status: "active" | "merged";
   mergedIntoDonationId?: string;
   snapshot: PlatformResourceSnapshot;
+  donationAlbum?: DonationAlbumSnapshot;
   contributorTeacherIds: string[];
   createdAt: string;
   updatedAt: string;
