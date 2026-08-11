@@ -131,4 +131,47 @@ describe("buildGradeTotalScoreSegmentReport", () => {
     expect(report.rows[0].threshold).toBe(700);
     expect(report.rows.at(-1)?.threshold).toBe(400);
   });
+
+  it("builds cohort target, line-count, completion, and rate rows", () => {
+    const report = buildGradeTotalScoreSegmentReport(
+      exam,
+      {
+        ...template,
+        totalScoreSegmentOptions: {
+          highScore1Threshold: 95,
+          highScore2Threshold: 90,
+          firstTierThreshold: 85,
+          undergraduateThreshold: 70,
+          classTargets: {
+            "class-1": { highScore1: 1, highScore2: 2, firstTier: 2, undergraduate: 2 },
+            "class-2": { highScore1: 2, highScore2: 1, firstTier: 1, undergraduate: 2 },
+          },
+        },
+      },
+      context,
+      classAverageTemplate,
+    );
+
+    const byKey = Object.fromEntries(report.summaryRows.map((row) => [row.key, row]));
+    expect(report.summaryRows.map((row) => row.label)).toEqual([
+      "考生人数",
+      "高分1目标",
+      "高分1达线数",
+      "完成情况",
+      "高分2目标",
+      "高分2达线数",
+      "达线情况",
+      "一本目标",
+      "一本人数",
+      "一本率",
+      "本科目标",
+      "本科人数",
+      "本科率",
+    ]);
+    expect(byKey.candidateCount.values).toEqual({ "class-2": 2, "class-1": 2 });
+    expect(byKey.highScore1Count.values).toEqual({ "class-2": 1, "class-1": 1 });
+    expect(byKey.highScore1Status.values).toEqual({ "class-2": "未完成（-1）", "class-1": "完成（+0）" });
+    expect(byKey.firstTierRate.values).toEqual({ "class-2": "50.0%", "class-1": "100.0%" });
+    expect(byKey.undergraduateRate.values).toEqual({ "class-2": "100.0%", "class-1": "100.0%" });
+  });
 });

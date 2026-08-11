@@ -231,7 +231,7 @@ describe("grade statistics", () => {
       hiddenClassIds: ["class-1"],
       classCategories: { "class-1": "强基班" },
       classLabels: { "class-2": "二班" },
-      subjectScoreModes: { "class-1": { 数学: "both" } },
+      subjectScoreModes: { "class-1": { 数学: "raw" } },
       totalScoreMode: "raw",
       showTeacherRows: false,
     });

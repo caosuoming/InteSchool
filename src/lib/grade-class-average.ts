@@ -9,6 +9,7 @@ import type {
   GradeStatisticsTemplate,
 } from "../types/index.js";
 import { averageGradeValues } from "./grade-reports.js";
+import { isAssignableGradeSubject } from "./grade-subjects.js";
 
 export interface GradeClassAverageScorePair {
   raw: number | null;
@@ -121,7 +122,10 @@ export function buildDefaultClassAverageOptions(
     ])),
     subjectScoreModes: Object.fromEntries(classOrder.map((classId) => [
       classId,
-      Object.fromEntries(exam.subjects.map((subject) => [subject, scoreMode])),
+      Object.fromEntries(exam.subjects.map((subject) => [
+        subject,
+        isAssignableGradeSubject(subject) ? scoreMode : "raw",
+      ])),
     ])),
     totalScoreMode: scoreMode,
     showTeacherRows: true,
@@ -161,10 +165,14 @@ export function resolveClassAverageOptions(
     },
     subjectScoreModes: Object.fromEntries((classOrder || []).map((classId) => [
       classId,
-      {
-        ...defaults.subjectScoreModes?.[classId],
-        ...options?.subjectScoreModes?.[classId],
-      },
+      Object.fromEntries(exam.subjects.map((subject) => [
+        subject,
+        isAssignableGradeSubject(subject)
+          ? options?.subjectScoreModes?.[classId]?.[subject]
+            || defaults.subjectScoreModes?.[classId]?.[subject]
+            || scoreMode
+          : "raw",
+      ])),
     ])),
     totalScoreMode: options?.totalScoreMode || scoreMode,
     showTeacherRows: options?.showTeacherRows ?? true,

@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/stores/ui";
 import { cn } from "@/lib/utils";
+import { isAssignableGradeSubject } from "@/lib/grade-subjects";
 
 interface GradeClassAverageTableProps {
   exam: GradeExam;
@@ -332,7 +333,7 @@ export function GradeClassAverageTable({
             <div>
               <div className="text-xs font-medium text-ink-700">学科分数显示</div>
               <div className="mt-0.5 text-xs text-ink-500">
-                每个班级、每个学科可分别显示原始分、赋分或两者；两者同时显示时使用“原始分|赋分”。
+                化学、生物、政治、地理可分别显示原始分、赋分或两者；其他学科固定显示原始分。
               </div>
             </div>
             <div className="overflow-x-auto rounded-lg border border-ink-200 bg-paper">
@@ -356,42 +357,47 @@ export function GradeClassAverageTable({
                           {row.className}
                         </td>
                         {report.subjects.map((subject) => {
+                          const assignable = isAssignableGradeSubject(subject);
                           const mode = resolvedOptions.subjectScoreModes?.[row.classId]?.[subject]
                             || effectiveTemplate.scoreMode;
                           const showRaw = mode === "raw" || mode === "both";
                           const showAssigned = mode === "assigned" || mode === "both";
                           return (
                             <td key={subject} className="px-3 py-2">
-                              <div className="flex items-center justify-center gap-3">
-                                <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`${row.className}${subject}原始分`}
-                                    checked={showRaw}
-                                    onChange={(event) => toggleSubjectScoreMode(
-                                      row.classId,
-                                      subject,
-                                      "raw",
-                                      event.target.checked,
-                                    )}
-                                  />
-                                  原始
-                                </label>
-                                <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`${row.className}${subject}赋分`}
-                                    checked={showAssigned}
-                                    onChange={(event) => toggleSubjectScoreMode(
-                                      row.classId,
-                                      subject,
-                                      "assigned",
-                                      event.target.checked,
-                                    )}
-                                  />
-                                  赋分
-                                </label>
-                              </div>
+                              {assignable ? (
+                                <div className="flex items-center justify-center gap-3">
+                                  <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`${row.className}${subject}原始分`}
+                                      checked={showRaw}
+                                      onChange={(event) => toggleSubjectScoreMode(
+                                        row.classId,
+                                        subject,
+                                        "raw",
+                                        event.target.checked,
+                                      )}
+                                    />
+                                    原始
+                                  </label>
+                                  <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`${row.className}${subject}赋分`}
+                                      checked={showAssigned}
+                                      onChange={(event) => toggleSubjectScoreMode(
+                                        row.classId,
+                                        subject,
+                                        "assigned",
+                                        event.target.checked,
+                                      )}
+                                    />
+                                    赋分
+                                  </label>
+                                </div>
+                              ) : (
+                                <div className="text-center text-ink-500">原始分</div>
+                              )}
                             </td>
                           );
                         })}

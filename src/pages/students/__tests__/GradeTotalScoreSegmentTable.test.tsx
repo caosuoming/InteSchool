@@ -28,6 +28,15 @@ const template: GradeStatisticsTemplate = {
   segmentMax: 100,
   segmentMin: 80,
   segmentSize: 10,
+  totalScoreSegmentOptions: {
+    highScore1Threshold: 90,
+    highScore2Threshold: 85,
+    firstTierThreshold: 80,
+    undergraduateThreshold: 70,
+    classTargets: {
+      "class-1": { highScore1: 1, highScore2: 1, firstTier: 1, undergraduate: 1 },
+    },
+  },
 };
 
 const exam: GradeExam = {
@@ -92,6 +101,7 @@ describe("GradeTotalScoreSegmentTable", () => {
   it("renders cumulative class counts and saves score range changes", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
+    const onAutoSave = vi.fn();
 
     function Harness() {
       const [settings, setSettings] = useState(exam.settings);
@@ -106,6 +116,7 @@ describe("GradeTotalScoreSegmentTable", () => {
             onChange(next);
             setSettings(next);
           }}
+          onAutoSave={onAutoSave}
         />
       );
     }
@@ -116,6 +127,17 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(screen.getByRole("columnheader", { name: "1班" })).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /100分以上/ })).getByRole("cell", { name: "0" })).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /90分以上/ })).getByRole("cell", { name: "1" })).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /考生人数/ })).getByRole("cell", { name: "1" })).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /高分1达线数/ })).getByRole("cell", { name: "1" })).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /完成情况/ })).getByRole("cell", { name: "完成（+0）" })).toBeInTheDocument();
+
+    const target = screen.getByRole("spinbutton", { name: "1班高分1目标" });
+    await user.clear(target);
+    await user.type(target, "2");
+    await user.tab();
+    expect(onAutoSave).toHaveBeenCalled();
+    expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
+      ?.totalScoreSegmentOptions?.classTargets?.["class-1"]?.highScore1).toBe(2);
 
     await user.click(screen.getByRole("button", { name: "调整分数段" }));
     const interval = screen.getByRole("spinbutton", { name: "分数间隔" });

@@ -6,6 +6,7 @@ import type {
   GradeScoreRecord,
   GradeStatisticsTemplate,
   GradeTeacherOption,
+  GradeTotalScoreSegmentOptions,
 } from "../types/index.js";
 import {
   buildDefaultCustomGradeColumns,
@@ -239,7 +240,8 @@ function normalizeClassAverageOptions(
         Object.fromEntries(Object.entries(modes || {})
           .filter(([subject, mode]) =>
             subjectSet.has(subject) && (mode === "raw" || mode === "assigned" || mode === "both"),
-          )),
+          )
+          .map(([subject, mode]) => [subject, isAssignableGradeSubject(subject) ? mode : "raw"])),
       ]),
   );
   const totalScoreMode = options.totalScoreMode === "raw" || options.totalScoreMode === "assigned"
@@ -262,6 +264,36 @@ function normalizeClassAverageOptions(
     showGroupDifference: optionalBoolean(options.showGroupDifference),
     showGroupAverage: optionalBoolean(options.showGroupAverage),
     showOverallAverage: optionalBoolean(options.showOverallAverage),
+  };
+}
+
+function normalizeTotalScoreSegmentOptions(
+  options: GradeTotalScoreSegmentOptions,
+  classSet: Set<string>,
+): GradeTotalScoreSegmentOptions {
+  const normalizeThreshold = (value: number | undefined): number | undefined => (
+    Number.isFinite(value) ? Math.max(0, Math.min(2000, Number(value))) : undefined
+  );
+  const normalizeTarget = (value: number | undefined): number | undefined => (
+    Number.isFinite(value) ? Math.max(0, Math.min(10000, Math.round(Number(value)))) : undefined
+  );
+  const classTargets = Object.fromEntries(
+    Object.entries(options.classTargets || {})
+      .filter(([classId]) => classSet.has(classId))
+      .map(([classId, targets]) => [classId, {
+        highScore1: normalizeTarget(targets?.highScore1),
+        highScore2: normalizeTarget(targets?.highScore2),
+        firstTier: normalizeTarget(targets?.firstTier),
+        undergraduate: normalizeTarget(targets?.undergraduate),
+      }]),
+  );
+
+  return {
+    highScore1Threshold: normalizeThreshold(options.highScore1Threshold),
+    highScore2Threshold: normalizeThreshold(options.highScore2Threshold),
+    firstTierThreshold: normalizeThreshold(options.firstTierThreshold),
+    undergraduateThreshold: normalizeThreshold(options.undergraduateThreshold),
+    classTargets,
   };
 }
 
@@ -358,6 +390,9 @@ export function normalizeGradeSettings(
     const classAverageOptions = item.kind === "classAverage" && item.classAverageOptions
       ? normalizeClassAverageOptions(item.classAverageOptions, classSet, subjectSet)
       : undefined;
+    const totalScoreSegmentOptions = item.kind === "totalScoreSegment" && item.totalScoreSegmentOptions
+      ? normalizeTotalScoreSegmentOptions(item.totalScoreSegmentOptions, classSet)
+      : undefined;
     const isLegacyTotalScoreSegment = item.kind === "totalScoreSegment"
       && (!Number.isFinite(item.segmentMax) || !Number.isFinite(item.segmentMin));
     const segmentSize = item.kind === "totalScoreSegment" && isLegacyTotalScoreSegment
@@ -394,6 +429,7 @@ export function normalizeGradeSettings(
         : undefined,
       columns,
       classAverageOptions,
+      totalScoreSegmentOptions,
     };
   });
 

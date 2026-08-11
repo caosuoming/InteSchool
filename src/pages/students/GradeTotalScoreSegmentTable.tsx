@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Download, RotateCcw, SlidersHorizontal, Table2 } from "lucide-react";
 import type {
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
   GradeStatisticsTemplate,
+  GradeTotalScoreTargetKey,
 } from "@/types";
 import {
   buildGradeTotalScoreSegmentReport,
@@ -26,6 +27,7 @@ interface GradeTotalScoreSegmentTableProps {
   classAverageTemplate?: GradeStatisticsTemplate;
   context: GradeImportContext;
   onChange: (settings: GradeExamSettings) => void;
+  onAutoSave?: (settings: GradeExamSettings) => Promise<void> | void;
 }
 
 export function GradeTotalScoreSegmentTable({
@@ -35,9 +37,13 @@ export function GradeTotalScoreSegmentTable({
   classAverageTemplate,
   context,
   onChange,
+  onAutoSave,
 }: GradeTotalScoreSegmentTableProps) {
   const [adjusting, setAdjusting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const latestSettings = useRef(settings);
+  latestSettings.current = settings;
   const effectiveTemplate = useMemo(
     () => settings.templates.find((item) => item.id === template.id) || template,
     [settings.templates, template],
@@ -58,11 +64,58 @@ export function GradeTotalScoreSegmentTable({
   );
 
   const updateTemplate = (patch: Partial<GradeStatisticsTemplate>) => {
-    onChange({
+    const nextSettings = {
       ...settings,
       templates: settings.templates.map((item) => item.id === effectiveTemplate.id
         ? { ...item, ...patch }
         : item),
+    };
+    latestSettings.current = nextSettings;
+    onChange(nextSettings);
+    return nextSettings;
+  };
+
+  const autoSave = async () => {
+    if (!onAutoSave) return;
+    setAutoSaving(true);
+    try {
+      await onAutoSave(latestSettings.current);
+    } finally {
+      setAutoSaving(false);
+    }
+  };
+
+  const optionalNumber = (value: string, max = 2000, integer = false): number | undefined => {
+    if (value.trim() === "") return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return undefined;
+    const bounded = Math.max(0, Math.min(max, parsed));
+    return integer ? Math.round(bounded) : bounded;
+  };
+
+  const updateSegmentOptions = (
+    patch: Partial<NonNullable<GradeStatisticsTemplate["totalScoreSegmentOptions"]>>,
+  ) => updateTemplate({
+    totalScoreSegmentOptions: {
+      ...effectiveTemplate.totalScoreSegmentOptions,
+      ...patch,
+    },
+  });
+
+  const updateTarget = (
+    classId: string,
+    targetKey: GradeTotalScoreTargetKey,
+    value: string,
+  ) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    updateSegmentOptions({
+      classTargets: {
+        ...options.classTargets,
+        [classId]: {
+          ...options.classTargets?.[classId],
+          [targetKey]: optionalNumber(value, 10000, true),
+        },
+      },
     });
   };
 
@@ -146,6 +199,53 @@ export function GradeTotalScoreSegmentTable({
           <div className="mt-2 text-xs text-ink-400">
             默认从 700 分递减到 400 分，每 10 分一档；每行统计总分大于等于该阈值的学生人数。
           </div>
+          <div className="mt-4 border-t border-ink-200 pt-4">
+            <div className="mb-3">
+              <div className="text-xs font-medium text-ink-700">达线标准</div>
+              <div className="mt-0.5 text-xs text-ink-500">
+                高分、一本和二本标准按当前总分口径统计；修改后自动保存到当前届年级。
+                {autoSaving && <span className="ml-2 text-emerald-700">正在自动保存…</span>}
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Input
+                label="高分1达线标准"
+                type="number"
+                min={0}
+                max={2000}
+                value={effectiveTemplate.totalScoreSegmentOptions?.highScore1Threshold ?? ""}
+                onChange={(event) => updateSegmentOptions({ highScore1Threshold: optionalNumber(event.target.value) })}
+                onBlur={() => void autoSave()}
+              />
+              <Input
+                label="高分2达线标准"
+                type="number"
+                min={0}
+                max={2000}
+                value={effectiveTemplate.totalScoreSegmentOptions?.highScore2Threshold ?? ""}
+                onChange={(event) => updateSegmentOptions({ highScore2Threshold: optionalNumber(event.target.value) })}
+                onBlur={() => void autoSave()}
+              />
+              <Input
+                label="一本达线标准"
+                type="number"
+                min={0}
+                max={2000}
+                value={effectiveTemplate.totalScoreSegmentOptions?.firstTierThreshold ?? ""}
+                onChange={(event) => updateSegmentOptions({ firstTierThreshold: optionalNumber(event.target.value) })}
+                onBlur={() => void autoSave()}
+              />
+              <Input
+                label="二本达线标准"
+                type="number"
+                min={0}
+                max={2000}
+                value={effectiveTemplate.totalScoreSegmentOptions?.undergraduateThreshold ?? ""}
+                onChange={(event) => updateSegmentOptions({ undergraduateThreshold: optionalNumber(event.target.value) })}
+                onBlur={() => void autoSave()}
+              />
+            </div>
+          </div>
         </div>
       )}
 
@@ -193,8 +293,54 @@ export function GradeTotalScoreSegmentTable({
                   ))}
                 </tr>
               ))}
+              {[0, 1].map((index) => (
+                <tr key={`summary-spacer-${index}`} aria-hidden="true" className="h-7 bg-paper">
+                  <th className="sticky left-0 z-[5] border-x border-ink-300 bg-paper" />
+                  {report.classes.map((classItem) => (
+                    <td key={classItem.classId} className="border-x border-ink-300" />
+                  ))}
+                </tr>
+              ))}
+              {report.summaryRows.map((row) => (
+                <tr key={row.key} className="bg-paper">
+                  <th className="sticky left-0 z-[5] border border-ink-300 bg-paper px-3 py-2 text-center font-semibold text-ink-800">
+                    {row.label}
+                  </th>
+                  {report.classes.map((classItem) => {
+                    const value = row.values[classItem.classId];
+                    if (row.kind === "target" && row.targetKey) {
+                      return (
+                        <td key={classItem.classId} className="border border-ink-300 px-2 py-1.5 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            max={10000}
+                            step={1}
+                            aria-label={`${classItem.classLabel}${row.label}`}
+                            value={typeof value === "number" ? value : ""}
+                            onChange={(event) => updateTarget(classItem.classId, row.targetKey!, event.target.value)}
+                            onBlur={() => void autoSave()}
+                            className="w-20 rounded border border-ink-200 bg-paper px-2 py-1 text-center font-semibold tabular-nums text-ink-900 outline-none focus:border-gold-400"
+                          />
+                        </td>
+                      );
+                    }
+                    return (
+                      <td
+                        key={classItem.classId}
+                        className="border border-ink-300 px-3 py-2 text-center font-semibold tabular-nums text-ink-900"
+                      >
+                        {value ?? "—"}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
             </tbody>
           </table>
+          <div className="mt-2 text-xs text-ink-400">
+            本科人数和本科率按“二本达线标准”统计；目标人数修改后自动保存到当前届年级。
+          </div>
         </div>
       )}
     </Card>
