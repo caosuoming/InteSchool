@@ -26,6 +26,15 @@ describe("extract text renderer", () => {
     expect(html).not.toContain("$x");
   });
 
+  it("preserves extracted superscript and subscript markup", () => {
+    const html = renderExtractText("a<sub>n</sub><sup>2</sup>+1", [], false);
+    const container = asElement(html);
+
+    expect(container.querySelector("sub")).toHaveTextContent("n");
+    expect(container.querySelector("sup")).toHaveTextContent("2");
+    expect(container.textContent).toBe("an2+1");
+  });
+
   it("renders safe markdown images and leaves unsafe sources as text", () => {
     const html = renderExtractText(
       "![示意图](https://example.com/figure.png)\n![危险](javascript:alert(1))",

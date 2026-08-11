@@ -175,6 +175,21 @@ describe("document extractor", () => {
     expect(result.html).not.toContain("$\\frac{x}{2}=1$");
   });
 
+  it("renders structure-aware Word superscript and subscript runs", async () => {
+    const filePath = join(workDir, "vertical-align.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({ value: "an2", messages: [] });
+    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>an2</p>", messages: [] });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      "a<sub>n</sub><sup>2</sup>+1",
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.text).toBe("a<sub>n</sub><sup>2</sup>+1");
+    expect(result.html).toContain("a<sub>n</sub><sup>2</sup>+1");
+  });
+
   it("renders preserved DOCX tables with formulas in their cells", async () => {
     const filePath = join(workDir, "table.docx");
     await writeFile(filePath, "fake docx");

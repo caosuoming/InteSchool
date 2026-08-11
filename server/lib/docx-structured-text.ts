@@ -218,6 +218,27 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
   if (node.nodeType !== ELEMENT_NODE) return node.textContent || "";
   const element = node as Element;
 
+  if (element.namespaceURI === WORD_NS && element.localName === "r") {
+    const properties = elementChildren(element).find((child) =>
+      child.namespaceURI === WORD_NS && child.localName === "rPr"
+    );
+    const verticalAlign = properties
+      ? elementChildren(properties).find((child) =>
+          child.namespaceURI === WORD_NS && child.localName === "vertAlign"
+        )
+      : undefined;
+    const verticalValue = verticalAlign?.getAttributeNS(WORD_NS, "val")
+      || verticalAlign?.getAttribute("w:val")
+      || "";
+    const content = elementChildren(element)
+      .filter((child) => child !== properties)
+      .map((child) => extractInlineContent(child, imageUrl))
+      .join("");
+    if (content && verticalValue === "superscript") return `<sup>${content}</sup>`;
+    if (content && verticalValue === "subscript") return `<sub>${content}</sub>`;
+    return content;
+  }
+
   if (
     element.namespaceURI === MATH_NS &&
     ["oMath", "oMathPara"].includes(element.localName)

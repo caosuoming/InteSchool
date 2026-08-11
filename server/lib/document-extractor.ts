@@ -119,13 +119,21 @@ function documentPreviewWarnings(
 }
 
 function renderMathAwareHtml(text: string): string {
-  const renderLine = (line: string) => {
+  const renderLine = (line: string): string => {
+    const verticalRuns: string[] = [];
+    const protectedLine = line.replace(
+      /<(sup|sub)>(.*?)<\/\1>/gi,
+      (_match, tag: string, content: string) => {
+        const index = verticalRuns.push(`<${tag.toLowerCase()}>${renderLine(content)}</${tag.toLowerCase()}>`) - 1;
+        return `\uE100${index}\uE101`;
+      },
+    );
     const parts: string[] = [];
     const pattern = /\$([^$\n]+)\$|!\[([^\]]*)\]\(([^)]+)\)/g;
     let cursor = 0;
     let match: RegExpExecArray | null;
-    while ((match = pattern.exec(line)) !== null) {
-      parts.push(escapeHtml(line.slice(cursor, match.index)));
+    while ((match = pattern.exec(protectedLine)) !== null) {
+      parts.push(escapeHtml(protectedLine.slice(cursor, match.index)));
       const latex = match[1]?.trim();
       if (latex) {
         parts.push(
@@ -147,8 +155,10 @@ function renderMathAwareHtml(text: string): string {
       }
       cursor = pattern.lastIndex;
     }
-    parts.push(escapeHtml(line.slice(cursor)));
-    return parts.join("");
+    parts.push(escapeHtml(protectedLine.slice(cursor)));
+    return parts.join("").replace(/\uE100(\d+)\uE101/g, (_match, index: string) =>
+      verticalRuns[Number(index)] || ""
+    );
   };
 
   return splitDocumentTableSegments(text)
@@ -210,7 +220,7 @@ export async function extractDocument(
       extractDocxStructuredText(convertedData, options.docxImageUrl),
     ]);
     const text = (structuredText || raw.value.trim()).normalize("NFC");
-    const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)|<table\b[^>]*\bdocument-table\b/i.test(text);
+    const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)|<(?:sup|sub)>|<table\b[^>]*\bdocument-table\b/i.test(text);
     const mammothWarnings = documentPreviewWarnings(
       [...raw.messages, ...rendered.messages],
       hasRichContent,

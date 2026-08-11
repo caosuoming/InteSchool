@@ -11,6 +11,7 @@ import {
 } from "./office-metafile";
 
 const TOKEN_PATTERN = /\$((?:[^$]|[\r\n])*?)\$|!\[([^\]]*)\]\(([^)]+)\)/g;
+const RICH_INLINE_PATTERN = /<(sup|sub)>(.*?)<\/\1>/gi;
 const PLACEHOLDER_PATTERN = /\uE000(\d+)\uE001/g;
 
 function escapeHtml(value: string): string {
@@ -140,7 +141,11 @@ export function renderExtractText(
   const tableProtectedText = splitDocumentTableSegments(decoded)
     .map((segment) => segment.type === "table" ? reserve(renderMathHtml(segment.value)) : segment.value)
     .join("");
-  const protectedText = tableProtectedText.replace(
+  const richInlineProtectedText = tableProtectedText.replace(
+    RICH_INLINE_PATTERN,
+    (match) => reserve(renderMathHtml(match)),
+  );
+  const protectedText = richInlineProtectedText.replace(
     TOKEN_PATTERN,
     (
       _match,

@@ -630,6 +630,44 @@ describe("document block parser", () => {
     });
   });
 
+  it("promotes an unnumbered prompt to a question when a following solution starts with 解", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "【真题体验】",
+        "(2021·新高考Ⅰ卷)已知数列 {an} 满足递推关系。",
+        "(1) 写出偶数项子列的通项公式；",
+        "(2) 求 {an} 的前 20 项和。",
+        "解 (1) 由递推关系可得偶数项构成等差数列。",
+        "所以可求得通项公式。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: "groupTitle", content: "【真题体验】" });
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: expect.stringContaining("(2021·新高考Ⅰ卷)已知数列"),
+      analysis: "(1) 由递推关系可得偶数项构成等差数列。\n所以可求得通项公式。",
+    });
+  });
+
+  it("promotes an unnumbered prompt when the following analysis uses 解析", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "若函数 f(x) 满足给定条件，求参数 a 的范围。",
+        "解析：由判别式非负可得参数约束。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      analysis: "由判别式非负可得参数约束。",
+    });
+  });
+
   it("recognizes a labelled proof after an existing proof request", () => {
     const blocks = parseDocumentBlocks(
       [
