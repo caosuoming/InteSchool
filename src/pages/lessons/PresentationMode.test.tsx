@@ -370,6 +370,73 @@ describe("PresentationMode", () => {
     expect(onExit).toHaveBeenCalledOnce();
   });
 
+  it("renders highlighter strokes on an independent multiply layer with flat 45% strokes", async () => {
+    const compositeModes: string[] = [];
+    const alphaValues: number[] = [];
+    const capValues: CanvasLineCap[] = [];
+    let compositeMode = "source-over";
+    let alpha = 1;
+    let cap: CanvasLineCap = "round";
+    const context = {
+      clearRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      lineJoin: "round" as CanvasLineJoin,
+      lineWidth: 1,
+      strokeStyle: "#000000",
+    } as unknown as CanvasRenderingContext2D;
+    Object.defineProperties(context, {
+      globalCompositeOperation: {
+        configurable: true,
+        get: () => compositeMode,
+        set: (value: string) => { compositeMode = value; compositeModes.push(value); },
+      },
+      globalAlpha: {
+        configurable: true,
+        get: () => alpha,
+        set: (value: number) => { alpha = value; alphaValues.push(value); },
+      },
+      lineCap: {
+        configurable: true,
+        get: () => cap,
+        set: (value: CanvasLineCap) => { cap = value; capValues.push(value); },
+      },
+    });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(context);
+
+    const user = userEvent.setup();
+    const { container } = render(
+      <PresentationMode
+        slides={slides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "黄色荧光笔" }));
+
+    const interaction = screen.getByLabelText("课件批注画布") as HTMLCanvasElement;
+    vi.spyOn(interaction, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800,
+      width: 1000, height: 800, toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(interaction, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(interaction, { pointerId: 1, clientX: 300, clientY: 100 });
+    fireEvent.pointerUp(interaction, { pointerId: 1, clientX: 300, clientY: 100 });
+
+    const highlighterLayer = container.querySelector<HTMLCanvasElement>('[data-drawing-layer="highlighter"]');
+    const inkLayer = container.querySelector<HTMLCanvasElement>('[data-drawing-layer="ink"]');
+    expect(highlighterLayer).not.toBeNull();
+    expect(inkLayer).not.toBeNull();
+    expect(highlighterLayer).toHaveStyle({ mixBlendMode: "multiply" });
+    expect(compositeModes).toContain("multiply");
+    expect(alphaValues).toContain(0.45);
+    expect(capValues).toContain("butt");
+  });
+
   it("keeps the slide writable while a board moves and switches independent writing areas", async () => {
     const user = userEvent.setup();
     render(

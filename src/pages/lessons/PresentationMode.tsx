@@ -81,6 +81,20 @@ interface WritableCanvasProps {
   ariaLabel?: string;
 }
 
+interface DrawingPoint {
+  x: number;
+  y: number;
+}
+
+interface DrawingStroke {
+  kind: "pen" | "highlighter" | "eraser";
+  color: string;
+  width: number;
+  points: DrawingPoint[];
+}
+
+const HIGHLIGHTER_ALPHA = 0.45;
+
 interface BoardWritingArea {
   id: string;
   frameX: number;
@@ -341,6 +355,46 @@ function getElementsAtAnimationProgress(
   });
 }
 
+function drawRecordedStroke(
+  context: CanvasRenderingContext2D,
+  stroke: DrawingStroke,
+  canvasWidth: number,
+  canvasHeight: number,
+) {
+  if (stroke.points.length === 0) return;
+  context.beginPath();
+  const first = stroke.points[0];
+  context.moveTo(first.x * canvasWidth, first.y * canvasHeight);
+  for (const point of stroke.points.slice(1)) {
+    context.lineTo(point.x * canvasWidth, point.y * canvasHeight);
+  }
+  if (stroke.points.length === 1) {
+    context.lineTo(first.x * canvasWidth + 0.01, first.y * canvasHeight);
+  }
+
+  context.lineJoin = "round";
+  context.lineWidth = stroke.width;
+  if (stroke.kind === "eraser") {
+    context.globalCompositeOperation = "destination-out";
+    context.globalAlpha = 1;
+    context.lineCap = "round";
+    context.strokeStyle = "rgba(0, 0, 0, 1)";
+  } else if (stroke.kind === "highlighter") {
+    context.globalCompositeOperation = "multiply";
+    context.globalAlpha = HIGHLIGHTER_ALPHA;
+    context.lineCap = "butt";
+    context.strokeStyle = stroke.color;
+  } else {
+    context.globalCompositeOperation = "source-over";
+    context.globalAlpha = 1;
+    context.lineCap = "round";
+    context.strokeStyle = stroke.color;
+  }
+  context.stroke();
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha = 1;
+}
+
 function WritableCanvas({
   tool,
   preset,
@@ -350,133 +404,156 @@ function WritableCanvas({
   className,
   ariaLabel,
 }: WritableCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const drawingRef = useRef(false);
-  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const highlighterCanvasRef = useRef<HTMLCanvasElement>(null);
+  const inkCanvasRef = useRef<HTMLCanvasElement>(null);
+  const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
+  const strokesRef = useRef<DrawingStroke[]>([]);
+  const activeStrokeRef = useRef<DrawingStroke | null>(null);
 
-  const resizeCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    const parent = canvas?.parentElement;
-    if (!canvas || !parent) return;
-    const rect = parent.getBoundingClientRect();
-    const width = parent.clientWidth || rect.width;
-    const height = parent.clientHeight || rect.height;
-    if (width <= 0 || height <= 0) return;
+  const redraw = useCallback(() => {
+    const highlighterCanvas = highlighterCanvasRef.current;
+    const inkCanvas = inkCanvasRef.current;
+    if (!highlighterCanvas || !inkCanvas) return;
+    const highlighterContext = highlighterCanvas.getContext("2d");
+    const inkContext = inkCanvas.getContext("2d");
+    if (!highlighterContext || !inkContext) return;
 
-    const snapshot = document.createElement("canvas");
-    snapshot.width = canvas.width;
-    snapshot.height = canvas.height;
-    const snapshotContext = snapshot.getContext("2d");
-    if (snapshotContext && canvas.width > 0 && canvas.height > 0) {
-      snapshotContext.drawImage(canvas, 0, 0);
-    }
-
-    canvas.width = Math.round(width);
-    canvas.height = Math.round(height);
-    const context = canvas.getContext("2d");
-    if (context && snapshot.width > 0 && snapshot.height > 0) {
-      context.drawImage(snapshot, 0, 0, canvas.width, canvas.height);
+    highlighterContext.clearRect(0, 0, highlighterCanvas.width, highlighterCanvas.height);
+    inkContext.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
+    const strokes = activeStrokeRef.current
+      ? [...strokesRef.current, activeStrokeRef.current]
+      : strokesRef.current;
+    for (const stroke of strokes) {
+      if (stroke.kind === "highlighter" || stroke.kind === "eraser") {
+        drawRecordedStroke(
+          highlighterContext,
+          stroke,
+          highlighterCanvas.width,
+          highlighterCanvas.height,
+        );
+      }
+      if (stroke.kind === "pen" || stroke.kind === "eraser") {
+        drawRecordedStroke(inkContext, stroke, inkCanvas.width, inkCanvas.height);
+      }
     }
   }, []);
 
+  const resizeCanvases = useCallback(() => {
+    const interactionCanvas = interactionCanvasRef.current;
+    const parent = interactionCanvas?.parentElement;
+    if (!interactionCanvas || !parent) return;
+    const rect = parent.getBoundingClientRect();
+    const width = Math.round(parent.clientWidth || rect.width);
+    const height = Math.round(parent.clientHeight || rect.height);
+    if (width <= 0 || height <= 0) return;
+
+    for (const canvas of [highlighterCanvasRef.current, inkCanvasRef.current, interactionCanvas]) {
+      if (!canvas) continue;
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+    }
+    redraw();
+  }, [redraw]);
+
   useEffect(() => {
-    resizeCanvas();
-    window.addEventListener("resize", resizeCanvas);
-    const parent = canvasRef.current?.parentElement;
+    resizeCanvases();
+    window.addEventListener("resize", resizeCanvases);
+    const parent = interactionCanvasRef.current?.parentElement;
     const observer = typeof ResizeObserver === "undefined" || !parent
       ? null
-      : new ResizeObserver(resizeCanvas);
+      : new ResizeObserver(resizeCanvases);
     observer?.observe(parent);
     return () => {
-      window.removeEventListener("resize", resizeCanvas);
+      window.removeEventListener("resize", resizeCanvases);
       observer?.disconnect();
     };
-  }, [resizeCanvas]);
+  }, [resizeCanvases]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
-  }, [clearToken]);
+    strokesRef.current = [];
+    activeStrokeRef.current = null;
+    redraw();
+  }, [clearToken, redraw]);
 
   useEffect(() => {
-    drawingRef.current = false;
-    lastPointRef.current = null;
-  }, [cancelToken]);
+    activeStrokeRef.current = null;
+    redraw();
+  }, [cancelToken, redraw]);
 
-  const pointFromEvent = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+  const pointFromEvent = (event: ReactPointerEvent<HTMLCanvasElement>): DrawingPoint => {
+    const canvas = interactionCanvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
-    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
     return {
-      x: (event.clientX - rect.left) * scaleX,
-      y: (event.clientY - rect.top) * scaleY,
+      x: rect.width > 0 ? clamp((event.clientX - rect.left) / rect.width, 0, 1) : 0,
+      y: rect.height > 0 ? clamp((event.clientY - rect.top) / rect.height, 0, 1) : 0,
     };
   };
 
   const startDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (tool === "none" || tool === "select") return;
     event.preventDefault();
-    drawingRef.current = true;
-    lastPointRef.current = pointFromEvent(event);
+    const stroke: DrawingStroke = tool === "eraser"
+      ? { kind: "eraser", color: "#000000", width: eraserWidth, points: [] }
+      : preset
+        ? { kind: preset.kind, color: preset.color, width: preset.width, points: [] }
+        : { kind: "pen", color: "#000000", width: 3, points: [] };
+    stroke.points.push(pointFromEvent(event));
+    activeStrokeRef.current = stroke;
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    redraw();
   };
 
   const continueDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!drawingRef.current || tool === "none" || tool === "select") return;
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    const lastPoint = lastPointRef.current;
-    if (!canvas || !context || !lastPoint) return;
-
+    const stroke = activeStrokeRef.current;
+    if (!stroke || tool === "none" || tool === "select") return;
     event.preventDefault();
-    const nextPoint = pointFromEvent(event);
-    context.beginPath();
-    context.moveTo(lastPoint.x, lastPoint.y);
-    context.lineTo(nextPoint.x, nextPoint.y);
-    context.lineCap = "round";
-    context.lineJoin = "round";
-
-    if (tool === "eraser") {
-      context.globalCompositeOperation = "destination-out";
-      context.globalAlpha = 1;
-      context.lineWidth = eraserWidth;
-      context.strokeStyle = "rgba(0, 0, 0, 1)";
-    } else if (preset) {
-      context.globalCompositeOperation = "source-over";
-      context.globalAlpha = preset.kind === "highlighter" ? 0.32 : 1;
-      context.lineWidth = preset.width;
-      context.strokeStyle = preset.color;
-    }
-
-    context.stroke();
-    context.globalAlpha = 1;
-    lastPointRef.current = nextPoint;
+    stroke.points.push(pointFromEvent(event));
+    redraw();
   };
 
   const stopDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (drawingRef.current) event.currentTarget.releasePointerCapture?.(event.pointerId);
-    drawingRef.current = false;
-    lastPointRef.current = null;
+    const stroke = activeStrokeRef.current;
+    if (stroke) {
+      strokesRef.current.push(stroke);
+      activeStrokeRef.current = null;
+      redraw();
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      aria-label={ariaLabel}
-      className={cn(
-        "absolute inset-0 h-full w-full touch-none",
-        tool === "none" || tool === "select" ? "pointer-events-none" : "pointer-events-auto cursor-crosshair",
-        className,
-      )}
-      onPointerDown={startDrawing}
-      onPointerMove={continueDrawing}
-      onPointerUp={stopDrawing}
-      onPointerCancel={stopDrawing}
-      onPointerLeave={stopDrawing}
-    />
+    <div className={cn("pointer-events-none absolute inset-0", className)}>
+      <canvas
+        ref={highlighterCanvasRef}
+        aria-hidden="true"
+        data-drawing-layer="highlighter"
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        style={{ mixBlendMode: "multiply" }}
+      />
+      <canvas
+        ref={inkCanvasRef}
+        aria-hidden="true"
+        data-drawing-layer="ink"
+        className="pointer-events-none absolute inset-0 h-full w-full"
+      />
+      <canvas
+        ref={interactionCanvasRef}
+        aria-label={ariaLabel}
+        data-drawing-layer="interaction"
+        className={cn(
+          "absolute inset-0 h-full w-full touch-none",
+          tool === "none" || tool === "select"
+            ? "pointer-events-none"
+            : "pointer-events-auto cursor-crosshair",
+        )}
+        onPointerDown={startDrawing}
+        onPointerMove={continueDrawing}
+        onPointerUp={stopDrawing}
+        onPointerCancel={stopDrawing}
+        onPointerLeave={stopDrawing}
+      />
+    </div>
   );
 }
 
