@@ -184,6 +184,7 @@ describe("ExamRoomArrangementPage", () => {
       "第三步：设置可用考场",
       "第四步：排考场规则",
     ]);
+    expect(screen.getByText("本届学生 1 人")).toBeInTheDocument();
   });
 
   it("asks for an exam name before creating a new arrangement", async () => {
@@ -528,7 +529,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByTestId("desk-label-card")).toHaveTextContent("李同学");
   });
 
-  it("keeps every desk label in one room on one adaptive 8K print page", async () => {
+  it("uses a readable five-column 8K desk-label layout", async () => {
     const user = userEvent.setup();
     const assignments = Array.from({ length: 21 }, (_, index) => ({
       ...savedArrangement.assignments[0],
@@ -548,9 +549,94 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getAllByTestId("desk-label-card")).toHaveLength(21);
     const [printPage] = screen.getAllByTestId("desk-label-print-page");
     expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
-    expect(printPage).toHaveAttribute("data-density", "compact");
-    expect(printPage).toHaveAttribute("data-columns", "3");
+    expect(printPage).toHaveAttribute("data-density", "normal");
+    expect(printPage).toHaveAttribute("data-columns", "5");
     expect(printPage.querySelectorAll(".exam-desk-label")).toHaveLength(21);
-    expect(Number.parseFloat(printPage.style.gridAutoRows)).toBeLessThan(30);
+    expect(Number.parseFloat(printPage.style.gridAutoRows)).toBeGreaterThan(30);
+  });
+
+  it("splits a large class over multiple readable A4 pages", async () => {
+    const user = userEvent.setup();
+    const students = Array.from({ length: 57 }, (_, index) => ({
+      ...context.students[0],
+      id: `student-${index + 1}`,
+      name: `学生${index + 1}`,
+      studentNo: String(index + 1).padStart(3, "0"),
+    }));
+    const assignments = students.map((student, index) => ({
+      ...savedArrangement.assignments[0],
+      id: `combined:${student.id}`,
+      studentId: student.id,
+      studentName: student.name,
+      studentNo: student.studentNo,
+      seatNo: index + 1,
+      admissionNo: `20260510${String(index + 1).padStart(6, "0")}`,
+    }));
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      ...context,
+      cohort: { ...cohort, studentCount: 57 },
+      classes: [{ ...context.classes[0], studentCount: 57 }],
+      students,
+    });
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{
+      ...savedArrangement,
+      rooms: [{ ...savedArrangement.rooms[0], capacity: 60 }],
+      assignments,
+    }]);
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+
+    const pages = screen.getAllByTestId("class-arrangement-print-page");
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toHaveAttribute("data-columns", "3");
+    expect(pages[0].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(30);
+    expect(pages[1].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(27);
+    expect(pages[0].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("高三（1）班 · 57 名学生 · 第 1/2 页");
+  });
+
+  it("continues desk labels across rooms and 8K pages", async () => {
+    const user = userEvent.setup();
+    const secondRoom = {
+      id: "room-2",
+      name: "2考场",
+      number: "2考场",
+      location: "教学楼 302",
+      capacity: 30,
+    };
+    const assignments = Array.from({ length: 60 }, (_, index) => {
+      const room = index < 30 ? savedArrangement.rooms[0] : secondRoom;
+      const seatNo = (index % 30) + 1;
+      return {
+        ...savedArrangement.assignments[0],
+        id: `combined:student-${index + 1}`,
+        studentId: `student-${index + 1}`,
+        studentName: `学生${index + 1}`,
+        studentNo: String(index + 1).padStart(3, "0"),
+        roomId: room.id,
+        roomName: room.name,
+        roomNumber: room.number,
+        roomLocation: room.location,
+        seatNo,
+        admissionNo: `20260510${String(index + 1).padStart(6, "0")}`,
+      };
+    });
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{
+      ...savedArrangement,
+      rooms: [{ ...savedArrangement.rooms[0], capacity: 30 }, secondRoom],
+      assignments,
+    }]);
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+    await user.click(await screen.findByRole("tab", { name: "桌贴预览" }));
+
+    const pages = screen.getAllByTestId("desk-label-print-page");
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toHaveAttribute("data-columns", "5");
+    expect(pages[0].querySelectorAll(".exam-desk-label")).toHaveLength(50);
+    expect(pages[1].querySelectorAll(".exam-desk-label")).toHaveLength(10);
+    expect(pages[0]).toHaveTextContent("教学楼 301");
+    expect(pages[0]).toHaveTextContent("教学楼 302");
   });
 });
