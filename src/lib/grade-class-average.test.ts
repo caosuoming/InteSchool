@@ -180,7 +180,7 @@ describe("grade class average report", () => {
         数学: { raw: 90, assigned: 90 },
         英语: { raw: 80, assigned: 80 },
       },
-      subjectScoreModes: { 数学: "assigned", 英语: "assigned" },
+      subjectScoreModes: { 数学: "raw", 英语: "raw" },
       totalAverages: { raw: 170, assigned: 170 },
     });
     expect(group.difference).toEqual({
@@ -200,25 +200,31 @@ describe("grade class average report", () => {
     expect(report.overallAverage).toEqual(group.average);
   });
 
-  it("supports per-class raw/assigned/both subject display and an independent total mode", () => {
+  it("only allows assigned-score display modes for assignable subjects", () => {
     const scoredExam: GradeExam = {
       ...exam,
-      records: exam.records.map((record) => record.classId === "class-2"
-        ? {
-            ...record,
-            assignedScores: {
-              ...record.assignedScores,
-              英语: (record.assignedScores.英语 || 0) + 5,
-            },
-          }
-        : record),
+      subjects: ["数学", "化学"],
+      records: exam.records.map((record) => ({
+        ...record,
+        scores: {
+          数学: record.scores.数学,
+          化学: record.scores.英语,
+        },
+        assignedScores: {
+          数学: record.assignedScores.数学,
+          化学: record.classId === "class-2"
+            ? (record.assignedScores.英语 || 0) + 5
+            : record.assignedScores.英语,
+        },
+      })),
     };
     const adjusted: GradeStatisticsTemplate = {
       ...template,
+      subjects: ["数学", "化学"],
       classAverageOptions: {
         subjectScoreModes: {
-          "class-2": { 数学: "raw", 英语: "both" },
-          "class-10": { 数学: "assigned", 英语: "assigned" },
+          "class-2": { 数学: "assigned", 化学: "both" },
+          "class-10": { 数学: "assigned", 化学: "assigned" },
         },
         totalScoreMode: "raw",
       },
@@ -227,11 +233,11 @@ describe("grade class average report", () => {
     const report = buildGradeClassAverageReport(scoredExam, adjusted, context);
     const class2 = report.groups[0].rows.find((row) => row.classId === "class-2")!;
 
-    expect(class2.subjectScoreModes).toEqual({ 数学: "raw", 英语: "both" });
-    expect(class2.subjectAverages.英语).toEqual({ raw: 80, assigned: 85 });
+    expect(class2.subjectScoreModes).toEqual({ 数学: "raw", 化学: "both" });
+    expect(class2.subjectAverages.化学).toEqual({ raw: 80, assigned: 85 });
     expect(report.options.totalScoreMode).toBe("raw");
-    expect(report.groups[0].subjectScoreModes.数学).toBe("both");
-    expect(report.groups[0].subjectScoreModes.英语).toBe("both");
+    expect(report.groups[0].subjectScoreModes.数学).toBe("raw");
+    expect(report.groups[0].subjectScoreModes.化学).toBe("both");
   });
 
   it("keeps every cohort class in the class-average template even without imported scores", () => {

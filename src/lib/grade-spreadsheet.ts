@@ -529,6 +529,16 @@ export async function exportGradeTotalScoreSegmentReport(
       ...report.classes.map((classItem) => cell(row.counts[classItem.classId] || 0)),
     ]);
   });
+  rows.push(
+    [cell(null), ...report.classes.map(() => cell(null))],
+    [cell(null), ...report.classes.map(() => cell(null))],
+  );
+  report.summaryRows.forEach((row) => {
+    rows.push([
+      cell(row.label, { fontWeight: "bold" }),
+      ...report.classes.map((classItem) => cell(row.values[classItem.classId])),
+    ]);
+  });
 
   const safeName = report.title.replace(/[\\/:*?"<>|]/g, "_") || "总分分数段汇总表";
   await writeXlsxFile(rows, {

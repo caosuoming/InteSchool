@@ -633,6 +633,28 @@ export interface GradeClassAverageOptions {
   showOverallAverage?: boolean;
 }
 
+export type GradeTotalScoreTargetKey = "highScore1" | "highScore2" | "firstTier" | "undergraduate";
+
+export interface GradeTotalScoreClassTargets {
+  highScore1?: number;
+  highScore2?: number;
+  firstTier?: number;
+  undergraduate?: number;
+}
+
+export interface GradeTotalScoreSegmentOptions {
+  /** 高分 1 的总分达线标准。 */
+  highScore1Threshold?: number;
+  /** 高分 2 的总分达线标准。 */
+  highScore2Threshold?: number;
+  /** 一本的总分达线标准。 */
+  firstTierThreshold?: number;
+  /** 本科人数使用的二本总分达线标准。 */
+  undergraduateThreshold?: number;
+  /** 各班级随届保存的高分、一本和本科目标人数。 */
+  classTargets?: Record<string, GradeTotalScoreClassTargets>;
+}
+
 export interface GradeStatisticsTemplate {
   id: string;
   kind: GradeTemplateKind;
@@ -652,6 +674,8 @@ export interface GradeStatisticsTemplate {
   columns?: GradeTemplateColumn[];
   /** 班级平均分表的布局和汇总选项。 */
   classAverageOptions?: GradeClassAverageOptions;
+  /** 总分分数段表的达线标准和班级目标。 */
+  totalScoreSegmentOptions?: GradeTotalScoreSegmentOptions;
 }
 
 export interface GradeTemplateProfile {

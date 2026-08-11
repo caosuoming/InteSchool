@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   ArrowRight,
@@ -175,6 +175,7 @@ function GradePreprocessing({
   const [saving, setSaving] = useState(false);
   const [copying, setCopying] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const autoSaveQueue = useRef<Promise<void>>(Promise.resolve());
 
   const load = useCallback(async () => {
     if (!cohortKey) {
@@ -308,6 +309,25 @@ function GradePreprocessing({
       setSaving(false);
     }
   };
+
+  const autoSaveSegmentSettings = useCallback((nextDraft: GradeExamSettings) => {
+    if (!cohortKey) return Promise.resolve();
+    autoSaveQueue.current = autoSaveQueue.current.then(async () => {
+      try {
+        const saved = await gradeService.saveCohortSettings(
+          schoolId,
+          teacherId,
+          cohortKey,
+          subjects,
+          nextDraft,
+        );
+        setRecord(saved);
+      } catch (error) {
+        toast.error("目标与达线标准自动保存失败", error instanceof Error ? error.message : undefined);
+      }
+    });
+    return autoSaveQueue.current;
+  }, [cohortKey, schoolId, subjects, teacherId]);
 
   const copy = async () => {
     if (!copySource || !cohortKey) return;
@@ -466,6 +486,7 @@ function GradePreprocessing({
               classAverageTemplate={classAverageTemplate || undefined}
               context={context}
               onChange={setDraft}
+              onAutoSave={autoSaveSegmentSettings}
             />
           )}
         </>
