@@ -186,6 +186,35 @@
 }
 
 /* 试卷预览：左侧题面与右侧题目信息共享网格行，保持纵向对齐并共同滚动。 */
+.preview-sticky-shell {
+  --preview-paper-width: 210mm;
+  position: relative;
+}
+.preview-sticky-shell.preview-sticky-shell-wide {
+  --preview-paper-width: 260mm;
+}
+.preview-sticky-rail {
+  position: absolute;
+  z-index: 10;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--preview-paper-width);
+  min-width: 17rem;
+  pointer-events: none;
+}
+.preview-sticky-controls {
+  position: sticky;
+  top: 0;
+  border-left: 1px solid rgba(16, 42, 67, 0.2);
+  padding: 0.75rem 0 0.75rem 1.25rem;
+  background: #f5f7fa;
+  pointer-events: auto;
+}
+.preview-sticky-spacer {
+  min-height: 10.5rem;
+}
+
 .exam-paper-preview-grid {
   position: relative;
   display: grid;

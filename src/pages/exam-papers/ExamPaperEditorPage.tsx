@@ -1468,42 +1468,45 @@ export default function ExamPaperEditorPage() {
           </Button>
         </div>
 
-        <div className="overflow-x-auto pb-4">
-          <div className="exam-paper-preview-grid" data-testid="exam-paper-preview">
-            <PreviewQuestionPair
-              leftClassName="exam-paper-preview-title"
-              left={(
-                <MathHtml className="text-center font-serif text-2xl font-bold text-ink-900">
-                  {title || "未命名试卷"}
-                </MathHtml>
-              )}
-              right={(
-                <div data-testid="exam-paper-preview-details">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-serif text-sm font-semibold text-ink-900">题目信息与使用情况</div>
-                      <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
-                    </div>
-                    {previewSidebarVisibility.answerStatus && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleMarkAllDone}
-                        loading={markingAllDone}
-                        disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}
-                      >
-                        <CheckSquare className="w-3.5 h-3.5" />
-                        全部设为使用
-                      </Button>
-                    )}
-                  </div>
-                  <PreviewSidebarControls
-                    value={previewSidebarVisibility}
-                    onChange={setPreviewSidebarVisibility}
-                  />
+        <div className="preview-sticky-shell">
+          <aside className="preview-sticky-rail no-print">
+            <div className="preview-sticky-controls" data-testid="exam-paper-preview-details">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-serif text-sm font-semibold text-ink-900">题目信息与使用情况</div>
+                  <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
                 </div>
-              )}
-            />
+                {previewSidebarVisibility.answerStatus && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleMarkAllDone}
+                    loading={markingAllDone}
+                    disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}
+                  >
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    全部设为使用
+                  </Button>
+                )}
+              </div>
+              <PreviewSidebarControls
+                value={previewSidebarVisibility}
+                onChange={setPreviewSidebarVisibility}
+              />
+            </div>
+          </aside>
+
+          <div className="overflow-x-auto pb-4">
+            <div className="exam-paper-preview-grid" data-testid="exam-paper-preview">
+              <PreviewQuestionPair
+                leftClassName="exam-paper-preview-title"
+                left={(
+                  <MathHtml className="text-center font-serif text-2xl font-bold text-ink-900">
+                    {title || "未命名试卷"}
+                  </MathHtml>
+                )}
+                right={<div className="preview-sticky-spacer" aria-hidden="true" />}
+              />
 
             {isStructuredExtract ? (
               contentBlocks.map((block, blockIndex) => {
@@ -1687,6 +1690,7 @@ export default function ExamPaperEditorPage() {
               })
             )}
           </div>
+        </div>
         </div>
         {/* 发布弹窗 */}
         <PublishModal
