@@ -208,6 +208,37 @@ describe("ExtractReviewModal", () => {
     expect(mocks.parseDocumentBlocks).not.toHaveBeenCalled();
   });
 
+  it("renders script markup in review titles instead of showing literal tags", async () => {
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="上下标讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[
+          {
+            id: "group-title-script",
+            type: "groupTitle",
+            content: "热点一 a<sub>n</sub><sub>＋</sub><sub>1</sub>＋a<sub>n</sub>＝f(n)型",
+            order: 0,
+            status: "new",
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText(/热点一/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("<sub>");
+    expect(Array.from(document.body.querySelectorAll("sub")).map((node) => node.textContent))
+      .toEqual(["n", "＋", "1", "n"]);
+  });
+
   it("moves and swaps answer, analysis, and summary content without overwriting it", async () => {
     const user = userEvent.setup();
 

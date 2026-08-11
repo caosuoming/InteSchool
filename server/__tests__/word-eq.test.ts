@@ -2,7 +2,10 @@
 
 import katex from "katex";
 import { describe, expect, it } from "vitest";
-import { wordEqFieldToLatex } from "../lib/word-eq.js";
+import {
+  wordEqFieldRunsToLatex,
+  wordEqFieldToLatex,
+} from "../lib/word-eq.js";
 
 describe("legacy Word EQ fields", () => {
   it.each([
@@ -29,6 +32,24 @@ describe("legacy Word EQ fields", () => {
     ).toBe(
       String.raw`\left\{\begin{matrix}\lambda +3\ge 0,\\f(1)\ge 0,\end{matrix}\right.`,
     );
+  });
+
+  it("preserves run-formatted scripts inside fragmented EQ instructions", () => {
+    expect(wordEqFieldRunsToLatex([
+      { text: "eq a" },
+      { text: "n", verticalAlign: "subscript" },
+      { text: "＋x" },
+      { text: "2", verticalAlign: "superscript" },
+    ])).toBe(String.raw`a{}_{n}+x{}^{2}`);
+  });
+
+  it("does not duplicate a script applied to the whole EQ instruction", () => {
+    expect(wordEqFieldRunsToLatex([
+      { text: String.raw`eq \s`, verticalAlign: "superscript" },
+      { text: String.raw`\up12(`, verticalAlign: "superscript" },
+      { text: "n", verticalAlign: "superscript" },
+      { text: ")", verticalAlign: "superscript" },
+    ])).toBe(String.raw`{}^{n}`);
   });
 
   it("produces KaTeX-renderable output for representative nested fields", () => {

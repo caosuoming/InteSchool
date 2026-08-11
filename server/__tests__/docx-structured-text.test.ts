@@ -90,6 +90,23 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves subscript and superscript formatting inside legacy EQ instructions", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText>eq a</w:instrText></w:r>
+        <w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:instrText>n</w:instrText></w:r>
+        <w:r><w:instrText>＋x</w:instrText></w:r>
+        <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:instrText>2</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "$a{}_{n}+x{}^{2}$",
+    );
+  });
+
   it("keeps the displayed result of non-equation Word fields", async () => {
     const data = await makeDocx(`
       <w:p>
