@@ -336,7 +336,17 @@ export const serviceParameters = {
       "gradYear",
       "grade"
     ],
+    "updateSchoolGrade": [
+      "gradeId",
+      "patch"
+    ],
     "advanceSchoolGrade": [
+      "gradeId"
+    ],
+    "decreaseSchoolGrade": [
+      "gradeId"
+    ],
+    "graduateSchoolGrade": [
       "gradeId"
     ],
     "bulkCreateSchoolClasses": [

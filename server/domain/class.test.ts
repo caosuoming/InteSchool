@@ -278,6 +278,62 @@ describe("class lifecycle service", () => {
     });
   });
 
+  it("decreases a whole grade while preserving a customized grade name", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "class-2027",
+      type: "school",
+      schoolId: "school-1",
+      gradeId: "grade-2027",
+      name: "高二(1)班",
+      grade: "高二",
+      gradYear: 2027,
+      studentCount: 1,
+      status: "active",
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    });
+    (state.students as Array<Record<string, unknown>>).push({
+      id: "student-2027",
+      name: "待调整学生",
+      studentNo: "201",
+      classId: "class-2027",
+      schoolId: "school-1",
+      grade: "高二",
+      status: "active",
+    });
+
+    await runWithState(state, async () => {
+      const renamed = await classService.updateSchoolGrade("grade-2027", { name: "创新年级" });
+      const result = await classService.decreaseSchoolGrade("grade-2027");
+
+      expect(renamed.name).toBe("创新年级");
+      expect(result).toMatchObject({ updatedClasses: 1, updatedStudents: 1 });
+      expect(result.grade).toMatchObject({ name: "创新年级", grade: "高一" });
+      expect(getClass(state, "class-2027")).toMatchObject({ name: "高一(1)班", grade: "高一" });
+      expect(getStudent(state, "student-2027")).toMatchObject({ grade: "高一" });
+      await expect(classService.decreaseSchoolGrade("grade-2027")).rejects.toThrow("高一年级不能继续降学年");
+    });
+  });
+
+  it("graduates a whole grade and archives its active classes and students", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      const result = await classService.graduateSchoolGrade("grade-2026");
+
+      expect(result).toMatchObject({ updatedClasses: 2, graduatedStudents: 3 });
+      expect(result.grade).toMatchObject({ status: "graduated" });
+      expect(getClass(state, "class-1")).toMatchObject({ status: "graduated", studentCount: 0 });
+      expect(getClass(state, "class-2")).toMatchObject({ status: "graduated", studentCount: 0 });
+      expect(getStudent(state, "student-early")).toMatchObject({ status: "graduated", graduationType: "regular" });
+      expect(getStudent(state, "student-transfer")).toMatchObject({ status: "graduated", graduationType: "regular" });
+      expect(getStudent(state, "student-regular")).toMatchObject({ status: "graduated", graduationType: "regular" });
+      expect(getStudent(state, "student-suspended")).toMatchObject({ status: "suspended" });
+      await expect(classService.advanceSchoolGrade("grade-2026")).rejects.toThrow("已毕业年级不能调整学年");
+    });
+  });
+
   it("moves a school class and its students into the recycle bin and restores both", async () => {
     const state = createState();
 
