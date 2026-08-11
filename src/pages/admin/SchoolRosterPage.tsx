@@ -2,6 +2,8 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, us
 import { useNavigate } from "react-router";
 import {
   ArchiveRestore,
+  ArrowDown,
+  ArrowUp,
   Download,
   FileSpreadsheet,
   GraduationCap,
@@ -117,6 +119,8 @@ export default function SchoolRosterPage() {
   const [gradeModalOpen, setGradeModalOpen] = useState(false);
   const [gradeYear, setGradeYear] = useState(String(new Date().getFullYear() + 3));
   const [gradeLevel, setGradeLevel] = useState("高一");
+  const [editGradeOpen, setEditGradeOpen] = useState(false);
+  const [editGradeName, setEditGradeName] = useState("");
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [classNames, setClassNames] = useState("");
   const [editClassOpen, setEditClassOpen] = useState(false);
@@ -238,11 +242,46 @@ export default function SchoolRosterPage() {
     await load();
   });
 
+  const openEditGrade = () => {
+    if (!selectedGrade) return;
+    setEditGradeName(selectedGrade.name);
+    setEditGradeOpen(true);
+  };
+
+  const handleEditGrade = () => run(async () => {
+    if (!selectedGrade) return;
+    const name = editGradeName.trim();
+    if (!name) {
+      toast.error("请填写年级名称");
+      return;
+    }
+    await classService.updateSchoolGrade(selectedGrade.id, { name });
+    toast.success(`已更新年级名称为“${name}”`);
+    setEditGradeOpen(false);
+    await load();
+  });
+
+  const handleDecreaseGrade = () => run(async () => {
+    if (!selectedGrade) return;
+    if (!window.confirm(`确定将“${selectedGrade.name}”统一降学年吗？班级和学生的年级会同步更新。`)) return;
+    const result = await classService.decreaseSchoolGrade(selectedGrade.id);
+    toast.success(`已降为 ${result.grade.grade}`, `更新 ${result.updatedClasses} 个班级、${result.updatedStudents} 名学生`);
+    await load();
+  });
+
   const handleAdvanceGrade = () => run(async () => {
     if (!selectedGrade) return;
     if (!window.confirm(`确定将“${selectedGrade.name}”统一升学年吗？班级和在册学生的年级会同步更新。`)) return;
     const result = await classService.advanceSchoolGrade(selectedGrade.id);
-    toast.success(`已升为 ${result.grade.name}`, `更新 ${result.updatedClasses} 个班级、${result.updatedStudents} 名学生`);
+    toast.success(`已升为 ${result.grade.grade}`, `更新 ${result.updatedClasses} 个班级、${result.updatedStudents} 名学生`);
+    await load();
+  });
+
+  const handleGraduateGrade = () => run(async () => {
+    if (!selectedGrade) return;
+    if (!window.confirm(`确定将“${selectedGrade.name}”标记为毕业吗？该年级全部在读学生会正常毕业，班级会统一封存。`)) return;
+    const result = await classService.graduateSchoolGrade(selectedGrade.id);
+    toast.success(`“${result.grade.name}”已毕业`, `封存 ${result.updatedClasses} 个班级、毕业 ${result.graduatedStudents} 名学生`);
     await load();
   });
 
@@ -404,7 +443,7 @@ export default function SchoolRosterPage() {
     <div>
       <PageHeader
         title="班级与学生"
-        description="先建立年级，再维护班级和学生；支持 Excel 批量导入、统一升学年与回收站恢复。"
+        description="先建立年级，再维护班级和学生；支持 Excel 批量导入、年级升降、毕业与回收站恢复。"
         icon={<GraduationCap className="h-5 w-5" />}
         action={
           <div className="flex flex-wrap gap-2">
@@ -478,8 +517,17 @@ export default function SchoolRosterPage() {
                   <Button size="sm" variant="outline" onClick={() => setClassModalOpen(true)} disabled={selectedGrade.status === "graduated"}>
                     <Plus className="h-3.5 w-3.5" />批量班级
                   </Button>
+                  <Button size="sm" variant="outline" onClick={openEditGrade}>
+                    <Pencil className="h-3.5 w-3.5" />编辑年级
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleDecreaseGrade} disabled={selectedGrade.grade === "高一" || selectedGrade.status === "graduated"} loading={working}>
+                    <ArrowDown className="h-3.5 w-3.5" />降学年
+                  </Button>
                   <Button size="sm" variant="outline" onClick={handleAdvanceGrade} disabled={selectedGrade.grade === "高三" || selectedGrade.status === "graduated"} loading={working}>
-                    <GraduationCap className="h-3.5 w-3.5" />升学年
+                    <ArrowUp className="h-3.5 w-3.5" />升学年
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleGraduateGrade} disabled={selectedGrade.status === "graduated"} loading={working}>
+                    <GraduationCap className="h-3.5 w-3.5" />毕业
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => downloadStudentRosterTemplate(selectedGrade.name)}>
                     <Download className="h-3.5 w-3.5" />下载模板
@@ -694,6 +742,28 @@ export default function SchoolRosterPage() {
             { value: "高三", label: "高三" },
           ]} />
         </div>
+      </Modal>
+
+      <Modal
+        open={editGradeOpen}
+        onClose={() => setEditGradeOpen(false)}
+        title="编辑年级"
+        description={selectedGrade ? `${selectedGrade.gradYear}届 · 当前${gradeStatusLabel(selectedGrade)}` : undefined}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditGradeOpen(false)}>取消</Button>
+            <Button variant="gold" onClick={handleEditGrade} loading={working}>保存修改</Button>
+          </>
+        }
+      >
+        <Input
+          label="年级名称"
+          value={editGradeName}
+          onChange={(event) => setEditGradeName(event.target.value)}
+          hint="仅修改显示名称；届别和当前学年不会改变。"
+          autoFocus
+        />
       </Modal>
 
       <Modal

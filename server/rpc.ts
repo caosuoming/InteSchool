@@ -29,7 +29,10 @@ const EXAM_MANAGER_MUTATIONS = new Set([
 ]);
 const SCHOOL_ROSTER_MUTATIONS = new Set([
   "createSchoolGrade",
+  "updateSchoolGrade",
   "advanceSchoolGrade",
+  "decreaseSchoolGrade",
+  "graduateSchoolGrade",
   "bulkCreateSchoolClasses",
   "bulkImportStudents",
   "createSchoolClass",

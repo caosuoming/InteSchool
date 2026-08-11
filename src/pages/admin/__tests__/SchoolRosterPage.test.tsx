@@ -15,8 +15,11 @@ vi.mock("@/services/class", () => ({
     listStudentsBySchool: vi.fn(),
     listSchoolRosterRecycleBin: vi.fn(),
     createSchoolGrade: vi.fn(),
+    updateSchoolGrade: vi.fn(),
     bulkCreateSchoolClasses: vi.fn(),
     advanceSchoolGrade: vi.fn(),
+    decreaseSchoolGrade: vi.fn(),
+    graduateSchoolGrade: vi.fn(),
     bulkImportStudents: vi.fn(),
     deleteClass: vi.fn(),
     deleteStudent: vi.fn(),
@@ -168,6 +171,22 @@ describe("SchoolRosterPage", () => {
     vi.mocked(classService.listSchoolRosterRecycleBin).mockResolvedValue({ classes: [], students: [] });
     vi.mocked(settingsService.listClassTypes).mockResolvedValue([classType]);
     vi.mocked(authService.listTeachers).mockResolvedValue(managedTeachers);
+    vi.mocked(classService.updateSchoolGrade).mockResolvedValue(grade);
+    vi.mocked(classService.advanceSchoolGrade).mockResolvedValue({
+      grade: { ...grade, grade: "高三" },
+      updatedClasses: classes.length,
+      updatedStudents: 1,
+    });
+    vi.mocked(classService.decreaseSchoolGrade).mockResolvedValue({
+      grade: { ...grade, grade: "高一" },
+      updatedClasses: classes.length,
+      updatedStudents: 1,
+    });
+    vi.mocked(classService.graduateSchoolGrade).mockResolvedValue({
+      grade: { ...grade, status: "graduated" },
+      updatedClasses: classes.length,
+      graduatedStudents: 1,
+    });
     vi.mocked(classService.updateSchoolClass).mockResolvedValue(classes[0]);
     vi.mocked(authService.updateTeacherTeachingProfile).mockResolvedValue(managedTeachers[0]);
     vi.mocked(classService.updateStudent).mockResolvedValue(student);
@@ -214,6 +233,28 @@ describe("SchoolRosterPage", () => {
         homeroomClassIds: [classes[0].id],
       });
     });
+  });
+
+  it("edits, raises, lowers, and graduates a grade", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑年级" }));
+    fireEvent.change(screen.getByLabelText("年级名称"), { target: { value: "高二创新年级" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => {
+      expect(classService.updateSchoolGrade).toHaveBeenCalledWith(grade.id, { name: "高二创新年级" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "降学年" }));
+    await waitFor(() => expect(classService.decreaseSchoolGrade).toHaveBeenCalledWith(grade.id));
+
+    fireEvent.click(screen.getByRole("button", { name: "升学年" }));
+    await waitFor(() => expect(classService.advanceSchoolGrade).toHaveBeenCalledWith(grade.id));
+
+    fireEvent.click(screen.getByRole("button", { name: "毕业" }));
+    await waitFor(() => expect(classService.graduateSchoolGrade).toHaveBeenCalledWith(grade.id));
+    expect(confirm).toHaveBeenCalledTimes(3);
   });
 
   it("emphasizes subject selections and student types that differ from the class majority", async () => {

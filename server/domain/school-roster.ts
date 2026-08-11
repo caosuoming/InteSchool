@@ -23,6 +23,21 @@ function normalizeClassName(value: string): string {
   return /^\d+$/.test(normalized) ? `${normalized}班` : normalized;
 }
 
+function canonicalGradeName(gradYear: number, grade: string): string {
+  return `${gradYear}届${grade}`;
+}
+
+function classBelongsToGrade(item: SchoolClass, grade: SchoolGrade): boolean {
+  if (item.gradeId) return item.gradeId === grade.id;
+  return item.gradYear === grade.gradYear && item.grade === grade.grade;
+}
+
+function shiftedGradeName(current: SchoolGrade, nextGrade: string): string {
+  return current.name === canonicalGradeName(current.gradYear, current.grade)
+    ? canonicalGradeName(current.gradYear, nextGrade)
+    : current.name;
+}
+
 function requireGrade(gradeId: string): SchoolGrade {
   const grade = (db.read("schoolGrades") as SchoolGrade[]).find((item) => item.id === gradeId);
   if (!grade) throw new Error("年级不存在");
@@ -61,6 +76,59 @@ function createClassForGrade(grade: SchoolGrade, teacherId: string, name: string
 
 function restoreStatus(student: Student): ActiveStudentStatus {
   return student.deletedFromStatus || "active";
+}
+
+function shiftSchoolGrade(gradeId: string, offset: -1 | 1): {
+  grade: SchoolGrade;
+  updatedClasses: number;
+  updatedStudents: number;
+} {
+  const current = requireGrade(gradeId);
+  if (current.status === "graduated") throw new Error("已毕业年级不能调整学年");
+
+  const index = GRADE_SEQUENCE.indexOf(current.grade as (typeof GRADE_SEQUENCE)[number]);
+  const targetIndex = index + offset;
+  if (index < 0 || targetIndex < 0 || targetIndex >= GRADE_SEQUENCE.length) {
+    throw new Error(offset > 0
+      ? "高三年级不能继续升学年，请使用毕业功能"
+      : "高一年级不能继续降学年");
+  }
+
+  const nextGrade = GRADE_SEQUENCE[targetIndex];
+  const now = new Date().toISOString();
+  let updatedGrade = current;
+
+  db.update("schoolGrades", (list: SchoolGrade[]) => list.map((item) => {
+    if (item.id !== gradeId) return item;
+    updatedGrade = {
+      ...item,
+      grade: nextGrade,
+      name: shiftedGradeName(item, nextGrade),
+      updatedAt: now,
+    };
+    return updatedGrade;
+  }));
+
+  const classIds = new Set<string>();
+  let updatedClasses = 0;
+  db.update("schoolClasses", (list: SchoolClass[]) => list.map((item) => {
+    if (!classBelongsToGrade(item, current) || item.status === "deleted") return item;
+    classIds.add(item.id);
+    updatedClasses += 1;
+    const renamed = item.name.startsWith(current.grade)
+      ? `${nextGrade}${item.name.slice(current.grade.length)}`
+      : item.name;
+    return { ...item, gradeId, grade: nextGrade, name: renamed };
+  }));
+
+  let updatedStudents = 0;
+  db.update("students", (list: Student[]) => list.map((item) => {
+    if (!classIds.has(item.classId) || item.status === "deleted") return item;
+    updatedStudents += 1;
+    return { ...item, grade: nextGrade };
+  }));
+
+  return { grade: updatedGrade, updatedClasses, updatedStudents };
 }
 
 export const schoolRosterService = {
@@ -105,6 +173,29 @@ export const schoolRosterService = {
     return created;
   },
 
+  async updateSchoolGrade(gradeId: string, patch: { name: string }): Promise<SchoolGrade> {
+    await delay(180);
+    maybeThrowError();
+    const current = requireGrade(gradeId);
+    const name = normalizeName(patch.name || "");
+    if (!name) throw new Error("请填写年级名称");
+    if (name.length > 100) throw new Error("年级名称不能超过 100 个字符");
+    const duplicate = (db.read("schoolGrades") as SchoolGrade[]).some((item) =>
+      item.id !== gradeId
+      && item.schoolId === current.schoolId
+      && normalizeName(item.name).toLocaleLowerCase("zh-CN") === name.toLocaleLowerCase("zh-CN"),
+    );
+    if (duplicate) throw new Error("年级名称已存在");
+
+    let updated = current;
+    db.update("schoolGrades", (list: SchoolGrade[]) => list.map((item) => {
+      if (item.id !== gradeId) return item;
+      updated = { ...item, name, updatedAt: new Date().toISOString() };
+      return updated;
+    }));
+    return updated;
+  },
+
   async advanceSchoolGrade(gradeId: string): Promise<{
     grade: SchoolGrade;
     updatedClasses: number;
@@ -112,46 +203,68 @@ export const schoolRosterService = {
   }> {
     await delay(300);
     maybeThrowError();
+    return shiftSchoolGrade(gradeId, 1);
+  },
+
+  async decreaseSchoolGrade(gradeId: string): Promise<{
+    grade: SchoolGrade;
+    updatedClasses: number;
+    updatedStudents: number;
+  }> {
+    await delay(300);
+    maybeThrowError();
+    return shiftSchoolGrade(gradeId, -1);
+  },
+
+  async graduateSchoolGrade(gradeId: string): Promise<{
+    grade: SchoolGrade;
+    updatedClasses: number;
+    graduatedStudents: number;
+  }> {
+    await delay(380);
+    maybeThrowError();
     const current = requireGrade(gradeId);
-    const index = GRADE_SEQUENCE.indexOf(current.grade as (typeof GRADE_SEQUENCE)[number]);
-    if (index < 0 || index === GRADE_SEQUENCE.length - 1) {
-      throw new Error("高三年级不能继续升学年，请使用整班毕业功能");
-    }
-    const nextGrade = GRADE_SEQUENCE[index + 1];
+    if (current.status === "graduated") throw new Error("年级已毕业");
+
     const now = new Date().toISOString();
-    let updatedGrade = current;
-
-    db.update("schoolGrades", (list: SchoolGrade[]) => list.map((item) => {
-      if (item.id !== gradeId) return item;
-      updatedGrade = {
-        ...item,
-        grade: nextGrade,
-        name: `${item.gradYear}届${nextGrade}`,
-        updatedAt: now,
-      };
-      return updatedGrade;
-    }));
-
     const classIds = new Set<string>();
     let updatedClasses = 0;
     db.update("schoolClasses", (list: SchoolClass[]) => list.map((item) => {
-      if (item.gradeId !== gradeId || item.status === "deleted") return item;
+      if (!classBelongsToGrade(item, current) || item.status === "deleted") return item;
       classIds.add(item.id);
+      if (item.status === "graduated") return item;
       updatedClasses += 1;
-      const renamed = item.name.startsWith(current.grade)
-        ? `${nextGrade}${item.name.slice(current.grade.length)}`
-        : item.name;
-      return { ...item, grade: nextGrade, name: renamed };
+      return {
+        ...item,
+        gradeId,
+        status: "graduated",
+        graduatedAt: now,
+        studentCount: 0,
+      };
     }));
 
-    let updatedStudents = 0;
+    let graduatedStudents = 0;
     db.update("students", (list: Student[]) => list.map((item) => {
-      if (!classIds.has(item.classId) || item.status === "deleted") return item;
-      updatedStudents += 1;
-      return { ...item, grade: nextGrade };
+      if (!classIds.has(item.classId) || item.status !== "active") return item;
+      graduatedStudents += 1;
+      return {
+        ...item,
+        status: "graduated",
+        archiveStatus: "graduated",
+        archiveStatusBeforeLeave: undefined,
+        graduatedAt: now,
+        graduationType: "regular",
+      };
     }));
 
-    return { grade: updatedGrade, updatedClasses, updatedStudents };
+    let updatedGrade = current;
+    db.update("schoolGrades", (list: SchoolGrade[]) => list.map((item) => {
+      if (item.id !== gradeId) return item;
+      updatedGrade = { ...item, status: "graduated", updatedAt: now };
+      return updatedGrade;
+    }));
+
+    return { grade: updatedGrade, updatedClasses, graduatedStudents };
   },
 
   async bulkCreateSchoolClasses(
