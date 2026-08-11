@@ -1258,6 +1258,102 @@ export const shareService = {
     return contributorRanking();
   },
 
+  async renameDonationAlbum(
+    teacherId: string,
+    subject: string,
+    albumId: string,
+    name: string,
+  ): Promise<ShareRecord[]> {
+    await delay(100);
+    const normalizedSubject = subject.trim();
+    if (!canManageSubject(teacherId, normalizedSubject)) {
+      throw new Error("仅该学科版主或平台超级管理员可以管理专辑");
+    }
+    const normalizedName = name.trim().slice(0, 80);
+    if (!normalizedName) throw new Error("专辑名称不能为空");
+    const albumRecords = primaryDonations().filter((item) =>
+      donationSubject(item) === normalizedSubject && item.donationAlbum?.id === albumId,
+    );
+    if (albumRecords.length === 0) throw new Error("平台专辑不存在");
+
+    const ids = new Set(albumRecords.map((item) => item.id));
+    db.update("shareRecords", (records: ShareRecord[]) => records.map((record) =>
+      ids.has(record.id) && record.donationAlbum
+        ? { ...record, donationAlbum: { ...record.donationAlbum, name: normalizedName } }
+        : record,
+    ));
+    return primaryDonations().filter((item) =>
+      donationSubject(item) === normalizedSubject && item.donationAlbum?.id === albumId,
+    );
+  },
+
+  async mergeDonationAlbums(
+    teacherId: string,
+    subject: string,
+    sourceAlbumId: string,
+    targetAlbumId: string,
+  ): Promise<ShareRecord[]> {
+    await delay(100);
+    const normalizedSubject = subject.trim();
+    if (!canManageSubject(teacherId, normalizedSubject)) {
+      throw new Error("仅该学科版主或平台超级管理员可以管理专辑");
+    }
+    if (sourceAlbumId === targetAlbumId) throw new Error("不能合并同一个专辑");
+    const subjectDonations = primaryDonations().filter((item) => donationSubject(item) === normalizedSubject);
+    const source = subjectDonations.filter((item) => item.donationAlbum?.id === sourceAlbumId);
+    const target = subjectDonations.filter((item) => item.donationAlbum?.id === targetAlbumId);
+    if (source.length === 0 || target.length === 0) throw new Error("待合并的平台专辑不存在");
+    const targetAlbum = target[0].donationAlbum!;
+    if (source.some((item) => item.resourceType !== targetAlbum.resourceType)) {
+      throw new Error("不同资源类型的专辑不能合并");
+    }
+    const sourceIds = new Set(source.map((item) => item.id));
+    db.update("shareRecords", (records: ShareRecord[]) => records.map((record) =>
+      sourceIds.has(record.id)
+        ? { ...record, donationAlbum: structuredClone(targetAlbum) }
+        : record,
+    ));
+    return primaryDonations().filter((item) =>
+      donationSubject(item) === normalizedSubject && item.donationAlbum?.id === targetAlbumId,
+    );
+  },
+
+  async setDonationAlbum(
+    teacherId: string,
+    subject: string,
+    donationId: string,
+    albumId: string | null,
+  ): Promise<ShareRecord> {
+    await delay(100);
+    const normalizedSubject = subject.trim();
+    if (!canManageSubject(teacherId, normalizedSubject)) {
+      throw new Error("仅该学科版主或平台超级管理员可以管理专辑");
+    }
+    const donation = primaryDonations().find((item) =>
+      item.id === donationId && donationSubject(item) === normalizedSubject,
+    );
+    if (!donation) throw new Error("平台资源不存在");
+    let donationAlbum: DonationAlbumSnapshot | undefined;
+    if (albumId) {
+      const target = primaryDonations().find((item) =>
+        donationSubject(item) === normalizedSubject && item.donationAlbum?.id === albumId,
+      );
+      if (!target?.donationAlbum) throw new Error("目标平台专辑不存在");
+      if (target.donationAlbum.resourceType !== donation.resourceType) {
+        throw new Error("只能把文档加入同类型专辑");
+      }
+      donationAlbum = structuredClone(target.donationAlbum);
+    }
+    let updated: ShareRecord | null = null;
+    db.update("shareRecords", (records: ShareRecord[]) => records.map((record) => {
+      if (record.id !== donationId) return record;
+      updated = { ...record, donationAlbum };
+      return updated;
+    }));
+    if (!updated) throw new Error("平台资源不存在");
+    return updated;
+  },
+
   async updateDonationOrder(
     teacherId: string,
     subject: string,

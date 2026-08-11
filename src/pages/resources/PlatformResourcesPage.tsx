@@ -15,6 +15,9 @@ import {
   FileQuestion,
   FileSpreadsheet,
   FileText,
+  Folder,
+  ChevronDown,
+  ChevronRight,
   Images,
   Lightbulb,
   MessageSquareWarning,
@@ -67,7 +70,7 @@ import { MathHtml } from "@/components/ui/MathHtml";
 import { ExpandableQuestionContent } from "@/components/resource/ExpandableQuestionContent";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 
-type ResourceTypeFilter = "all" | ShareableResourceType;
+type ResourceTypeFilter = "all" | "album" | ShareableResourceType;
 type LeftTab = "chapter" | "knowledge";
 type SortKey = "layout" | "updated" | "created" | "title";
 type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
@@ -94,6 +97,13 @@ interface PlatformResourceItem {
   snapshot: ShareableResource;
   donationAlbum?: DonationAlbumSnapshot;
   question?: Question;
+}
+
+interface PlatformAlbumGroup {
+  key: string;
+  subject: string;
+  album: DonationAlbumSnapshot;
+  items: PlatformResourceItem[];
 }
 
 interface PlatformResourceFilters {
@@ -139,6 +149,7 @@ const emptyFilters: PlatformResourceFilters = {
 
 const typeFilterConfig: { key: ResourceTypeFilter; label: string; icon: typeof FileText }[] = [
   { key: "all", label: "全部", icon: FileText },
+  { key: "album", label: "专辑", icon: Folder },
   { key: "question", label: "题目", icon: FileQuestion },
   { key: "examPaper", label: "试卷", icon: FileSpreadsheet },
   { key: "lecture", label: "讲义", icon: FileText },
@@ -159,6 +170,14 @@ const resourceTypeLabel: Record<ShareableResourceType, string> = {
   lecture: "讲义",
   courseware: "课件",
   material: "素材",
+};
+
+const resourceTypeIcon: Record<ShareableResourceType, typeof FileText> = {
+  question: FileQuestion,
+  examPaper: FileSpreadsheet,
+  lecture: BookOpen,
+  courseware: Presentation,
+  material: FileBox,
 };
 
 const coursewareTypeLabel: Record<CoursewareType, string> = {
@@ -408,6 +427,8 @@ export default function PlatformResourcesPage() {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [ownContributionIds, setOwnContributionIds] = useState<Set<string>>(new Set());
   const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
+  const [expandedAlbumKeys, setExpandedAlbumKeys] = useState<Set<string>>(new Set());
+  const [albumWorkingKey, setAlbumWorkingKey] = useState<string | null>(null);
   const [saveConflict, setSaveConflict] = useState<{
     item: PlatformResourceItem;
     check: PlatformSaveCheckResult;
@@ -493,7 +514,7 @@ export default function PlatformResourcesPage() {
   }), [items]);
 
   const typeSpecificFilterOptions = useMemo(() => {
-    const typedItems = typeFilter === "all"
+    const typedItems = typeFilter === "all" || typeFilter === "album"
       ? []
       : items.filter((item) => item.resourceType === typeFilter);
     if (typeFilter === "question") {
@@ -551,13 +572,15 @@ export default function PlatformResourcesPage() {
   const displayedItems = useMemo(() => {
     let list = items;
     if (selectedSubject) list = list.filter((item) => item.subject === selectedSubject);
-    if (typeFilter !== "all") list = list.filter((item) => item.resourceType === typeFilter);
+    if (typeFilter === "album") list = list.filter((item) => Boolean(item.donationAlbum));
+    else if (typeFilter !== "all") list = list.filter((item) => item.resourceType === typeFilter);
     if (keyword.trim()) {
       const term = keyword.trim().toLowerCase();
       list = list.filter((item) =>
         item.title.toLowerCase().includes(term)
         || item.description?.toLowerCase().includes(term)
-        || item.content?.toLowerCase().includes(term),
+        || item.content?.toLowerCase().includes(term)
+        || item.donationAlbum?.name.toLowerCase().includes(term),
       );
     }
     if (filters.grade) list = list.filter((item) => item.grade === filters.grade);
@@ -620,6 +643,28 @@ export default function PlatformResourcesPage() {
     if (sortKey === "title") sorted.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
     return sorted;
   }, [items, selectedSubject, typeFilter, keyword, filters, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, sortKey]);
+
+  const platformAlbumGroups = useMemo<PlatformAlbumGroup[]>(() => {
+    const grouped = new Map<string, PlatformAlbumGroup>();
+    for (const item of displayedItems) {
+      if (!item.donationAlbum) continue;
+      const key = `${item.subject}:${item.donationAlbum.id}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        grouped.set(key, {
+          key,
+          subject: item.subject,
+          album: item.donationAlbum,
+          items: [item],
+        });
+      }
+    }
+    return [...grouped.values()]
+      .map((group) => ({ ...group, items: [...group.items].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, "zh-CN")) }))
+      .sort((a, b) => a.subject.localeCompare(b.subject, "zh-CN") || a.album.name.localeCompare(b.album.name, "zh-CN"));
+  }, [displayedItems]);
 
   const updateFilter = (key: keyof PlatformResourceFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -899,6 +944,63 @@ export default function PlatformResourcesPage() {
     });
   };
 
+  const togglePlatformAlbum = (key: string) => {
+    setExpandedAlbumKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const renamePlatformAlbum = async (group: PlatformAlbumGroup) => {
+    if (!teacher) return;
+    const nextName = window.prompt("新的专辑名称", group.album.name)?.trim();
+    if (!nextName || nextName === group.album.name) return;
+    setAlbumWorkingKey(group.key);
+    try {
+      await shareService.renameDonationAlbum(teacher.id, group.subject, group.album.id, nextName);
+      toast.success("平台专辑已重命名");
+      await loadAll();
+    } catch (error: any) {
+      toast.error("专辑重命名失败", error?.message);
+    } finally {
+      setAlbumWorkingKey(null);
+    }
+  };
+
+  const mergePlatformAlbum = async (group: PlatformAlbumGroup, targetAlbumId: string) => {
+    if (!teacher || !targetAlbumId) return;
+    const target = platformAlbumGroups.find((candidate) =>
+      candidate.subject === group.subject && candidate.album.id === targetAlbumId,
+    );
+    if (!target || !window.confirm(`确认将“${group.album.name}”合并到“${target.album.name}”？`)) return;
+    setAlbumWorkingKey(group.key);
+    try {
+      await shareService.mergeDonationAlbums(teacher.id, group.subject, group.album.id, targetAlbumId);
+      toast.success("平台专辑已合并");
+      await loadAll();
+    } catch (error: any) {
+      toast.error("专辑合并失败", error?.message);
+    } finally {
+      setAlbumWorkingKey(null);
+    }
+  };
+
+  const setPlatformItemAlbum = async (group: PlatformAlbumGroup, donationId: string, albumId: string | null) => {
+    if (!teacher) return;
+    setAlbumWorkingKey(group.key);
+    try {
+      await shareService.setDonationAlbum(teacher.id, group.subject, donationId, albumId);
+      toast.success(albumId ? "文档已加入专辑" : "文档已移出专辑");
+      await loadAll();
+    } catch (error: any) {
+      toast.error("专辑文档管理失败", error?.message);
+    } finally {
+      setAlbumWorkingKey(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -1093,7 +1195,9 @@ export default function PlatformResourcesPage() {
                 </button>
               );
             })}
-            <span className="ml-auto text-xs text-ink-400">共 {displayedItems.length} 项</span>
+            <span className="ml-auto text-xs text-ink-400">
+              共 {typeFilter === "album" ? platformAlbumGroups.length : displayedItems.length} 项
+            </span>
           </div>
 
           <div className="mb-4 rounded-lg border border-ink-100 bg-mist/30 p-3">
@@ -1156,6 +1260,9 @@ export default function PlatformResourcesPage() {
               {typeFilter === "all" && (
                 <span className="text-xs text-ink-400">选择具体资源类型后可使用对应属性筛选</span>
               )}
+              {typeFilter === "album" && (
+                <span className="text-xs text-ink-400">专辑默认收拢；展开后可查看文档，学科版主可管理专辑内容</span>
+              )}
               {hasActiveFilters && (
                 <button
                   type="button"
@@ -1170,6 +1277,130 @@ export default function PlatformResourcesPage() {
 
           {loading ? (
             <div className="flex items-center justify-center py-20"><Spinner size={24} /></div>
+          ) : typeFilter === "album" ? (
+            platformAlbumGroups.length === 0 ? (
+              <EmptyState
+                icon={<Folder className="w-10 h-10 text-ink-200" />}
+                title="暂无平台专辑"
+                description="教师捐赠完整专辑后会显示在这里"
+              />
+            ) : (
+              <div className="space-y-3">
+                {platformAlbumGroups.map((group) => {
+                  const expanded = expandedAlbumKeys.has(group.key);
+                  const canManageAlbum = platformAdmin || Boolean(privileges?.moderatedSubjects.includes(group.subject));
+                  const targetAlbums = [...new Map(items
+                    .filter((item) =>
+                      item.subject === group.subject
+                      && item.donationAlbum
+                      && item.donationAlbum.id !== group.album.id
+                      && item.donationAlbum.resourceType === group.album.resourceType,
+                    )
+                    .map((item) => [item.donationAlbum!.id, item.donationAlbum!] as const))
+                    .values()]
+                    .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+                  const availableDocuments = items
+                    .filter((item) =>
+                      item.subject === group.subject
+                      && item.resourceType === group.album.resourceType
+                      && !item.donationAlbum,
+                    )
+                    .sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+                  return (
+                    <div
+                      key={group.key}
+                      role="group"
+                      aria-label={`平台专辑：${group.album.name}`}
+                      className="overflow-hidden rounded-lg border border-amber-200 bg-paper"
+                    >
+                      <div className="flex flex-wrap items-center gap-2 bg-amber-50/70 px-3 py-2.5">
+                        <button
+                          type="button"
+                          onClick={() => togglePlatformAlbum(group.key)}
+                          aria-expanded={expanded}
+                          aria-label={`${expanded ? "收拢" : "展开"}专辑：${group.album.name}`}
+                          className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
+                        >
+                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </button>
+                        <Folder className="h-4 w-4 text-amber-700" />
+                        <button
+                          type="button"
+                          onClick={() => togglePlatformAlbum(group.key)}
+                          className="font-semibold text-ink-800 hover:text-amber-800"
+                        >
+                          {group.album.name}
+                        </button>
+                        <span className="text-xs text-ink-500">{group.album.libraryLabel} · {group.items.length} 个文档</span>
+                        <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">{group.subject}</span>
+                        {canManageAlbum && (
+                          <div className="ml-auto flex flex-wrap items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={albumWorkingKey !== null}
+                              onClick={() => void renamePlatformAlbum(group)}
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                              重命名
+                            </Button>
+                            <select
+                              aria-label={`合并专辑：${group.album.name}`}
+                              value=""
+                              disabled={targetAlbums.length === 0 || albumWorkingKey !== null}
+                              onChange={(event) => void mergePlatformAlbum(group, event.target.value)}
+                              className="rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700 disabled:opacity-50"
+                            >
+                              <option value="">合并到…</option>
+                              {targetAlbums.map((album) => <option key={album.id} value={album.id}>{album.name}</option>)}
+                            </select>
+                            <select
+                              aria-label={`添加文档到专辑：${group.album.name}`}
+                              value=""
+                              disabled={availableDocuments.length === 0 || albumWorkingKey !== null}
+                              onChange={(event) => {
+                                if (event.target.value) void setPlatformItemAlbum(group, event.target.value, group.album.id);
+                              }}
+                              className="rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700 disabled:opacity-50"
+                            >
+                              <option value="">添加文档…</option>
+                              {availableDocuments.map((item) => <option key={item.shareId} value={item.shareId}>{item.title}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                      {expanded && (
+                        <div className="divide-y divide-ink-100">
+                          {group.items.map((item) => {
+                            const ResourceIcon = resourceTypeIcon[item.resourceType];
+                            return (
+                              <div key={item.shareId} className="flex items-center gap-2 px-4 py-2.5">
+                                <ResourceIcon
+                                  aria-label={`${resourceTypeLabel[item.resourceType]}标识`}
+                                  className="h-4 w-4 flex-none text-ink-500"
+                                />
+                                <span className="min-w-0 flex-1 truncate text-sm text-ink-800">{item.title}</span>
+                                <span className="text-xs text-ink-400">{timeAgo(item.updatedAt)}</span>
+                                {canManageAlbum && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={albumWorkingKey !== null}
+                                    onClick={() => void setPlatformItemAlbum(group, item.shareId, null)}
+                                  >
+                                    移出专辑
+                                  </Button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )
           ) : displayedItems.length === 0 ? (
             <EmptyState
               icon={<Cloud className="w-10 h-10 text-ink-200" />}
@@ -1188,6 +1419,7 @@ export default function PlatformResourcesPage() {
                 const subjectIndex = subjectItems.findIndex((candidate) => candidate.shareId === item.shareId);
                 const chapterNames = resolveNames(chapterTree, item.chapterIds);
                 const knowledgeNames = resolveNames(knowledgeTree, item.knowledgePointIds);
+                const ResourceIcon = resourceTypeIcon[item.resourceType];
                 return (
                   <div key={item.shareId} className="card-base p-4 hover:shadow-cardHover transition-all group">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -1273,7 +1505,13 @@ export default function PlatformResourcesPage() {
                       />
                     ) : (
                       <>
-                        <div className="mb-1 font-medium text-ink-900 line-clamp-2">{item.title}</div>
+                        <div className="mb-1 flex items-start gap-2 font-medium text-ink-900">
+                          <ResourceIcon
+                            aria-label={`${resourceTypeLabel[item.resourceType]}标识`}
+                            className="mt-0.5 h-4 w-4 flex-none text-ink-500"
+                          />
+                          <span className="line-clamp-2">{item.title}</span>
+                        </div>
                         {item.description && <div className="mb-2 text-xs text-ink-500 line-clamp-2">{item.description}</div>}
                         {item.content && (
                           <div className="mb-2 rounded bg-mist/40 p-2 text-xs leading-relaxed text-ink-600 line-clamp-2">

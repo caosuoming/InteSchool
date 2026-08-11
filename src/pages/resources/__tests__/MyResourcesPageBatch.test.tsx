@@ -366,15 +366,13 @@ describe("MyResourcesPage batch actions", () => {
     renderPage("examPaper");
 
     expect(await screen.findByRole("group", { name: "专辑：函数资料" })).toBeInTheDocument();
-    expect(screen.getByText(examPaper.title)).toBeInTheDocument();
-    expect(screen.getByText(examPaperTwo.title)).toBeInTheDocument();
+    expect(screen.queryByText(examPaper.title)).not.toBeInTheDocument();
+    expect(screen.queryByText(examPaperTwo.title)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "函数资料" }));
 
-    await waitFor(() => {
-      expect(screen.queryByText(examPaper.title)).not.toBeInTheDocument();
-      expect(screen.queryByText(examPaperTwo.title)).not.toBeInTheDocument();
-    });
+    expect(await screen.findByText(examPaper.title)).toBeInTheDocument();
+    expect(screen.getByText(examPaperTwo.title)).toBeInTheDocument();
   });
 
   it("donates every album document with the album id", async () => {

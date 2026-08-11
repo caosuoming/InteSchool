@@ -1363,6 +1363,24 @@ export const serviceParameters = {
       "targetTeacherId",
       "enabled"
     ],
+    "renameDonationAlbum": [
+      "teacherId",
+      "subject",
+      "albumId",
+      "name"
+    ],
+    "mergeDonationAlbums": [
+      "teacherId",
+      "subject",
+      "sourceAlbumId",
+      "targetAlbumId"
+    ],
+    "setDonationAlbum": [
+      "teacherId",
+      "subject",
+      "donationId",
+      "albumId"
+    ],
     "updateDonationOrder": [
       "teacherId",
       "subject",

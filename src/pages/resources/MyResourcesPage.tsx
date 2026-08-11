@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
   Search, FileQuestion, BookOpen, Lightbulb,
@@ -518,6 +518,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [materials, setMaterials] = useState<Material[]>([]);
   const [resourceFolders, setResourceFolders] = useState<ResourceFolder[]>([]);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
+  const knownFolderIdsRef = useRef<Set<string>>(new Set());
   const [folderWorking, setFolderWorking] = useState(false);
   const [folderCreateType, setFolderCreateType] = useState<ResourceFolderType | null>(null);
   const [folderCreateResourceIds, setFolderCreateResourceIds] = useState<string[]>([]);
@@ -776,7 +777,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       return;
     }
     const folders = await resourceFolderService.listFolders(teacher.id, activeTab);
-    setResourceFolders(folders || []);
+    const nextFolders = folders || [];
+    setResourceFolders(nextFolders);
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+      for (const folder of nextFolders) {
+        if (!knownFolderIdsRef.current.has(folder.id)) next.add(folder.id);
+        knownFolderIdsRef.current.add(folder.id);
+      }
+      return next;
+    });
   }, [activeTab, teacher]);
 
   useEffect(() => {
