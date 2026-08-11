@@ -6,7 +6,7 @@ import {
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered,
   AlertCircle, Lock, Calendar, Layout,
   Sparkles, BookOpen, Lightbulb, Download,
-  CheckSquare, ArrowUpDown,
+  CheckSquare, ArrowUpDown, Link2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { examPaperService } from "@/services/examPaper";
@@ -78,6 +78,7 @@ import type {
   PrepTask,
   Question,
   ResourceSemester,
+  SimilarQuestionCandidate,
   Student,
   TreeNode,
 } from "@/types";
@@ -661,6 +662,10 @@ export default function ExamPaperEditorPage() {
 
   const totalScore = useMemo(() =>
     paperQuestions.reduce((sum, q) => sum + q.score, 0), [paperQuestions]);
+  const paperQuestionIds = useMemo(
+    () => new Set(paperQuestions.map((question) => question.questionId).filter(Boolean) as string[]),
+    [paperQuestions],
+  );
 
   const isStructuredExtract = Boolean(paper?.isExtractCopy && contentBlocks.length > 0);
 
@@ -838,6 +843,36 @@ export default function ExamPaperEditorPage() {
     setAddSource("bank");
   };
 
+  const replacePaperQuestionAt = useCallback((replaceIndex: number, newQuestion: Question) => {
+    if (isStructureLocked) return;
+    const replacedQuestion = paperQuestions[replaceIndex];
+    if (!replacedQuestion) return;
+    setPaperQuestions((previous) => previous.map((paperQuestion, index) => {
+      if (index !== replaceIndex) return paperQuestion;
+      return {
+        ...paperQuestion,
+        questionId: newQuestion.id,
+        stem: newQuestion.stem,
+        options: newQuestion.options,
+        answer: newQuestion.answer,
+        analysis: newQuestion.analysis,
+        type: newQuestion.type,
+      };
+    }));
+    setQuestions((previous) => ({ ...previous, [newQuestion.id]: newQuestion }));
+    setContentBlocks((previous) => previous.map((block) =>
+      block.examPaperQuestionId === replacedQuestion.id
+        ? {
+          ...block,
+          content: newQuestion.stem,
+          questionId: newQuestion.id,
+          questionType: newQuestion.type,
+        }
+        : block,
+    ));
+    toast.success("题目已替换");
+  }, [isStructureLocked, paperQuestions]);
+
   // 编辑模式：修改分值
   const handleUpdateScore = (pqId: string, score: number) => {
     setPaperQuestions((prev) => prev.map((q) => q.id === pqId ? { ...q, score } : q));
@@ -915,33 +950,7 @@ export default function ExamPaperEditorPage() {
       // 换题模式：替换指定位置
       if (toAdd.length === 0) { toast.error("未找到有效题目"); return; }
       const newQ = toAdd[0];
-      const replacedQuestion = paperQuestions[replaceIdx];
-      setPaperQuestions((prev) => prev.map((pq, i) => {
-        if (i !== replaceIdx) return pq;
-        return {
-          ...pq,
-          questionId: newQ.id,
-          stem: newQ.stem,
-          options: newQ.options,
-          answer: newQ.answer,
-          analysis: newQ.analysis,
-          type: newQ.type,
-        };
-      }));
-      setQuestions((prev) => ({ ...prev, [newQ.id]: newQ }));
-      if (replacedQuestion) {
-        setContentBlocks((prev) => prev.map((block) =>
-          block.examPaperQuestionId === replacedQuestion.id
-            ? {
-              ...block,
-              content: newQ.stem,
-              questionId: newQ.id,
-              questionType: newQ.type,
-            }
-            : block,
-        ));
-      }
-      toast.success("题目已替换");
+      replacePaperQuestionAt(replaceIdx, newQ);
     } else {
       // 添加模式
       if (toAdd.length === 0) {
@@ -1837,7 +1846,7 @@ export default function ExamPaperEditorPage() {
           </div>
         </Card>
 
-        <div className="grid xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
+        <div className="space-y-4">
           {/* 左侧：完整试卷 */}
           <Card className="min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-ink-100">
@@ -2115,6 +2124,9 @@ export default function ExamPaperEditorPage() {
               <div className="space-y-6">
                 {groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex, groups) => {
                   const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
+                  const commonGroupScore = group.questions.every((item) => item.pq.score === group.questions[0]?.pq.score)
+                    ? group.questions[0]?.pq.score ?? null
+                    : null;
                   const groupCollapsed = collapsedGroupTypes.has(group.type);
                   return (
                     <section key={group.type}>
@@ -2156,6 +2168,28 @@ export default function ExamPaperEditorPage() {
                         <h2 className="font-serif text-base font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
                         <span className="text-xs text-ink-500">{group.questions.length} 题</span>
                         <span className="text-xs text-gold-700 font-medium">{groupScore} 分</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-ink-500">每题</span>
+                          <Input
+                            aria-label={`${getGroupHeading(group.type, groupIndex)}统一分值`}
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={commonGroupScore === null ? "" : String(commonGroupScore)}
+                            placeholder="混合"
+                            onChange={(event) => {
+                              if (event.target.value === "") return;
+                              const score = Number(event.target.value);
+                              if (!Number.isFinite(score) || score < 0) return;
+                              const questionIds = new Set(group.questions.map((item) => item.pq.id));
+                              setPaperQuestions((previous) => previous.map((paperQuestion) =>
+                                questionIds.has(paperQuestion.id) ? { ...paperQuestion, score } : paperQuestion,
+                              ));
+                            }}
+                            className="h-8 w-16 text-xs"
+                          />
+                          <span className="text-xs text-ink-500">分</span>
+                        </div>
                         {!isStructureLocked && <Button
                           variant="outline"
                           size="sm"
@@ -2187,6 +2221,22 @@ export default function ExamPaperEditorPage() {
                               onReplace={() => handleReplaceQuestion(item.index)}
                               onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
                               structureLocked={isStructureLocked}
+                              sidebar={(
+                                <EditQuestionCatalogPanel
+                                  pq={item.pq}
+                                  index={item.index}
+                                  question={item.question}
+                                  schoolId={schoolId}
+                                  chapterTree={chapterTree}
+                                  knowledgeTree={knowledgeTree}
+                                  chapterNameMap={chapterNameMap}
+                                  knowledgeNameMap={knowledgeNameMap}
+                                  onUpdateCatalogs={handleUpdateQuestionCatalogs}
+                                  onReplace={(replacement) => replacePaperQuestionAt(item.index, replacement)}
+                                  excludedQuestionIds={paperQuestionIds}
+                                  structureLocked={isStructureLocked}
+                                />
+                              )}
                             />
                             {prepTaskId && (
                               <div className="flex justify-end">
@@ -2223,6 +2273,22 @@ export default function ExamPaperEditorPage() {
                       onReplace={() => handleReplaceQuestion(index)}
                       onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
                       structureLocked={isStructureLocked}
+                      sidebar={(
+                        <EditQuestionCatalogPanel
+                          pq={paperQuestion}
+                          index={index}
+                          question={paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined}
+                          schoolId={schoolId}
+                          chapterTree={chapterTree}
+                          knowledgeTree={knowledgeTree}
+                          chapterNameMap={chapterNameMap}
+                          knowledgeNameMap={knowledgeNameMap}
+                          onUpdateCatalogs={handleUpdateQuestionCatalogs}
+                          onReplace={(replacement) => replacePaperQuestionAt(index, replacement)}
+                          excludedQuestionIds={paperQuestionIds}
+                          structureLocked={isStructureLocked}
+                        />
+                      )}
                     />
                     {prepTaskId && (
                       <div className="flex justify-end">
@@ -2242,8 +2308,8 @@ export default function ExamPaperEditorPage() {
             )}
           </Card>
 
-          {/* 右侧：组卷与统计 */}
-          <div className="space-y-4 xl:sticky xl:top-4">
+          {/* 下方：组卷与统计 */}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Card className="p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-gold-500" />
@@ -2859,6 +2925,263 @@ function PreviewQuestionPair({
   );
 }
 
+function EditQuestionCatalogPanel({
+  pq,
+  index,
+  question,
+  schoolId,
+  chapterTree,
+  knowledgeTree,
+  chapterNameMap,
+  knowledgeNameMap,
+  onUpdateCatalogs,
+  onReplace,
+  excludedQuestionIds,
+  structureLocked,
+}: {
+  pq: ExamPaperQuestion;
+  index: number;
+  question: Question | null | undefined;
+  schoolId: string;
+  chapterTree: TreeNode | null;
+  knowledgeTree: TreeNode | null;
+  chapterNameMap: Map<string, string>;
+  knowledgeNameMap: Map<string, string>;
+  onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[]) => Promise<void>;
+  onReplace: (question: Question) => void;
+  excludedQuestionIds: Set<string>;
+  structureLocked: boolean;
+}) {
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
+  const [draftKnowledgePointIds, setDraftKnowledgePointIds] = useState<string[]>([]);
+  const [savingCatalogs, setSavingCatalogs] = useState(false);
+  const [relatedOpen, setRelatedOpen] = useState(false);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [relatedQuestions, setRelatedQuestions] = useState<SimilarQuestionCandidate[]>([]);
+
+  const chapterNames = (question?.chapterIds || [])
+    .map((chapterId) => chapterNameMap.get(chapterId))
+    .filter(Boolean) as string[];
+  const knowledgeNames = (question?.knowledgePointIds || [])
+    .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
+    .filter(Boolean) as string[];
+
+  const openCatalogEditor = () => {
+    if (!question) return;
+    setDraftChapterIds(question.chapterIds);
+    setDraftKnowledgePointIds(question.knowledgePointIds);
+    setCatalogOpen(true);
+  };
+
+  const saveCatalogs = async () => {
+    if (!question) return;
+    setSavingCatalogs(true);
+    try {
+      await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds);
+      setCatalogOpen(false);
+      setRelatedOpen(false);
+      setRelatedQuestions([]);
+    } finally {
+      setSavingCatalogs(false);
+    }
+  };
+
+  const toggleRelatedQuestions = async () => {
+    if (relatedOpen) {
+      setRelatedOpen(false);
+      return;
+    }
+    setRelatedOpen(true);
+    if (!question || question.knowledgePointIds.length === 0 || relatedQuestions.length > 0) return;
+
+    setRelatedLoading(true);
+    try {
+      const candidates = await questionService.listQuestions({
+        schoolId,
+        knowledgePointIds: question.knowledgePointIds,
+      });
+      const currentKnowledgeIds = new Set(question.knowledgePointIds);
+      const ranked = candidates
+        .filter((candidate) => !excludedQuestionIds.has(candidate.id) && candidate.type === question.type)
+        .map((candidate) => {
+          const candidateKnowledgeIds = new Set(candidate.knowledgePointIds);
+          const overlap = question.knowledgePointIds.filter((id) => candidateKnowledgeIds.has(id)).length;
+          const union = new Set([...currentKnowledgeIds, ...candidateKnowledgeIds]).size;
+          return {
+            question: candidate,
+            similarity: union > 0 ? overlap / union : 0,
+          };
+        })
+        .filter((candidate) => candidate.similarity > 0)
+        .sort((left, right) =>
+          right.similarity - left.similarity
+          || right.question.recommendation - left.question.recommendation
+          || right.question.usageCount - left.question.usageCount,
+        )
+        .slice(0, 6);
+      setRelatedQuestions(ranked);
+    } catch (error) {
+      toast.error("相关题加载失败", error instanceof Error ? error.message : "请稍后重试");
+    } finally {
+      setRelatedLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div
+        className="rounded-lg border border-ink-100 bg-paper p-3 shadow-sm"
+        data-testid={`exam-editor-question-details-${index + 1}`}
+      >
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题目录</div>
+            <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
+          </div>
+          <button
+            type="button"
+            onClick={openCatalogEditor}
+            disabled={!question}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
+            aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
+          >
+            <Edit3 className="h-3 w-3" />
+            编辑
+          </button>
+        </div>
+
+        <div className="space-y-1 text-xs leading-5 text-ink-600">
+          <div>
+            <span className="text-ink-400">章节课目录：</span>
+            {chapterNames.length > 0 ? chapterNames.join("、") : "暂无关联章节课"}
+          </div>
+          <div>
+            <span className="text-ink-400">知识点目录：</span>
+            {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
+          </div>
+        </div>
+
+        <div className="mt-3 border-t border-ink-100 pt-3">
+          <button
+            type="button"
+            onClick={() => void toggleRelatedQuestions()}
+            disabled={!question}
+            className="flex w-full items-center justify-between rounded-md px-1 py-1 text-left text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:cursor-not-allowed disabled:text-ink-300"
+            aria-expanded={relatedOpen}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Link2 className="h-3.5 w-3.5" />
+              相关题
+            </span>
+            {relatedOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+
+          {relatedOpen && (
+            <div className="mt-2 space-y-2" data-testid={`exam-editor-related-questions-${index + 1}`}>
+              {!question || question.knowledgePointIds.length === 0 ? (
+                <div className="rounded-md bg-ink-50 px-2 py-3 text-center text-[11px] text-ink-400">
+                  当前题目暂无知识点，无法匹配相关题
+                </div>
+              ) : relatedLoading ? (
+                <div className="flex justify-center py-4"><Spinner size={16} /></div>
+              ) : relatedQuestions.length === 0 ? (
+                <div className="rounded-md bg-ink-50 px-2 py-3 text-center text-[11px] text-ink-400">
+                  暂无同题型且知识点高度相似的题目
+                </div>
+              ) : relatedQuestions.map((candidate, candidateIndex) => (
+                <div key={candidate.question.id} className="rounded-md border border-ink-100 p-2">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-medium text-teal-700">
+                      知识点相似度 {Math.round(candidate.similarity * 100)}%
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={structureLocked}
+                      onClick={() => {
+                        setRelatedOpen(false);
+                        setRelatedQuestions([]);
+                        onReplace(candidate.question);
+                      }}
+                      aria-label={`用相关题 ${candidateIndex + 1} 替换第 ${index + 1} 题`}
+                    >
+                      替换原题
+                    </Button>
+                  </div>
+                  <MathHtml className="line-clamp-3 text-xs leading-5 text-ink-800">
+                    {candidate.question.stem}
+                  </MathHtml>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Modal
+        open={catalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        title={`编辑第 ${index + 1} 题章节课和知识点`}
+        description="修改会同步保存到题库中的原题。"
+        size="lg"
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => setCatalogOpen(false)}>取消</Button>
+            <Button variant="gold" onClick={saveCatalogs} loading={savingCatalogs}>保存</Button>
+          </>
+        )}
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-gold-100 p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-800">
+              <BookOpen className="h-4 w-4 text-gold-600" />
+              章节课目录
+            </div>
+            {chapterTree ? (
+              <SearchableTree
+                data={chapterTree}
+                title="章节课目录"
+                checkable
+                checkedIds={draftChapterIds}
+                onCheck={setDraftChapterIds}
+                expandLevel={2}
+                searchPlaceholder="搜索章节课..."
+                showHeader={false}
+                treeMaxHeightClassName="max-h-[320px]"
+              />
+            ) : (
+              <div className="py-8 text-center text-xs text-ink-400">章节课目录加载中...</div>
+            )}
+          </div>
+          <div className="rounded-lg border border-teal-100 p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-800">
+              <Lightbulb className="h-4 w-4 text-teal-600" />
+              知识点目录
+            </div>
+            {knowledgeTree ? (
+              <SearchableTree
+                data={knowledgeTree}
+                title="知识点目录"
+                accent="teal"
+                checkable
+                checkedIds={draftKnowledgePointIds}
+                onCheck={setDraftKnowledgePointIds}
+                expandLevel={2}
+                searchPlaceholder="搜索知识点..."
+                showHeader={false}
+                treeMaxHeightClassName="max-h-[320px]"
+              />
+            ) : (
+              <div className="py-8 text-center text-xs text-ink-400">知识点目录加载中...</div>
+            )}
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 function PreviewQuestionDetails({
   pq,
   index,
@@ -3179,10 +3502,10 @@ function PreviewQuestionItem({
             )}>
               {pq.options.map((opt, i) => (
                 <div key={i} className={cn(
-                  "px-2 py-1.5 rounded border text-sm flex items-center gap-1.5 min-w-0",
+                  "px-2 py-1.5 text-sm flex items-center gap-1.5 min-w-0",
                   expanded && pq.answer.includes(String.fromCharCode(65 + i))
-                    ? "border-emerald-200 bg-emerald-50/50"
-                    : "border-ink-100",
+                    ? "rounded bg-emerald-50/50 text-emerald-900"
+                    : "",
                 )}>
                   <span className="font-mono font-semibold text-ink-600 flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
                   <MathHtml className="min-w-0 flex-1 text-ink-800">{opt}</MathHtml>
@@ -3202,11 +3525,6 @@ function PreviewQuestionItem({
                 <MathHtml className="inline text-ink-800">{pq.analysis}</MathHtml>
               </div>
             </div>
-          )}
-          {!expanded && (
-            <button onClick={() => setExpanded(true)} className="no-print text-xs text-gold-600 hover:text-gold-700 ml-5 mt-2">
-              展开答案与解析
-            </button>
           )}
         </div>
       </div>
@@ -3240,7 +3558,7 @@ function QuestionProgressBadge({ progress }: { progress?: QuestionProgress }) {
 // ===== 编辑模式的题目行 =====
 function EditQuestionRow({
   pq, index, total, question, progress, canMoveUp, canMoveDown,
-  onMoveUp, onMoveDown, onRemove, onReplace, onUpdateScore, structureLocked = false,
+  onMoveUp, onMoveDown, onRemove, onReplace, onUpdateScore, structureLocked = false, sidebar,
 }: {
   pq: ExamPaperQuestion;
   index: number;
@@ -3255,9 +3573,11 @@ function EditQuestionRow({
   onReplace: () => void;
   onUpdateScore: (score: number) => void;
   structureLocked?: boolean;
+  sidebar?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
+    <div className={cn(sidebar && "grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start")}>
     <div className="border border-ink-100 rounded-md p-3 hover:border-ink-200 transition-colors">
       <div className="flex items-start gap-2">
         {/* 上下移动 */}
@@ -3316,10 +3636,10 @@ function EditQuestionRow({
             )}>
               {pq.options.map((opt, i) => (
                 <div key={i} className={cn(
-                  "px-2 py-1 rounded border text-xs min-w-0 flex items-center gap-1.5",
+                  "px-2 py-1 text-xs min-w-0 flex items-center gap-1.5",
                   expanded && pq.answer.includes(String.fromCharCode(65 + i))
-                    ? "border-emerald-200 bg-emerald-50/50"
-                    : "border-ink-100",
+                    ? "rounded bg-emerald-50/50 text-emerald-900"
+                    : "",
                 )}>
                   <span className="font-mono font-semibold text-ink-500 flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
                   <MathHtml className="min-w-0 flex-1 text-xs text-ink-800">{opt}</MathHtml>
@@ -3339,14 +3659,6 @@ function EditQuestionRow({
                 <MathHtml className="inline text-ink-800">{pq.analysis}</MathHtml>
               </div>
             </div>
-          )}
-          {!expanded && (pq.options?.length ?? 0) > 0 && (
-            <button
-              onClick={() => setExpanded(true)}
-              className="text-xs text-gold-600 hover:text-gold-700 mt-2 ml-4"
-            >
-              展开答案与解析
-            </button>
           )}
         </div>
 
@@ -3368,6 +3680,8 @@ function EditQuestionRow({
           </button>
         </div>}
       </div>
+    </div>
+    {sidebar && <aside className="min-w-0">{sidebar}</aside>}
     </div>
   );
 }
