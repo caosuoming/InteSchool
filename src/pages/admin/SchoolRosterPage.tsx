@@ -37,6 +37,7 @@ import type {
   SchoolGrade,
   SchoolRosterRecycleBin,
   Student,
+  StudentRosterImportRow,
   Teacher,
 } from "@/types";
 
@@ -95,6 +96,41 @@ function majorityValue(values: string[]): string | null {
   return ranked[0][1] > ranked[1][1] ? ranked[0][0] : null;
 }
 
+function normalizeRosterName(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("zh-CN");
+}
+
+function findUnmatchedRosterStudents(
+  rows: StudentRosterImportRow[],
+  students: Student[],
+  classes: SchoolClass[],
+  grade: SchoolGrade,
+): Student[] {
+  const gradeClassIds = new Set(
+    classes.filter((item) => classBelongsToGrade(item, grade)).map((item) => item.id),
+  );
+  const importedNameCounts = new Map<string, number>();
+  const seenStudentNumbers = new Set<string>();
+  for (const row of rows) {
+    const studentNo = row.studentNo?.trim().toLocaleLowerCase("zh-CN") || "";
+    if (studentNo && seenStudentNumbers.has(studentNo)) continue;
+    if (studentNo) seenStudentNumbers.add(studentNo);
+    const key = normalizeRosterName(row.name);
+    importedNameCounts.set(key, (importedNameCounts.get(key) || 0) + 1);
+  }
+
+  return students.filter((student) => {
+    if (student.status !== "active" || !gradeClassIds.has(student.classId)) return false;
+    const key = normalizeRosterName(student.name);
+    const remaining = importedNameCounts.get(key) || 0;
+    if (remaining > 0) {
+      importedNameCounts.set(key, remaining - 1);
+      return false;
+    }
+    return true;
+  });
+}
+
 export default function SchoolRosterPage() {
   const navigate = useNavigate();
   const { teacher, getCurrentAffiliation } = useAuthStore();
@@ -113,6 +149,10 @@ export default function SchoolRosterPage() {
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [showRecycleBin, setShowRecycleBin] = useState(false);
+  const [pendingRosterImport, setPendingRosterImport] = useState<{
+    rows: StudentRosterImportRow[];
+    unmatchedStudents: Student[];
+  } | null>(null);
 
   const [gradeModalOpen, setGradeModalOpen] = useState(false);
   const [gradeYear, setGradeYear] = useState(String(new Date().getFullYear() + 3));
@@ -246,19 +286,48 @@ export default function SchoolRosterPage() {
     await load();
   });
 
+  const commitRosterImport = async (
+    rows: StudentRosterImportRow[],
+    missingStudents: "keep" | "delete",
+  ) => {
+    if (!teacher || !selectedGrade) return;
+    const result = await classService.bulkImportStudents(
+      selectedGrade.id,
+      teacher.id,
+      rows,
+      { missingStudents },
+    );
+    const details = [
+      `${result.updatedStudents} 名已有学生已更新`,
+      `${result.createdStudents} 名学生已新增`,
+      `${result.createdClasses} 个班级自动创建`,
+    ];
+    if (result.deletedStudents > 0) details.push(`${result.deletedStudents} 名旧名单学生已移入回收站`);
+    if (result.skippedStudents > 0) details.push(`${result.skippedStudents} 条重复学号已跳过`);
+    toast.success("学生名单导入完成", details.join("，"));
+    await load();
+  };
+
   const handleImportFile = async (file: File | undefined) => {
     if (!file || !teacher || !selectedGrade) return;
     await run(async () => {
       const rows = await readStudentRosterFile(file);
-      const result = await classService.bulkImportStudents(selectedGrade.id, teacher.id, rows);
-      toast.success(
-        `已导入 ${result.createdStudents} 名学生`,
-        `${result.createdClasses} 个班级自动创建，${result.skippedStudents} 条重复学号已跳过`,
-      );
-      await load();
+      const unmatchedStudents = findUnmatchedRosterStudents(rows, students, classes, selectedGrade);
+      if (unmatchedStudents.length > 0) {
+        setPendingRosterImport({ rows, unmatchedStudents });
+        return;
+      }
+      await commitRosterImport(rows, "keep");
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
+
+  const handlePendingRosterImport = (missingStudents: "keep" | "delete") => run(async () => {
+    if (!pendingRosterImport) return;
+    const { rows } = pendingRosterImport;
+    setPendingRosterImport(null);
+    await commitRosterImport(rows, missingStudents);
+  });
 
   const handleDeleteClass = (item: SchoolClass) => run(async () => {
     if (!window.confirm(`确定删除“${item.name}”吗？班级和所属学生会进入回收站。`)) return;
@@ -716,6 +785,56 @@ export default function SchoolRosterPage() {
           value={classNames}
           onChange={(event) => setClassNames(event.target.value)}
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(pendingRosterImport)}
+        onClose={() => setPendingRosterImport(null)}
+        title="发现旧名单中未匹配的学生"
+        description={pendingRosterImport
+          ? `新名单按姓名匹配后，有 ${pendingRosterImport.unmatchedStudents.length} 名原有学生未出现。请选择保留，或将他们移入回收站。`
+          : undefined}
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => handlePendingRosterImport("keep")}
+              loading={working}
+            >
+              保留未匹配学生
+            </Button>
+            <Button
+              variant="ink"
+              onClick={() => handlePendingRosterImport("delete")}
+              loading={working}
+            >
+              删除未匹配学生
+            </Button>
+          </>
+        }
+      >
+        {pendingRosterImport && (
+          <div className="space-y-2">
+            <div className="text-xs text-ink-500">未匹配学生预览</div>
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-ink-100 bg-mist/50 px-3 py-2">
+              {pendingRosterImport.unmatchedStudents.slice(0, 20).map((student) => (
+                <div key={student.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                  <span className="font-medium text-ink-800">{student.name}</span>
+                  <span className="text-xs text-ink-500">
+                    {classes.find((item) => item.id === student.classId)?.name || "未知班级"}
+                    {student.studentNo ? ` · ${student.studentNo}` : ""}
+                  </span>
+                </div>
+              ))}
+              {pendingRosterImport.unmatchedStudents.length > 20 && (
+                <div className="pt-2 text-xs text-ink-400">
+                  另有 {pendingRosterImport.unmatchedStudents.length - 20} 名未展示
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal

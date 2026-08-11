@@ -3,6 +3,7 @@ import type {
   SchoolGrade,
   SchoolRosterRecycleBin,
   Student,
+  StudentRosterImportOptions,
   StudentRosterImportResult,
   StudentRosterImportRow,
   StudentStatus,
@@ -185,6 +186,7 @@ export const schoolRosterService = {
     gradeId: string,
     teacherId: string,
     rows: StudentRosterImportRow[],
+    options?: StudentRosterImportOptions,
   ): Promise<StudentRosterImportResult> {
     await delay(350);
     maybeThrowError();
@@ -192,6 +194,10 @@ export const schoolRosterService = {
     if (grade.status === "graduated") throw new Error("已毕业年级不能导入学生");
     if (!Array.isArray(rows) || rows.length === 0) throw new Error("导入文件中没有学生数据");
     if (rows.length > 5000) throw new Error("单次最多导入 5000 名学生");
+    const missingStudents = options?.missingStudents || "keep";
+    if (!(["keep", "delete"] as const).includes(missingStudents)) {
+      throw new Error("无效的旧名单学生处理方式");
+    }
 
     const normalizedRows = rows.map((row, index) => {
       const className = normalizeClassName(row.className || "");
@@ -218,56 +224,165 @@ export const schoolRosterService = {
     const createdClasses = missingNames.map((name) => createClassForGrade(grade, teacherId, name));
     createdClasses.forEach((item) => classMap.set(item.name.toLocaleLowerCase("zh-CN"), item));
 
-    const existingNumbers = new Set(
-      (db.read("students") as Student[])
-        .filter((item) => item.schoolId === grade.schoolId)
-        .map((item) => item.studentNo.trim().toLocaleLowerCase("zh-CN"))
-        .filter(Boolean),
+    const allStudents = db.read("students") as Student[];
+    const gradeClassIds = new Set(gradeClasses.map((item) => item.id));
+    const existingGradeStudents = allStudents.filter((item) =>
+      item.schoolId === grade.schoolId
+      && item.status === "active"
+      && gradeClassIds.has(item.classId),
     );
-    const seenNumbers = new Set<string>();
-    const createdStudents: Student[] = [];
-    const classIncrements = new Map<string, number>();
-    let skippedStudents = 0;
+    const existingByName = new Map<string, Student[]>();
+    for (const student of existingGradeStudents) {
+      const key = normalizeName(student.name).toLocaleLowerCase("zh-CN");
+      existingByName.set(key, [...(existingByName.get(key) || []), student]);
+    }
 
-    normalizedRows.forEach((row) => {
+    const seenNumbers = new Set<string>();
+    let skippedStudents = 0;
+    const effectiveRows = normalizedRows.filter((row) => {
       const numberKey = row.studentNo.toLocaleLowerCase("zh-CN");
-      if (numberKey && (existingNumbers.has(numberKey) || seenNumbers.has(numberKey))) {
+      if (!numberKey) return true;
+      if (seenNumbers.has(numberKey)) {
         skippedStudents += 1;
-        return;
+        return false;
       }
+      seenNumbers.add(numberKey);
+      return true;
+    });
+
+    const matchedExistingIds = new Set<string>();
+    const assignments = effectiveRows.map((row) => {
       const targetClass = classMap.get(row.className.toLocaleLowerCase("zh-CN"));
       if (!targetClass) throw new Error(`班级不存在：${row.className}`);
-      if (numberKey) seenNumbers.add(numberKey);
-      classIncrements.set(targetClass.id, (classIncrements.get(targetClass.id) || 0) + 1);
-      createdStudents.push({
-        id: genId("stu"),
+      const nameKey = row.name.toLocaleLowerCase("zh-CN");
+      const candidates = (existingByName.get(nameKey) || [])
+        .filter((student) => !matchedExistingIds.has(student.id));
+
+      let matched: Student | undefined;
+      if (candidates.length === 1) {
+        matched = candidates[0];
+      } else if (candidates.length > 1) {
+        if (row.studentNo) {
+          const sameNumber = candidates.filter((student) =>
+            student.studentNo.trim().toLocaleLowerCase("zh-CN") === row.studentNo.toLocaleLowerCase("zh-CN"),
+          );
+          if (sameNumber.length === 1) matched = sameNumber[0];
+        }
+        if (!matched) {
+          const sameClass = candidates.filter((student) => student.classId === targetClass.id);
+          if (sameClass.length === 1) matched = sameClass[0];
+        }
+        if (!matched) {
+          throw new Error(`同一年级存在多名“${row.name}”，无法仅按姓名确定对应学生；请补充可区分的学号或班级`);
+        }
+      }
+      if (matched) matchedExistingIds.add(matched.id);
+      return { row, targetClass, matched };
+    });
+
+    const unmatchedExistingIds = new Set(
+      existingGradeStudents
+        .filter((student) => !matchedExistingIds.has(student.id))
+        .map((student) => student.id),
+    );
+
+    const importedNumbers = new Map<string, string>();
+    for (const { row } of assignments) {
+      const key = row.studentNo.toLocaleLowerCase("zh-CN");
+      if (key) importedNumbers.set(key, row.name);
+    }
+    for (const student of allStudents) {
+      if (student.schoolId !== grade.schoolId || student.status === "deleted") continue;
+      const numberKey = student.studentNo.trim().toLocaleLowerCase("zh-CN");
+      if (!numberKey || !importedNumbers.has(numberKey)) continue;
+      if (matchedExistingIds.has(student.id)) continue;
+      if (missingStudents === "delete" && unmatchedExistingIds.has(student.id)) continue;
+      throw new Error(`学号 ${student.studentNo} 已被“${student.name}”使用，无法导入“${importedNumbers.get(numberKey)}”`);
+    }
+
+    const now = new Date().toISOString();
+    const updatedById = new Map<string, Student>();
+    const createdStudents: Student[] = [];
+
+    for (const { row, targetClass, matched } of assignments) {
+      if (!matched) {
+        createdStudents.push({
+          id: genId("stu"),
+          name: row.name,
+          studentNo: row.studentNo,
+          classId: targetClass.id,
+          schoolId: grade.schoolId,
+          grade: grade.grade,
+          gender: row.gender,
+          subjectSelection: row.subjectSelection,
+          isExternal: row.isExternal,
+          status: "active",
+        });
+        continue;
+      }
+
+      const classChanged = matched.classId !== targetClass.id;
+      const studentNoChanged = matched.studentNo !== row.studentNo;
+      updatedById.set(matched.id, {
+        ...matched,
         name: row.name,
         studentNo: row.studentNo,
         classId: targetClass.id,
-        schoolId: grade.schoolId,
         grade: grade.grade,
-        gender: row.gender,
+        gender: row.gender ?? matched.gender,
         subjectSelection: row.subjectSelection,
         isExternal: row.isExternal,
-        status: "active",
+        classHistory: classChanged
+          ? [
+              ...(matched.classHistory || []),
+              {
+                fromClassId: matched.classId,
+                toClassId: targetClass.id,
+                changedAt: now,
+                studentNoChanged,
+              },
+            ]
+          : matched.classHistory,
       });
+    }
+
+    const deletedStudentIds = missingStudents === "delete" ? unmatchedExistingIds : new Set<string>();
+    const nextStudents = allStudents.map((student) => {
+      const updated = updatedById.get(student.id);
+      if (updated) return updated;
+      if (!deletedStudentIds.has(student.id)) return student;
+      return {
+        ...student,
+        deletedFromStatus: student.status,
+        status: "deleted" as const,
+        deletedAt: now,
+      };
     });
+    nextStudents.push(...createdStudents);
+
+    const activeCountByClass = new Map<string, number>();
+    for (const student of nextStudents) {
+      if (student.status !== "active") continue;
+      activeCountByClass.set(student.classId, (activeCountByClass.get(student.classId) || 0) + 1);
+    }
 
     db.update("schoolClasses", (list: SchoolClass[]) => [
       ...list.map((item) => {
-        const increment = classIncrements.get(item.id);
-        return increment ? { ...item, studentCount: item.studentCount + increment } : item;
+        if (!gradeClassIds.has(item.id)) return item;
+        return { ...item, studentCount: activeCountByClass.get(item.id) || 0 };
       }),
       ...createdClasses.map((item) => ({
         ...item,
-        studentCount: classIncrements.get(item.id) || 0,
+        studentCount: activeCountByClass.get(item.id) || 0,
       })),
     ]);
-    db.update("students", (list: Student[]) => [...list, ...createdStudents]);
+    db.update("students", () => nextStudents);
 
     return {
       createdClasses: createdClasses.length,
       createdStudents: createdStudents.length,
+      updatedStudents: updatedById.size,
+      deletedStudents: deletedStudentIds.size,
       skippedStudents,
     };
   },
