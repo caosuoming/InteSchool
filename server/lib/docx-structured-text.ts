@@ -7,6 +7,7 @@ import {
   type DocumentTable,
   type DocumentTableCell,
 } from "../../src/lib/document-table.js";
+import { wordEqFieldToLatex } from "./word-eq.js";
 
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
@@ -257,10 +258,63 @@ function extractParagraph(
   paragraph: Element,
   imageUrl?: ImageUrlFactory,
 ): string {
+  let field: {
+    depth: number;
+    instruction: string;
+    result: string;
+    phase: "instruction" | "result";
+  } | null = null;
+  const content: string[] = [];
+
+  const fieldCharTypes = (element: Element): string[] => {
+    const fieldChars = element.namespaceURI === WORD_NS && element.localName === "fldChar"
+      ? [element]
+      : Array.from(element.getElementsByTagNameNS(WORD_NS, "fldChar"));
+    return fieldChars
+      .map((entry) => entry.getAttributeNS(WORD_NS, "fldCharType") || entry.getAttribute("w:fldCharType") || "")
+      .filter(Boolean);
+  };
+  const instructionText = (element: Element): string => {
+    const instructions = element.namespaceURI === WORD_NS && element.localName === "instrText"
+      ? [element]
+      : Array.from(element.getElementsByTagNameNS(WORD_NS, "instrText"));
+    return instructions.map((entry) => entry.textContent || "").join("");
+  };
+  const finishField = () => {
+    if (!field) return;
+    const latex = wordEqFieldToLatex(field.instruction);
+    content.push(latex ? `$${latex}$` : field.result);
+    field = null;
+  };
+
+  for (const child of elementChildren(paragraph)) {
+    const fieldTypes = fieldCharTypes(child);
+    const beginCount = fieldTypes.filter((type) => type === "begin").length;
+    if (!field && beginCount === 0) {
+      content.push(extractInlineContent(child, imageUrl));
+      continue;
+    }
+
+    if (!field) {
+      field = { depth: beginCount, instruction: "", result: "", phase: "instruction" };
+    } else {
+      field.depth += beginCount;
+    }
+
+    if (field.phase === "instruction") {
+      field.instruction += instructionText(child);
+    } else {
+      field.result += extractInlineContent(child, imageUrl);
+    }
+
+    if (fieldTypes.includes("separate")) field.phase = "result";
+    field.depth -= fieldTypes.filter((type) => type === "end").length;
+    if (field.depth <= 0) finishField();
+  }
+  if (field) content.push(field.result);
+
   return normalizeText(
-    elementChildren(paragraph)
-      .map((child) => extractInlineContent(child, imageUrl))
-      .join(""),
+    content.join(""),
   ).trim();
 }
 
