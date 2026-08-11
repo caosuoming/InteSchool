@@ -877,6 +877,20 @@ export const serviceParameters = {
     ]
   },
   "organization": {
+    "listDepartments": [
+      "schoolId"
+    ],
+    "createDepartment": [
+      "schoolId",
+      "data"
+    ],
+    "updateDepartment": [
+      "id",
+      "patch"
+    ],
+    "deleteDepartment": [
+      "id"
+    ],
     "listSubjectGroups": [
       "schoolId"
     ],
@@ -930,7 +944,13 @@ export const serviceParameters = {
     ],
     "updateTeacherRoles": [
       "teacherId",
+      "schoolId",
       "roles"
+    ],
+    "setTeacherSchoolRole": [
+      "teacherId",
+      "schoolId",
+      "role"
     ],
     "listTeachers": [
       "schoolId"

@@ -1,6 +1,6 @@
 import { rpcCall } from "./api";
 
-import type { SubjectGroup, PrepGroup, Teacher, TeacherRole } from "@/types";
+import type { OrganizationDepartment, SubjectGroup, PrepGroup, Teacher, TeacherRole } from "@/types";
 
 export const roleLabels: Record<TeacherRole, string> = {
   teacher: "教师",
@@ -37,6 +37,29 @@ export function canManage(
 }
 
 export const organizationService = {
+  async listDepartments(schoolId: string): Promise<OrganizationDepartment[]> {
+    return rpcCall("organization", "listDepartments", [schoolId]) as any;
+  },
+
+  async createDepartment(schoolId: string, data: {
+    name: string;
+    parentId?: string;
+    grade?: string;
+    leaderId?: string;
+    roles?: TeacherRole[];
+    description?: string;
+  }): Promise<OrganizationDepartment> {
+    return rpcCall("organization", "createDepartment", [schoolId, data]) as any;
+  },
+
+  async updateDepartment(id: string, patch: Partial<OrganizationDepartment>): Promise<void> {
+    return rpcCall("organization", "updateDepartment", [id, patch]) as any;
+  },
+
+  async deleteDepartment(id: string): Promise<void> {
+    return rpcCall("organization", "deleteDepartment", [id]) as any;
+  },
+
   async listSubjectGroups(schoolId: string): Promise<SubjectGroup[]> {
     return rpcCall("organization", "listSubjectGroups", [schoolId]) as any;
   },
@@ -99,8 +122,12 @@ export const organizationService = {
     return rpcCall("organization", "removePrepMember", [groupId, teacherId]) as any;
   },
 
-  async updateTeacherRoles(teacherId: string, roles: TeacherRole[]): Promise<void> {
-    return rpcCall("organization", "updateTeacherRoles", [teacherId, roles]) as any;
+  async updateTeacherRoles(teacherId: string, schoolId: string, roles: TeacherRole[]): Promise<void> {
+    return rpcCall("organization", "updateTeacherRoles", [teacherId, schoolId, roles]) as any;
+  },
+
+  async setTeacherSchoolRole(teacherId: string, schoolId: string, role: "teacher" | "school_admin"): Promise<void> {
+    return rpcCall("organization", "setTeacherSchoolRole", [teacherId, schoolId, role]) as any;
   },
 
   async listTeachers(schoolId: string): Promise<Teacher[]> {

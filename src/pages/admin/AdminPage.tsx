@@ -67,8 +67,8 @@ const allAdminItems: AdminItem[] = [
   },
   {
     icon: UsersRound,
-    title: "教师教学资料",
-    description: "维护本校教师的任教学科、年级和班级",
+    title: "教师权限与教学资料",
+    description: "按管理层级维护本校教师角色、任教学科、年级和班级",
     href: "/admin/teacher-profiles",
     schoolOnly: true,
     teachingProfileOnly: true,

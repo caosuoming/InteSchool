@@ -1,4 +1,5 @@
 import type { AppState, SessionUser, TeacherRecord } from "./types.js";
+import { highestTeacherRoleLevel, isTeacherRole, TEACHER_ROLE_LEVEL } from "../src/lib/teacher-roles.js";
 import { runWithState } from "./runtime-db.js";
 import { serviceRegistry, type ServiceName } from "./service-registry.js";
 import { serviceParameters } from "./service-metadata.js";
@@ -17,7 +18,7 @@ const PUBLIC_CALLS = new Set([
   "class.listClassroomChoices",
 ]);
 
-const ADMIN_SERVICE_MUTATIONS = new Set(["settings", "organization"]);
+const ADMIN_SERVICE_MUTATIONS = new Set(["settings"]);
 const EXAM_MANAGER_MUTATIONS = new Set([
   "importExam",
   "saveCohortTemplateProfile",
@@ -110,7 +111,15 @@ const ADMIN_TARGET_TEACHER_CALLS = new Set([
   "organization.addPrepMember",
   "organization.removePrepMember",
   "organization.updateTeacherRoles",
+  "organization.setTeacherSchoolRole",
 ]);
+
+const ORGANIZATION_ADMIN_ONLY_METHODS = new Set([
+  "createDepartment",
+  "updateDepartment",
+  "deleteDepartment",
+]);
+
 
 class SerialExecutor {
   private tail = Promise.resolve();
@@ -157,6 +166,91 @@ function activeRole(teacher: TeacherRecord): string {
 
 function isAdmin(teacher: TeacherRecord): boolean {
   return ["school_admin", "platform_admin"].includes(activeRole(teacher));
+}
+
+function isPlatformAdmin(teacher: TeacherRecord): boolean {
+  return activeRole(teacher) === "platform_admin";
+}
+
+function activeAffiliation(teacher: TeacherRecord): Record<string, unknown> | null {
+  return teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent)
+    || null;
+}
+
+function schoolAffiliation(teacher: TeacherRecord, schoolId: string): Record<string, unknown> | null {
+  return teacher.affiliations?.find((item) => item.schoolId === schoolId) || null;
+}
+
+function affiliationRoles(affiliation: Record<string, unknown> | null, teacher: TeacherRecord) {
+  return Array.isArray(affiliation?.roles)
+    ? affiliation.roles.filter(isTeacherRole)
+    : teacher.roles.filter(isTeacherRole);
+}
+
+function affiliationGrades(affiliation: Record<string, unknown> | null, teacher: TeacherRecord): string[] {
+  return Array.isArray(affiliation?.teachingGrades)
+    ? affiliation.teachingGrades.filter((grade): grade is string => typeof grade === "string")
+    : Array.isArray(teacher.teachingGrades)
+      ? teacher.teachingGrades.filter((grade): grade is string => typeof grade === "string")
+      : [];
+}
+
+function sharesManagedGrade(manager: TeacherRecord, target: TeacherRecord, schoolId: string): boolean {
+  const managerGrades = new Set(affiliationGrades(schoolAffiliation(manager, schoolId), manager));
+  if (managerGrades.size === 0) return false;
+  return affiliationGrades(schoolAffiliation(target, schoolId), target).some((grade) => managerGrades.has(grade));
+}
+
+function canUpdateTeacherRoles(
+  state: AppState,
+  manager: TeacherRecord,
+  teacherId: unknown,
+  schoolId: unknown,
+  roles: unknown,
+): boolean {
+  if (typeof teacherId !== "string" || typeof schoolId !== "string" || !Array.isArray(roles) || !roles.every(isTeacherRole)) return false;
+  const target = state.teachers.find((item) => item.id === teacherId);
+  if (!target || !schoolAffiliation(target, schoolId)) return false;
+  if (isPlatformAdmin(manager)) return true;
+  if (manager.schoolId !== schoolId) return false;
+  if (isAdmin(manager)) return true;
+  if (target.id === manager.id) return false;
+
+  const managerRoles = affiliationRoles(schoolAffiliation(manager, schoolId), manager);
+  const managerLevel = highestTeacherRoleLevel(managerRoles);
+  if (managerLevel < TEACHER_ROLE_LEVEL.gradeLeader) return false;
+  if (managerLevel === TEACHER_ROLE_LEVEL.gradeLeader && !sharesManagedGrade(manager, target, schoolId)) return false;
+
+  const targetLevel = highestTeacherRoleLevel(affiliationRoles(schoolAffiliation(target, schoolId), target));
+  if (targetLevel >= managerLevel) return false;
+
+  const requestedRoles = roles.filter((role) => role !== "teacher");
+  return requestedRoles.every((role) => TEACHER_ROLE_LEVEL[role] < managerLevel);
+}
+
+function canMutateOrganization(
+  state: AppState,
+  teacher: TeacherRecord,
+  method: string,
+  args: unknown[],
+): boolean {
+  if (method === "setTeacherSchoolRole") return isPlatformAdmin(teacher);
+  if (ORGANIZATION_ADMIN_ONLY_METHODS.has(method)) return isAdmin(teacher);
+  if (method === "updateTeacherRoles") {
+    return canUpdateTeacherRoles(state, teacher, args[0], args[1], args[2]);
+  }
+  if (isAdmin(teacher)) return true;
+
+  const roles = affiliationRoles(activeAffiliation(teacher), teacher);
+  const level = highestTeacherRoleLevel(roles);
+  if (["createSubjectGroup", "updateSubjectGroup", "deleteSubjectGroup", "addMember", "removeMember"].includes(method)) {
+    return level >= TEACHER_ROLE_LEVEL.subjectLeader;
+  }
+  if (["createPrepGroup", "updatePrepGroup", "deletePrepGroup", "addPrepMember", "removePrepMember"].includes(method)) {
+    return level >= TEACHER_ROLE_LEVEL.prepLeader;
+  }
+  return false;
 }
 
 function canManageExams(teacher: TeacherRecord): boolean {
@@ -310,10 +404,16 @@ function authorize(
       && typeof value === "string"
       && value !== teacher.id
       && !(admin && ADMIN_TARGET_TEACHER_CALLS.has(call))
+      && call !== "organization.updateTeacherRoles"
     ) {
       throw new Error("无权以其他教师身份执行操作");
     }
-    if (SCHOOL_KEYS.includes(name) && typeof value === "string" && value !== teacher.schoolId) {
+    if (
+      SCHOOL_KEYS.includes(name)
+      && typeof value === "string"
+      && value !== teacher.schoolId
+      && !(service === "organization" && isPlatformAdmin(teacher))
+    ) {
       throw new Error("无权访问其他学校的数据");
     }
     if (name === "schoolIdOrTeacherId" && value !== teacher.id && value !== teacher.schoolId) {
@@ -352,6 +452,9 @@ function authorize(
 
   if (ADMIN_SERVICE_MUTATIONS.has(service) && !isReadOnly(service, method) && !admin) {
     throw new Error("该操作需要学校管理员权限");
+  }
+  if (service === "organization" && !isReadOnly(service, method) && !canMutateOrganization(state, teacher, method, normalizedArgs)) {
+    throw new Error("无权执行该组织或教师权限操作");
   }
   if (service === "grade" && EXAM_MANAGER_MUTATIONS.has(method) && !canManageExams(teacher)) {
     throw new Error("该操作需要年级组长或学校管理员权限");
@@ -479,6 +582,7 @@ function authorize(
         && school !== teacher.schoolId
         && owner !== teacher.id
         && !shared
+        && !(service === "organization" && isPlatformAdmin(teacher))
       ) {
         throw new Error("无权访问该资源");
       }

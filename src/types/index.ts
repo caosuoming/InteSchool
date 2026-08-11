@@ -33,6 +33,8 @@ export interface TeacherAffiliation {
   position?: string;
   status: TeacherStatus;
   role: "teacher" | "school_admin" | "platform_admin";
+  /** 由上级直接授予的角色；roles 还会包含所负责部门继承的角色。 */
+  assignedRoles?: TeacherRole[];
   /** 教师在该单位担任的身份（可多个） */
   roles: TeacherRole[];
   /** 所属学科组ID列表 */
@@ -140,6 +142,21 @@ export interface PrepGroup {
   grade: string;
   leaderId: string | null;
   memberIds: string[];
+  description?: string;
+  createdAt: string;
+}
+
+/** 学校自定义部门。部门名称、层级和负责人权限均由学校管理员配置。 */
+export interface OrganizationDepartment {
+  id: string;
+  schoolId: string;
+  name: string;
+  parentId: string | null;
+  /** 可选年级范围；用于表达“高一年级组”等年级部门。 */
+  grade?: string;
+  leaderId: string | null;
+  /** 负责人因担任该部门负责人而获得的角色权限。 */
+  roles: TeacherRole[];
   description?: string;
   createdAt: string;
 }
