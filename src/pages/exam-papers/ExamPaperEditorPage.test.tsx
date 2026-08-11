@@ -140,6 +140,23 @@ const secondQuestion = {
   analysis: "使用定义证明。",
 } as Question;
 
+const sameTypeQuestion = {
+  ...question,
+  id: "question-3",
+  stem: "函数值域是？",
+  answer: "B",
+  recommendation: 4,
+} as Question;
+
+const relatedReplacementQuestion = {
+  ...question,
+  id: "question-related",
+  stem: "同知识点替换题",
+  answer: "A",
+  recommendation: 5,
+  usageCount: 8,
+} as Question;
+
 const paper = {
   id: "paper-1",
   teacherId: teacher.id,
@@ -652,6 +669,56 @@ describe("ExamPaperEditorPage preview", () => {
     expect(toolbar.previousElementSibling).toContainElement(
       screen.getByRole("heading", { name: `编辑：${paper.title}` }),
     );
+  });
+
+  it("supports grouped score changes and aligned catalog-related controls in the editor", async () => {
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+      questions: [
+        paper.questions[0],
+        {
+          ...paper.questions[0],
+          id: "paper-question-2",
+          questionId: sameTypeQuestion.id,
+          stem: sameTypeQuestion.stem,
+          options: sameTypeQuestion.options,
+          answer: sameTypeQuestion.answer,
+          analysis: sameTypeQuestion.analysis,
+          score: 3,
+        },
+      ],
+      totalScore: 8,
+    });
+    mocks.listQuestions.mockResolvedValue([question, sameTypeQuestion, relatedReplacementQuestion]);
+
+    renderEditorPage();
+
+    const groupedScore = await screen.findByLabelText<HTMLInputElement>("一、单选题统一分值");
+    expect(groupedScore).toHaveAttribute("placeholder", "混合");
+    fireEvent.change(groupedScore, { target: { value: "7" } });
+    expect(screen.getAllByText("14 分").length).toBeGreaterThan(0);
+
+    expect(screen.queryByText("展开答案与解析")).not.toBeInTheDocument();
+    const firstOptionRow = screen.getAllByText("A.")[0].parentElement as HTMLElement;
+    expect(firstOptionRow).not.toHaveClass("border");
+
+    const details = screen.getByTestId("exam-editor-question-details-1");
+    expect(details).toHaveTextContent("章节课目录");
+    expect(details).toHaveTextContent("知识点目录");
+    expect(details).toHaveTextContent("函数定义域");
+    expect(within(details).getByRole("button", { name: "编辑第 1 题章节课和知识点" })).toBeInTheDocument();
+
+    fireEvent.click(within(details).getByRole("button", { name: "相关题" }));
+    const related = await screen.findByTestId("exam-editor-related-questions-1");
+    expect(within(related).getByText("同知识点替换题")).toBeInTheDocument();
+    fireEvent.click(within(related).getByRole("button", { name: "用相关题 1 替换第 1 题" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(question.stem)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("同知识点替换题")).toBeInTheDocument();
   });
 });
 
