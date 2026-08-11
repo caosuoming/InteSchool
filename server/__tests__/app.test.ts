@@ -794,9 +794,15 @@ describe("production backend", () => {
     const beforeLeaderGrant = built.store.loadState();
     const leaderState = structuredClone(beforeLeaderGrant);
     const leaderTeacher = leaderState.teachers.find((item) => item.id === manager.teacher.id)!;
+    const managedTeacher = leaderState.teachers.find((item) => item.id === target.teacher.id)!;
     leaderTeacher.roles = ["teacher", "gradeLeader"];
+    leaderTeacher.teachingGrades = ["高二"];
     leaderTeacher.affiliations = leaderTeacher.affiliations.map((item) => item.id === leaderTeacher.currentAffiliationId
-      ? { ...item, roles: ["teacher", "gradeLeader"] }
+      ? { ...item, roles: ["teacher", "gradeLeader"], teachingGrades: ["高二"] }
+      : item);
+    managedTeacher.teachingGrades = ["高二"];
+    managedTeacher.affiliations = managedTeacher.affiliations.map((item) => item.id === managedTeacher.currentAffiliationId
+      ? { ...item, teachingGrades: ["高二"] }
       : item);
     built.store.saveState(beforeLeaderGrant, leaderState);
 
@@ -807,7 +813,7 @@ describe("production backend", () => {
       payload: { subject: "物理" },
     });
     expect(leaderManaged.statusCode, leaderManaged.body).toBe(200);
-    expect(leaderManaged.json()).toMatchObject({ subject: "物理" });
+    expect(leaderManaged.json()).toMatchObject({ subject: "物理", teachingGrades: ["高二"] });
 
     const afterLeaderGrant = built.store.loadState();
     const ordinaryState = structuredClone(afterLeaderGrant);

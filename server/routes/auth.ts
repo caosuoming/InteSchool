@@ -127,11 +127,11 @@ const adminApplicationSchema = z.object({
   reason: z.string().trim().min(5).max(300),
 });
 
-const managedTeachingProfileSchema = teachingFieldsSchema.partial({
-  subject: true,
-  teachingGrades: true,
-  teachingClassIds: true,
-  homeroomClassIds: true,
+const managedTeachingProfileSchema = z.object({
+  subject: z.string().trim().min(1).max(50).optional(),
+  teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).optional(),
+  teachingClassIds: z.array(z.string().min(1).max(100)).max(100).optional(),
+  homeroomClassIds: z.array(z.string().min(1).max(100)).max(20).optional(),
 }).refine((input) => Object.values(input).some((value) => value !== undefined), {
   message: "至少需要修改一项教学资料",
 });
@@ -164,6 +164,64 @@ function requireTeachingProfileManager(teacher: TeacherRecord): void {
     || null;
   if (!canManageTeachingProfiles(teacher, affiliation)) {
     throw new Error("该操作需要年级组长、教务主任、副校长、校长或学校管理员权限");
+  }
+}
+
+function activeAffiliation(teacher: TeacherRecord): Record<string, unknown> | null {
+  return teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent)
+    || null;
+}
+
+function activeTeacherRoles(teacher: TeacherRecord): string[] {
+  const affiliation = activeAffiliation(teacher);
+  return Array.isArray(affiliation?.roles)
+    ? affiliation.roles.filter((role): role is string => typeof role === "string")
+    : teacher.roles;
+}
+
+function requireTeachingProfileTargetScope(
+  state: AppState,
+  manager: TeacherRecord,
+  target: TeacherRecord,
+  patch: {
+    teachingGrades?: string[];
+    teachingClassIds?: string[];
+    homeroomClassIds?: string[];
+  },
+): void {
+  if (["school_admin", "platform_admin"].includes(activeRole(manager))) return;
+  const roles = activeTeacherRoles(manager);
+  if (roles.some((role) => ["dean", "vicePrincipal", "principal"].includes(role))) return;
+  if (!roles.includes("gradeLeader")) throw new Error("无权管理该教师的教学资料");
+  if (!manager.schoolId) throw new Error("当前账号没有学校身份");
+
+  const managerAffiliation = activeAffiliation(manager);
+  const managerGrades = new Set(
+    Array.isArray(managerAffiliation?.teachingGrades)
+      ? managerAffiliation.teachingGrades.filter((grade): grade is string => typeof grade === "string")
+      : manager.teachingGrades || [],
+  );
+  if (managerGrades.size === 0) throw new Error("请先为年级负责人配置可管理年级");
+
+  const targetAffiliation = target.affiliations.find((item) => item.schoolId === manager.schoolId) || null;
+  const affiliationGrades = Array.isArray(targetAffiliation?.teachingGrades)
+    ? targetAffiliation.teachingGrades.filter((grade): grade is string => typeof grade === "string")
+    : [];
+  const nextGrades = patch.teachingGrades
+    ?? (affiliationGrades.length > 0 ? affiliationGrades : target.teachingGrades || []);
+  if (nextGrades.length === 0 || nextGrades.some((grade) => !managerGrades.has(grade))) {
+    throw new Error("年级负责人只能管理本人负责年级的教师");
+  }
+
+  const classIds = [...(patch.teachingClassIds || []), ...(patch.homeroomClassIds || [])];
+  if (classIds.length > 0) {
+    const classes = state.schoolClasses as Array<{ id: string; schoolId: string; grade?: string }>;
+    const invalid = classIds.some((classId) => {
+      const schoolClass = classes.find((item) => item.id === classId && item.schoolId === manager.schoolId);
+      return !schoolClass?.grade || !managerGrades.has(schoolClass.grade);
+    });
+    if (invalid) throw new Error("年级负责人只能分配本人负责年级的班级");
   }
 }
 
@@ -694,6 +752,7 @@ export async function registerAuthRoutes(
       if (index < 0) throw new Error("教师不存在");
       const target = state.teachers[index];
       if (!target.affiliations.some((item) => item.schoolId === manager.schoolId)) throw new Error("无权管理其他学校的教师");
+      requireTeachingProfileTargetScope(state, manager, target, input);
       const classIds = input.teachingClassIds
         ?? (target.affiliations.find((item) => item.schoolId === manager.schoolId)?.teachingClassIds as string[] | undefined)
         ?? [];

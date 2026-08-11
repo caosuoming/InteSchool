@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { cn } from "@/lib/utils";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import type { SubjectGroup, PrepGroup, Teacher, TeacherRole } from "@/types";
+import { DepartmentManager } from "./DepartmentManager";
 
 // ============ 常量 ============
 
@@ -115,8 +116,10 @@ function PermissionMatrix() {
 
 // ============ 主页面 ============
 export default function OrganizationPage() {
-  const { teacher } = useAuthStore();
-  const { gradeOptions, defaultGrade } = useSchoolResourceOptions(teacher?.schoolId);
+  const { teacher, getCurrentAffiliation } = useAuthStore();
+  const currentAffiliation = getCurrentAffiliation();
+  const schoolId = currentAffiliation?.schoolId ?? teacher?.schoolId ?? null;
+  const { gradeOptions, defaultGrade } = useSchoolResourceOptions(schoolId);
 
   const [subjectGroups, setSubjectGroups] = useState<SubjectGroup[]>([]);
   const [prepGroups, setPrepGroups] = useState<PrepGroup[]>([]);
@@ -149,14 +152,15 @@ export default function OrganizationPage() {
   const [pendingTeacherIds, setPendingTeacherIds] = useState<Set<string>>(new Set());
   const [memberSearchKw, setMemberSearchKw] = useState("");
 
-  const schoolId = teacher?.schoolId ?? null;
-  const roles = teacher?.roles ?? [];
+  const roles = currentAffiliation?.roles ?? teacher?.roles ?? [];
+  const accountRole = currentAffiliation?.role ?? teacher?.role;
+  const isSchoolAdmin = accountRole === "school_admin" || accountRole === "platform_admin";
 
   // 权限判断
-  const canCreateSubject = canManage(roles, "school") || canManage(roles, "subject");
-  const canEditSubject = canManage(roles, "subject");
-  const canCreatePrep = canManage(roles, "subject") || canManage(roles, "prep");
-  const canEditPrep = canManage(roles, "prep") || canManage(roles, "subject");
+  const canCreateSubject = isSchoolAdmin || canManage(roles, "school") || canManage(roles, "subject");
+  const canEditSubject = isSchoolAdmin || canManage(roles, "subject");
+  const canCreatePrep = isSchoolAdmin || canManage(roles, "subject") || canManage(roles, "prep");
+  const canEditPrep = isSchoolAdmin || canManage(roles, "prep") || canManage(roles, "subject");
 
   useEffect(() => {
     load();
@@ -418,6 +422,8 @@ export default function OrganizationPage() {
         description="管理学科组、备课组及教师身份权限"
         icon={<Network className="w-5 h-5" />}
       />
+
+      <DepartmentManager schoolId={schoolId} canEdit={isSchoolAdmin} />
 
       <div className="grid lg:grid-cols-12 gap-5">
         {/* 左栏：学科组树形列表 */}
