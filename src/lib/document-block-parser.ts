@@ -772,6 +772,20 @@ function extractExplicitSolution(
   return line.slice(match[0].length).trim();
 }
 
+function looksLikeImplicitQuestion(
+  block: Partial<DocumentBlock>,
+  sectionType: QuestionType | undefined,
+  config: DocumentParseConfig,
+): boolean {
+  const text = block.content?.trim() || "";
+  if (!text || text.length > 4_000) return false;
+  if (sectionType) return true;
+  if (/[?？]/.test(text)) return true;
+  if (/[（(][一二三四五六七八九十0-9]+[）)]/.test(text)) return true;
+  if (/(?:已知|设|若|求|证明|求证|计算|判断|选择|写出|求出|说明|是否)/.test(text)) return true;
+  return config.essayKeywords.some((keyword) => keyword && text.includes(keyword));
+}
+
 function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const blocks: DocumentBlock[] = [];
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
@@ -863,6 +877,26 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       };
       currentQuestionField = "content";
       continue;
+    }
+
+    if (currentBlock.type === "knowledge" && looksLikeImplicitQuestion(currentBlock, sectionQuestionType, config)) {
+      const explicitSolution = extractExplicitSolution(line, currentBlock);
+      const labelledAnalysis = analysisPattern?.test(line)
+        ? stripPrefix(line, analysisPattern)
+        : undefined;
+      const implicitAnalysis = explicitSolution ?? labelledAnalysis;
+      if (implicitAnalysis !== undefined) {
+        currentBlock = {
+          ...currentBlock,
+          type: "question",
+          knowledgeTitle: undefined,
+          questionType: inferQuestionType(currentBlock, sectionQuestionType, config),
+          difficulty: 3,
+        };
+        appendQuestionField(currentBlock, "analysis", implicitAnalysis);
+        currentQuestionField = "analysis";
+        continue;
+      }
     }
 
     if (currentBlock.type === "question") {

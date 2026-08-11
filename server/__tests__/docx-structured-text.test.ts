@@ -46,6 +46,21 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves Word run superscript and subscript formatting", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>a</w:t></w:r>
+        <w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>n</w:t></w:r>
+        <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2</w:t></w:r>
+        <w:r><w:t>+1</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "a<sub>n</sub><sup>2</sup>+1",
+    );
+  });
+
   it("converts fragmented legacy Word EQ fields instead of leaving formula gaps", async () => {
     const data = await makeDocx(`
       <w:p>
