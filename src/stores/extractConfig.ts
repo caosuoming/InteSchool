@@ -55,6 +55,7 @@ const defaultQuestionKeywords = [
   "拓展",
   "拓",
   "练习",
+  "训练",
   "习题",
   "第",
 ];
@@ -105,6 +106,10 @@ const defaultSummaryKeywords = [
   "点评：",
   "归纳",
   "【归纳】",
+  "规律方法",
+  "【规律方法】",
+  "易错提醒",
+  "【易错提醒】",
   ...analysisAsSummaryKeywords,
 ];
 

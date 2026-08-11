@@ -12,6 +12,7 @@ import {
 import type {
   GradeExamSettings,
   GradeImportContext,
+  GradeScoreRecord,
   GradeStatisticsTemplate,
 } from "@/types";
 import { Card } from "@/components/ui/Card";
@@ -23,7 +24,11 @@ import {
   displayGradeFormulaValue,
   evaluateGradeFormula,
 } from "@/lib/grade-formula";
-import { ASSIGNMENT_GRADE_SUBJECTS, DEFAULT_ASSIGNMENT_RULES } from "@/lib/grade-statistics";
+import {
+  ASSIGNMENT_GRADE_SUBJECTS,
+  calculateGradeRecords,
+  DEFAULT_ASSIGNMENT_RULES,
+} from "@/lib/grade-statistics";
 
 interface GradeSettingsEditorProps {
   settings: GradeExamSettings;
@@ -33,6 +38,8 @@ interface GradeSettingsEditorProps {
   section?: "all" | "settings" | "templates";
   /** 已由成绩表直接提供赋分的科目，不再重复执行规则换算。 */
   importedAssignedSubjects?: string[];
+  /** 当前统计数据来源的完整成绩，用于展示原始分与当前赋分规则的实际对照。 */
+  records?: GradeScoreRecord[];
 }
 
 function toggleValue(values: string[], value: string): string[] {
@@ -211,7 +218,7 @@ function TeacherSettings({
           <UsersRound className="h-4 w-4" />
         </div>
         <div>
-          <div className="font-medium text-ink-900">班级任课教师</div>
+          <div className="font-medium text-ink-900">配置1、班级任课教师</div>
           <div className="mt-0.5 text-xs text-ink-500">已维护教学关系的教师可直接勾选；未关联账号时可在对应单元格手动输入姓名，多个姓名使用顿号分隔。</div>
         </div>
       </div>
@@ -284,6 +291,7 @@ function AssignmentSettings({
   subjects,
   onChange,
   importedAssignedSubjects = [],
+  records = [],
 }: GradeSettingsEditorProps) {
   const eligibleSubjects = subjects.filter((subject) =>
     ASSIGNMENT_GRADE_SUBJECTS.includes(subject as (typeof ASSIGNMENT_GRADE_SUBJECTS)[number]),
@@ -294,6 +302,29 @@ function AssignmentSettings({
     !settings.assignmentRules[subject]
     && !importedAssignedSet.has(subject),
   );
+  const recalculatedRecords = useMemo(() => (
+    records.length > 0
+      ? calculateGradeRecords(records, subjects, settings)
+      : []
+  ), [records, settings, subjects]);
+  const scoreComparisons = useMemo(() => Object.fromEntries(eligibleSubjects.map((subject) => {
+    const values = new Map<number, Set<number>>();
+    recalculatedRecords.forEach((record) => {
+      const raw = record.scores[subject];
+      const assigned = record.assignedScores[subject];
+      if (typeof raw !== "number" || !Number.isFinite(raw)) return;
+      if (typeof assigned !== "number" || !Number.isFinite(assigned)) return;
+      const assignedValues = values.get(raw) || new Set<number>();
+      assignedValues.add(assigned);
+      values.set(raw, assignedValues);
+    });
+    return [subject, [...values.entries()]
+      .sort(([left], [right]) => right - left)
+      .map(([raw, assigned]) => ({
+        raw,
+        assigned: [...assigned].sort((left, right) => right - left),
+      }))];
+  })), [eligibleSubjects, recalculatedRecords]);
 
   return (
     <Card className="p-0 overflow-hidden">
@@ -303,7 +334,7 @@ function AssignmentSettings({
             <Calculator className="h-4 w-4" />
           </div>
           <div>
-            <div className="font-medium text-ink-900">赋分对照表</div>
+            <div className="font-medium text-ink-900">配置2、赋分对照表</div>
             <div className="mt-0.5 text-xs text-ink-500">仅化学、生物、政治、地理使用赋分；按年级原始分排名划分等级后线性换算。</div>
           </div>
         </div>
@@ -352,6 +383,7 @@ function AssignmentSettings({
           </div>
         ) : assignedSubjects.map((subject) => {
           const rules = settings.assignmentRules[subject];
+          const comparison = scoreComparisons[subject] || [];
           return (
             <div key={subject} className="rounded-lg border border-ink-200 overflow-hidden">
               <div className="flex items-center justify-between bg-mist/70 px-4 py-2.5">
@@ -371,50 +403,80 @@ function AssignmentSettings({
                   改用原始分
                 </button>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-[680px] w-full text-xs">
-                  <thead className="bg-ink-50 text-ink-500">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium">等级</th>
-                      <th className="px-3 py-2 text-left font-medium">累计百分位起点</th>
-                      <th className="px-3 py-2 text-left font-medium">累计百分位终点</th>
-                      <th className="px-3 py-2 text-left font-medium">赋分下限</th>
-                      <th className="px-3 py-2 text-left font-medium">赋分上限</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-ink-100">
-                    {rules.map((rule, ruleIndex) => (
-                      <tr key={`${subject}-${ruleIndex}`}>
-                        {([
-                          ["label", "text"],
-                          ["percentileFrom", "number"],
-                          ["percentileTo", "number"],
-                          ["assignedMin", "number"],
-                          ["assignedMax", "number"],
-                        ] as const).map(([key, type]) => (
-                          <td key={key} className="px-3 py-2">
-                            <input
-                              type={type}
-                              min={type === "number" ? 0 : undefined}
-                              max={type === "number" ? 100 : undefined}
-                              value={rule[key]}
-                              onChange={(event) => {
-                                const updated = rules.map((item, index) => index === ruleIndex
-                                  ? { ...item, [key]: type === "number" ? Number(event.target.value) : event.target.value }
-                                  : item);
-                                onChange({
-                                  ...settings,
-                                  assignmentRules: { ...settings.assignmentRules, [subject]: updated },
-                                });
-                              }}
-                              className="w-full min-w-[5rem] rounded border border-ink-200 bg-paper px-2 py-1.5 text-ink-800 outline-none focus:border-gold-400"
-                            />
-                          </td>
-                        ))}
+              <div className="grid xl:grid-cols-2">
+                <div className="overflow-x-auto border-b border-ink-100 xl:border-b-0 xl:border-r">
+                  <div className="border-b border-ink-100 bg-paper px-3 py-2 text-xs font-medium text-ink-600">赋分规则</div>
+                  <table className="min-w-[680px] w-full text-xs">
+                    <thead className="bg-ink-50 text-ink-500">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">等级</th>
+                        <th className="px-3 py-2 text-left font-medium">累计百分位起点</th>
+                        <th className="px-3 py-2 text-left font-medium">累计百分位终点</th>
+                        <th className="px-3 py-2 text-left font-medium">赋分下限</th>
+                        <th className="px-3 py-2 text-left font-medium">赋分上限</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-ink-100">
+                      {rules.map((rule, ruleIndex) => (
+                        <tr key={`${subject}-${ruleIndex}`}>
+                          {([
+                            ["label", "text"],
+                            ["percentileFrom", "number"],
+                            ["percentileTo", "number"],
+                            ["assignedMin", "number"],
+                            ["assignedMax", "number"],
+                          ] as const).map(([key, type]) => (
+                            <td key={key} className="px-3 py-2">
+                              <input
+                                type={type}
+                                min={type === "number" ? 0 : undefined}
+                                max={type === "number" ? 100 : undefined}
+                                value={rule[key]}
+                                onChange={(event) => {
+                                  const updated = rules.map((item, index) => index === ruleIndex
+                                    ? { ...item, [key]: type === "number" ? Number(event.target.value) : event.target.value }
+                                    : item);
+                                  onChange({
+                                    ...settings,
+                                    assignmentRules: { ...settings.assignmentRules, [subject]: updated },
+                                  });
+                                }}
+                                className="w-full min-w-[5rem] rounded border border-ink-200 bg-paper px-2 py-1.5 text-ink-800 outline-none focus:border-gold-400"
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="overflow-x-auto">
+                  <div className="border-b border-ink-100 bg-paper px-3 py-2 text-xs font-medium text-ink-600">本次成绩原始分—赋分对照</div>
+                  {comparison.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-xs text-ink-400">
+                      暂无已上传成绩可生成对照。
+                    </div>
+                  ) : (
+                    <table className="w-full min-w-[320px] text-xs">
+                      <thead className="bg-ink-50 text-ink-500">
+                        <tr>
+                          <th className="px-4 py-2 text-right font-medium">原始分</th>
+                          <th className="px-4 py-2 text-right font-medium">赋分</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-ink-100">
+                        {comparison.map(({ raw, assigned }) => (
+                          <tr key={`${subject}-comparison-${raw}`}>
+                            <td className="px-4 py-2 text-right font-medium tabular-nums text-ink-800">{raw}</td>
+                            <td className="px-4 py-2 text-right font-semibold tabular-nums text-gold-800">
+                              {assigned.join(" / ")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -439,7 +501,7 @@ function ClassSubjectSettings({
           <SlidersHorizontal className="h-4 w-4" />
         </div>
         <div>
-          <div className="font-medium text-ink-900">各班统一排名与单独排名科目</div>
+          <div className="font-medium text-ink-900">配置3、各班统一排名与单独排名科目</div>
           <div className="mt-0.5 text-xs text-ink-500">
             每个科目最多选择一列；切换列时会自动取消另一列。尚未保存配置时，系统按最近一次导入成绩中整班均有分数的科目默认勾选。
           </div>

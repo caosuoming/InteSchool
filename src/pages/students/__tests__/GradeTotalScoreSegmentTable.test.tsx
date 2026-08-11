@@ -123,6 +123,7 @@ describe("GradeTotalScoreSegmentTable", () => {
 
     render(<Harness />);
 
+    expect(screen.getByText("表二、总分分数段汇总表")).toBeInTheDocument();
     expect(screen.getByText("2026届高三期末考试总分分数段汇总表")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "1班" })).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /100分以上/ })).getByRole("cell", { name: "0" })).toBeInTheDocument();

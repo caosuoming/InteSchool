@@ -116,6 +116,7 @@ describe("GradeClassAverageTable", () => {
 
     render(<Harness />);
 
+    expect(screen.getByText("表一、班级平均分统计表")).toBeInTheDocument();
     expect(screen.getByText("2026届高三期末考试班级平均分统计表")).toBeInTheDocument();
     expect(screen.getAllByText("数学教师").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("cell", { name: "90.00" }).length).toBeGreaterThan(0);

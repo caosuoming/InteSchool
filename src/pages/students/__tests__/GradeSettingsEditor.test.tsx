@@ -167,4 +167,41 @@ describe("GradeSettingsEditor", () => {
     expect(screen.getByRole("columnheader", { name: /数学化学合计/ })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "170" })).toBeInTheDocument();
   });
+
+  it("labels statistics configs and shows raw-to-assigned score comparisons for uploaded grades", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学"], classes.map((item) => item.id));
+    const secondRecord: GradeScoreRecord = {
+      ...sampleRecord,
+      id: "score-2",
+      studentId: "student-2",
+      studentName: "第二位学生",
+      studentNo: "20260002",
+      scores: { 数学: 85, 化学: 70 },
+      assignedScores: { 数学: 85, 化学: 70 },
+      rawTotal: 155,
+      assignedTotal: 155,
+      gradeRank: 2,
+      classRank: 2,
+    };
+
+    render(
+      <GradeSettingsEditor
+        settings={settings}
+        subjects={["数学", "化学"]}
+        context={context}
+        onChange={vi.fn()}
+        section="settings"
+        records={[sampleRecord, secondRecord]}
+      />,
+    );
+
+    expect(screen.getByText("配置1、班级任课教师")).toBeInTheDocument();
+    expect(screen.getByText("配置2、赋分对照表")).toBeInTheDocument();
+    expect(screen.getByText("配置3、各班统一排名与单独排名科目")).toBeInTheDocument();
+
+    const comparison = screen.getByText("本次成绩原始分—赋分对照").parentElement!;
+    expect(within(comparison).getByRole("cell", { name: "80" })).toBeInTheDocument();
+    expect(within(comparison).getByRole("cell", { name: "100" })).toBeInTheDocument();
+    expect(within(comparison).getAllByRole("cell", { name: "70" })).toHaveLength(2);
+  });
 });
