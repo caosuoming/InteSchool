@@ -277,13 +277,23 @@ describe("LecturePreviewPage", () => {
     expect(documentTitle.closest(".text-center")).not.toBeNull();
     expect(within(paper).queryByText("单调性")).not.toBeInTheDocument();
     expect(within(paper).getByText(/在给定区间内判断函数的增减/)).toBeInTheDocument();
-    expect(screen.getByTestId("lecture-preview-details")).toHaveTextContent("题目属性");
+    const previewControls = screen.getByTestId("lecture-preview-details");
+    expect(previewControls).toHaveTextContent("题目属性");
+    expect(previewControls).toHaveClass("preview-sticky-controls");
+    expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
+    const previewShell = paper.closest(".preview-sticky-shell");
+    expect(previewShell).not.toBeNull();
+    expect(paper.querySelector(".preview-sticky-spacer")).not.toBeNull();
     const questionDetails = screen.getByTestId("lecture-question-details-1");
     expect(questionDetails).toHaveTextContent("第 1 题");
     expect(questionDetails).toHaveTextContent("单选");
     expect(questionDetails).toHaveTextContent("较易");
     expect(questionDetails).toHaveTextContent("使用次数3 次");
     expect(questionDetails.parentElement).toHaveClass("lecture-preview-right");
+
+    fireEvent.change(screen.getByLabelText("纸张大小"), { target: { value: "8K" } });
+    expect(previewShell).toHaveClass("preview-sticky-shell-wide");
+    expect(paper).toHaveClass("lecture-preview-8k");
 
     await waitFor(() => {
       expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4);
