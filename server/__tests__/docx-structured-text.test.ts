@@ -46,6 +46,52 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("converts fragmented legacy Word EQ fields instead of leaving formula gaps", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>数列的前 n 项和 b_n=1-</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText> eq \\f</w:instrText></w:r>
+        <w:r><w:instrText>(2,</w:instrText></w:r>
+        <w:r><w:instrText>7)</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+        <w:r><w:t>n。</w:t></w:r>
+      </w:p>
+      <w:p>
+        <w:r><w:t>A. -</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText>eq \\f(1,3)</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+        <w:r><w:t> B. </w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText>eq \\f(5,7)</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "数列的前 n 项和 b_n=1-$\\frac{2}{7}$n。\n"
+        + "A. -$\\frac{1}{3}$ B. $\\frac{5}{7}$",
+    );
+  });
+
+  it("keeps the displayed result of non-equation Word fields", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>日期：</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText>DATE \\@ yyyy-MM-dd</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+        <w:r><w:t>2026-08-11</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "日期：2026-08-11",
+    );
+  });
+
   it("preserves table rows and cells instead of flattening them", async () => {
     const data = await makeDocx(`
       <w:tbl>
