@@ -134,6 +134,33 @@ export const shareService = {
     return rpcCall("share", "setSubjectModerator", [adminTeacherId, subject, targetTeacherId, enabled]) as any;
   },
 
+  async renameDonationAlbum(
+    teacherId: string,
+    subject: string,
+    albumId: string,
+    name: string,
+  ): Promise<ShareRecord[]> {
+    return rpcCall("share", "renameDonationAlbum", [teacherId, subject, albumId, name]) as any;
+  },
+
+  async mergeDonationAlbums(
+    teacherId: string,
+    subject: string,
+    sourceAlbumId: string,
+    targetAlbumId: string,
+  ): Promise<ShareRecord[]> {
+    return rpcCall("share", "mergeDonationAlbums", [teacherId, subject, sourceAlbumId, targetAlbumId]) as any;
+  },
+
+  async setDonationAlbum(
+    teacherId: string,
+    subject: string,
+    donationId: string,
+    albumId: string | null,
+  ): Promise<ShareRecord> {
+    return rpcCall("share", "setDonationAlbum", [teacherId, subject, donationId, albumId]) as any;
+  },
+
   async updateDonationOrder(
     teacherId: string,
     subject: string,

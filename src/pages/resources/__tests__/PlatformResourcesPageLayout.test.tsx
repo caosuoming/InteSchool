@@ -42,6 +42,9 @@ vi.mock("@/services/share", () => ({
     resolveDonationCorrection: vi.fn(),
     updateDonationResource: vi.fn(),
     setSubjectModerator: vi.fn(),
+    renameDonationAlbum: vi.fn(),
+    mergeDonationAlbums: vi.fn(),
+    setDonationAlbum: vi.fn(),
     updateDonationOrder: vi.fn(),
     deleteDonationResource: vi.fn(),
   },
@@ -235,6 +238,58 @@ describe("PlatformResourcesPage layout and filters", () => {
     expect(within(headerRow as HTMLElement).getByRole("button", { name: /本人捐赠/ })).toBeInTheDocument();
   });
 
+  it("shows a collapsed album category with type icons and moderator document management", async () => {
+    const user = userEvent.setup();
+    const albumDonation = donationRecord("donation-album", "teacher-other", "examPaper", albumPaper);
+    albumDonation.donationAlbum = {
+      id: "album-1",
+      name: "函数专题",
+      resourceType: "examPaper",
+      libraryLabel: "试卷库",
+    };
+    const freePaper: ExamPaper = {
+      ...albumPaper,
+      id: "paper-free",
+      title: "待加入专辑试卷",
+    };
+    const freeDonation = donationRecord("donation-free", "teacher-other", "examPaper", freePaper);
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([albumDonation, freeDonation]);
+    vi.mocked(shareService.getDonationPrivileges).mockResolvedValue({
+      donationCount: 1,
+      rank: 1,
+      isTopContributor: false,
+      canManagePlatformSettings: false,
+      canManageAllSubjects: false,
+      moderatedSubjects: ["数学"],
+    });
+    vi.mocked(shareService.setDonationAlbum).mockResolvedValue(albumDonation);
+
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "专辑" }));
+
+    expect(screen.getByRole("group", { name: "平台专辑：函数专题" })).toBeInTheDocument();
+    expect(screen.queryByText("函数专题试卷")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重命名" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "展开专辑：函数专题" }));
+    expect(await screen.findByText("函数专题试卷")).toBeInTheDocument();
+    expect(screen.getByLabelText("试卷标识")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移出专辑" })).toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByLabelText("添加文档到专辑：函数专题"),
+      "donation-free",
+    );
+    await waitFor(() => {
+      expect(shareService.setDonationAlbum).toHaveBeenCalledWith(
+        "teacher-self",
+        "数学",
+        "donation-free",
+        "album-1",
+      );
+    });
+  });
+
   it("shows the album name and source resource library on donated documents", async () => {
     const albumDonation = donationRecord("donation-album", "teacher-other", "examPaper", albumPaper);
     albumDonation.donationAlbum = {
@@ -249,6 +304,7 @@ describe("PlatformResourcesPage layout and filters", () => {
 
     expect(await screen.findByText("函数专题试卷")).toBeInTheDocument();
     expect(screen.getByText("专辑：函数专题 · 试卷库")).toBeInTheDocument();
+    expect(screen.getByLabelText("试卷标识")).toBeInTheDocument();
   });
 
   it("derives type-specific filter choices from donated resources", async () => {

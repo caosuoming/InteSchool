@@ -162,6 +162,82 @@ describe("platform resource donations", () => {
     });
   });
 
+  it("lets subject moderators rename, merge, and change platform album membership", async () => {
+    const appState = state();
+    appState.teachers.push(teacher("teacher-admin", "平台管理员", "school-admin", {
+      role: "platform_admin",
+      subject: "平台管理",
+    }));
+    const base = {
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期" as const,
+      duration: 60,
+      totalScore: 100,
+      questions: [],
+      status: "draft" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    (appState.examPapers as ExamPaper[]).push(
+      { ...base, id: "paper-a1", title: "专辑甲一" },
+      { ...base, id: "paper-a2", title: "专辑甲二" },
+      { ...base, id: "paper-b1", title: "专辑乙一" },
+      { ...base, id: "paper-free", title: "未归档试卷" },
+    );
+    appState.resourceFolders = [
+      {
+        id: "album-a", teacherId: "teacher-a", schoolId: "school-a",
+        resourceType: "examPaper", name: "专辑甲", resourceIds: ["paper-a1", "paper-a2"],
+        pinned: false, createdAt: now, updatedAt: now,
+      },
+      {
+        id: "album-b", teacherId: "teacher-a", schoolId: "school-a",
+        resourceType: "examPaper", name: "专辑乙", resourceIds: ["paper-b1"],
+        pinned: false, createdAt: now, updatedAt: now,
+      },
+    ];
+
+    await runWithState(appState, async () => {
+      const albumA = await shareService.donateResources("teacher-a", "school-a", [
+        { resourceType: "examPaper", resourceId: "paper-a1", albumId: "album-a" },
+        { resourceType: "examPaper", resourceId: "paper-a2", albumId: "album-a" },
+      ]);
+      const albumB = await shareService.donateResources("teacher-a", "school-a", [
+        { resourceType: "examPaper", resourceId: "paper-b1", albumId: "album-b" },
+      ]);
+      const [free] = await shareService.donateResources("teacher-a", "school-a", [
+        { resourceType: "examPaper", resourceId: "paper-free" },
+      ]);
+
+      await expect(shareService.renameDonationAlbum("teacher-b", "数学", "album-a", "越权改名"))
+        .rejects.toThrow("学科版主");
+      await shareService.setSubjectModerator("teacher-admin", "数学", "teacher-c", true);
+
+      await shareService.renameDonationAlbum("teacher-c", "数学", "album-a", "函数总复习");
+      expect((await shareService.listPublicDonations("teacher-c"))
+        .filter((record) => record.donationAlbum?.id === "album-a")
+        .every((record) => record.donationAlbum?.name === "函数总复习"))
+        .toBe(true);
+
+      await shareService.setDonationAlbum("teacher-c", "数学", free.id, "album-a");
+      expect((await shareService.listPublicDonations("teacher-c")).find((record) => record.id === free.id)?.donationAlbum)
+        .toMatchObject({ id: "album-a", name: "函数总复习" });
+
+      await shareService.mergeDonationAlbums("teacher-c", "数学", "album-b", "album-a");
+      expect((await shareService.listPublicDonations("teacher-c")).find((record) => record.id === albumB[0].id)?.donationAlbum)
+        .toMatchObject({ id: "album-a", name: "函数总复习" });
+
+      await shareService.setDonationAlbum("teacher-c", "数学", albumA[0].id, null);
+      expect((await shareService.listPublicDonations("teacher-c")).find((record) => record.id === albumA[0].id)?.donationAlbum)
+        .toBeUndefined();
+    });
+  });
+
   it("detects >80% duplicate questions, merges selected fields, and preserves both directory paths", async () => {
     const appState = state();
     await runWithState(appState, async () => {
