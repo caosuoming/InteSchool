@@ -480,6 +480,11 @@ describe("courseware lesson flow", () => {
       expect(lesson.slides[1].elements).toEqual(expect.arrayContaining([
         expect.objectContaining({
           kind: "text",
+          content: "第 1 题",
+          questionSection: "stem",
+        }),
+        expect.objectContaining({
+          kind: "text",
           content: "<p>观察图像并选择答案。</p>",
           questionSection: "stem",
         }),
@@ -675,6 +680,9 @@ describe("courseware lesson flow", () => {
           analysis: "第 1 题解析",
         },
       });
+      expect(lesson.slides[1].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "第 1 题", questionSection: "stem" }),
+      ]));
       expect(lesson.slides[19]).toMatchObject({
         type: "question",
         title: "第 19 题",
