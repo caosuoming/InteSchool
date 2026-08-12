@@ -58,6 +58,33 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, useCsr
   return reviveRpc(payload) as T;
 }
 
+export async function apiBlobRequest(path: string, init: RequestInit = {}, useCsrf = false): Promise<Blob> {
+  const headers = new Headers(init.headers);
+  if (useCsrf) {
+    if (!csrfToken) throw new Error("会话已失效，请刷新页面后重试");
+    headers.set("X-InteSchool-CSRF", csrfToken);
+  }
+  const response = await fetch(path, {
+    ...init,
+    headers,
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") || "";
+    let message = `请求失败（${response.status}）`;
+    if (contentType.includes("application/json")) {
+      const payload = await response.json() as { error?: unknown };
+      if (typeof payload.error === "string" && payload.error) message = payload.error;
+    } else {
+      const text = await response.text();
+      if (text) message = text;
+    }
+    if (response.status === 401) csrfToken = null;
+    throw new ApiError(message, response.status);
+  }
+  return response.blob();
+}
+
 export async function rpcCall<T>(service: string, method: string, args: unknown[]): Promise<T> {
   const response = await apiRequest<{ result: T }>("/api/rpc", {
     method: "POST",

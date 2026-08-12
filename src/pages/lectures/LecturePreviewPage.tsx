@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   BookOpen, CheckSquare, Edit3, Eye, FileText, GraduationCap,
-  Printer, Type, UserCheck, Users,
+  Copy, Download, Printer, Type, UserCheck, Users,
 } from "lucide-react";
 import { lectureService } from "@/services/lecture";
 import { questionService } from "@/services/question";
@@ -29,6 +29,7 @@ import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, LessonCourseware, Question, Student, TreeNode } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
+import { generateLectureDocx } from "@/lib/docx";
 
 type PaperSize = "A4" | "8K";
 
@@ -90,6 +91,8 @@ export default function LecturePreviewPage() {
   const [audienceClassIds, setAudienceClassIds] = useState<string[]>([]);
   const [savingAudience, setSavingAudience] = useState(false);
   const [markingAllDone, setMarkingAllDone] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
   const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
   const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
@@ -272,6 +275,37 @@ export default function LecturePreviewPage() {
     }
   };
 
+  const handleDuplicate = async () => {
+    if (!lecture || lecture.teacherId !== teacher?.id) return;
+    setDuplicating(true);
+    try {
+      const copy = await lectureService.duplicateLecture(lecture.id);
+      toast.success("讲义副本已创建");
+      navigate(`/lectures/${copy.id}/edit`);
+    } catch (error) {
+      toast.error("创建副本失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!lecture) return;
+    setDownloading(true);
+    try {
+      const availableQuestions: Record<string, Question> = {};
+      for (const [questionId, question] of Object.entries(questions)) {
+        if (question) availableQuestions[questionId] = question;
+      }
+      await generateLectureDocx(lecture, availableQuestions);
+      toast.success("讲义已下载", "数学公式已优先转换为 MathType 格式");
+    } catch (error) {
+      toast.error("下载失败", error instanceof Error ? error.message : "无法生成讲义文档");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleSendToMyCourseware = async () => {
     if (!lecture || !teacher?.schoolId || lecture.teacherId !== teacher.id) return;
     if (linkedCourseware) {
@@ -390,7 +424,7 @@ export default function LecturePreviewPage() {
         description="检查讲义内容、版面与题目属性"
         icon={<Eye className="w-5 h-5" />}
         action={
-          <div className="flex items-center gap-2">
+          <div className="no-print flex flex-wrap items-center justify-end gap-2">
             <Button variant="outline" onClick={() => setAudienceOpen(true)}>
               <Users className="w-4 h-4" />
               <span className="max-w-48 truncate">{usageTarget === "未指定" ? "添加使用对象" : usageTarget}</span>
@@ -406,6 +440,16 @@ export default function LecturePreviewPage() {
                 {linkedCourseware ? "课件" : "发送到我的课件"}
               </Button>
             )}
+            {lecture.teacherId === teacher?.id && (
+              <Button variant="outline" onClick={handleDuplicate} loading={duplicating}>
+                <Copy className="w-4 h-4" />
+                创建副本
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleDownload} loading={downloading}>
+              <Download className="w-4 h-4" />
+              下载
+            </Button>
             {!lecture.isExtractCopy && (
               <Button variant="outline" onClick={() => navigate(`/lectures/${id}/edit`)}>
                 <Edit3 className="w-4 h-4" />

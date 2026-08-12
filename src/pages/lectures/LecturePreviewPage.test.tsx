@@ -15,6 +15,9 @@ const basketMocks = vi.hoisted(() => ({
   addQuestion: vi.fn(),
   removeQuestion: vi.fn(),
 }));
+const documentMocks = vi.hoisted(() => ({
+  generateLectureDocx: vi.fn(),
+}));
 
 const teacher = {
   id: "teacher-1",
@@ -27,7 +30,10 @@ vi.mock("@/stores/auth", () => ({
 }));
 
 vi.mock("@/services/lecture", () => ({
-  lectureService: { getLecture: vi.fn(), updateLecture: vi.fn() },
+  lectureService: { getLecture: vi.fn(), updateLecture: vi.fn(), duplicateLecture: vi.fn() },
+}));
+vi.mock("@/lib/docx", () => ({
+  generateLectureDocx: documentMocks.generateLectureDocx,
 }));
 vi.mock("@/services/class", () => ({
   classService: {
@@ -220,11 +226,16 @@ function CoursewareRouteProbe() {
   return <div>{location.search === "?preview=1" ? "课件预览页" : "课件编辑页"}</div>;
 }
 
+function LectureEditorRouteProbe() {
+  return <div>讲义编辑页</div>;
+}
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/lectures/lecture-1/preview"]}>
       <Routes>
         <Route path="/lectures/:id/preview" element={<LecturePreviewPage />} />
+        <Route path="/lectures/:id/edit" element={<LectureEditorRouteProbe />} />
         <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
       </Routes>
     </MemoryRouter>,
@@ -248,6 +259,8 @@ describe("LecturePreviewPage", () => {
     vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
     vi.mocked(analyticsService.batchSaveAnswerRecords).mockResolvedValue([]);
     vi.mocked(lectureService.updateLecture).mockResolvedValue(lecture);
+    vi.mocked(lectureService.duplicateLecture).mockResolvedValue({ ...lecture, id: "lecture-copy" });
+    documentMocks.generateLectureDocx.mockResolvedValue(undefined);
     vi.mocked(lessonCoursewareService.getCoursewareBySource).mockResolvedValue(null);
     vi.mocked(lessonCoursewareService.createFromLecture).mockResolvedValue({ id: "lesson-courseware-1" } as any);
     basketMocks.listBaskets.mockResolvedValue([]);
@@ -298,6 +311,24 @@ describe("LecturePreviewPage", () => {
     await waitFor(() => {
       expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4);
     });
+  });
+
+  it("downloads the preview and creates an editable lecture copy", async () => {
+    renderPage();
+
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    await waitFor(() => {
+      expect(documentMocks.generateLectureDocx).toHaveBeenCalledWith(lecture, {
+        [question.id]: question,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "创建副本" }));
+    await waitFor(() => {
+      expect(lectureService.duplicateLecture).toHaveBeenCalledWith(lecture.id);
+    });
+    expect(await screen.findByText("讲义编辑页")).toBeInTheDocument();
   });
 
   it("keeps extracted lecture copies preview-only", async () => {

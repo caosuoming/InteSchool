@@ -255,6 +255,35 @@ export async function registerFileRoutes(
     };
   });
 
+  app.post("/api/files/convert-formulas/mathtype", async (request, reply) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const part = await request.file();
+    if (!part) return reply.code(400).send({ error: "请选择 DOCX 文档" });
+    const originalName = safeOriginalName(part.filename);
+    if (extname(originalName).toLowerCase() !== ".docx") {
+      return reply.code(400).send({ error: "仅支持转换 DOCX 文档" });
+    }
+
+    const input = await part.toBuffer();
+    if (part.file.truncated) {
+      return reply.code(413).send({ error: `文件不能超过 ${Math.floor(config.maxUploadBytes / 1024 / 1024)} MB` });
+    }
+    try {
+      const converted = await convertOmmlDocxToMathType(input);
+      reply.type(MIME_TYPES[".docx"]);
+      reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(originalName)}`);
+      reply.header("Content-Length", converted.buffer.length);
+      reply.header("X-Formula-Format", "mathtype");
+      reply.header("X-Formula-Converted-Count", converted.convertedCount);
+      return reply.send(converted.buffer);
+    } catch (error) {
+      return reply.type("application/json; charset=utf-8").code(422).send({
+        error: `公式无法完整转换为 MathType：${error instanceof Error ? error.message : "未知错误"}`,
+      });
+    }
+  });
+
   app.post("/api/files", async (request) => {
     const session = requireSession(request, store);
     requireCsrf(request, session);

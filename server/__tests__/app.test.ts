@@ -1811,6 +1811,22 @@ describe("production backend", () => {
       document,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     );
+    const generatedConversion = await built.app.inject({
+      method: "POST",
+      url: "/api/files/convert-formulas/mathtype",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+        "content-type": multipart.contentType,
+      },
+      payload: multipart.body,
+    });
+    expect(generatedConversion.statusCode).toBe(200);
+    expect(generatedConversion.headers["x-formula-format"]).toBe("mathtype");
+    expect(generatedConversion.headers["x-formula-converted-count"]).toBe("1");
+    const generatedZip = await JSZip.loadAsync(generatedConversion.rawPayload);
+    expect(await generatedZip.file("word/document.xml")?.async("string")).toContain('ProgID="Equation.DSMT4"');
+
     const upload = await built.app.inject({
       method: "POST",
       url: "/api/files",
