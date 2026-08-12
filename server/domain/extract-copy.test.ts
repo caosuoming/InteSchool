@@ -337,6 +337,23 @@ describe("document extract copies", () => {
         originalFileUrl: undefined,
         contentBlocks: undefined,
       });
+      expect(lectureCopy.sections.map((section) => section.type)).toEqual([
+        "chapter",
+        "chapter",
+      ]);
+      expect(lectureCopy.sections[0].children.map((section) => section.type)).toEqual([
+        "text",
+      ]);
+      expect(lectureCopy.sections[1].children.map((section) => section.type)).toEqual([
+        "question",
+        "knowledge",
+        "question",
+      ]);
+      expect(lectureCopy.sections[1].children.map((section) => section.questionId)).toEqual([
+        "bank-question-1",
+        undefined,
+        "bank-question-2",
+      ]);
       const reorderedLecture = await lectureService.updateLecture(lectureCopy.id, {
         sections: [...lectureCopy.sections].reverse(),
       });

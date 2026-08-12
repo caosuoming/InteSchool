@@ -68,7 +68,7 @@ describe("buildLectureEditorLayout", () => {
     ]);
   });
 
-  it("keeps root blocks ungrouped for normal editable lectures", () => {
+  it("keeps root blocks ungrouped when compatibility grouping is disabled", () => {
     const sections = [
       section("chapter", "chapter"),
       section("root-text", "text"),
@@ -78,5 +78,21 @@ describe("buildLectureEditorLayout", () => {
 
     expect(layout.chapters[0].items).toEqual([]);
     expect(layout.ungrouped.map((item) => item.section.id)).toEqual(["root-text"]);
+  });
+
+  it("groups legacy editable-copy root blocks under the preceding chapter", () => {
+    const sections = [
+      section("chapter", "chapter"),
+      section("root-text", "text"),
+      section("root-question", "question"),
+    ];
+
+    const layout = buildLectureEditorLayout(sections, true);
+
+    expect(layout.ungrouped).toEqual([]);
+    expect(layout.chapters[0].items.map((item) => item.section.id)).toEqual([
+      "root-text",
+      "root-question",
+    ]);
   });
 });
