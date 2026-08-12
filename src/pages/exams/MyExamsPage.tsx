@@ -509,6 +509,7 @@ function GradePreprocessing({
         subjects={subjects}
         context={context}
         onChange={setDraft}
+        section="settings"
         records={selectedExam?.records || []}
       />
 
