@@ -5,6 +5,7 @@ import {
 } from "./grade-class-average.js";
 import type { GradeTotalScoreSegmentReport } from "./grade-total-score-segment.js";
 import type { GradeSubjectScoreSegmentReport } from "./grade-subject-score-segment.js";
+import type { GradeElectiveScoreSegmentReport } from "./grade-elective-score-segment.js";
 import { buildGradeReportTable } from "./grade-reports.js";
 import {
   ASSIGNABLE_GRADE_SUBJECTS,
@@ -615,6 +616,83 @@ export async function exportGradeSubjectScoreSegmentReport(
   });
   const safeName = report.subjects[0].title
     .replace(report.subjects[0].subject, "各单科")
+    .replace(/[\\/:*?"<>|]/g, "_");
+  await writeXlsxFile(sheets).toFile(`${safeName}.xlsx`);
+}
+
+export async function exportGradeElectiveScoreSegmentReport(
+  report: GradeElectiveScoreSegmentReport,
+): Promise<void> {
+  if (report.subjects.length === 0) throw new Error("暂无可导出的选修分数段");
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const border = { borderStyle: "thin" as const, borderColor: "#9CA3AF" };
+  const cell = (value: string | number | null, options: Record<string, unknown> = {}) => ({
+    value: value ?? undefined,
+    type: typeof value === "number" ? Number : String,
+    align: "center" as const,
+    alignVertical: "center" as const,
+    height: 22,
+    ...border,
+    ...options,
+  });
+  const sheets = report.subjects.map((subjectReport) => {
+    const columnCount = 3 + subjectReport.gradeLabels.length + subjectReport.thresholds.length;
+    const rows: Array<Array<ReturnType<typeof cell>>> = [
+      [
+        cell(subjectReport.title, { fontWeight: "bold", fontSize: 16, align: "left" }),
+        ...Array.from({ length: Math.max(0, columnCount - 2) }, () => cell(null)),
+        cell(report.reportDate.replace(/-/g, "."), { fontWeight: "bold" }),
+      ],
+      [
+        cell("班级", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        cell("任课教师", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        cell("实际考试人数", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        ...subjectReport.gradeLabels.map((label) => cell(label, {
+          fontWeight: "bold",
+          backgroundColor: "#F3F4F6",
+        })),
+        ...subjectReport.thresholds.map((threshold) => cell(`${threshold}分以上`, {
+          fontWeight: "bold",
+          backgroundColor: "#F3F4F6",
+        })),
+      ],
+      ...subjectReport.rows.map((row) => [
+        cell(row.classLabel),
+        cell(row.teacherNames.join("、") || null),
+        cell(row.candidateCount),
+        ...subjectReport.gradeLabels.map((label) => cell(row.gradeCounts[label] || 0)),
+        ...subjectReport.thresholds.map((threshold) => cell(row.scoreCounts[threshold] || 0)),
+      ]),
+      [
+        cell("累计", { fontWeight: "bold" }),
+        cell(null),
+        cell(subjectReport.totalCandidateCount, { fontWeight: "bold" }),
+        ...subjectReport.gradeLabels.map((label) => cell(subjectReport.totalGradeCounts[label] || 0, { fontWeight: "bold" })),
+        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalScoreCounts[threshold] || 0, { fontWeight: "bold" })),
+      ],
+      [
+        cell("所占比例", { fontWeight: "bold" }),
+        cell(null),
+        cell(null),
+        ...subjectReport.gradeLabels.map((label) => cell(subjectReport.totalGradeRates[label], { fontWeight: "bold" })),
+        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalScoreRates[threshold], { fontWeight: "bold" })),
+      ],
+    ];
+    return {
+      sheet: subjectReport.subject,
+      data: rows,
+      stickyRowsCount: 2,
+      columns: [
+        { width: 12 },
+        { width: 16 },
+        { width: 14 },
+        ...subjectReport.gradeLabels.map(() => ({ width: 8 })),
+        ...subjectReport.thresholds.map(() => ({ width: 12 })),
+      ],
+    };
+  });
+  const safeName = report.subjects[0].title
+    .replace(report.subjects[0].subject, "选修")
     .replace(/[\\/:*?"<>|]/g, "_");
   await writeXlsxFile(sheets).toFile(`${safeName}.xlsx`);
 }
