@@ -123,6 +123,18 @@ function chunkForPrint<T>(items: T[], pageCapacity: number): T[][] {
   return pages;
 }
 
+function subjectLines(subjectLabel: string, subjectsPerLine = 3): string[] {
+  const subjects = subjectLabel
+    .split(" / ")
+    .map((subject) => subject.trim())
+    .filter(Boolean);
+  const lines: string[] = [];
+  for (let index = 0; index < subjects.length; index += subjectsPerLine) {
+    lines.push(subjects.slice(index, index + subjectsPerLine).join("、"));
+  }
+  return lines;
+}
+
 function uniqueSubjects(values: string[]): string[] {
   const selected = new Set(values.map((item) => item.trim()).filter(Boolean));
   return [
@@ -1703,7 +1715,11 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                           <div className="exam-class-arrangement-items">
                             {student.assignments.map((item) => (
                               <div key={item.id} className="exam-class-arrangement-item" title={item.admissionNo}>
-                                <strong>{item.subjectLabel.split(" / ").join("、")}</strong>
+                                <strong className="exam-class-arrangement-subject">
+                                  {subjectLines(item.subjectLabel).map((line, lineIndex) => (
+                                    <span key={`${lineIndex}-${line}`}>{line}</span>
+                                  ))}
+                                </strong>
                                 <span>{item.roomNumber || item.roomName} · {item.seatNo}号</span>
                                 <span>{item.roomLocation || item.roomName}</span>
                               </div>
