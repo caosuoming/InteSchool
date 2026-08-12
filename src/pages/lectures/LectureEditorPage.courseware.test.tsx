@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Lecture, Teacher, TreeNode } from "@/types";
@@ -179,11 +180,12 @@ describe("LectureEditorPage courseware action", () => {
   });
 
   it("saves current lecture edits before creating courseware from edit mode", async () => {
+    const user = userEvent.setup();
     renderPage();
 
     const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
     await waitFor(() => expect(sendButton).toBeEnabled());
-    fireEvent.click(sendButton);
+    await user.click(sendButton);
 
     await waitFor(() => {
       expect(mocks.updateLecture).toHaveBeenCalledWith(

@@ -159,6 +159,7 @@ function sourceLecture(): Lecture {
         content: "",
         questionId: "question-1",
         children: [],
+        customLabel: "例1",
       }],
     }],
     version: 1,
@@ -469,7 +470,7 @@ describe("courseware lesson flow", () => {
       ]));
       expect(lesson.slides[1]).toMatchObject({
         type: "question",
-        title: "第 1 题",
+        title: "1.",
         freeformLayout: true,
         questionId: question.id,
         questionSnapshot: {
@@ -480,7 +481,7 @@ describe("courseware lesson flow", () => {
       expect(lesson.slides[1].elements).toEqual(expect.arrayContaining([
         expect.objectContaining({
           kind: "text",
-          content: "第 1 题",
+          content: "1.",
           questionSection: "stem",
         }),
         expect.objectContaining({
@@ -523,7 +524,7 @@ describe("courseware lesson flow", () => {
       }
       expect(lesson.slides.at(-1)).toMatchObject({
         type: "question",
-        title: "第 19 题",
+        title: "19.",
       });
       expect(lesson.libraryCoursewareId).toBeTruthy();
       const libraryCourseware = await coursewareService.getCourseware(lesson.libraryCoursewareId!);
@@ -574,6 +575,7 @@ describe("courseware lesson flow", () => {
       {
         id: "question-1",
         type: "question",
+        title: "题目：（2017·课标 I·理，20）",
         content: paper.questions[0].stem,
         examPaperQuestionId: paper.questions[0].id,
       },
@@ -618,8 +620,15 @@ describe("courseware lesson flow", () => {
       expect(lesson.slides[1].elements).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ content: "函数定义" }),
       ]));
+      expect(lesson.slides[2]).toMatchObject({
+        title: "1.",
+        questionSnapshot: { stem: paper.questions[0].stem.replace(/<img[^>]+>/, "").trim() },
+      });
+      expect(lesson.slides[2].elements).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "题目：（2017·课标 I·理，20）" }),
+      ]));
       expect(lesson.slides[3]).toMatchObject({
-        title: "第 2 题",
+        title: "2.",
         questionSnapshot: { stem: "第二道未出现在结构块中的题目" },
       });
     });
@@ -673,7 +682,7 @@ describe("courseware lesson flow", () => {
       });
       expect(lesson.slides[1]).toMatchObject({
         type: "question",
-        title: "第 1 题",
+        title: "1.",
         questionSnapshot: {
           stem: "第 1 题题干",
           answer: "1",
@@ -681,11 +690,11 @@ describe("courseware lesson flow", () => {
         },
       });
       expect(lesson.slides[1].elements).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: "text", content: "第 1 题", questionSection: "stem" }),
+        expect.objectContaining({ kind: "text", content: "1.", questionSection: "stem" }),
       ]));
       expect(lesson.slides[19]).toMatchObject({
         type: "question",
-        title: "第 19 题",
+        title: "19.",
       });
     });
   });
@@ -715,6 +724,13 @@ describe("courseware lesson flow", () => {
         children: [],
       },
     );
+    lecture.sections[0].children.push({
+      id: "section-question-default-label",
+      title: "这段题目名称不应进入课件",
+      type: "question",
+      content: "补充题干",
+      children: [],
+    });
     state.lectures = [lecture];
 
     await runWithState(state, async () => {
@@ -724,7 +740,7 @@ describe("courseware lesson flow", () => {
         lecture.id,
       );
 
-      expect(lesson.slides).toHaveLength(3);
+      expect(lesson.slides).toHaveLength(4);
       expect(lesson.slides[0]).toMatchObject({
         type: "section",
         title: "审阅后的函数专题",
@@ -738,7 +754,7 @@ describe("courseware lesson flow", () => {
       });
       expect(lesson.slides[2]).toMatchObject({
         type: "question",
-        title: "例题 1",
+        title: "例1",
         freeformLayout: true,
         questionId: question.id,
         questionSnapshot: {
@@ -750,10 +766,29 @@ describe("courseware lesson flow", () => {
       expect(lesson.slides[2].elements).toEqual(expect.arrayContaining([
         expect.objectContaining({
           kind: "text",
+          content: "例1",
+          questionSection: "stem",
+        }),
+        expect.objectContaining({
+          kind: "text",
           content: "<p>观察图像并选择答案。</p>",
           questionSection: "stem",
         }),
         expect.objectContaining({ kind: "image", src: "/api/files/question-image" }),
+      ]));
+      expect(lesson.slides[2].elements).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "例题 1" }),
+      ]));
+      expect(lesson.slides[3]).toMatchObject({
+        type: "question",
+        title: "2.",
+        questionSnapshot: { stem: "补充题干" },
+      });
+      expect(lesson.slides[3].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "2.", questionSection: "stem" }),
+      ]));
+      expect(lesson.slides[3].elements).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "这段题目名称不应进入课件" }),
       ]));
       const libraryCourseware = await coursewareService.getCourseware(lesson.libraryCoursewareId!);
       expect(libraryCourseware).toMatchObject({
