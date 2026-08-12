@@ -1,14 +1,22 @@
 import JSZip from "jszip";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExamPaper, Question } from "@/types";
+import type { ExamPaper, Lecture, Question } from "@/types";
 
 const saveAsMock = vi.hoisted(() => vi.fn());
+const apiBlobRequestMock = vi.hoisted(() => vi.fn(async (_path: string, init: RequestInit) => {
+  const file = (init.body as FormData).get("file");
+  if (!(file instanceof Blob)) throw new Error("missing docx");
+  return file;
+}));
 
 vi.mock("file-saver", () => ({
   saveAs: saveAsMock,
 }));
+vi.mock("@/services/api", () => ({
+  apiBlobRequest: apiBlobRequestMock,
+}));
 
-import { generateExamPaperDocx } from "@/lib/docx";
+import { buildExamPaperDocxBlob, buildLectureDocxBlob, generateExamPaperDocx } from "@/lib/docx";
 
 const timestamp = "2026-08-04T00:00:00.000Z";
 
@@ -83,20 +91,25 @@ const structuredPaper: ExamPaper = {
 async function capturedDocumentXml(): Promise<string> {
   const [blob] = saveAsMock.mock.calls.at(-1) || [];
   expect(blob).toBeInstanceOf(Blob);
-  const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error || new Error("读取文档失败"));
-    reader.onload = () => resolve(reader.result as ArrayBuffer);
-    reader.readAsArrayBuffer(blob as Blob);
-  });
+  const buffer = await blobToArrayBuffer(blob as Blob);
   const zip = await JSZip.loadAsync(buffer);
   const documentXml = zip.file("word/document.xml");
   expect(documentXml).not.toBeNull();
   return documentXml!.async("string");
 }
 
+async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("读取文档失败"));
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 beforeEach(() => {
   saveAsMock.mockReset();
+  apiBlobRequestMock.mockClear();
 });
 
 describe("generateExamPaperDocx", () => {
@@ -114,5 +127,83 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("A");
     expect(documentXml).toContain("根据函数定义判断。");
     expect(documentXml).not.toContain("题库中的旧题干");
+    expect(apiBlobRequestMock).toHaveBeenCalledWith(
+      "/api/files/convert-formulas/mathtype",
+      expect.objectContaining({ method: "POST" }),
+      true,
+    );
+  });
+
+  it("emits editable Office math before the default MathType conversion", async () => {
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: "求 $f(x)=x^2+\\frac{1}{x}$ 的定义域。",
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: "求 $f(x)=x^2+\\frac{1}{x}$ 的定义域。",
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper, { [linkedQuestion.id]: linkedQuestion });
+    const buffer = await blobToArrayBuffer(blob);
+    const zip = await JSZip.loadAsync(buffer);
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml).toContain("<m:oMath");
+    expect(documentXml).toContain("<m:sSup>");
+    expect(documentXml).toContain("<m:f>");
+    expect(documentXml).not.toContain("$f(x)");
+  });
+
+  it("builds lecture downloads from preview sections with editable formulas", async () => {
+    const lectureQuestion: Question = {
+      ...linkedQuestion,
+      stem: "已知 $f(x)=x^2$，求函数值。",
+      options: ["$0$", "$1$"],
+      answer: "$1$",
+    };
+    const lecture: Lecture = {
+      id: "lecture-1",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      title: "函数讲义",
+      description: "公式练习",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期",
+      classIds: [],
+      studentIds: [],
+      sections: [
+        { id: "title", title: "函数讲义", type: "chapter", content: "", children: [] },
+        {
+          id: "question",
+          title: "例题",
+          type: "question",
+          content: "",
+          questionId: lectureQuestion.id,
+          customLabel: "例1",
+          children: [],
+        },
+      ],
+      contentBlocks: [{ id: "document-title", type: "documentTitle", content: "函数讲义" }],
+      version: 1,
+      status: "draft",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    const blob = await buildLectureDocxBlob(lecture, { [lectureQuestion.id]: lectureQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml).toContain("函数讲义");
+    expect(documentXml).toContain("例1");
+    expect(documentXml).toContain("<m:oMath");
+    expect(documentXml).toContain("<m:sSup>");
   });
 });

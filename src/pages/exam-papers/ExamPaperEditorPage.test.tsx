@@ -6,6 +6,7 @@ import type { ExamPaper, ExamPublication, Question, Teacher, TreeNode } from "@/
 const mocks = vi.hoisted(() => ({
   getPaper: vi.fn(),
   updatePaper: vi.fn(),
+  duplicatePaper: vi.fn(),
   listQuestions: vi.fn(),
   updateQuestion: vi.fn(),
   listBaskets: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock("@/services/examPaper", () => ({
   examPaperService: {
     getPaper: mocks.getPaper,
     updatePaper: mocks.updatePaper,
+    duplicatePaper: mocks.duplicatePaper,
     listPapers: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -242,11 +244,16 @@ function CoursewareRouteProbe() {
   return <div>{location.search === "?preview=1" ? "课件预览页" : "课件编辑页"}</div>;
 }
 
+function ExamPaperEditorRouteProbe() {
+  return <div>试卷编辑目标页</div>;
+}
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={[`/exam-papers/${paper.id}/preview`]}>
       <Routes>
         <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
+        <Route path="/exam-papers/:id" element={<ExamPaperEditorRouteProbe />} />
         <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
       </Routes>
     </MemoryRouter>,
@@ -270,6 +277,7 @@ describe("ExamPaperEditorPage preview", () => {
     vi.clearAllMocks();
     mocks.getPaper.mockResolvedValue(paper);
     mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...paper, ...patch }));
+    mocks.duplicatePaper.mockResolvedValue({ ...paper, id: "paper-copy", isExtractCopy: false });
     mocks.listQuestions.mockResolvedValue([question]);
     mocks.updateQuestion.mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
     mocks.listBaskets.mockResolvedValue([]);
@@ -369,6 +377,18 @@ describe("ExamPaperEditorPage preview", () => {
       title: paper.title,
       contentBlocks: paper.contentBlocks,
     });
+  });
+
+  it("creates an editable copy directly from preview", async () => {
+    renderPage();
+
+    const copyButton = await screen.findByRole("button", { name: "创建副本" });
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(mocks.duplicatePaper).toHaveBeenCalledWith(paper.id);
+    });
+    expect(await screen.findByText("试卷编辑目标页")).toBeInTheDocument();
   });
 
   it("edits a preview question's chapter course and knowledge-point catalogs", async () => {

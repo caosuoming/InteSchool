@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "react-rout
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
   FileSpreadsheet, GraduationCap, Users, Send,
-  ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered,
+  ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered, Copy,
   AlertCircle, Lock, Calendar, Layout,
   Sparkles, BookOpen, Lightbulb, Download,
   CheckSquare, ArrowUpDown, Link2,
@@ -214,6 +214,7 @@ export default function ExamPaperEditorPage() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
   const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
   const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
@@ -1181,6 +1182,20 @@ export default function ExamPaperEditorPage() {
     }
   };
 
+  const handleDuplicate = async () => {
+    if (!paper || prepTaskId || paper.teacherId !== teacher?.id) return;
+    setDuplicating(true);
+    try {
+      const copy = await examPaperService.duplicatePaper(paper.id);
+      toast.success("试卷副本已创建");
+      navigate(`/exam-papers/${copy.id}`);
+    } catch (error) {
+      toast.error("创建副本失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   const handleDownload = async () => {
     if (!paper) return;
     setDownloading(true);
@@ -1197,7 +1212,7 @@ export default function ExamPaperEditorPage() {
         questions: paperQuestions,
         contentBlocks,
       }, questions);
-      toast.success("试卷已下载");
+      toast.success("试卷已下载", "数学公式已优先转换为 MathType 格式");
     } catch (error) {
       toast.error("下载失败", error instanceof Error ? error.message : "无法生成试卷文档");
     } finally {
@@ -1426,7 +1441,7 @@ export default function ExamPaperEditorPage() {
           description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
           icon={<FileSpreadsheet className="w-5 h-5" />}
           action={
-            <div className="no-print flex items-center gap-2">
+            <div className="no-print flex flex-wrap items-center justify-end gap-2">
               {!prepTaskId && (
                 <Button variant="outline" onClick={() => setAudiencePickerOpen(true)}>
                   <Users className="w-4 h-4" />
@@ -1459,6 +1474,16 @@ export default function ExamPaperEditorPage() {
                   发布试卷
                 </Button>
               )}
+              {!prepTaskId && paper?.teacherId === teacher?.id && (
+                <Button variant="outline" onClick={handleDuplicate} loading={duplicating}>
+                  <Copy className="w-4 h-4" />
+                  创建副本
+                </Button>
+              )}
+              <Button variant="outline" onClick={handleDownload} loading={downloading}>
+                <Download className="w-4 h-4" />
+                下载
+              </Button>
               <Button
                 variant="gold"
                 onClick={() => navigateWithDraft(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
@@ -1469,13 +1494,6 @@ export default function ExamPaperEditorPage() {
             </div>
           }
         />
-
-        <div className="no-print mb-4 flex items-center justify-end gap-2">
-          <Button variant="gold" onClick={handleDownload} loading={downloading}>
-            <Download className="w-4 h-4" />
-            下载
-          </Button>
-        </div>
 
         <div className="preview-sticky-shell">
           <aside className="preview-sticky-rail no-print">
