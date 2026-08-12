@@ -41,6 +41,7 @@ import { GradeSettingsEditor } from "@/pages/students/GradeSettingsEditor";
 import { GradeImportWizard } from "@/pages/students/GradeImportWizard";
 import { GradeClassAverageTable } from "@/pages/students/GradeClassAverageTable";
 import { GradeTotalScoreSegmentTable } from "@/pages/students/GradeTotalScoreSegmentTable";
+import { GradeSubjectScoreSegmentTable } from "@/pages/students/GradeSubjectScoreSegmentTable";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { GRADE_SUBJECT_OPTIONS } from "@/lib/grade-spreadsheet";
 
@@ -479,15 +480,26 @@ function GradePreprocessing({
             />
           )}
           {selectedExam && totalScoreSegmentTemplate && (
-            <GradeTotalScoreSegmentTable
-              exam={selectedExam}
-              settings={draft}
-              template={totalScoreSegmentTemplate}
-              classAverageTemplate={classAverageTemplate || undefined}
-              context={context}
-              onChange={setDraft}
-              onAutoSave={autoSaveSegmentSettings}
-            />
+            <>
+              <GradeTotalScoreSegmentTable
+                exam={selectedExam}
+                settings={draft}
+                template={totalScoreSegmentTemplate}
+                classAverageTemplate={classAverageTemplate || undefined}
+                context={context}
+                onChange={setDraft}
+                onAutoSave={autoSaveSegmentSettings}
+              />
+              <GradeSubjectScoreSegmentTable
+                exam={selectedExam}
+                settings={draft}
+                template={totalScoreSegmentTemplate}
+                classAverageTemplate={classAverageTemplate || undefined}
+                context={context}
+                onChange={setDraft}
+                onAutoSave={autoSaveSegmentSettings}
+              />
+            </>
           )}
         </>
       )}

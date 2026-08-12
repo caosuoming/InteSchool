@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Download, RotateCcw, SlidersHorizontal, Table2 } from "lucide-react";
 import type {
+  GradeAcademicTrack,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -102,6 +103,34 @@ export function GradeTotalScoreSegmentTable({
     },
   });
 
+  const updateTrackThreshold = (
+    track: GradeAcademicTrack,
+    targetKey: GradeTotalScoreTargetKey,
+    value: string,
+  ) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    updateSegmentOptions({
+      trackThresholds: {
+        ...options.trackThresholds,
+        [track]: {
+          ...options.trackThresholds?.[track],
+          [targetKey]: optionalNumber(value),
+        },
+      },
+    });
+  };
+
+  const trackThresholdValue = (track: GradeAcademicTrack, targetKey: GradeTotalScoreTargetKey) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    const legacy = {
+      highScore1: options.highScore1Threshold,
+      highScore2: options.highScore2Threshold,
+      firstTier: options.firstTierThreshold,
+      undergraduate: options.undergraduateThreshold,
+    }[targetKey];
+    return options.trackThresholds?.[track]?.[targetKey] ?? legacy ?? "";
+  };
+
   const updateTarget = (
     classId: string,
     targetKey: GradeTotalScoreTargetKey,
@@ -150,7 +179,7 @@ export function GradeTotalScoreSegmentTable({
           <div>
             <div className="font-medium text-ink-900">表二、总分分数段汇总表</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              按班级横向汇总达到各总分阈值的累计人数；班级顺序、简称和隐藏状态与上方班级平均分表保持一致。
+              按物理类、历史类分组汇总达到各总分阈值的累计人数，并自动生成理科小计、文科小计和总计。
             </div>
           </div>
         </div>
@@ -203,57 +232,31 @@ export function GradeTotalScoreSegmentTable({
                 />
               </div>
               <span className="mb-1 h-9 w-px bg-ink-200" aria-hidden="true" />
-              <div className="w-32">
-                <Input
-                  label="高分1达线标准"
-                  type="number"
-                  min={0}
-                  max={2000}
-                  value={effectiveTemplate.totalScoreSegmentOptions?.highScore1Threshold ?? ""}
-                  onChange={(event) => updateSegmentOptions({ highScore1Threshold: optionalNumber(event.target.value) })}
-                  onBlur={() => void autoSave()}
-                />
-              </div>
-              <div className="w-32">
-                <Input
-                  label="高分2达线标准"
-                  type="number"
-                  min={0}
-                  max={2000}
-                  value={effectiveTemplate.totalScoreSegmentOptions?.highScore2Threshold ?? ""}
-                  onChange={(event) => updateSegmentOptions({ highScore2Threshold: optionalNumber(event.target.value) })}
-                  onBlur={() => void autoSave()}
-                />
-              </div>
-              <div className="w-32">
-                <Input
-                  label="一本达线标准"
-                  type="number"
-                  min={0}
-                  max={2000}
-                  value={effectiveTemplate.totalScoreSegmentOptions?.firstTierThreshold ?? ""}
-                  onChange={(event) => updateSegmentOptions({ firstTierThreshold: optionalNumber(event.target.value) })}
-                  onBlur={() => void autoSave()}
-                />
-              </div>
-              <div className="w-32">
-                <Input
-                  label="二本达线标准"
-                  type="number"
-                  min={0}
-                  max={2000}
-                  value={effectiveTemplate.totalScoreSegmentOptions?.undergraduateThreshold ?? ""}
-                  onChange={(event) => updateSegmentOptions({ undergraduateThreshold: optionalNumber(event.target.value) })}
-                  onBlur={() => void autoSave()}
-                />
-              </div>
+              {(["science", "arts"] as const).flatMap((track) => ([
+                ["highScore1", "高分1"],
+                ["highScore2", "高分2"],
+                ["firstTier", "一本"],
+                ["undergraduate", "二本"],
+              ] as const).map(([targetKey, label]) => (
+                <div key={`${track}-${targetKey}`} className="w-32">
+                  <Input
+                    label={`${track === "science" ? "理科" : "文科"}${label}标准`}
+                    type="number"
+                    min={0}
+                    max={2000}
+                    value={trackThresholdValue(track, targetKey)}
+                    onChange={(event) => updateTrackThreshold(track, targetKey, event.target.value)}
+                    onBlur={() => void autoSave()}
+                  />
+                </div>
+              )))}
               <Button variant="ghost" size="sm" onClick={reset}>
                 <RotateCcw className="h-3.5 w-3.5" />恢复默认
               </Button>
             </div>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 text-[11px] text-ink-400">
-            <span>分数段按当前总分口径累计人数；达线标准失焦后自动保存到当前届年级。</span>
+            <span>含物理的选科归入理科，含历史的选科归入文科；两类达线标准分别保存到当前届年级。</span>
             {autoSaving && <span className="text-emerald-700">正在自动保存…</span>}
           </div>
         </div>
@@ -277,9 +280,9 @@ export function GradeTotalScoreSegmentTable({
                 <th className="sticky left-0 z-10 whitespace-nowrap border border-ink-300 bg-ink-50 px-2 py-1.5 text-center font-semibold">
                   总分分数段
                 </th>
-                {report.classes.map((classItem) => (
-                  <th key={classItem.classId} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">
-                    {classItem.classLabel}
+                {report.columns.map((column) => (
+                  <th key={column.key} className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold ${column.kind === "class" ? "" : "bg-emerald-50 text-emerald-900"}`}>
+                    {column.label}
                   </th>
                 ))}
               </tr>
@@ -290,12 +293,12 @@ export function GradeTotalScoreSegmentTable({
                   <th className="sticky left-0 z-[5] whitespace-nowrap border border-ink-300 bg-paper px-2 py-1.5 text-center font-semibold text-ink-800">
                     {row.threshold}分以上
                   </th>
-                  {report.classes.map((classItem) => (
+                  {report.columns.map((column) => (
                     <td
-                      key={classItem.classId}
-                      className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900"
+                      key={column.key}
+                      className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900 ${column.kind === "class" ? "" : "bg-emerald-50/50"}`}
                     >
-                      {row.counts[classItem.classId] || 0}
+                      {row.counts[column.key] || 0}
                     </td>
                   ))}
                 </tr>
@@ -303,8 +306,8 @@ export function GradeTotalScoreSegmentTable({
               {[0, 1].map((index) => (
                 <tr key={`summary-spacer-${index}`} aria-hidden="true" className="h-5 bg-paper">
                   <th className="sticky left-0 z-[5] border-x border-ink-300 bg-paper" />
-                  {report.classes.map((classItem) => (
-                    <td key={classItem.classId} className="border-x border-ink-300" />
+                  {report.columns.map((column) => (
+                    <td key={column.key} className="border-x border-ink-300" />
                   ))}
                 </tr>
               ))}
@@ -313,19 +316,19 @@ export function GradeTotalScoreSegmentTable({
                   <th className="sticky left-0 z-[5] whitespace-nowrap border border-ink-300 bg-paper px-2 py-1.5 text-center font-semibold text-ink-800">
                     {row.label}
                   </th>
-                  {report.classes.map((classItem) => {
-                    const value = row.values[classItem.classId];
-                    if (row.kind === "target" && row.targetKey) {
+                  {report.columns.map((column) => {
+                    const value = row.values[column.key];
+                    if (row.kind === "target" && row.targetKey && column.kind === "class" && column.classId) {
                       return (
-                        <td key={classItem.classId} className="whitespace-nowrap border border-ink-300 px-1.5 py-1 text-center">
+                        <td key={column.key} className="whitespace-nowrap border border-ink-300 px-1.5 py-1 text-center">
                           <input
                             type="number"
                             min={0}
                             max={10000}
                             step={1}
-                            aria-label={`${classItem.classLabel}${row.label}`}
+                            aria-label={`${column.label}${row.label}`}
                             value={typeof value === "number" ? value : ""}
-                            onChange={(event) => updateTarget(classItem.classId, row.targetKey!, event.target.value)}
+                            onChange={(event) => updateTarget(column.classId!, row.targetKey!, event.target.value)}
                             onBlur={() => void autoSave()}
                             className="w-14 rounded border border-ink-200 bg-paper px-1.5 py-1 text-center font-semibold tabular-nums text-ink-900 outline-none focus:border-gold-400"
                           />
@@ -334,8 +337,8 @@ export function GradeTotalScoreSegmentTable({
                     }
                     return (
                       <td
-                        key={classItem.classId}
-                        className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900"
+                        key={column.key}
+                        className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900 ${column.kind === "class" ? "" : "bg-emerald-50/50"}`}
                       >
                         {value ?? "—"}
                       </td>
@@ -346,7 +349,7 @@ export function GradeTotalScoreSegmentTable({
             </tbody>
           </table>
           <div className="mt-2 text-xs text-ink-400">
-            本科人数和本科率按“二本达线标准”统计；目标人数修改后自动保存到当前届年级。
+            本科人数和本科率分别按理科、文科的“二本标准”统计；目标人数修改后自动保存到当前届年级。
           </div>
         </div>
       )}

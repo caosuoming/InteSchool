@@ -142,6 +142,11 @@
     object-fit: contain;
     vertical-align: middle;
   }
+
+  .math-variable {
+    font-family: "Times New Roman", Times, serif;
+    font-style: italic;
+  }
 }
 
 @layer utilities {
@@ -404,8 +409,11 @@
     gap: var(--class-print-gap);
   }
   .exam-class-arrangement-student {
+    display: flex;
     min-width: 0;
     min-height: 0;
+    flex-direction: column;
+    justify-content: center;
     overflow: hidden;
     border: 0.2mm solid #777;
     border-radius: 0.8mm;
@@ -414,8 +422,9 @@
   }
   .exam-class-arrangement-student-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 1mm;
     border-bottom: 0.15mm solid #aaa;
     padding-bottom: 0.6mm;
@@ -423,9 +432,7 @@
     line-height: 1.22;
   }
   .exam-class-arrangement-student-header strong {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .exam-class-arrangement-student-header span {
     flex: 0 0 auto;
@@ -443,16 +450,15 @@
     display: grid;
     min-width: 0;
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.85fr) minmax(0, 1fr);
-    align-items: baseline;
+    align-items: center;
     gap: 0.7mm;
     font-size: var(--class-print-font-size);
     line-height: 1.28;
   }
   .exam-class-arrangement-item > * {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
   .exam-class-arrangement-item strong {
     font-weight: 700;
@@ -524,11 +530,10 @@
     background: #fff;
     display: flex;
     flex-direction: column;
+    justify-content: center;
   }
   .exam-desk-label-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     text-align: center;
     font-family: "Songti SC", "SimSun", serif;
     font-size: var(--desk-title-size);
@@ -539,9 +544,8 @@
   .exam-desk-label-seat {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: 1.5mm;
-    text-align: center;
   }
   .exam-desk-label-meta {
     min-width: 0;
@@ -550,9 +554,16 @@
     line-height: 1.35;
   }
   .exam-desk-label-meta span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .exam-desk-label-meta span:first-child,
+  .exam-desk-label-seat span:first-child {
+    text-align: left;
+  }
+  .exam-desk-label-meta span:last-child,
+  .exam-desk-label-seat > *:last-child {
+    text-align: right;
   }
   .exam-desk-label-seat {
     margin-top: var(--desk-section-spacing);
@@ -564,13 +575,17 @@
   }
   .exam-desk-label-seat strong { font-size: var(--desk-seat-strong-size); }
   .exam-desk-label-assignments {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
   }
   .exam-desk-label-assignment {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: center;
     min-height: 0;
     padding-top: var(--desk-section-spacing);
     border-top: 0.2mm solid #aaa;
@@ -579,18 +594,17 @@
     border-top: 0;
   }
   .exam-desk-label-assignment-main {
-    display: grid;
+    display: flex;
     min-width: 0;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: center;
-    gap: 0.55mm;
-    text-align: center;
+    align-items: baseline;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.4mm 1mm;
+    text-align: left;
   }
   .exam-desk-label-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: center;
+    overflow-wrap: anywhere;
+    text-align: left;
     font-family: "Songti SC", "SimSun", serif;
     font-size: var(--desk-name-size);
     font-weight: 700;
@@ -598,35 +612,38 @@
     line-height: 1.3;
   }
   .exam-desk-label-subject {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: center;
+    overflow-wrap: anywhere;
+    text-align: left;
     font-size: var(--desk-subject-size);
     font-weight: 600;
     line-height: 1.3;
+  }
+  .exam-desk-label-class {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: left;
+    font-size: var(--desk-detail-size);
+    line-height: 1.35;
   }
   .exam-desk-label-assignment-meta {
     display: flex;
     min-width: 0;
     align-items: baseline;
-    justify-content: center;
+    justify-content: flex-start;
     flex-wrap: wrap;
     gap: 0.45mm 1.1mm;
     margin-top: var(--desk-subline-spacing);
     font-size: var(--desk-detail-size);
     line-height: 1.35;
-    text-align: center;
+    text-align: left;
   }
   .exam-desk-label-assignment-meta span {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .exam-desk-label-admission {
     flex: 0 1 auto;
-    text-align: center;
+    text-align: left;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: 0.02em;
   }

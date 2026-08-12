@@ -285,7 +285,7 @@ export function classAverageScoreCellValue(
   return `${display(values.raw)}|${display(values.assigned)}`;
 }
 
-function teacherNamesForSubject(
+export function teacherNamesForSubject(
   classId: string,
   subject: string,
   settings: GradeExamSettings,

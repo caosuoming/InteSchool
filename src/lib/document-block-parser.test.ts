@@ -815,4 +815,27 @@ describe("document block parser", () => {
     ]);
     expect(blocks[0].analysis).toBe("由单调性可得。");
   });
+
+  it.each([
+    "考向1 $a_{n+1}=pa_n+q^n$",
+    "考向２：递推数列的构造",
+    "考向三 数列通项公式的求法",
+  ])("classifies %s as a project or question-type title", (projectHeading) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 已知数列满足递推关系，求其通项公式。",
+        "解析：先利用构造法完成前一题。",
+        projectHeading,
+        "例2 已知另一数列，求其通项公式。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["question", "例1 已知数列满足递推关系，求其通项公式。"],
+      ["groupTitle", projectHeading],
+      ["question", "例2 已知另一数列，求其通项公式。"],
+    ]);
+    expect(blocks[0].analysis).toBe("先利用构造法完成前一题。");
+  });
 });

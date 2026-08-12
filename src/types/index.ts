@@ -657,6 +657,7 @@ export interface GradeClassAverageOptions {
 }
 
 export type GradeTotalScoreTargetKey = "highScore1" | "highScore2" | "firstTier" | "undergraduate";
+export type GradeAcademicTrack = "science" | "arts";
 
 export interface GradeTotalScoreClassTargets {
   highScore1?: number;
@@ -665,15 +666,26 @@ export interface GradeTotalScoreClassTargets {
   undergraduate?: number;
 }
 
+export interface GradeTotalScoreTrackThresholds {
+  highScore1?: number;
+  highScore2?: number;
+  firstTier?: number;
+  undergraduate?: number;
+}
+
 export interface GradeTotalScoreSegmentOptions {
-  /** 高分 1 的总分达线标准。 */
+  /** 旧数据使用的统一高分 1 达线标准；新数据优先使用 trackThresholds。 */
   highScore1Threshold?: number;
-  /** 高分 2 的总分达线标准。 */
+  /** 旧数据使用的统一高分 2 达线标准；新数据优先使用 trackThresholds。 */
   highScore2Threshold?: number;
-  /** 一本的总分达线标准。 */
+  /** 旧数据使用的统一一本达线标准；新数据优先使用 trackThresholds。 */
   firstTierThreshold?: number;
-  /** 本科人数使用的二本总分达线标准。 */
+  /** 旧数据使用的统一二本达线标准；新数据优先使用 trackThresholds。 */
   undergraduateThreshold?: number;
+  /** 物理类（理科）和历史类（文科）分别使用的总分达线标准。 */
+  trackThresholds?: Partial<Record<GradeAcademicTrack, GradeTotalScoreTrackThresholds>>;
+  /** 表三各单科累计分数段，可按学科独立调整。 */
+  subjectScoreSegmentThresholds?: Record<string, number[]>;
   /** 各班级随届保存的高分、一本和本科目标人数。 */
   classTargets?: Record<string, GradeTotalScoreClassTargets>;
 }

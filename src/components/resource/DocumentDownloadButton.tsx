@@ -120,7 +120,7 @@ export function DocumentDownloadButton({
           if (!downloading) setOpen(false);
         }}
         title="选择数学公式格式"
-        description="DOCX 中的数学公式可下载为 Word 原生公式，或保留原始 MathType 对象。"
+        description="DOCX 中的数学公式可统一下载为 Word 原生公式或可编辑 MathType 对象。"
         size="sm"
       >
         <div className="space-y-3">
@@ -169,7 +169,7 @@ export function DocumentDownloadButton({
               <div>
                 <div className="font-medium text-ink-900">MathType</div>
                 <div className="mt-1 text-xs leading-relaxed text-ink-500">
-                  保留上传文档中的 MathType 对象，适合继续使用 MathType 编辑。
+                  将 Word 原生公式转换为 MathType；已有 MathType 对象保持不变，适合继续使用 MathType 编辑。
                 </div>
               </div>
             </div>

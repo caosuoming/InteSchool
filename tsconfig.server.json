@@ -20,6 +20,7 @@
     "src/types/**/*.ts",
     "src/lib/grade-statistics.ts",
     "src/lib/exam-arrangement.ts",
+    "src/lib/omml-to-latex.ts",
     "src/lib/teacher-schedule.ts"
   ],
   "exclude": ["node_modules", "dist", "build"]

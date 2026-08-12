@@ -93,13 +93,15 @@ function getClassPrintLayout(studentCount: number, maxAssignments: number): {
   const count = Math.max(1, studentCount);
   const columns = 3;
   const assignmentCount = Math.max(1, maxAssignments);
-  const density = assignmentCount <= 4 ? "normal" : "compact";
+  const requiredRowsForTwoPages = Math.max(1, Math.ceil(count / (columns * 2)));
+  const density = assignmentCount <= 4 && requiredRowsForTwoPages <= 10 ? "normal" : "compact";
   const contentHeight = density === "normal"
     ? 8 + assignmentCount * 3.25
     : 7.2 + assignmentCount * 2.8;
   const gap = density === "normal" ? 1.8 : 1.4;
   const availableHeight = 277;
-  const maxRows = Math.max(1, Math.min(10, Math.floor((availableHeight + gap) / (contentHeight + gap))));
+  const readableRows = Math.max(1, Math.min(10, Math.floor((availableHeight + gap) / (contentHeight + gap))));
+  const maxRows = Math.max(readableRows, requiredRowsForTwoPages);
   const pageCapacity = columns * maxRows;
   const rows = Math.min(maxRows, Math.ceil(count / columns));
   const pageFitHeight = (availableHeight - Math.max(0, rows - 1) * gap) / rows;
@@ -107,7 +109,7 @@ function getClassPrintLayout(studentCount: number, maxAssignments: number): {
     columns,
     rows,
     density,
-    rowHeight: Math.min(contentHeight, pageFitHeight),
+    rowHeight: Math.max(8, Math.min(contentHeight + (density === "normal" ? 4 : 3), pageFitHeight)),
     pageCapacity,
   };
 }
@@ -1624,8 +1626,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       <article key={label.key} data-testid="desk-label-card" className="rounded-lg border border-ink-300 bg-paper p-3 shadow-sm">
                         <div className="truncate text-center font-serif text-xs font-semibold text-ink-900">{selectedArrangement?.name}</div>
                         <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-ink-500">
-                          <span>{selectedArrangement?.examDate || "考试日期待定"}</span>
                           <span>{label.roomLocation}</span>
+                          <span>{selectedArrangement?.examDate || "考试日期待定"}</span>
                         </div>
                         <div className="mt-1.5 flex items-end justify-between border-y border-ink-200 py-1 text-ink-900">
                           <span className="text-xs font-medium">{label.roomNumber}</span>
@@ -1633,15 +1635,15 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         </div>
                         <div className="divide-y divide-ink-100">{label.assignments.map((assignment) => (
                           <div key={assignment.id} className="py-1.5">
-                            <div className="flex items-start justify-between gap-2">
+                            <div className="flex flex-wrap items-baseline justify-start gap-x-2 gap-y-0.5">
                               <div className="text-sm font-medium text-ink-900">{assignment.studentName}</div>
                               <div className="text-[11px] font-medium text-ink-600">{assignment.subjectLabel.split(" / ").join("、")}</div>
+                              <div className="text-[11px] text-ink-500">{assignment.className}</div>
                             </div>
                             <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-ink-500">
-                              <span>班级：{assignment.className}</span>
                               {showDeskStudentNo && <span>学号：{assignment.studentNo}</span>}
+                              {showDeskAdmissionNo && <span className="font-mono text-[10px] text-ink-400">准考证号：{assignment.admissionNo}</span>}
                             </div>
-                            {showDeskAdmissionNo && <div className="mt-0.5 font-mono text-[10px] text-ink-400">准考证号：{assignment.admissionNo}</div>}
                           </div>
                         ))}</div>
                       </article>
@@ -1741,17 +1743,17 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     {pageLabels.map((group) => (
                     <section key={group.key} className="exam-desk-label">
                       <div className="exam-desk-label-title">{selectedArrangement.name}</div>
-                      <div className="exam-desk-label-meta"><span>{selectedArrangement.examDate || "考试日期待定"}</span><span>{group.roomLocation}</span></div>
+                      <div className="exam-desk-label-meta"><span>{group.roomLocation}</span><span>{selectedArrangement.examDate || "考试日期待定"}</span></div>
                       <div className="exam-desk-label-seat"><span>{group.roomNumber}</span><strong>{group.seatNo} 号</strong></div>
                       <div className="exam-desk-label-assignments">
                         {group.assignments.map((assignment) => (
                           <div key={assignment.id} className="exam-desk-label-assignment">
                             <div className="exam-desk-label-assignment-main">
-                              <div className="exam-desk-label-name">{assignment.studentName}</div>
-                              <div className="exam-desk-label-subject">{assignment.subjectLabel}</div>
+                              <span className="exam-desk-label-name">{assignment.studentName}</span>
+                              <span className="exam-desk-label-subject">{assignment.subjectLabel}</span>
+                              <span className="exam-desk-label-class">{assignment.className}</span>
                             </div>
                             <div className="exam-desk-label-assignment-meta">
-                              <span>{assignment.className}</span>
                               {showDeskStudentNo && <span>学号 {assignment.studentNo}</span>}
                               {showDeskAdmissionNo && <span className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</span>}
                             </div>
