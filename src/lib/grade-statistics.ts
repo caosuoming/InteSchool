@@ -270,6 +270,7 @@ function normalizeClassAverageOptions(
 function normalizeTotalScoreSegmentOptions(
   options: GradeTotalScoreSegmentOptions,
   classSet: Set<string>,
+  subjectSet: Set<string>,
 ): GradeTotalScoreSegmentOptions {
   const normalizeThreshold = (value: number | undefined): number | undefined => (
     Number.isFinite(value) ? Math.max(0, Math.min(2000, Number(value))) : undefined
@@ -287,12 +288,39 @@ function normalizeTotalScoreSegmentOptions(
         undergraduate: normalizeTarget(targets?.undergraduate),
       }]),
   );
+  const normalizeTrackThresholds = (
+    values: GradeTotalScoreSegmentOptions["trackThresholds"],
+  ) => Object.fromEntries((["science", "arts"] as const).flatMap((track) => {
+    const source = values?.[track];
+    if (!source) return [];
+    return [[track, {
+      highScore1: normalizeThreshold(source.highScore1),
+      highScore2: normalizeThreshold(source.highScore2),
+      firstTier: normalizeThreshold(source.firstTier),
+      undergraduate: normalizeThreshold(source.undergraduate),
+    }]];
+  }));
+  const subjectScoreSegmentThresholds = Object.fromEntries(
+    Object.entries(options.subjectScoreSegmentThresholds || {})
+      .filter(([subject]) => subjectSet.has(subject))
+      .map(([subject, thresholds]) => [
+        subject,
+        [...new Set((thresholds || [])
+          .filter((value) => Number.isFinite(value))
+          .map((value) => Math.max(0, Math.min(1000, Math.round(Number(value))))))]
+          .sort((left, right) => right - left)
+          .slice(0, 40),
+      ])
+      .filter(([, thresholds]) => (thresholds as number[]).length > 0),
+  );
 
   return {
     highScore1Threshold: normalizeThreshold(options.highScore1Threshold),
     highScore2Threshold: normalizeThreshold(options.highScore2Threshold),
     firstTierThreshold: normalizeThreshold(options.firstTierThreshold),
     undergraduateThreshold: normalizeThreshold(options.undergraduateThreshold),
+    trackThresholds: normalizeTrackThresholds(options.trackThresholds),
+    subjectScoreSegmentThresholds,
     classTargets,
   };
 }
@@ -391,7 +419,7 @@ export function normalizeGradeSettings(
       ? normalizeClassAverageOptions(item.classAverageOptions, classSet, subjectSet)
       : undefined;
     const totalScoreSegmentOptions = item.kind === "totalScoreSegment" && item.totalScoreSegmentOptions
-      ? normalizeTotalScoreSegmentOptions(item.totalScoreSegmentOptions, classSet)
+      ? normalizeTotalScoreSegmentOptions(item.totalScoreSegmentOptions, classSet, subjectSet)
       : undefined;
     const isLegacyTotalScoreSegment = item.kind === "totalScoreSegment"
       && (!Number.isFinite(item.segmentMax) || !Number.isFinite(item.segmentMin));

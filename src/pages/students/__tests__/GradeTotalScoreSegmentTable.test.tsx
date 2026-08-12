@@ -95,6 +95,9 @@ const context: GradeImportContext = {
   }],
   students: [],
   teachers: [],
+  classProfiles: {
+    "class-1": { subjectSelections: ["物化生"], scoreSubjects: ["数学"], hasImportedScores: true },
+  },
 };
 
 describe("GradeTotalScoreSegmentTable", () => {
@@ -126,11 +129,13 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(screen.getByText("表二、总分分数段汇总表")).toBeInTheDocument();
     expect(screen.getByText("2026届高三期末考试总分分数段汇总表")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "1班" })).toBeInTheDocument();
-    expect(within(screen.getByRole("row", { name: /100分以上/ })).getByRole("cell", { name: "0" })).toBeInTheDocument();
-    expect(within(screen.getByRole("row", { name: /90分以上/ })).getByRole("cell", { name: "1" })).toBeInTheDocument();
-    expect(within(screen.getByRole("row", { name: /考生人数/ })).getByRole("cell", { name: "1" })).toBeInTheDocument();
-    expect(within(screen.getByRole("row", { name: /高分1达线数/ })).getByRole("cell", { name: "1" })).toBeInTheDocument();
-    expect(within(screen.getByRole("row", { name: /完成情况/ })).getByRole("cell", { name: "完成（+0）" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "理科小计" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "总计" })).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /100分以上/ })).getAllByRole("cell", { name: "0" })).toHaveLength(3);
+    expect(within(screen.getByRole("row", { name: /90分以上/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
+    expect(within(screen.getByRole("row", { name: /考生人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
+    expect(within(screen.getByRole("row", { name: /高分1达线数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
+    expect(within(screen.getByRole("row", { name: /完成情况/ })).getAllByRole("cell", { name: "完成（+0）" })).toHaveLength(3);
 
     const target = screen.getByRole("spinbutton", { name: "1班高分1目标" });
     await user.clear(target);
@@ -143,7 +148,9 @@ describe("GradeTotalScoreSegmentTable", () => {
     await user.click(screen.getByRole("button", { name: "调整分数段" }));
     expect(screen.getByTestId("total-score-settings")).toHaveClass("sticky", "top-0");
     const settingsRow = screen.getByTestId("total-score-settings-row");
-    expect(within(settingsRow).getAllByRole("spinbutton")).toHaveLength(7);
+    expect(within(settingsRow).getAllByRole("spinbutton")).toHaveLength(11);
+    expect(screen.getByRole("spinbutton", { name: "理科高分1标准" })).toHaveValue(90);
+    expect(screen.getByRole("spinbutton", { name: "文科高分1标准" })).toHaveValue(90);
     const interval = screen.getByRole("spinbutton", { name: "分数间隔" });
     await user.clear(interval);
     await user.type(interval, "5");

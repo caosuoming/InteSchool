@@ -35,6 +35,20 @@ describe("extract text renderer", () => {
     expect(container.textContent).toBe("an2+1");
   });
 
+  it("preserves extracted Times New Roman italic math-variable markers", () => {
+    const html = renderExtractText(
+      '<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>=1',
+      [],
+      false,
+    );
+    const container = asElement(html);
+
+    expect(container.querySelectorAll(".math-variable")).toHaveLength(2);
+    expect(container.querySelector(".math-variable")).toHaveTextContent("a");
+    expect(container.querySelector("sub .math-variable")).toHaveTextContent("n");
+    expect(container.textContent).toBe("an=1");
+  });
+
   it("renders safe markdown images and leaves unsafe sources as text", () => {
     const html = renderExtractText(
       "![示意图](https://example.com/figure.png)\n![危险](javascript:alert(1))",

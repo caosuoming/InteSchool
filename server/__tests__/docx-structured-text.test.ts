@@ -57,8 +57,32 @@ describe("DOCX structure-aware text extraction", () => {
     `);
 
     await expect(extractDocxStructuredText(data)).resolves.toBe(
-      "a<sub>n</sub><sup>2</sup>+1",
+      '<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub><sup>2</sup>+1',
     );
+  });
+
+  it("preserves standalone italic Word math variables without styling prose letters", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>I 卷：设 </w:t></w:r>
+        <w:r><w:rPr><w:i/></w:rPr><w:t>a</w:t></w:r>
+        <w:r><w:t>=1。</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      'I 卷：设 <i class="math-variable">a</i>=1。',
+    );
+  });
+
+  it("honors an explicit false Word italic property", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:rPr><w:i w:val="0"/></w:rPr><w:t>A</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe("A");
   });
 
   it("converts fragmented legacy Word EQ fields instead of leaving formula gaps", async () => {

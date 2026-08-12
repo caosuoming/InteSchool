@@ -10,6 +10,7 @@ const revokeObjectURLMock = vi.fn();
 function capabilityResponse(available: boolean, message = "MathType 转换器可用"): Response {
   return new Response(JSON.stringify({
     officeFormulaConversion: { available, message },
+    mathTypeFormulaConversion: { available: true, message: "Word 原生公式可转换为可编辑 MathType 对象" },
     mathTypeOriginalDownload: { available: true },
   }), {
     status: 200,
@@ -92,7 +93,7 @@ describe("DocumentDownloadButton", () => {
     await waitFor(() => expect(officeButton).toBeDisabled());
     expect(screen.getByText("未安装 mathtype_to_mathml_plus 0.0.16")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^MathType 保留上传文档/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^MathType 将 Word 原生公式/ }));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         2,

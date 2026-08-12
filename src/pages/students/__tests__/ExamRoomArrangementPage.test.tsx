@@ -412,7 +412,7 @@ describe("ExamRoomArrangementPage", () => {
     const classPrintPage = screen.getByTestId("class-arrangement-print-page");
     expect(classPrintPage).toHaveAttribute("data-columns", "3");
     const classGrid = classPrintPage.querySelector<HTMLElement>(".exam-class-arrangement-grid");
-    expect(Number.parseFloat(classGrid?.style.gridAutoRows || "0")).toBeLessThan(15);
+    expect(Number.parseFloat(classGrid?.style.gridAutoRows || "0")).toBeGreaterThan(15);
 
     await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
@@ -425,7 +425,9 @@ describe("ExamRoomArrangementPage", () => {
     const deskPrintPage = screen.getByTestId("desk-label-print-page");
     expect(Number.parseFloat(deskPrintPage.style.gridAutoRows)).toBeLessThan(48);
     expect(deskPrintPage.querySelector(".exam-desk-label-assignment-main")).toHaveTextContent("张同学");
-    expect(deskPrintPage.querySelector(".exam-desk-label-assignment-meta")).toHaveTextContent("高三（1）班");
+    expect(deskPrintPage.querySelector(".exam-desk-label-assignment-main")).toHaveTextContent("高三（1）班");
+    expect(deskPrintPage.querySelector(".exam-desk-label-meta")?.children[0]).toHaveTextContent("教学楼 301");
+    expect(deskPrintPage.querySelector(".exam-desk-label-meta")?.children[1]).toHaveTextContent("2026-05-10");
 
     await user.click(screen.getByLabelText("桌贴显示学号"));
     expect(screen.queryByText("学号：001")).not.toBeInTheDocument();
@@ -557,7 +559,7 @@ describe("ExamRoomArrangementPage", () => {
 
   it("splits a large class over multiple readable A4 pages", async () => {
     const user = userEvent.setup();
-    const students = Array.from({ length: 57 }, (_, index) => ({
+    const students = Array.from({ length: 67 }, (_, index) => ({
       ...context.students[0],
       id: `student-${index + 1}`,
       name: `学生${index + 1}`,
@@ -574,8 +576,8 @@ describe("ExamRoomArrangementPage", () => {
     }));
     vi.mocked(examArrangementService.getContext).mockResolvedValue({
       ...context,
-      cohort: { ...cohort, studentCount: 57 },
-      classes: [{ ...context.classes[0], studentCount: 57 }],
+      cohort: { ...cohort, studentCount: 67 },
+      classes: [{ ...context.classes[0], studentCount: 67 }],
       students,
     });
     vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{
@@ -590,9 +592,9 @@ describe("ExamRoomArrangementPage", () => {
     const pages = screen.getAllByTestId("class-arrangement-print-page");
     expect(pages).toHaveLength(2);
     expect(pages[0]).toHaveAttribute("data-columns", "3");
-    expect(pages[0].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(30);
-    expect(pages[1].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(27);
-    expect(pages[0].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("高三（1）班 · 57 名学生 · 第 1/2 页");
+    expect(pages[0].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(36);
+    expect(pages[1].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(31);
+    expect(pages[0].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("高三（1）班 · 67 名学生 · 第 1/2 页");
   });
 
   it("continues desk labels across rooms and 8K pages", async () => {

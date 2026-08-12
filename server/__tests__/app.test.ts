@@ -1752,7 +1752,7 @@ describe("production backend", () => {
     expect(anonymous.statusCode).toBe(401);
   });
 
-  it("reports formula conversion capabilities without hiding the original MathType download", async () => {
+  it("reports both formula conversion directions", async () => {
     const session = await login(built.app);
     const response = await built.app.inject({
       method: "GET",
@@ -1763,10 +1763,15 @@ describe("production backend", () => {
     expect(response.statusCode).toBe(200);
     const payload = response.json<{
       officeFormulaConversion: { available: boolean; message: string };
+      mathTypeFormulaConversion: { available: boolean; message: string };
       mathTypeOriginalDownload: { available: boolean };
     }>();
     expect(typeof payload.officeFormulaConversion.available).toBe("boolean");
     expect(payload.officeFormulaConversion.message).toBeTruthy();
+    expect(payload.mathTypeFormulaConversion).toEqual({
+      available: true,
+      message: "Word 原生公式可转换为可编辑 MathType 对象",
+    });
     expect(payload.mathTypeOriginalDownload.available).toBe(true);
 
     const anonymous = await built.app.inject({
@@ -1776,20 +1781,29 @@ describe("production backend", () => {
     expect(anonymous.statusCode).toBe(401);
   });
 
-  it("lets DOCX downloads preserve MathType or request new Microsoft formulas", async () => {
+  it("lets DOCX downloads convert Word formulas to MathType or MathType formulas to Office Math", async () => {
     const session = await login(built.app);
     const zip = new JSZip();
     zip.file(
       "word/document.xml",
       `<?xml version="1.0" encoding="UTF-8"?>
-       <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-         <w:body><w:p><w:r><w:t>公式测试</w:t></w:r></w:p></w:body>
+       <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+         xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+         <w:body><w:p><w:r><w:t>公式测试</w:t></w:r><m:oMath><m:r><m:t>x=1</m:t></m:r></m:oMath></w:p></w:body>
        </w:document>`,
     );
     zip.file(
       "word/_rels/document.xml.rels",
       `<?xml version="1.0" encoding="UTF-8"?>
        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`,
+    );
+    zip.file(
+      "[Content_Types].xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+       <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+         <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+         <Default Extension="xml" ContentType="application/xml"/>
+       </Types>`,
     );
     const document = await zip.generateAsync({ type: "nodebuffer" });
     const multipart = multipartBufferPayload(
@@ -1817,7 +1831,12 @@ describe("production backend", () => {
     });
     expect(mathTypeDownload.statusCode).toBe(200);
     expect(mathTypeDownload.headers["x-formula-format"]).toBe("mathtype");
-    expect(mathTypeDownload.rawPayload.equals(document)).toBe(true);
+    expect(mathTypeDownload.rawPayload.equals(document)).toBe(false);
+    const mathTypeZip = await JSZip.loadAsync(mathTypeDownload.rawPayload);
+    const mathTypeXml = await mathTypeZip.file("word/document.xml")?.async("string");
+    expect(mathTypeXml).toContain('ProgID="Equation.DSMT4"');
+    expect(mathTypeXml).not.toContain("<m:oMath");
+    expect(Object.keys(mathTypeZip.files).some((path) => path.startsWith("word/embeddings/inteschoolMathType"))).toBe(true);
 
     const officeDownload = await built.app.inject({
       method: "GET",

@@ -4,6 +4,7 @@ import {
   type GradeClassAverageReport,
 } from "./grade-class-average.js";
 import type { GradeTotalScoreSegmentReport } from "./grade-total-score-segment.js";
+import type { GradeSubjectScoreSegmentReport } from "./grade-subject-score-segment.js";
 import { buildGradeReportTable } from "./grade-reports.js";
 import {
   ASSIGNABLE_GRADE_SUBJECTS,
@@ -513,12 +514,12 @@ export async function exportGradeTotalScoreSegmentReport(
   const rows: Array<Array<ReturnType<typeof cell>>> = [];
   rows.push([
     cell(report.title, { fontWeight: "bold", fontSize: 16, align: "left" }),
-    ...Array.from({ length: Math.max(0, report.classes.length - 1) }, () => cell(null)),
+    ...Array.from({ length: Math.max(0, report.columns.length - 1) }, () => cell(null)),
     cell(report.reportDate.replace(/-/g, "."), { fontWeight: "bold" }),
   ]);
   rows.push([
     cell("总分分数段", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
-    ...report.classes.map((classItem) => cell(classItem.classLabel, {
+    ...report.columns.map((column) => cell(column.label, {
       fontWeight: "bold",
       backgroundColor: "#F3F4F6",
     })),
@@ -526,17 +527,17 @@ export async function exportGradeTotalScoreSegmentReport(
   report.rows.forEach((row) => {
     rows.push([
       cell(`${row.threshold}分以上`, { fontWeight: "bold" }),
-      ...report.classes.map((classItem) => cell(row.counts[classItem.classId] || 0)),
+      ...report.columns.map((column) => cell(row.counts[column.key] || 0)),
     ]);
   });
   rows.push(
-    [cell(null), ...report.classes.map(() => cell(null))],
-    [cell(null), ...report.classes.map(() => cell(null))],
+    [cell(null), ...report.columns.map(() => cell(null))],
+    [cell(null), ...report.columns.map(() => cell(null))],
   );
   report.summaryRows.forEach((row) => {
     rows.push([
       cell(row.label, { fontWeight: "bold" }),
-      ...report.classes.map((classItem) => cell(row.values[classItem.classId])),
+      ...report.columns.map((column) => cell(row.values[column.key])),
     ]);
   });
 
@@ -544,8 +545,76 @@ export async function exportGradeTotalScoreSegmentReport(
   await writeXlsxFile(rows, {
     columns: [
       { width: 16 },
-      ...report.classes.map(() => ({ width: 12 })),
+      ...report.columns.map(() => ({ width: 12 })),
     ],
     stickyRowsCount: 2,
   }).toFile(`${safeName}.xlsx`);
+}
+
+export async function exportGradeSubjectScoreSegmentReport(
+  report: GradeSubjectScoreSegmentReport,
+): Promise<void> {
+  if (report.subjects.length === 0) throw new Error("暂无可导出的单科分数段");
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const border = { borderStyle: "thin" as const, borderColor: "#9CA3AF" };
+  const cell = (value: string | number | null, options: Record<string, unknown> = {}) => ({
+    value: value ?? undefined,
+    type: typeof value === "number" ? Number : String,
+    align: "center" as const,
+    alignVertical: "center" as const,
+    height: 22,
+    ...border,
+    ...options,
+  });
+  const sheets = report.subjects.map((subjectReport) => {
+    const rows: Array<Array<ReturnType<typeof cell>>> = [
+      [
+        cell(subjectReport.title, { fontWeight: "bold", fontSize: 16, align: "left" }),
+        ...Array.from({ length: subjectReport.thresholds.length + 1 }, () => cell(null)),
+        cell(report.reportDate.replace(/-/g, "."), { fontWeight: "bold" }),
+      ],
+      [
+        cell("班级", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        cell(subjectReport.subject, { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        cell("实考人数", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        ...subjectReport.thresholds.map((threshold) => cell(`${threshold}分以上`, {
+          fontWeight: "bold",
+          backgroundColor: "#F3F4F6",
+        })),
+      ],
+      ...subjectReport.rows.map((row) => [
+        cell(row.classLabel),
+        cell(row.teacherNames.join("、") || null),
+        cell(row.candidateCount),
+        ...subjectReport.thresholds.map((threshold) => cell(row.counts[threshold] || 0)),
+      ]),
+      [
+        cell("累计", { fontWeight: "bold" }),
+        cell(null),
+        cell(subjectReport.totalCandidateCount, { fontWeight: "bold" }),
+        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalCounts[threshold] || 0, { fontWeight: "bold" })),
+      ],
+      [
+        cell("所占比例", { fontWeight: "bold" }),
+        cell(null),
+        cell(null),
+        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalRates[threshold], { fontWeight: "bold" })),
+      ],
+    ];
+    return {
+      sheet: subjectReport.subject,
+      data: rows,
+      stickyRowsCount: 2,
+      columns: [
+        { width: 12 },
+        { width: 16 },
+        { width: 12 },
+        ...subjectReport.thresholds.map(() => ({ width: 12 })),
+      ],
+    };
+  });
+  const safeName = report.subjects[0].title
+    .replace(report.subjects[0].subject, "各单科")
+    .replace(/[\\/:*?"<>|]/g, "_");
+  await writeXlsxFile(sheets).toFile(`${safeName}.xlsx`);
 }

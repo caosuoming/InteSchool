@@ -212,6 +212,38 @@ function wordRunVerticalAlign(element: Element): string {
     || "";
 }
 
+function wordRunIsItalic(element: Element): boolean {
+  const properties = elementChildren(element).find(
+    (child) => child.namespaceURI === WORD_NS && child.localName === "rPr",
+  );
+  if (!properties) return false;
+  const italic = elementChildren(properties).find(
+    (child) => child.namespaceURI === WORD_NS && ["i", "iCs"].includes(child.localName),
+  );
+  if (!italic) return false;
+  const value = (
+    italic.getAttributeNS(WORD_NS, "val")
+    || italic.getAttribute("w:val")
+    || "true"
+  ).toLowerCase();
+  return !["0", "false", "off", "none"].includes(value);
+}
+
+function mathVariableMarkup(content: string): string {
+  return /^[A-Za-z]$/.test(content)
+    ? `<i class="math-variable">${content}</i>`
+    : content;
+}
+
+function markScriptedMathVariables(content: string): string {
+  return content.replace(
+    /(^|[^A-Za-z>])([A-Za-z])(?=<(?:sub|sup)>)/g,
+    (_match, prefix: string, variable: string) => (
+      `${prefix}<i class="math-variable">${variable}</i>`
+    ),
+  );
+}
+
 function nearestWordRun(element: Element): Element | undefined {
   let current: Node | null = element;
   while (current?.nodeType === ELEMENT_NODE) {
@@ -269,9 +301,14 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
       .filter((child) => child !== properties)
       .map((child) => extractInlineContent(child, imageUrl))
       .join("");
-    if (content && verticalValue === "superscript") return `<sup>${content}</sup>`;
-    if (content && verticalValue === "subscript") return `<sub>${content}</sub>`;
-    return content;
+    const styledContent = wordRunIsItalic(element) ? mathVariableMarkup(content) : content;
+    if (styledContent && verticalValue === "superscript") {
+      return `<sup>${mathVariableMarkup(styledContent)}</sup>`;
+    }
+    if (styledContent && verticalValue === "subscript") {
+      return `<sub>${mathVariableMarkup(styledContent)}</sub>`;
+    }
+    return styledContent;
   }
 
   if (
@@ -363,9 +400,7 @@ function extractParagraph(
   }
   if (field) content.push(field.result);
 
-  return normalizeText(
-    content.join(""),
-  ).trim();
+  return normalizeText(markScriptedMathVariables(content.join(""))).trim();
 }
 
 function wordChild(element: Element, localName: string): Element | undefined {

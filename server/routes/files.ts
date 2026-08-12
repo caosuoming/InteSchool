@@ -11,6 +11,7 @@ import { requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
 import { extractDocxImage } from "../lib/docx-structured-text.js";
 import { convertMathTypeDocxToOmml, probeMathTypeRuntime } from "../lib/mathtype-docx.js";
+import { convertOmmlDocxToMathType } from "../lib/omml-mathtype-docx.js";
 import { createAsyncLimiter } from "../lib/async-limiter.js";
 import { withSerializedState } from "../rpc.js";
 
@@ -246,6 +247,10 @@ export async function registerFileRoutes(
           ? "MathType 公式可转换为新微软公式"
           : mathType.message,
       },
+      mathTypeFormulaConversion: {
+        available: true,
+        message: "Word 原生公式可转换为可编辑 MathType 对象",
+      },
       mathTypeOriginalDownload: { available: true },
     };
   });
@@ -398,8 +403,20 @@ export async function registerFileRoutes(
       return reply.send(converted.buffer);
     }
 
+    if (extension === ".docx" && formulaFormat === "mathtype") {
+      try {
+        const converted = await convertOmmlDocxToMathType(await readFile(filePath));
+        reply.header("Content-Length", converted.buffer.length);
+        reply.header("X-Formula-Format", "mathtype");
+        return reply.send(converted.buffer);
+      } catch (error) {
+        return reply.type("application/json; charset=utf-8").code(422).send({
+          error: `公式无法完整转换为 MathType：${error instanceof Error ? error.message : "未知错误"}`,
+        });
+      }
+    }
+
     reply.header("Content-Length", file.size);
-    if (extension === ".docx") reply.header("X-Formula-Format", "mathtype");
     return reply.send(createReadStream(filePath));
   });
 }
