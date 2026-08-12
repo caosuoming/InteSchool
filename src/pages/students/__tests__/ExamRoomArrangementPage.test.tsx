@@ -413,6 +413,11 @@ describe("ExamRoomArrangementPage", () => {
     expect(classPrintPage).toHaveAttribute("data-columns", "3");
     const classGrid = classPrintPage.querySelector<HTMLElement>(".exam-class-arrangement-grid");
     expect(Number.parseFloat(classGrid?.style.gridAutoRows || "0")).toBeGreaterThan(15);
+    expect([...classPrintPage.querySelectorAll(".exam-class-arrangement-subject span")].map((node) => node.textContent)).toEqual([
+      "语文、数学、英语",
+      "化学、生物",
+      "物理",
+    ]);
 
     await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
