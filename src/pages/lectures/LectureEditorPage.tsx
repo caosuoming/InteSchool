@@ -260,8 +260,8 @@ export default function LectureEditorPage() {
     [sections],
   );
   const editorLayout = useMemo(
-    () => buildLectureEditorLayout(sections, isStructureLocked),
-    [isStructureLocked, sections],
+    () => buildLectureEditorLayout(sections, true),
+    [sections],
   );
   const lectureQuestionList = useMemo(
     () => lectureQuestionIds.map((questionId) => lectureQuestions[questionId]).filter(Boolean),
@@ -273,9 +273,11 @@ export default function LectureEditorPage() {
   );
   const activeColumnSections = useMemo(
     () => selectedColumn
-      ? selectedColumn.children
-      : sections.filter((section) => section.type !== "chapter"),
-    [sections, selectedColumn],
+      ? editorLayout.chapters
+          .find((group) => group.chapter.id === selectedColumn.id)
+          ?.items.map((item) => item.section) || []
+      : editorLayout.ungrouped.map((item) => item.section),
+    [editorLayout, selectedColumn],
   );
   const lectureStudents = useMemo(
     () => resolveClassAudienceStudents(selectedClassIds, classes, students),
@@ -2469,7 +2471,7 @@ export default function LectureEditorPage() {
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-ink-500">内容块</span>
-                    <span className="font-medium text-ink-800">{selectedColumn?.children.length || 0} 个</span>
+                    <span className="font-medium text-ink-800">{selectedColumn ? activeColumnSections.length : 0} 个</span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-ink-500">题目总数</span>

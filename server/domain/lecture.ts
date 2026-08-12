@@ -24,6 +24,39 @@ function collectQuestionIds(sections: LectureSection[]): string[] {
   return ids;
 }
 
+function copyLectureSections(sections: LectureSection[]): LectureSection[] {
+  return sections.map((section) => ({
+    ...section,
+    id: genId("sec"),
+    children: copyLectureSections(section.children || []),
+  }));
+}
+
+/**
+ * Extracted documents keep their original order as a flat sequence where a
+ * chapter/group heading is followed by its text, knowledge blocks and
+ * questions. Once such a document becomes an authored copy, the editor uses
+ * chapter.children as the canonical editable structure, so restore that
+ * hierarchy while preserving any leading content that has no chapter.
+ */
+function restoreEditableChapterHierarchy(sections: LectureSection[]): LectureSection[] {
+  const roots: LectureSection[] = [];
+  let currentChapter: LectureSection | null = null;
+
+  for (const section of sections) {
+    if (section.type === "chapter") {
+      currentChapter = section;
+      roots.push(section);
+    } else if (currentChapter) {
+      currentChapter.children.push(section);
+    } else {
+      roots.push(section);
+    }
+  }
+
+  return roots;
+}
+
 function matchFilter(l: Lecture, filter: LectureFilter): boolean {
   if (filter.keyword) {
     const kw = filter.keyword.toLowerCase();
@@ -236,20 +269,17 @@ export const lectureService = {
     const source = db.read("lectures").find((l) => l.id === sourceId);
     if (!source) throw new Error("原讲义不存在");
     const now = new Date().toISOString();
-    // 递归复制 sections，生成新 id（保留 questionId 引用）
-    const copySections = (secs: LectureSection[]): LectureSection[] =>
-      secs.map((s) => ({
-        ...s,
-        id: genId("sec"),
-        children: copySections(s.children || []),
-      }));
+    const copiedSections = copyLectureSections(source.sections);
+    const editableSections = source.isExtractCopy || source.originalFileUrl
+      ? restoreEditableChapterHierarchy(copiedSections)
+      : copiedSections;
     const duplicated: Lecture = {
       ...source,
       id: genId("lec"),
       title: newTitle || `${source.title}（副本）`,
       status: "draft",
       version: 1,
-      sections: copySections(source.sections),
+      sections: editableSections,
       contentBlocks: undefined,
       originalFileUrl: undefined,
       originalFileName: undefined,
@@ -401,12 +431,6 @@ export const lectureService = {
     const source = db.read("lectures").find((l) => l.id === sourceId);
     if (!source) throw new Error("源讲义不存在");
     const now = new Date().toISOString();
-    const copySections = (secs: LectureSection[]): LectureSection[] =>
-      secs.map((s) => ({
-        ...s,
-        id: genId("sec"),
-        children: copySections(s.children || []),
-      }));
     const normalizedBlocks = contentBlocks.map((block) => ({
       ...block,
       id: genId("doc-block"),
@@ -462,7 +486,7 @@ export const lectureService = {
       ...source,
       id: genId("lec"),
       title: `${source.title}（拆解版）`,
-      sections: extractedSections.length > 0 ? extractedSections : copySections(source.sections),
+      sections: extractedSections.length > 0 ? extractedSections : copyLectureSections(source.sections),
       contentBlocks: normalizedBlocks.length > 0 ? normalizedBlocks : source.contentBlocks,
       isExtractCopy: true,
       sourceResourceId: sourceId,
