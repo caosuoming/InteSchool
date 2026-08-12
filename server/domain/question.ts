@@ -25,6 +25,7 @@ export interface QuestionInput {
   analysis: string;
   summary?: string;
   board?: string;
+  boardImages?: string[];
   links?: QuestionLink[];
   explanationVideo?: QuestionVideoReference | null;
   chapterIds: string[];
@@ -222,6 +223,7 @@ export const questionService = {
       analysis: input.analysis,
       summary: input.summary || "",
       board: input.board || "",
+      boardImages: input.boardImages ? [...input.boardImages] : [],
       links: input.links?.map((link) => ({ ...link })) || [],
       explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
       chapterIds: input.chapterIds,
@@ -448,6 +450,7 @@ export const questionService = {
       analysis: input.analysis,
       summary: input.summary || "",
       board: input.board || "",
+      boardImages: input.boardImages ? [...input.boardImages] : [],
       links: input.links?.map((link) => ({ ...link })) || [],
       explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
       chapterIds: input.chapterIds,

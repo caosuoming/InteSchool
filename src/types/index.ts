@@ -993,6 +993,8 @@ export interface Question {
   summary?: string;
   /** 板书内容；课堂手写板书保存后为图片文件地址，也可保存为文本。 */
   board?: string;
+  /** 课堂板书中各书写区保存的截图，按书写区顺序排列。 */
+  boardImages?: string[];
   /** 课堂中可直接调用的相关链接。 */
   links?: QuestionLink[];
   /** 关联到素材库中的讲解视频。 */
@@ -2176,6 +2178,7 @@ export interface LessonSlide {
     analysis: string;
     summary?: string;
     board?: string;
+    boardImages?: string[];
     links?: QuestionLink[];
     explanationVideo?: QuestionVideoReference | null;
   };

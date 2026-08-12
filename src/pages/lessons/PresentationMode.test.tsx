@@ -5,6 +5,21 @@ import type { LessonSlide } from "@/types";
 import { getMaximumContrastTextColor } from "@/lib/color-contrast";
 import { PresentationMode } from "./PresentationMode";
 
+const serviceMocks = vi.hoisted(() => ({
+  uploadFile: vi.fn(),
+  updateQuestion: vi.fn(),
+}));
+
+vi.mock("@/services/api", () => ({
+  uploadFile: serviceMocks.uploadFile,
+}));
+
+vi.mock("@/services/question", () => ({
+  questionService: {
+    updateQuestion: serviceMocks.updateQuestion,
+  },
+}));
+
 const slides: LessonSlide[] = [
   {
     id: "slide-1",
@@ -58,6 +73,8 @@ const questionSlide: LessonSlide = {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  serviceMocks.uploadFile.mockReset();
+  serviceMocks.updateQuestion.mockReset();
   localStorage.clear();
   Object.defineProperty(window, "PointerEvent", {
     configurable: true,
@@ -89,6 +106,7 @@ beforeEach(() => {
     lineTo: vi.fn(),
     stroke: vi.fn(),
     drawImage: vi.fn(),
+    fillRect: vi.fn(),
     lineCap: "round",
     lineJoin: "round",
     globalCompositeOperation: "source-over",
@@ -96,6 +114,10 @@ beforeEach(() => {
     lineWidth: 1,
     strokeStyle: "#000000",
   } as unknown as CanvasRenderingContext2D);
+  Object.defineProperty(HTMLCanvasElement.prototype, "toBlob", {
+    configurable: true,
+    value: vi.fn((callback: BlobCallback) => callback(new Blob(["png"], { type: "image/png" }))),
+  });
 });
 
 describe("PresentationMode", () => {
@@ -465,6 +487,54 @@ describe("PresentationMode", () => {
 
     await user.click(screen.getByRole("button", { name: "右侧下课" }));
     expect(onExit).toHaveBeenCalledOnce();
+  });
+
+  it("fullscreens a board and saves one screenshot for every writing area", async () => {
+    const user = userEvent.setup();
+    serviceMocks.uploadFile
+      .mockResolvedValueOnce({ url: "/api/files/board-1" })
+      .mockResolvedValueOnce({ url: "/api/files/board-2" });
+    serviceMocks.updateQuestion.mockResolvedValue({});
+
+    render(
+      <PresentationMode
+        slides={[questionSlide]}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "打开板书" }));
+    const board = screen.getByRole("region", { name: "板书 1" });
+    const leftControls = () => within(
+      board.querySelector<HTMLElement>('[data-board-side-controls="left"]')!,
+    );
+
+    expect(leftControls().getByRole("button", { name: "从左侧全屏板书 1" })).toBeInTheDocument();
+    expect(leftControls().getByRole("button", { name: "从左侧截图板书 1" })).toBeInTheDocument();
+
+    await user.click(leftControls().getByRole("button", { name: "从左侧全屏板书 1" }));
+    expect(board).toHaveStyle({ left: "0%", top: "0%", width: "100%", height: "100%" });
+    expect(leftControls().getByRole("button", { name: "从左侧退出全屏板书 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "移动板书 1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /调整板书 1大小/ })).not.toBeInTheDocument();
+
+    await user.click(leftControls().getByRole("button", { name: "从左侧退出全屏板书 1" }));
+    expect(board).toHaveStyle({ left: "0%", top: "10%", width: "100%", height: "62%" });
+
+    await user.click(leftControls().getByRole("button", { name: "从左侧在板书 1中新增书写区" }));
+    await user.click(leftControls().getByRole("button", { name: "从左侧截图板书 1" }));
+
+    await waitFor(() => expect(serviceMocks.uploadFile).toHaveBeenCalledTimes(2));
+    expect(serviceMocks.updateQuestion).toHaveBeenCalledWith("question-1", {
+      boardImages: ["/api/files/board-1", "/api/files/board-2"],
+    });
+    expect(serviceMocks.uploadFile.mock.calls.map(([file]) => (file as File).name)).toEqual([
+      "板书-question-1-1.png",
+      "板书-question-1-2.png",
+    ]);
   });
 
   it("renders highlighter strokes on an independent multiply layer with flat 45% strokes", async () => {

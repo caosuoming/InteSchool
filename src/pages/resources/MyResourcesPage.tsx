@@ -2620,6 +2620,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                   </div>
                                   <QuestionSupplementaryDetails
                                     board={q.board}
+                                    boardImages={q.boardImages}
                                     links={q.links}
                                     explanationVideo={q.explanationVideo}
                                     compact
