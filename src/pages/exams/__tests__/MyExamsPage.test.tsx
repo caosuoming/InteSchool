@@ -9,7 +9,16 @@ import type { GradeCohort, Teacher, TeacherAffiliation } from "@/types";
 vi.mock("@/services/grade", () => ({
   gradeService: {
     listCohorts: vi.fn(),
+    getImportContext: vi.fn(),
+    getCohortSettings: vi.fn(),
+    listExams: vi.fn(),
   },
+}));
+
+vi.mock("@/pages/students/GradeSettingsEditor", () => ({
+  GradeSettingsEditor: ({ section }: { section?: string }) => (
+    <div data-testid="grade-settings-editor" data-section={section} />
+  ),
 }));
 
 const affiliation: TeacherAffiliation = {
@@ -53,6 +62,24 @@ describe("MyExamsPage", () => {
       getCurrentAffiliation: () => affiliation,
     });
     vi.mocked(gradeService.listCohorts).mockResolvedValue([cohort]);
+    vi.mocked(gradeService.getImportContext).mockResolvedValue({
+      cohort,
+      classes: [],
+      students: [],
+      teachers: [],
+    });
+    vi.mocked(gradeService.getCohortSettings).mockResolvedValue(null);
+    vi.mocked(gradeService.listExams).mockResolvedValue([]);
+  });
+
+  it("shows only configurations 1-3 in grade statistics", async () => {
+    render(
+      <MemoryRouter initialEntries={["/my-exams/grades"]}>
+        <MyExamsPage section="grades" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("grade-settings-editor")).toHaveAttribute("data-section", "settings");
   });
 
   it("shows the invigilation tab between room setup and grade statistics", async () => {
