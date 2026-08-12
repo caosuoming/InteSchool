@@ -192,7 +192,7 @@ function extractFloatingImages(
 
 function questionSlide(
   question: Pick<Question, "id" | "stem" | "type" | "options" | "answer" | "analysis">
-    & Partial<Pick<Question, "summary" | "board" | "links" | "explanationVideo">>,
+    & Partial<Pick<Question, "summary" | "board" | "boardImages" | "links" | "explanationVideo">>,
   title: string,
 ): LessonSlide {
   const stem = extractFloatingImages(question.stem, "stem");
@@ -311,6 +311,7 @@ function questionSlide(
       analysis: analysis.content,
       summary: question.summary,
       board: question.board,
+      boardImages: question.boardImages ? [...question.boardImages] : [],
       links: question.links?.map((link) => ({ ...link })),
       explanationVideo: question.explanationVideo ? { ...question.explanationVideo } : null,
     },
@@ -418,6 +419,7 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
       analysis: canonicalQuestion?.analysis || sourceQuestion?.analysis || "",
       summary: canonicalQuestion?.summary,
       board: canonicalQuestion?.board,
+      boardImages: canonicalQuestion?.boardImages,
       links: canonicalQuestion?.links,
       explanationVideo: canonicalQuestion?.explanationVideo,
     }, `${questionNumber}.`)];
@@ -455,6 +457,7 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
       analysis: canonicalQuestion?.analysis || question.analysis,
       summary: canonicalQuestion?.summary,
       board: canonicalQuestion?.board,
+      boardImages: canonicalQuestion?.boardImages,
       links: canonicalQuestion?.links,
       explanationVideo: canonicalQuestion?.explanationVideo,
     }, `${index + 1}.`);

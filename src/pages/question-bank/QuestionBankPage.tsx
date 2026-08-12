@@ -8,7 +8,7 @@ import {
   FileText, ExternalLink,
   Download, RefreshCw, ShoppingBasket,
   PanelLeftClose, PanelLeftOpen,
-  CheckSquare, Square, WandSparkles, Link2, Video,
+  CheckSquare, Square, WandSparkles, Link2, Video, NotebookPen,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
@@ -2094,6 +2094,12 @@ function QuestionRow({
               <Badge variant="gold">
                 <CheckCircle2 className="w-3 h-3 mr-0.5" />
                 已选用
+              </Badge>
+            )}
+            {(question.board || question.boardImages?.length) && (
+              <Badge variant="gold" className="bg-sky-50 text-sky-700 border-sky-200">
+                <NotebookPen className="w-3 h-3 mr-0.5" />
+                有板书
               </Badge>
             )}
             {tagOrder.filter((key) => !hiddenTags.includes(key)).map((key) => {

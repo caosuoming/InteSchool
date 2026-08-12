@@ -20,6 +20,7 @@ export interface QuestionInput {
   analysis: string;
   summary?: string;
   board?: string;
+  boardImages?: string[];
   links?: QuestionLink[];
   explanationVideo?: QuestionVideoReference | null;
   chapterIds: string[];

@@ -189,6 +189,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
 
       <QuestionSupplementaryDetails
         board={question.board}
+        boardImages={question.boardImages}
         links={question.links}
         explanationVideo={question.explanationVideo}
       />

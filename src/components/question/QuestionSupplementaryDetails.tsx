@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { ExternalLink, Link2, Video } from "lucide-react";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { Modal } from "@/components/ui/Modal";
 import type { QuestionLink, QuestionVideoReference } from "@/types";
 
 interface QuestionSupplementaryDetailsProps {
   board?: string;
+  boardImages?: string[];
   links?: QuestionLink[];
   explanationVideo?: QuestionVideoReference | null;
   compact?: boolean;
@@ -23,30 +26,55 @@ function isPlayableVideoSource(value: string): boolean {
 
 export function QuestionSupplementaryDetails({
   board,
+  boardImages = [],
   links = [],
   explanationVideo,
   compact = false,
 }: QuestionSupplementaryDetailsProps) {
+  const [previewBoardImage, setPreviewBoardImage] = useState<string | null>(null);
   const videoSource = explanationVideo?.fileUrl || explanationVideo?.content || "";
+  const legacyBoardImage = board && isImageSource(board) ? board : null;
+  const boardImageSources = Array.from(new Set([
+    ...(legacyBoardImage ? [legacyBoardImage] : []),
+    ...boardImages.filter(Boolean),
+  ]));
+  const boardText = board && !legacyBoardImage ? board : "";
 
-  if (!board && links.length === 0 && !explanationVideo) return null;
+  if (!board && boardImageSources.length === 0 && links.length === 0 && !explanationVideo) return null;
 
   return (
-    <div className={compact ? "space-y-2" : "space-y-3"}>
-      {board && (
+    <>
+      <div className={compact ? "space-y-2" : "space-y-3"}>
+      {(boardText || boardImageSources.length > 0) && (
         <div>
           <div className="mb-1 text-xs font-medium text-ink-500">板书</div>
-          <div className="overflow-hidden rounded-md border border-sky-200 bg-sky-50/30 p-2.5">
-            {isImageSource(board) ? (
-              <img
-                src={board}
-                alt="题目板书"
-                className="max-h-[28rem] w-full rounded object-contain"
-              />
-            ) : (
+          <div className="space-y-2 rounded-md border border-sky-200 bg-sky-50/30 p-2.5">
+            {boardText && (
               <MathHtml className="whitespace-pre-wrap text-sm leading-relaxed text-ink-900">
-                {board}
+                {boardText}
               </MathHtml>
+            )}
+            {boardImageSources.length > 0 && (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                {boardImageSources.map((src, index) => (
+                  <button
+                    key={src}
+                    type="button"
+                    className="group overflow-hidden rounded-md border border-sky-200 bg-paper text-left shadow-sm transition hover:border-sky-400 hover:shadow"
+                    onClick={() => setPreviewBoardImage(src)}
+                    aria-label={`查看板书 ${index + 1}`}
+                  >
+                    <img
+                      src={src}
+                      alt={boardImageSources.length === 1 ? "题目板书" : `题目板书 ${index + 1}`}
+                      className="aspect-video w-full object-cover"
+                    />
+                    {boardImageSources.length > 1 && (
+                      <span className="block px-2 py-1 text-[11px] text-ink-500">书写区 {index + 1}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -103,7 +131,23 @@ export function QuestionSupplementaryDetails({
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      <Modal
+        open={Boolean(previewBoardImage)}
+        onClose={() => setPreviewBoardImage(null)}
+        title="板书内容"
+        size="full"
+      >
+        {previewBoardImage && (
+          <img
+            src={previewBoardImage}
+            alt="板书大图"
+            className="mx-auto max-h-[80vh] max-w-full object-contain"
+          />
+        )}
+      </Modal>
+    </>
   );
 }
 

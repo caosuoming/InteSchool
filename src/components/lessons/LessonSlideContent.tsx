@@ -153,7 +153,11 @@ export function LessonSlideContent({
             </div>
           )}
           {visibility.analysis && (
-            <QuestionSupplementaryDetails board={question.board} compact />
+            <QuestionSupplementaryDetails
+              board={question.board}
+              boardImages={question.boardImages}
+              compact
+            />
           )}
         </div>
       </div>

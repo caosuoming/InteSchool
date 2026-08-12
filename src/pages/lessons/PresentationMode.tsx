@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Camera,
   Eraser,
   Eye,
   Link2,
@@ -38,6 +39,9 @@ import {
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
+import { uploadFile } from "@/services/api";
+import { questionService } from "@/services/question";
+import { toast } from "@/stores/ui";
 import {
   getVisibleLessonSlideElements,
   STEM_ONLY_QUESTION_VISIBILITY,
@@ -115,6 +119,12 @@ interface BoardPage {
   height: number;
   writingAreas: BoardWritingArea[];
   activeWritingAreaId: string;
+  restoreBounds?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
 type BoardResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
@@ -421,6 +431,107 @@ function drawRecordedStroke(
   context.globalAlpha = 1;
 }
 
+function drawBoardScreenshotStroke(
+  context: CanvasRenderingContext2D,
+  stroke: DrawingStroke,
+  board: BoardPage,
+  writingArea: BoardWritingArea,
+  width: number,
+  height: number,
+) {
+  if (stroke.points.length === 0) return;
+  const mapPoint = (point: DrawingPoint) => ({
+    x: ((writingArea.frameX + point.x * 100 * writingArea.scale) / board.width) * width,
+    y: ((writingArea.frameY + point.y * 100 * writingArea.scale) / board.height) * height,
+  });
+  const first = mapPoint(stroke.points[0]);
+  context.beginPath();
+  context.moveTo(first.x, first.y);
+  for (const point of stroke.points.slice(1)) {
+    const mapped = mapPoint(point);
+    context.lineTo(mapped.x, mapped.y);
+  }
+  if (stroke.points.length === 1) context.lineTo(first.x + 0.01, first.y);
+
+  context.lineJoin = "round";
+  context.lineWidth = Math.max(1, stroke.width * writingArea.scale);
+  if (stroke.kind === "eraser") {
+    context.globalCompositeOperation = "destination-out";
+    context.globalAlpha = 1;
+    context.lineCap = "round";
+    context.strokeStyle = "rgba(0, 0, 0, 1)";
+  } else if (stroke.kind === "highlighter") {
+    context.globalCompositeOperation = "source-over";
+    context.globalAlpha = HIGHLIGHTER_ALPHA;
+    context.lineCap = "butt";
+    context.strokeStyle = stroke.color;
+  } else {
+    context.globalCompositeOperation = "source-over";
+    context.globalAlpha = 1;
+    context.lineCap = "round";
+    context.strokeStyle = stroke.color;
+  }
+  context.stroke();
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha = 1;
+}
+
+function canvasPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("板书截图生成失败"));
+    }, "image/png");
+  });
+}
+
+async function renderBoardWritingAreaScreenshot(
+  board: BoardPage,
+  writingArea: BoardWritingArea,
+  backgroundColor: string,
+): Promise<Blob> {
+  const width = 1600;
+  const height = Math.max(1, Math.round(width * (board.height / board.width)));
+  const composite = document.createElement("canvas");
+  const highlighterLayer = document.createElement("canvas");
+  const inkLayer = document.createElement("canvas");
+  for (const canvas of [composite, highlighterLayer, inkLayer]) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const context = composite.getContext("2d");
+  const highlighterContext = highlighterLayer.getContext("2d");
+  const inkContext = inkLayer.getContext("2d");
+  if (!context || !highlighterContext || !inkContext) {
+    throw new Error("当前浏览器无法生成板书截图");
+  }
+
+  context.fillStyle = backgroundColor;
+  context.fillRect(0, 0, width, height);
+  context.strokeStyle = "rgba(37, 99, 235, 0.13)";
+  context.lineWidth = 1;
+  for (let y = 32; y < height; y += 32) {
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+    context.stroke();
+  }
+
+  for (const stroke of writingArea.strokes) {
+    if (stroke.kind === "highlighter" || stroke.kind === "eraser") {
+      drawBoardScreenshotStroke(highlighterContext, stroke, board, writingArea, width, height);
+    }
+    if (stroke.kind === "pen" || stroke.kind === "eraser") {
+      drawBoardScreenshotStroke(inkContext, stroke, board, writingArea, width, height);
+    }
+  }
+  context.globalCompositeOperation = "multiply";
+  context.drawImage(highlighterLayer, 0, 0);
+  context.globalCompositeOperation = "source-over";
+  context.drawImage(inkLayer, 0, 0);
+  return canvasPngBlob(composite);
+}
+
 function WritableCanvas({
   tool,
   preset,
@@ -670,6 +781,7 @@ export function PresentationMode({
   const [activeBoardIdsBySlide, setActiveBoardIdsBySlide] = useState<Record<string, string | null>>({});
   const [annotationStrokesBySlide, setAnnotationStrokesBySlide] = useState<Record<string, DrawingStroke[]>>({});
   const [boardsVisible, setBoardsVisible] = useState(false);
+  const [savingBoardId, setSavingBoardId] = useState<string | null>(null);
   const [mainClearToken, setMainClearToken] = useState(0);
   const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
   const [colorPreferences, setColorPreferences] = useState<PresentationColorPreferences>(readColorPreferences);
@@ -969,6 +1081,67 @@ export function PresentationMode({
     }));
     setActiveBoardId(boardId);
     setBoardsVisible(true);
+  };
+
+  const toggleBoardFullscreen = (boardId: string) => {
+    setBoards((current) => current.map((board) => {
+      if (board.id !== boardId) return board;
+      if (board.restoreBounds) {
+        return {
+          ...board,
+          ...board.restoreBounds,
+          restoreBounds: undefined,
+        };
+      }
+      return {
+        ...board,
+        restoreBounds: {
+          x: board.x,
+          y: board.y,
+          width: board.width,
+          height: board.height,
+        },
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+      };
+    }));
+    setActiveBoardId(boardId);
+    setBoardsVisible(true);
+  };
+
+  const saveBoardScreenshots = async (board: BoardPage) => {
+    const questionId = currentSlide?.questionId;
+    if (!questionId) {
+      toast.error("当前页面未关联题目，无法保存板书截图");
+      return;
+    }
+    if (board.writingAreas.length === 0 || savingBoardId) return;
+
+    setSavingBoardId(board.id);
+    try {
+      const boardImages: string[] = [];
+      for (const [index, writingArea] of board.writingAreas.entries()) {
+        const blob = await renderBoardWritingAreaScreenshot(
+          board,
+          writingArea,
+          colorPreferences.boardBackgroundColor,
+        );
+        const uploaded = await uploadFile(new File(
+          [blob],
+          `板书-${questionId}-${index + 1}.png`,
+          { type: "image/png" },
+        ));
+        boardImages.push(uploaded.url);
+      }
+      await questionService.updateQuestion(questionId, { boardImages });
+      toast.success(`已保存 ${boardImages.length} 张板书截图`);
+    } catch (error) {
+      toast.error("板书截图保存失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingBoardId(null);
+    }
   };
 
   const selectWritingArea = (boardId: string, writingAreaId: string) => {
@@ -1512,6 +1685,27 @@ export function PresentationMode({
     >
       <button
         type="button"
+        aria-label={`从${side === "left" ? "左侧" : "右侧"}${board.restoreBounds ? "退出全屏" : "全屏"}${label}`}
+        onClick={() => toggleBoardFullscreen(board.id)}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-transparent text-ink-500 drop-shadow-sm transition-colors hover:bg-paper/60 hover:text-teal-700"
+        title={board.restoreBounds ? "退出板书全屏" : "板书全屏"}
+      >
+        {board.restoreBounds
+          ? <Minimize2 className="h-3.5 w-3.5" />
+          : <Maximize2 className="h-3.5 w-3.5" />}
+      </button>
+      <button
+        type="button"
+        aria-label={`从${side === "left" ? "左侧" : "右侧"}截图${label}`}
+        onClick={() => void saveBoardScreenshots(board)}
+        disabled={!currentSlide?.questionId || savingBoardId === board.id}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-transparent text-ink-500 drop-shadow-sm transition-colors hover:bg-paper/60 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-30"
+        title={currentSlide?.questionId ? "截图并保存到题目板书" : "当前页面未关联题目"}
+      >
+        <Camera className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
         aria-label={`从${side === "left" ? "左侧" : "右侧"}在${label}中新增书写区`}
         onClick={() => addWritingArea(board.id)}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-transparent text-ink-500 drop-shadow-sm transition-colors hover:bg-paper/60 hover:text-teal-700"
@@ -1719,25 +1913,27 @@ export function PresentationMode({
                   );
                 })}
 
-                <div className="pointer-events-none absolute left-10 top-3 z-20">
-                  <button
-                    type="button"
-                    aria-label={`移动${label}`}
-                    className="pointer-events-auto flex h-8 w-8 shrink-0 cursor-move items-center justify-center rounded-lg bg-ink-900/50 text-paper shadow hover:bg-ink-900/80"
-                    onPointerDown={(event) => startBoardInteraction(event, board, "move")}
-                    onPointerMove={moveBoardInteraction}
-                    onPointerUp={endBoardInteraction}
-                    onPointerCancel={endBoardInteraction}
-                  >
-                    <Move className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                {!board.restoreBounds && (
+                  <div className="pointer-events-none absolute left-10 top-3 z-20">
+                    <button
+                      type="button"
+                      aria-label={`移动${label}`}
+                      className="pointer-events-auto flex h-8 w-8 shrink-0 cursor-move items-center justify-center rounded-lg bg-ink-900/50 text-paper shadow hover:bg-ink-900/80"
+                      onPointerDown={(event) => startBoardInteraction(event, board, "move")}
+                      onPointerMove={moveBoardInteraction}
+                      onPointerUp={endBoardInteraction}
+                      onPointerCancel={endBoardInteraction}
+                    >
+                      <Move className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
 
                 {renderBoardSideControls(board, label, "left")}
                 {renderBoardSideControls(board, label, "right")}
               </div>
 
-              {BOARD_RESIZE_HANDLES.map((handle) => (
+              {!board.restoreBounds && BOARD_RESIZE_HANDLES.map((handle) => (
                 <button
                   key={handle.direction}
                   type="button"

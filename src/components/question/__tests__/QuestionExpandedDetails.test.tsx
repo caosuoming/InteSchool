@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
 
@@ -45,5 +46,26 @@ describe("QuestionExpandedDetails", () => {
     );
 
     expect(within(container).queryByText("总结")).not.toBeInTheDocument();
+  });
+
+  it("shows classroom board screenshots as thumbnails and opens a large preview", async () => {
+    const user = userEvent.setup();
+    render(
+      <QuestionExpandedDetails
+        question={{
+          id: "question-board-images",
+          answer: "A",
+          analysis: "解析",
+          summary: "总结",
+          boardImages: ["/api/files/board-1", "/api/files/board-2"],
+        }}
+      />,
+    );
+
+    expect(screen.getByAltText("题目板书 1")).toHaveAttribute("src", "/api/files/board-1");
+    expect(screen.getByAltText("题目板书 2")).toHaveAttribute("src", "/api/files/board-2");
+
+    await user.click(screen.getByRole("button", { name: "查看板书 2" }));
+    expect(screen.getByAltText("板书大图")).toHaveAttribute("src", "/api/files/board-2");
   });
 });
