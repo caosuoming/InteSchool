@@ -420,7 +420,7 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
       board: canonicalQuestion?.board,
       links: canonicalQuestion?.links,
       explanationVideo: canonicalQuestion?.explanationVideo,
-    }, block.title || `第 ${questionNumber} 题`)];
+    }, `${questionNumber}.`)];
   });
 
   if (structuredSlides.length > 0) {
@@ -440,7 +440,7 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
           board: canonicalQuestion?.board,
           links: canonicalQuestion?.links,
           explanationVideo: canonicalQuestion?.explanationVideo,
-        }, `第 ${questionNumber} 题`);
+        }, `${questionNumber}.`);
       });
     return [...structuredSlides, ...remainingQuestions];
   }
@@ -457,7 +457,7 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
       board: canonicalQuestion?.board,
       links: canonicalQuestion?.links,
       explanationVideo: canonicalQuestion?.explanationVideo,
-    }, `第 ${index + 1} 题`);
+    }, `${index + 1}.`);
   });
 }
 
@@ -479,7 +479,7 @@ function documentBlockSlides(blocks: LessonDocumentBlock[]): LessonSlide[] {
       options: block.options,
       answer: block.answer || "",
       analysis: block.analysis || "",
-    }, block.title || `第 ${questionNumber} 题`)];
+    }, `${questionNumber}.`)];
   });
 }
 
@@ -912,13 +912,16 @@ export const lessonCoursewareService = {
       titleSlide(coverTitle, lecture.description || `${lecture.grade} · ${lecture.schoolYear}`),
     ];
 
+    let questionNumber = 0;
     flattenLectureSections(lecture.sections).forEach((sec) => {
       if (sec.type === "question") {
+        questionNumber += 1;
+        const questionLabel = sec.customLabel?.trim() || `${questionNumber}.`;
         const question = sec.questionId
           ? questions.find((item) => item.id === sec.questionId)
           : undefined;
         if (question) {
-          slides.push(questionSlide(question, sec.title));
+          slides.push(questionSlide(question, questionLabel));
         } else {
           slides.push(questionSlide({
             id: sec.questionId || sec.id,
@@ -926,7 +929,7 @@ export const lessonCoursewareService = {
             type: "essay",
             answer: "",
             analysis: "",
-          }, sec.title));
+          }, questionLabel));
         }
       } else if (sec.type === "knowledge") {
         slides.push(knowledgeSlide(sec.title, sec.content));
