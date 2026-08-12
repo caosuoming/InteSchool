@@ -42,6 +42,7 @@ import { GradeImportWizard } from "@/pages/students/GradeImportWizard";
 import { GradeClassAverageTable } from "@/pages/students/GradeClassAverageTable";
 import { GradeTotalScoreSegmentTable } from "@/pages/students/GradeTotalScoreSegmentTable";
 import { GradeSubjectScoreSegmentTable } from "@/pages/students/GradeSubjectScoreSegmentTable";
+import { GradeElectiveScoreSegmentTable } from "@/pages/students/GradeElectiveScoreSegmentTable";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { GRADE_SUBJECT_OPTIONS } from "@/lib/grade-spreadsheet";
 
@@ -491,6 +492,15 @@ function GradePreprocessing({
                 onAutoSave={autoSaveSegmentSettings}
               />
               <GradeSubjectScoreSegmentTable
+                exam={selectedExam}
+                settings={draft}
+                template={totalScoreSegmentTemplate}
+                classAverageTemplate={classAverageTemplate || undefined}
+                context={context}
+                onChange={setDraft}
+                onAutoSave={autoSaveSegmentSettings}
+              />
+              <GradeElectiveScoreSegmentTable
                 exam={selectedExam}
                 settings={draft}
                 template={totalScoreSegmentTemplate}
