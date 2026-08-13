@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Braces,
   Calculator,
   Check,
+  Download,
   Plus,
   SlidersHorizontal,
   Table2,
   Trash2,
+  Upload,
   UsersRound,
 } from "lucide-react";
 import type {
@@ -17,8 +19,19 @@ import type {
 } from "@/types";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
+import {
+  applyGradeTeacherImportPlan,
+  buildGradeTeacherImportPlan,
+  downloadGradeTeacherTemplate,
+  parseGradeTeacherNames,
+  readGradeTeacherFile,
+  type GradeTeacherConflictChoice,
+  type GradeTeacherImportPlan,
+} from "@/lib/grade-teacher-spreadsheet";
 import {
   buildDefaultCustomGradeColumns,
   displayGradeFormulaValue,
@@ -29,6 +42,7 @@ import {
   calculateGradeRecords,
   DEFAULT_ASSIGNMENT_RULES,
 } from "@/lib/grade-statistics";
+import { toast } from "@/stores/ui";
 
 interface GradeSettingsEditorProps {
   settings: GradeExamSettings;
@@ -40,6 +54,8 @@ interface GradeSettingsEditorProps {
   importedAssignedSubjects?: string[];
   /** 当前统计数据来源的完整成绩，用于展示原始分与当前赋分规则的实际对照。 */
   records?: GradeScoreRecord[];
+  /** 上传班级任课教师名单后持久化到当前年级；未提供时仅更新本地配置。 */
+  onTeacherImport?: (settings: GradeExamSettings) => Promise<GradeExamSettings>;
 }
 
 function toggleValue(values: string[], value: string): string[] {
@@ -107,14 +123,6 @@ function ClassSummary({
   );
 }
 
-function parseTeacherNames(value: string): string[] {
-  return [...new Set(value
-    .split(/[、,，;；\n]+/)
-    .map((item) => item.trim())
-    .filter(Boolean))]
-    .slice(0, 10);
-}
-
 function ManualTeacherInput({
   names,
   label,
@@ -134,7 +142,7 @@ function ManualTeacherInput({
   }, [normalized]);
 
   const commit = () => {
-    const next = parseTeacherNames(value);
+    const next = parseGradeTeacherNames(value);
     setValue(next.join("、"));
     onCommit(next);
   };
@@ -209,80 +217,277 @@ function TeacherSettings({
   subjects,
   context,
   onChange,
+  onTeacherImport,
 }: GradeSettingsEditorProps) {
   const classes = useMemo(() => orderedClasses(context), [context]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingImport, setPendingImport] = useState<GradeTeacherImportPlan | null>(null);
+  const [conflictChoices, setConflictChoices] = useState<Record<string, GradeTeacherConflictChoice>>({});
+  const [importing, setImporting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const commitImport = async (
+    plan: GradeTeacherImportPlan,
+    choices: Record<string, GradeTeacherConflictChoice>,
+  ) => {
+    const nextSettings = applyGradeTeacherImportPlan(settings, context, subjects, plan, choices);
+    setImporting(true);
+    try {
+      const committed = onTeacherImport ? await onTeacherImport(nextSettings) : nextSettings;
+      onChange(committed);
+      setPendingImport(null);
+      setConflictChoices({});
+      toast.success(
+        onTeacherImport ? "任课教师名单已导入并保存" : "任课教师名单已导入",
+        onTeacherImport ? "名单已绑定当前年级，再次上传可覆盖对应班级和学科。" : undefined,
+      );
+    } catch (error) {
+      toast.error("导入任课教师失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const rows = await readGradeTeacherFile(file, subjects);
+      const plan = buildGradeTeacherImportPlan(settings, context, rows);
+      if (plan.conflicts.length > 0) {
+        setPendingImport(plan);
+        setConflictChoices(Object.fromEntries(plan.conflicts.map((conflict) => [conflict.key, "imported"])));
+      } else {
+        await commitImport(plan, {});
+      }
+    } catch (error) {
+      toast.error("读取任课教师模板失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      await downloadGradeTeacherTemplate(context.cohort.label, subjects, settings, context);
+    } catch (error) {
+      toast.error("下载任课教师模板失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
-    <Card className="p-0 overflow-hidden">
-      <div className="flex items-start gap-3 border-b border-ink-100 px-5 py-4">
-        <div className="rounded-lg bg-teal-50 p-2 text-teal-700">
-          <UsersRound className="h-4 w-4" />
+    <>
+      <Card className="p-0 overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-teal-50 p-2 text-teal-700">
+              <UsersRound className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="font-medium text-ink-900">配置1、班级任课教师</div>
+              <div className="mt-0.5 text-xs text-ink-500">已维护教学关系的教师可直接勾选；也可下载当前年级模板批量填写后上传，名单按年级保存。</div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={handleDownload} loading={downloading}>
+              <Download className="h-4 w-4" />下载任课教师模板
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} loading={importing}>
+              <Upload className="h-4 w-4" />批量导入
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xlsm"
+              className="hidden"
+              aria-label="上传班级任课教师模板"
+              onChange={(event) => void handleImportFile(event.target.files?.[0])}
+            />
+          </div>
         </div>
-        <div>
-          <div className="font-medium text-ink-900">配置1、班级任课教师</div>
-          <div className="mt-0.5 text-xs text-ink-500">已维护教学关系的教师可直接勾选；未关联账号时可在对应单元格手动输入姓名，多个姓名使用顿号分隔。</div>
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-max w-full text-xs">
-          <thead className="bg-ink-50 text-ink-500">
-            <tr>
-              <th className="sticky left-0 z-10 min-w-28 border-r border-ink-100 bg-ink-50 px-4 py-2.5 text-left font-medium">班级</th>
-              {subjects.map((subject) => (
-                <th key={subject} className="min-w-44 px-4 py-2.5 text-left font-medium">{subject}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {classes.map((classItem) => (
-              <tr key={classItem.id} className="align-top">
-                <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-4 py-3 font-medium text-ink-800">
-                  <ClassSummary classItem={classItem} context={context} />
-                </td>
-                {subjects.map((subject) => {
-                  const teachers = context.teachers.filter((teacher) => teacher.subject === subject);
-                  const selected = settings.classSubjectTeacherIds?.[classItem.id]?.[subject]
-                    || settings.subjectTeacherIds[subject]
-                    || [];
-                  const manualNames = settings.classSubjectTeacherNames?.[classItem.id]?.[subject] || [];
-                  return (
-                    <td key={subject} className="px-4 py-3">
-                      <div className="flex max-w-64 flex-wrap gap-1.5">
-                        {teachers.length === 0 ? (
-                          <span className="text-ink-400">暂无该科教师</span>
-                        ) : teachers.map((teacher) => (
-                          <CheckboxPill
-                            key={teacher.id}
-                            checked={selected.includes(teacher.id)}
-                            label={teacher.name}
-                            onChange={() => onChange(updateClassTeacherSelection(
-                              settings,
-                              classItem.id,
-                              subject,
-                              toggleValue(selected, teacher.id),
-                            ))}
-                          />
-                        ))}
-                      </div>
-                      <ManualTeacherInput
-                        names={manualNames}
-                        label={`${classItem.name}${subject}手动任课教师`}
-                        hasLinkedTeacher={selected.length > 0}
-                        onCommit={(teacherNames) => onChange(updateClassTeacherNames(
-                          settings,
-                          classItem.id,
-                          subject,
-                          teacherNames,
-                        ))}
-                      />
-                    </td>
-                  );
-                })}
+        <div className="overflow-x-auto">
+          <table className="min-w-max w-full text-xs">
+            <thead className="bg-ink-50 text-ink-500">
+              <tr>
+                <th className="sticky left-0 z-10 min-w-28 border-r border-ink-100 bg-ink-50 px-4 py-2.5 text-left font-medium">班级</th>
+                {subjects.map((subject) => (
+                  <th key={subject} className="min-w-44 px-4 py-2.5 text-left font-medium">{subject}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
+            </thead>
+            <tbody className="divide-y divide-ink-100">
+              {classes.map((classItem) => (
+                <tr key={classItem.id} className="align-top">
+                  <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-4 py-3 font-medium text-ink-800">
+                    <ClassSummary classItem={classItem} context={context} />
+                  </td>
+                  {subjects.map((subject) => {
+                    const teachers = context.teachers.filter((teacher) => teacher.subject === subject);
+                    const selected = settings.classSubjectTeacherIds?.[classItem.id]?.[subject]
+                      || settings.subjectTeacherIds[subject]
+                      || [];
+                    const manualNames = settings.classSubjectTeacherNames?.[classItem.id]?.[subject] || [];
+                    return (
+                      <td key={subject} className="px-4 py-3">
+                        <div className="flex max-w-64 flex-wrap gap-1.5">
+                          {teachers.length === 0 ? (
+                            <span className="text-ink-400">暂无该科教师</span>
+                          ) : teachers.map((teacher) => (
+                            <CheckboxPill
+                              key={teacher.id}
+                              checked={selected.includes(teacher.id)}
+                              label={teacher.name}
+                              onChange={() => onChange(updateClassTeacherSelection(
+                                settings,
+                                classItem.id,
+                                subject,
+                                toggleValue(selected, teacher.id),
+                              ))}
+                            />
+                          ))}
+                        </div>
+                        <ManualTeacherInput
+                          names={manualNames}
+                          label={`${classItem.name}${subject}手动任课教师`}
+                          hasLinkedTeacher={selected.length > 0}
+                          onCommit={(teacherNames) => onChange(updateClassTeacherNames(
+                            settings,
+                            classItem.id,
+                            subject,
+                            teacherNames,
+                          ))}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Modal
+        open={Boolean(pendingImport)}
+        onClose={() => {
+          if (importing) return;
+          setPendingImport(null);
+          setConflictChoices({});
+        }}
+        title="选择任课教师名单"
+        description={pendingImport
+          ? `上传名单与当前年级已有配置有 ${pendingImport.conflicts.length} 处不同，请逐项选择保留哪一份。`
+          : undefined}
+        size="lg"
+        footer={pendingImport && (
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPendingImport(null);
+                setConflictChoices({});
+              }}
+              disabled={importing}
+            >
+              取消
+            </Button>
+            <Button
+              variant="gold"
+              loading={importing}
+              onClick={() => void commitImport(pendingImport, conflictChoices)}
+            >
+              确认导入
+            </Button>
+          </>
+        )}
+      >
+        {pendingImport && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-ink-500">无冲突的单元格会直接采用上传名单；以下仅显示有差异的项目。</div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConflictChoices(Object.fromEntries(
+                    pendingImport.conflicts.map((conflict) => [conflict.key, "existing"]),
+                  ))}
+                >
+                  全部保留现有
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConflictChoices(Object.fromEntries(
+                    pendingImport.conflicts.map((conflict) => [conflict.key, "imported"]),
+                  ))}
+                >
+                  全部使用上传
+                </Button>
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-ink-100">
+              <table className="w-full min-w-[44rem] text-xs">
+                <thead className="bg-ink-50 text-ink-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">班级</th>
+                    <th className="px-3 py-2 text-left font-medium">学科</th>
+                    <th className="px-3 py-2 text-left font-medium">现有名单</th>
+                    <th className="px-3 py-2 text-left font-medium">上传名单</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink-100">
+                  {pendingImport.conflicts.map((conflict) => (
+                    <tr key={conflict.key}>
+                      <td className="px-3 py-2 font-medium text-ink-800">{conflict.className}</td>
+                      <td className="px-3 py-2 text-ink-700">{conflict.subject}</td>
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          className={cn(
+                            "w-full rounded-md border px-2.5 py-2 text-left transition-colors",
+                            conflictChoices[conflict.key] === "existing"
+                              ? "border-teal-400 bg-teal-50 text-teal-900"
+                              : "border-ink-200 text-ink-600 hover:border-ink-300",
+                          )}
+                          onClick={() => setConflictChoices((current) => ({
+                            ...current,
+                            [conflict.key]: "existing",
+                          }))}
+                        >
+                          {conflict.existingNames.join("、") || "清空"}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          className={cn(
+                            "w-full rounded-md border px-2.5 py-2 text-left transition-colors",
+                            conflictChoices[conflict.key] === "imported"
+                              ? "border-gold-400 bg-gold-50 text-gold-900"
+                              : "border-ink-200 text-ink-600 hover:border-ink-300",
+                          )}
+                          onClick={() => setConflictChoices((current) => ({
+                            ...current,
+                            [conflict.key]: "imported",
+                          }))}
+                        >
+                          {conflict.importedNames.join("、") || "清空"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
   );
 }
 

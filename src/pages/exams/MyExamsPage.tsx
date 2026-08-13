@@ -312,6 +312,30 @@ function GradePreprocessing({
     }
   };
 
+  const saveTeacherImport = useCallback(async (nextDraft: GradeExamSettings): Promise<GradeExamSettings> => {
+    if (!cohortKey) return nextDraft;
+    setSaving(true);
+    try {
+      const saved = await gradeService.saveCohortSettings(
+        schoolId,
+        teacherId,
+        cohortKey,
+        subjects,
+        nextDraft,
+      );
+      const refreshedExams = await gradeService.listExams(schoolId, cohortKey);
+      setRecord(saved);
+      setExams(refreshedExams);
+      setSelectedExamId((current) => (
+        refreshedExams.some((item) => item.id === current) ? current : refreshedExams[0]?.id || ""
+      ));
+      setSubjects(saved.subjects);
+      return structuredClone(saved.settings);
+    } finally {
+      setSaving(false);
+    }
+  }, [cohortKey, schoolId, subjects, teacherId]);
+
   const autoSaveSegmentSettings = useCallback((nextDraft: GradeExamSettings) => {
     if (!cohortKey) return Promise.resolve();
     autoSaveQueue.current = autoSaveQueue.current.then(async () => {
@@ -519,6 +543,7 @@ function GradePreprocessing({
         subjects={subjects}
         context={context}
         onChange={setDraft}
+        onTeacherImport={saveTeacherImport}
         section="settings"
         records={selectedExam?.records || []}
       />
