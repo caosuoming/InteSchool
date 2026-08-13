@@ -4,10 +4,12 @@ import type {
   GradeCohortSettings,
   GradeExam,
   GradeExamImportInput,
+  GradeExamMetadataPatch,
   GradeExamSettings,
   GradeImportContext,
   GradeQueryData,
   GradeStatisticsTemplate,
+  GradeScoreAdjustmentKind,
   GradeTemplateProfile,
 } from "@/types";
 
@@ -92,6 +94,20 @@ export const gradeService = {
 
   async updateExamSettings(examId: string, settings: GradeExamSettings): Promise<GradeExam> {
     return rpcCall("grade", "updateExamSettings", [examId, settings]) as Promise<GradeExam>;
+  },
+
+  async updateExamMetadata(examId: string, patch: GradeExamMetadataPatch): Promise<GradeExam> {
+    return rpcCall("grade", "updateExamMetadata", [examId, patch]) as Promise<GradeExam>;
+  },
+
+  async adjustExamScore(
+    examId: string,
+    studentId: string,
+    subject: string,
+    kind: GradeScoreAdjustmentKind,
+    value: number | null,
+  ): Promise<GradeExam> {
+    return rpcCall("grade", "adjustExamScore", [examId, studentId, subject, kind, value]) as Promise<GradeExam>;
   },
 
   async deleteExam(examId: string): Promise<void> {

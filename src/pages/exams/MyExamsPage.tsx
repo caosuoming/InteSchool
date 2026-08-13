@@ -43,6 +43,7 @@ import { GradeClassAverageTable } from "@/pages/students/GradeClassAverageTable"
 import { GradeTotalScoreSegmentTable } from "@/pages/students/GradeTotalScoreSegmentTable";
 import { GradeSubjectScoreSegmentTable } from "@/pages/students/GradeSubjectScoreSegmentTable";
 import { GradeElectiveScoreSegmentTable } from "@/pages/students/GradeElectiveScoreSegmentTable";
+import { GradeExamAdjustmentPanel } from "@/pages/students/GradeExamAdjustmentPanel";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { GRADE_SUBJECT_OPTIONS } from "@/lib/grade-spreadsheet";
 
@@ -264,6 +265,14 @@ function GradePreprocessing({
       sampleRecords: exam.records.slice(0, 8),
     } : current);
   };
+
+  const handleExamUpdated = useCallback((exam: GradeExam) => {
+    setExams((current) => current.map((item) => item.id === exam.id ? exam : item));
+    setContext((current) => current ? {
+      ...current,
+      sampleRecords: exam.records.slice(0, 8),
+    } : current);
+  }, []);
 
   const toggleSubject = (subject: string) => {
     if (!context || !draft) return;
@@ -495,6 +504,9 @@ function GradePreprocessing({
               </div>
             </div>
           </Card>
+          {selectedExam && (
+            <GradeExamAdjustmentPanel exam={selectedExam} onExamUpdated={handleExamUpdated} />
+          )}
           {selectedExam && classAverageTemplate && (
             <GradeClassAverageTable
               exam={selectedExam}

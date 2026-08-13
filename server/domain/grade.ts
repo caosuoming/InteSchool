@@ -3,11 +3,13 @@ import type {
   GradeCohortSettings,
   GradeExam,
   GradeExamImportInput,
+  GradeExamMetadataPatch,
   GradeExamSettings,
   GradeImportContext,
   GradeQueryClass,
   GradeQueryData,
   GradeQueryExam,
+  GradeScoreAdjustmentKind,
   GradeScoreRecord,
   GradeStatisticsTemplate,
   GradeTeacherOption,
@@ -194,6 +196,26 @@ function normalizeScores(
     }
     return [subject, Math.round(value * 100) / 100];
   }));
+}
+
+function normalizeAdjustedScore(value: number | null): number | null {
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error("修改后的成绩不是有效数字");
+  }
+  if (value < -1000 || value > 1000) {
+    throw new Error("修改后的成绩超出合理范围");
+  }
+  return Math.round(value * 100) / 100;
+}
+
+function normalizeExamDate(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed) || Number.isNaN(new Date(`${trimmed}T00:00:00`).getTime())) {
+    throw new Error("考试时间格式不正确");
+  }
+  return trimmed;
 }
 
 function examBaseRecords(records: GradeScoreRecord[]) {
@@ -858,6 +880,91 @@ export const gradeService = {
       settings,
     );
     return readList<GradeExam>("gradeExams").find((item) => item.id === examId)!;
+  },
+
+  async updateExamMetadata(examId: string, patch: GradeExamMetadataPatch): Promise<GradeExam> {
+    await delay(150);
+    maybeThrowError();
+    const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
+    if (!current) throw new Error("成绩考试不存在");
+    const name = patch?.name?.trim();
+    if (!name) throw new Error("请填写考试名称");
+    const examDate = normalizeExamDate(patch.examDate);
+    const updated: GradeExam = {
+      ...current,
+      name,
+      examDate,
+      updatedAt: new Date().toISOString(),
+    };
+    db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
+    return updated;
+  },
+
+  async adjustExamScore(
+    examId: string,
+    studentId: string,
+    subject: string,
+    kind: GradeScoreAdjustmentKind,
+    value: number | null,
+    teacher: Teacher,
+  ): Promise<GradeExam> {
+    await delay(150);
+    maybeThrowError();
+    const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
+    if (!current) throw new Error("成绩考试不存在");
+    if (!current.subjects.includes(subject)) throw new Error("该考试不存在所选科目");
+    if (kind !== "raw" && kind !== "assigned") throw new Error("成绩修改口径不正确");
+    const record = current.records.find((item) => item.studentId === studentId);
+    if (!record) throw new Error("该考试不存在所选学生成绩");
+
+    const nextValue = normalizeAdjustedScore(value);
+    const previousValue = kind === "raw"
+      ? record.scores[subject] ?? null
+      : record.assignedScores[subject] ?? null;
+    if (previousValue === nextValue) return current;
+
+    const baseRecords = examBaseRecords(current.records).map((item) => {
+      if (item.studentId !== studentId) return item;
+      if (kind === "raw") {
+        return {
+          ...item,
+          scores: { ...item.scores, [subject]: nextValue },
+        };
+      }
+      return {
+        ...item,
+        sourceAssignedScores: {
+          ...(item.sourceAssignedScores || {}),
+          [subject]: nextValue,
+        },
+      };
+    });
+    const now = new Date().toISOString();
+    const updated: GradeExam = {
+      ...current,
+      records: calculateGradeRecords(baseRecords, current.subjects, current.settings),
+      scoreAdjustments: [
+        ...(current.scoreAdjustments || []),
+        {
+          id: genId("grade-score-adjustment"),
+          studentId: record.studentId,
+          studentName: record.studentName,
+          studentNo: record.studentNo,
+          classId: record.classId,
+          className: record.className,
+          subject,
+          kind,
+          previousValue,
+          nextValue,
+          changedByTeacherId: teacher.id,
+          changedByName: teacher.name,
+          changedAt: now,
+        },
+      ],
+      updatedAt: now,
+    };
+    db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
+    return updated;
   },
 
   async deleteExam(examId: string): Promise<void> {

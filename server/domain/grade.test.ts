@@ -320,6 +320,77 @@ describe("grade service", () => {
     });
   });
 
+  it("updates exam metadata and audits score adjustments while recalculating ranks", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "原考试名",
+        examDate: "2026-08-01",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects: ["数学"],
+        rows: [
+          {
+            rowKey: "row-adjust-1",
+            sourceRowNumber: 2,
+            sourceName: "旧姓名",
+            sourceStudentNo: "202601",
+            sourceClassName: "高三(1)班",
+            studentId: "student-1",
+            scores: { 数学: 100 },
+          },
+          {
+            rowKey: "row-adjust-2",
+            sourceRowNumber: 3,
+            sourceName: "新增学生",
+            sourceStudentNo: "202602",
+            sourceClassName: "高三(2)班",
+            createStudent: {
+              name: "新增学生",
+              studentNo: "202602",
+              classId: "class-2",
+            },
+            scores: { 数学: 90 },
+          },
+        ],
+      });
+
+      const renamed = await gradeService.updateExamMetadata(exam.id, {
+        name: "八月联考",
+        examDate: "2026-08-12",
+      });
+      expect(renamed).toMatchObject({ name: "八月联考", examDate: "2026-08-12" });
+
+      const adjusted = await gradeService.adjustExamScore(
+        exam.id,
+        "student-1",
+        "数学",
+        "raw",
+        80,
+        appState.teachers[0] as any,
+      );
+      const changed = adjusted.records.find((item) => item.studentId === "student-1")!;
+      const other = adjusted.records.find((item) => item.studentId !== "student-1")!;
+      expect(changed.scores.数学).toBe(80);
+      expect(changed.rawTotal).toBe(80);
+      expect(changed.gradeRank).toBe(2);
+      expect(other.gradeRank).toBe(1);
+      expect(adjusted.scoreAdjustments).toEqual([
+        expect.objectContaining({
+          studentId: "student-1",
+          subject: "数学",
+          kind: "raw",
+          previousValue: 100,
+          nextValue: 80,
+          changedByTeacherId: "teacher-1",
+          changedByName: "数学老师",
+        }),
+      ]);
+    });
+  });
+
   it("rejects duplicate matches to the same existing student", async () => {
     const appState = state();
 

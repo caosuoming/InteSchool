@@ -25,6 +25,8 @@ const EXAM_MANAGER_MUTATIONS = new Set([
   "saveCohortSettings",
   "copyCohortSettings",
   "updateExamSettings",
+  "updateExamMetadata",
+  "adjustExamScore",
   "deleteExam",
 ]);
 const SCHOOL_ROSTER_MUTATIONS = new Set([

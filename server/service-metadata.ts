@@ -551,6 +551,18 @@ export const serviceParameters = {
       "examId",
       "settings"
     ],
+    "updateExamMetadata": [
+      "examId",
+      "patch"
+    ],
+    "adjustExamScore": [
+      "examId",
+      "studentId",
+      "subject",
+      "kind",
+      "value",
+      "teacher"
+    ],
     "deleteExam": [
       "examId"
     ]
