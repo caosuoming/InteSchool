@@ -184,6 +184,7 @@ const BOARD_WRITING_AREA_MIN_SCALE = 1;
 const BOARD_WRITING_AREA_MAX_SCALE = 2;
 const BOARD_WRITING_AREA_VISIBLE_MARGIN_PX = 48;
 const BOARD_WRITING_AREA_WHEEL_ZOOM_SPEED = 0.0015;
+const BOARD_SIDE_CONTROLS_SCREEN_Y = 50;
 
 function createBoardPage(slideId: string, index: number): BoardPage {
   const offset = (index % 5) * 3;
@@ -205,6 +206,14 @@ function createBoardPage(slideId: string, index: number): BoardPage {
     height: 62,
     writingAreas: [firstWritingArea],
     activeWritingAreaId: firstWritingArea.id,
+  };
+}
+
+function boardSideControlsStyle(board: BoardPage): CSSProperties {
+  const screenY = Math.max(BOARD_SIDE_CONTROLS_SCREEN_Y, board.y);
+  return {
+    top: `${((screenY - board.y) / board.height) * 100}%`,
+    maxHeight: `${((100 - screenY) / board.height) * 100}%`,
   };
 }
 
@@ -1105,6 +1114,12 @@ export function PresentationMode({
         y: 0,
         width: 100,
         height: 100,
+        writingAreas: board.writingAreas.map((area) => ({
+          ...area,
+          frameX: 0,
+          frameY: 0,
+          scale: BOARD_WRITING_AREA_MIN_SCALE,
+        })),
       };
     }));
     setActiveBoardId(boardId);
@@ -1679,9 +1694,10 @@ export function PresentationMode({
     <div
       data-board-side-controls={side}
       className={cn(
-        "pointer-events-auto absolute top-1 z-20 flex max-h-[calc(100%_-_0.5rem)] flex-col items-center gap-0.5 overflow-y-auto",
+        "pointer-events-auto absolute z-20 flex flex-col items-center gap-0.5 overflow-y-auto",
         side === "left" ? "left-1" : "right-1",
       )}
+      style={boardSideControlsStyle(board)}
     >
       <button
         type="button"
@@ -1929,9 +1945,10 @@ export function PresentationMode({
                   </div>
                 )}
 
-                {renderBoardSideControls(board, label, "left")}
-                {renderBoardSideControls(board, label, "right")}
               </div>
+
+              {renderBoardSideControls(board, label, "left")}
+              {renderBoardSideControls(board, label, "right")}
 
               {!board.restoreBounds && BOARD_RESIZE_HANDLES.map((handle) => (
                 <button
