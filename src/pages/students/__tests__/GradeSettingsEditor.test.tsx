@@ -198,6 +198,8 @@ describe("GradeSettingsEditor", () => {
     expect(screen.getByText("配置1、班级任课教师")).toBeInTheDocument();
     expect(screen.getByText("配置2、赋分对照表")).toBeInTheDocument();
     expect(screen.getByText("配置3、各班统一排名与单独排名科目")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载任课教师模板" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批量导入" })).toBeInTheDocument();
 
     const comparison = screen.getByText("本次成绩原始分—赋分对照").parentElement!;
     expect(within(comparison).getByRole("cell", { name: "80" })).toBeInTheDocument();
