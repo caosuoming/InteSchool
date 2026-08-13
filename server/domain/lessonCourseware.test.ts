@@ -4,6 +4,7 @@ import type {
   Courseware,
   ExamPaper,
   Lecture,
+  LessonCourseware,
   LessonDocumentBlock,
   Question,
   Teacher,
@@ -482,11 +483,17 @@ describe("courseware lesson flow", () => {
         expect.objectContaining({
           kind: "text",
           content: "1.",
+          x: 5,
+          y: 5,
+          width: 4,
+          height: 6,
           questionSection: "stem",
         }),
         expect.objectContaining({
           kind: "text",
           content: "<p>观察图像并选择答案。</p>",
+          x: 10,
+          width: 85,
           questionSection: "stem",
         }),
         expect.objectContaining({
@@ -556,6 +563,52 @@ describe("courseware lesson flow", () => {
       await lessonCoursewareService.updateCourseware(lesson.id, { title: "函数检测课堂版" });
       await expect(coursewareService.getCourseware(lesson.libraryCoursewareId!))
         .resolves.toMatchObject({ title: "函数检测课堂版" });
+    });
+  });
+
+  it("compacts legacy generated question labels when loading a courseware", async () => {
+    const question = sourceQuestion();
+    const paper = sourceExamPaper(question);
+    const state = createState();
+    state.questions = [question];
+    state.examPapers = [paper];
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1",
+        "school-1",
+        paper.id,
+      );
+      const questionSlide = (state.lessonCoursewares as LessonCourseware[])
+        .find((item) => item.id === lesson.id)
+        ?.slides.find((slide) => slide.type === "question");
+      const numberElement = questionSlide?.elements?.find((element) =>
+        element.kind === "text" && element.content === "1.");
+      const stemElement = questionSlide?.elements?.find((element) =>
+        element.kind === "text" && element.content === "<p>观察图像并选择答案。</p>");
+
+      expect(numberElement).toBeDefined();
+      expect(stemElement).toBeDefined();
+      Object.assign(numberElement!, { x: 5, y: 5, width: 14, height: 10 });
+      Object.assign(stemElement!, { x: 20, y: 5, width: 75, height: 24 });
+
+      const loaded = await lessonCoursewareService.getCourseware(lesson.id);
+      expect(loaded?.slides[1].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "text",
+          content: "1.",
+          x: 5,
+          y: 5,
+          width: 4,
+          height: 6,
+        }),
+        expect.objectContaining({
+          kind: "text",
+          content: "<p>观察图像并选择答案。</p>",
+          x: 10,
+          width: 85,
+        }),
+      ]));
     });
   });
 
