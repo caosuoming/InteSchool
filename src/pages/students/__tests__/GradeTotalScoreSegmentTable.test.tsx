@@ -33,6 +33,10 @@ const template: GradeStatisticsTemplate = {
     highScore2Threshold: 85,
     firstTierThreshold: 80,
     undergraduateThreshold: 70,
+    trackThresholds: {
+      science: { highScore1: 90, highScore2: 85, firstTier: 80, undergraduate: 70 },
+      arts: { highScore1: 88, highScore2: 83, firstTier: 78, undergraduate: 68 },
+    },
     classTargets: {
       "class-1": { highScore1: 1, highScore2: 1, firstTier: 1, undergraduate: 1 },
     },
@@ -136,6 +140,13 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(within(screen.getByRole("row", { name: /考生人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /高分1达线数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /完成情况/ })).getAllByRole("cell", { name: "完成（+0）" })).toHaveLength(3);
+    expect(screen.getByTestId("track-standard-summary")).toHaveTextContent(
+      "理科标准：高分1 90分|高分2 85分|一本 80分|二本 70分",
+    );
+    expect(screen.getByTestId("track-standard-summary")).toHaveTextContent(
+      "文科标准：高分1 88分|高分2 83分|一本 78分|二本 68分",
+    );
+    expect(screen.getByTestId("track-standard-summary").querySelector("td")).toHaveAttribute("colspan", "4");
 
     const target = screen.getByRole("spinbutton", { name: "1班高分1目标" });
     await user.clear(target);
@@ -150,7 +161,7 @@ describe("GradeTotalScoreSegmentTable", () => {
     const settingsRow = screen.getByTestId("total-score-settings-row");
     expect(within(settingsRow).getAllByRole("spinbutton")).toHaveLength(11);
     expect(screen.getByRole("spinbutton", { name: "理科高分1标准" })).toHaveValue(90);
-    expect(screen.getByRole("spinbutton", { name: "文科高分1标准" })).toHaveValue(90);
+    expect(screen.getByRole("spinbutton", { name: "文科高分1标准" })).toHaveValue(88);
     const interval = screen.getByRole("spinbutton", { name: "分数间隔" });
     await user.clear(interval);
     await user.type(interval, "5");

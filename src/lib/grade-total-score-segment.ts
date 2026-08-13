@@ -48,6 +48,7 @@ export interface GradeTotalScoreSegmentReport {
   segmentMax: number;
   segmentMin: number;
   segmentSize: number;
+  trackStandards: Record<GradeAcademicTrack, Record<GradeTotalScoreTargetKey, number | null>>;
   classes: GradeTotalScoreSegmentClass[];
   columns: GradeTotalScoreSegmentColumn[];
   rows: GradeTotalScoreSegmentRow[];
@@ -270,6 +271,13 @@ export function buildGradeTotalScoreSegmentReport(
   }
 
   const segmentOptions = template.totalScoreSegmentOptions || {};
+  const trackStandards = Object.fromEntries((["science", "arts"] as const).map((track) => [
+    track,
+    Object.fromEntries(TARGET_KEYS.map((key) => [
+      key,
+      thresholdForTrack(template, track, key) ?? null,
+    ])),
+  ])) as GradeTotalScoreSegmentReport["trackStandards"];
   const targets = Object.fromEntries(classes.map((classItem) => [
     classItem.classId,
     segmentOptions.classTargets?.[classItem.classId] || {},
@@ -373,6 +381,7 @@ export function buildGradeTotalScoreSegmentReport(
     segmentMax,
     segmentMin,
     segmentSize,
+    trackStandards,
     classes,
     columns,
     rows,

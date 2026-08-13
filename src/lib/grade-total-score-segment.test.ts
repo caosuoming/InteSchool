@@ -177,6 +177,10 @@ describe("buildGradeTotalScoreSegmentReport", () => {
     });
     expect(byKey.firstTierRate.values).toEqual({ "class-2": "50.0%", "class-1": "100.0%", __total__: "75.0%" });
     expect(byKey.undergraduateRate.values).toEqual({ "class-2": "100.0%", "class-1": "100.0%", __total__: "100.0%" });
+    expect(report.trackStandards).toEqual({
+      science: { highScore1: 95, highScore2: 90, firstTier: 85, undergraduate: 70 },
+      arts: { highScore1: 95, highScore2: 90, firstTier: 85, undergraduate: 70 },
+    });
   });
 
   it("groups physics and history classes and applies separate line thresholds", () => {
@@ -212,6 +216,8 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       "文科小计",
       "总计",
     ]);
+    expect(report.trackStandards.science.highScore1).toBe(90);
+    expect(report.trackStandards.arts.highScore1).toBe(101);
     const highScore = report.summaryRows.find((row) => row.key === "highScore1Count");
     expect(highScore?.values).toMatchObject({
       "class-1": 1,

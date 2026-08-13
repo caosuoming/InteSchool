@@ -31,6 +31,13 @@ interface GradeTotalScoreSegmentTableProps {
   onAutoSave?: (settings: GradeExamSettings) => Promise<void> | void;
 }
 
+const TOTAL_SCORE_STANDARD_LABELS: Array<[GradeTotalScoreTargetKey, string]> = [
+  ["highScore1", "高分1"],
+  ["highScore2", "高分2"],
+  ["firstTier", "一本"],
+  ["undergraduate", "二本"],
+];
+
 export function GradeTotalScoreSegmentTable({
   exam,
   settings,
@@ -303,14 +310,30 @@ export function GradeTotalScoreSegmentTable({
                   ))}
                 </tr>
               ))}
-              {[0, 1].map((index) => (
-                <tr key={`summary-spacer-${index}`} aria-hidden="true" className="h-5 bg-paper">
-                  <th className="sticky left-0 z-[5] border-x border-ink-300 bg-paper" />
-                  {report.columns.map((column) => (
-                    <td key={column.key} className="border-x border-ink-300" />
-                  ))}
-                </tr>
-              ))}
+              <tr data-testid="track-standard-summary" className="bg-amber-50/40">
+                <td
+                  colSpan={report.columns.length + 1}
+                  className="border border-ink-300 px-3 py-2 text-center text-[11px] text-ink-700"
+                >
+                  <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-1">
+                    {(["science", "arts"] as const).map((track) => (
+                      <span key={track} className="whitespace-nowrap">
+                        <span className="font-semibold text-ink-900">
+                          {track === "science" ? "理科标准" : "文科标准"}：
+                        </span>
+                        {TOTAL_SCORE_STANDARD_LABELS.map(([key, label], index) => (
+                          <span key={key}>
+                            {index > 0 && <span className="mx-1.5 text-ink-300">|</span>}
+                            {label} {report.trackStandards[track][key] === null
+                              ? "未设置"
+                              : `${report.trackStandards[track][key]}分`}
+                          </span>
+                        ))}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+              </tr>
               {report.summaryRows.map((row) => (
                 <tr key={row.key} className="bg-paper">
                   <th className="sticky left-0 z-[5] whitespace-nowrap border border-ink-300 bg-paper px-2 py-1.5 text-center font-semibold text-ink-800">
