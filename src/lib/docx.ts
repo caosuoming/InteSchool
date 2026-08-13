@@ -200,6 +200,139 @@ function createOptionsTable(options: string[]): Table {
   });
 }
 
+const STRUCTURED_MATH_SELECTOR = "i.math-variable, sub, sup";
+const MATH_CONTEXT_SYMBOLS = new Set(Array.from("+-−=<>≤≥≠×÷*/·⋅()（）[]|."));
+
+function isMathContextCharacter(value: string): boolean {
+  return /^[A-Za-z0-9]$/.test(value) || MATH_CONTEXT_SYMBOLS.has(value);
+}
+
+function mathContextPrefix(value: string): string {
+  let end = 0;
+  while (end < value.length && isMathContextCharacter(value[end])) end += 1;
+  return value.slice(0, end);
+}
+
+function mathContextSuffix(value: string): string {
+  let start = value.length;
+  while (start > 0 && isMathContextCharacter(value[start - 1])) start -= 1;
+  return value.slice(start);
+}
+
+function richInlineMathLatex(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+  const element = node as Element;
+  const content = Array.from(element.childNodes).map(richInlineMathLatex).join("");
+  if (element.tagName.toLowerCase() === "sub") return `_{${content}}`;
+  if (element.tagName.toLowerCase() === "sup") return `^{${content}}`;
+  return content;
+}
+
+function restoreStructuredInlineMath(
+  value: string,
+  formulas: string[],
+): string {
+  if (formulas.length === 0) return value;
+
+  const markerPattern = /\uE200(\d+)\uE201/g;
+  const tokens: Array<{ type: "text" | "math"; value: string }> = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = markerPattern.exec(value)) !== null) {
+    if (match.index > cursor) tokens.push({ type: "text", value: value.slice(cursor, match.index) });
+    tokens.push({ type: "math", value: formulas[Number(match[1])] || "" });
+    cursor = markerPattern.lastIndex;
+  }
+  if (cursor < value.length) tokens.push({ type: "text", value: value.slice(cursor) });
+
+  const result: string[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type === "text") {
+      result.push(token.value);
+      continue;
+    }
+
+    let latex = token.value;
+    const previous = result.at(-1);
+    if (previous) {
+      const suffix = mathContextSuffix(previous);
+      if (suffix) {
+        result[result.length - 1] = previous.slice(0, -suffix.length);
+        latex = suffix + latex;
+      }
+    }
+
+    while (index + 1 < tokens.length) {
+      const next = tokens[index + 1];
+      if (next.type === "math") {
+        latex += next.value;
+        index += 1;
+        continue;
+      }
+
+      const following = tokens[index + 2];
+      if (
+        next.value.length > 0
+        && following?.type === "math"
+        && Array.from(next.value).every(isMathContextCharacter)
+      ) {
+        latex += next.value + following.value;
+        index += 2;
+        continue;
+      }
+
+      const prefix = mathContextPrefix(next.value);
+      if (prefix) {
+        latex += prefix;
+        next.value = next.value.slice(prefix.length);
+      }
+      break;
+    }
+
+    if (latex) result.push(`$${latex}$`);
+  }
+  return result.join("");
+}
+
+function replaceRenderedMath(container: HTMLElement): void {
+  container.querySelectorAll<HTMLElement>(".katex-formula[data-latex]").forEach((formula) => {
+    const latex = formula.dataset.latex;
+    if (!latex) return;
+    const delimiter = formula.classList.contains("katex-formula-block") ? "$$" : "$";
+    formula.replaceWith(`${delimiter}${latex}${delimiter}`);
+  });
+
+  container.querySelectorAll<HTMLElement>(".katex").forEach((formula) => {
+    const annotation = formula.querySelector<HTMLElement>('annotation[encoding="application/x-tex"]');
+    const latex = annotation?.textContent?.trim();
+    if (latex) formula.replaceWith(`$${latex}$`);
+  });
+
+  container.querySelectorAll<MathMLElement>("math").forEach((formula) => {
+    const annotation = formula.querySelector<HTMLElement>('annotation[encoding="application/x-tex"]');
+    const latex = annotation?.textContent?.trim();
+    if (latex) formula.replaceWith(`$${latex}$`);
+  });
+}
+
+function replaceStructuredMath(container: HTMLElement): string[] {
+  const formulas: string[] = [];
+  const roots = Array.from(container.querySelectorAll<HTMLElement>(STRUCTURED_MATH_SELECTOR))
+    .filter((element) => !element.parentElement?.closest(STRUCTURED_MATH_SELECTOR));
+
+  for (const element of roots) {
+    if (element.closest(".katex")) continue;
+    const latex = richInlineMathLatex(element).trim();
+    if (!latex) continue;
+    const index = formulas.push(latex) - 1;
+    element.replaceWith(document.createTextNode(`\uE200${index}\uE201`));
+  }
+  return formulas;
+}
+
 function plainDocumentText(value: string | undefined): string {
   if (!value) return "";
   const withLineBreaks = value
@@ -209,13 +342,9 @@ function plainDocumentText(value: string | undefined): string {
   if (typeof document !== "undefined") {
     const container = document.createElement("div");
     container.innerHTML = withLineBreaks;
-    container.querySelectorAll<HTMLElement>(".katex-formula[data-latex]").forEach((formula) => {
-      const latex = formula.dataset.latex;
-      if (!latex) return;
-      const delimiter = formula.classList.contains("katex-formula-block") ? "$$" : "$";
-      formula.replaceWith(`${delimiter}${latex}${delimiter}`);
-    });
-    return (container.textContent || "")
+    replaceRenderedMath(container);
+    const structuredMath = replaceStructuredMath(container);
+    return restoreStructuredInlineMath(container.textContent || "", structuredMath)
       .replace(/\u00a0/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
@@ -383,10 +512,17 @@ export async function buildExamPaperDocxBlob(
 async function convertGeneratedDocxToMathType(blob: Blob, fileName: string): Promise<Blob> {
   const form = new FormData();
   form.append("file", blob, fileName);
-  return apiBlobRequest("/api/files/convert-formulas/mathtype", {
-    method: "POST",
-    body: form,
-  }, true);
+  try {
+    return await apiBlobRequest("/api/files/convert-formulas/mathtype", {
+      method: "POST",
+      body: form,
+    }, true);
+  } catch {
+    // The generated document already contains editable OMML. If a particular
+    // formula cannot be represented by MathType, keep the Office Math version
+    // instead of failing the whole download or flattening the equation.
+    return blob;
+  }
 }
 
 export async function generateExamPaperDocx(
