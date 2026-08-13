@@ -773,6 +773,29 @@ export interface GradeScoreRecord {
   subjectRankScopes?: Record<string, GradeSubjectRankScope>;
 }
 
+export type GradeScoreAdjustmentKind = "raw" | "assigned";
+
+export interface GradeScoreAdjustment {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentNo: string;
+  classId: string;
+  className: string;
+  subject: string;
+  kind: GradeScoreAdjustmentKind;
+  previousValue: number | null;
+  nextValue: number | null;
+  changedByTeacherId: string;
+  changedByName: string;
+  changedAt: string;
+}
+
+export interface GradeExamMetadataPatch {
+  name: string;
+  examDate?: string;
+}
+
 export interface GradeExam {
   id: string;
   schoolId: string;
@@ -785,6 +808,8 @@ export interface GradeExam {
   sourceSheetName: string;
   subjects: string[];
   records: GradeScoreRecord[];
+  /** 成绩统计页手工微调的审计记录，按修改时间追加。 */
+  scoreAdjustments?: GradeScoreAdjustment[];
   settings: GradeExamSettings;
   createdAt: string;
   updatedAt: string;
