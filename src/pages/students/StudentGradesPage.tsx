@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   CheckSquare,
+  ExternalLink,
   LineChart,
   Search,
   ShieldCheck,
@@ -183,19 +184,31 @@ function ExamPicker({
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {exams.map((exam) => (
-          <label
+          <div
             key={exam.id}
             className={cn(
-              "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors",
+              "rounded-lg border transition-colors",
               selected.has(exam.id) ? "border-gold-300 bg-gold-50/60" : "border-ink-100 hover:border-ink-200",
             )}
           >
-            <input type="checkbox" className="mt-0.5" checked={selected.has(exam.id)} onChange={() => toggle(exam.id)} />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-ink-800">{exam.name}</span>
-              <span className="mt-0.5 block text-xs text-ink-400">{exam.cohortLabel} · {examDateLabel(exam)}</span>
-            </span>
-          </label>
+            <label className="flex cursor-pointer items-start gap-3 px-3 py-2.5">
+              <input type="checkbox" className="mt-0.5" checked={selected.has(exam.id)} onChange={() => toggle(exam.id)} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-ink-800">{exam.name}</span>
+                <span className="mt-0.5 block text-xs text-ink-400">{exam.cohortLabel} · {examDateLabel(exam)}</span>
+              </span>
+            </label>
+            {exam.reportToken && (
+              <a
+                href={`/grade-reports/${exam.reportToken}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 border-t border-ink-100 px-3 py-2 text-xs font-medium text-gold-700 hover:bg-gold-50"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />查看已发布统计表
+              </a>
+            )}
+          </div>
         ))}
       </div>
     </Card>

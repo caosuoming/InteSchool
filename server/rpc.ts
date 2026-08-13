@@ -16,6 +16,7 @@ const PUBLIC_CALLS = new Set([
   "school.searchSchools",
   "school.getSchool",
   "class.listClassroomChoices",
+  "grade.getPublishedReportByToken",
 ]);
 
 const ADMIN_SERVICE_MUTATIONS = new Set(["settings"]);
@@ -27,6 +28,8 @@ const EXAM_MANAGER_MUTATIONS = new Set([
   "updateExamSettings",
   "updateExamMetadata",
   "adjustExamScore",
+  "publishExamResults",
+  "unpublishExamResults",
   "deleteExam",
 ]);
 const SCHOOL_ROSTER_MUTATIONS = new Set([

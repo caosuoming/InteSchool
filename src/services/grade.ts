@@ -1,4 +1,5 @@
 import { rpcCall } from "./api";
+import type { GradePublishedReportBundle } from "@/lib/grade-published-report";
 import type {
   GradeCohort,
   GradeCohortSettings,
@@ -108,6 +109,18 @@ export const gradeService = {
     value: number | null,
   ): Promise<GradeExam> {
     return rpcCall("grade", "adjustExamScore", [examId, studentId, subject, kind, value]) as Promise<GradeExam>;
+  },
+
+  async publishExamResults(examId: string): Promise<GradeExam> {
+    return rpcCall("grade", "publishExamResults", [examId]) as Promise<GradeExam>;
+  },
+
+  async unpublishExamResults(examId: string): Promise<GradeExam> {
+    return rpcCall("grade", "unpublishExamResults", [examId]) as Promise<GradeExam>;
+  },
+
+  async getPublishedReportByToken(token: string): Promise<GradePublishedReportBundle> {
+    return rpcCall("grade", "getPublishedReportByToken", [token]) as Promise<GradePublishedReportBundle>;
   },
 
   async deleteExam(examId: string): Promise<void> {

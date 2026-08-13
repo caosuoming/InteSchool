@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type {
   GradeCohort,
   GradeCohortSettings,
@@ -28,12 +29,28 @@ import {
   normalizeGradeSettings,
 } from "../../src/lib/grade-statistics.js";
 import { averageGradeValues } from "../../src/lib/grade-reports.js";
+import {
+  buildGradePublishedReportBundle,
+  type GradePublishedReportBundle,
+} from "../../src/lib/grade-published-report.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
 function readList<T>(key: string): T[] {
   const value = db.read(key);
   return Array.isArray(value) ? value as T[] : [];
+}
+
+interface GradePublicationRecord {
+  id: string;
+  examId: string;
+  schoolId: string;
+  cohortKey: string;
+  shareToken: string;
+  publishedAt: string;
+  publishedByTeacherId: string;
+  publishedByName: string;
+  report: GradePublishedReportBundle;
 }
 
 function cohortKeyForClass(item: SchoolClass): string {
@@ -323,6 +340,11 @@ function persistCohortSettings(
   subjects: string[],
   settings: GradeExamSettings,
 ): GradeCohortSettings {
+  const publishedExam = readList<GradeExam>("gradeExams")
+    .find((exam) => exam.schoolId === schoolId && exam.cohortKey === cohortKey && exam.publication);
+  if (publishedExam) {
+    throw new Error(`请先撤回「${publishedExam.name}」的成绩发布后再修改年级成绩配置`);
+  }
   const context = requireContext(schoolId, cohortKey);
   const normalizedSubjects = normalizeSubjects(subjects);
   const normalizedSettings = normalizeGradeSettings(
@@ -436,10 +458,13 @@ function buildQueryData(teacher: Teacher): GradeQueryData {
   const schoolExams = readList<GradeExam>("gradeExams")
     .filter((exam) => exam.schoolId === schoolId)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  const queryableExams = scope === "school" || scope === "grade"
+    ? schoolExams
+    : schoolExams.filter((exam) => Boolean(exam.publication));
 
   const relevantExams = scope === "school"
-    ? schoolExams
-    : schoolExams.filter((exam) =>
+    ? queryableExams
+    : queryableExams.filter((exam) =>
         targetCohorts.has(exam.cohortKey)
         && exam.records.some((record) => targetClassSet.has(record.classId)),
       );
@@ -539,6 +564,7 @@ function buildQueryData(teacher: Teacher): GradeQueryData {
       subjectAverages,
       classSummaries,
       records,
+      reportToken: exam.publication?.shareToken,
       createdAt: exam.createdAt,
     }];
   });
@@ -887,6 +913,7 @@ export const gradeService = {
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
     if (!current) throw new Error("成绩考试不存在");
+    if (current.publication) throw new Error("请先撤回成绩发布后再修改考试信息");
     const name = patch?.name?.trim();
     if (!name) throw new Error("请填写考试名称");
     const examDate = normalizeExamDate(patch.examDate);
@@ -912,6 +939,7 @@ export const gradeService = {
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
     if (!current) throw new Error("成绩考试不存在");
+    if (current.publication) throw new Error("请先撤回成绩发布后再修改学生成绩");
     if (!current.subjects.includes(subject)) throw new Error("该考试不存在所选科目");
     if (kind !== "raw" && kind !== "assigned") throw new Error("成绩修改口径不正确");
     const record = current.records.find((item) => item.studentId === studentId);
@@ -967,11 +995,91 @@ export const gradeService = {
     return updated;
   },
 
+  async publishExamResults(examId: string, teacher: Teacher): Promise<GradeExam> {
+    await delay(150);
+    maybeThrowError();
+    const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
+    if (!current) throw new Error("成绩考试不存在");
+    if (current.publication) return current;
+
+    const publishedAt = new Date().toISOString();
+    const shareToken = randomBytes(24).toString("base64url");
+    const report = buildGradePublishedReportBundle(
+      current,
+      requireContext(current.schoolId, current.cohortKey),
+      publishedAt,
+    );
+    if (!report.classAverage && !report.totalScoreSegment && !report.subjectScoreSegment && !report.electiveScoreSegment) {
+      throw new Error("当前年级尚未配置可发布的成绩统计表");
+    }
+    const publication = {
+      shareToken,
+      publishedAt,
+      publishedByTeacherId: teacher.id,
+      publishedByName: teacher.name,
+    };
+    const record: GradePublicationRecord = {
+      id: genId("grade-publication"),
+      examId: current.id,
+      schoolId: current.schoolId,
+      cohortKey: current.cohortKey,
+      ...publication,
+      report,
+    };
+    db.update("gradePublications", (items: GradePublicationRecord[] | undefined) => [
+      ...(Array.isArray(items) ? items.filter((item) => item.examId !== examId) : []),
+      record,
+    ]);
+    const updated: GradeExam = {
+      ...current,
+      publication,
+      updatedAt: publishedAt,
+    };
+    db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
+    return updated;
+  },
+
+  async unpublishExamResults(examId: string): Promise<GradeExam> {
+    await delay(150);
+    maybeThrowError();
+    const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
+    if (!current) throw new Error("成绩考试不存在");
+    if (!current.publication) return current;
+
+    db.update("gradePublications", (items: GradePublicationRecord[] | undefined) => (
+      Array.isArray(items) ? items.filter((item) => item.examId !== examId) : []
+    ));
+    const { publication: _publication, ...rest } = current;
+    const updated: GradeExam = {
+      ...rest,
+      updatedAt: new Date().toISOString(),
+    };
+    db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
+    return updated;
+  },
+
+  async getPublishedReportByToken(token: string): Promise<GradePublishedReportBundle> {
+    await delay(80);
+    const normalized = token?.trim();
+    if (!normalized) throw new Error("成绩分享链接无效");
+    const publication = readList<GradePublicationRecord>("gradePublications")
+      .find((item) => item.shareToken === normalized);
+    if (!publication) throw new Error("成绩发布已撤回或分享链接无效");
+    const exam = readList<GradeExam>("gradeExams").find((item) => item.id === publication.examId);
+    if (!exam?.publication || exam.publication.shareToken !== normalized) {
+      throw new Error("成绩发布已撤回或分享链接无效");
+    }
+    return structuredClone(publication.report);
+  },
+
   async deleteExam(examId: string): Promise<void> {
     await delay(150);
     maybeThrowError();
     const exists = readList<GradeExam>("gradeExams").some((item) => item.id === examId);
     if (!exists) throw new Error("成绩考试不存在");
     db.update("gradeExams", (items: GradeExam[]) => items.filter((item) => item.id !== examId));
+    db.update("gradePublications", (items: GradePublicationRecord[] | undefined) => (
+      Array.isArray(items) ? items.filter((item) => item.examId !== examId) : []
+    ));
   },
 };

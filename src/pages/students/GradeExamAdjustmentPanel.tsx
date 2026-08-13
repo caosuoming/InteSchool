@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { History, Search, SlidersHorizontal } from "lucide-react";
+import { Copy, History, Search, Send, SlidersHorizontal, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Select } from "@/components/ui/Input";
@@ -91,6 +91,11 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
   const [selectedStudentId, setSelectedStudentId] = useState(exam.records[0]?.studentId || "");
   const [studentSearch, setStudentSearch] = useState("");
   const [savingScore, setSavingScore] = useState<string | null>(null);
+  const [publicationSaving, setPublicationSaving] = useState(false);
+  const published = Boolean(exam.publication);
+  const shareUrl = exam.publication
+    ? `${window.location.origin}/grade-reports/${exam.publication.shareToken}`
+    : "";
 
   useEffect(() => {
     setExamName(exam.name);
@@ -145,6 +150,42 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
     }
   };
 
+  const publishResults = async () => {
+    setPublicationSaving(true);
+    try {
+      const updated = await gradeService.publishExamResults(exam.id);
+      onExamUpdated(updated);
+      toast.success("成绩已发布", "任课教师和班主任可按权限查看，分享链接已生成");
+    } catch (error) {
+      toast.error("发布成绩失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setPublicationSaving(false);
+    }
+  };
+
+  const unpublishResults = async () => {
+    setPublicationSaving(true);
+    try {
+      const updated = await gradeService.unpublishExamResults(exam.id);
+      onExamUpdated(updated);
+      toast.success("已撤回发布", "原分享链接已失效，可以继续修改后重新发布");
+    } catch (error) {
+      toast.error("撤回发布失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setPublicationSaving(false);
+    }
+  };
+
+  const copyShareUrl = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("分享链接已复制");
+    } catch {
+      toast.error("复制失败", "请手动复制分享链接");
+    }
+  };
+
   const saveScore = async (
     subject: string,
     kind: GradeScoreAdjustmentKind,
@@ -187,10 +228,45 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
         </div>
       </div>
 
+      <div className="border-b border-ink-100 bg-ink-50/40 p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-medium text-ink-900">
+              {published ? "成绩已发布" : "成绩尚未发布"}
+              {exam.publication && (
+                <span className="text-xs font-normal text-ink-400">
+                  {new Date(exam.publication.publishedAt).toLocaleString("zh-CN")} · {exam.publication.publishedByName}
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-xs text-ink-500">
+              发布后，任课教师仅查看任教学科和学生，班主任可查看本班全科；公开链接只展示四张聚合统计表。
+            </div>
+          </div>
+          <Button
+            variant={published ? "outline" : "gold"}
+            onClick={() => void (published ? unpublishResults() : publishResults())}
+            loading={publicationSaving}
+          >
+            {published ? <Undo2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+            {published ? "撤回发布" : "发布"}
+          </Button>
+        </div>
+        {published && (
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Input aria-label="成绩分享链接" value={shareUrl} readOnly className="font-mono text-xs" />
+            <Button variant="outline" onClick={() => void copyShareUrl()}>
+              <Copy className="h-4 w-4" />复制链接
+            </Button>
+          </div>
+        )}
+      </div>
+
       <div className="grid gap-3 border-b border-ink-100 p-5 md:grid-cols-[minmax(0,1fr)_13rem_auto] md:items-end">
         <Input
           label="考试名称"
           value={examName}
+          disabled={published}
           onChange={(event) => setExamName(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") void saveMetadata();
@@ -200,9 +276,10 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
           label="考试时间"
           type="date"
           value={examDate}
+          disabled={published}
           onChange={(event) => setExamDate(event.target.value)}
         />
-        <Button variant="outline" onClick={() => void saveMetadata()} loading={metadataSaving}>
+        <Button variant="outline" onClick={() => void saveMetadata()} loading={metadataSaving} disabled={published}>
           保存考试信息
         </Button>
       </div>
@@ -211,7 +288,9 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
         <div>
           <div className="font-medium text-ink-900">学生成绩微调</div>
           <div className="mt-0.5 text-xs text-ink-500">
-            可下拉选择或搜索学生。修改分数后失焦即保存；赋分留空表示恢复按原始分和当前规则自动计算。
+            {published
+              ? "当前成绩已发布；请先撤回发布，再继续修改学生成绩。"
+              : "可下拉选择或搜索学生。修改分数后失焦即保存；赋分留空表示恢复按原始分和当前规则自动计算。"}
           </div>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
@@ -269,14 +348,14 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
                     <ScoreEditor
                       label={assignedConfigured ? "原始分" : "成绩"}
                       value={selectedRecord.scores[subject]}
-                      disabled={savingScore !== null}
+                      disabled={published || savingScore !== null}
                       onCommit={(value) => saveScore(subject, "raw", value)}
                     />
                     {assignedConfigured && (
                       <ScoreEditor
                         label="赋分"
                         value={selectedRecord.assignedScores[subject]}
-                        disabled={savingScore !== null}
+                        disabled={published || savingScore !== null}
                         hint={selectedRecord.sourceAssignedScores?.[subject] == null ? "当前为自动计算" : "当前为手工/导入赋分"}
                         onCommit={(value) => saveScore(subject, "assigned", value)}
                       />
