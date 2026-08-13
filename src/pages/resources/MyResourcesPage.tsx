@@ -73,6 +73,7 @@ import {
   treeNameMap,
 } from "@/lib/basket-audience";
 import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
+import { createBlankLessonCourseware } from "@/lib/lesson-courseware-create";
 import {
   appendUniqueIds,
   batchResourceKey,
@@ -1333,6 +1334,20 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       navigate(`/lectures/${created.id}/edit`);
     } catch (e: any) {
       toast.error("创建讲义失败", e?.message);
+    }
+  };
+
+  const handleCreateBlankCourseware = async () => {
+    if (!teacher) return;
+    try {
+      const created = await createBlankLessonCourseware(teacher.id, schoolId, {
+        grade: defaultGrade,
+        schoolYear: defaultSchoolYear,
+        semester: defaultSemester,
+      });
+      navigate(`/my-lessons/${created.id}/edit`);
+    } catch (e: any) {
+      toast.error("创建课件失败", e?.message);
     }
   };
 
@@ -2863,10 +2878,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 </>
               )}
               {activeTab === "courseware" && (
-                <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=courseware")}>
-                  <Upload className="w-3.5 h-3.5" />
-                  上传课件
-                </Button>
+                <>
+                  <Button variant="gold" size="sm" onClick={handleCreateBlankCourseware}>
+                    <Plus className="w-3.5 h-3.5" />
+                    做课件
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=courseware")}>
+                    <Upload className="w-3.5 h-3.5" />
+                    上传课件
+                  </Button>
+                </>
               )}
               {activeTab === "material" && (
                 <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=material")}>

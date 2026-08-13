@@ -16,6 +16,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { basketService } from "@/services/basket";
 import { questionService } from "@/services/question";
 import { classService } from "@/services/class";
 import { uploadFile } from "@/services/api";
@@ -41,6 +42,7 @@ import { getCoursewareEditorUrl } from "@/lib/courseware-online";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { LessonEditorInspector } from "@/components/lessons/LessonEditorInspector";
+import { createLessonQuestionSlide } from "@/lib/lesson-courseware-create";
 
 const INSPECTOR_MIN_WIDTH = 220;
 const INSPECTOR_MAX_WIDTH = 420;
@@ -84,6 +86,9 @@ export function LessonEditorPage() {
   const [relatedQuestions, setRelatedQuestions] = useState<Question[]>([]);
   // 所有相关题的缓存（id -> Question），供预览模式使用
   const [relatedQuestionsMap, setRelatedQuestionsMap] = useState<Record<string, Question>>({});
+  const [questionPickerOpen, setQuestionPickerOpen] = useState(false);
+  const [basketQuestions, setBasketQuestions] = useState<Question[]>([]);
+  const [basketQuestionsLoading, setBasketQuestionsLoading] = useState(false);
 
   // 预览模式
   const [previewMode, setPreviewMode] = useState(() => searchParams.get("preview") === "1");
@@ -355,6 +360,42 @@ export function LessonEditorPage() {
     updateCurrentElements([...(currentSlide.elements || []), element]);
     setSelectedElementId(element.id);
     setSelectedTextRegion(null);
+  };
+
+  const openQuestionPicker = async () => {
+    if (!teacher) return;
+    setQuestionPickerOpen(true);
+    setBasketQuestionsLoading(true);
+    try {
+      const baskets = await basketService.listBaskets(teacher.id);
+      const questionIds = Array.from(new Set(
+        baskets.flatMap((basket) => basket.questionIds || []),
+      ));
+      const questions = await Promise.all(
+        questionIds.map((questionId) => questionService.getQuestion(questionId)),
+      );
+      setBasketQuestions(questions.filter((question): question is Question => Boolean(question)));
+    } catch (error) {
+      toast.error("资源篮题目加载失败", error instanceof Error ? error.message : undefined);
+      setBasketQuestions([]);
+    } finally {
+      setBasketQuestionsLoading(false);
+    }
+  };
+
+  const insertQuestionFromBasket = (question: Question) => {
+    const slide = createLessonQuestionSlide(question);
+    const insertIndex = Math.min(currentIndex + 1, slides.length);
+    setSlides((previous) => {
+      const next = [...previous];
+      next.splice(insertIndex, 0, slide);
+      return next;
+    });
+    setCurrentIndex(insertIndex);
+    setSelectedElementId(null);
+    setSelectedTextRegion(null);
+    setQuestionPickerOpen(false);
+    toast.success("已插入题目");
   };
 
   const updateSelectedElement = (patch: Partial<LessonSlideElement>) => {
@@ -915,6 +956,7 @@ export function LessonEditorPage() {
                     selectedTextRegion={selectedTextRegion}
                     students={students}
                     relatedQuestions={relatedQuestions}
+                    relatedQuestionsById={relatedQuestionsMap}
                     canDeleteSlide={slides.length > 1}
                     canMergeSlide={currentIndex < slides.length - 1}
                     onSelectElement={(elementId) => {
@@ -932,6 +974,7 @@ export function LessonEditorPage() {
                     onAddText={addTextElement}
                     onAddImage={addImageElement}
                     onAddLink={addLinkElement}
+                    onAddQuestion={openQuestionPicker}
                     onAddSlide={addNewSlide}
                     onSplitSlide={splitSlide}
                     onMergeSlide={mergeWithNext}
@@ -959,6 +1002,47 @@ export function LessonEditorPage() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={questionPickerOpen}
+        onClose={() => setQuestionPickerOpen(false)}
+        title="从资源篮插入题目"
+        description="这里只显示当前教师资源篮中的题目。插入后会在当前页下方新建题目页。"
+        size="lg"
+        footer={null}
+      >
+        {basketQuestionsLoading ? (
+          <div className="py-10 text-center text-sm text-ink-500">正在加载资源篮题目...</div>
+        ) : basketQuestions.length === 0 ? (
+          <div className="py-10 text-center text-sm text-ink-500">资源篮中暂无题目</div>
+        ) : (
+          <div className="max-h-[60vh] space-y-2 overflow-auto pr-1">
+            {basketQuestions.map((question) => (
+              <div key={question.id} className="rounded-lg border border-ink-100 p-3">
+                <div className="mb-2 flex items-start gap-3">
+                  <MathHtml className="min-w-0 flex-1 text-sm leading-6 text-ink-800">{question.stem}</MathHtml>
+                  <Badge variant="ink">{question.type}</Badge>
+                </div>
+                {question.options && question.options.length > 0 && (
+                  <div className="mb-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    {question.options.map((option, index) => (
+                      <div key={`${question.id}-picker-option-${index}`} className="flex items-start gap-2 rounded bg-mist/40 px-2 py-1.5 text-xs text-ink-600">
+                        <span className="font-mono">{String.fromCharCode(65 + index)}.</span>
+                        <MathHtml className="min-w-0 flex-1">{option}</MathHtml>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <Button size="sm" variant="gold" onClick={() => insertQuestionFromBasket(question)}>
+                    <Plus className="h-3.5 w-3.5" />插入
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={classModalOpen}

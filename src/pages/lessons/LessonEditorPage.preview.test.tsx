@@ -1,10 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { LessonCourseware, Teacher } from "@/types";
+import type { Basket, LessonCourseware, Question, Teacher } from "@/types";
 
 const mocks = vi.hoisted(() => ({
   getCourseware: vi.fn(),
+  getQuestion: vi.fn(),
+  listBaskets: vi.fn(),
   listMyStudents: vi.fn(),
   listMyClasses: vi.fn(),
 }));
@@ -56,7 +58,10 @@ vi.mock("@/services/class", () => ({
   },
 }));
 vi.mock("@/services/question", () => ({
-  questionService: { getQuestion: vi.fn() },
+  questionService: { getQuestion: mocks.getQuestion },
+}));
+vi.mock("@/services/basket", () => ({
+  basketService: { listBaskets: mocks.listBaskets },
 }));
 vi.mock("./PresentationMode", () => ({
   PresentationMode: () => <div>课件预览模式</div>,
@@ -78,6 +83,8 @@ describe("LessonEditorPage preview query", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getCourseware.mockResolvedValue(courseware);
+    mocks.getQuestion.mockResolvedValue(null);
+    mocks.listBaskets.mockResolvedValue([]);
     mocks.listMyStudents.mockResolvedValue([]);
     mocks.listMyClasses.mockResolvedValue([]);
   });
@@ -93,5 +100,39 @@ describe("LessonEditorPage preview query", () => {
 
     expect(await screen.findByText(courseware.title)).toBeInTheDocument();
     expect(screen.queryByText("课件预览模式")).not.toBeInTheDocument();
+  });
+
+  it("inserts questions only from the teacher resource baskets", async () => {
+    const question = {
+      id: "question-basket-1",
+      type: "single",
+      stem: "若 $x^2=4$，则 $x$ 等于？",
+      options: ["$2$", "$-2$", "$\\pm2$"],
+      answer: "$\\pm2$",
+      analysis: "由平方根定义可得。",
+    } as unknown as Question;
+    mocks.listBaskets.mockResolvedValue([{
+      id: "basket-1",
+      teacherId: teacher.id,
+      name: "默认资源篮",
+      questionIds: [question.id],
+      materialIds: [],
+    } as Basket]);
+    mocks.getQuestion.mockImplementation(async (questionId: string) => (
+      questionId === question.id ? question : null
+    ));
+
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    await screen.findByText(courseware.title);
+
+    fireEvent.click(screen.getByRole("button", { name: "题目" }));
+
+    expect(await screen.findByRole("heading", { name: "从资源篮插入题目" })).toBeInTheDocument();
+    expect(mocks.listBaskets).toHaveBeenCalledWith(teacher.id);
+    expect(mocks.getQuestion).toHaveBeenCalledWith(question.id);
+    fireEvent.click(screen.getByRole("button", { name: "插入" }));
+
+    expect(await screen.findByText("第 2 页，共 2 页")).toBeInTheDocument();
+    expect(document.querySelector(".katex")).not.toBeNull();
   });
 });
