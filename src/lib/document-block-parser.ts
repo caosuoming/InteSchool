@@ -353,6 +353,40 @@ function extractLeadingQuestionNumber(text: string): { number: string; rest: str
   return null;
 }
 
+function shouldContinueNumberedSummary(
+  line: string,
+  block: Partial<DocumentBlock>,
+  config: DocumentParseConfig,
+): boolean {
+  const summary = block.summary?.trim();
+  if (!summary) return false;
+
+  const candidate = extractLeadingQuestionNumber(line);
+  if (!candidate) return false;
+  const candidateNumber = Number(candidate.number);
+  if (!Number.isInteger(candidateNumber)) return false;
+
+  const previous = summary
+    .split("\n")
+    .map((entry) => extractLeadingQuestionNumber(entry.trim()))
+    .filter((entry): entry is { number: string; rest: string } => Boolean(entry))
+    .at(-1);
+  if (!previous || candidateNumber !== Number(previous.number) + 1) return false;
+
+  // A numbered list inside 总结 commonly looks exactly like a new question. Keep
+  // the list together unless the number is also the expected next top-level
+  // question and its text itself looks like a question prompt.
+  const currentQuestion = extractLeadingQuestionNumber(block.content || "");
+  if (
+    currentQuestion
+    && candidateNumber === Number(currentQuestion.number) + 1
+    && looksLikeImplicitQuestion({ content: candidate.rest }, undefined, config)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 const nestedQuestionMarkerPattern = /^(?:[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]|[①-⑳])\s*/i;
 
 function isNestedTrailingAnswerLine(
@@ -864,6 +898,15 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
         order: order++,
         status: "new",
       });
+      continue;
+    }
+
+    if (
+      currentBlock.type === "question"
+      && currentQuestionField === "summary"
+      && shouldContinueNumberedSummary(line, currentBlock, config)
+    ) {
+      appendQuestionField(currentBlock, "summary", line);
       continue;
     }
 
