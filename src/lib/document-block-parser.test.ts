@@ -868,6 +868,10 @@ describe("document block parser", () => {
     "考向1 $a_{n+1}=pa_n+q^n$",
     "考向２：递推数列的构造",
     "考向三 数列通项公式的求法",
+    "题型一 数列递推关系",
+    "题型二 由递推求通项",
+    "类型1 等差数列综合题",
+    "类型二 数列与函数综合",
   ])("classifies %s as a project or question-type title", (projectHeading) => {
     const blocks = parseDocumentBlocks(
       [
@@ -885,5 +889,74 @@ describe("document block parser", () => {
       ["question", "例2 已知另一数列，求其通项公式。"],
     ]);
     expect(blocks[0].analysis).toBe("先利用构造法完成前一题。");
+  });
+
+  it.each([
+    ["反思", "反思 先判断递推关系的类型，再选择构造方法。"],
+    ["反思感悟", "反思感悟 先化简再观察结构。"],
+    ["感悟", "感悟：复杂递推式应优先寻找不变量。"],
+    ["【反思】", "【反思】 本题容易忽略首项条件。"],
+  ])("treats %s as a summary marker instead of a project title", (_label, summaryLine) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 已知数列满足递推关系，求其通项公式。",
+        "解析：先完成递推式变形。",
+        summaryLine,
+        "题型一 递推数列",
+        "例2 已知另一数列，求其通项公式。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual([
+      "question",
+      "groupTitle",
+      "question",
+    ]);
+    expect(blocks[0].summary).toBe(summaryLine
+      .replace(/^反思感悟\s*/, "")
+      .replace(/^反思\s*/, "")
+      .replace(/^感悟\s*[:：]?\s*/, "")
+      .replace(/^【反思】\s*/, ""));
+  });
+
+  it("keeps content after a standalone bracketed reflection marker in the question summary", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 已知数列满足递推关系，求其通项公式。",
+        "解析：先完成递推式变形。",
+        "【反思】",
+        "本题容易忽略首项条件。",
+        "题型二 递推数列变式",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      summary: "本题容易忽略首项条件。",
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "groupTitle",
+      content: "题型二 递推数列变式",
+    });
+  });
+
+  it("does not treat a word beginning with 题型一 as a project title without a separator", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "题型一元二次方程需要先判断判别式。",
+        "题型一 二次方程基础",
+        "例1 求方程的根。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["documentTitle", "题型一元二次方程需要先判断判别式。"],
+      ["groupTitle", "题型一 二次方程基础"],
+      ["question", "例1 求方程的根。"],
+    ]);
   });
 });
