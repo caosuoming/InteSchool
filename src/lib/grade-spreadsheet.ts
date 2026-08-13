@@ -531,10 +531,22 @@ export async function exportGradeTotalScoreSegmentReport(
       ...report.columns.map((column) => cell(row.counts[column.key] || 0)),
     ]);
   });
-  rows.push(
-    [cell(null), ...report.columns.map(() => cell(null))],
-    [cell(null), ...report.columns.map(() => cell(null))],
-  );
+  const standardSummary = (["science", "arts"] as const).map((track) => {
+    const values = report.trackStandards[track];
+    const trackLabel = track === "science" ? "理科标准" : "文科标准";
+    const display = (value: number | null) => value === null ? "未设置" : `${value}分`;
+    return `${trackLabel}：高分1 ${display(values.highScore1)} | 高分2 ${display(values.highScore2)} | 一本 ${display(values.firstTier)} | 二本 ${display(values.undergraduate)}`;
+  }).join("    ");
+  rows.push([
+    cell(standardSummary, {
+      fontWeight: "bold",
+      backgroundColor: "#FFFBEB",
+      columnSpan: report.columns.length + 1,
+      height: 34,
+      wrap: true,
+    }),
+    ...report.columns.map(() => cell(null)),
+  ]);
   report.summaryRows.forEach((row) => {
     rows.push([
       cell(row.label, { fontWeight: "bold" }),
