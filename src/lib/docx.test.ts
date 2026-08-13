@@ -158,6 +158,85 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).not.toContain("$f(x)");
   });
 
+  it("restores imported rich-text scripts as editable Office math", async () => {
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: [
+          "设",
+          '<i class="math-variable">S</i><sub><i class="math-variable">n</i></sub>',
+          "为数列{",
+          '<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>',
+          "}的前",
+          '<i class="math-variable">n</i>',
+          "项和，已知4",
+          '<i class="math-variable">S</i><sub><i class="math-variable">n</i></sub>',
+          "=3",
+          '<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>',
+          "+4。",
+        ].join(""),
+        analysis: [
+          "令(-1)",
+          '<sup><i class="math-variable">n</i>-1</sup>',
+          '<i class="math-variable">n</i>',
+          '<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>',
+          "，再计算。",
+        ].join(""),
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: [
+          "设",
+          '<i class="math-variable">S</i><sub><i class="math-variable">n</i></sub>',
+          "为数列{",
+          '<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>',
+          "}的前",
+          '<i class="math-variable">n</i>',
+          "项和，已知4",
+          '<i class="math-variable">S</i><sub><i class="math-variable">n</i></sub>',
+          "=3",
+          '<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>',
+          "+4。",
+        ].join(""),
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml).toContain("<m:sSub>");
+    expect(documentXml).toContain("<m:sSup>");
+    expect(documentXml).toMatch(/<m:t(?: [^>]*)?>4<\/m:t>/);
+    expect(documentXml).toMatch(/<m:t(?: [^>]*)?>S<\/m:t>/);
+    expect(documentXml).toMatch(/<m:t(?: [^>]*)?>a<\/m:t>/);
+    expect(documentXml).not.toContain("4Sn=3an+4");
+    expect(documentXml).not.toContain("(-1)n-1nan");
+  });
+
+  it("falls back to editable Office math when MathType conversion fails", async () => {
+    apiBlobRequestMock.mockRejectedValueOnce(new Error("unsupported MathType formula"));
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: "求 $x^2+1$。",
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: "求 $x^2+1$。",
+      }],
+    };
+
+    await generateExamPaperDocx(formulaPaper, { [linkedQuestion.id]: linkedQuestion });
+
+    expect(saveAsMock).toHaveBeenCalledOnce();
+    const documentXml = await capturedDocumentXml();
+    expect(documentXml).toContain("<m:oMath");
+    expect(documentXml).toContain("<m:sSup>");
+  });
+
   it("builds lecture downloads from preview sections with editable formulas", async () => {
     const lectureQuestion: Question = {
       ...linkedQuestion,
@@ -205,5 +284,47 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("例1");
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:sSup>");
+  });
+
+  it("restores imported rich-text scripts in lecture downloads", async () => {
+    const lectureQuestion: Question = {
+      ...linkedQuestion,
+      stem: '已知4<i class="math-variable">S</i><sub><i class="math-variable">n</i></sub>=3<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>+4。',
+      analysis: '所以<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>=4×(-3)<sup><i class="math-variable">n</i>-1</sup>。',
+    };
+    const lecture: Lecture = {
+      id: "lecture-rich-math",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      title: "数列讲义",
+      description: "",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期",
+      classIds: [],
+      studentIds: [],
+      sections: [{
+        id: "question",
+        title: "例题",
+        type: "question",
+        content: "",
+        questionId: lectureQuestion.id,
+        children: [],
+      }],
+      version: 1,
+      status: "draft",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    const blob = await buildLectureDocxBlob(lecture, { [lectureQuestion.id]: lectureQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml).toContain("<m:sSub>");
+    expect(documentXml).toContain("<m:sSup>");
+    expect(documentXml).not.toContain("4Sn=3an+4");
   });
 });
