@@ -11,6 +11,8 @@ vi.mock("@/services/grade", () => ({
   gradeService: {
     updateExamMetadata: vi.fn(),
     adjustExamScore: vi.fn(),
+    publishExamResults: vi.fn(),
+    unpublishExamResults: vi.fn(),
   },
 }));
 
@@ -94,6 +96,36 @@ describe("GradeExamAdjustmentPanel", () => {
         examDate: "2026-08-12",
       });
     });
+  });
+
+  it("publishes, exposes a share link, locks editing, and withdraws publication", async () => {
+    const user = userEvent.setup();
+    const initial = buildExam();
+    const published: GradeExam = {
+      ...initial,
+      publication: {
+        shareToken: "public-token",
+        publishedAt: "2026-08-13T10:00:00.000Z",
+        publishedByTeacherId: "teacher-1",
+        publishedByName: "年级组长",
+      },
+    };
+    vi.mocked(gradeService.publishExamResults).mockResolvedValue(published);
+    vi.mocked(gradeService.unpublishExamResults).mockResolvedValue(initial);
+
+    render(<Harness initial={initial} />);
+    await user.click(screen.getByRole("button", { name: "发布" }));
+
+    await waitFor(() => expect(gradeService.publishExamResults).toHaveBeenCalledWith("exam-1"));
+    expect(await screen.findByText("成绩已发布")).toBeInTheDocument();
+    expect(screen.getByLabelText("成绩分享链接")).toHaveValue(`${window.location.origin}/grade-reports/public-token`);
+    expect(screen.getByRole("textbox", { name: "考试名称" })).toBeDisabled();
+    expect(screen.getByRole("spinbutton", { name: "成绩" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "撤回发布" }));
+    await waitFor(() => expect(gradeService.unpublishExamResults).toHaveBeenCalledWith("exam-1"));
+    expect(await screen.findByText("成绩尚未发布")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "考试名称" })).toBeEnabled();
   });
 
   it("searches students, saves a subject score adjustment, and shows modifier history", async () => {

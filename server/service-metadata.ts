@@ -563,6 +563,16 @@ export const serviceParameters = {
       "value",
       "teacher"
     ],
+    "publishExamResults": [
+      "examId",
+      "teacher"
+    ],
+    "unpublishExamResults": [
+      "examId"
+    ],
+    "getPublishedReportByToken": [
+      "token"
+    ],
     "deleteExam": [
       "examId"
     ]

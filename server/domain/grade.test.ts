@@ -479,7 +479,7 @@ describe("grade service", () => {
       const context = await gradeService.getImportContext("school-1", "grad-2026");
       const subjects = ["数学", "化学"];
       const settings = buildDefaultGradeSettings(subjects, context.classes.map((item) => item.id), context.teachers);
-      await gradeService.importExam("school-1", "teacher-1", {
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
         cohortKey: "grad-2026",
         name: "期中考试",
         sourceFileName: "scores.xlsx",
@@ -512,6 +512,11 @@ describe("grade service", () => {
         ],
       });
 
+      const unpublishedQuery = await gradeService.getQueryData(teacher);
+      expect(unpublishedQuery.exams).toEqual([]);
+      const published = await gradeService.publishExamResults(exam.id, teacher);
+      expect(published.publication?.shareToken).toBeTruthy();
+
       const teacherQuery = await gradeService.getQueryData(teacher);
       expect(teacherQuery.scope).toBe("teacher");
       expect(teacherQuery.homeroomClassIds).toEqual([]);
@@ -521,6 +526,15 @@ describe("grade service", () => {
       expect(Object.keys(teacherQuery.exams[0].records[0].scores)).toEqual(["数学"]);
       expect(teacherQuery.exams[0].classSummaries).toHaveLength(2);
       expect(Object.keys(teacherQuery.exams[0].classSummaries[0].subjectAverages)).toEqual(["数学"]);
+      expect(teacherQuery.exams[0].reportToken).toBe(published.publication?.shareToken);
+      const publicReport = await gradeService.getPublishedReportByToken(published.publication!.shareToken);
+      expect(publicReport.exam).toMatchObject({ name: "期中考试", cohortLabel: "2026届高三" });
+      expect(JSON.stringify(publicReport)).not.toContain("旧姓名");
+      expect(JSON.stringify(publicReport)).not.toContain("二班学生");
+      await expect(gradeService.adjustExamScore(exam.id, "student-1", "数学", "raw", 119, teacher))
+        .rejects.toThrow("请先撤回成绩发布");
+      await expect(gradeService.saveCohortSettings("school-1", "teacher-1", "grad-2026", subjects, settings))
+        .rejects.toThrow("请先撤回「期中考试」的成绩发布");
 
       teacher.homeroomClassIds = ["class-1"];
       teacher.affiliations[0].homeroomClassIds = ["class-1"];
@@ -563,6 +577,13 @@ describe("grade service", () => {
       const unassignedQuery = await gradeService.getQueryData(teacher);
       expect(unassignedQuery.teachingClassIds).toEqual([]);
       expect(unassignedQuery.exams).toEqual([]);
+
+      const token = published.publication!.shareToken;
+      const withdrawn = await gradeService.unpublishExamResults(exam.id);
+      expect(withdrawn.publication).toBeUndefined();
+      await expect(gradeService.getPublishedReportByToken(token)).rejects.toThrow("已撤回");
+      await expect(gradeService.updateExamMetadata(exam.id, { name: "撤回后可修改", examDate: "2026-08-13" }))
+        .resolves.toMatchObject({ name: "撤回后可修改", examDate: "2026-08-13" });
     });
   });
   it("shares cohort preprocessing across imports and recalculates existing exams", async () => {

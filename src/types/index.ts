@@ -796,6 +796,13 @@ export interface GradeExamMetadataPatch {
   examDate?: string;
 }
 
+export interface GradeExamPublication {
+  shareToken: string;
+  publishedAt: string;
+  publishedByTeacherId: string;
+  publishedByName: string;
+}
+
 export interface GradeExam {
   id: string;
   schoolId: string;
@@ -810,6 +817,8 @@ export interface GradeExam {
   records: GradeScoreRecord[];
   /** 成绩统计页手工微调的审计记录，按修改时间追加。 */
   scoreAdjustments?: GradeScoreAdjustment[];
+  /** 当前有效的成绩发布；撤回后清空，重新发布会生成新链接。 */
+  publication?: GradeExamPublication;
   settings: GradeExamSettings;
   createdAt: string;
   updatedAt: string;
@@ -863,6 +872,8 @@ export interface GradeQueryExam {
   subjectAverages: Record<string, number | null>;
   classSummaries: GradeQueryClassSummary[];
   records: GradeQueryRecord[];
+  /** 已发布统计表的只读分享令牌，仅对有权查看该考试的登录教师返回。 */
+  reportToken?: string;
   createdAt: string;
 }
 

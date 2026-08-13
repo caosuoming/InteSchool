@@ -43,6 +43,7 @@ const LessonEditorPage = lazy(() => import("@/pages/lessons/LessonEditorPage"));
 const ClassroomPage = lazy(() => import("@/pages/lessons/ClassroomPage"));
 const MyStudentsPage = lazy(() => import("@/pages/students/MyStudentsPage"));
 const StudentGradesPage = lazy(() => import("@/pages/students/StudentGradesPage"));
+const PublishedGradeReportPage = lazy(() => import("@/pages/students/PublishedGradeReportPage"));
 const MyExamsPage = lazy(() => import("@/pages/exams/MyExamsPage"));
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 
@@ -167,6 +168,7 @@ export default function App() {
             }
           />
           <Route path="/classroom-login" element={<ClassroomLoginPage />} />
+          <Route path="/grade-reports/:token" element={<PublishedGradeReportPage />} />
           <Route
             path="/classroom"
             element={teacher ? (teacher.schoolId ? <ClassroomPage /> : <Navigate to="/school-auth" replace />) : <Navigate to="/classroom-login" replace />}
