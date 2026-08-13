@@ -390,6 +390,7 @@
     font-size: 11pt;
     font-weight: 700;
     line-height: 1.05;
+    transform: translateY(-0.5em);
   }
   .exam-class-arrangement-header-meta {
     display: flex;
@@ -433,6 +434,7 @@
   }
   .exam-class-arrangement-student-header strong {
     overflow-wrap: anywhere;
+    transform: translateY(-0.5em);
   }
   .exam-class-arrangement-student-header span {
     flex: 0 0 auto;
@@ -494,6 +496,8 @@
     --desk-section-spacing: 1.15mm;
     --desk-seat-padding: 0.9mm;
     --desk-subline-spacing: 0.65mm;
+    --desk-content-shift: -1.85mm;
+    --desk-seat-shift: -1.75mm;
     page: exam-desk-label;
     display: grid;
     width: 260mm;
@@ -522,6 +526,8 @@
     --desk-section-spacing: 0.8mm;
     --desk-seat-padding: 0.65mm;
     --desk-subline-spacing: 0.45mm;
+    --desk-content-shift: -1.6mm;
+    --desk-seat-shift: -1.6mm;
   }
   .exam-desk-label {
     break-inside: avoid;
@@ -578,13 +584,18 @@
     font-size: var(--desk-seat-size);
     line-height: 1.35;
   }
-  .exam-desk-label-seat strong { font-size: var(--desk-seat-strong-size); }
+  .exam-desk-label-seat strong {
+    font-size: var(--desk-seat-strong-size);
+    transform: translateY(var(--desk-seat-shift));
+  }
   .exam-desk-label-assignments {
     flex: 0 0 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
+    margin-bottom: var(--desk-content-shift);
+    transform: translateY(var(--desk-content-shift));
   }
   .exam-desk-label-assignment {
     display: flex;
@@ -626,8 +637,9 @@
   }
   .exam-desk-label-class {
     min-width: 0;
+    margin-left: auto;
     overflow-wrap: anywhere;
-    text-align: left;
+    text-align: right;
     font-size: var(--desk-detail-size);
     line-height: 1.35;
   }

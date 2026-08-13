@@ -1753,7 +1753,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     data-testid="desk-label-print-page"
                     style={{
                       gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
-                      gridAutoRows: `${layout.rowHeight}mm`,
+                      gridAutoRows: "max-content",
+                      alignItems: "start",
                     }}
                   >
                     {pageLabels.map((group) => (

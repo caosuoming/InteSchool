@@ -428,7 +428,8 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "下载桌贴 PDF" })).toBeEnabled();
     const deskPrintPage = screen.getByTestId("desk-label-print-page");
-    expect(Number.parseFloat(deskPrintPage.style.gridAutoRows)).toBeLessThan(48);
+    expect(deskPrintPage.style.gridAutoRows).toBe("max-content");
+    expect(deskPrintPage.style.alignItems).toBe("start");
     expect(deskPrintPage.querySelector(".exam-desk-label-assignment-main")).toHaveTextContent("张同学");
     expect(deskPrintPage.querySelector(".exam-desk-label-assignment-main")).toHaveTextContent("高三（1）班");
     expect(deskPrintPage.querySelector(".exam-desk-label-meta")?.children[0]).toHaveTextContent("教学楼 301");
@@ -559,7 +560,8 @@ describe("ExamRoomArrangementPage", () => {
     expect(printPage).toHaveAttribute("data-density", "normal");
     expect(printPage).toHaveAttribute("data-columns", "5");
     expect(printPage.querySelectorAll(".exam-desk-label")).toHaveLength(21);
-    expect(Number.parseFloat(printPage.style.gridAutoRows)).toBeGreaterThan(30);
+    expect(printPage.style.gridAutoRows).toBe("max-content");
+    expect(printPage.style.alignItems).toBe("start");
   });
 
   it("splits a large class over multiple readable A4 pages", async () => {
