@@ -795,6 +795,54 @@ describe("document block parser", () => {
     expect(blocks[0].summary).toMatch(/注意等价转化|不要漏掉端点/);
   });
 
+  it("keeps sequential numbered summary items in the same question", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "7. 已知数列满足递推关系，求其通项公式。",
+        "解析：先分别研究奇数项和偶数项。",
+        "总结：1. 构造隔项等差数列：两式相减得到公差。",
+        "2. 构造隔项等比数列：两式相除得到公比。",
+        "8. 已知另一数列，求其前 n 项和。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "7. 已知数列满足递推关系，求其通项公式。",
+      summary: [
+        "1. 构造隔项等差数列：两式相减得到公差。",
+        "2. 构造隔项等比数列：两式相除得到公比。",
+      ].join("\n"),
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "8. 已知另一数列，求其前 n 项和。",
+    });
+  });
+
+  it("still starts the expected next question after a numbered summary item", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 已知数列满足递推关系，求其通项公式。",
+        "总结：1. 先识别递推关系的结构。",
+        "2. 已知另一数列满足 $a_{n+1}=2a_n$，求 $a_n$。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      summary: "1. 先识别递推关系的结构。",
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "2. 已知另一数列满足 $a_{n+1}=2a_n$，求 $a_n$。",
+    });
+  });
+
   it("classifies bracketed and 热点 headings as project group titles", () => {
     const blocks = parseDocumentBlocks(
       [
