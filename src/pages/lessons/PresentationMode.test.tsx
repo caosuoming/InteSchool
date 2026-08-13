@@ -459,8 +459,8 @@ describe("PresentationMode", () => {
     const rightBoardControls = firstBoard.querySelector<HTMLElement>('[data-board-side-controls="right"]');
     expect(leftBoardControls).not.toBeNull();
     expect(rightBoardControls).not.toBeNull();
-    expect(leftBoardControls).toHaveClass("top-1");
-    expect(rightBoardControls).toHaveClass("top-1");
+    expect(Number.parseFloat(leftBoardControls?.style.top || "0")).toBeCloseTo((40 / 62) * 100);
+    expect(Number.parseFloat(rightBoardControls?.style.top || "0")).toBeCloseTo((40 / 62) * 100);
     const addWritingAreaButton = within(leftBoardControls!).getByRole("button", { name: "从左侧在板书 1中新增书写区" });
     const rightAddWritingAreaButton = within(rightBoardControls!).getByRole("button", { name: "从右侧在板书 1中新增书写区" });
     const firstWritingAreaTab = within(leftBoardControls!).getByRole("tab", { name: "从左侧切换到板书 1书写区 1" });
@@ -507,24 +507,54 @@ describe("PresentationMode", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "打开板书" }));
+    const surface = screen.getByTestId("presentation-surface");
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({}),
+    });
     const board = screen.getByRole("region", { name: "板书 1" });
-    const leftControls = () => within(
-      board.querySelector<HTMLElement>('[data-board-side-controls="left"]')!,
-    );
+    const leftControlsElement = () => board.querySelector<HTMLElement>('[data-board-side-controls="left"]')!;
+    const leftControls = () => within(leftControlsElement());
 
     expect(leftControls().getByRole("button", { name: "从左侧全屏板书 1" })).toBeInTheDocument();
     expect(leftControls().getByRole("button", { name: "从左侧截图板书 1" })).toBeInTheDocument();
 
+    await user.click(leftControls().getByRole("button", { name: "从左侧在板书 1中新增书写区" }));
+    let writingFrames = Array.from(board.querySelectorAll<HTMLElement>("[data-board-writing-frame]"));
+    fireEvent.wheel(writingFrames[1], { deltaY: -500, clientX: 500, clientY: 300 });
+    expect(Number(writingFrames[1].dataset.boardWritingScale)).toBeGreaterThan(1);
+    await user.click(leftControls().getByRole("tab", { name: "从左侧切换到板书 1书写区 1" }));
+    fireEvent.wheel(writingFrames[0], { deltaY: -500, clientX: 500, clientY: 300 });
+    expect(Number(writingFrames[0].dataset.boardWritingScale)).toBeGreaterThan(1);
+
     await user.click(leftControls().getByRole("button", { name: "从左侧全屏板书 1" }));
     expect(board).toHaveStyle({ left: "0%", top: "0%", width: "100%", height: "100%" });
+    expect(leftControlsElement()).toHaveStyle({ top: "50%" });
     expect(leftControls().getByRole("button", { name: "从左侧退出全屏板书 1" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "移动板书 1" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /调整板书 1大小/ })).not.toBeInTheDocument();
+    writingFrames = Array.from(board.querySelectorAll<HTMLElement>("[data-board-writing-frame]"));
+    for (const writingFrame of writingFrames) {
+      expect(writingFrame).toHaveAttribute("data-board-writing-scale", "1");
+      expect(writingFrame).toHaveStyle({
+        left: "0%",
+        top: "0%",
+        width: "100%",
+        height: "100%",
+        transform: "scale(1)",
+      });
+    }
 
     await user.click(leftControls().getByRole("button", { name: "从左侧退出全屏板书 1" }));
     expect(board).toHaveStyle({ left: "0%", top: "10%", width: "100%", height: "62%" });
 
-    await user.click(leftControls().getByRole("button", { name: "从左侧在板书 1中新增书写区" }));
     await user.click(leftControls().getByRole("button", { name: "从左侧截图板书 1" }));
 
     await waitFor(() => expect(serviceMocks.uploadFile).toHaveBeenCalledTimes(2));
@@ -811,6 +841,20 @@ describe("PresentationMode", () => {
     fireEvent.pointerMove(southEastHandle, { pointerId: 5, clientX: 940, clientY: 656 });
     fireEvent.pointerUp(southEastHandle, { pointerId: 5, clientX: 940, clientY: 656 });
     expect(board).toHaveStyle({ left: "10%", width: "90%", top: "0%", height: "82%" });
+
+    const southHandle = screen.getByRole("button", { name: "从下边调整板书 1大小" });
+    fireEvent.pointerDown(southHandle, { pointerId: 6, clientX: 500, clientY: 656 });
+    fireEvent.pointerMove(southHandle, { pointerId: 6, clientX: 500, clientY: 192 });
+    fireEvent.pointerUp(southHandle, { pointerId: 6, clientX: 500, clientY: 192 });
+    expect(board).toHaveStyle({ top: "0%", height: "24%" });
+
+    const moveBoardButton = screen.getByRole("button", { name: "移动板书 1" });
+    fireEvent.pointerDown(moveBoardButton, { pointerId: 7, clientX: 500, clientY: 100 });
+    fireEvent.pointerMove(moveBoardButton, { pointerId: 7, clientX: 500, clientY: 580 });
+    fireEvent.pointerUp(moveBoardButton, { pointerId: 7, clientX: 500, clientY: 580 });
+    expect(board).toHaveStyle({ top: "60%", height: "24%" });
+    expect(board.querySelector<HTMLElement>('[data-board-side-controls="left"]')).toHaveStyle({ top: "0%" });
+    expect(board.querySelector<HTMLElement>('[data-board-side-controls="right"]')).toHaveStyle({ top: "0%" });
   });
 
   it("dismisses floating controls outside and configures eraser size without replaying slide animations", async () => {
