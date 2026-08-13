@@ -24,6 +24,9 @@ import type {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
+import { MathHtml } from "@/components/ui/MathHtml";
+import { Modal } from "@/components/ui/Modal";
+import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 import {
   getLessonElementAnimationOrder,
   hasLessonElementAnimation,
@@ -42,6 +45,7 @@ interface LessonEditorInspectorProps {
   selectedTextRegion: LessonSlideTextRegion | null;
   students: Student[];
   relatedQuestions: Question[];
+  relatedQuestionsById: Record<string, Question>;
   canDeleteSlide: boolean;
   canMergeSlide: boolean;
   onSelectElement: (id: string | null) => void;
@@ -53,6 +57,7 @@ interface LessonEditorInspectorProps {
   onAddText: () => void;
   onAddImage: (file: File) => void;
   onAddLink: () => void;
+  onAddQuestion: () => void;
   onAddSlide: () => void;
   onSplitSlide: () => void;
   onMergeSlide: () => void;
@@ -100,6 +105,7 @@ export function LessonEditorInspector({
   selectedTextRegion,
   students,
   relatedQuestions,
+  relatedQuestionsById,
   canDeleteSlide,
   canMergeSlide,
   onSelectElement,
@@ -111,6 +117,7 @@ export function LessonEditorInspector({
   onAddText,
   onAddImage,
   onAddLink,
+  onAddQuestion,
   onAddSlide,
   onSplitSlide,
   onMergeSlide,
@@ -125,6 +132,7 @@ export function LessonEditorInspector({
   const [tab, setTab] = useState<LessonEditorInspectorTab>("content");
   const [animationPanel, setAnimationPanel] = useState<AnimationPanel>("element");
   const [associationPanel, setAssociationPanel] = useState<AssociationPanel>("students");
+  const [questionDetail, setQuestionDetail] = useState<Question | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -240,7 +248,7 @@ export function LessonEditorInspector({
           <div className="space-y-4">
             <div>
               <div className="mb-2 text-xs font-medium text-ink-700">插入内容</div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddText} disabled={!canInsertElements}>
                   <Type className="h-4 w-4" />
                   文本
@@ -258,6 +266,10 @@ export function LessonEditorInspector({
                 <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddLink} disabled={!canInsertElements}>
                   <LinkIcon className="h-4 w-4" />
                   超链接
+                </Button>
+                <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddQuestion}>
+                  <FileQuestion className="h-4 w-4" />
+                  题目
                 </Button>
               </div>
               <input
@@ -703,15 +715,30 @@ export function LessonEditorInspector({
                 {(slide.relatedQuestionIds || []).length > 0 && (
                   <div className="space-y-2">
                     <div className="text-[11px] font-medium text-ink-600">已关联题目</div>
-                    {(slide.relatedQuestionIds || []).map((questionId, index) => (
-                      <div key={questionId} className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 p-2">
-                        <span className="text-xs text-emerald-700">#{index + 1}</span>
-                        <span className="min-w-0 flex-1 truncate text-xs text-emerald-800">{questionId}</span>
-                        <button type="button" onClick={() => onRemoveRelatedQuestion(questionId)} className="text-emerald-600" aria-label="移除相关题">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                    {(slide.relatedQuestionIds || []).map((questionId, index) => {
+                      const question = relatedQuestionsById[questionId];
+                      return (
+                        <div key={questionId} className="flex items-start gap-2 rounded border border-emerald-200 bg-emerald-50 p-2">
+                          <span className="pt-0.5 text-xs text-emerald-700">#{index + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => question && setQuestionDetail(question)}
+                            disabled={!question}
+                            className="min-w-0 flex-1 text-left disabled:cursor-default"
+                            aria-label={`查看已关联题目 ${index + 1}`}
+                          >
+                            {question ? (
+                              <MathHtml className="line-clamp-2 text-xs text-emerald-800">{question.stem}</MathHtml>
+                            ) : (
+                              <span className="block truncate text-xs text-emerald-800">{questionId}</span>
+                            )}
+                          </button>
+                          <button type="button" onClick={() => onRemoveRelatedQuestion(questionId)} className="pt-0.5 text-emerald-600" aria-label="移除相关题">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 <div className="space-y-2">
@@ -720,7 +747,14 @@ export function LessonEditorInspector({
                     const added = (slide.relatedQuestionIds || []).includes(question.id);
                     return (
                       <div key={question.id} className="rounded border border-ink-100 p-2">
-                        <div className="mb-1 line-clamp-2 text-xs text-ink-700">{question.stem}</div>
+                        <button
+                          type="button"
+                          onClick={() => setQuestionDetail(question)}
+                          className="mb-1 block w-full text-left"
+                          aria-label={`查看题目 ${question.id}`}
+                        >
+                          <MathHtml className="line-clamp-2 text-xs text-ink-700">{question.stem}</MathHtml>
+                        </button>
                         <div className="flex items-center justify-between">
                           <Badge variant="ink">{QUESTION_TYPE_LABEL[question.type]}</Badge>
                           {added ? (
@@ -743,6 +777,55 @@ export function LessonEditorInspector({
           </div>
         )}
       </div>
+
+      <Modal
+        open={!!questionDetail}
+        onClose={() => setQuestionDetail(null)}
+        title="题目详情"
+        size="lg"
+        footer={null}
+      >
+        {questionDetail && (
+          <div className="space-y-4 text-sm">
+            <div>
+              <div className="mb-1.5 text-xs font-medium text-ink-500">题干</div>
+              <MathHtml className="leading-7 text-ink-900">{questionDetail.stem}</MathHtml>
+            </div>
+            {questionDetail.options && questionDetail.options.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-ink-500">选项</div>
+                {questionDetail.options.map((option, index) => (
+                  <div key={`${questionDetail.id}-detail-option-${index}`} className="flex items-start gap-2 rounded-lg border border-ink-100 bg-mist/40 px-3 py-2">
+                    <span className="font-mono text-xs font-semibold text-ink-500">{String.fromCharCode(65 + index)}.</span>
+                    <MathHtml className="min-w-0 flex-1 text-ink-800">{option}</MathHtml>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+              <div className="mb-1 text-xs font-medium text-emerald-700">参考答案</div>
+              <MathHtml className="text-emerald-900">{questionDetail.answer || "暂无答案"}</MathHtml>
+            </div>
+            <div className="rounded-lg border border-gold-200 bg-gold-50 p-3">
+              <div className="mb-1 text-xs font-medium text-gold-700">解析</div>
+              <MathHtml className="text-ink-800">{questionDetail.analysis || "暂无解析"}</MathHtml>
+            </div>
+            {questionDetail.summary && (
+              <div className="rounded-lg border border-ink-100 bg-mist/40 p-3">
+                <div className="mb-1 text-xs font-medium text-ink-500">总结</div>
+                <MathHtml className="text-ink-800">{questionDetail.summary}</MathHtml>
+              </div>
+            )}
+            <QuestionSupplementaryDetails
+              board={questionDetail.board}
+              boardImages={questionDetail.boardImages}
+              links={questionDetail.links}
+              explanationVideo={questionDetail.explanationVideo}
+              compact
+            />
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

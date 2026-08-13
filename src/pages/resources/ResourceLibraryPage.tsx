@@ -30,6 +30,7 @@ import type {
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { createBlankLessonCourseware } from "@/lib/lesson-courseware-create";
 
 type ResourceTab = "lecture" | "examPaper" | "courseware" | "material";
 type LeftTab = "chapter" | "knowledge";
@@ -236,6 +237,20 @@ export default function ResourceLibraryPage() {
     }
   };
 
+  const handleCreateBlankCourseware = async () => {
+    if (!teacher) return;
+    try {
+      const created = await createBlankLessonCourseware(teacher.id, schoolId, {
+        grade: defaultGrade,
+        schoolYear: defaultSchoolYear,
+        semester: defaultSemester,
+      });
+      navigate(`/my-lessons/${created.id}/edit`);
+    } catch (e: any) {
+      toast.error("创建课件失败", e?.message);
+    }
+  };
+
   const handleExtractToQuestionBank = async () => {
     if (!extractTarget) return;
     setExtracting(true);
@@ -415,10 +430,16 @@ export default function ResourceLibraryPage() {
                 </>
               )}
               {activeTab === "courseware" && (
-                <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=courseware")}>
-                  <Upload className="w-3.5 h-3.5" />
-                  上传课件
-                </Button>
+                <>
+                  <Button variant="gold" size="sm" onClick={handleCreateBlankCourseware}>
+                    <Plus className="w-3.5 h-3.5" />
+                    做课件
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=courseware")}>
+                    <Upload className="w-3.5 h-3.5" />
+                    上传课件
+                  </Button>
+                </>
               )}
               {activeTab === "material" && (
                 <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=material")}>

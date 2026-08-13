@@ -43,6 +43,7 @@ function renderInspector(overrides: Partial<ComponentProps<typeof LessonEditorIn
     selectedTextRegion: null,
     students: [{ id: "student-1", name: "张同学" } as Student],
     relatedQuestions: [{ id: "question-2", stem: "相关题目", type: "single" } as Question],
+    relatedQuestionsById: {},
     canDeleteSlide: true,
     canMergeSlide: true,
     onSelectElement: vi.fn(),
@@ -54,6 +55,7 @@ function renderInspector(overrides: Partial<ComponentProps<typeof LessonEditorIn
     onAddText: vi.fn(),
     onAddImage: vi.fn(),
     onAddLink: vi.fn(),
+    onAddQuestion: vi.fn(),
     onAddSlide: vi.fn(),
     onSplitSlide: vi.fn(),
     onMergeSlide: vi.fn(),
@@ -83,6 +85,9 @@ describe("LessonEditorInspector", () => {
 
     await user.click(screen.getByRole("button", { name: "超链接" }));
     expect(props.onAddLink).toHaveBeenCalledOnce();
+
+    await user.click(screen.getByRole("button", { name: "题目" }));
+    expect(props.onAddQuestion).toHaveBeenCalledOnce();
 
     const image = new File(["image"], "diagram.png", { type: "image/png" });
     const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]');
@@ -119,6 +124,35 @@ describe("LessonEditorInspector", () => {
     expect(screen.getByRole("button", { name: "相关学生" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "相关题" }));
     expect(onLoadRelatedQuestions).toHaveBeenCalled();
+  });
+
+  it("renders related-question math and opens complete details including the answer", async () => {
+    const user = userEvent.setup();
+    const relatedQuestion = {
+      id: "question-2",
+      type: "single",
+      stem: "若 $x^2=4$，则 $x$ 等于？",
+      options: ["$2$", "$-2$", "$\\pm2$"],
+      answer: "$\\pm2$",
+      analysis: "由平方根定义可得。",
+      summary: "平方方程有正负两个根。",
+    } as Question;
+    renderInspector({
+      slide: { ...slide, relatedQuestionIds: [relatedQuestion.id] },
+      relatedQuestions: [relatedQuestion],
+      relatedQuestionsById: { [relatedQuestion.id]: relatedQuestion },
+    });
+
+    await user.click(screen.getByRole("button", { name: "关联" }));
+    await user.click(screen.getByRole("button", { name: "相关题" }));
+
+    expect(document.querySelector(".katex")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "查看已关联题目 1" }));
+
+    expect(screen.getByRole("heading", { name: "题目详情" })).toBeInTheDocument();
+    expect(screen.getByText("参考答案")).toBeInTheDocument();
+    expect(screen.getByText("解析")).toBeInTheDocument();
+    expect(screen.getByText("总结")).toBeInTheDocument();
   });
 
   it("lets multiple objects share one appearance step", async () => {
