@@ -152,6 +152,79 @@ function createTextElement(
   };
 }
 
+const QUESTION_LABEL_X = 5;
+const QUESTION_LABEL_Y = 5;
+const QUESTION_LABEL_HEIGHT = 6;
+const QUESTION_CONTENT_RIGHT = 95;
+const LEGACY_QUESTION_LABEL_WIDTH = 14;
+const LEGACY_QUESTION_LABEL_HEIGHT = 10;
+const LEGACY_QUESTION_STEM_X = 20;
+const LEGACY_QUESTION_STEM_WIDTH = 75;
+
+function questionLabelLayout(label: string): {
+  labelWidth: number;
+  stemX: number;
+  stemWidth: number;
+} {
+  const labelLength = Array.from(label.trim()).length;
+  const labelWidth = Math.min(LEGACY_QUESTION_LABEL_WIDTH, Math.max(4, 2 + labelLength));
+  const stemX = QUESTION_LABEL_X + labelWidth + 1;
+  return {
+    labelWidth,
+    stemX,
+    stemWidth: QUESTION_CONTENT_RIGHT - stemX,
+  };
+}
+
+function normalizeLegacyQuestionSlideLayout(slide: LessonSlide): LessonSlide {
+  if (slide.type !== "question" || !slide.freeformLayout || !slide.elements?.length) return slide;
+
+  const legacyLabel = slide.elements.find((element) => (
+    element.kind === "text"
+    && element.questionSection === "stem"
+    && element.content === slide.title
+    && element.x === QUESTION_LABEL_X
+    && element.y === QUESTION_LABEL_Y
+    && element.width === LEGACY_QUESTION_LABEL_WIDTH
+    && element.height === LEGACY_QUESTION_LABEL_HEIGHT
+  ));
+  if (!legacyLabel) return slide;
+
+  const { labelWidth, stemX, stemWidth } = questionLabelLayout(slide.title);
+  const elements = slide.elements.map((element) => {
+    if (element.id === legacyLabel.id) {
+      return {
+        ...element,
+        width: labelWidth,
+        height: QUESTION_LABEL_HEIGHT,
+      };
+    }
+    if (
+      element.kind === "text"
+      && element.questionSection === "stem"
+      && element.x === LEGACY_QUESTION_STEM_X
+      && element.y === QUESTION_LABEL_Y
+      && element.width === LEGACY_QUESTION_STEM_WIDTH
+    ) {
+      return {
+        ...element,
+        x: stemX,
+        width: stemWidth,
+      };
+    }
+    return element;
+  });
+
+  return { ...slide, elements };
+}
+
+function normalizeLegacyCoursewareLayout(courseware: LessonCourseware): LessonCourseware {
+  const slides = courseware.slides.map(normalizeLegacyQuestionSlideLayout);
+  return slides.some((slide, index) => slide !== courseware.slides[index])
+    ? { ...courseware, slides }
+    : courseware;
+}
+
 function extractFloatingImages(
   content: string,
   questionSection: LessonQuestionContentSection,
@@ -213,13 +286,14 @@ function questionSlide(
     "analysis",
     stem.elements.length + optionImageCount + answer.elements.length,
   );
+  const { labelWidth, stemX, stemWidth } = questionLabelLayout(title);
 
   const textElements: LessonSlideElement[] = [
     createTextElement(title, {
-      x: 5,
-      y: 5,
-      width: 14,
-      height: 10,
+      x: QUESTION_LABEL_X,
+      y: QUESTION_LABEL_Y,
+      width: labelWidth,
+      height: QUESTION_LABEL_HEIGHT,
     }, {
       fontSize: 22,
       questionSection: "stem",
@@ -227,9 +301,9 @@ function questionSlide(
   ];
   if (stem.content) {
     textElements.push(createTextElement(stem.content, {
-      x: 20,
-      y: 5,
-      width: 75,
+      x: stemX,
+      y: QUESTION_LABEL_Y,
+      width: stemWidth,
       height: options?.length ? 24 : 42,
     }, {
       fontSize: 26,
@@ -689,12 +763,14 @@ export const lessonCoursewareService = {
     return db
       .read("lessonCoursewares")
       .filter((c) => matchFilter(c, filter))
+      .map(normalizeLegacyCoursewareLayout)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   },
 
   async getCourseware(id: string): Promise<LessonCourseware | null> {
     await delay(200);
-    return db.read("lessonCoursewares").find((c) => c.id === id) || null;
+    const courseware = db.read("lessonCoursewares").find((c) => c.id === id);
+    return courseware ? normalizeLegacyCoursewareLayout(courseware) : null;
   },
 
   async createCourseware(
