@@ -80,7 +80,7 @@ function DocumentBlocksPreview({ blocks }: { blocks: ExtractedDocumentBlock[] })
   );
 }
 
-function ExamPaperPreview({ paper }: { paper: ExamPaper }) {
+export function ExamPaperPreview({ paper }: { paper: ExamPaper }) {
   return (
     <div className="space-y-4">
       {paper.description && (
@@ -147,7 +147,7 @@ function LectureSectionPreview({ section, depth = 0 }: { section: LectureSection
   );
 }
 
-function LecturePreview({ lecture }: { lecture: Lecture }) {
+export function LecturePreview({ lecture }: { lecture: Lecture }) {
   return (
     <div className="space-y-4">
       {lecture.description && (
@@ -176,7 +176,7 @@ function LecturePreview({ lecture }: { lecture: Lecture }) {
   );
 }
 
-function GenericResourcePreview({ resource }: { resource: Courseware | Material }) {
+export function GenericResourcePreview({ resource }: { resource: Courseware | Material }) {
   return (
     <div className="space-y-3">
       {resource.description && (
