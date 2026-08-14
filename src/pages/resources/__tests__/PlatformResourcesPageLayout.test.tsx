@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import PlatformResourcesPage from "@/pages/resources/PlatformResourcesPage";
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
+import { donationService } from "@/services/donation";
 import type { ExamPaper, Material, Question, ShareRecord, Teacher, TreeNode } from "@/types";
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
@@ -276,6 +277,12 @@ describe("PlatformResourcesPage layout and filters", () => {
     expect(screen.getByLabelText("试卷标识")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "移出专辑" })).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "函数专题试卷" }));
+    expect(screen.getByText("试卷 · 平台资源预览")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "返回" }));
+    expect(screen.queryByText("试卷 · 平台资源预览")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "函数专题试卷" })).toBeInTheDocument();
+
     await user.selectOptions(
       screen.getByLabelText("添加文档到专辑：函数专题"),
       "donation-free",
@@ -305,6 +312,67 @@ describe("PlatformResourcesPage layout and filters", () => {
     expect(await screen.findByText("函数专题试卷")).toBeInTheDocument();
     expect(screen.getByText("专辑：函数专题 · 试卷库")).toBeInTheDocument();
     expect(screen.getByLabelText("试卷标识")).toBeInTheDocument();
+  });
+
+  it("previews platform documents and saves a copy from the preview", async () => {
+    const user = userEvent.setup();
+    const paperDonation = donationRecord("donation-paper", "teacher-other", "examPaper", albumPaper);
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([paperDonation]);
+    vi.mocked(donationService.checkSaveAsOwnResource).mockResolvedValue({
+      donationId: "donation-paper",
+      resourceType: "examPaper",
+      canSave: true,
+      alreadySaved: false,
+    });
+    vi.mocked(donationService.saveAsOwnResource).mockResolvedValue({
+      resourceType: "examPaper",
+      resourceId: "paper-copy",
+      merged: false,
+    });
+
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "函数专题试卷" }));
+    expect(screen.getByText("试卷 · 平台资源预览")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "另存" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "另存" }));
+    await waitFor(() => expect(donationService.checkSaveAsOwnResource).toHaveBeenCalledWith(
+      "donation-paper",
+      "teacher-self",
+      "school-1",
+    ));
+    await waitFor(() => expect(donationService.saveAsOwnResource).toHaveBeenCalledWith(
+      "donation-paper",
+      "teacher-self",
+      "school-1",
+      undefined,
+    ));
+    expect(await screen.findByRole("button", { name: "已另存" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "返回" }));
+    expect(screen.queryByText("试卷 · 平台资源预览")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "函数专题试卷" })).toBeInTheDocument();
+  });
+
+  it("does not offer save in preview for the document donor", async () => {
+    const user = userEvent.setup();
+    const ownPaperDonation = donationRecord("donation-own-paper", "teacher-self", "examPaper", {
+      ...albumPaper,
+      id: "paper-own",
+      teacherId: "teacher-self",
+      title: "本人捐赠试卷",
+    });
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([ownPaperDonation]);
+    vi.mocked(shareService.listDonationStatus).mockResolvedValue([ownPaperDonation]);
+
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "本人捐赠试卷" }));
+    expect(screen.getByText("试卷 · 平台资源预览")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "另存" })).not.toBeInTheDocument();
   });
 
   it("derives type-specific filter choices from donated resources", async () => {

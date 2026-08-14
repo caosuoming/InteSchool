@@ -68,6 +68,10 @@ import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoo
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { ExpandableQuestionContent } from "@/components/resource/ExpandableQuestionContent";
+import {
+  PlatformResourcePreviewModal,
+  type PlatformPreviewResource,
+} from "@/components/resource/PlatformResourcePreviewModal";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 
 type ResourceTypeFilter = "all" | "album" | ShareableResourceType;
@@ -428,6 +432,7 @@ export default function PlatformResourcesPage() {
   const [ownContributionIds, setOwnContributionIds] = useState<Set<string>>(new Set());
   const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
   const [expandedAlbumKeys, setExpandedAlbumKeys] = useState<Set<string>>(new Set());
+  const [previewItem, setPreviewItem] = useState<PlatformResourceItem | null>(null);
   const [albumWorkingKey, setAlbumWorkingKey] = useState<string | null>(null);
   const [saveConflict, setSaveConflict] = useState<{
     item: PlatformResourceItem;
@@ -935,6 +940,38 @@ export default function PlatformResourcesPage() {
 
   const saveQuestionConflict = saveConflict?.check.conflict;
 
+  const previewResource = useMemo<PlatformPreviewResource | null>(() => {
+    if (!previewItem) return null;
+    if (previewItem.resourceType === "examPaper") {
+      return {
+        resourceType: "examPaper",
+        title: previewItem.title,
+        snapshot: previewItem.snapshot as ExamPaper,
+      };
+    }
+    if (previewItem.resourceType === "lecture") {
+      return {
+        resourceType: "lecture",
+        title: previewItem.title,
+        snapshot: previewItem.snapshot as Lecture,
+      };
+    }
+    if (previewItem.resourceType === "courseware") {
+      return {
+        resourceType: "courseware",
+        title: previewItem.title,
+        snapshot: previewItem.snapshot as Courseware,
+      };
+    }
+    return null;
+  }, [previewItem]);
+
+  const canPreviewItem = (item: PlatformResourceItem) => (
+    item.resourceType === "examPaper"
+    || item.resourceType === "lecture"
+    || (item.resourceType === "courseware" && Boolean(item.donationAlbum))
+  );
+
   const toggleQuestionDetails = (shareId: string) => {
     setExpandedQuestionIds((current) => {
       const next = new Set(current);
@@ -1379,7 +1416,17 @@ export default function PlatformResourcesPage() {
                                   aria-label={`${resourceTypeLabel[item.resourceType]}标识`}
                                   className="h-4 w-4 flex-none text-ink-500"
                                 />
-                                <span className="min-w-0 flex-1 truncate text-sm text-ink-800">{item.title}</span>
+                                {canPreviewItem(item) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewItem(item)}
+                                    className="min-w-0 flex-1 truncate text-left text-sm text-ink-800 hover:text-gold-700 hover:underline"
+                                  >
+                                    {item.title}
+                                  </button>
+                                ) : (
+                                  <span className="min-w-0 flex-1 truncate text-sm text-ink-800">{item.title}</span>
+                                )}
                                 <span className="text-xs text-ink-400">{timeAgo(item.updatedAt)}</span>
                                 {canManageAlbum && (
                                   <Button
@@ -1510,7 +1557,17 @@ export default function PlatformResourcesPage() {
                             aria-label={`${resourceTypeLabel[item.resourceType]}标识`}
                             className="mt-0.5 h-4 w-4 flex-none text-ink-500"
                           />
-                          <span className="line-clamp-2">{item.title}</span>
+                          {canPreviewItem(item) ? (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewItem(item)}
+                              className="line-clamp-2 text-left hover:text-gold-700 hover:underline"
+                            >
+                              {item.title}
+                            </button>
+                          ) : (
+                            <span className="line-clamp-2">{item.title}</span>
+                          )}
                         </div>
                         {item.description && <div className="mb-2 text-xs text-ink-500 line-clamp-2">{item.description}</div>}
                         {item.content && (
@@ -1536,6 +1593,20 @@ export default function PlatformResourcesPage() {
           )}
         </div>
       </div>
+
+      <PlatformResourcePreviewModal
+        resource={previewResource}
+        donorName={previewItem ? contributorMap.get(previewItem.fromTeacherId)?.nickname || "匿名用户" : undefined}
+        subject={previewItem?.subject}
+        albumName={previewItem?.donationAlbum?.name}
+        canSave={Boolean(previewItem && !ownContributionIds.has(previewItem.shareId))}
+        saving={Boolean(previewItem && addingIds.has(previewItem.shareId))}
+        saved={Boolean(previewItem && savedIds.has(previewItem.shareId))}
+        onSave={() => {
+          if (previewItem) void handleAddToMyResources(previewItem);
+        }}
+        onBack={() => setPreviewItem(null)}
+      />
 
       <Modal
         open={Boolean(saveConflict && saveQuestionConflict)}
