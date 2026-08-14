@@ -215,6 +215,58 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).not.toContain("(-1)n-1nan");
   });
 
+  it("merges consecutive imported formula fragments into one Office Math expression", async () => {
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [],
+      contentBlocks: [{
+        id: "knowledge-formula",
+        type: "knowledge",
+        content: [
+          "<p>通项放缩：</p><p>(1)",
+          '<span class="katex-formula" data-latex="a_n"></span>',
+          "&gt;",
+          '<span class="katex-formula" data-latex="b_n"></span>',
+          "＝",
+          '<span class="katex-formula" data-latex="c_n"></span>',
+          "－",
+          '<span class="katex-formula" data-latex="d_n"></span>',
+          "；</p>",
+        ].join(""),
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper);
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml.match(/<m:oMath\b/g)).toHaveLength(1);
+    expect(documentXml).toContain("<m:sSub>");
+    expect(documentXml).toMatch(/<w:t(?: [^>]*)?>\(1\)<\/w:t>/);
+    expect(documentXml).toMatch(/<m:t(?: [^>]*)?>&gt;<\/m:t>/);
+    expect(documentXml).toMatch(/<m:t(?: [^>]*)?>=<\/m:t>/);
+    expect(documentXml).toMatch(/<m:t(?: [^>]*)?>[−-]<\/m:t>/);
+  });
+
+  it("writes rich-text paragraph boundaries as explicit Word line breaks", async () => {
+    const paragraphPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [],
+      contentBlocks: [{
+        id: "knowledge-paragraphs",
+        type: "knowledge",
+        content: "<p>第一段</p><p>第二段<br>第三行</p>",
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(paragraphPaper);
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml.match(/<w:br\b[^>]*\/>/g)).toHaveLength(2);
+    expect(documentXml).not.toContain("&#10;");
+  });
+
   it("falls back to editable Office math when MathType conversion fails", async () => {
     apiBlobRequestMock.mockRejectedValueOnce(new Error("unsupported MathType formula"));
     const formulaPaper: ExamPaper = {

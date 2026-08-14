@@ -67,8 +67,19 @@ function textRun(text: string, style: DocumentTextStyle = {}): TextRun {
   });
 }
 
+function textRunsWithLineBreaks(text: string, style: DocumentTextStyle = {}): TextRun[] {
+  return text.split("\n").map((line, index) => new TextRun({
+    text: line,
+    break: index > 0 ? 1 : undefined,
+    bold: style.bold,
+    size: style.size,
+    color: style.color,
+    font: style.font || "宋体",
+  }));
+}
+
 function documentTextChildren(value: string | undefined, style: DocumentTextStyle = {}): ParagraphChild[] {
-  const text = plainDocumentText(value);
+  const text = mergeInlineFormulaRuns(plainDocumentText(value));
   if (!text) return [textRun("", style)];
 
   const children: ParagraphChild[] = [];
@@ -76,13 +87,18 @@ function documentTextChildren(value: string | undefined, style: DocumentTextStyl
   let cursor = 0;
   let match: RegExpExecArray | null;
   while ((match = formulaPattern.exec(text)) !== null) {
-    if (match.index > cursor) children.push(textRun(text.slice(cursor, match.index), style));
+    if (match.index > cursor) {
+      children.push(...textRunsWithLineBreaks(text.slice(cursor, match.index), style));
+    }
     const latex = (match[1] ?? match[2] ?? "").trim();
     const formula = latex ? latexToOmml(latex) : null;
-    children.push(formula || textRun(match[0], style));
+    if (formula) children.push(formula);
+    else children.push(...textRunsWithLineBreaks(match[0], style));
     cursor = formulaPattern.lastIndex;
   }
-  if (cursor < text.length) children.push(textRun(text.slice(cursor), style));
+  if (cursor < text.length) {
+    children.push(...textRunsWithLineBreaks(text.slice(cursor), style));
+  }
   return children.length > 0 ? children : [textRun(text, style)];
 }
 
@@ -201,7 +217,7 @@ function createOptionsTable(options: string[]): Table {
 }
 
 const STRUCTURED_MATH_SELECTOR = "i.math-variable, sub, sup";
-const MATH_CONTEXT_SYMBOLS = new Set(Array.from("+-−=<>≤≥≠×÷*/·⋅()（）[]|."));
+const MATH_CONTEXT_SYMBOLS = new Set(Array.from("+-−－＋=＝<>＜＞≤≥≠≈×÷*/·⋅()（）[]{}|.^±∓"));
 
 function isMathContextCharacter(value: string): boolean {
   return /^[A-Za-z0-9]$/.test(value) || MATH_CONTEXT_SYMBOLS.has(value);
@@ -217,6 +233,93 @@ function mathContextSuffix(value: string): string {
   let start = value.length;
   while (start > 0 && isMathContextCharacter(value[start - 1])) start -= 1;
   return value.slice(start);
+}
+
+function normalizeMathContextText(value: string): string {
+  return value
+    .replace(/＝/g, "=")
+    .replace(/[－−]/g, "-")
+    .replace(/＋/g, "+")
+    .replace(/＜/g, "<")
+    .replace(/＞/g, ">");
+}
+
+function isEnumerationPrefix(value: string): boolean {
+  return /^(?:\(\d+\)|（\d+）|\d+\.)$/.test(value);
+}
+
+function mergeInlineFormulaRuns(value: string): string {
+  const formulaPattern = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+  const tokens: Array<{ type: "text"; value: string } | { type: "math"; value: string; display: boolean }> = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = formulaPattern.exec(value)) !== null) {
+    if (match.index > cursor) tokens.push({ type: "text", value: value.slice(cursor, match.index) });
+    tokens.push({
+      type: "math",
+      value: match[1] ?? match[2] ?? "",
+      display: match[1] !== undefined,
+    });
+    cursor = formulaPattern.lastIndex;
+  }
+  if (cursor < value.length) tokens.push({ type: "text", value: value.slice(cursor) });
+  if (!tokens.some((token) => token.type === "math" && !token.display)) return value;
+
+  const result: string[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type === "text") {
+      result.push(token.value);
+      continue;
+    }
+    if (token.display) {
+      result.push(`$$${token.value}$$`);
+      continue;
+    }
+
+    let latex = token.value;
+    const previous = result.at(-1);
+    if (previous) {
+      const suffix = mathContextSuffix(previous);
+      if (suffix && !isEnumerationPrefix(suffix)) {
+        result[result.length - 1] = previous.slice(0, -suffix.length);
+        latex = normalizeMathContextText(suffix) + latex;
+      }
+    }
+
+    while (index + 1 < tokens.length) {
+      const next = tokens[index + 1];
+      if (next.type === "math") {
+        if (next.display) break;
+        latex += next.value;
+        index += 1;
+        continue;
+      }
+
+      const following = tokens[index + 2];
+      if (
+        next.value.length > 0
+        && following?.type === "math"
+        && !following.display
+        && Array.from(next.value).every(isMathContextCharacter)
+      ) {
+        latex += normalizeMathContextText(next.value) + following.value;
+        index += 2;
+        continue;
+      }
+
+      const prefix = mathContextPrefix(next.value);
+      if (prefix) {
+        latex += normalizeMathContextText(prefix);
+        next.value = next.value.slice(prefix.length);
+      }
+      break;
+    }
+
+    result.push(`$${latex}$`);
+  }
+  return result.join("");
 }
 
 function richInlineMathLatex(node: Node): string {
@@ -235,66 +338,10 @@ function restoreStructuredInlineMath(
   formulas: string[],
 ): string {
   if (formulas.length === 0) return value;
-
-  const markerPattern = /\uE200(\d+)\uE201/g;
-  const tokens: Array<{ type: "text" | "math"; value: string }> = [];
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  while ((match = markerPattern.exec(value)) !== null) {
-    if (match.index > cursor) tokens.push({ type: "text", value: value.slice(cursor, match.index) });
-    tokens.push({ type: "math", value: formulas[Number(match[1])] || "" });
-    cursor = markerPattern.lastIndex;
-  }
-  if (cursor < value.length) tokens.push({ type: "text", value: value.slice(cursor) });
-
-  const result: string[] = [];
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token.type === "text") {
-      result.push(token.value);
-      continue;
-    }
-
-    let latex = token.value;
-    const previous = result.at(-1);
-    if (previous) {
-      const suffix = mathContextSuffix(previous);
-      if (suffix) {
-        result[result.length - 1] = previous.slice(0, -suffix.length);
-        latex = suffix + latex;
-      }
-    }
-
-    while (index + 1 < tokens.length) {
-      const next = tokens[index + 1];
-      if (next.type === "math") {
-        latex += next.value;
-        index += 1;
-        continue;
-      }
-
-      const following = tokens[index + 2];
-      if (
-        next.value.length > 0
-        && following?.type === "math"
-        && Array.from(next.value).every(isMathContextCharacter)
-      ) {
-        latex += next.value + following.value;
-        index += 2;
-        continue;
-      }
-
-      const prefix = mathContextPrefix(next.value);
-      if (prefix) {
-        latex += prefix;
-        next.value = next.value.slice(prefix.length);
-      }
-      break;
-    }
-
-    if (latex) result.push(`$${latex}$`);
-  }
-  return result.join("");
+  return value.replace(/\uE200(\d+)\uE201/g, (_marker, index: string) => {
+    const latex = formulas[Number(index)]?.trim();
+    return latex ? `$${latex}$` : "";
+  });
 }
 
 function replaceRenderedMath(container: HTMLElement): void {
