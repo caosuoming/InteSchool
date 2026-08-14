@@ -503,8 +503,6 @@
     width: 260mm;
     height: 370mm;
     box-sizing: border-box;
-    align-content: space-between;
-    padding: 0 5mm;
     gap: var(--desk-label-gap);
     break-after: page;
     overflow: hidden;
