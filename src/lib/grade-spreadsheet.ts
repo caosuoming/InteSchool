@@ -1,6 +1,7 @@
 import type { GradeExam, GradeImportRow } from "../types/index.js";
 import {
   classAverageScoreCellValue,
+  formatGradeClassRangeLabel,
   type GradeClassAverageReport,
 } from "./grade-class-average.js";
 import type { GradeTotalScoreSegmentReport } from "./grade-total-score-segment.js";
@@ -456,7 +457,7 @@ export async function exportGradeClassAverageReport(report: GradeClassAverageRep
     if (group.rows.length > 1 && report.options.showGroupAverage) {
       rows.push([
         textCell(group.category),
-        textCell(`平均（${group.rows.map((row) => row.classLabel).join("、")}）`, { fontWeight: "bold" }),
+        textCell(`平均（${formatGradeClassRangeLabel(group.rows.map((row) => row.classLabel))}）`, { fontWeight: "bold" }),
         textCell(""),
         ...report.subjects.map((subject) => textCell(classAverageScoreCellValue(
           group.average.subjectValues[subject],
