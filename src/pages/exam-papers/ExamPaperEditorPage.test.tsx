@@ -526,6 +526,22 @@ describe("ExamPaperEditorPage preview", () => {
     expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
   });
 
+  it("places preview controls on a second row below the page header", async () => {
+    renderPage();
+
+    const toolbar = await screen.findByRole("toolbar", { name: "试卷预览操作" });
+    expect(within(toolbar).getByRole("button", { name: "添加使用对象" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "发送到我的课件" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "发布试卷" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "创建副本" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "下载" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "编辑试卷" })).toBeInTheDocument();
+    expect(toolbar.previousElementSibling).toContainElement(
+      screen.getByRole("heading", { name: paper.title }),
+    );
+  });
+
   it("previews unsaved edits and keeps them when returning to the editor", async () => {
     renderEditorPage();
 
