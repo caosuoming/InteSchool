@@ -78,6 +78,22 @@ export function compactGradeClassLabel(className: string): string {
   return className;
 }
 
+export function formatGradeClassRangeLabel(labels: string[]): string {
+  if (labels.length < 2) return labels.join("、");
+
+  const classNumbers = labels.map((label) => {
+    const match = label.trim().match(/^(\d+)\s*班$/);
+    return match ? Number(match[1]) : null;
+  });
+  if (!classNumbers.every((value): value is number => value !== null)) return labels.join("、");
+
+  const sorted = [...classNumbers].sort((left, right) => left - right);
+  const isContinuous = sorted.every((value, index) => index === 0 || value === sorted[index - 1] + 1);
+  if (!isContinuous) return labels.join("、");
+
+  return `${sorted[0]}-${sorted[sorted.length - 1]}班`;
+}
+
 function fallbackReportDate(exam: GradeExam): string {
   return exam.examDate || exam.createdAt.slice(0, 10);
 }

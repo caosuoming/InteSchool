@@ -19,6 +19,7 @@ import {
   buildDefaultClassAverageOptions,
   buildGradeClassAverageReport,
   classAverageScoreCellValue,
+  formatGradeClassRangeLabel,
   resolveClassAverageOptions,
 } from "@/lib/grade-class-average";
 import { exportGradeClassAverageReport } from "@/lib/grade-spreadsheet";
@@ -44,10 +45,6 @@ function displayScore(
 ): string {
   const value = classAverageScoreCellValue(values, mode);
   return typeof value === "number" ? value.toFixed(2) : value || "—";
-}
-
-function classRangeLabel(labels: string[]): string {
-  return labels.join("、");
 }
 
 export function GradeClassAverageTable({
@@ -508,7 +505,7 @@ export function GradeClassAverageTable({
                   ...(group.rows.length > 1 && report.options.showGroupAverage ? [(
                     <tr key={`${group.category}-average`} className="bg-blue-50/40">
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-medium">
-                        平均（{classRangeLabel(group.rows.map((row) => row.classLabel))}）
+                        平均（{formatGradeClassRangeLabel(group.rows.map((row) => row.classLabel))}）
                       </td>
                       <td className="border border-ink-300 px-3 py-2" />
                       {report.subjects.map((subject) => (

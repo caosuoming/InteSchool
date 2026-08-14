@@ -7,6 +7,7 @@ import type {
 import {
   buildDefaultClassAverageOptions,
   buildGradeClassAverageReport,
+  formatGradeClassRangeLabel,
 } from "./grade-class-average.js";
 
 const context: GradeImportContext = {
@@ -154,6 +155,17 @@ const exam: GradeExam = {
 };
 
 describe("grade class average report", () => {
+  it("compacts only fully continuous numeric class labels", () => {
+    expect(formatGradeClassRangeLabel(["1班", "2班", "3班", "4班", "5班"]))
+      .toBe("1-5班");
+    expect(formatGradeClassRangeLabel(["10班", "8班", "9班"]))
+      .toBe("8-10班");
+    expect(formatGradeClassRangeLabel(["1班", "2班", "4班", "5班"]))
+      .toBe("1班、2班、4班、5班");
+    expect(formatGradeClassRangeLabel(["1班", "实验二班"]))
+      .toBe("1班、实验二班");
+  });
+
   it("builds defaults from class profiles and natural class order", () => {
     const options = buildDefaultClassAverageOptions(exam, context);
 
