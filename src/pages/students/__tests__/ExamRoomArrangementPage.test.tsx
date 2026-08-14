@@ -412,7 +412,8 @@ describe("ExamRoomArrangementPage", () => {
     const classPrintPage = screen.getByTestId("class-arrangement-print-page");
     expect(classPrintPage).toHaveAttribute("data-columns", "3");
     const classGrid = classPrintPage.querySelector<HTMLElement>(".exam-class-arrangement-grid");
-    expect(Number.parseFloat(classGrid?.style.gridAutoRows || "0")).toBeGreaterThan(15);
+    expect(classGrid?.style.gridAutoRows).toBe("max-content");
+    expect(classGrid?.style.alignItems).toBe("start");
     expect([...classPrintPage.querySelectorAll(".exam-class-arrangement-subject span")].map((node) => node.textContent)).toEqual([
       "语文、数学、英语",
       "化学、生物",
@@ -641,10 +642,9 @@ describe("ExamRoomArrangementPage", () => {
     await user.click(await screen.findByRole("tab", { name: "桌贴预览" }));
 
     const pages = screen.getAllByTestId("desk-label-print-page");
-    expect(pages).toHaveLength(2);
+    expect(pages).toHaveLength(1);
     expect(pages[0]).toHaveAttribute("data-columns", "5");
-    expect(pages[0].querySelectorAll(".exam-desk-label")).toHaveLength(50);
-    expect(pages[1].querySelectorAll(".exam-desk-label")).toHaveLength(10);
+    expect(pages[0].querySelectorAll(".exam-desk-label")).toHaveLength(60);
     expect(pages[0]).toHaveTextContent("教学楼 301");
     expect(pages[0]).toHaveTextContent("教学楼 302");
   });

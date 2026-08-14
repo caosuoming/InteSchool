@@ -52,42 +52,70 @@ const ACADEMIC_TEST_SUBJECTS = ["物理", "化学", "生物", "政治", "历史"
 
 type ViewMode = "settings" | "result";
 type PreviewMode = "class" | "desk";
+type PrintDensity = "normal" | "compact";
 
-function getDeskLabelPrintLayout(labelCount: number, maxAssignments: number): {
+function getDeskLabelDensity(maxAssignments: number): PrintDensity {
+  return Math.max(1, maxAssignments) <= 2 ? "normal" : "compact";
+}
+
+function estimateDeskLabelHeight(
+  label: ReturnType<typeof groupDeskLabels>[number],
+  density: PrintDensity,
+): number {
+  const assignmentCount = Math.max(1, label.assignments.length);
+  const baseHeight = density === "normal" ? 29.2 : 24.6;
+  const assignmentHeight = density === "normal" ? 12.6 : 10.8;
+  const wrappedSubjectLineHeight = density === "normal" ? 3.4 : 2.9;
+  const extraSubjectLines = label.assignments.reduce((total, assignment) => {
+    const compactLength = [...assignment.subjectLabel.replace(/\s+/g, "")].length;
+    return total + Math.max(0, Math.ceil(compactLength / 20) - 1);
+  }, 0);
+  return baseHeight
+    + Math.max(0, assignmentCount - 1) * assignmentHeight
+    + extraSubjectLines * wrappedSubjectLineHeight;
+}
+
+function paginateDeskLabels(
+  labels: ReturnType<typeof groupDeskLabels>,
+): {
   columns: number;
-  rows: number;
-  density: "normal" | "compact";
-  rowHeight: number;
-  pageCapacity: number;
+  density: PrintDensity;
+  pages: ReturnType<typeof groupDeskLabels>[];
 } {
-  const count = Math.max(1, labelCount);
   const columns = 5;
-  const assignmentCount = Math.max(1, maxAssignments);
-  const density = assignmentCount <= 2 ? "normal" : "compact";
-  const contentHeight = density === "normal"
-    ? 23 + assignmentCount * 9.5
-    : 20 + assignmentCount * 8.2;
+  const maxAssignments = Math.max(...labels.map((label) => label.assignments.length), 1);
+  const density = getDeskLabelDensity(maxAssignments);
   const gap = density === "normal" ? 1.4 : 1;
-  const availableHeight = 356;
-  const maxRows = Math.max(1, Math.floor((availableHeight + gap) / (contentHeight + gap)));
-  const pageCapacity = columns * maxRows;
-  const rows = Math.min(maxRows, Math.ceil(count / columns));
-  const pageFitHeight = (availableHeight - Math.max(0, rows - 1) * gap) / rows;
+  const availableHeight = 370;
+  const pages: ReturnType<typeof groupDeskLabels>[] = [];
+  let page: ReturnType<typeof groupDeskLabels> = [];
+  let usedHeight = 0;
+
+  for (let index = 0; index < labels.length; index += columns) {
+    const row = labels.slice(index, index + columns);
+    const rowHeight = Math.max(...row.map((label) => estimateDeskLabelHeight(label, density)));
+    const nextHeight = usedHeight + (page.length > 0 ? gap : 0) + rowHeight;
+    if (page.length > 0 && nextHeight > availableHeight) {
+      pages.push(page);
+      page = [];
+      usedHeight = 0;
+    }
+    if (page.length > 0) usedHeight += gap;
+    page.push(...row);
+    usedHeight += rowHeight;
+  }
+  if (page.length > 0) pages.push(page);
 
   return {
     columns,
-    rows,
-    rowHeight: Math.min(contentHeight, pageFitHeight),
     density,
-    pageCapacity,
+    pages,
   };
 }
 
 function getClassPrintLayout(studentCount: number, maxAssignments: number): {
   columns: 3;
-  rows: number;
-  density: "normal" | "compact";
-  rowHeight: number;
+  density: PrintDensity;
   pageCapacity: number;
 } {
   const count = Math.max(1, studentCount);
@@ -103,13 +131,9 @@ function getClassPrintLayout(studentCount: number, maxAssignments: number): {
   const readableRows = Math.max(1, Math.min(10, Math.floor((availableHeight + gap) / (contentHeight + gap))));
   const maxRows = Math.max(readableRows, requiredRowsForTwoPages);
   const pageCapacity = columns * maxRows;
-  const rows = Math.min(maxRows, Math.ceil(count / columns));
-  const pageFitHeight = (availableHeight - Math.max(0, rows - 1) * gap) / rows;
   return {
     columns,
-    rows,
     density,
-    rowHeight: Math.max(8, Math.min(contentHeight + (density === "normal" ? 4 : 3), pageFitHeight)),
     pageCapacity,
   };
 }
@@ -1703,7 +1727,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       className="exam-class-arrangement-grid"
                       style={{
                         gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
-                        gridAutoRows: `${layout.rowHeight}mm`,
+                        gridAutoRows: "max-content",
+                        alignItems: "start",
                       }}
                     >
                       {pageStudents.map((student) => (
@@ -1738,11 +1763,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           {previewMode === "desk" && selectedDeskLabels.length > 0 && selectedArrangement && (
             <div ref={deskPrintRef} className="print-only exam-desk-label-sheet" aria-hidden="true">
               {(() => {
-                const maxAssignments = Math.max(...selectedDeskLabels.map((label) => label.assignments.length), 1);
-                const baseLayout = getDeskLabelPrintLayout(selectedDeskLabels.length, maxAssignments);
-                const pages = chunkForPrint(selectedDeskLabels, baseLayout.pageCapacity);
-                return pages.map((pageLabels, pageIndex) => {
-                  const layout = getDeskLabelPrintLayout(pageLabels.length, maxAssignments);
+                const layout = paginateDeskLabels(selectedDeskLabels);
+                return layout.pages.map((pageLabels, pageIndex) => {
                   return (
                   <div
                     key={`desk-label-page-${pageIndex}`}
