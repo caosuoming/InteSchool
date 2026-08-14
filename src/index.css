@@ -503,8 +503,8 @@
     width: 260mm;
     height: 370mm;
     box-sizing: border-box;
-    align-content: start;
-    padding: 5mm;
+    align-content: space-between;
+    padding: 0 5mm;
     gap: var(--desk-label-gap);
     break-after: page;
     overflow: hidden;
@@ -604,10 +604,8 @@
     justify-content: flex-start;
     min-height: 0;
     padding-top: var(--desk-subline-spacing);
-    border-top: 0.2mm solid #aaa;
   }
   .exam-desk-label-assignment:first-child {
-    border-top: 0;
     padding-top: 0;
   }
   .exam-desk-label-assignment-main {
