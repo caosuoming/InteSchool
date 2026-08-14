@@ -68,7 +68,7 @@ export default function DashboardPage() {
           lectureService.listLectures({ teacherId: teacher.id }),
           basketService.listBaskets(teacher.id),
           aiService.listDocuments(teacher.id),
-          classService.listSchoolClasses(teacher.schoolId!),
+          teacher.schoolId ? classService.listSchoolClasses(teacher.schoolId) : Promise.resolve([]),
           classService.listPersonalClasses(teacher.id),
           shareService.listCorrectionTodos(teacher.id),
         ]);

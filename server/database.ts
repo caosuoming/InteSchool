@@ -515,6 +515,59 @@ export class DatabaseStore {
 
         this.sqlite.prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '4')").run();
       })();
+      version = 4;
+    }
+
+    if (version < 5) {
+      const now = new Date().toISOString();
+      const applicationRows = this.sqlite.prepare(
+        "SELECT data_json FROM app_records WHERE collection = 'applications'",
+      ).all() as Array<{ data_json: string }>;
+      const registrationApplications = applicationRows
+        .map((record) => JSON.parse(record.data_json) as JsonRecord)
+        .filter((application) => application.registrationApplication === true);
+      const applicationByTeacher = new Map(
+        registrationApplications.map((application) => [String(application.teacherId || ""), application]),
+      );
+      const teacherRows = this.sqlite.prepare(
+        "SELECT id, data_json FROM app_records WHERE collection = 'teachers'",
+      ).all() as Array<{ id: string; data_json: string }>;
+      const updateTeacher = this.sqlite.prepare(`
+        UPDATE app_records
+        SET school_id = NULL, owner_id = ?, data_json = ?, updated_at = ?
+        WHERE collection = 'teachers' AND id = ?
+      `);
+
+      this.sqlite.transaction(() => {
+        for (const row of teacherRows) {
+          const teacher = JSON.parse(row.data_json) as TeacherRecord;
+          const application = applicationByTeacher.get(teacher.id);
+          if (!application || !["pending", "rejected"].includes(String(application.status))) continue;
+          const personal = teacher.affiliations?.find((item) => item.schoolId == null && item.status === "active");
+          if (!personal || typeof personal.id !== "string") continue;
+          const affiliations = teacher.affiliations.map((item) => ({
+            ...item,
+            isCurrent: item.id === personal.id,
+          }));
+          const migrated: TeacherRecord = {
+            ...teacher,
+            schoolId: null,
+            subject: typeof personal.subject === "string" ? personal.subject : teacher.subject,
+            teachingGrades: Array.isArray(personal.teachingGrades) ? personal.teachingGrades as string[] : [],
+            teachingClassIds: Array.isArray(personal.teachingClassIds) ? personal.teachingClassIds as string[] : [],
+            homeroomClassIds: Array.isArray(personal.homeroomClassIds) ? personal.homeroomClassIds as string[] : [],
+            status: "active",
+            role: (personal.role || "teacher") as TeacherRecord["role"],
+            roles: Array.isArray(personal.roles) ? personal.roles as string[] : ["teacher"],
+            subjectGroupIds: Array.isArray(personal.subjectGroupIds) ? personal.subjectGroupIds as string[] : [],
+            prepGroupIds: Array.isArray(personal.prepGroupIds) ? personal.prepGroupIds as string[] : [],
+            affiliations,
+            currentAffiliationId: personal.id,
+          };
+          updateTeacher.run(teacher.id, JSON.stringify(migrated), now, row.id);
+        }
+        this.sqlite.prepare("INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '5')").run();
+      })();
     }
   }
 

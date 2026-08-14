@@ -72,8 +72,7 @@ export default function App() {
   if (loading) return <RouteLoading />;
 
   const protectedRoutes = teacher
-    ? teacher.schoolId
-      ? (
+    ? (
         <AppLayout>
           <Routes>
             {/* 工作台 */}
@@ -150,7 +149,6 @@ export default function App() {
           </Routes>
         </AppLayout>
       )
-      : <Navigate to="/school-auth" replace />
     : <Navigate to="/login" replace />;
 
   return (
@@ -159,7 +157,7 @@ export default function App() {
         <Routes>
           <Route
             path="/login"
-            element={teacher ? <Navigate to={teacher.schoolId ? "/dashboard" : "/school-auth"} replace /> : <LoginPage />}
+            element={teacher ? <Navigate to="/dashboard" replace /> : <LoginPage />}
           />
           <Route
             path="/prep-login"

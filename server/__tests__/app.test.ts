@@ -117,17 +117,33 @@ function approveRegistrationForTest(identifier: string): void {
     "SELECT teacher_id FROM users WHERE lower(email) = lower(?) OR phone = ? LIMIT 1",
   ).get(identifier, identifier) as { teacher_id: string } | undefined;
   const teacher = after.teachers.find((item) => item.id === user?.teacher_id);
-  if (!teacher?.schoolId) throw new Error(`待审核教师不存在: ${identifier}`);
+  if (!teacher) throw new Error(`待审核教师不存在: ${identifier}`);
   const application = (after.applications as Array<Record<string, unknown>>).find((item) =>
     item.registrationApplication === true && item.teacherId === teacher.id && item.status === "pending",
   );
   if (!application) throw new Error(`注册申请不存在: ${identifier}`);
+  const schoolId = String(application.schoolId || "");
+  const schoolAffiliation = teacher.affiliations.find((item) => item.schoolId === schoolId);
+  if (!schoolAffiliation || typeof schoolAffiliation.id !== "string") {
+    throw new Error(`待审核学校身份不存在: ${identifier}`);
+  }
+  teacher.schoolId = schoolId;
   teacher.status = "active";
-  teacher.affiliations = teacher.affiliations.map((item) => item.schoolId === teacher.schoolId
-    ? { ...item, status: "active" }
-    : item);
+  teacher.subject = String(schoolAffiliation.subject || teacher.subject);
+  teacher.teachingGrades = Array.isArray(schoolAffiliation.teachingGrades)
+    ? schoolAffiliation.teachingGrades as string[]
+    : [];
+  teacher.teachingClassIds = Array.isArray(schoolAffiliation.teachingClassIds)
+    ? schoolAffiliation.teachingClassIds as string[]
+    : [];
+  teacher.role = schoolAffiliation.role as typeof teacher.role;
+  teacher.roles = Array.isArray(schoolAffiliation.roles) ? schoolAffiliation.roles as string[] : ["teacher"];
+  teacher.affiliations = teacher.affiliations.map((item) => item.id === schoolAffiliation.id
+    ? { ...item, status: "active", isCurrent: true }
+    : { ...item, isCurrent: false });
+  teacher.currentAffiliationId = schoolAffiliation.id;
   application.status = "approved";
-  const school = (after.schools as Array<Record<string, unknown>>).find((item) => item.id === teacher.schoolId);
+  const school = (after.schools as Array<Record<string, unknown>>).find((item) => item.id === schoolId);
   if (school) school.teacherCount = Number(school.teacherCount || 0) + 1;
   built.store.saveState(before, after);
 }
@@ -434,12 +450,13 @@ describe("production backend", () => {
     expect(built.store.sqlite.prepare("SELECT email FROM users WHERE phone = ?").get(phone))
       .toEqual({ email: null });
 
-    const blockedLogin = await built.app.inject({
+    const personalLogin = await built.app.inject({
       method: "POST",
       url: "/api/auth/login",
       payload: { identifier: phone, password: "StrongPass123" },
     });
-    expect(blockedLogin.statusCode).toBe(403);
+    expect(personalLogin.statusCode).toBe(200);
+    expect(personalLogin.json<{ teacher: { schoolId: string | null } }>().teacher.schoolId).toBeNull();
     approveRegistrationForTest(phone);
 
     const phoneLogin = await built.app.inject({
@@ -789,13 +806,44 @@ describe("production backend", () => {
     expect(registered.statusCode).toBe(202);
     expect(registered.json()).toMatchObject({ teacher: null, csrfToken: null, pending: true });
 
-    const blockedLogin = await built.app.inject({
+    const personalLogin = await built.app.inject({
       method: "POST",
       url: "/api/auth/login",
       payload: { identifier: "school-profile@example.com", password: "StrongPass123" },
     });
-    expect(blockedLogin.statusCode).toBe(403);
-    expect(blockedLogin.json()).toEqual({ error: "注册申请正在等待学校管理员或平台超级管理员审核" });
+    expect(personalLogin.statusCode).toBe(200);
+    const personalBody = personalLogin.json<{
+      teacher: {
+        schoolId: string | null;
+        status: string;
+        currentAffiliationId: string;
+        affiliations: Array<Record<string, unknown>>;
+      };
+      csrfToken: string;
+    }>();
+    expect(personalBody.teacher).toMatchObject({ schoolId: null, status: "active" });
+    expect(personalBody.teacher.affiliations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ schoolId: null, status: "active", isCurrent: true }),
+      expect.objectContaining({ schoolId: "sch-1", status: "pending", isCurrent: false }),
+    ]));
+
+    const duplicatePending = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/applications",
+      headers: {
+        cookie: sessionCookie(personalLogin),
+        "x-inteschool-csrf": personalBody.csrfToken,
+      },
+      payload: {
+        schoolId: "sch-1",
+        subjects: ["物理"],
+        roles: ["teacher"],
+      },
+    });
+    expect(duplicatePending.statusCode).toBe(400);
+    expect(duplicatePending.json()).toEqual({
+      error: "已提交过该学校的认证申请，不能重复申请；后续权限调整请在后台设置中提交",
+    });
 
     const admin = await login(built.app);
     const pending = await built.app.inject({
@@ -2704,7 +2752,7 @@ describe("production backend", () => {
     });
     expect(built.store.sqlite.prepare(
       "SELECT value FROM metadata WHERE key = 'schema_version'",
-    ).get()).toEqual({ value: "4" });
+    ).get()).toEqual({ value: "5" });
   });
 
 });

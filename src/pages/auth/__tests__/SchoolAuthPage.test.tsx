@@ -67,6 +67,7 @@ describe("SchoolAuthPage", () => {
       loading: false,
       error: null,
       refresh: vi.fn(),
+      logout: vi.fn(),
     });
     vi.mocked(schoolService.listSchools).mockResolvedValue([school]);
     vi.mocked(schoolService.listMySchoolCreationApplications).mockResolvedValue([]);

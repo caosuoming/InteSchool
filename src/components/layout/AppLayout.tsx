@@ -69,7 +69,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [donationRank, setDonationRank] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const affiliations = teacher ? getAffiliations() : [];
+  const affiliations = teacher ? getAffiliations().filter((item) => item.status === "active") : [];
   const currentAffiliation = teacher ? getCurrentAffiliation() : null;
   const isPersonalIdentity = !currentAffiliation?.schoolId;
   const canManageExams = teacher ? canManageSchoolExams(teacher, currentAffiliation) : false;
