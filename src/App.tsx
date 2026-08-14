@@ -6,6 +6,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { RequireExamManager } from "@/components/auth/RequireExamManager";
 import { RequireSchoolRosterManager } from "@/components/auth/RequireSchoolRosterManager";
 import { RequireTeachingProfileManager } from "@/components/auth/RequireTeachingProfileManager";
+import { RequireAccountManager } from "@/components/auth/RequireAccountManager";
 
 const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
 const ClassroomLoginPage = lazy(() => import("@/pages/auth/ClassroomLoginPage"));
@@ -32,6 +33,7 @@ const SettingsPage = lazy(() => import("@/pages/admin/SettingsPage"));
 const RegistrationAccessPage = lazy(() => import("@/pages/admin/RegistrationAccessPage"));
 const PermissionApplicationsPage = lazy(() => import("@/pages/admin/PermissionApplicationsPage"));
 const TeacherProfilesPage = lazy(() => import("@/pages/admin/TeacherProfilesPage"));
+const AccountManagementPage = lazy(() => import("@/pages/admin/AccountManagementPage"));
 const TeacherSchoolApplicationsPage = lazy(() => import("@/pages/admin/TeacherSchoolApplicationsPage"));
 const SchoolAdminApplicationsPage = lazy(() => import("@/pages/admin/SchoolAdminApplicationsPage"));
 const SchoolCreationApplicationsPage = lazy(() => import("@/pages/admin/SchoolCreationApplicationsPage"));
@@ -116,6 +118,7 @@ export default function App() {
             <Route path="/admin/registration-access" element={<RegistrationAccessPage />} />
             <Route path="/admin/permission-applications" element={<PermissionApplicationsPage />} />
             <Route path="/admin/teacher-profiles" element={<RequireTeachingProfileManager><TeacherProfilesPage /></RequireTeachingProfileManager>} />
+            <Route path="/admin/accounts" element={<RequireAccountManager><AccountManagementPage /></RequireAccountManager>} />
             <Route path="/admin/teacher-school-applications" element={<TeacherSchoolApplicationsPage />} />
             <Route path="/admin/school-admin-applications" element={<SchoolAdminApplicationsPage />} />
             <Route path="/admin/school-creation-applications" element={<SchoolCreationApplicationsPage />} />

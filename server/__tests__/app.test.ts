@@ -1137,6 +1137,71 @@ describe("production backend", () => {
       .resolves.toMatchObject({ teacher: expect.objectContaining({ id: "tch-1" }) });
   });
 
+  it("lets school administrators reset local teacher passwords and invalidates target sessions", async () => {
+    built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
+    const targetSession = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
+    const admin = await login(built.app);
+
+    const reset = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/teachers/tch-2/password-reset",
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: {},
+    });
+    expect(reset.statusCode).toBe(200);
+    const generatedPassword = reset.json<{ password: string }>().password;
+    expect(generatedPassword).toMatch(/^[A-Za-z0-9_-]{16}$/);
+
+    const oldSession = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/current",
+      headers: { cookie: targetSession.cookie },
+    });
+    expect(oldSession.json()).toEqual({ teacher: null, csrfToken: null });
+
+    const oldPassword = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { identifier: "min.wang@bj04.edu.cn", password: "TeacherPass123" },
+    });
+    expect(oldPassword.statusCode).toBe(401);
+    await expect(login(built.app, "min.wang@bj04.edu.cn", generatedPassword))
+      .resolves.toMatchObject({ teacher: expect.objectContaining({ id: "tch-2" }) });
+
+    const crossSchool = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/teachers/tch-3/password-reset",
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: {},
+    });
+    expect(crossSchool.statusCode).toBe(403);
+    expect(crossSchool.json()).toEqual({ error: "无权重置其他学校教师的密码" });
+  });
+
+  it("lets platform administrators reset passwords across schools with a specified password", async () => {
+    built.store.createUser("tch-3", "hua.liu@shsy.edu.cn", "TeacherPass123");
+    const before = built.store.loadState();
+    const after = structuredClone(before);
+    const platformTeacher = after.teachers.find((item) => item.id === "tch-1")!;
+    platformTeacher.role = "platform_admin";
+    platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === platformTeacher.currentAffiliationId
+      ? { ...item, role: "platform_admin" }
+      : item);
+    built.store.saveState(before, after);
+    const admin = await login(built.app);
+
+    const reset = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/teachers/tch-3/password-reset",
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { newPassword: "ManagedPass123" },
+    });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json()).toEqual({ password: "ManagedPass123" });
+    await expect(login(built.app, "hua.liu@shsy.edu.cn", "ManagedPass123"))
+      .resolves.toMatchObject({ teacher: expect.objectContaining({ id: "tch-3" }) });
+  });
+
   it("lets users update a validated public nickname and persists it", async () => {
     const session = await login(built.app);
 
