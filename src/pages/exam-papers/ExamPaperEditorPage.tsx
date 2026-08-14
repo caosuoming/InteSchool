@@ -1440,60 +1440,64 @@ export default function ExamPaperEditorPage() {
           title={title || paper?.title}
           description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
           icon={<FileSpreadsheet className="w-5 h-5" />}
-          action={
-            <div className="no-print flex flex-wrap items-center justify-end gap-2">
-              {!prepTaskId && (
-                <Button variant="outline" onClick={() => setAudiencePickerOpen(true)}>
-                  <Users className="w-4 h-4" />
-                  <span className="max-w-48 truncate">
-                    {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
-                  </span>
-                  {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
-                </Button>
-              )}
-              {!prepTaskId && paper?.teacherId === teacher?.id && (
-                <Button
-                  variant="outline"
-                  onClick={handleSendToMyCourseware}
-                  loading={sendingToCourseware}
-                  disabled={linkedCoursewareLoading}
-                >
-                  <BookOpen className="w-4 h-4" />
-                  {linkedCourseware ? "课件" : "发送到我的课件"}
-                </Button>
-              )}
-              {!prepTaskId && (
-                <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
-                  <Layout className="w-4 h-4" />
-                  制作答题卡
-                </Button>
-              )}
-              {!prepTaskId && (
-                <Button variant="outline" onClick={() => setPublishOpen(true)}>
-                  <Send className="w-4 h-4" />
-                  发布试卷
-                </Button>
-              )}
-              {!prepTaskId && paper?.teacherId === teacher?.id && (
-                <Button variant="outline" onClick={handleDuplicate} loading={duplicating}>
-                  <Copy className="w-4 h-4" />
-                  创建副本
-                </Button>
-              )}
-              <Button variant="outline" onClick={handleDownload} loading={downloading}>
-                <Download className="w-4 h-4" />
-                下载
-              </Button>
-              <Button
-                variant="gold"
-                onClick={() => navigateWithDraft(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
-              >
-                <Edit3 className="w-4 h-4" />
-                编辑试卷
-              </Button>
-            </div>
-          }
+          className="mb-3"
         />
+
+        <div
+          role="toolbar"
+          aria-label="试卷预览操作"
+          className="no-print mb-6 flex flex-wrap items-center justify-end gap-2"
+        >
+          {!prepTaskId && (
+            <Button variant="outline" onClick={() => setAudiencePickerOpen(true)}>
+              <Users className="w-4 h-4" />
+              <span className="max-w-48 truncate">
+                {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
+              </span>
+              {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
+            </Button>
+          )}
+          {!prepTaskId && paper?.teacherId === teacher?.id && (
+            <Button
+              variant="outline"
+              onClick={handleSendToMyCourseware}
+              loading={sendingToCourseware}
+              disabled={linkedCoursewareLoading}
+            >
+              <BookOpen className="w-4 h-4" />
+              {linkedCourseware ? "课件" : "发送到我的课件"}
+            </Button>
+          )}
+          {!prepTaskId && (
+            <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
+              <Layout className="w-4 h-4" />
+              制作答题卡
+            </Button>
+          )}
+          {!prepTaskId && (
+            <Button variant="outline" onClick={() => setPublishOpen(true)}>
+              <Send className="w-4 h-4" />
+              发布试卷
+            </Button>
+          )}
+          {!prepTaskId && paper?.teacherId === teacher?.id && (
+            <Button variant="outline" onClick={handleDuplicate} loading={duplicating}>
+              <Copy className="w-4 h-4" />
+              创建副本
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleDownload} loading={downloading}>
+            <Download className="w-4 h-4" />
+            下载
+          </Button>
+          <Button
+            variant="gold"
+            onClick={() => navigateWithDraft(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+          >
+            <Edit3 className="w-4 h-4" />
+            编辑试卷
+          </Button>
+        </div>
 
         <div className="preview-sticky-shell">
           <aside className="preview-sticky-rail no-print">
