@@ -72,9 +72,11 @@ const registerSchema = z.object({
   subject: teachingFieldsSchema.shape.subject,
   teachingGrades: teachingFieldsSchema.shape.teachingGrades,
   teachingClassIds: teachingFieldsSchema.shape.teachingClassIds,
+  roles: z.array(z.enum(TEACHER_ROLES)).min(1).max(TEACHER_ROLES.length).optional().default(["teacher"]),
+  requestSchoolAdmin: z.boolean().optional().default(false),
 }).refine((input) => Boolean(input.schoolId) !== Boolean(input.newSchool), {
   message: "请选择已有学校或创建新学校",
-});
+}).transform((input) => ({ ...input, roles: normalizeTeacherRoles(input.roles) }));
 
 const registrationAuthorizationSchema = z.object({
   phone: phoneSchema,
@@ -126,6 +128,11 @@ const profileSchema = z.object({
 const adminApplicationSchema = z.object({
   reason: z.string().trim().min(5).max(300),
 });
+
+const roleApplicationSchema = z.object({
+  roles: z.array(z.enum(TEACHER_ROLES)).min(1).max(TEACHER_ROLES.length),
+  reason: z.string().trim().min(5).max(300),
+}).transform((input) => ({ ...input, roles: normalizeTeacherRoles(input.roles) }));
 
 const managedTeachingProfileSchema = z.object({
   subject: z.string().trim().min(1).max(50).optional(),
@@ -230,6 +237,12 @@ const TEACHING_CLASS_ASSIGNMENT_ERROR = "任教班级只能由年级组长、教
 function requirePlatformAdmin(teacher: TeacherRecord): void {
   if (activeRole(teacher) !== "platform_admin") {
     throw new Error("该操作需要平台管理员权限");
+  }
+}
+
+function requireSchoolAdmin(teacher: TeacherRecord): void {
+  if (activeRole(teacher) !== "school_admin") {
+    throw new Error("该操作需要本校管理员权限");
   }
 }
 
@@ -361,7 +374,7 @@ function activateAffiliation(
   const affiliations = teacher.affiliations
     .filter((item) => item.id !== affiliationId)
     .map((item) => ({ ...item, isCurrent: false }));
-  if (!existing) {
+  if (!existing || existing.status !== "active") {
     const school = schools.find((item) => item.id === schoolId) as ({ teacherCount?: number } & { id: string; name: string }) | undefined;
     if (school) school.teacherCount = Number(school.teacherCount || 0) + 1;
   }
@@ -470,6 +483,7 @@ export async function registerAuthRoutes(
     }
     validateTeachingClassIds(state, schoolId, input.teachingClassIds);
 
+    const requiresReview = !input.newSchool;
     const teacher: TeacherRecord = {
       id: teacherId,
       email: input.email?.toLowerCase() || "",
@@ -480,7 +494,7 @@ export async function registerAuthRoutes(
       subject: input.subject,
       teachingGrades: input.teachingGrades,
       teachingClassIds: input.teachingClassIds,
-      status: "active",
+      status: requiresReview ? "pending" : "active",
       role: "teacher",
       roles: ["teacher"],
       subjectGroupIds: [],
@@ -494,7 +508,7 @@ export async function registerAuthRoutes(
           subject: input.subject,
           teachingGrades: input.teachingGrades,
           teachingClassIds: input.teachingClassIds,
-          status: "active",
+          status: requiresReview ? "pending" : "active",
           role: "teacher",
           roles: ["teacher"],
           subjectGroupIds: [],
@@ -523,6 +537,33 @@ export async function registerAuthRoutes(
       createdAt: now,
     };
     store.createAuthorizedAccount(teacher, input.password, input.phone, { newSchool });
+    if (requiresReview) {
+      await withSerializedState(store, (latestState) => {
+        const applications = latestState.applications as Array<Record<string, unknown>>;
+        applications.push({
+          id: randomUUID(),
+          teacherId,
+          teacherName: input.name,
+          schoolId,
+          schoolName,
+          employeeNo: "",
+          subject: input.subject,
+          subjects: [input.subject],
+          teachingGrades: input.teachingGrades,
+          teachingClassIds: [],
+          position: "",
+          roles: input.roles,
+          proofFileId: null,
+          proofFileName: "",
+          requestSchoolAdmin: input.requestSchoolAdmin,
+          registrationApplication: true,
+          status: "pending",
+          createdAt: now,
+        });
+      });
+      reply.code(202);
+      return { teacher: null, csrfToken: null, pending: true };
+    }
     const user = store.authenticate(input.phone, input.password);
     if (!user) throw new Error("账号创建失败");
     const { token, session } = store.createSession(user);
@@ -539,6 +580,16 @@ export async function registerAuthRoutes(
     }
     const teacher = store.getTeacherById(user.teacher_id);
     if (!teacher) throw new Error("账号关联的教师资料不存在");
+    if (teacher.status === "pending") {
+      const error = new Error("注册申请正在等待学校管理员或平台超级管理员审核") as Error & { statusCode: number };
+      error.statusCode = 403;
+      throw error;
+    }
+    if (teacher.status === "rejected") {
+      const error = new Error("注册申请未通过，请联系学校管理员或平台超级管理员") as Error & { statusCode: number };
+      error.statusCode = 403;
+      throw error;
+    }
     const { token, session } = store.createSession(user);
     setSessionCookie(reply, token, config);
     return { teacher: publicTeacher(teacher), csrfToken: session.csrfToken };
@@ -659,7 +710,7 @@ export async function registerAuthRoutes(
     if (["school_admin", "platform_admin"].includes(activeRole(teacher))) throw new Error("当前账号已经是管理员");
     return withSerializedState(store, (state) => {
       const applications = state.schoolAdminApplications as Array<Record<string, unknown>>;
-      if (applications.some((item) => item.teacherId === teacher.id && item.schoolId === teacher.schoolId && item.status === "pending")) {
+      if (applications.some((item) => item.kind !== "teacher_roles" && item.teacherId === teacher.id && item.schoolId === teacher.schoolId && item.status === "pending")) {
         throw new Error("已有待审核的学校管理员申请");
       }
       const school = (state.schools as Array<{ id: string; name: string }>).find((item) => item.id === teacher.schoolId);
@@ -683,7 +734,7 @@ export async function registerAuthRoutes(
     const session = requireSession(request, store);
     const state = store.loadState();
     return (state.schoolAdminApplications as Array<Record<string, unknown>>)
-      .filter((item) => item.teacherId === session.teacherId)
+      .filter((item) => item.kind !== "teacher_roles" && item.teacherId === session.teacherId)
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   });
 
@@ -693,7 +744,7 @@ export async function registerAuthRoutes(
     requirePlatformAdmin(reviewer);
     const state = store.loadState();
     return (state.schoolAdminApplications as Array<Record<string, unknown>>)
-      .filter((item) => item.status === "pending")
+      .filter((item) => item.kind !== "teacher_roles" && item.status === "pending")
       .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   });
 
@@ -734,6 +785,125 @@ export async function registerAuthRoutes(
           ? `你在 ${String(application.schoolName || "当前学校")} 的学校管理员申请已通过。`
           : `你在 ${String(application.schoolName || "当前学校")} 的学校管理员申请未通过。`,
         actionUrl: approved ? "/admin" : "/profile",
+      });
+      return { ok: true };
+    });
+  });
+
+  app.post("/api/auth/role-applications", async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const teacher = sessionTeacher(store, session);
+    const input = roleApplicationSchema.parse(request.body);
+    if (!teacher.schoolId || teacher.status !== "active") throw new Error("请先加入学校");
+    if (activeRole(teacher) === "platform_admin") throw new Error("平台超级管理员不能申请校内教师权限");
+    const currentRoles = new Set(activeTeacherRoles(teacher));
+    const requestedRoles = input.roles.filter((role) => role !== "teacher" && !currentRoles.has(role));
+    if (requestedRoles.length === 0) throw new Error("请选择尚未拥有的职务权限");
+    return withSerializedState(store, (state) => {
+      const applications = state.schoolAdminApplications as Array<Record<string, unknown>>;
+      if (applications.some((item) => (
+        item.kind === "teacher_roles"
+        && item.teacherId === teacher.id
+        && item.schoolId === teacher.schoolId
+        && item.status === "pending"
+      ))) {
+        throw new Error("已有待审核的教师权限申请");
+      }
+      const school = (state.schools as Array<{ id: string; name: string }>).find((item) => item.id === teacher.schoolId);
+      if (!school) throw new Error("学校不存在");
+      const application = {
+        id: randomUUID(),
+        kind: "teacher_roles",
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        schoolId: school.id,
+        schoolName: school.name,
+        requestedRoles,
+        reason: input.reason,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      };
+      applications.push(application);
+      return application;
+    });
+  });
+
+  app.get("/api/auth/role-applications/mine", async (request) => {
+    const session = requireSession(request, store);
+    const state = store.loadState();
+    return (state.schoolAdminApplications as Array<Record<string, unknown>>)
+      .filter((item) => item.kind === "teacher_roles" && item.teacherId === session.teacherId)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  });
+
+  app.get("/api/auth/role-applications/pending", async (request) => {
+    const session = requireSession(request, store);
+    const reviewer = sessionTeacher(store, session);
+    requireSchoolAdmin(reviewer);
+    if (!reviewer.schoolId) throw new Error("当前管理员没有学校身份");
+    const state = store.loadState();
+    return (state.schoolAdminApplications as Array<Record<string, unknown>>)
+      .filter((item) => item.kind === "teacher_roles" && item.status === "pending" && item.schoolId === reviewer.schoolId)
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  });
+
+  app.post("/api/auth/role-applications/:id/review", async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const reviewer = sessionTeacher(store, session);
+    requireSchoolAdmin(reviewer);
+    if (!reviewer.schoolId) throw new Error("当前管理员没有学校身份");
+    const id = z.string().uuid().parse((request.params as { id?: string }).id);
+    const approved = z.object({ approved: z.boolean() }).parse(request.body).approved;
+    return withSerializedState(store, (state) => {
+      const applications = state.schoolAdminApplications as Array<Record<string, unknown>>;
+      const application = applications.find((item) => item.id === id && item.kind === "teacher_roles");
+      if (!application || application.status !== "pending" || application.schoolId !== reviewer.schoolId) {
+        throw new Error("教师权限申请不存在或已处理");
+      }
+      application.status = approved ? "approved" : "rejected";
+      application.reviewedAt = new Date().toISOString();
+      application.reviewedBy = reviewer.id;
+      if (approved) {
+        const teacherIndex = state.teachers.findIndex((item) => item.id === application.teacherId);
+        if (teacherIndex < 0) throw new Error("申请教师不存在");
+        const target = state.teachers[teacherIndex];
+        const requestedRoles = Array.isArray(application.requestedRoles)
+          ? application.requestedRoles.filter((role): role is TeacherRole => TEACHER_ROLES.includes(role as TeacherRole))
+          : [];
+        const affiliations = target.affiliations.map((item) => {
+          if (item.schoolId !== reviewer.schoolId) return item;
+          const directRoles = Array.isArray(item.assignedRoles) && item.assignedRoles.length > 0
+            ? item.assignedRoles.filter((role): role is TeacherRole => TEACHER_ROLES.includes(role as TeacherRole))
+            : Array.isArray(item.roles)
+              ? item.roles.filter((role): role is TeacherRole => TEACHER_ROLES.includes(role as TeacherRole))
+              : ["teacher" as TeacherRole];
+          const assignedRoles = normalizeTeacherRoles([...directRoles, ...requestedRoles]);
+          const effectiveRoles = normalizeTeacherRoles([
+            ...(Array.isArray(item.roles)
+              ? item.roles.filter((role): role is TeacherRole => TEACHER_ROLES.includes(role as TeacherRole))
+              : directRoles),
+            ...requestedRoles,
+          ]);
+          return { ...item, assignedRoles, roles: effectiveRoles };
+        });
+        const current = affiliations.find((item) => item.id === target.currentAffiliationId)
+          || affiliations.find((item) => item.isCurrent);
+        state.teachers[teacherIndex] = {
+          ...target,
+          affiliations,
+          roles: Array.isArray(current?.roles) ? current.roles as string[] : target.roles,
+        };
+      }
+      createNotificationInState(state, {
+        recipientTeacherId: String(application.teacherId),
+        type: "approval",
+        title: approved ? "教师权限申请已通过" : "教师权限申请未通过",
+        content: approved
+          ? "你申请的校内职务权限已由本校管理员通过。"
+          : "你申请的校内职务权限未通过。",
+        actionUrl: "/admin/permission-applications",
       });
       return { ok: true };
     });
@@ -899,13 +1069,46 @@ export async function registerAuthRoutes(
           Array.isArray(application.teachingGrades) ? application.teachingGrades as string[] : [],
           Array.isArray(application.teachingClassIds) ? application.teachingClassIds as string[] : [],
           typeof application.position === "string" ? application.position : "",
-          application.requestSchoolAdmin === true,
+          application.requestSchoolAdmin === true && platformAdmin,
           Array.isArray(application.roles)
             ? normalizeTeacherRoles(application.roles.filter(
               (item): item is TeacherRole => TEACHER_ROLES.includes(item as TeacherRole),
             ))
             : ["teacher"],
         );
+        if (application.requestSchoolAdmin === true && !platformAdmin) {
+          const adminApplications = state.schoolAdminApplications as Array<Record<string, unknown>>;
+          const alreadyPending = adminApplications.some((item) =>
+            item.kind !== "teacher_roles"
+            && item.teacherId === application.teacherId
+            && item.schoolId === application.schoolId
+            && item.status === "pending",
+          );
+          if (!alreadyPending) {
+            adminApplications.push({
+              id: randomUUID(),
+              teacherId: application.teacherId,
+              teacherName: application.teacherName,
+              schoolId: application.schoolId,
+              schoolName: application.schoolName,
+              reason: "注册或入校时申请学校管理员权限",
+              status: "pending",
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      } else if (application.registrationApplication === true) {
+        const teacherIndex = state.teachers.findIndex((teacher) => teacher.id === application.teacherId);
+        if (teacherIndex >= 0) {
+          const target = state.teachers[teacherIndex];
+          state.teachers[teacherIndex] = {
+            ...target,
+            status: "rejected",
+            affiliations: target.affiliations.map((item) => item.schoolId === application.schoolId
+              ? { ...item, status: "rejected" }
+              : item),
+          };
+        }
       }
       createNotificationInState(state, {
         recipientTeacherId: String(application.teacherId),

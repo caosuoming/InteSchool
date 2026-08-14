@@ -184,6 +184,20 @@ export interface SchoolAdminApplication {
   reviewedBy?: string;
 }
 
+export interface TeacherRoleApplication {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  schoolId: string;
+  schoolName: string;
+  requestedRoles: TeacherRole[];
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
 export interface SchoolCreationApplication {
   id: string;
   requesterId: string;

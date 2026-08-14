@@ -8,7 +8,7 @@ interface AuthState {
   error: string | null;
   init: () => Promise<void>;
   login: (identifier: string, password: string) => Promise<boolean>;
-  register: (input: Parameters<typeof authService.register>[0]) => Promise<boolean>;
+  register: (input: Parameters<typeof authService.register>[0]) => Promise<"active" | "pending" | false>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   updateProfile: (patch: Parameters<typeof authService.updateProfile>[0]) => Promise<boolean>;
@@ -54,7 +54,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const teacher = await authService.register(input);
       set({ teacher, loading: false });
-      return true;
+      return teacher ? "active" : "pending";
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "注册失败", loading: false });
       return false;
