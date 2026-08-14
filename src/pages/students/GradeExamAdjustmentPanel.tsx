@@ -335,7 +335,10 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
         </div>
 
         {selectedRecord ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            aria-label="各科成绩"
+            className="grid grid-flow-col auto-cols-[minmax(14rem,1fr)] gap-3 overflow-x-auto pb-1"
+          >
             {exam.subjects.map((subject) => {
               const assignedConfigured = Object.prototype.hasOwnProperty.call(exam.settings.assignmentRules, subject)
                 || selectedRecord.sourceAssignedScores?.[subject] !== undefined;

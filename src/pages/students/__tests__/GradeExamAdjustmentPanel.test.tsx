@@ -98,6 +98,27 @@ describe("GradeExamAdjustmentPanel", () => {
     });
   });
 
+  it("keeps all subject score editors in one horizontally scrollable row", () => {
+    const initial = buildExam();
+    const subjects = ["语文", "数学", "英语", "物理"];
+    const exam: GradeExam = {
+      ...initial,
+      subjects,
+      records: initial.records.map((record) => ({
+        ...record,
+        scores: Object.fromEntries(subjects.map((subject) => [subject, record.scores.数学])),
+        assignedScores: Object.fromEntries(subjects.map((subject) => [subject, record.assignedScores.数学])),
+      })),
+      settings: buildDefaultGradeSettings(subjects, ["class-1"]),
+    };
+
+    render(<Harness initial={exam} />);
+
+    const scoreRow = screen.getByLabelText("各科成绩");
+    expect(scoreRow).toHaveClass("grid-flow-col", "overflow-x-auto");
+    expect(scoreRow.children).toHaveLength(subjects.length);
+  });
+
   it("publishes, exposes a share link, locks editing, and withdraws publication", async () => {
     const user = userEvent.setup();
     const initial = buildExam();
