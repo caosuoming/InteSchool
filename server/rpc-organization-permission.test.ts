@@ -206,6 +206,14 @@ describe("organization RPC hierarchical permissions", () => {
       built.store,
       session("platform-admin"),
       "organization",
+      "updateTeacherRoles",
+      ["school-two-teacher", "school-2", ["teacher", "principal"]],
+    )).rejects.toThrow("无权执行该组织或教师权限操作");
+
+    await expect(invokeRpc(
+      built.store,
+      session("platform-admin"),
+      "organization",
       "setTeacherSchoolRole",
       ["school-two-teacher", "school-2", "school_admin"],
     )).resolves.toBeUndefined();

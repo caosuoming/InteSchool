@@ -763,7 +763,7 @@ export class DatabaseStore {
           now,
           now,
         );
-      } else if (teacher.schoolId) {
+      } else if (teacher.schoolId && teacher.status === "active") {
         const row = this.sqlite.prepare(`
           SELECT data_json FROM app_records WHERE collection = 'schools' AND id = ?
         `).get(teacher.schoolId) as { data_json: string } | undefined;

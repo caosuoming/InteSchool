@@ -6,6 +6,7 @@ import type {
   SchoolApplication,
   Teacher,
   TeacherAffiliation,
+  TeacherRoleApplication,
   TeacherRole,
 } from "@/types";
 import { apiRequest, setCsrfToken } from "./api";
@@ -13,6 +14,7 @@ import { apiRequest, setCsrfToken } from "./api";
 interface AuthPayload {
   teacher: Teacher | null;
   csrfToken: string | null;
+  pending?: boolean;
 }
 
 let currentTeacher: Teacher | null = null;
@@ -49,18 +51,26 @@ export const authService = {
       newSchool?: { name: string; code: string; city: string; description?: string };
       subject: string;
       teachingGrades?: string[];
+      roles?: TeacherRole[];
+      requestSchoolAdmin?: boolean;
     } | string,
     password?: string,
     name?: string,
     phone?: string,
-  ): Promise<Teacher> {
+  ): Promise<Teacher | null> {
     const payload = typeof input === "string"
       ? { email: input, password: password || "", name: name || "", phone: phone || "" }
       : input;
-    return storeAuth(await apiRequest<AuthPayload>("/api/auth/register", {
+    const result = await apiRequest<AuthPayload>("/api/auth/register", {
       method: "POST",
       body: JSON.stringify(payload),
-    }));
+    });
+    if (!result.teacher || !result.csrfToken) {
+      currentTeacher = null;
+      setCsrfToken(null);
+      return null;
+    }
+    return storeAuth({ teacher: result.teacher, csrfToken: result.csrfToken });
   },
 
   async login(identifier: string, password: string): Promise<Teacher> {
@@ -204,6 +214,28 @@ export const authService = {
 
   async reviewSchoolAdminApplication(id: string, approved: boolean): Promise<void> {
     await apiRequest(`/api/auth/admin-applications/${encodeURIComponent(id)}/review`, {
+      method: "POST",
+      body: JSON.stringify({ approved }),
+    }, true);
+  },
+
+  async applyTeacherRoles(roles: TeacherRole[], reason: string): Promise<TeacherRoleApplication> {
+    return apiRequest<TeacherRoleApplication>("/api/auth/role-applications", {
+      method: "POST",
+      body: JSON.stringify({ roles, reason }),
+    }, true);
+  },
+
+  async getMyTeacherRoleApplications(): Promise<TeacherRoleApplication[]> {
+    return apiRequest<TeacherRoleApplication[]>("/api/auth/role-applications/mine");
+  },
+
+  async getPendingTeacherRoleApplications(): Promise<TeacherRoleApplication[]> {
+    return apiRequest<TeacherRoleApplication[]>("/api/auth/role-applications/pending");
+  },
+
+  async reviewTeacherRoleApplication(id: string, approved: boolean): Promise<void> {
+    await apiRequest(`/api/auth/role-applications/${encodeURIComponent(id)}/review`, {
       method: "POST",
       body: JSON.stringify({ approved }),
     }, true);

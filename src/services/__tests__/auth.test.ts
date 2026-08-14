@@ -1,4 +1,4 @@
-import type { SchoolApplication, Teacher, TeacherAffiliation } from "@/types";
+import type { SchoolApplication, Teacher, TeacherAffiliation, TeacherRoleApplication } from "@/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiMocks = vi.hoisted(() => ({
@@ -99,6 +99,23 @@ describe("auth service", () => {
       body: JSON.stringify({ identifier: "login@example.com", password: "StrongPass123" }),
     });
     expect(apiMocks.setCsrfToken).toHaveBeenLastCalledWith("csrf-login");
+  });
+
+  it("keeps a reviewed registration anonymous until approval", async () => {
+    apiMocks.apiRequest.mockResolvedValueOnce({ teacher: null, csrfToken: null, pending: true });
+
+    await expect(authService.register({
+      email: "pending@example.com",
+      password: "StrongPass123",
+      name: "待审核教师",
+      phone: "13800138000",
+      schoolId: "school-1",
+      subject: "数学",
+      teachingGrades: ["高一"],
+      roles: ["teacher", "gradeLeader"],
+    })).resolves.toBeNull();
+    expect(authService.getCurrentTeacher()).toBeNull();
+    expect(apiMocks.setCsrfToken).toHaveBeenCalledWith(null);
   });
 
   it("manages registration authorizations through protected endpoints", async () => {
@@ -209,6 +226,67 @@ describe("auth service", () => {
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/applications/mine");
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(3, "/api/auth/applications/pending");
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/applications/application%20%2F%201/review", {
+      method: "POST",
+      body: JSON.stringify({ approved: true }),
+    }, true);
+  });
+
+  it("submits, lists, and reviews school administrator applications", async () => {
+    const application = { id: "admin-application-1", status: "pending" };
+    apiMocks.apiRequest
+      .mockResolvedValueOnce(application)
+      .mockResolvedValueOnce([application])
+      .mockResolvedValueOnce([application])
+      .mockResolvedValueOnce({ ok: true });
+
+    await expect(authService.applySchoolAdmin("负责学校平台管理工作")).resolves.toEqual(application);
+    await expect(authService.getMySchoolAdminApplications()).resolves.toEqual([application]);
+    await expect(authService.getPendingSchoolAdminApplications()).resolves.toEqual([application]);
+    await authService.reviewSchoolAdminApplication("admin / application", false);
+
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(1, "/api/auth/admin-applications", {
+      method: "POST",
+      body: JSON.stringify({ reason: "负责学校平台管理工作" }),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/admin-applications/mine");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(3, "/api/auth/admin-applications/pending");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/admin-applications/admin%20%2F%20application/review", {
+      method: "POST",
+      body: JSON.stringify({ approved: false }),
+    }, true);
+  });
+
+  it("submits, lists, and reviews teacher role applications", async () => {
+    const application = {
+      id: "role-application-1",
+      teacherId: "teacher-1",
+      teacherName: "测试教师",
+      schoolId: "school-1",
+      schoolName: "测试学校",
+      requestedRoles: ["gradeLeader"],
+      reason: "负责年级教学管理",
+      status: "pending",
+      createdAt: "2026-08-14T00:00:00.000Z",
+    } as TeacherRoleApplication;
+    apiMocks.apiRequest
+      .mockResolvedValueOnce(application)
+      .mockResolvedValueOnce([application])
+      .mockResolvedValueOnce([application])
+      .mockResolvedValueOnce({ ok: true });
+
+    await expect(authService.applyTeacherRoles(["teacher", "gradeLeader"], "负责年级教学管理"))
+      .resolves.toEqual(application);
+    await expect(authService.getMyTeacherRoleApplications()).resolves.toEqual([application]);
+    await expect(authService.getPendingTeacherRoleApplications()).resolves.toEqual([application]);
+    await authService.reviewTeacherRoleApplication("role / application", true);
+
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(1, "/api/auth/role-applications", {
+      method: "POST",
+      body: JSON.stringify({ roles: ["teacher", "gradeLeader"], reason: "负责年级教学管理" }),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/role-applications/mine");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(3, "/api/auth/role-applications/pending");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/role-applications/role%20%2F%20application/review", {
       method: "POST",
       body: JSON.stringify({ approved: true }),
     }, true);

@@ -3,10 +3,12 @@ import { useNavigate } from "react-router";
 import { ArrowLeft, BookOpen, GraduationCap, Lock, Mail, School, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 import { authService } from "@/services/auth";
-import { SUBJECT_OPTIONS } from "@/lib/education";
+import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
+import { TEACHER_ROLES } from "@/lib/teacher-roles";
 import { useAuthStore } from "@/stores/auth";
-import type { RegistrationContext } from "@/types";
+import type { RegistrationContext, TeacherRole } from "@/types";
 import { BrandMark } from "@/components/brand/BrandMark";
+import { roleLabels } from "@/services/organization";
 
 type Mode = "login" | "register";
 
@@ -28,6 +30,9 @@ export default function LoginPage({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [subject, setSubject] = useState("数学");
+  const [teachingGrades, setTeachingGrades] = useState<string[]>([]);
+  const [roles, setRoles] = useState<TeacherRole[]>(["teacher"]);
+  const [requestSchoolAdmin, setRequestSchoolAdmin] = useState(false);
   const [context, setContext] = useState<RegistrationContext | null>(null);
   const [checkingPhone, setCheckingPhone] = useState(false);
   const [createSchool, setCreateSchool] = useState(false);
@@ -38,6 +43,7 @@ export default function LoginPage({
   const [schoolDescription, setSchoolDescription] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [showRecoveryHelp, setShowRecoveryHelp] = useState(false);
+  const [registrationPending, setRegistrationPending] = useState(false);
   const collectiveEntry = destination === "/prep?entry=collective";
 
   useEffect(() => {
@@ -72,17 +78,37 @@ export default function LoginPage({
       await checkAuthorization();
       return;
     }
-    await register({
+    const result = await register({
       email,
       password,
       name,
       phone,
       subject,
-      teachingGrades: [],
+      teachingGrades,
+      roles,
+      requestSchoolAdmin,
       ...(createSchool
         ? { newSchool: { name: schoolName, code: schoolCode, city: schoolCity, description: schoolDescription } }
         : { schoolId }),
     });
+    if (result === "pending") {
+      setRegistrationPending(true);
+      setMode("login");
+      setPassword("");
+    }
+  };
+
+  const toggleGrade = (grade: string) => {
+    setTeachingGrades((current) => current.includes(grade)
+      ? current.filter((item) => item !== grade)
+      : [...current, grade]);
+  };
+
+  const toggleRole = (role: TeacherRole) => {
+    if (role === "teacher") return;
+    setRoles((current) => current.includes(role)
+      ? current.filter((item) => item !== role)
+      : [...current, role]);
   };
 
   return (
@@ -129,6 +155,11 @@ export default function LoginPage({
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "login" && registrationPending && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                注册申请已提交。学校管理员或平台超级管理员审核通过后即可直接登录。
+              </div>
+            )}
             {mode === "register" && (
               <>
                 <Input label="姓名" value={name} onChange={(event) => setName(event.target.value)} required placeholder="请输入真实姓名" />
@@ -165,6 +196,42 @@ export default function LoginPage({
                       </div>
                     )}
                     <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
+                    {!createSchool && (
+                      <>
+                        <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
+                          <legend className="px-1 text-sm font-medium text-ink-700">任教年级</legend>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {GRADE_OPTIONS.map((grade) => (
+                              <label key={grade} className="inline-flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
+                                <input type="checkbox" checked={teachingGrades.includes(grade)} onChange={() => toggleGrade(grade)} />
+                                {grade}
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                        <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
+                          <legend className="px-1 text-sm font-medium text-ink-700">职务与权限申请</legend>
+                          <p className="mb-3 text-xs text-ink-500">勾选实际担任的职务；审核通过后获得相应权限。</p>
+                          <div className="flex flex-wrap gap-2">
+                            {TEACHER_ROLES.map((role) => (
+                              <label key={role} className="inline-flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={roles.includes(role)}
+                                  disabled={role === "teacher"}
+                                  onChange={() => toggleRole(role)}
+                                />
+                                {roleLabels[role]}
+                              </label>
+                            ))}
+                          </div>
+                          <label className="mt-3 inline-flex items-center gap-2 text-sm text-ink-700">
+                            <input type="checkbox" checked={requestSchoolAdmin} onChange={(event) => setRequestSchoolAdmin(event.target.checked)} />
+                            同时申请学校管理员权限（仅平台超级管理员可授予）
+                          </label>
+                        </fieldset>
+                      </>
+                    )}
                   </>
                 )}
               </>
@@ -201,7 +268,9 @@ export default function LoginPage({
             <div className="relative"><Lock className="absolute left-3 top-9 w-4 h-4 text-ink-400" /><Input label="密码" type="password" minLength={mode === "register" ? 10 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} required className="pl-10" /></div>
             {error && <div className="px-3 py-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700">{error}</div>}
             <Button type="submit" variant="gold" size="lg" loading={loading} className="w-full" disabled={mode === "register" && !context}>
-              {mode === "register" ? "注册并进入学校" : collectiveEntry ? "登录并进入集体研讨" : "登录"}
+              {mode === "register"
+                ? createSchool ? "注册并进入学校" : "提交注册申请"
+                : collectiveEntry ? "登录并进入集体研讨" : "登录"}
             </Button>
           </form>
 

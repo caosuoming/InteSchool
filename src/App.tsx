@@ -30,6 +30,7 @@ const OrganizationPage = lazy(() => import("@/pages/organization/OrganizationPag
 const AdminPage = lazy(() => import("@/pages/admin/AdminPage"));
 const SettingsPage = lazy(() => import("@/pages/admin/SettingsPage"));
 const RegistrationAccessPage = lazy(() => import("@/pages/admin/RegistrationAccessPage"));
+const PermissionApplicationsPage = lazy(() => import("@/pages/admin/PermissionApplicationsPage"));
 const TeacherProfilesPage = lazy(() => import("@/pages/admin/TeacherProfilesPage"));
 const TeacherSchoolApplicationsPage = lazy(() => import("@/pages/admin/TeacherSchoolApplicationsPage"));
 const SchoolAdminApplicationsPage = lazy(() => import("@/pages/admin/SchoolAdminApplicationsPage"));
@@ -114,6 +115,7 @@ export default function App() {
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />
             <Route path="/admin/registration-access" element={<RegistrationAccessPage />} />
+            <Route path="/admin/permission-applications" element={<PermissionApplicationsPage />} />
             <Route path="/admin/teacher-profiles" element={<RequireTeachingProfileManager><TeacherProfilesPage /></RequireTeachingProfileManager>} />
             <Route path="/admin/teacher-school-applications" element={<TeacherSchoolApplicationsPage />} />
             <Route path="/admin/school-admin-applications" element={<SchoolAdminApplicationsPage />} />

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Building2, Save, ShieldCheck, UserCog } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Select } from "@/components/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { TEACHER_ROLES } from "@/lib/teacher-roles";
 import { authService } from "@/services/auth";
 import { organizationService, roleLabels } from "@/services/organization";
 import { schoolService } from "@/services/school";
@@ -80,20 +79,12 @@ export default function SchoolAdminApplicationsPage() {
     }
   };
 
-  const toggleRole = (role: TeacherRole) => {
-    if (role === "teacher") return;
-    setRoles((current) => current.includes(role)
-      ? current.filter((item) => item !== role)
-      : [...current, role]);
-  };
-
   const saveDirectAssignment = async () => {
     if (!schoolId || !teacherId) return;
     setSaving(true);
     try {
       await organizationService.setTeacherSchoolRole(teacherId, schoolId, schoolRole);
-      await organizationService.updateTeacherRoles(teacherId, schoolId, roles);
-      toast.success("学校管理身份与教师角色已更新");
+      toast.success("学校管理员身份已更新");
       const teacherList = await organizationService.listTeachers(schoolId);
       setTeachers(teacherList);
     } catch (error) {
@@ -107,7 +98,7 @@ export default function SchoolAdminApplicationsPage() {
     <div>
       <PageHeader
         title="学校管理权限"
-        description="平台超级管理员可直接指定各校管理员和校级角色，也可继续处理教师提交的管理员申请"
+        description="平台超级管理员可查看各校教师权限并指定学校管理员，但不能修改教师职务权限"
         icon={<ShieldCheck className="w-5 h-5" />}
       />
 
@@ -116,7 +107,7 @@ export default function SchoolAdminApplicationsPage() {
           <div className="rounded-lg bg-gold-50 p-2 text-gold-700"><UserCog className="h-5 w-5" /></div>
           <div>
             <h2 className="font-serif text-lg font-semibold text-ink-900">直接指定学校管理人员</h2>
-            <p className="mt-1 text-sm text-ink-500">无需等待申请，可直接设置学校管理员、校长、副校长、教务主任等固定角色。</p>
+            <p className="mt-1 text-sm text-ink-500">可为每所学校指定多个学校管理员；教师职务权限由本校管理员维护。</p>
           </div>
         </div>
 
@@ -147,22 +138,12 @@ export default function SchoolAdminApplicationsPage() {
               ]}
             />
 
-            <fieldset>
-              <legend className="mb-2 text-sm font-medium text-ink-700">校内角色权限</legend>
+            <div>
+              <div className="mb-2 text-sm font-medium text-ink-700">教师职务权限（只读）</div>
               <div className="flex flex-wrap gap-2">
-                {TEACHER_ROLES.map((role) => (
-                  <label key={role} className="inline-flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={roles.includes(role)}
-                      disabled={role === "teacher"}
-                      onChange={() => toggleRole(role)}
-                    />
-                    {roleLabels[role]}
-                  </label>
-                ))}
+                {roles.map((role) => <Badge key={role} variant={role === "teacher" ? "ink" : "teal"}>{roleLabels[role]}</Badge>)}
               </div>
-            </fieldset>
+            </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
               <Building2 className="h-3.5 w-3.5" />
@@ -176,7 +157,7 @@ export default function SchoolAdminApplicationsPage() {
             </div>
 
             <Button variant="gold" loading={saving} onClick={saveDirectAssignment}>
-              <Save className="h-4 w-4" />保存直接指定
+              <Save className="h-4 w-4" />保存学校管理员身份
             </Button>
           </>
         ) : (

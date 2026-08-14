@@ -67,6 +67,13 @@ const allAdminItems: AdminItem[] = [
   },
   {
     icon: UsersRound,
+    title: "教师权限申请",
+    description: "申请新的校内职务权限；学校管理员同时审核本校教师申请",
+    href: "/admin/permission-applications",
+    schoolOnly: true,
+  },
+  {
+    icon: UsersRound,
     title: "教师权限与教学资料",
     description: "按管理层级维护本校教师角色、任教学科、年级和班级",
     href: "/admin/teacher-profiles",
@@ -120,7 +127,7 @@ export function AdminPage() {
     if (item.adminOnly && !isAdmin) return false;
     if (item.platformOnly && !isPlatformAdmin) return false;
     if (item.rosterOnly && !canManageRoster) return false;
-    if (item.teachingProfileOnly && !canManageProfiles) return false;
+    if (item.teachingProfileOnly && (!canManageProfiles || isPlatformAdmin)) return false;
     return true;
   });
 
