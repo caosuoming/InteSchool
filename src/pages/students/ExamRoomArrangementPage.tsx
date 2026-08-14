@@ -54,6 +54,9 @@ type ViewMode = "settings" | "result";
 type PreviewMode = "class" | "desk";
 type PrintDensity = "normal" | "compact";
 
+const DESK_LABEL_PAGE_HEIGHT_MM = 370;
+const DESK_LABEL_PAGE_MARGIN_MM = 12.7;
+
 function getDeskLabelDensity(maxAssignments: number): PrintDensity {
   return Math.max(1, maxAssignments) <= 2 ? "normal" : "compact";
 }
@@ -86,7 +89,7 @@ function paginateDeskLabels(
   const maxAssignments = Math.max(...labels.map((label) => label.assignments.length), 1);
   const density = getDeskLabelDensity(maxAssignments);
   const gap = density === "normal" ? 1.4 : 1;
-  const availableHeight = 370;
+  const availableHeight = DESK_LABEL_PAGE_HEIGHT_MM - DESK_LABEL_PAGE_MARGIN_MM * 2;
   const pages: ReturnType<typeof groupDeskLabels>[] = [];
   let page: ReturnType<typeof groupDeskLabels> = [];
   let usedHeight = 0;
@@ -1776,7 +1779,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     style={{
                       gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
                       gridAutoRows: "max-content",
-                      alignItems: "start",
+                      alignItems: "stretch",
+                      alignContent: "start",
+                      padding: `${DESK_LABEL_PAGE_MARGIN_MM}mm`,
                     }}
                   >
                     {pageLabels.map((group) => (
