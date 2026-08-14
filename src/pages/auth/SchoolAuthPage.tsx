@@ -29,7 +29,7 @@ export default function SchoolAuthPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const addingSchool = searchParams.get("add") === "1";
-  const { teacher, refresh } = useAuthStore();
+  const { teacher, refresh, logout } = useAuthStore();
   const [schools, setSchools] = useState<School[]>([]);
   const [keyword, setKeyword] = useState("");
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
@@ -149,7 +149,12 @@ export default function SchoolAuthPage() {
         navigate(addingSchool ? "/profile" : "/dashboard");
       } else {
         toast.success("申请已提交", "本校管理员或平台超级管理员审核通过后即可切换到该学校");
-        if (addingSchool) navigate("/profile");
+        if (addingSchool) {
+          navigate("/profile");
+        } else {
+          await logout();
+          navigate("/login");
+        }
       }
     } catch (e) {
       toast.error("认证失败", e instanceof Error ? e.message : undefined);

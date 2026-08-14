@@ -157,7 +157,7 @@ export default function LoginPage({
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "login" && registrationPending && (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                注册申请已提交。学校管理员或平台超级管理员审核通过后即可直接登录。
+                注册申请已提交。现在可先以个人身份登录；审核通过后，下次登录将默认进入学校身份。
               </div>
             )}
             {mode === "register" && (

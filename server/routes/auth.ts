@@ -490,11 +490,11 @@ export async function registerAuthRoutes(
       name: input.name,
       nickname: "",
       avatar: input.name.charAt(0),
-      schoolId,
+      schoolId: requiresReview ? null : schoolId,
       subject: input.subject,
-      teachingGrades: input.teachingGrades,
+      teachingGrades: requiresReview ? [] : input.teachingGrades,
       teachingClassIds: input.teachingClassIds,
-      status: requiresReview ? "pending" : "active",
+      status: "active",
       role: "teacher",
       roles: ["teacher"],
       subjectGroupIds: [],
@@ -513,7 +513,7 @@ export async function registerAuthRoutes(
           roles: ["teacher"],
           subjectGroupIds: [],
           prepGroupIds: [],
-          isCurrent: true,
+          isCurrent: !requiresReview,
           joinedAt: now,
         },
         {
@@ -529,11 +529,11 @@ export async function registerAuthRoutes(
           roles: ["teacher"],
           subjectGroupIds: [],
           prepGroupIds: [],
-          isCurrent: false,
+          isCurrent: requiresReview,
           joinedAt: now,
         },
       ],
-      currentAffiliationId: schoolAffiliationId,
+      currentAffiliationId: requiresReview ? personalAffiliationId : schoolAffiliationId,
       createdAt: now,
     };
     store.createAuthorizedAccount(teacher, input.password, input.phone, { newSchool });
@@ -580,16 +580,6 @@ export async function registerAuthRoutes(
     }
     const teacher = store.getTeacherById(user.teacher_id);
     if (!teacher) throw new Error("账号关联的教师资料不存在");
-    if (teacher.status === "pending") {
-      const error = new Error("注册申请正在等待学校管理员或平台超级管理员审核") as Error & { statusCode: number };
-      error.statusCode = 403;
-      throw error;
-    }
-    if (teacher.status === "rejected") {
-      const error = new Error("注册申请未通过，请联系学校管理员或平台超级管理员") as Error & { statusCode: number };
-      error.statusCode = 403;
-      throw error;
-    }
     const { token, session } = store.createSession(user);
     setSessionCookie(reply, token, config);
     return { teacher: publicTeacher(teacher), csrfToken: session.csrfToken };
@@ -956,8 +946,8 @@ export async function registerAuthRoutes(
       if (currentTeacher?.affiliations.some((affiliation) => affiliation.schoolId === input.schoolId && affiliation.status === "active")) {
         throw new Error("已加入该学校，无需重复申请");
       }
-      if (applications.some((item) => item.teacherId === session.teacherId && item.schoolId === input.schoolId && item.status === "pending")) {
-        throw new Error("已有待审核的认证申请");
+      if (applications.some((item) => item.teacherId === session.teacherId && item.schoolId === input.schoolId)) {
+        throw new Error("已提交过该学校的认证申请，不能重复申请；后续权限调整请在后台设置中提交");
       }
       const now = new Date().toISOString();
       const application: Record<string, unknown> = {
@@ -1103,7 +1093,6 @@ export async function registerAuthRoutes(
           const target = state.teachers[teacherIndex];
           state.teachers[teacherIndex] = {
             ...target,
-            status: "rejected",
             affiliations: target.affiliations.map((item) => item.schoolId === application.schoolId
               ? { ...item, status: "rejected" }
               : item),
