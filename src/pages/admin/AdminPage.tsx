@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   UsersRound,
   Building2,
+  KeyRound,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, uiScaleConfig, type UiScale } from "@/stores/settings";
@@ -79,6 +80,14 @@ const allAdminItems: AdminItem[] = [
     href: "/admin/teacher-profiles",
     schoolOnly: true,
     teachingProfileOnly: true,
+  },
+  {
+    icon: KeyRound,
+    title: "用户与密码管理",
+    description: "查看学校用户权限、管理学校管理员身份并重置教师登录密码",
+    href: "/admin/accounts",
+    schoolOnly: true,
+    adminOnly: true,
   },
   {
     icon: UserPlus,

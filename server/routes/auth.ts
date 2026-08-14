@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { DatabaseStore } from "../database.js";
@@ -668,6 +668,32 @@ export async function registerAuthRoutes(
     }).parse(request.body);
     store.changePassword(session.userId, input.currentPassword, input.newPassword);
     return { ok: true };
+  });
+
+  app.post("/api/auth/teachers/:id/password-reset", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (request) => {
+    const session = requireSession(request, store);
+    requireCsrf(request, session);
+    const manager = sessionTeacher(store, session);
+    requireAdmin(manager);
+    const teacherId = z.string().min(1).max(100).parse((request.params as { id?: string }).id);
+    if (teacherId === manager.id) throw new Error("请在个人设置中修改自己的密码");
+    const input = z.object({
+      newPassword: z.string().min(10).max(128).optional(),
+    }).parse(request.body ?? {});
+    const target = store.getTeacherById(teacherId);
+    if (!target) throw new Error("教师不存在");
+
+    if (activeRole(manager) === "school_admin") {
+      const affiliation = activeAffiliation(manager);
+      const schoolId = typeof affiliation?.schoolId === "string" ? affiliation.schoolId : manager.schoolId;
+      const targetAffiliation = target.affiliations.find((item) => item.schoolId === schoolId && item.status === "active");
+      if (!schoolId || !targetAffiliation) throw new Error("无权重置其他学校教师的密码");
+      if (targetAffiliation.role === "platform_admin") throw new Error("无权重置平台管理员的密码");
+    }
+
+    const password = input.newPassword || randomBytes(12).toString("base64url");
+    store.resetPasswordByTeacherId(teacherId, password);
+    return { password };
   });
 
   app.patch("/api/auth/email", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (request) => {

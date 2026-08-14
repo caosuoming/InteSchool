@@ -461,6 +461,9 @@ export const organizationService = {
     if (role !== "teacher" && role !== "school_admin") throw new Error("不支持的学校账号权限");
     const targetTeacher = (db.read("teachers") as Teacher[]).find((teacher) => teacher.id === teacherId);
     if (!targetTeacher || !teacherAffiliation(targetTeacher, schoolId)) throw new Error("教师不属于该学校");
+    if (teacherAffiliation(targetTeacher, schoolId)?.role === "platform_admin") {
+      throw new Error("平台管理员身份不能通过学校管理员配置修改");
+    }
     db.update("teachers", (list: Teacher[]) => list.map((teacher) => {
       if (teacher.id !== teacherId) return teacher;
       const target = teacherAffiliation(teacher, schoolId);

@@ -172,6 +172,29 @@ describe("auth service", () => {
     expect(apiMocks.setCsrfToken).toHaveBeenLastCalledWith(null);
   });
 
+  it("resets a managed teacher password with random or specified credentials", async () => {
+    apiMocks.apiRequest
+      .mockResolvedValueOnce({ password: "RandomPassword123" })
+      .mockResolvedValueOnce({ password: "SpecifiedPass123" });
+
+    await expect(authService.resetTeacherPassword("teacher / 2")).resolves.toEqual({ password: "RandomPassword123" });
+    await expect(authService.resetTeacherPassword("teacher / 2", "SpecifiedPass123"))
+      .resolves.toEqual({ password: "SpecifiedPass123" });
+
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(
+      1,
+      "/api/auth/teachers/teacher%20%2F%202/password-reset",
+      { method: "POST", body: JSON.stringify({}) },
+      true,
+    );
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(
+      2,
+      "/api/auth/teachers/teacher%20%2F%202/password-reset",
+      { method: "POST", body: JSON.stringify({ newPassword: "SpecifiedPass123" }) },
+      true,
+    );
+  });
+
   it("lists teachers and resolves current, cached, and missing identities", async () => {
     const current = teacher();
     const other = teacher({ id: "teacher-2", email: "other@example.com" });

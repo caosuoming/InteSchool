@@ -114,6 +114,13 @@ export const authService = {
     }, true);
   },
 
+  async resetTeacherPassword(teacherId: string, newPassword?: string): Promise<{ password: string }> {
+    return apiRequest<{ password: string }>(`/api/auth/teachers/${encodeURIComponent(teacherId)}/password-reset`, {
+      method: "POST",
+      body: JSON.stringify(newPassword ? { newPassword } : {}),
+    }, true);
+  },
+
   async bindEmail(email: string): Promise<Teacher> {
     const teacher = await apiRequest<Teacher>("/api/auth/email", {
       method: "PATCH",

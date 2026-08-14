@@ -948,6 +948,17 @@ export class DatabaseStore {
       .run(userId, userId);
   }
 
+  resetPasswordByTeacherId(teacherId: string, newPassword: string): void {
+    const user = this.sqlite.prepare("SELECT id FROM users WHERE teacher_id = ?").get(teacherId) as { id: string } | undefined;
+    if (!user) throw new Error("该教师尚未创建登录账号");
+    const now = new Date().toISOString();
+    this.sqlite.transaction(() => {
+      this.sqlite.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
+        .run(hashPassword(newPassword), now, user.id);
+      this.sqlite.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
+    })();
+  }
+
   createSession(user: UserRow): { token: string; session: SessionUser } {
     const token = randomBytes(32).toString("base64url");
     const csrfToken = randomBytes(24).toString("base64url");
