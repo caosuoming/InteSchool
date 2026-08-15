@@ -44,6 +44,20 @@ const exam: GradeExam = {
       gradeRank: 1,
       classRank: 1,
     },
+    {
+      id: "record-2",
+      studentId: "student-2",
+      studentName: "乙",
+      studentNo: "002",
+      classId: "class-2",
+      className: "高三(2)班",
+      scores: { 数学: 80, 化学: 70 },
+      assignedScores: { 数学: 80, 化学: 76 },
+      rawTotal: 150,
+      assignedTotal: 156,
+      gradeRank: 2,
+      classRank: 1,
+    },
   ],
   settings: {
     subjectTeacherIds: {},
@@ -62,19 +76,31 @@ const context: GradeImportContext = {
     label: "2026届高三",
     grade: "高三",
     gradYear: 2026,
-    classIds: ["class-1"],
-    studentCount: 1,
+    classIds: ["class-1", "class-2"],
+    studentCount: 2,
   },
-  classes: [{
-    id: "class-1",
-    type: "school",
-    schoolId: "school-1",
-    name: "高三(1)班",
-    grade: "高三",
-    studentCount: 1,
-    createdBy: "teacher-1",
-    createdAt: "2026-01-01T00:00:00.000Z",
-  }],
+  classes: [
+    {
+      id: "class-1",
+      type: "school",
+      schoolId: "school-1",
+      name: "高三(1)班",
+      grade: "高三",
+      studentCount: 1,
+      createdBy: "teacher-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "class-2",
+      type: "school",
+      schoolId: "school-1",
+      name: "高三(2)班",
+      grade: "高三",
+      studentCount: 1,
+      createdBy: "teacher-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  ],
   students: [],
   teachers: [{
     id: "teacher-math",
@@ -86,6 +112,12 @@ const context: GradeImportContext = {
   classProfiles: {
     "class-1": {
       classTypeName: "强基班",
+      subjectSelections: ["物化生"],
+      scoreSubjects: ["数学", "化学"],
+      hasImportedScores: true,
+    },
+    "class-2": {
+      classTypeName: "普通班",
       subjectSelections: ["物化生"],
       scoreSubjects: ["数学", "化学"],
       hasImportedScores: true,
@@ -124,18 +156,30 @@ describe("GradeClassAverageTable", () => {
 
     await user.click(screen.getByRole("button", { name: "调整表格" }));
     expect(screen.queryByRole("checkbox", { name: "高三(1)班数学赋分" })).not.toBeInTheDocument();
-    expect(screen.getByText("原始分")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "数学批量设置" })).not.toBeInTheDocument();
+
+    const bulkSelect = screen.getByRole("combobox", { name: "化学批量设置" });
+    expect(bulkSelect).toHaveValue("assigned");
+    await user.selectOptions(bulkSelect, "both");
+    const bulkSettings = onChange.mock.lastCall?.[0];
+    expect(bulkSettings.templates[0].classAverageOptions.subjectScoreModes["class-1"].化学)
+      .toBe("both");
+    expect(bulkSettings.templates[0].classAverageOptions.subjectScoreModes["class-2"].化学)
+      .toBe("both");
+    expect(screen.getAllByRole("cell", { name: "80.00|86.00" }).length).toBeGreaterThan(0);
 
     const rawCheckbox = screen.getByRole("checkbox", { name: "高三(1)班化学原始分" });
     const assignedCheckbox = screen.getByRole("checkbox", { name: "高三(1)班化学赋分" });
-    expect(rawCheckbox).not.toBeChecked();
+    expect(rawCheckbox).toBeChecked();
     expect(assignedCheckbox).toBeChecked();
 
     await user.click(rawCheckbox);
-    expect(screen.getAllByRole("cell", { name: "80.00|86.00" }).length).toBeGreaterThan(0);
     const scoreModeSettings = onChange.mock.lastCall?.[0];
     expect(scoreModeSettings.templates[0].classAverageOptions.subjectScoreModes["class-1"].化学)
+      .toBe("assigned");
+    expect(scoreModeSettings.templates[0].classAverageOptions.subjectScoreModes["class-2"].化学)
       .toBe("both");
+    expect(screen.getByRole("combobox", { name: "化学批量设置" })).toHaveValue("");
 
     await user.click(screen.getByRole("radio", { name: "原始总分" }));
     const totalModeSettings = onChange.mock.lastCall?.[0];

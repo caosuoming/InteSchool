@@ -168,6 +168,31 @@ export function GradeClassAverageTable({
       .filter(Boolean);
   }, [context.classes, report.groups, resolvedOptions.classOrder]);
 
+  const configurableSubjects = useMemo(
+    () => report.subjects.filter(isAssignableGradeSubject),
+    [report.subjects],
+  );
+
+  const setSubjectScoreModeForAllClasses = (
+    subject: string,
+    mode: GradeClassAverageSubjectScoreMode,
+  ) => {
+    updateOptions({
+      subjectScoreModes: Object.fromEntries(classRows.map((row) => [
+        row.classId,
+        { [subject]: mode },
+      ])),
+    });
+  };
+
+  const bulkSubjectScoreMode = (subject: string): GradeClassAverageSubjectScoreMode | "" => {
+    const modes = classRows.map((row) => (
+      resolvedOptions.subjectScoreModes?.[row.classId]?.[subject] || effectiveTemplate.scoreMode
+    ));
+    if (modes.length === 0) return "";
+    return modes.every((mode) => mode === modes[0]) ? modes[0] : "";
+  };
+
   return (
     <Card className="overflow-hidden p-0">
       <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
@@ -326,42 +351,64 @@ export function GradeClassAverageTable({
             </table>
           </div>
 
-          <div className="space-y-2">
-            <div>
-              <div className="text-xs font-medium text-ink-700">学科分数显示</div>
-              <div className="mt-0.5 text-xs text-ink-500">
-                化学、生物、政治、地理可分别显示原始分、赋分或两者；其他学科固定显示原始分。
+          {configurableSubjects.length > 0 && (
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs font-medium text-ink-700">学科分数显示</div>
+                <div className="mt-0.5 text-xs text-ink-500">
+                  仅列出可赋分学科；语文、数学、英语、物理、历史固定使用原始分。可按学科批量设置全部班级，也可逐班微调。
+                </div>
               </div>
-            </div>
-            <div className="overflow-x-auto rounded-lg border border-ink-200 bg-paper">
-              <table className="min-w-[760px] w-full text-xs">
-                <thead className="bg-ink-50 text-ink-500">
-                  <tr>
-                    <th className="sticky left-0 z-10 min-w-28 border-r border-ink-200 bg-ink-50 px-3 py-2 text-left font-medium">
-                      班级
-                    </th>
-                    {report.subjects.map((subject) => (
-                      <th key={subject} className="min-w-36 px-3 py-2 text-center font-medium">{subject}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-100">
-                  {classRows.map((row) => {
-                    const hidden = (resolvedOptions.hiddenClassIds || []).includes(row.classId);
-                    return (
-                      <tr key={row.classId} className={cn(hidden && "bg-ink-50/60 text-ink-400")}>
-                        <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-3 py-2 font-medium text-ink-700">
-                          {row.className}
-                        </td>
-                        {report.subjects.map((subject) => {
-                          const assignable = isAssignableGradeSubject(subject);
-                          const mode = resolvedOptions.subjectScoreModes?.[row.classId]?.[subject]
-                            || effectiveTemplate.scoreMode;
-                          const showRaw = mode === "raw" || mode === "both";
-                          const showAssigned = mode === "assigned" || mode === "both";
-                          return (
-                            <td key={subject} className="px-3 py-2">
-                              {assignable ? (
+              <div className="overflow-x-auto rounded-lg border border-ink-200 bg-paper">
+                <table className="min-w-[640px] w-full text-xs">
+                  <thead className="bg-ink-50 text-ink-500">
+                    <tr>
+                      <th className="sticky left-0 z-10 min-w-28 border-r border-ink-200 bg-ink-50 px-3 py-2 text-left font-medium">
+                        班级
+                      </th>
+                      {configurableSubjects.map((subject) => (
+                        <th key={subject} className="min-w-40 px-3 py-2 text-center font-medium">{subject}</th>
+                      ))}
+                    </tr>
+                    <tr className="border-t border-ink-200 bg-paper">
+                      <th className="sticky left-0 z-10 border-r border-ink-200 bg-paper px-3 py-2 text-left font-medium text-ink-500">
+                        批量设置
+                      </th>
+                      {configurableSubjects.map((subject) => (
+                        <th key={subject} className="px-3 py-2 text-center font-normal">
+                          <select
+                            aria-label={`${subject}批量设置`}
+                            value={bulkSubjectScoreMode(subject)}
+                            onChange={(event) => {
+                              const mode = event.target.value as GradeClassAverageSubjectScoreMode;
+                              if (mode) setSubjectScoreModeForAllClasses(subject, mode);
+                            }}
+                            className="w-full rounded border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700 outline-none focus:border-gold-400"
+                          >
+                            <option value="">混合设置</option>
+                            <option value="raw">全部原始分</option>
+                            <option value="assigned">全部赋分</option>
+                            <option value="both">全部显示两者</option>
+                          </select>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {classRows.map((row) => {
+                      const hidden = (resolvedOptions.hiddenClassIds || []).includes(row.classId);
+                      return (
+                        <tr key={row.classId} className={cn(hidden && "bg-ink-50/60 text-ink-400")}>
+                          <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-3 py-2 font-medium text-ink-700">
+                            {row.className}
+                          </td>
+                          {configurableSubjects.map((subject) => {
+                            const mode = resolvedOptions.subjectScoreModes?.[row.classId]?.[subject]
+                              || effectiveTemplate.scoreMode;
+                            const showRaw = mode === "raw" || mode === "both";
+                            const showAssigned = mode === "assigned" || mode === "both";
+                            return (
+                              <td key={subject} className="px-3 py-2">
                                 <div className="flex items-center justify-center gap-3">
                                   <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
                                     <input
@@ -392,19 +439,17 @@ export function GradeClassAverageTable({
                                     赋分
                                   </label>
                                 </div>
-                              ) : (
-                                <div className="text-center text-ink-500">原始分</div>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
