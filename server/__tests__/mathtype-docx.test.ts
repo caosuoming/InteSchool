@@ -14,6 +14,7 @@ const DOCUMENT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8" standalone="yes"
     <w:p>
       <w:r><w:t>已知</w:t></w:r>
       <w:r>
+        <w:rPr><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr>
         <w:object>
           <v:shape><v:imagedata r:id="rIdPreview"/></v:shape>
           <o:OLEObject Type="Embed" ProgID="__PROG_ID__" r:id="rIdEquation"/>
@@ -123,6 +124,10 @@ describe("MathType DOCX conversion", () => {
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:f>");
     expect(documentXml).toMatch(/<m:t[^>]*>x=<\/m:t>/);
+    expect(documentXml).toContain("Cambria Math");
+    expect(documentXml).toContain('<w:sz w:val="28"/>');
+    expect(documentXml).toContain('<w:szCs w:val="28"/>');
+    expect(documentXml).toContain('<w:position w:val="0"/>');
     expect(relationshipsXml).not.toContain("rIdEquation");
     expect(relationshipsXml).not.toContain("rIdPreview");
     expect(converted.file("word/embeddings/oleObject1.bin")).toBeNull();

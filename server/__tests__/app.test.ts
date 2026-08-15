@@ -1989,7 +1989,7 @@ describe("production backend", () => {
     expect(anonymous.statusCode).toBe(401);
   });
 
-  it("reports both formula conversion directions", async () => {
+  it("reports the OMML download conversion capability", async () => {
     const session = await login(built.app);
     const response = await built.app.inject({
       method: "GET",
@@ -2000,16 +2000,9 @@ describe("production backend", () => {
     expect(response.statusCode).toBe(200);
     const payload = response.json<{
       officeFormulaConversion: { available: boolean; message: string };
-      mathTypeFormulaConversion: { available: boolean; message: string };
-      mathTypeOriginalDownload: { available: boolean };
     }>();
     expect(typeof payload.officeFormulaConversion.available).toBe("boolean");
     expect(payload.officeFormulaConversion.message).toBeTruthy();
-    expect(payload.mathTypeFormulaConversion).toEqual({
-      available: true,
-      message: "Word 原生公式可转换为可编辑 MathType 对象",
-    });
-    expect(payload.mathTypeOriginalDownload.available).toBe(true);
 
     const anonymous = await built.app.inject({
       method: "GET",
@@ -2018,7 +2011,7 @@ describe("production backend", () => {
     expect(anonymous.statusCode).toBe(401);
   });
 
-  it("lets DOCX downloads convert Word formulas to MathType or MathType formulas to Office Math", async () => {
+  it("downloads DOCX files as Office Math by default and rejects MathType output", async () => {
     const session = await login(built.app);
     const zip = new JSZip();
     zip.file(
@@ -2048,22 +2041,6 @@ describe("production backend", () => {
       document,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     );
-    const generatedConversion = await built.app.inject({
-      method: "POST",
-      url: "/api/files/convert-formulas/mathtype",
-      headers: {
-        cookie: session.cookie,
-        "x-inteschool-csrf": session.csrfToken,
-        "content-type": multipart.contentType,
-      },
-      payload: multipart.body,
-    });
-    expect(generatedConversion.statusCode).toBe(200);
-    expect(generatedConversion.headers["x-formula-format"]).toBe("mathtype");
-    expect(generatedConversion.headers["x-formula-converted-count"]).toBe("1");
-    const generatedZip = await JSZip.loadAsync(generatedConversion.rawPayload);
-    expect(await generatedZip.file("word/document.xml")?.async("string")).toContain('ProgID="Equation.DSMT4"');
-
     const upload = await built.app.inject({
       method: "POST",
       url: "/api/files",
@@ -2077,29 +2054,26 @@ describe("production backend", () => {
     expect(upload.statusCode).toBe(200);
     const file = upload.json<{ url: string }>();
 
-    const mathTypeDownload = await built.app.inject({
-      method: "GET",
-      url: `${file.url}?formulaFormat=mathtype`,
-      headers: { cookie: session.cookie },
-    });
-    expect(mathTypeDownload.statusCode).toBe(200);
-    expect(mathTypeDownload.headers["x-formula-format"]).toBe("mathtype");
-    expect(mathTypeDownload.rawPayload.equals(document)).toBe(false);
-    const mathTypeZip = await JSZip.loadAsync(mathTypeDownload.rawPayload);
-    const mathTypeXml = await mathTypeZip.file("word/document.xml")?.async("string");
-    expect(mathTypeXml).toContain('ProgID="Equation.DSMT4"');
-    expect(mathTypeXml).not.toContain("<m:oMath");
-    expect(Object.keys(mathTypeZip.files).some((path) => path.startsWith("word/embeddings/inteschoolMathType"))).toBe(true);
-
     const officeDownload = await built.app.inject({
       method: "GET",
-      url: `${file.url}?formulaFormat=office`,
+      url: file.url,
       headers: { cookie: session.cookie },
     });
     expect(officeDownload.statusCode).toBe(200);
     expect(officeDownload.headers["x-formula-format"]).toBe("office");
     const officeZip = await JSZip.loadAsync(officeDownload.rawPayload);
-    expect(await officeZip.file("word/document.xml")?.async("string")).toContain("公式测试");
+    const officeXml = await officeZip.file("word/document.xml")?.async("string");
+    expect(officeXml).toContain("公式测试");
+    expect(officeXml).toContain("<m:oMath");
+    expect(officeXml).not.toContain("Equation.DSMT4");
+
+    const mathTypeDownload = await built.app.inject({
+      method: "GET",
+      url: `${file.url}?formulaFormat=mathtype`,
+      headers: { cookie: session.cookie },
+    });
+    expect(mathTypeDownload.statusCode).toBe(400);
+    expect(mathTypeDownload.json()).toEqual({ error: "不支持的公式格式" });
 
     const invalid = await built.app.inject({
       method: "GET",
