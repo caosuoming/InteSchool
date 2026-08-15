@@ -9,7 +9,9 @@ import katex from "katex";
 import { mml2omml } from "mathml2omml";
 import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
-import { apiBlobRequest } from "@/services/api";
+
+const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -39,7 +41,55 @@ function importedXmlElement(element: Element): ImportedXmlComponent {
   return component;
 }
 
-function latexToOmml(latex: string): ParagraphChild | null {
+function appendWordProperty(
+  document: XMLDocument,
+  parent: Element,
+  name: string,
+  value?: string,
+): void {
+  const element = document.createElementNS(WORD_NS, `w:${name}`);
+  if (value !== undefined) element.setAttributeNS(WORD_NS, "w:val", value);
+  parent.appendChild(element);
+}
+
+function applyOmmlRunStyle(root: Element, style: DocumentTextStyle): void {
+  const document = root.ownerDocument;
+  if (!document) return;
+  root.setAttribute("xmlns:w", WORD_NS);
+
+  for (const run of Array.from(root.getElementsByTagNameNS(MATH_NS, "r"))) {
+    for (const child of Array.from(run.childNodes)) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const element = child as Element;
+        if (element.namespaceURI === WORD_NS && element.localName === "rPr") {
+          run.removeChild(element);
+        }
+      }
+    }
+
+    const runProperties = document.createElementNS(WORD_NS, "w:rPr");
+    const fonts = document.createElementNS(WORD_NS, "w:rFonts");
+    for (const attribute of ["ascii", "hAnsi", "eastAsia", "cs"]) {
+      fonts.setAttributeNS(WORD_NS, `w:${attribute}`, "Cambria Math");
+    }
+    runProperties.appendChild(fonts);
+    if (style.bold) appendWordProperty(document, runProperties, "b");
+    if (style.color) appendWordProperty(document, runProperties, "color", style.color);
+    if (style.size) {
+      appendWordProperty(document, runProperties, "sz", String(style.size));
+      appendWordProperty(document, runProperties, "szCs", String(style.size));
+    }
+    appendWordProperty(document, runProperties, "position", "0");
+
+    const textNode = Array.from(run.childNodes).find((child) =>
+      child.nodeType === Node.ELEMENT_NODE
+      && (child as Element).namespaceURI === MATH_NS
+      && (child as Element).localName === "t");
+    run.insertBefore(runProperties, textNode || null);
+  }
+}
+
+function latexToOmml(latex: string, style: DocumentTextStyle = {}): ParagraphChild | null {
   try {
     const rendered = katex.renderToString(latex, {
       throwOnError: true,
@@ -51,6 +101,7 @@ function latexToOmml(latex: string): ParagraphChild | null {
     const omml = mml2omml(mathml);
     const xml = new DOMParser().parseFromString(omml, "application/xml");
     if (xml.getElementsByTagName("parsererror").length > 0) return null;
+    applyOmmlRunStyle(xml.documentElement, style);
     return importedXmlElement(xml.documentElement) as unknown as ParagraphChild;
   } catch {
     return null;
@@ -91,7 +142,7 @@ function documentTextChildren(value: string | undefined, style: DocumentTextStyl
       children.push(...textRunsWithLineBreaks(text.slice(cursor, match.index), style));
     }
     const latex = (match[1] ?? match[2] ?? "").trim();
-    const formula = latex ? latexToOmml(latex) : null;
+    const formula = latex ? latexToOmml(latex, style) : null;
     if (formula) children.push(formula);
     else children.push(...textRunsWithLineBreaks(match[0], style));
     cursor = formulaPattern.lastIndex;
@@ -556,29 +607,13 @@ export async function buildExamPaperDocxBlob(
   return Packer.toBlob(doc);
 }
 
-async function convertGeneratedDocxToMathType(blob: Blob, fileName: string): Promise<Blob> {
-  const form = new FormData();
-  form.append("file", blob, fileName);
-  try {
-    return await apiBlobRequest("/api/files/convert-formulas/mathtype", {
-      method: "POST",
-      body: form,
-    }, true);
-  } catch {
-    // The generated document already contains editable OMML. If a particular
-    // formula cannot be represented by MathType, keep the Office Math version
-    // instead of failing the whole download or flattening the equation.
-    return blob;
-  }
-}
-
 export async function generateExamPaperDocx(
   paper: ExamPaper,
   questionsById: Record<string, Question> = {},
 ): Promise<void> {
   const fileName = safeDocxFileName(paper.title);
   const blob = await buildExamPaperDocxBlob(paper, questionsById);
-  saveAs(await convertGeneratedDocxToMathType(blob, fileName), fileName);
+  saveAs(blob, fileName);
 }
 
 function appendLectureQuestion(
@@ -714,7 +749,7 @@ export async function generateLectureDocx(
 ): Promise<void> {
   const fileName = safeDocxFileName(lecture.title, "讲义");
   const blob = await buildLectureDocxBlob(lecture, questionsById);
-  saveAs(await convertGeneratedDocxToMathType(blob, fileName), fileName);
+  saveAs(blob, fileName);
 }
 
 export async function generateQuestionDocx(
@@ -790,18 +825,8 @@ export async function generateQuestionDocx(
       children.push(
         new Paragraph({
           children: [
-            new TextRun({
-              text: `${idx + 1}. `,
-              bold: true,
-              color: "D4A24C",
-              font: "宋体",
-              size: 22,
-            }),
-            new TextRun({
-              text: remark,
-              font: "宋体",
-              size: 22,
-            }),
+            textRun(`${idx + 1}. `, { bold: true, color: "D4A24C", size: 22 }),
+            ...documentTextChildren(remark, { size: 22 }),
           ],
           spacing: { line: 360 },
         }),
@@ -897,19 +922,8 @@ export async function generateQuestionsDocx(
       children.push(
         new Paragraph({
           children: [
-            new TextRun({
-              text: "答案：",
-              bold: true,
-              color: "059669",
-              font: "宋体",
-              size: 22,
-            }),
-            new TextRun({
-              text: question.answer,
-              color: "059669",
-              font: "宋体",
-              size: 22,
-            }),
+            textRun("答案：", { bold: true, color: "059669", size: 22 }),
+            ...documentTextChildren(question.answer, { color: "059669", size: 22 }),
           ],
           spacing: { before: 120, line: 360 },
         }),
@@ -919,18 +933,8 @@ export async function generateQuestionsDocx(
         children.push(
           new Paragraph({
             children: [
-              new TextRun({
-                text: "解析：",
-                bold: true,
-                color: "D4A24C",
-                font: "宋体",
-                size: 22,
-              }),
-              new TextRun({
-                text: question.analysis,
-                font: "宋体",
-                size: 22,
-              }),
+              textRun("解析：", { bold: true, color: "D4A24C", size: 22 }),
+              ...documentTextChildren(question.analysis, { size: 22 }),
             ],
             spacing: { line: 360 },
           }),

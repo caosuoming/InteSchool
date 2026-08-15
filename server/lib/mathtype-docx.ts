@@ -7,6 +7,7 @@ import JSZip from "jszip";
 import { mml2omml } from "mathml2omml";
 
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const OFFICE_NS = "urn:schemas-microsoft-com:office:office";
 const VML_NS = "urn:schemas-microsoft-com:vml";
 const DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -143,6 +144,56 @@ function hasOnlyObjectContent(run: Element, objectElement: Element): boolean {
     || (child.namespaceURI === WORD_NS && child.localName === "rPr"));
 }
 
+function directWordRunProperties(run: Element | null): Element | null {
+  if (!run) return null;
+  return elementChildren(run).find((child) =>
+    child.namespaceURI === WORD_NS && child.localName === "rPr") || null;
+}
+
+function directWordProperty(runProperties: Element | null, localName: string): Element | null {
+  if (!runProperties) return null;
+  return elementChildren(runProperties).find((child) =>
+    child.namespaceURI === WORD_NS && child.localName === localName) || null;
+}
+
+function applyMathRunFormatting(root: Element, sourceRun: Element | null): void {
+  const document = root.ownerDocument;
+  if (!document) return;
+  const sourceProperties = directWordRunProperties(sourceRun);
+  const copiedProperties = ["b", "bCs", "i", "iCs", "color", "sz", "szCs"];
+
+  for (const mathRun of Array.from(root.getElementsByTagNameNS(MATH_NS, "r"))) {
+    for (const child of [...elementChildren(mathRun)]) {
+      if (child.namespaceURI === WORD_NS && child.localName === "rPr") {
+        mathRun.removeChild(child);
+      }
+    }
+
+    const runProperties = document.createElementNS(WORD_NS, "w:rPr");
+    const fonts = document.createElementNS(WORD_NS, "w:rFonts");
+    for (const attribute of ["ascii", "hAnsi", "eastAsia", "cs"]) {
+      fonts.setAttributeNS(WORD_NS, `w:${attribute}`, "Cambria Math");
+    }
+    runProperties.appendChild(fonts);
+
+    for (const name of copiedProperties) {
+      const source = directWordProperty(sourceProperties, name);
+      if (source) runProperties.appendChild(source.cloneNode(true));
+    }
+
+    // MathType OLE previews can carry baseline offsets that no longer apply
+    // after conversion. Explicitly use the text baseline so native Word math
+    // remains vertically aligned with adjacent text.
+    const position = document.createElementNS(WORD_NS, "w:position");
+    position.setAttributeNS(WORD_NS, "w:val", "0");
+    runProperties.appendChild(position);
+
+    const text = elementChildren(mathRun).find((child) =>
+      child.namespaceURI === MATH_NS && child.localName === "t") || null;
+    mathRun.insertBefore(runProperties, text);
+  }
+}
+
 function replaceObjectWithOmml(
   candidate: MathTypeCandidate,
   omml: string,
@@ -151,6 +202,7 @@ function replaceObjectWithOmml(
   const root = ommlDocument.documentElement;
   if (!root || root.localName !== "oMath") return false;
 
+  applyMathRunFormatting(root, candidate.runElement);
   const replacement = root.cloneNode(true);
   const run = candidate.runElement;
   if (run?.parentNode && hasOnlyObjectContent(run, candidate.objectElement)) {

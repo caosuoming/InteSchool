@@ -11,7 +11,6 @@ import { requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
 import { extractDocxImage } from "../lib/docx-structured-text.js";
 import { convertMathTypeDocxToOmml, probeMathTypeRuntime } from "../lib/mathtype-docx.js";
-import { convertOmmlDocxToMathType } from "../lib/omml-mathtype-docx.js";
 import { createAsyncLimiter } from "../lib/async-limiter.js";
 import { withSerializedState } from "../rpc.js";
 
@@ -244,44 +243,10 @@ export async function registerFileRoutes(
       officeFormulaConversion: {
         available: mathType.available,
         message: mathType.available
-          ? "MathType 公式可转换为新微软公式"
+          ? "DOCX 下载统一输出 Word 原生 OMML 公式"
           : mathType.message,
       },
-      mathTypeFormulaConversion: {
-        available: true,
-        message: "Word 原生公式可转换为可编辑 MathType 对象",
-      },
-      mathTypeOriginalDownload: { available: true },
     };
-  });
-
-  app.post("/api/files/convert-formulas/mathtype", async (request, reply) => {
-    const session = requireSession(request, store);
-    requireCsrf(request, session);
-    const part = await request.file();
-    if (!part) return reply.code(400).send({ error: "请选择 DOCX 文档" });
-    const originalName = safeOriginalName(part.filename);
-    if (extname(originalName).toLowerCase() !== ".docx") {
-      return reply.code(400).send({ error: "仅支持转换 DOCX 文档" });
-    }
-
-    const input = await part.toBuffer();
-    if (part.file.truncated) {
-      return reply.code(413).send({ error: `文件不能超过 ${Math.floor(config.maxUploadBytes / 1024 / 1024)} MB` });
-    }
-    try {
-      const converted = await convertOmmlDocxToMathType(input);
-      reply.type(MIME_TYPES[".docx"]);
-      reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(originalName)}`);
-      reply.header("Content-Length", converted.buffer.length);
-      reply.header("X-Formula-Format", "mathtype");
-      reply.header("X-Formula-Converted-Count", converted.convertedCount);
-      return reply.send(converted.buffer);
-    } catch (error) {
-      return reply.type("application/json; charset=utf-8").code(422).send({
-        error: `公式无法完整转换为 MathType：${error instanceof Error ? error.message : "未知错误"}`,
-      });
-    }
   });
 
   app.post("/api/files", async (request) => {
@@ -408,8 +373,9 @@ export async function registerFileRoutes(
       return reply.code(403).send({ error: "无权访问该文件" });
     }
     const extension = extname(file.originalName).toLowerCase();
-    const formulaFormat = (request.query as { formulaFormat?: string }).formulaFormat;
-    if (formulaFormat && !["office", "mathtype"].includes(formulaFormat)) {
+    const requestedFormulaFormat = (request.query as { formulaFormat?: string }).formulaFormat;
+    const formulaFormat = requestedFormulaFormat || (extension === ".docx" ? "office" : undefined);
+    if (formulaFormat && formulaFormat !== "office") {
       return reply.code(400).send({ error: "不支持的公式格式" });
     }
 
@@ -424,25 +390,12 @@ export async function registerFileRoutes(
       const converted = await convertMathTypeDocxToOmml(await readFile(filePath));
       if (converted.detectedCount > 0 && converted.failedCount > 0) {
         return reply.type("application/json; charset=utf-8").code(422).send({
-          error: "部分 MathType 公式无法转换为新微软公式，请选择 MathType 格式下载",
+          error: "部分 MathType 公式无法完整转换为 Word 原生 OMML，已阻止下载以避免输出不可编辑公式",
         });
       }
       reply.header("Content-Length", converted.buffer.length);
       reply.header("X-Formula-Format", "office");
       return reply.send(converted.buffer);
-    }
-
-    if (extension === ".docx" && formulaFormat === "mathtype") {
-      try {
-        const converted = await convertOmmlDocxToMathType(await readFile(filePath));
-        reply.header("Content-Length", converted.buffer.length);
-        reply.header("X-Formula-Format", "mathtype");
-        return reply.send(converted.buffer);
-      } catch (error) {
-        return reply.type("application/json; charset=utf-8").code(422).send({
-          error: `公式无法完整转换为 MathType：${error instanceof Error ? error.message : "未知错误"}`,
-        });
-      }
     }
 
     reply.header("Content-Length", file.size);

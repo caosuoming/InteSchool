@@ -3,20 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExamPaper, Lecture, Question } from "@/types";
 
 const saveAsMock = vi.hoisted(() => vi.fn());
-const apiBlobRequestMock = vi.hoisted(() => vi.fn(async (_path: string, init: RequestInit) => {
-  const file = (init.body as FormData).get("file");
-  if (!(file instanceof Blob)) throw new Error("missing docx");
-  return file;
-}));
 
 vi.mock("file-saver", () => ({
   saveAs: saveAsMock,
 }));
-vi.mock("@/services/api", () => ({
-  apiBlobRequest: apiBlobRequestMock,
-}));
 
-import { buildExamPaperDocxBlob, buildLectureDocxBlob, generateExamPaperDocx } from "@/lib/docx";
+import {
+  buildExamPaperDocxBlob,
+  buildLectureDocxBlob,
+  generateExamPaperDocx,
+  generateQuestionsDocx,
+} from "@/lib/docx";
 
 const timestamp = "2026-08-04T00:00:00.000Z";
 
@@ -109,7 +106,6 @@ async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
 
 beforeEach(() => {
   saveAsMock.mockReset();
-  apiBlobRequestMock.mockClear();
 });
 
 describe("generateExamPaperDocx", () => {
@@ -127,14 +123,9 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("A");
     expect(documentXml).toContain("根据函数定义判断。");
     expect(documentXml).not.toContain("题库中的旧题干");
-    expect(apiBlobRequestMock).toHaveBeenCalledWith(
-      "/api/files/convert-formulas/mathtype",
-      expect.objectContaining({ method: "POST" }),
-      true,
-    );
   });
 
-  it("emits editable Office math before the default MathType conversion", async () => {
+  it("emits editable Office math with the surrounding text size and a complete math font", async () => {
     const formulaPaper: ExamPaper = {
       ...structuredPaper,
       questions: [{
@@ -155,6 +146,9 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:sSup>");
     expect(documentXml).toContain("<m:f>");
+    expect(documentXml).toContain("Cambria Math");
+    expect(documentXml).toMatch(/<w:sz w:val="24"\s*\/>/);
+    expect(documentXml).toMatch(/<w:position w:val="0"\s*\/>/);
     expect(documentXml).not.toContain("$f(x)");
   });
 
@@ -267,8 +261,7 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).not.toContain("&#10;");
   });
 
-  it("falls back to editable Office math when MathType conversion fails", async () => {
-    apiBlobRequestMock.mockRejectedValueOnce(new Error("unsupported MathType formula"));
+  it("downloads generated documents as OMML without creating MathType OLE objects", async () => {
     const formulaPaper: ExamPaper = {
       ...structuredPaper,
       questions: [{
@@ -287,6 +280,25 @@ describe("generateExamPaperDocx", () => {
     const documentXml = await capturedDocumentXml();
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:sSup>");
+    expect(documentXml).not.toContain("<w:object");
+    expect(documentXml).not.toContain("Equation.DSMT4");
+  });
+
+  it("keeps formulas in batch-exported answers and analyses as native OMML", async () => {
+    const question: Question = {
+      ...linkedQuestion,
+      answer: "$x^2+1$",
+      analysis: "圆 $\\odot O$ 的半径为 $r$。",
+    };
+
+    await generateQuestionsDocx([question], { title: "公式题" });
+
+    const documentXml = await capturedDocumentXml();
+    expect(documentXml.match(/<m:oMath\b/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(documentXml).toContain("<m:sSup>");
+    expect(documentXml).toContain("⊙");
+    expect(documentXml).not.toContain("$x^2+1$");
+    expect(documentXml).not.toContain("$\\odot O$");
   });
 
   it("builds lecture downloads from preview sections with editable formulas", async () => {
