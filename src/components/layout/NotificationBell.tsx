@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CheckCheck, CircleCheck, Gift, Megaphone, ShieldCheck } from "lucide-react";
+import { AtSign, Bell, CheckCheck, CircleCheck, Gift, Megaphone, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router";
 import { notificationService } from "@/services/notification";
 import type { AppNotification } from "@/types";
@@ -10,6 +10,7 @@ const typeMeta = {
   admin: { label: "管理员", icon: ShieldCheck },
   approval: { label: "审批", icon: CircleCheck },
   reward: { label: "奖励", icon: Gift },
+  mention: { label: "提及", icon: AtSign },
 } as const;
 
 function formatTime(value: string): string {

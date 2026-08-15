@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
 import { runWithState } from "../runtime-db.js";
 import { prepService } from "./prep.js";
-import type { ExamPaper, Teacher } from "../../src/types/index.js";
+import type { AppNotification, ExamPaper, Teacher } from "../../src/types/index.js";
 
 const now = "2026-08-03T03:00:00.000Z";
 
@@ -67,6 +67,7 @@ function state(): AppState {
     lectures: [],
     questions: [],
     questionReferences: [],
+    notifications: [],
   } as unknown as AppState;
 }
 
@@ -91,6 +92,15 @@ describe("prep linked-resource collaboration", () => {
       expect(appState.prepTasks[0].viewPasswordHash).toMatch(/^scrypt\$/);
       expect(appState.prepTasks[0].assignments.map((item) => item.teacherId).sort())
         .toEqual([collaborator.id, owner.id].sort());
+      expect(appState.notifications as AppNotification[]).toEqual([
+        expect.objectContaining({
+          recipientTeacherId: collaborator.id,
+          type: "mention",
+          title: "你被 @ 到新的协作任务",
+          actionUrl: `/prep/tasks/${created.id}`,
+          readAt: null,
+        }),
+      ]);
 
       const collaboratorTasks = await prepService.listTasks("school-1", undefined, collaborator);
       expect(collaboratorTasks).toHaveLength(1);
@@ -174,6 +184,37 @@ describe("prep linked-resource collaboration", () => {
         undefined,
         collaborator,
       )).rejects.toThrow("批注段落不存在");
+    });
+  });
+
+  it("creates an unread mention when a teacher is @ assigned to a board workflow", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const task = await prepService.createTask(
+        "school-1",
+        "subject-group-1",
+        {
+          title: "高一函数集体备课",
+          grade: "高一",
+          subject: "数学",
+          workflows: [{ type: "review", name: "复习计划" }],
+        },
+        owner.id,
+      );
+      await prepService.assignTask(task.id, task.workflows[0].id, [owner.id, collaborator.id]);
+
+      const notifications = appState.notifications as AppNotification[];
+      expect(notifications).toEqual([
+        expect.objectContaining({
+          recipientTeacherId: collaborator.id,
+          type: "mention",
+          title: "你被 @ 到新的备课任务",
+          actionUrl: `/prep/tasks/${task.id}`,
+          readAt: null,
+        }),
+      ]);
+      expect(notifications.some((item) => item.recipientTeacherId === owner.id)).toBe(false);
     });
   });
 });

@@ -11,6 +11,7 @@ import Database from "better-sqlite3";
 import { buildApp, type BuiltApp } from "../app.js";
 import { fetchPublicText } from "../lib/safe-fetch.js";
 import { buildDefaultGradeSettings } from "../../src/lib/grade-statistics.js";
+import type { AppNotification } from "../../src/types/index.js";
 
 interface SessionContext {
   cookie: string;
@@ -694,6 +695,12 @@ describe("production backend", () => {
     expect(applied.statusCode, applied.body).toBe(200);
     const application = applied.json<{ id: string; requestedRoles: string[] }>();
     expect(application.requestedRoles).toEqual(["gradeLeader"]);
+    expect((built.store.loadState().notifications as AppNotification[]).some((notification) =>
+      notification.recipientTeacherId === "tch-1"
+      && notification.title === "新的教师权限申请"
+      && notification.actionUrl === "/admin/permission-applications"
+      && notification.readAt === null,
+    )).toBe(true);
 
     const mine = await built.app.inject({
       method: "GET",
@@ -805,6 +812,12 @@ describe("production backend", () => {
     });
     expect(registered.statusCode).toBe(202);
     expect(registered.json()).toMatchObject({ teacher: null, csrfToken: null, pending: true });
+    expect((built.store.loadState().notifications as AppNotification[]).some((notification) =>
+      notification.recipientTeacherId === "tch-1"
+      && notification.title === "新教师注册待审核"
+      && notification.actionUrl === "/admin/teacher-school-applications"
+      && notification.readAt === null,
+    )).toBe(true);
 
     const personalLogin = await built.app.inject({
       method: "POST",

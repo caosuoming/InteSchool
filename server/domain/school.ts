@@ -6,7 +6,7 @@ import type {
 import type { TeacherRecord } from "../types.js";
 import { db } from "../runtime-db.js";
 import { delay } from "../domain-shared.js";
-import { createNotification } from "./notification.js";
+import { createNotification, platformAdminTeacherIds } from "./notification.js";
 
 interface SchoolCreationInput {
   name: string;
@@ -101,6 +101,16 @@ export const schoolService = {
       createdAt: new Date().toISOString(),
     };
     schoolApplications().push(application);
+    for (const recipientTeacherId of platformAdminTeacherIds(db.read("teachers") as TeacherRecord[])) {
+      if (recipientTeacherId === teacher.id) continue;
+      createNotification({
+        recipientTeacherId,
+        type: "admin",
+        title: "新的学校新增申请",
+        content: `${teacher.name} 申请新增“${application.name}”，请及时审核。`,
+        actionUrl: "/admin/school-creation-applications",
+      });
+    }
     return application;
   },
 

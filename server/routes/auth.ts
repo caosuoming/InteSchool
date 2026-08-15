@@ -8,7 +8,12 @@ import { withSerializedState } from "../rpc.js";
 import { canManageTeachingProfiles } from "../../src/lib/teaching-profile-permissions.js";
 import { normalizeTeacherRoles, TEACHER_ROLES } from "../../src/lib/teacher-roles.js";
 import type { TeacherRole } from "../../src/types/index.js";
-import { createNotificationInState } from "../domain/notification.js";
+import {
+  createNotificationInState,
+  createNotificationsInState,
+  platformAdminTeacherIds,
+  schoolReviewTeacherIds,
+} from "../domain/notification.js";
 
 export const SESSION_COOKIE = "inteschool_session";
 
@@ -185,6 +190,42 @@ function activeTeacherRoles(teacher: TeacherRecord): string[] {
   return Array.isArray(affiliation?.roles)
     ? affiliation.roles.filter((role): role is string => typeof role === "string")
     : teacher.roles;
+}
+
+function notifySchoolReviewers(
+  state: AppState,
+  schoolId: string,
+  applicantTeacherId: string,
+  input: {
+    title: string;
+    content: string;
+    actionUrl: string;
+  },
+  includePlatformAdmins = true,
+): void {
+  const recipients = schoolReviewTeacherIds(state.teachers, schoolId, includePlatformAdmins)
+    .filter((teacherId) => teacherId !== applicantTeacherId);
+  createNotificationsInState(state, recipients, {
+    type: "admin",
+    ...input,
+  });
+}
+
+function notifyPlatformReviewers(
+  state: AppState,
+  applicantTeacherId: string,
+  input: {
+    title: string;
+    content: string;
+    actionUrl: string;
+  },
+): void {
+  const recipients = platformAdminTeacherIds(state.teachers)
+    .filter((teacherId) => teacherId !== applicantTeacherId);
+  createNotificationsInState(state, recipients, {
+    type: "admin",
+    ...input,
+  });
 }
 
 function requireTeachingProfileTargetScope(
@@ -560,6 +601,11 @@ export async function registerAuthRoutes(
           status: "pending",
           createdAt: now,
         });
+        notifySchoolReviewers(latestState, schoolId, teacherId, {
+          title: "新教师注册待审核",
+          content: `${input.name} 已注册并申请加入 ${schoolName}，请及时审核。`,
+          actionUrl: "/admin/teacher-school-applications",
+        });
       });
       reply.code(202);
       return { teacher: null, csrfToken: null, pending: true };
@@ -742,6 +788,11 @@ export async function registerAuthRoutes(
         createdAt: new Date().toISOString(),
       };
       applications.push(application);
+      notifyPlatformReviewers(state, teacher.id, {
+        title: "新的学校管理员申请",
+        content: `${teacher.name} 申请成为 ${school.name} 的学校管理员，请及时审核。`,
+        actionUrl: "/admin/school-admin-applications",
+      });
       return application;
     });
   });
@@ -841,6 +892,11 @@ export async function registerAuthRoutes(
         createdAt: new Date().toISOString(),
       };
       applications.push(application);
+      notifySchoolReviewers(state, school.id, teacher.id, {
+        title: "新的教师权限申请",
+        content: `${teacher.name} 提交了新的校内职务权限申请，请及时审核。`,
+        actionUrl: "/admin/permission-applications",
+      }, false);
       return application;
     });
   });
@@ -1019,6 +1075,12 @@ export async function registerAuthRoutes(
           content: `你加入 ${school.name} 的认证已自动通过。`,
           actionUrl: "/dashboard",
         });
+      } else {
+        notifySchoolReviewers(state, input.schoolId, session.teacherId, {
+          title: "新的教师入校申请",
+          content: `${currentTeacher.name} 申请加入 ${school.name}，请及时审核。`,
+          actionUrl: "/admin/teacher-school-applications",
+        });
       }
       return application;
     });
@@ -1110,6 +1172,11 @@ export async function registerAuthRoutes(
               reason: "注册或入校时申请学校管理员权限",
               status: "pending",
               createdAt: new Date().toISOString(),
+            });
+            notifyPlatformReviewers(state, String(application.teacherId), {
+              title: "新的学校管理员申请",
+              content: `${String(application.teacherName || "教师")} 申请成为 ${String(application.schoolName || "当前学校")} 的学校管理员，请及时审核。`,
+              actionUrl: "/admin/school-admin-applications",
             });
           }
         }
