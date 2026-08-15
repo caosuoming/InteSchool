@@ -15,6 +15,16 @@ const GRADE_SEQUENCE = ["高一", "高二", "高三"] as const;
 
 type ActiveStudentStatus = Exclude<StudentStatus, "deleted">;
 
+interface ParentAuthorization {
+  id: string;
+  phone: string;
+  guardianName?: string;
+  studentId: string;
+  schoolId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -22,6 +32,68 @@ function normalizeName(value: string): string {
 function normalizeClassName(value: string): string {
   const normalized = normalizeName(value);
   return /^\d+$/.test(normalized) ? `${normalized}班` : normalized;
+}
+
+function normalizePhone(value: string): string {
+  return value.trim().replace(/[\s()-]/g, "").replace(/^\+86/, "");
+}
+
+function rosterContacts(
+  student: Student | undefined,
+  row: StudentRosterImportRow,
+): Student["contacts"] {
+  const hasRosterContact = Boolean(
+    row.guardian1Name || row.guardian1Phone || row.guardian2Name || row.guardian2Phone,
+  );
+  if (!hasRosterContact) return student?.contacts;
+  const previous = student?.contacts || {};
+  const guardian1Name = row.guardian1Name || undefined;
+  const guardian1Phone = row.guardian1Phone || undefined;
+  const guardian2Name = row.guardian2Name || undefined;
+  const guardian2Phone = row.guardian2Phone || undefined;
+  return {
+    ...previous,
+    guardian1Name,
+    guardian1Phone,
+    guardian2Name,
+    guardian2Phone,
+    guardianName: guardian1Name,
+    guardianPhone: guardian1Phone,
+  };
+}
+
+function rebuildParentAuthorizations(schoolId: string, students: Student[]): void {
+  const now = new Date().toISOString();
+  const previous = (db.read("parentAuthorizations") as ParentAuthorization[] | undefined) || [];
+  const otherSchools = previous.filter((item) => item.schoolId !== schoolId);
+  const generated: ParentAuthorization[] = [];
+
+  for (const student of students) {
+    if (student.schoolId !== schoolId || student.status === "deleted") continue;
+    const contacts = student.contacts;
+    if (!contacts) continue;
+    const entries = [
+      [contacts.guardian1Name || contacts.guardianName, contacts.guardian1Phone || contacts.guardianPhone],
+      [contacts.guardian2Name, contacts.guardian2Phone],
+    ] as const;
+    const seen = new Set<string>();
+    for (const [guardianName, rawPhone] of entries) {
+      const phone = rawPhone ? normalizePhone(rawPhone) : "";
+      if (!phone || seen.has(phone)) continue;
+      seen.add(phone);
+      generated.push({
+        id: `parent-auth-${student.id}-${phone}`,
+        phone,
+        guardianName: guardianName || undefined,
+        studentId: student.id,
+        schoolId,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  db.update("parentAuthorizations", () => [...otherSchools, ...generated]);
 }
 
 function canonicalGradeName(gradYear: number, grade: string): string {
@@ -311,6 +383,7 @@ export const schoolRosterService = {
     if (!(["keep", "delete"] as const).includes(missingStudents)) {
       throw new Error("无效的旧名单学生处理方式");
     }
+    const matchStudentIds = options?.matchStudentIds || {};
 
     const normalizedRows = rows.map((row, index) => {
       const className = normalizeClassName(row.className || "");
@@ -319,6 +392,13 @@ export const schoolRosterService = {
       if (!className || !name) {
         throw new Error(`第 ${index + 2} 行缺少班级或姓名`);
       }
+      const guardian1Phone = normalizePhone(row.guardian1Phone || "");
+      const guardian2Phone = normalizePhone(row.guardian2Phone || "");
+      for (const phone of [guardian1Phone, guardian2Phone]) {
+        if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
+          throw new Error(`第 ${index + 2} 行家长手机号格式不正确`);
+        }
+      }
       return {
         className,
         name,
@@ -326,6 +406,10 @@ export const schoolRosterService = {
         subjectSelection: normalizeName(row.subjectSelection || "") || undefined,
         isExternal: Boolean(row.isExternal),
         gender: row.gender,
+        guardian1Name: normalizeName(row.guardian1Name || "") || undefined,
+        guardian1Phone: guardian1Phone || undefined,
+        guardian2Name: normalizeName(row.guardian2Name || "") || undefined,
+        guardian2Phone: guardian2Phone || undefined,
       } satisfies StudentRosterImportRow;
     });
 
@@ -352,7 +436,7 @@ export const schoolRosterService = {
 
     const seenNumbers = new Set<string>();
     let skippedStudents = 0;
-    const effectiveRows = normalizedRows.filter((row) => {
+    const effectiveRows = normalizedRows.map((row, rowIndex) => ({ row, rowIndex })).filter(({ row }) => {
       const numberKey = row.studentNo.toLocaleLowerCase("zh-CN");
       if (!numberKey) return true;
       if (seenNumbers.has(numberKey)) {
@@ -364,7 +448,7 @@ export const schoolRosterService = {
     });
 
     const matchedExistingIds = new Set<string>();
-    const assignments = effectiveRows.map((row) => {
+    const assignments = effectiveRows.map(({ row, rowIndex }) => {
       const targetClass = classMap.get(row.className.toLocaleLowerCase("zh-CN"));
       if (!targetClass) throw new Error(`班级不存在：${row.className}`);
       const nameKey = row.name.toLocaleLowerCase("zh-CN");
@@ -372,25 +456,34 @@ export const schoolRosterService = {
         .filter((student) => !matchedExistingIds.has(student.id));
 
       let matched: Student | undefined;
-      if (candidates.length === 1) {
-        matched = candidates[0];
-      } else if (candidates.length > 1) {
+      const explicitKey = String(rowIndex);
+      const hasExplicitResolution = Object.prototype.hasOwnProperty.call(matchStudentIds, explicitKey);
+      if (hasExplicitResolution) {
+        const selectedId = matchStudentIds[explicitKey];
+        if (selectedId) {
+          matched = existingGradeStudents.find((student) => student.id === selectedId);
+          if (!matched) throw new Error(`第 ${rowIndex + 2} 行选择的原学生不属于当前年级`);
+          if (matchedExistingIds.has(matched.id)) throw new Error(`原学生“${matched.name}”被重复对应到多条新名单记录`);
+        }
+      } else {
         if (row.studentNo) {
-          const sameNumber = candidates.filter((student) =>
-            student.studentNo.trim().toLocaleLowerCase("zh-CN") === row.studentNo.toLocaleLowerCase("zh-CN"),
+          const sameNumber = existingGradeStudents.filter((student) =>
+            !matchedExistingIds.has(student.id)
+            && student.studentNo.trim().toLocaleLowerCase("zh-CN") === row.studentNo.toLocaleLowerCase("zh-CN"),
           );
           if (sameNumber.length === 1) matched = sameNumber[0];
         }
         if (!matched) {
           const sameClass = candidates.filter((student) => student.classId === targetClass.id);
-          if (sameClass.length === 1) matched = sameClass[0];
-        }
-        if (!matched) {
-          throw new Error(`同一年级存在多名“${row.name}”，无法仅按姓名确定对应学生；请补充可区分的学号或班级`);
+          if (sameClass.length === 1 && candidates.length === 1) {
+            matched = sameClass[0];
+          } else if (candidates.length > 0) {
+            throw new Error(`第 ${rowIndex + 2} 行“${row.name}”存在同名学生或班级变化，请先确认对应关系`);
+          }
         }
       }
       if (matched) matchedExistingIds.add(matched.id);
-      return { row, targetClass, matched };
+      return { row, rowIndex, targetClass, matched };
     });
 
     const unmatchedExistingIds = new Set(
@@ -429,6 +522,7 @@ export const schoolRosterService = {
           gender: row.gender,
           subjectSelection: row.subjectSelection,
           isExternal: row.isExternal,
+          contacts: rosterContacts(undefined, row),
           status: "active",
         });
         continue;
@@ -445,6 +539,7 @@ export const schoolRosterService = {
         gender: row.gender ?? matched.gender,
         subjectSelection: row.subjectSelection,
         isExternal: row.isExternal,
+        contacts: rosterContacts(matched, row),
         classHistory: classChanged
           ? [
               ...(matched.classHistory || []),
@@ -466,7 +561,9 @@ export const schoolRosterService = {
       if (!deletedStudentIds.has(student.id)) return student;
       return {
         ...student,
-        deletedFromStatus: student.status,
+        deletedFromStatus: student.status === "deleted"
+          ? (student.deletedFromStatus || "active")
+          : student.status,
         status: "deleted" as const,
         deletedAt: now,
       };
@@ -490,6 +587,7 @@ export const schoolRosterService = {
       })),
     ]);
     db.update("students", () => nextStudents);
+    rebuildParentAuthorizations(grade.schoolId, nextStudents);
 
     return {
       createdClasses: createdClasses.length,

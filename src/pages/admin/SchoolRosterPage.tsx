@@ -102,35 +102,98 @@ function normalizeRosterName(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("zh-CN");
 }
 
-function findUnmatchedRosterStudents(
+interface RosterReviewRow {
+  rowIndex: number;
+  row: StudentRosterImportRow;
+  reason: "sameName" | "unmatched";
+}
+
+interface RosterImportReview {
+  reviewRows: RosterReviewRow[];
+  autoMatchedStudentIds: string[];
+  gradeStudents: Student[];
+}
+
+interface PendingRosterImport {
+  rows: StudentRosterImportRow[];
+  review: RosterImportReview;
+  resolutions: Record<string, string>;
+}
+
+function unresolvedOldStudents(pending: PendingRosterImport): Student[] {
+  const matched = new Set(pending.review.autoMatchedStudentIds);
+  for (const value of Object.values(pending.resolutions)) {
+    if (value && value !== "__create__") matched.add(value);
+  }
+  return pending.review.gradeStudents.filter((student) => !matched.has(student.id));
+}
+
+function buildRosterImportReview(
   rows: StudentRosterImportRow[],
   students: Student[],
   classes: SchoolClass[],
   grade: SchoolGrade,
-): Student[] {
+): RosterImportReview {
   const gradeClassIds = new Set(
     classes.filter((item) => classBelongsToGrade(item, grade)).map((item) => item.id),
   );
-  const importedNameCounts = new Map<string, number>();
-  const seenStudentNumbers = new Set<string>();
-  for (const row of rows) {
-    const studentNo = row.studentNo?.trim().toLocaleLowerCase("zh-CN") || "";
-    if (studentNo && seenStudentNumbers.has(studentNo)) continue;
-    if (studentNo) seenStudentNumbers.add(studentNo);
-    const key = normalizeRosterName(row.name);
-    importedNameCounts.set(key, (importedNameCounts.get(key) || 0) + 1);
+  const classByName = new Map(
+    classes
+      .filter((item) => classBelongsToGrade(item, grade))
+      .map((item) => [normalizeRosterName(item.name), item] as const),
+  );
+  const gradeStudents = students.filter((student) =>
+    student.status === "active" && gradeClassIds.has(student.classId),
+  );
+  const byName = new Map<string, Student[]>();
+  for (const student of gradeStudents) {
+    const key = normalizeRosterName(student.name);
+    byName.set(key, [...(byName.get(key) || []), student]);
   }
 
-  return students.filter((student) => {
-    if (student.status !== "active" || !gradeClassIds.has(student.classId)) return false;
-    const key = normalizeRosterName(student.name);
-    const remaining = importedNameCounts.get(key) || 0;
-    if (remaining > 0) {
-      importedNameCounts.set(key, remaining - 1);
-      return false;
+  const seenStudentNumbers = new Set<string>();
+  const matchedIds = new Set<string>();
+  const reviewRows: RosterReviewRow[] = [];
+  rows.forEach((row, rowIndex) => {
+    const studentNo = row.studentNo?.trim().toLocaleLowerCase("zh-CN") || "";
+    if (studentNo && seenStudentNumbers.has(studentNo)) return;
+    if (studentNo) seenStudentNumbers.add(studentNo);
+
+    if (studentNo) {
+      const byNumber = gradeStudents.filter((student) =>
+        !matchedIds.has(student.id)
+        && student.studentNo?.trim().toLocaleLowerCase("zh-CN") === studentNo,
+      );
+      if (byNumber.length === 1) {
+        matchedIds.add(byNumber[0].id);
+        return;
+      }
     }
-    return true;
+
+    const candidates = (byName.get(normalizeRosterName(row.name)) || [])
+      .filter((student) => !matchedIds.has(student.id));
+    const targetClass = classByName.get(normalizeRosterName(row.className));
+    const sameClass = targetClass
+      ? candidates.filter((student) => student.classId === targetClass.id)
+      : [];
+    if (candidates.length === 1 && sameClass.length === 1) {
+      matchedIds.add(candidates[0].id);
+      return;
+    }
+    if (candidates.length > 0) {
+      reviewRows.push({ rowIndex, row, reason: "sameName" });
+      return;
+    }
+    if (gradeStudents.some((student) => !matchedIds.has(student.id))) {
+      reviewRows.push({ rowIndex, row, reason: "unmatched" });
+    }
   });
+
+  return {
+    reviewRows,
+    autoMatchedStudentIds: [...matchedIds],
+    gradeStudents,
+  };
 }
 
 export default function SchoolRosterPage() {
@@ -151,10 +214,7 @@ export default function SchoolRosterPage() {
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [showRecycleBin, setShowRecycleBin] = useState(false);
-  const [pendingRosterImport, setPendingRosterImport] = useState<{
-    rows: StudentRosterImportRow[];
-    unmatchedStudents: Student[];
-  } | null>(null);
+  const [pendingRosterImport, setPendingRosterImport] = useState<PendingRosterImport | null>(null);
 
   const [gradeModalOpen, setGradeModalOpen] = useState(false);
   const [gradeYear, setGradeYear] = useState(String(new Date().getFullYear() + 3));
@@ -328,13 +388,14 @@ export default function SchoolRosterPage() {
   const commitRosterImport = async (
     rows: StudentRosterImportRow[],
     missingStudents: "keep" | "delete",
+    matchStudentIds?: Record<string, string | null>,
   ) => {
     if (!teacher || !selectedGrade) return;
     const result = await classService.bulkImportStudents(
       selectedGrade.id,
       teacher.id,
       rows,
-      { missingStudents },
+      { missingStudents, matchStudentIds },
     );
     const details = [
       `${result.updatedStudents} 名已有学生已更新`,
@@ -351,9 +412,12 @@ export default function SchoolRosterPage() {
     if (!file || !teacher || !selectedGrade) return;
     await run(async () => {
       const rows = await readStudentRosterFile(file);
-      const unmatchedStudents = findUnmatchedRosterStudents(rows, students, classes, selectedGrade);
-      if (unmatchedStudents.length > 0) {
-        setPendingRosterImport({ rows, unmatchedStudents });
+      const review = buildRosterImportReview(rows, students, classes, selectedGrade);
+      const autoUnmatchedStudents = review.gradeStudents.filter(
+        (student) => !review.autoMatchedStudentIds.includes(student.id),
+      );
+      if (review.reviewRows.length > 0 || autoUnmatchedStudents.length > 0) {
+        setPendingRosterImport({ rows, review, resolutions: {} });
         return;
       }
       await commitRosterImport(rows, "keep");
@@ -363,9 +427,22 @@ export default function SchoolRosterPage() {
 
   const handlePendingRosterImport = (missingStudents: "keep" | "delete") => run(async () => {
     if (!pendingRosterImport) return;
+    const unresolved = pendingRosterImport.review.reviewRows.filter(
+      ({ rowIndex }) => !pendingRosterImport.resolutions[String(rowIndex)],
+    );
+    if (unresolved.length > 0) {
+      toast.error("请先确认所有需要人工匹配的学生");
+      return;
+    }
+    const matchStudentIds = Object.fromEntries(
+      pendingRosterImport.review.reviewRows.map(({ rowIndex }) => {
+        const value = pendingRosterImport.resolutions[String(rowIndex)];
+        return [String(rowIndex), value === "__create__" ? null : value];
+      }),
+    );
     const { rows } = pendingRosterImport;
     setPendingRosterImport(null);
-    await commitRosterImport(rows, missingStudents);
+    await commitRosterImport(rows, missingStudents, matchStudentIds);
   });
 
   const handleDeleteClass = (item: SchoolClass) => run(async () => {
@@ -503,6 +580,20 @@ export default function SchoolRosterPage() {
     toast.success(`已恢复学生“${item.name}”`);
     await load();
   });
+
+  const pendingUnmatchedStudents = pendingRosterImport
+    ? unresolvedOldStudents(pendingRosterImport)
+    : [];
+  const selectedResolutionStudentIds = new Set(
+    pendingRosterImport
+      ? Object.values(pendingRosterImport.resolutions).filter((value) => value !== "__create__")
+      : [],
+  );
+  const rosterReviewComplete = pendingRosterImport
+    ? pendingRosterImport.review.reviewRows.every(
+        ({ rowIndex }) => Boolean(pendingRosterImport.resolutions[String(rowIndex)]),
+      )
+    : false;
 
   if (loading) {
     return <div className="flex min-h-[55vh] items-center justify-center"><Spinner size={28} /></div>;
@@ -860,49 +951,126 @@ export default function SchoolRosterPage() {
       <Modal
         open={Boolean(pendingRosterImport)}
         onClose={() => setPendingRosterImport(null)}
-        title="发现旧名单中未匹配的学生"
+        title={pendingRosterImport?.review.reviewRows.length
+          ? "确认学生名单对应关系"
+          : "发现旧名单中未匹配的学生"}
         description={pendingRosterImport
-          ? `新名单按姓名匹配后，有 ${pendingRosterImport.unmatchedStudents.length} 名原有学生未出现。请选择保留，或将他们移入回收站。`
+          ? pendingRosterImport.review.reviewRows.length > 0
+            ? `需要人工确认 ${pendingRosterImport.review.reviewRows.length} 条记录；确认后还可决定 ${pendingUnmatchedStudents.length} 名未匹配旧学生是否保留。`
+            : `新名单按姓名匹配后，有 ${pendingUnmatchedStudents.length} 名原有学生未出现。请选择保留，或将他们移入回收站。`
           : undefined}
-        size="md"
+        size="lg"
         footer={
           <>
-            <Button
-              variant="outline"
-              onClick={() => handlePendingRosterImport("keep")}
-              loading={working}
-            >
-              保留未匹配学生
-            </Button>
-            <Button
-              variant="ink"
-              onClick={() => handlePendingRosterImport("delete")}
-              loading={working}
-            >
-              删除未匹配学生
-            </Button>
+            <Button variant="ghost" onClick={() => setPendingRosterImport(null)}>取消</Button>
+            {pendingUnmatchedStudents.length > 0 ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => handlePendingRosterImport("keep")}
+                  loading={working}
+                  disabled={!rosterReviewComplete}
+                >
+                  {pendingRosterImport.review.reviewRows.length > 0 ? "导入并保留旧学生" : "保留未匹配学生"}
+                </Button>
+                <Button
+                  variant="ink"
+                  onClick={() => handlePendingRosterImport("delete")}
+                  loading={working}
+                  disabled={!rosterReviewComplete}
+                >
+                  {pendingRosterImport.review.reviewRows.length > 0 ? "导入并移入回收站" : "删除未匹配学生"}
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="gold"
+                onClick={() => handlePendingRosterImport("keep")}
+                loading={working}
+                disabled={!rosterReviewComplete}
+              >
+                确认导入
+              </Button>
+            )}
           </>
         }
       >
         {pendingRosterImport && (
-          <div className="space-y-2">
-            <div className="text-xs text-ink-500">未匹配学生预览</div>
-            <div className="max-h-56 overflow-y-auto rounded-lg border border-ink-100 bg-mist/50 px-3 py-2">
-              {pendingRosterImport.unmatchedStudents.slice(0, 20).map((student) => (
-                <div key={student.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
-                  <span className="font-medium text-ink-800">{student.name}</span>
-                  <span className="text-xs text-ink-500">
-                    {classes.find((item) => item.id === student.classId)?.name || "未知班级"}
-                    {student.studentNo ? ` · ${student.studentNo}` : ""}
-                  </span>
+          <div className="space-y-5">
+            {pendingRosterImport.review.reviewRows.length > 0 && (
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-medium text-ink-800">人工匹配</div>
+                  <div className="mt-1 text-xs text-ink-500">
+                    同名但班级变化时请确认是否为原学生；姓名无法匹配时，可选择原名单中尚未匹配的学生（用于改名），或明确新增。
+                  </div>
                 </div>
-              ))}
-              {pendingRosterImport.unmatchedStudents.length > 20 && (
-                <div className="pt-2 text-xs text-ink-400">
-                  另有 {pendingRosterImport.unmatchedStudents.length - 20} 名未展示
+                <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+                  {pendingRosterImport.review.reviewRows.map(({ rowIndex, row, reason }) => {
+                    const currentValue = pendingRosterImport.resolutions[String(rowIndex)] || "";
+                    const options = pendingRosterImport.review.gradeStudents
+                      .filter((student) => (
+                        !selectedResolutionStudentIds.has(student.id) || student.id === currentValue
+                      ))
+                      .map((student) => ({
+                        value: student.id,
+                        label: `${student.name} · ${classes.find((item) => item.id === student.classId)?.name || "未知班级"}${student.studentNo ? ` · ${student.studentNo}` : ""}`,
+                      }));
+                    return (
+                      <div key={rowIndex} className="rounded-lg border border-ink-100 bg-mist/40 p-3">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+                          <span className="font-medium text-ink-900">
+                            新名单：{row.name} · {row.className}{row.studentNo ? ` · ${row.studentNo}` : ""}
+                          </span>
+                          <Badge variant={reason === "sameName" ? "gold" : "ink"}>
+                            {reason === "sameName" ? "同名需确认" : "姓名未匹配"}
+                          </Badge>
+                        </div>
+                        <Select
+                          label="对应原学生"
+                          value={currentValue}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setPendingRosterImport((current) => current ? {
+                              ...current,
+                              resolutions: { ...current.resolutions, [String(rowIndex)]: value },
+                            } : current);
+                          }}
+                          options={[
+                            { value: "", label: "请选择处理方式" },
+                            { value: "__create__", label: `新增学生“${row.name}”` },
+                            ...options,
+                          ]}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {pendingUnmatchedStudents.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-ink-800">仍未匹配的原学生</div>
+                <div className="text-xs text-ink-500">导入时可整体保留，或移入回收站；之后仍可从回收站恢复。</div>
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-ink-100 bg-mist/50 px-3 py-2">
+                  {pendingUnmatchedStudents.slice(0, 20).map((student) => (
+                    <div key={student.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                      <span className="font-medium text-ink-800">{student.name}</span>
+                      <span className="text-xs text-ink-500">
+                        {classes.find((item) => item.id === student.classId)?.name || "未知班级"}
+                        {student.studentNo ? ` · ${student.studentNo}` : ""}
+                      </span>
+                    </div>
+                  ))}
+                  {pendingUnmatchedStudents.length > 20 && (
+                    <div className="pt-2 text-xs text-ink-400">
+                      另有 {pendingUnmatchedStudents.length - 20} 名未展示
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>

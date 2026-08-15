@@ -13,6 +13,7 @@ import { DatabaseStore, DuplicateAccountError } from "./database.js";
 import { invokeRpc } from "./rpc.js";
 import { getSession, registerAuthRoutes, requireCsrf } from "./routes/auth.js";
 import { registerFileRoutes } from "./routes/files.js";
+import { registerParentRoutes } from "./routes/parent.js";
 
 const rpcSchema = z.object({
   service: z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/).max(50),
@@ -48,6 +49,7 @@ function statusForError(error: Error): number {
     || error.message.includes("未登录")
     || error.message.includes("邮箱或密码错误")
     || error.message.includes("邮箱、手机号或密码错误")
+    || error.message.includes("手机号或密码错误")
   ) return 401;
   if (error.message.includes("无权") || error.message.includes("管理员权限")) return 403;
   if (error.message.includes("不存在")) return 404;
@@ -130,6 +132,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
   });
 
   await registerAuthRoutes(app, store, config);
+  await registerParentRoutes(app, store, config);
   await registerFileRoutes(app, store, config);
 
   app.post("/api/rpc", async (request) => {

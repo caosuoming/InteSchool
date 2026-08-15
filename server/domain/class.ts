@@ -77,13 +77,44 @@ function cleanOptional(value: string | undefined): string | undefined {
 }
 
 function normalizeContacts(input: StudentContactInfo): StudentContactInfo {
+  const guardian1Name = cleanOptional(input.guardian1Name ?? input.guardianName);
+  const guardian1Phone = cleanOptional(input.guardian1Phone ?? input.guardianPhone);
   return {
     studentPhone: cleanOptional(input.studentPhone),
-    guardianName: cleanOptional(input.guardianName),
-    guardianPhone: cleanOptional(input.guardianPhone),
+    guardian1Name,
+    guardian1Phone,
+    guardian2Name: cleanOptional(input.guardian2Name),
+    guardian2Phone: cleanOptional(input.guardian2Phone),
+    guardianName: guardian1Name,
+    guardianPhone: guardian1Phone,
     emergencyContact: cleanOptional(input.emergencyContact),
     emergencyPhone: cleanOptional(input.emergencyPhone),
   };
+}
+
+function syncStudentParentAuthorizations(student: Student, contacts: StudentContactInfo): void {
+  const now = new Date().toISOString();
+  const entries = [
+    [contacts.guardian1Name ?? contacts.guardianName, contacts.guardian1Phone ?? contacts.guardianPhone],
+    [contacts.guardian2Name, contacts.guardian2Phone],
+  ] as const;
+  const generated = entries.flatMap(([guardianName, rawPhone]) => {
+    const phone = rawPhone?.trim().replace(/[\s()-]/g, "").replace(/^\+86/, "") || "";
+    if (!/^1[3-9]\d{9}$/.test(phone)) return [];
+    return [{
+      id: `parent-auth-${student.id}-${phone}`,
+      phone,
+      guardianName,
+      studentId: student.id,
+      schoolId: student.schoolId,
+      createdAt: now,
+      updatedAt: now,
+    }];
+  });
+  db.update("parentAuthorizations", (items: Array<Record<string, unknown>> | undefined) => [
+    ...((items || []).filter((item) => item.studentId !== student.id)),
+    ...generated,
+  ]);
 }
 
 export const classService = {
@@ -381,6 +412,7 @@ export const classService = {
       updated = { ...item, contacts };
       return updated;
     }));
+    syncStudentParentAuthorizations(updated, contacts);
     appendStudentArchiveRecord({
       id: genId("stu-archive"),
       studentId,

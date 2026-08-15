@@ -111,8 +111,11 @@ export const gradeService = {
     return rpcCall("grade", "adjustExamScore", [examId, studentId, subject, kind, value]) as Promise<GradeExam>;
   },
 
-  async publishExamResults(examId: string): Promise<GradeExam> {
-    return rpcCall("grade", "publishExamResults", [examId]) as Promise<GradeExam>;
+  async publishExamResults(
+    examId: string,
+    options?: { publishToParents?: boolean },
+  ): Promise<GradeExam> {
+    return rpcCall("grade", "publishExamResults", options ? [examId, options] : [examId]) as Promise<GradeExam>;
   },
 
   async unpublishExamResults(examId: string): Promise<GradeExam> {

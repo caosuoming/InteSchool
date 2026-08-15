@@ -565,6 +565,7 @@ export const serviceParameters = {
     ],
     "publishExamResults": [
       "examId",
+      "options",
       "teacher"
     ],
     "unpublishExamResults": [

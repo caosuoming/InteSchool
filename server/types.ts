@@ -37,6 +37,22 @@ export interface SessionUser {
   expiresAt: string;
 }
 
+export interface ParentAccountRecord {
+  id: string;
+  name: string;
+  phone: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ParentSessionUser {
+  userId: string;
+  parentId: string;
+  phone: string;
+  csrfToken: string;
+  expiresAt: string;
+}
+
 export type RegistrationAuthorizationKind = "admin" | "guarantee";
 
 export interface RegistrationAuthorizationRecord {

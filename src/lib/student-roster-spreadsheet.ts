@@ -9,9 +9,24 @@ const HEADER_ALIASES = {
   subjectSelection: ["选科", "选科组合", "科目组合", "科类", "选考科目"],
   isExternal: ["借读生", "是否借读", "借读"],
   gender: ["性别"],
+  guardian1Name: ["家长1姓名", "家长一姓名", "监护人1姓名", "监护人一姓名"],
+  guardian1Phone: ["家长1电话", "家长一电话", "监护人1电话", "监护人一电话", "家长1手机号"],
+  guardian2Name: ["家长2姓名", "家长二姓名", "监护人2姓名", "监护人二姓名"],
+  guardian2Phone: ["家长2电话", "家长二电话", "监护人2电话", "监护人二电话", "家长2手机号"],
 } as const;
 
-export const STUDENT_ROSTER_TEMPLATE_HEADERS = ["班级*", "姓名*", "学号", "选科", "借读生", "性别"] as const;
+export const STUDENT_ROSTER_TEMPLATE_HEADERS = [
+  "班级*",
+  "姓名*",
+  "学号",
+  "选科",
+  "借读生",
+  "性别",
+  "家长1姓名",
+  "家长1电话",
+  "家长2姓名",
+  "家长2电话",
+] as const;
 
 function text(value: CellValue): string {
   if (value === null || value === undefined) return "";
@@ -52,6 +67,10 @@ export function parseStudentRosterTable(rows: CellValue[][]): StudentRosterImpor
   const subjectSelectionColumn = findColumn(headers, HEADER_ALIASES.subjectSelection, false);
   const externalColumn = findColumn(headers, HEADER_ALIASES.isExternal, false);
   const genderColumn = findColumn(headers, HEADER_ALIASES.gender, false);
+  const guardian1NameColumn = findColumn(headers, HEADER_ALIASES.guardian1Name, false);
+  const guardian1PhoneColumn = findColumn(headers, HEADER_ALIASES.guardian1Phone, false);
+  const guardian2NameColumn = findColumn(headers, HEADER_ALIASES.guardian2Name, false);
+  const guardian2PhoneColumn = findColumn(headers, HEADER_ALIASES.guardian2Phone, false);
 
   const parsed = rows.slice(firstNonEmpty + 1).flatMap((row, index) => {
     if (row.every((cell) => !text(cell))) return [];
@@ -70,6 +89,10 @@ export function parseStudentRosterTable(rows: CellValue[][]): StudentRosterImpor
         : undefined,
       isExternal: externalColumn >= 0 ? parseExternal(text(row[externalColumn])) : false,
       gender: genderColumn >= 0 ? parseGender(text(row[genderColumn])) : undefined,
+      guardian1Name: guardian1NameColumn >= 0 ? text(row[guardian1NameColumn]) || undefined : undefined,
+      guardian1Phone: guardian1PhoneColumn >= 0 ? text(row[guardian1PhoneColumn]) || undefined : undefined,
+      guardian2Name: guardian2NameColumn >= 0 ? text(row[guardian2NameColumn]) || undefined : undefined,
+      guardian2Phone: guardian2PhoneColumn >= 0 ? text(row[guardian2PhoneColumn]) || undefined : undefined,
     } satisfies StudentRosterImportRow];
   });
   if (parsed.length === 0) throw new Error("Excel 文件中没有学生数据");
@@ -104,10 +127,13 @@ export async function downloadStudentRosterTemplate(gradeName: string): Promise<
     sheet: "学生导入模板",
     data: [
       STUDENT_ROSTER_TEMPLATE_HEADERS.map(header),
-      ["1", "张三", "20260001", "物化生", "否", "男"].map(cell),
-      ["17", "李四", "", "史政地", "是", "女"].map(cell),
+      ["1", "张三", "20260001", "物化生", "否", "男", "张父", "13800138000", "张母", "13900139000"].map(cell),
+      ["17", "李四", "", "史政地", "是", "女", "", "", "", ""].map(cell),
     ],
     stickyRowsCount: 1,
-    columns: [{ width: 14 }, { width: 14 }, { width: 18 }, { width: 14 }, { width: 12 }, { width: 10 }],
+    columns: [
+      { width: 14 }, { width: 14 }, { width: 18 }, { width: 14 }, { width: 12 }, { width: 10 },
+      { width: 14 }, { width: 18 }, { width: 14 }, { width: 18 },
+    ],
   }]).toFile(`${gradeName.replace(/[\\/:*?"<>|]/g, "_")}_学生导入模板.xlsx`);
 }

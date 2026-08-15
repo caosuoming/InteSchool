@@ -995,7 +995,11 @@ export const gradeService = {
     return updated;
   },
 
-  async publishExamResults(examId: string, teacher: Teacher): Promise<GradeExam> {
+  async publishExamResults(
+    examId: string,
+    options: { publishToParents?: boolean } | undefined,
+    teacher: Teacher,
+  ): Promise<GradeExam> {
     await delay(150);
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
@@ -1017,6 +1021,7 @@ export const gradeService = {
       publishedAt,
       publishedByTeacherId: teacher.id,
       publishedByName: teacher.name,
+      publishToParents: Boolean(options?.publishToParents),
     };
     const record: GradePublicationRecord = {
       id: genId("grade-publication"),

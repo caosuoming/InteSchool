@@ -9,6 +9,8 @@ import { RequireTeachingProfileManager } from "@/components/auth/RequireTeaching
 import { RequireAccountManager } from "@/components/auth/RequireAccountManager";
 
 const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
+const ParentRegisterPage = lazy(() => import("@/pages/auth/ParentRegisterPage"));
+const ParentPortalPage = lazy(() => import("@/pages/parent/ParentPortalPage"));
 const ClassroomLoginPage = lazy(() => import("@/pages/auth/ClassroomLoginPage"));
 const SchoolAuthPage = lazy(() => import("@/pages/auth/SchoolAuthPage"));
 const DashboardPage = lazy(() => import("@/pages/dashboard/DashboardPage"));
@@ -162,6 +164,8 @@ export default function App() {
             path="/login"
             element={teacher ? <Navigate to="/dashboard" replace /> : <LoginPage />}
           />
+          <Route path="/parent-register" element={<ParentRegisterPage />} />
+          <Route path="/parent" element={<ParentPortalPage />} />
           <Route
             path="/prep-login"
             element={

@@ -330,16 +330,17 @@ describe("SchoolRosterPage", () => {
       target: { files: [new File(["roster"], "students.xlsx")] },
     });
 
-    expect(await screen.findByText("发现旧名单中未匹配的学生")).toBeInTheDocument();
+    expect(await screen.findByText("确认学生名单对应关系")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("对应原学生"), { target: { value: "__create__" } });
     expect(screen.getAllByText("张同学")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "保留未匹配学生" }));
+    fireEvent.click(screen.getByRole("button", { name: "导入并保留旧学生" }));
 
     await waitFor(() => {
       expect(classService.bulkImportStudents).toHaveBeenCalledWith(
         grade.id,
         "teacher-1",
         importedRows,
-        { missingStudents: "keep" },
+        { missingStudents: "keep", matchStudentIds: { "0": null } },
       );
     });
   });
@@ -363,15 +364,16 @@ describe("SchoolRosterPage", () => {
     fireEvent.change(fileInput, {
       target: { files: [new File(["roster"], "students.xlsx")] },
     });
-    await screen.findByText("发现旧名单中未匹配的学生");
-    fireEvent.click(screen.getByRole("button", { name: "删除未匹配学生" }));
+    await screen.findByText("确认学生名单对应关系");
+    fireEvent.change(screen.getByLabelText("对应原学生"), { target: { value: "__create__" } });
+    fireEvent.click(screen.getByRole("button", { name: "导入并移入回收站" }));
 
     await waitFor(() => {
       expect(classService.bulkImportStudents).toHaveBeenCalledWith(
         grade.id,
         "teacher-1",
         importedRows,
-        { missingStudents: "delete" },
+        { missingStudents: "delete", matchStudentIds: { "0": null } },
       );
     });
   });

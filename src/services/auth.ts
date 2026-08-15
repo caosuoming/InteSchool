@@ -41,6 +41,12 @@ export const authService = {
     return apiRequest<RegistrationContext>(`/api/auth/registration-context?phone=${encodeURIComponent(phone)}`);
   },
 
+  async getIdentityContext(phone: string): Promise<{ phone: string; teacher: boolean; parent: boolean }> {
+    return apiRequest<{ phone: string; teacher: boolean; parent: boolean }>(
+      `/api/auth/identity-context?phone=${encodeURIComponent(phone)}`,
+    );
+  },
+
   async register(
     input: {
       email?: string;

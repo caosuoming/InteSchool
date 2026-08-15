@@ -402,6 +402,15 @@ export async function registerAuthRoutes(
   store: DatabaseStore,
   config: ServerConfig,
 ): Promise<void> {
+  app.get("/api/auth/identity-context", { config: { rateLimit: { max: 30, timeWindow: "15 minutes" } } }, async (request) => {
+    const phone = phoneSchema.parse((request.query as { phone?: string }).phone);
+    return {
+      phone,
+      teacher: Boolean(store.getUserByPhone(phone)),
+      parent: Boolean(store.getParentUserByPhone(phone)),
+    };
+  });
+
   app.get("/api/auth/registration-context", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (request) => {
     const phone = phoneSchema.parse((request.query as { phone?: string }).phone);
     const authorization = store.getAvailableRegistrationAuthorization(phone);
