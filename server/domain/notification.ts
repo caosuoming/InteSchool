@@ -1,7 +1,7 @@
 import type { AppNotification, AppNotificationType } from "../../src/types/index.js";
 import { genId } from "../domain-shared.js";
 import { db } from "../runtime-db.js";
-import type { AppState } from "../types.js";
+import type { AppState, TeacherRecord } from "../types.js";
 
 export interface CreateNotificationInput {
   recipientTeacherId: string;
@@ -10,6 +10,8 @@ export interface CreateNotificationInput {
   content: string;
   actionUrl?: string;
 }
+
+export type CreateNotificationDetails = Omit<CreateNotificationInput, "recipientTeacherId">;
 
 function buildNotification(input: CreateNotificationInput): AppNotification {
   return {
@@ -25,16 +27,61 @@ function buildNotification(input: CreateNotificationInput): AppNotification {
 }
 
 export function createNotificationInState(state: AppState, input: CreateNotificationInput): AppNotification {
-  const notification = buildNotification(input);
+  return createNotificationsInState(state, [input.recipientTeacherId], input)[0];
+}
+
+export function createNotificationsInState(
+  state: AppState,
+  recipientTeacherIds: Iterable<string>,
+  input: CreateNotificationDetails,
+): AppNotification[] {
+  const recipientIds = [...new Set(recipientTeacherIds)].filter(Boolean);
+  const created = recipientIds.map((recipientTeacherId) => buildNotification({
+    ...input,
+    recipientTeacherId,
+  }));
   const notifications = Array.isArray(state.notifications) ? state.notifications as AppNotification[] : [];
-  state.notifications = [notification, ...notifications];
-  return notification;
+  state.notifications = [...created, ...notifications];
+  return created;
 }
 
 export function createNotification(input: CreateNotificationInput): AppNotification {
   const notification = buildNotification(input);
   db.update("notifications", (items: AppNotification[] = []) => [notification, ...items]);
   return notification;
+}
+
+function hasAccountRole(teacher: TeacherRecord, role: "school_admin" | "platform_admin"): boolean {
+  if (teacher.status === "active" && teacher.role === role) return true;
+  return teacher.affiliations.some((affiliation) =>
+    affiliation.status === "active" && affiliation.role === role,
+  );
+}
+
+/** 返回拥有平台超级管理员身份的教师账号。 */
+export function platformAdminTeacherIds(teachers: TeacherRecord[]): string[] {
+  return teachers
+    .filter((teacher) => hasAccountRole(teacher, "platform_admin"))
+    .map((teacher) => teacher.id);
+}
+
+/** 返回指定学校的管理员；可选同时包含拥有全平台审核权的超级管理员。 */
+export function schoolReviewTeacherIds(
+  teachers: TeacherRecord[],
+  schoolId: string,
+  includePlatformAdmins = true,
+): string[] {
+  return teachers
+    .filter((teacher) => {
+      if (includePlatformAdmins && hasAccountRole(teacher, "platform_admin")) return true;
+      if (teacher.status === "active" && teacher.schoolId === schoolId && teacher.role === "school_admin") return true;
+      return teacher.affiliations.some((affiliation) =>
+        affiliation.status === "active"
+        && affiliation.schoolId === schoolId
+        && affiliation.role === "school_admin",
+      );
+    })
+    .map((teacher) => teacher.id);
 }
 
 export const notificationService = {

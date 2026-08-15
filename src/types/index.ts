@@ -2428,7 +2428,7 @@ export interface ClassroomNoticeFilter {
 
 // ============ 消息中心 ============
 
-export type AppNotificationType = "system" | "admin" | "approval" | "reward";
+export type AppNotificationType = "system" | "admin" | "approval" | "reward" | "mention";
 
 /** 面向单个教师账号的持久化站内消息。 */
 export interface AppNotification {

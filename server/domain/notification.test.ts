@@ -1,14 +1,48 @@
 import { describe, expect, it } from "vitest";
 import type { AppNotification } from "../../src/types/index.js";
-import type { AppState } from "../types.js";
+import type { AppState, TeacherRecord } from "../types.js";
 import { runWithState } from "../runtime-db.js";
-import { createNotification, notificationService } from "./notification.js";
+import {
+  createNotification,
+  notificationService,
+  platformAdminTeacherIds,
+  schoolReviewTeacherIds,
+} from "./notification.js";
 
 function stateWithNotifications(notifications: AppNotification[] = []): AppState {
   return {
     teachers: [],
     currentTeacherId: null,
     notifications,
+  };
+}
+
+function teacher(
+  id: string,
+  schoolId: string | null,
+  role: TeacherRecord["role"],
+): TeacherRecord {
+  return {
+    id,
+    email: `${id}@example.com`,
+    name: id,
+    avatar: "",
+    schoolId,
+    subject: "数学",
+    status: "active",
+    role,
+    roles: [],
+    subjectGroupIds: [],
+    prepGroupIds: [],
+    affiliations: [{
+      id: `${id}-affiliation`,
+      schoolId,
+      role,
+      status: "active",
+      isCurrent: true,
+    }],
+    currentAffiliationId: `${id}-affiliation`,
+    createdAt: "2026-08-15T00:00:00.000Z",
   };
 }
 
@@ -66,5 +100,20 @@ describe("notificationService", () => {
       await expect(notificationService.markNotificationRead(notification.id, "teacher-2"))
         .rejects.toThrow("消息不存在");
     });
+  });
+
+  it("selects only teachers who can actually review school or platform applications", () => {
+    const teachers = [
+      teacher("school-1-admin", "school-1", "school_admin"),
+      teacher("school-2-admin", "school-2", "school_admin"),
+      teacher("platform-admin", "school-2", "platform_admin"),
+      teacher("ordinary", "school-1", "teacher"),
+    ];
+
+    expect(schoolReviewTeacherIds(teachers, "school-1").sort())
+      .toEqual(["platform-admin", "school-1-admin"]);
+    expect(schoolReviewTeacherIds(teachers, "school-1", false))
+      .toEqual(["school-1-admin"]);
+    expect(platformAdminTeacherIds(teachers)).toEqual(["platform-admin"]);
   });
 });

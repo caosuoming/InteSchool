@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { School } from "../../src/types/index.js";
+import type { AppNotification, School } from "../../src/types/index.js";
 import type { AppState, TeacherRecord } from "../types.js";
 import { runWithState } from "../runtime-db.js";
 import { schoolService } from "./school.js";
@@ -47,6 +47,7 @@ function state(): AppState {
     currentTeacherId: null,
     schools: [existingSchool],
     schoolCreationApplications: [],
+    notifications: [],
   };
 }
 
@@ -71,6 +72,15 @@ describe("school creation applications", () => {
         status: "pending",
       });
       expect(appState.schoolCreationApplications).toEqual([application]);
+      expect(appState.notifications as AppNotification[]).toEqual([
+        expect.objectContaining({
+          recipientTeacherId: "admin",
+          type: "admin",
+          title: "新的学校新增申请",
+          actionUrl: "/admin/school-creation-applications",
+          readAt: null,
+        }),
+      ]);
       expect(await schoolService.listMySchoolCreationApplications(teacher("applicant")))
         .toEqual([application]);
     });

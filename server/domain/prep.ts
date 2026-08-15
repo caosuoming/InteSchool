@@ -22,6 +22,7 @@ import { sanitizeExamPaperPatch, sanitizeLecturePatch } from "./document-resourc
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { createNotification } from "./notification.js";
 
 /** 流程类型中文标签 */
 export const taskTypeLabels: Record<PrepTaskType, string> = {
@@ -385,6 +386,15 @@ export const prepService = {
       updatedAt: now,
     };
     db.update("prepTasks", (list) => [task, ...list]);
+    for (const recipientTeacherId of collaboratorIds) {
+      createNotification({
+        recipientTeacherId,
+        type: "mention",
+        title: "你被 @ 到新的协作任务",
+        content: `${teacher.name} 邀请你参与“${task.title}”的协作编辑。`,
+        actionUrl: `/prep/tasks/${task.id}`,
+      });
+    }
     return publicTask(task);
   },
 
@@ -652,6 +662,9 @@ export const prepService = {
   async assignTask(taskId: string, workflowId: string, teacherIds: string[]): Promise<PrepAssignment[]> {
     await delay(200);
 
+    const task = db.read("prepTasks").find((item) => item.id === taskId);
+    const workflow = task?.workflows.find((item) => item.id === workflowId);
+
     const assignments: PrepAssignment[] = teacherIds.map((tid) => ({
       id: genId("as"),
       taskId,
@@ -678,6 +691,19 @@ export const prepService = {
           : t,
       ),
     );
+
+    if (task && workflow) {
+      for (const recipientTeacherId of [...new Set(teacherIds)]) {
+        if (!recipientTeacherId || recipientTeacherId === task.createdBy) continue;
+        createNotification({
+          recipientTeacherId,
+          type: "mention",
+          title: "你被 @ 到新的备课任务",
+          content: `你在“${task.title}”中被 @ 为“${workflow.name}”负责人。`,
+          actionUrl: `/prep/tasks/${task.id}`,
+        });
+      }
+    }
 
     return assignments;
   },
