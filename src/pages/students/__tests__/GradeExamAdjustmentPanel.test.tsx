@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildDefaultGradeSettings } from "@/lib/grade-statistics";
@@ -98,7 +98,7 @@ describe("GradeExamAdjustmentPanel", () => {
     });
   });
 
-  it("keeps all subject score editors in one horizontally scrollable row", () => {
+  it("keeps subject score editors in one compact horizontally scrollable row", () => {
     const initial = buildExam();
     const subjects = ["语文", "数学", "英语", "物理"];
     const exam: GradeExam = {
@@ -115,8 +115,66 @@ describe("GradeExamAdjustmentPanel", () => {
     render(<Harness initial={exam} />);
 
     const scoreRow = screen.getByLabelText("各科成绩");
-    expect(scoreRow).toHaveClass("grid-flow-col", "overflow-x-auto");
+    expect(scoreRow).toHaveClass("flex", "overflow-x-auto");
     expect(scoreRow.children).toHaveLength(subjects.length);
+    expect(screen.getByLabelText("语文成绩")).toHaveClass("w-36", "shrink-0");
+  });
+
+  it("shows only the student's exam subjects and only offers assigned scores for assignable subjects", () => {
+    const initial = buildExam();
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+    const scores = {
+      语文: 120,
+      数学: 149,
+      英语: 138.5,
+      物理: 96,
+      化学: 88,
+      生物: 82,
+      政治: null,
+      历史: null,
+      地理: null,
+    };
+    const assignedScores = {
+      ...scores,
+      化学: 91,
+      生物: 86,
+    };
+    const sourceAssignedScores = Object.fromEntries(subjects.map((subject) => [
+      subject,
+      subject === "化学" ? 91 : subject === "生物" ? 86 : null,
+    ]));
+    const exam: GradeExam = {
+      ...initial,
+      subjects,
+      records: initial.records.map((record) => ({
+        ...record,
+        subjectSelection: "物化生",
+        scores,
+        sourceAssignedScores,
+        assignedScores,
+      })),
+      settings: buildDefaultGradeSettings(subjects, ["class-1"]),
+    };
+
+    render(<Harness initial={exam} />);
+
+    expect(screen.getByLabelText("各科成绩").children).toHaveLength(6);
+    expect(screen.queryByLabelText("政治成绩")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("历史成绩")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("地理成绩")).not.toBeInTheDocument();
+
+    const chinese = screen.getByLabelText("语文成绩");
+    expect(within(chinese).getByRole("spinbutton", { name: "成绩" })).toHaveValue(120);
+    expect(within(chinese).queryByRole("spinbutton", { name: "赋分" })).not.toBeInTheDocument();
+    expect(chinese).toHaveClass("w-36", "shrink-0");
+
+    const physics = screen.getByLabelText("物理成绩");
+    expect(within(physics).queryByRole("spinbutton", { name: "赋分" })).not.toBeInTheDocument();
+
+    const chemistry = screen.getByLabelText("化学成绩");
+    expect(within(chemistry).getByRole("spinbutton", { name: "原始分" })).toHaveValue(88);
+    expect(within(chemistry).getByRole("spinbutton", { name: "赋分" })).toHaveValue(91);
+    expect(chemistry.className).toContain("w-[17rem]");
   });
 
   it("publishes, exposes a share link, locks editing, and withdraws publication", async () => {
