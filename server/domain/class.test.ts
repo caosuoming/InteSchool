@@ -308,7 +308,7 @@ describe("class lifecycle service", () => {
       const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
         { className: "高二(2)班", name: "张三", studentNo: "NEW-001", subjectSelection: "物化地" },
         { className: "高二(2)班", name: "新增学生", studentNo: "NEW-002" },
-      ], { missingStudents: "keep" });
+      ], { missingStudents: "keep", matchStudentIds: { "0": "student-match" } });
 
       expect(result).toEqual({
         createdClasses: 0,
@@ -333,6 +333,110 @@ describe("class lifecycle service", () => {
       expect(getStudent(state, "student-missing")).toMatchObject({ status: "active" });
       expect(getClass(state, "class-2027-a")).toMatchObject({ studentCount: 1 });
       expect(getClass(state, "class-2027-b")).toMatchObject({ studentCount: 2 });
+    });
+  });
+
+  it("requires explicit resolution for same-name class changes and permits creating a distinct student", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push(
+      {
+        id: "class-2027-same-a",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(1)班",
+        grade: "高二",
+        studentCount: 1,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+      {
+        id: "class-2027-same-b",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(2)班",
+        grade: "高二",
+        studentCount: 0,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+    );
+    (state.students as Array<Record<string, unknown>>).push({
+      id: "student-same-name",
+      name: "张三",
+      studentNo: "",
+      classId: "class-2027-same-a",
+      schoolId: "school-1",
+      grade: "高二",
+      status: "active",
+    });
+
+    await runWithState(state, async () => {
+      await expect(classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(2)班", name: "张三" },
+      ])).rejects.toThrow("同名学生或班级变化");
+
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(2)班", name: "张三" },
+      ], { matchStudentIds: { "0": null }, missingStudents: "keep" });
+      expect(result).toMatchObject({ createdStudents: 1, updatedStudents: 0 });
+      expect((state.students as Array<Record<string, unknown>>).filter((item) => item.name === "张三" && item.status === "active")).toHaveLength(2);
+    });
+  });
+
+  it("maps a renamed student explicitly and generates parent authorizations from imported contacts", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "class-2027-parent",
+      type: "school",
+      schoolId: "school-1",
+      gradeId: "grade-2027",
+      name: "高二(1)班",
+      grade: "高二",
+      studentCount: 1,
+      status: "active",
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    });
+    (state.students as Array<Record<string, unknown>>).push({
+      id: "student-renamed",
+      name: "旧姓名",
+      studentNo: "301",
+      classId: "class-2027-parent",
+      schoolId: "school-1",
+      grade: "高二",
+      status: "active",
+    });
+
+    await runWithState(state, async () => {
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [{
+        className: "高二(1)班",
+        name: "新姓名",
+        studentNo: "302",
+        guardian1Name: "家长甲",
+        guardian1Phone: "13800138000",
+        guardian2Name: "家长乙",
+        guardian2Phone: "13900139000",
+      }], { matchStudentIds: { "0": "student-renamed" }, missingStudents: "keep" });
+
+      expect(result).toMatchObject({ createdStudents: 0, updatedStudents: 1 });
+      expect(getStudent(state, "student-renamed")).toMatchObject({
+        name: "新姓名",
+        studentNo: "302",
+        contacts: {
+          guardian1Name: "家长甲",
+          guardian1Phone: "13800138000",
+          guardian2Name: "家长乙",
+          guardian2Phone: "13900139000",
+        },
+      });
+      expect(state.parentAuthorizations).toEqual(expect.arrayContaining([
+        expect.objectContaining({ studentId: "student-renamed", phone: "13800138000", guardianName: "家长甲" }),
+        expect.objectContaining({ studentId: "student-renamed", phone: "13900139000", guardianName: "家长乙" }),
+      ]));
     });
   });
 

@@ -514,7 +514,7 @@ describe("grade service", () => {
 
       const unpublishedQuery = await gradeService.getQueryData(teacher);
       expect(unpublishedQuery.exams).toEqual([]);
-      const published = await gradeService.publishExamResults(exam.id, teacher);
+      const published = await gradeService.publishExamResults(exam.id, undefined, teacher);
       expect(published.publication?.shareToken).toBeTruthy();
 
       const teacherQuery = await gradeService.getQueryData(teacher);

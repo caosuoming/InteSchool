@@ -356,7 +356,13 @@ export type StudentArchiveStatus =
 
 export interface StudentContactInfo {
   studentPhone?: string;
+  guardian1Name?: string;
+  guardian1Phone?: string;
+  guardian2Name?: string;
+  guardian2Phone?: string;
+  /** @deprecated 兼容旧版单监护人字段。 */
   guardianName?: string;
+  /** @deprecated 兼容旧版单监护人字段。 */
   guardianPhone?: string;
   emergencyContact?: string;
   emergencyPhone?: string;
@@ -444,10 +450,19 @@ export interface StudentRosterImportRow {
   subjectSelection?: string;
   isExternal?: boolean;
   gender?: "male" | "female";
+  guardian1Name?: string;
+  guardian1Phone?: string;
+  guardian2Name?: string;
+  guardian2Phone?: string;
 }
 
 export interface StudentRosterImportOptions {
   missingStudents?: "keep" | "delete";
+  /**
+   * 需要人工确认的导入行到原学生的显式对应关系。key 为导入数据的 0-based 行号；
+   * value 为原学生 id，null 表示明确新增为同名/改名后的另一名学生。
+   */
+  matchStudentIds?: Record<string, string | null>;
 }
 
 export interface StudentRosterImportResult {
@@ -815,6 +830,8 @@ export interface GradeExamPublication {
   publishedAt: string;
   publishedByTeacherId: string;
   publishedByName: string;
+  /** 是否同步向已授权家长账号开放学生个人成绩。 */
+  publishToParents?: boolean;
 }
 
 export interface GradeExam {

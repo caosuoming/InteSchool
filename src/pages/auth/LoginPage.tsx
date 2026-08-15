@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { ArrowLeft, BookOpen, GraduationCap, Lock, Mail, School, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 import { authService } from "@/services/auth";
+import { parentService } from "@/services/parent";
 import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
 import { TEACHER_ROLES } from "@/lib/teacher-roles";
 import { useAuthStore } from "@/stores/auth";
@@ -44,6 +45,10 @@ export default function LoginPage({
   const [phoneError, setPhoneError] = useState("");
   const [showRecoveryHelp, setShowRecoveryHelp] = useState(false);
   const [registrationPending, setRegistrationPending] = useState(false);
+  const [identityOptions, setIdentityOptions] = useState<{ teacher: boolean; parent: boolean } | null>(null);
+  const [loginIdentity, setLoginIdentity] = useState<"teacher" | "parent" | null>(null);
+  const [parentLoggingIn, setParentLoggingIn] = useState(false);
+  const [parentLoginError, setParentLoginError] = useState("");
   const collectiveEntry = destination === "/prep?entry=collective";
 
   useEffect(() => {
@@ -67,10 +72,53 @@ export default function LoginPage({
     }
   };
 
+  const checkLoginIdentity = async (): Promise<{ teacher: boolean; parent: boolean } | null> => {
+    const normalized = identifier.trim().replace(/[\s()-]/g, "").replace(/^\+86/, "");
+    if (!/^1[3-9]\d{9}$/.test(normalized)) {
+      setIdentityOptions(null);
+      setLoginIdentity("teacher");
+      return null;
+    }
+    try {
+      const result = await authService.getIdentityContext(normalized);
+      const options = { teacher: result.teacher, parent: result.parent };
+      setIdentityOptions(options);
+      if (options.teacher && options.parent) {
+        setLoginIdentity((current) => current && options[current] ? current : null);
+      } else {
+        setLoginIdentity(options.parent ? "parent" : "teacher");
+      }
+      return options;
+    } catch {
+      setIdentityOptions(null);
+      setLoginIdentity("teacher");
+      return null;
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     clearError();
+    setParentLoginError("");
     if (mode === "login") {
+      if (collectiveEntry) {
+        await login(identifier, password);
+        return;
+      }
+      const options = identityOptions || await checkLoginIdentity();
+      if (options?.teacher && options.parent && !loginIdentity) return;
+      if (loginIdentity === "parent" || (options?.parent && !options.teacher)) {
+        setParentLoggingIn(true);
+        try {
+          await parentService.login(identifier, password);
+          navigate("/parent", { replace: true });
+        } catch (cause) {
+          setParentLoginError(cause instanceof Error ? cause.message : "家长登录失败");
+        } finally {
+          setParentLoggingIn(false);
+        }
+        return;
+      }
       await login(identifier, password);
       return;
     }
@@ -244,7 +292,13 @@ export default function LoginPage({
                   label="邮箱或手机号"
                   type="text"
                   value={identifier}
-                  onChange={(event) => setIdentifier(event.target.value)}
+                  onChange={(event) => {
+                    setIdentifier(event.target.value);
+                    setIdentityOptions(null);
+                    setLoginIdentity(null);
+                    setParentLoginError("");
+                  }}
+                  onBlur={() => { if (!collectiveEntry) void checkLoginIdentity(); }}
                   required
                   autoComplete="username"
                   hint="手机号可直接登录；绑定邮箱用于忘记密码时的身份验证"
@@ -265,9 +319,18 @@ export default function LoginPage({
                 />
               </div>
             )}
+            {mode === "login" && !collectiveEntry && identityOptions?.teacher && identityOptions.parent && (
+              <fieldset className="rounded-lg border border-gold-200 bg-gold-50/50 p-3">
+                <legend className="px-1 text-sm font-medium text-ink-700">选择登录身份</legend>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Button type="button" variant={loginIdentity === "teacher" ? "ink" : "outline"} onClick={() => setLoginIdentity("teacher")}>教师身份</Button>
+                  <Button type="button" variant={loginIdentity === "parent" ? "ink" : "outline"} onClick={() => setLoginIdentity("parent")}>家长身份</Button>
+                </div>
+              </fieldset>
+            )}
             <div className="relative"><Lock className="absolute left-3 top-9 w-4 h-4 text-ink-400" /><Input label="密码" type="password" minLength={mode === "register" ? 10 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} required className="pl-10" /></div>
-            {error && <div className="px-3 py-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700">{error}</div>}
-            <Button type="submit" variant="gold" size="lg" loading={loading} className="w-full" disabled={mode === "register" && !context}>
+            {(error || parentLoginError) && <div className="px-3 py-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700">{parentLoginError || error}</div>}
+            <Button type="submit" variant="gold" size="lg" loading={loading || parentLoggingIn} className="w-full" disabled={mode === "register" && !context}>
               {mode === "register"
                 ? createSchool ? "注册并进入学校" : "提交注册申请"
                 : collectiveEntry ? "登录并进入集体研讨" : "登录"}
@@ -308,9 +371,17 @@ export default function LoginPage({
           )}
 
           {!loginOnly && (
-            <div className="mt-6 text-center text-sm text-ink-500">
-              {mode === "login" ? "还没有账号？" : "已有账号？"}
-              <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); clearError(); }} className="ml-1 text-gold-600 font-medium">{mode === "login" ? "立即注册" : "返回登录"}</button>
+            <div className="mt-6 space-y-2 text-center text-sm text-ink-500">
+              <div>
+                {mode === "login" ? "还没有账号？" : "已有账号？"}
+                <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); clearError(); }} className="ml-1 text-gold-600 font-medium">{mode === "login" ? "立即注册" : "返回登录"}</button>
+              </div>
+              {mode === "login" && (
+                <div>
+                  学校已登记家长手机号？
+                  <button type="button" onClick={() => navigate("/parent-register")} className="ml-1 text-gold-600 font-medium">家长注册</button>
+                </div>
+              )}
             </div>
           )}
           <div className="mt-5 flex items-center justify-center gap-2 text-xs text-ink-400"><School className="w-3.5 h-3.5" /><Smartphone className="w-3.5 h-3.5" /><UserIcon className="w-3.5 h-3.5" /><GraduationCap className="w-3.5 h-3.5" />学校授权信息仅用于注册校验</div>

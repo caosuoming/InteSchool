@@ -8,6 +8,8 @@ import {
 import Database from "better-sqlite3";
 import type {
   AppState,
+  ParentAccountRecord,
+  ParentSessionUser,
   RegistrationAuthorizationRecord,
   SessionUser,
   StoredFile,
@@ -29,7 +31,7 @@ export const COLLECTIONS = [
   "studentInteractions", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
   "gradeExams", "gradePublications", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements",
-  "notifications",
+  "notifications", "parentAuthorizations", "parentAccounts",
 ] as const;
 
 type CollectionName = (typeof COLLECTIONS)[number];
@@ -44,6 +46,18 @@ interface UserRow {
 }
 
 interface SessionRow extends UserRow {
+  csrf_token: string;
+  expires_at: string;
+}
+
+interface ParentUserRow {
+  id: string;
+  parent_id: string;
+  phone: string;
+  password_hash: string;
+}
+
+interface ParentSessionRow extends ParentUserRow {
   csrf_token: string;
   expires_at: string;
 }
@@ -145,6 +159,26 @@ export class DatabaseStore {
         last_seen_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
+      CREATE TABLE IF NOT EXISTS parent_users (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT NOT NULL UNIQUE,
+        phone TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS parent_sessions (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        csrf_token TEXT NOT NULL,
+        parent_user_id TEXT NOT NULL REFERENCES parent_users(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_parent_sessions_expiry ON parent_sessions(expires_at);
 
       CREATE TABLE IF NOT EXISTS files (
         id TEXT PRIMARY KEY,
@@ -990,6 +1024,101 @@ export class DatabaseStore {
     `).run(new Date().toISOString(), input.id);
   }
 
+  getParentUserByPhone(phone: string): ParentUserRow | null {
+    const normalized = normalizePhone(phone);
+    return (this.sqlite.prepare("SELECT * FROM parent_users WHERE phone = ?").get(normalized) as ParentUserRow | undefined) || null;
+  }
+
+  getParentById(id: string): ParentAccountRecord | null {
+    const row = this.sqlite.prepare(
+      "SELECT data_json FROM app_records WHERE collection = 'parentAccounts' AND id = ?",
+    ).get(id) as { data_json: string } | undefined;
+    return row ? JSON.parse(row.data_json) as ParentAccountRecord : null;
+  }
+
+  createParentAccount(input: { name: string; phone: string; password: string }): { user: ParentUserRow; parent: ParentAccountRecord } {
+    const phone = normalizePhone(input.phone);
+    if (this.getParentUserByPhone(phone)) throw new DuplicateAccountError("该手机号已注册家长账号");
+    const now = new Date().toISOString();
+    const parent: ParentAccountRecord = {
+      id: randomUUID(),
+      name: input.name.trim(),
+      phone,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const user: ParentUserRow = {
+      id: randomUUID(),
+      parent_id: parent.id,
+      phone,
+      password_hash: hashPassword(input.password),
+    };
+
+    this.sqlite.transaction(() => {
+      this.sqlite.prepare(`
+        INSERT INTO app_records(collection, id, school_id, owner_id, data_json, created_at, updated_at)
+        VALUES ('parentAccounts', ?, NULL, ?, ?, ?, ?)
+      `).run(parent.id, parent.id, JSON.stringify(parent), now, now);
+      this.sqlite.prepare(`
+        INSERT INTO parent_users(id, parent_id, phone, password_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(user.id, user.parent_id, user.phone, user.password_hash, now, now);
+    })();
+    return { user, parent };
+  }
+
+  authenticateParent(phone: string, password: string): ParentUserRow | null {
+    const user = this.getParentUserByPhone(phone);
+    if (!user || !verifyPassword(password, user.password_hash)) return null;
+    return user;
+  }
+
+  createParentSession(user: ParentUserRow): { token: string; session: ParentSessionUser } {
+    const token = randomBytes(32).toString("base64url");
+    const csrfToken = randomBytes(24).toString("base64url");
+    const now = new Date();
+    const expires = new Date(now.getTime() + this.config.sessionDays * 86400000);
+    const sessionId = randomUUID();
+    this.sqlite.prepare(`
+      INSERT INTO parent_sessions(id, token_hash, csrf_token, parent_user_id, expires_at, created_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(sessionId, hashToken(token), csrfToken, user.id, expires.toISOString(), now.toISOString(), now.toISOString());
+    return {
+      token,
+      session: {
+        userId: user.id,
+        parentId: user.parent_id,
+        phone: user.phone,
+        csrfToken,
+        expiresAt: expires.toISOString(),
+      },
+    };
+  }
+
+  getParentSession(token: string | undefined): ParentSessionUser | null {
+    if (!token) return null;
+    const now = new Date().toISOString();
+    const row = this.sqlite.prepare(`
+      SELECT parent_users.id, parent_users.parent_id, parent_users.phone, parent_users.password_hash,
+             parent_sessions.csrf_token, parent_sessions.expires_at
+      FROM parent_sessions JOIN parent_users ON parent_users.id = parent_sessions.parent_user_id
+      WHERE parent_sessions.token_hash = ? AND parent_sessions.expires_at > ?
+    `).get(hashToken(token), now) as ParentSessionRow | undefined;
+    if (!row) return null;
+    this.sqlite.prepare("UPDATE parent_sessions SET last_seen_at = ? WHERE token_hash = ?").run(now, hashToken(token));
+    return {
+      userId: row.id,
+      parentId: row.parent_id,
+      phone: row.phone,
+      csrfToken: row.csrf_token,
+      expiresAt: row.expires_at,
+    };
+  }
+
+  deleteParentSession(token: string | undefined): void {
+    if (token) this.sqlite.prepare("DELETE FROM parent_sessions WHERE token_hash = ?").run(hashToken(token));
+  }
+
   changePassword(userId: string, currentPassword: string, newPassword: string): void {
     const user = this.sqlite.prepare("SELECT * FROM users WHERE id = ?").get(userId) as UserRow | undefined;
     if (!user || !verifyPassword(currentPassword, user.password_hash)) {
@@ -1060,6 +1189,7 @@ export class DatabaseStore {
 
   cleanupSessions(): void {
     this.sqlite.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(new Date().toISOString());
+    this.sqlite.prepare("DELETE FROM parent_sessions WHERE expires_at <= ?").run(new Date().toISOString());
   }
 
   insertTeacher(teacher: TeacherRecord): void {

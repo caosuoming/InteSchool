@@ -8,7 +8,7 @@ describe("student roster spreadsheet", () => {
   it("parses the downloadable template columns", () => {
     expect(parseStudentRosterTable([
       [...STUDENT_ROSTER_TEMPLATE_HEADERS],
-      [1, "张三", 20270001, "物化生", "否", "男"],
+      [1, "张三", 20270001, "物化生", "否", "男", "张父", "13800138000", "张母", "13900139000"],
       [17, "李四", "", "史政地", "是", "女"],
       [null, null, null, null, null, null],
     ])).toEqual([
@@ -19,6 +19,10 @@ describe("student roster spreadsheet", () => {
         subjectSelection: "物化生",
         isExternal: false,
         gender: "male",
+        guardian1Name: "张父",
+        guardian1Phone: "13800138000",
+        guardian2Name: "张母",
+        guardian2Phone: "13900139000",
       },
       {
         className: "17班",
@@ -27,6 +31,10 @@ describe("student roster spreadsheet", () => {
         subjectSelection: "史政地",
         isExternal: true,
         gender: "female",
+        guardian1Name: undefined,
+        guardian1Phone: undefined,
+        guardian2Name: undefined,
+        guardian2Phone: undefined,
       },
     ]);
   });
@@ -43,6 +51,10 @@ describe("student roster spreadsheet", () => {
         subjectSelection: undefined,
         isExternal: false,
         gender: undefined,
+        guardian1Name: undefined,
+        guardian1Phone: undefined,
+        guardian2Name: undefined,
+        guardian2Phone: undefined,
       },
     ]);
 
@@ -63,6 +75,24 @@ describe("student roster spreadsheet", () => {
       subjectSelection: "物化地",
       isExternal: false,
       gender: undefined,
+      guardian1Name: undefined,
+      guardian1Phone: undefined,
+      guardian2Name: undefined,
+      guardian2Phone: undefined,
     }]);
+  });
+
+  it("accepts guardian header aliases", () => {
+    expect(parseStudentRosterTable([
+      ["班级", "姓名", "监护人一姓名", "家长1手机号", "家长二姓名", "监护人2电话"],
+      ["2", "周七", "周父", "13800138000", "周母", "13900139000"],
+    ])[0]).toMatchObject({
+      className: "2班",
+      name: "周七",
+      guardian1Name: "周父",
+      guardian1Phone: "13800138000",
+      guardian2Name: "周母",
+      guardian2Phone: "13900139000",
+    });
   });
 });

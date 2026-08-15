@@ -131,6 +131,7 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
   const [studentSearch, setStudentSearch] = useState("");
   const [savingScore, setSavingScore] = useState<string | null>(null);
   const [publicationSaving, setPublicationSaving] = useState(false);
+  const [publishToParents, setPublishToParents] = useState(Boolean(exam.publication?.publishToParents));
   const published = Boolean(exam.publication);
   const shareUrl = exam.publication
     ? `${window.location.origin}/grade-reports/${exam.publication.shareToken}`
@@ -139,7 +140,8 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
   useEffect(() => {
     setExamName(exam.name);
     setExamDate(exam.examDate || "");
-  }, [exam.id, exam.name, exam.examDate]);
+    setPublishToParents(Boolean(exam.publication?.publishToParents));
+  }, [exam.id, exam.name, exam.examDate, exam.publication?.publishToParents]);
 
   useEffect(() => {
     if (!exam.records.some((record) => record.studentId === selectedStudentId)) {
@@ -196,9 +198,14 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
   const publishResults = async () => {
     setPublicationSaving(true);
     try {
-      const updated = await gradeService.publishExamResults(exam.id);
+      const updated = publishToParents
+        ? await gradeService.publishExamResults(exam.id, { publishToParents: true })
+        : await gradeService.publishExamResults(exam.id);
       onExamUpdated(updated);
-      toast.success("成绩已发布", "任课教师和班主任可按权限查看，分享链接已生成");
+      toast.success(
+        "成绩已发布",
+        publishToParents ? "已同步开放给已授权家长账号" : "任课教师和班主任可按权限查看，分享链接已生成",
+      );
     } catch (error) {
       toast.error("发布成绩失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -295,6 +302,19 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
             {published ? "撤回发布" : "发布"}
           </Button>
         </div>
+        {!published && (
+          <label className="mt-3 inline-flex items-center gap-2 text-sm text-ink-700">
+            <input
+              type="checkbox"
+              checked={publishToParents}
+              onChange={(event) => setPublishToParents(event.target.checked)}
+            />
+            同步发布给家长
+          </label>
+        )}
+        {published && exam.publication?.publishToParents && (
+          <div className="mt-2 text-xs text-emerald-700">本次成绩已同步开放给家长账号。</div>
+        )}
         {published && (
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <Input aria-label="成绩分享链接" value={shareUrl} readOnly className="font-mono text-xs" />
