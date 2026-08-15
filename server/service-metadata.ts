@@ -1158,6 +1158,21 @@ export const serviceParameters = {
       "questionId"
     ]
   },
+  "quota": {
+    "getQuota": [
+      "targetTeacherId",
+      "teacher"
+    ],
+    "updateQuota": [
+      "targetTeacherId",
+      "patch",
+      "teacher"
+    ],
+    "consumeExamUsage": [
+      "teacherId",
+      "feature"
+    ]
+  },
   "reflection": {
     "listByTarget": [
       "targetId"

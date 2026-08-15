@@ -35,6 +35,7 @@ import {
 } from "../../src/lib/grade-published-report.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { consumeExamUsageInternal } from "./quota.js";
 
 function readList<T>(key: string): T[] {
   const value = db.read(key);
@@ -1016,6 +1017,7 @@ export const gradeService = {
     if (!report.classAverage && !report.totalScoreSegment && !report.subjectScoreSegment && !report.electiveScoreSegment) {
       throw new Error("当前年级尚未配置可发布的成绩统计表");
     }
+    consumeExamUsageInternal(teacher.id, "gradeStatistics");
     const publication = {
       shareToken,
       publishedAt,

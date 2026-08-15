@@ -16,12 +16,14 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { gradeService } from "@/services/grade";
+import { quotaService } from "@/services/quota";
 import type {
   GradeCohort,
   GradeCohortSettings,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
+  UserQuotaSnapshot,
 } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -51,14 +53,20 @@ export type MyExamsSection = "rooms" | "invigilation" | "grades";
 
 const DEFAULT_COHORT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 
-function ExamSectionTabs({ section }: { section: MyExamsSection }) {
+function ExamSectionTabs({
+  section,
+  quota,
+}: {
+  section: MyExamsSection;
+  quota: UserQuotaSnapshot | null;
+}) {
   return (
     <div className="mb-5 flex gap-1 rounded-xl border border-ink-100 bg-paper p-1.5 shadow-sm">
       {([
-        ["rooms", "/my-exams/rooms", "考场布置", MapPinned],
-        ["invigilation", "/my-exams/invigilation", "监考表", ClipboardCheck],
-        ["grades", "/my-exams/grades", "成绩统计", FileSpreadsheet],
-      ] as const).map(([value, path, label, Icon]) => (
+        ["rooms", "/my-exams/rooms", "考场布置", MapPinned, "examRoom"],
+        ["invigilation", "/my-exams/invigilation", "监考表", ClipboardCheck, "invigilation"],
+        ["grades", "/my-exams/grades", "成绩统计", FileSpreadsheet, "gradeStatistics"],
+      ] as const).map(([value, path, label, Icon, usageKey]) => (
         <Link
           key={value}
           to={path}
@@ -71,6 +79,12 @@ function ExamSectionTabs({ section }: { section: MyExamsSection }) {
         >
           <Icon className="h-4 w-4" />
           {label}
+          <span className={cn(
+            "rounded px-1.5 py-0.5 text-[10px]",
+            section === value ? "bg-white/15 text-paper" : "bg-ink-100 text-ink-500",
+          )}>
+            剩余 {quota?.exam[usageKey].remaining ?? "—"} 次
+          </span>
         </Link>
       ))}
     </div>
@@ -579,6 +593,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
   const [searchParams, setSearchParams] = useSearchParams();
   const [cohorts, setCohorts] = useState<GradeCohort[]>([]);
   const [loading, setLoading] = useState(true);
+  const [quota, setQuota] = useState<UserQuotaSnapshot | null>(null);
   const cohortKey = searchParams.get("cohort") || "";
 
   useEffect(() => {
@@ -609,6 +624,25 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
     };
   }, [schoolId, searchParams, setSearchParams]);
 
+  useEffect(() => {
+    if (!teacher) {
+      setQuota(null);
+      return;
+    }
+    let active = true;
+    const loadQuota = () => {
+      void quotaService.getQuota(teacher.id)
+        .then((snapshot) => { if (active) setQuota(snapshot); })
+        .catch(() => { if (active) setQuota(null); });
+    };
+    loadQuota();
+    window.addEventListener("inteschool:quota-updated", loadQuota);
+    return () => {
+      active = false;
+      window.removeEventListener("inteschool:quota-updated", loadQuota);
+    };
+  }, [teacher]);
+
   const changeCohort = (value: string) => {
     setSearchParams(value ? { cohort: value } : {}, { replace: true });
   };
@@ -620,7 +654,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
         description="统一管理考场布置、监考表和按年级复用的成绩统计配置"
         icon={<ClipboardList className="h-5 w-5" />}
       />
-      <ExamSectionTabs section={section} />
+      <ExamSectionTabs section={section} quota={quota} />
 
       {!schoolId || !teacher ? (
         <Card><EmptyState title="请切换到学校身份" description="我的考试仅对已认证学校的管理身份开放。" /></Card>

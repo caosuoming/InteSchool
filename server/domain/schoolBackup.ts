@@ -11,6 +11,7 @@ import type {
 } from "../../src/types/index.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { appendCopySuffix, delay, genId, maybeThrowError } from "../domain-shared.js";
+import { assertResourceCapacity } from "./quota.js";
 import {
   getSchoolResourceChapterTree,
   getSchoolResourceKnowledgeTree,
@@ -585,6 +586,7 @@ export const schoolBackupService = {
         deduplicated: true,
       };
     }
+    assertResourceCapacity(teacherId, backup.resourceType);
     const directory = syncPersonalResourceDirectories(
       schoolId,
       backup.chapterIds || [],

@@ -18,6 +18,7 @@ import { classService } from "@/services/class";
 import { analyticsService, type DateRange } from "@/services/analytics";
 import { prepService } from "@/services/prep";
 import { lectureService } from "@/services/lecture";
+import { quotaService } from "@/services/quota";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { toast } from "@/stores/ui";
 import { Card } from "@/components/ui/Card";
@@ -44,7 +45,7 @@ import { useTagPrefsStore } from "@/stores/tagPrefs";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { useQuestionMetadataOptions } from "@/hooks/useQuestionMetadataOptions";
-import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester, QuestionSearchField } from "@/types";
+import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester, QuestionSearchField, UserQuotaSnapshot } from "@/types";
 import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { inferScore } from "@/services/analytics";
@@ -149,6 +150,7 @@ export default function QuestionBankPage({
   const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
 
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [quota, setQuota] = useState<UserQuotaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
   const [searchFields, setSearchFields] = useState<QuestionSearchField[]>([]);
@@ -281,25 +283,29 @@ export default function QuestionBankPage({
       excludeIds = Array.from(await analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange));
     }
 
-    const data = await questionService.listQuestions({
-      schoolId: teacher.schoolId!,
-      keyword,
-      searchFields,
-      chapterIds: checkedChapters,
-      chapterLogic,
-      knowledgePointIds: checkedKnowledge,
-      knowledgeLogic,
-      noChapter,
-      noKnowledge,
-      difficulty: selectedDifficulties,
-      type: selectedTypes as any,
-      grade: selectedGrade || undefined,
-      schoolYear: selectedYear || undefined,
-      semester: (selectedSemester || undefined) as ResourceSemester | undefined,
-      sourceType: selectedSources,
-      category: selectedCategories,
-      excludeQuestionIds: excludeIds,
-    });
+    const [data, quotaSnapshot] = await Promise.all([
+      questionService.listQuestions({
+        schoolId: teacher.schoolId!,
+        keyword,
+        searchFields,
+        chapterIds: checkedChapters,
+        chapterLogic,
+        knowledgePointIds: checkedKnowledge,
+        knowledgeLogic,
+        noChapter,
+        noKnowledge,
+        difficulty: selectedDifficulties,
+        type: selectedTypes as any,
+        grade: selectedGrade || undefined,
+        schoolYear: selectedYear || undefined,
+        semester: (selectedSemester || undefined) as ResourceSemester | undefined,
+        sourceType: selectedSources,
+        category: selectedCategories,
+        excludeQuestionIds: excludeIds,
+      }),
+      quotaService.getQuota(teacher.id).catch(() => null),
+    ]);
+    if (quotaSnapshot) setQuota(quotaSnapshot);
 
     const sorted = [...data];
     if (mode === "use" && selectedStudentIds.length > 0 && sortKey === "weakness") {
@@ -1042,6 +1048,14 @@ export default function QuestionBankPage({
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-ink-600">
               共 <span className="font-mono font-semibold text-ink-900">{totalQuestions}</span> 道题目
+              {quota && (
+                <span className="ml-2 text-xs text-ink-500">
+                  · 我的题库容量 {quota.resources.question.used}/{quota.resources.question.capacity}
+                  {quota.resources.question.donationBonus > 0
+                    ? `（有效捐赠扩容 +${quota.resources.question.donationBonus}）`
+                    : ""}
+                </span>
+              )}
               <span className="ml-2 text-xs text-ink-400">
                 {mode === "manage" ? "· 管理模式：点击编辑按钮可精细编辑题目" : "· 使用模式：可加入试题篮"}
               </span>

@@ -27,6 +27,7 @@ import {
 } from "../../src/lib/teacher-schedule.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { assertResourceCapacity } from "./quota.js";
 
 function matchFilter(c: LessonCourseware, filter: LessonCoursewareFilter): boolean {
   const lifecycleStatus = c.lifecycleStatus || "active";
@@ -597,6 +598,7 @@ function saveGeneratedCoursewareToLibrary(
   sourceId: string,
   sourceTitle: string,
 ): void {
+  assertResourceCapacity(lesson.teacherId, "courseware");
   const now = lesson.createdAt;
   const courseware: Courseware = {
     id: libraryCoursewareId,

@@ -28,6 +28,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/stores/ui";
+import { useAuthStore } from "@/stores/auth";
+import { quotaService } from "@/services/quota";
 import { cn } from "@/lib/utils";
 import { isAssignableGradeSubject } from "@/lib/grade-subjects";
 
@@ -149,6 +151,9 @@ export function GradeClassAverageTable({
   const exportReport = async () => {
     setExporting(true);
     try {
+      const teacherId = useAuthStore.getState().teacher?.id;
+      if (!teacherId) throw new Error("请先登录");
+      await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
       await exportGradeClassAverageReport(report);
       toast.success("班级平均分表已导出");
     } catch (error) {

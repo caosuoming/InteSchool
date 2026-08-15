@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/stores/ui";
+import { useAuthStore } from "@/stores/auth";
+import { quotaService } from "@/services/quota";
 
 interface GradeElectiveScoreSegmentTableProps {
   exam: GradeExam;
@@ -105,6 +107,9 @@ export function GradeElectiveScoreSegmentTable({
   const exportReport = async () => {
     setExporting(true);
     try {
+      const teacherId = useAuthStore.getState().teacher?.id;
+      if (!teacherId) throw new Error("请先登录");
+      await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
       await exportGradeElectiveScoreSegmentReport(report);
       toast.success("选修分数段已导出");
     } catch (error) {

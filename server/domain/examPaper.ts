@@ -10,6 +10,7 @@ import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { sanitizeExamPaperPatch } from "./document-resource-lock.js";
+import { assertResourceCapacity } from "./quota.js";
 
 function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
   if (filter.keyword) {
@@ -86,6 +87,7 @@ export const examPaperService = {
   ): Promise<ExamPaper> {
     await delay(400);
     maybeThrowError();
+    assertResourceCapacity(teacherId, "examPaper");
     const now = new Date().toISOString();
     const paper: ExamPaper = {
       id: genId("exam"),
@@ -157,6 +159,7 @@ export const examPaperService = {
     maybeThrowError();
     const source = db.read("examPapers").find((p) => p.id === sourceId);
     if (!source) throw new Error("原试卷不存在");
+    assertResourceCapacity(source.teacherId, "examPaper");
     const now = new Date().toISOString();
     // 复制题目项，生成新id（保留 questionId 关联到题库的引用）
     const copiedQuestions: ExamPaperQuestion[] = source.questions.map((q) => ({
@@ -252,6 +255,7 @@ export const examPaperService = {
     maybeThrowError();
     const source = db.read("examPapers").find((p) => p.id === sourceId);
     if (!source) throw new Error("源试卷不存在");
+    assertResourceCapacity(source.teacherId, "examPaper");
     const now = new Date().toISOString();
     const normalizedBlocks = contentBlocks.map((block) => ({
       ...block,
@@ -329,6 +333,7 @@ export const examPaperService = {
     maybeThrowError();
     const paper = db.read("examPapers").find((p) => p.id === paperId);
     if (!paper) throw new Error("试卷不存在");
+    assertResourceCapacity(paper.teacherId, "lecture");
 
     const now = new Date().toISOString();
 

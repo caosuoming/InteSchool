@@ -470,6 +470,9 @@ function authorize(
   if (service === "examArrangement" && !canManageExams(teacher)) {
     throw new Error("该操作需要年级组长或学校管理员权限");
   }
+  if (service === "quota" && method === "consumeExamUsage" && !canManageExams(teacher)) {
+    throw new Error("该操作需要年级组长或学校管理员权限");
+  }
   if (
     service === "class"
     && SCHOOL_ROSTER_MUTATIONS.has(method)

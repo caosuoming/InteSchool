@@ -46,6 +46,37 @@ export interface TeacherAffiliation {
   joinedAt: string;
 }
 
+export type ResourceQuotaKey = "question" | "examPaper" | "lecture" | "courseware" | "material";
+export type ExamUsageQuotaKey = "examRoom" | "invigilation" | "gradeStatistics";
+
+export interface UserQuotaOverrides {
+  /** 资源库基础容量；有效捐赠带来的扩容在此基础上动态叠加。 */
+  resourceBaseCapacities?: Partial<Record<ResourceQuotaKey, number>>;
+  /** “我的考试”各功能剩余可使用次数。 */
+  examRemainingUses?: Partial<Record<ExamUsageQuotaKey, number>>;
+}
+
+export interface ResourceQuotaStatus {
+  key: ResourceQuotaKey;
+  used: number;
+  baseCapacity: number;
+  effectiveDonations: number;
+  donationBonus: number;
+  capacity: number;
+  remaining: number;
+}
+
+export interface ExamUsageQuotaStatus {
+  key: ExamUsageQuotaKey;
+  remaining: number;
+}
+
+export interface UserQuotaSnapshot {
+  teacherId: string;
+  resources: Record<ResourceQuotaKey, ResourceQuotaStatus>;
+  exam: Record<ExamUsageQuotaKey, ExamUsageQuotaStatus>;
+}
+
 export type RegistrationAuthorizationKind = "admin" | "guarantee";
 
 export interface RegistrationAuthorization {
@@ -107,6 +138,8 @@ export interface Teacher {
   lessonSchedule?: TeacherLessonSchedule;
   /** 可管理的平台资源学科；仅平台超级管理员可以授予或撤销。 */
   platformModeratorSubjects?: string[];
+  /** 平台超级管理员针对该用户设置的容量/次数覆盖值。 */
+  quotaOverrides?: UserQuotaOverrides;
   createdAt: string;
 }
 
@@ -1472,6 +1505,8 @@ export interface ShareRecord {
   platformOrder?: number;
   /** 合并贡献指向的主捐赠记录；该记录只计贡献，不重复展示资源 */
   mergedIntoDonationId?: string;
+  /** 已将该平台资源创建为个人副本的不同用户，用于判定有效捐赠。 */
+  downloadedByTeacherIds?: string[];
   /** 专辑捐赠时保存专辑名称、来源资源库等信息。 */
   donationAlbum?: DonationAlbumSnapshot;
   /** 分享附言 */

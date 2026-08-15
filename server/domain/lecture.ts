@@ -14,6 +14,7 @@ import { reflectionService } from "./reflection.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
 import { sanitizeLecturePatch } from "./document-resource-lock.js";
+import { assertResourceCapacity } from "./quota.js";
 
 function collectQuestionIds(sections: LectureSection[]): string[] {
   const ids: string[] = [];
@@ -198,6 +199,7 @@ export const lectureService = {
   ): Promise<Lecture> {
     await delay(400);
     maybeThrowError();
+    assertResourceCapacity(teacherId, "lecture");
     const now = new Date().toISOString();
     const lecture: Lecture = {
       id: genId("lec"),
@@ -268,6 +270,7 @@ export const lectureService = {
     maybeThrowError();
     const source = db.read("lectures").find((l) => l.id === sourceId);
     if (!source) throw new Error("原讲义不存在");
+    assertResourceCapacity(source.teacherId, "lecture");
     const now = new Date().toISOString();
     const copiedSections = copyLectureSections(source.sections);
     const editableSections = source.isExtractCopy || source.originalFileUrl
@@ -430,6 +433,7 @@ export const lectureService = {
     maybeThrowError();
     const source = db.read("lectures").find((l) => l.id === sourceId);
     if (!source) throw new Error("源讲义不存在");
+    assertResourceCapacity(source.teacherId, "lecture");
     const now = new Date().toISOString();
     const normalizedBlocks = contentBlocks.map((block) => ({
       ...block,
@@ -531,6 +535,7 @@ export const lectureService = {
     maybeThrowError();
     const lecture = db.read("lectures").find((l) => l.id === lectureId);
     if (!lecture) throw new Error("讲义不存在");
+    assertResourceCapacity(lecture.teacherId, "examPaper");
 
     const now = new Date().toISOString();
 

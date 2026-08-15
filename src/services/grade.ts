@@ -115,7 +115,13 @@ export const gradeService = {
     examId: string,
     options?: { publishToParents?: boolean },
   ): Promise<GradeExam> {
-    return rpcCall("grade", "publishExamResults", options ? [examId, options] : [examId]) as Promise<GradeExam>;
+    const result = await rpcCall(
+      "grade",
+      "publishExamResults",
+      options ? [examId, options] : [examId],
+    ) as GradeExam;
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("inteschool:quota-updated"));
+    return result;
   },
 
   async unpublishExamResults(examId: string): Promise<GradeExam> {

@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { examArrangementService } from "@/services/examArrangement";
+import { quotaService } from "@/services/quota";
 import type {
   ExamArrangement,
   ExamArrangementContext,
@@ -1194,8 +1195,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   };
 
   const downloadSelectedClasses = async () => {
-    if (!selectedArrangement) return;
+    if (!selectedArrangement || !teacher) return;
     try {
+      await quotaService.consumeExamUsage(teacher.id, "examRoom");
       await downloadClassArrangements(
         selectedArrangement,
         classAssignmentGroups
@@ -1208,8 +1210,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   };
 
   const downloadSelectedLabels = async () => {
-    if (!selectedArrangement) return;
+    if (!selectedArrangement || !teacher) return;
     try {
+      await quotaService.consumeExamUsage(teacher.id, "examRoom");
       await downloadDeskLabels(selectedArrangement, selectedRoomIds, {
         showStudentNo: showDeskStudentNo,
         showAdmissionNo: showDeskAdmissionNo,
@@ -1220,8 +1223,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   };
 
   const downloadSelectedClassPdf = async () => {
-    if (!selectedArrangement || !classPrintRef.current) return;
+    if (!selectedArrangement || !classPrintRef.current || !teacher) return;
     try {
+      await quotaService.consumeExamUsage(teacher.id, "examRoom");
       const pages = [...classPrintRef.current.querySelectorAll<HTMLElement>(".exam-class-arrangement-page")];
       await downloadExamPreviewPdf(
         pages,
@@ -1234,8 +1238,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   };
 
   const downloadSelectedDeskPdf = async () => {
-    if (!selectedArrangement || !deskPrintRef.current) return;
+    if (!selectedArrangement || !deskPrintRef.current || !teacher) return;
     try {
+      await quotaService.consumeExamUsage(teacher.id, "examRoom");
       const pages = [...deskPrintRef.current.querySelectorAll<HTMLElement>(".exam-desk-label-page")];
       await downloadExamPreviewPdf(
         pages,
