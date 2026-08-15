@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
 import { settingsService } from "@/services/settings";
 import { analyticsService } from "@/services/analytics";
+import { knowledgeService } from "@/services/knowledge";
 import type { SchoolClass, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({
@@ -17,6 +18,12 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/settings", () => ({
   settingsService: {
     listClassTypes: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/knowledge", () => ({
+  knowledgeService: {
+    listChapters: vi.fn(),
   },
 }));
 
@@ -55,6 +62,9 @@ describe("StudentLearningPage", () => {
     vi.mocked(classService.listMyClasses).mockResolvedValue([schoolClass]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([]);
     vi.mocked(settingsService.listClassTypes).mockResolvedValue([]);
+    vi.mocked(knowledgeService.listChapters).mockResolvedValue([
+      { id: "chapter-1", schoolId: "school-1", parentId: null, name: "集合章节", order: 1, level: 0 },
+    ]);
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([
       {
         knowledgePointId: "point-1",
@@ -81,8 +91,12 @@ describe("StudentLearningPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "高一（1）班" }));
 
     await waitFor(() => {
-      expect(screen.getByText("集合的概念")).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /章节课训练与掌握情况/ })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByText("集合章节")).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByRole("tab", { name: /知识点训练与掌握情况/ }));
+    expect(await screen.findByText("集合的概念")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "显示知识点的父节点" }));
     expect(await screen.findByText("集合\\集合的概念")).toBeInTheDocument();
