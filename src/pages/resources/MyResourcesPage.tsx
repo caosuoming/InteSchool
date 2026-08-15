@@ -102,6 +102,40 @@ type LeftTab = "chapter" | "knowledge";
 type SortKey = "updated" | "created" | "title";
 type ResourceListItem = Question | ExamPaper | Lecture | Courseware | Material;
 
+type ResourceListUnit =
+  | { kind: "folder"; folder: ResourceFolder; items: ResourceListItem[] }
+  | { kind: "resource"; item: ResourceListItem };
+
+function resourceListTitle(item: ResourceListItem): string {
+  return "title" in item ? item.title : item.stem;
+}
+
+function compareResourceListUnits(left: ResourceListUnit, right: ResourceListUnit, sortKey: SortKey): number {
+  const leftPinned = left.kind === "folder" && left.folder.pinned;
+  const rightPinned = right.kind === "folder" && right.folder.pinned;
+  if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+
+  const leftTitle = left.kind === "folder" ? left.folder.name : resourceListTitle(left.item);
+  const rightTitle = right.kind === "folder" ? right.folder.name : resourceListTitle(right.item);
+  const leftCreatedAt = left.kind === "folder" ? left.folder.createdAt : left.item.createdAt;
+  const rightCreatedAt = right.kind === "folder" ? right.folder.createdAt : right.item.createdAt;
+  const leftUpdatedAt = left.kind === "folder" ? left.folder.updatedAt : left.item.updatedAt;
+  const rightUpdatedAt = right.kind === "folder" ? right.folder.updatedAt : right.item.updatedAt;
+
+  if (sortKey === "updated") {
+    const result = rightUpdatedAt.localeCompare(leftUpdatedAt);
+    if (result !== 0) return result;
+  } else if (sortKey === "created") {
+    const result = rightCreatedAt.localeCompare(leftCreatedAt);
+    if (result !== 0) return result;
+  } else {
+    const result = leftTitle.localeCompare(rightTitle, "zh-CN");
+    if (result !== 0) return result;
+  }
+
+  return leftTitle.localeCompare(rightTitle, "zh-CN");
+}
+
 function isResourceFolderType(value: MyResourceTab): value is ResourceFolderType {
   return value === "examPaper" || value === "lecture" || value === "courseware";
 }
@@ -1465,28 +1499,28 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
     const resourceMap = new Map(baseResourceListData.map((item) => [item.id, item]));
     const used = new Set<string>();
-    const grouped: ResourceListItem[] = [];
+    const units: ResourceListUnit[] = [];
 
     for (const folder of resourceFolders) {
       const visibleItems = folder.resourceIds
         .map((id) => resourceMap.get(id))
         .filter(Boolean) as ResourceListItem[];
       if (visibleItems.length === 0) continue;
-      const itemsToShow = collapsedFolderIds.has(folder.id)
-        ? visibleItems.slice(0, 1)
-        : visibleItems;
-      for (const item of itemsToShow) {
-        grouped.push(item);
-        used.add(item.id);
-      }
+      units.push({
+        kind: "folder",
+        folder,
+        items: collapsedFolderIds.has(folder.id) ? visibleItems.slice(0, 1) : visibleItems,
+      });
       visibleItems.forEach((item) => used.add(item.id));
     }
 
-    return [
-      ...grouped,
-      ...baseResourceListData.filter((item) => !used.has(item.id)),
-    ];
-  }, [activeTab, baseResourceListData, collapsedFolderIds, resourceFolders]);
+    baseResourceListData.forEach((item) => {
+      if (!used.has(item.id)) units.push({ kind: "resource", item });
+    });
+
+    units.sort((left, right) => compareResourceListUnits(left, right, sortKey));
+    return units.flatMap((unit) => unit.kind === "folder" ? unit.items : [unit.item]);
+  }, [activeTab, baseResourceListData, collapsedFolderIds, resourceFolders, sortKey]);
 
   const visibleFolderFirstResourceIds = useMemo(() => {
     const map = new Map<string, string>();

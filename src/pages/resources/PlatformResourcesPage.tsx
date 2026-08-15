@@ -21,6 +21,8 @@ import {
   Images,
   Lightbulb,
   MessageSquareWarning,
+  Pin,
+  PinOff,
   Plus,
   Presentation,
   Search,
@@ -108,6 +110,56 @@ interface PlatformAlbumGroup {
   subject: string;
   album: DonationAlbumSnapshot;
   items: PlatformResourceItem[];
+}
+
+type PlatformDisplayEntry =
+  | { kind: "album"; group: PlatformAlbumGroup }
+  | { kind: "resource"; item: PlatformResourceItem };
+
+function platformAlbumUpdatedAt(group: PlatformAlbumGroup): string {
+  return group.items.reduce((latest, item) => item.updatedAt > latest ? item.updatedAt : latest, "");
+}
+
+function platformAlbumCreatedAt(group: PlatformAlbumGroup): string {
+  return group.items.reduce((earliest, item) => !earliest || item.createdAt < earliest ? item.createdAt : earliest, "");
+}
+
+function platformAlbumOrder(group: PlatformAlbumGroup): number {
+  return group.items.reduce((minimum, item) => Math.min(minimum, item.order), Number.POSITIVE_INFINITY);
+}
+
+function comparePlatformDisplayEntries(left: PlatformDisplayEntry, right: PlatformDisplayEntry, sortKey: SortKey): number {
+  const leftPinned = left.kind === "album" && Boolean(left.group.album.pinned);
+  const rightPinned = right.kind === "album" && Boolean(right.group.album.pinned);
+  if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+
+  const leftTitle = left.kind === "album" ? left.group.album.name : left.item.title;
+  const rightTitle = right.kind === "album" ? right.group.album.name : right.item.title;
+  const leftSubject = left.kind === "album" ? left.group.subject : left.item.subject;
+  const rightSubject = right.kind === "album" ? right.group.subject : right.item.subject;
+  const leftCreatedAt = left.kind === "album" ? platformAlbumCreatedAt(left.group) : left.item.createdAt;
+  const rightCreatedAt = right.kind === "album" ? platformAlbumCreatedAt(right.group) : right.item.createdAt;
+  const leftUpdatedAt = left.kind === "album" ? platformAlbumUpdatedAt(left.group) : left.item.updatedAt;
+  const rightUpdatedAt = right.kind === "album" ? platformAlbumUpdatedAt(right.group) : right.item.updatedAt;
+
+  if (sortKey === "layout") {
+    const subjectResult = leftSubject.localeCompare(rightSubject, "zh-CN");
+    if (subjectResult !== 0) return subjectResult;
+    const leftOrder = left.kind === "album" ? platformAlbumOrder(left.group) : left.item.order;
+    const rightOrder = right.kind === "album" ? platformAlbumOrder(right.group) : right.item.order;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  } else if (sortKey === "updated") {
+    const result = rightUpdatedAt.localeCompare(leftUpdatedAt);
+    if (result !== 0) return result;
+  } else if (sortKey === "created") {
+    const result = rightCreatedAt.localeCompare(leftCreatedAt);
+    if (result !== 0) return result;
+  } else {
+    const result = leftTitle.localeCompare(rightTitle, "zh-CN");
+    if (result !== 0) return result;
+  }
+
+  return leftTitle.localeCompare(rightTitle, "zh-CN");
 }
 
 interface PlatformResourceFilters {
@@ -668,8 +720,35 @@ export default function PlatformResourcesPage() {
     }
     return [...grouped.values()]
       .map((group) => ({ ...group, items: [...group.items].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, "zh-CN")) }))
-      .sort((a, b) => a.subject.localeCompare(b.subject, "zh-CN") || a.album.name.localeCompare(b.album.name, "zh-CN"));
-  }, [displayedItems]);
+      .sort((left, right) => comparePlatformDisplayEntries(
+        { kind: "album", group: left },
+        { kind: "album", group: right },
+        sortKey,
+      ));
+  }, [displayedItems, sortKey]);
+
+  const mixedPlatformEntries = useMemo<PlatformDisplayEntry[]>(() => {
+    if (typeFilter === "album") return [];
+    const groupByKey = new Map(platformAlbumGroups.map((group) => [group.key, group]));
+    const emittedAlbums = new Set<string>();
+    const entries: PlatformDisplayEntry[] = [];
+
+    for (const item of displayedItems) {
+      if (item.donationAlbum) {
+        const key = `${item.subject}:${item.donationAlbum.id}`;
+        if (emittedAlbums.has(key)) continue;
+        const group = groupByKey.get(key);
+        if (group) {
+          entries.push({ kind: "album", group });
+          emittedAlbums.add(key);
+        }
+        continue;
+      }
+      entries.push({ kind: "resource", item });
+    }
+
+    return entries.sort((left, right) => comparePlatformDisplayEntries(left, right, sortKey));
+  }, [displayedItems, platformAlbumGroups, sortKey, typeFilter]);
 
   const updateFilter = (key: keyof PlatformResourceFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -1006,6 +1085,20 @@ export default function PlatformResourcesPage() {
     }
   };
 
+  const togglePlatformAlbumPin = async (group: PlatformAlbumGroup) => {
+    if (!teacher) return;
+    setAlbumWorkingKey(group.key);
+    try {
+      await shareService.setDonationAlbumPinned(teacher.id, group.subject, group.album.id, !group.album.pinned);
+      toast.success(group.album.pinned ? "已取消专辑置顶" : "专辑已置顶");
+      await loadAll();
+    } catch (error: any) {
+      toast.error("更新专辑置顶状态失败", error?.message);
+    } finally {
+      setAlbumWorkingKey(null);
+    }
+  };
+
   const mergePlatformAlbum = async (group: PlatformAlbumGroup, targetAlbumId: string) => {
     if (!teacher || !targetAlbumId) return;
     const target = platformAlbumGroups.find((candidate) =>
@@ -1233,7 +1326,7 @@ export default function PlatformResourcesPage() {
               );
             })}
             <span className="ml-auto text-xs text-ink-400">
-              共 {typeFilter === "album" ? platformAlbumGroups.length : displayedItems.length} 项
+              共 {typeFilter === "album" ? platformAlbumGroups.length : mixedPlatformEntries.length} 项
             </span>
           </div>
 
@@ -1370,8 +1463,18 @@ export default function PlatformResourcesPage() {
                         </button>
                         <span className="text-xs text-ink-500">{group.album.libraryLabel} · {group.items.length} 个文档</span>
                         <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">{group.subject}</span>
+                        {group.album.pinned && <Pin className="h-3.5 w-3.5 text-amber-700" aria-label="已置顶" />}
                         {canManageAlbum && (
                           <div className="ml-auto flex flex-wrap items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={albumWorkingKey !== null}
+                              onClick={() => void togglePlatformAlbumPin(group)}
+                            >
+                              {group.album.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                              {group.album.pinned ? "取消置顶" : "置顶"}
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"
@@ -1448,7 +1551,7 @@ export default function PlatformResourcesPage() {
                 })}
               </div>
             )
-          ) : displayedItems.length === 0 ? (
+          ) : mixedPlatformEntries.length === 0 ? (
             <EmptyState
               icon={<Cloud className="w-10 h-10 text-ink-200" />}
               title="暂无平台资源"
@@ -1456,7 +1559,70 @@ export default function PlatformResourcesPage() {
             />
           ) : (
             <div className="space-y-3">
-              {displayedItems.map((item) => {
+              {mixedPlatformEntries.map((entry) => {
+                if (entry.kind === "album") {
+                  const group = entry.group;
+                  const expanded = expandedAlbumKeys.has(group.key);
+                  return (
+                    <div
+                      key={group.key}
+                      role="group"
+                      aria-label={`平台专辑：${group.album.name}`}
+                      className="overflow-hidden rounded-lg border border-amber-200 bg-paper"
+                    >
+                      <div className="flex flex-wrap items-center gap-2 bg-amber-50/70 px-3 py-2.5">
+                        <button
+                          type="button"
+                          onClick={() => togglePlatformAlbum(group.key)}
+                          aria-expanded={expanded}
+                          aria-label={`${expanded ? "收拢" : "展开"}专辑：${group.album.name}`}
+                          className="rounded p-0.5 text-amber-700 hover:bg-amber-100"
+                        >
+                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </button>
+                        <Folder className="h-4 w-4 text-amber-700" />
+                        <button
+                          type="button"
+                          onClick={() => togglePlatformAlbum(group.key)}
+                          className="font-semibold text-ink-800 hover:text-amber-800"
+                        >
+                          {group.album.name}
+                        </button>
+                        <span className="text-xs text-ink-500">{group.album.libraryLabel} · {group.items.length} 个文档</span>
+                        <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">{group.subject}</span>
+                        {group.album.pinned && <Pin className="h-3.5 w-3.5 text-amber-700" aria-label="已置顶" />}
+                      </div>
+                      {expanded && (
+                        <div className="divide-y divide-ink-100">
+                          {group.items.map((item) => {
+                            const ResourceIcon = resourceTypeIcon[item.resourceType];
+                            return (
+                              <div key={item.shareId} className="flex items-center gap-2 px-4 py-2.5">
+                                <ResourceIcon
+                                  aria-label={`${resourceTypeLabel[item.resourceType]}标识`}
+                                  className="h-4 w-4 flex-none text-ink-500"
+                                />
+                                {canPreviewItem(item) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewItem(item)}
+                                    className="min-w-0 flex-1 truncate text-left text-sm text-ink-800 hover:text-gold-700 hover:underline"
+                                  >
+                                    {item.title}
+                                  </button>
+                                ) : (
+                                  <span className="min-w-0 flex-1 truncate text-sm text-ink-800">{item.title}</span>
+                                )}
+                                <span className="text-xs text-ink-400">{timeAgo(item.updatedAt)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                const item = entry.item;
                 const contributor = contributorMap.get(item.fromTeacherId);
                 const canManageSubject = platformAdmin || Boolean(privileges?.moderatedSubjects.includes(item.subject));
                 const canEdit = item.fromTeacherId === teacher?.id || canManageSubject;

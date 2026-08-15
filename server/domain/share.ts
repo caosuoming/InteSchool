@@ -174,6 +174,7 @@ function validateDonationAlbums(
       name: folder.name,
       resourceType: folder.resourceType,
       libraryLabel: albumLibraryLabels[folder.resourceType],
+      pinned: false,
     });
   }
   return snapshots;
@@ -1280,6 +1281,33 @@ export const shareService = {
     db.update("shareRecords", (records: ShareRecord[]) => records.map((record) =>
       ids.has(record.id) && record.donationAlbum
         ? { ...record, donationAlbum: { ...record.donationAlbum, name: normalizedName } }
+        : record,
+    ));
+    return primaryDonations().filter((item) =>
+      donationSubject(item) === normalizedSubject && item.donationAlbum?.id === albumId,
+    );
+  },
+
+  async setDonationAlbumPinned(
+    teacherId: string,
+    subject: string,
+    albumId: string,
+    pinned: boolean,
+  ): Promise<ShareRecord[]> {
+    await delay(100);
+    const normalizedSubject = subject.trim();
+    if (!canManageSubject(teacherId, normalizedSubject)) {
+      throw new Error("仅该学科版主或平台超级管理员可以管理专辑");
+    }
+    const albumRecords = primaryDonations().filter((item) =>
+      donationSubject(item) === normalizedSubject && item.donationAlbum?.id === albumId,
+    );
+    if (albumRecords.length === 0) throw new Error("平台专辑不存在");
+
+    const ids = new Set(albumRecords.map((item) => item.id));
+    db.update("shareRecords", (records: ShareRecord[]) => records.map((record) =>
+      ids.has(record.id) && record.donationAlbum
+        ? { ...record, donationAlbum: { ...record.donationAlbum, pinned } }
         : record,
     ));
     return primaryDonations().filter((item) =>

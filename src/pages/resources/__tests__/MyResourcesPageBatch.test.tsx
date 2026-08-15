@@ -375,6 +375,63 @@ describe("MyResourcesPage batch actions", () => {
     expect(screen.getByText(examPaperTwo.title)).toBeInTheDocument();
   });
 
+  it("sorts an unpinned album with standalone documents instead of forcing it first", async () => {
+    const standalone: ExamPaper = {
+      ...examPaper,
+      id: "paper-standalone",
+      title: "最新独立试卷",
+      createdAt: "2026-08-12T00:00:00.000Z",
+      updatedAt: "2026-08-12T00:00:00.000Z",
+    };
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, examPaperTwo, standalone]);
+    vi.mocked(resourceFolderService.listFolders).mockResolvedValue([{
+      id: "folder-existing",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      resourceType: "examPaper",
+      name: "函数资料",
+      resourceIds: [examPaper.id, examPaperTwo.id],
+      pinned: false,
+      createdAt: "2026-08-10T00:00:00.000Z",
+      updatedAt: "2026-08-10T00:00:00.000Z",
+    }]);
+
+    renderPage("examPaper");
+
+    const standaloneTitle = await screen.findByText(standalone.title);
+    const album = screen.getByRole("group", { name: "专辑：函数资料" });
+    expect(standaloneTitle.compareDocumentPosition(album) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps a pinned album ahead of standalone documents", async () => {
+    const standalone: ExamPaper = {
+      ...examPaper,
+      id: "paper-standalone",
+      title: "最新独立试卷",
+      createdAt: "2026-08-12T00:00:00.000Z",
+      updatedAt: "2026-08-12T00:00:00.000Z",
+    };
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, examPaperTwo, standalone]);
+    vi.mocked(resourceFolderService.listFolders).mockResolvedValue([{
+      id: "folder-existing",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      resourceType: "examPaper",
+      name: "函数资料",
+      resourceIds: [examPaper.id, examPaperTwo.id],
+      pinned: true,
+      createdAt: "2026-08-10T00:00:00.000Z",
+      updatedAt: "2026-08-10T00:00:00.000Z",
+    }]);
+
+    renderPage("examPaper");
+
+    const album = await screen.findByRole("group", { name: "专辑：函数资料" });
+    const standaloneTitle = screen.getByText(standalone.title);
+    expect(album.compareDocumentPosition(standaloneTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText("已置顶")).toBeInTheDocument();
+  });
+
   it("donates every album document with the album id", async () => {
     vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, examPaperTwo]);
     vi.mocked(resourceFolderService.listFolders).mockResolvedValue([{
