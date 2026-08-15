@@ -32,6 +32,7 @@ import type {
   TreeNode,
   ResourceSemester,
 } from "../../src/types/index.js";
+import { assertResourceCapacity, recordDonationDownload } from "./quota.js";
 
 type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
 type DonationPatch = Partial<{
@@ -634,6 +635,7 @@ function copySnapshotToTeacher(
   toSchoolId: string,
 ): { newResourceId: string; resourceType: ShareableResourceType } {
   if (!share.resourceSnapshot) throw new Error("捐赠资源快照不存在");
+  assertResourceCapacity(toTeacherId, share.resourceType);
   const now = new Date().toISOString();
   const directory = ensureDirectorySnapshot(share.directorySnapshot, toSchoolId);
   const original = share.resourceSnapshot;
@@ -1069,10 +1071,12 @@ export const shareService = {
         ...new Set([...(target.platformSourceDonationIds || []), donation.id]),
       ];
       db.write("questions", questions.map((item) => item.id === target.id ? merged : item));
+      recordDonationDownload(donation.id, teacherId);
       return { resourceType: "question", resourceId: target.id, merged: true };
     }
 
     const copied = copySnapshotToTeacher(donation, teacherId, schoolId);
+    recordDonationDownload(donation.id, teacherId);
     return {
       resourceType: copied.resourceType,
       resourceId: copied.newResourceId,

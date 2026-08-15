@@ -3,6 +3,7 @@ import { db } from "../runtime-db.js";
 import { randomUUID } from "node:crypto";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { reflectionService } from "./reflection.js";
+import { assertResourceCapacity } from "./quota.js";
 
 function matchFilter(c: Courseware, filter: ResourceFilter): boolean {
   if (filter.keyword) {
@@ -96,6 +97,7 @@ export const coursewareService = {
   ): Promise<Courseware> {
     await delay(400);
     maybeThrowError();
+    assertResourceCapacity(teacherId, "courseware");
     const now = new Date().toISOString();
     const courseware: Courseware = {
       id: genId("cw"),
@@ -196,6 +198,7 @@ export const coursewareService = {
     maybeThrowError();
     const source = db.read("coursewares").find((c) => c.id === sourceId);
     if (!source) throw new Error("原课件不存在");
+    assertResourceCapacity(source.teacherId, "courseware");
     const now = new Date().toISOString();
     const duplicated: Courseware = {
       ...source,

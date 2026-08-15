@@ -1,13 +1,36 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Building2, Copy, KeyRound, ShieldCheck, UserCog, Users } from "lucide-react";
+import { Building2, Copy, Gauge, KeyRound, ShieldCheck, UserCog, Users } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Input, Modal, Select } from "@/components/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { authService } from "@/services/auth";
 import { organizationService, roleLabels } from "@/services/organization";
 import { schoolService } from "@/services/school";
+import { quotaService } from "@/services/quota";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { School, Teacher, TeacherAffiliation } from "@/types";
+import type {
+  ExamUsageQuotaKey,
+  ResourceQuotaKey,
+  School,
+  Teacher,
+  TeacherAffiliation,
+  UserQuotaOverrides,
+  UserQuotaSnapshot,
+} from "@/types";
+
+const RESOURCE_QUOTA_FIELDS: Array<[ResourceQuotaKey, string]> = [
+  ["question", "题库"],
+  ["examPaper", "试卷库"],
+  ["lecture", "讲义库"],
+  ["courseware", "课件库"],
+  ["material", "素材库"],
+];
+
+const EXAM_QUOTA_FIELDS: Array<[ExamUsageQuotaKey, string]> = [
+  ["examRoom", "考场布置"],
+  ["invigilation", "监考表"],
+  ["gradeStatistics", "成绩统计"],
+];
 
 function affiliationFor(teacher: Teacher, schoolId: string): TeacherAffiliation | null {
   return teacher.affiliations.find((item) => item.schoolId === schoolId) || null;
@@ -41,6 +64,11 @@ export default function AccountManagementPage() {
   const [customPassword, setCustomPassword] = useState("");
   const [issuedPassword, setIssuedPassword] = useState("");
   const [resetting, setResetting] = useState(false);
+  const [quotaTarget, setQuotaTarget] = useState<Teacher | null>(null);
+  const [quotaSnapshot, setQuotaSnapshot] = useState<UserQuotaSnapshot | null>(null);
+  const [quotaDraft, setQuotaDraft] = useState<UserQuotaOverrides>({});
+  const [quotaLoading, setQuotaLoading] = useState(false);
+  const [quotaSaving, setQuotaSaving] = useState(false);
 
   const schoolId = isPlatformAdmin ? selectedSchoolId : currentSchoolId;
 
@@ -149,6 +177,44 @@ export default function AccountManagementPage() {
     }
   };
 
+  const openQuota = async (target: Teacher) => {
+    setQuotaTarget(target);
+    setQuotaSnapshot(null);
+    setQuotaLoading(true);
+    try {
+      const snapshot = await quotaService.getQuota(target.id);
+      setQuotaSnapshot(snapshot);
+      setQuotaDraft({
+        resourceBaseCapacities: Object.fromEntries(
+          RESOURCE_QUOTA_FIELDS.map(([key]) => [key, snapshot.resources[key].baseCapacity]),
+        ),
+        examRemainingUses: Object.fromEntries(
+          EXAM_QUOTA_FIELDS.map(([key]) => [key, snapshot.exam[key].remaining]),
+        ),
+      });
+    } catch (error) {
+      toast.error("使用量加载失败", error instanceof Error ? error.message : undefined);
+      setQuotaTarget(null);
+    } finally {
+      setQuotaLoading(false);
+    }
+  };
+
+  const saveQuota = async () => {
+    if (!quotaTarget) return;
+    setQuotaSaving(true);
+    try {
+      const snapshot = await quotaService.updateQuota(quotaTarget.id, quotaDraft);
+      setQuotaSnapshot(snapshot);
+      toast.success("用户使用量已更新");
+      setQuotaTarget(null);
+    } catch (error) {
+      toast.error("使用量更新失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setQuotaSaving(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -249,6 +315,11 @@ export default function AccountManagementPage() {
                           <KeyRound className="h-4 w-4" />重置密码
                         </Button>
                       )}
+                      {isPlatformAdmin && (
+                        <Button type="button" variant="outline" onClick={() => void openQuota(teacher)}>
+                          <Gauge className="h-4 w-4" />使用量
+                        </Button>
+                      )}
                       {!canReset && isPlatformTarget && !isPlatformAdmin && (
                         <span className="text-xs text-ink-400">平台管理员密码仅可由平台管理员处理</span>
                       )}
@@ -304,6 +375,81 @@ export default function AccountManagementPage() {
               placeholder="留空可使用随机重置"
               hint="至少 10 位；如无指定需求，建议直接使用随机重置。"
             />
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(quotaTarget)}
+        onClose={() => !quotaSaving && setQuotaTarget(null)}
+        title={`设置 ${quotaTarget?.name || "用户"} 的使用量`}
+        description="资源库填写基础容量；有效捐赠产生的扩容会在基础容量上继续叠加。考试功能填写当前剩余可使用次数。"
+        size="lg"
+        footer={(
+          <>
+            <Button type="button" variant="ghost" disabled={quotaSaving} onClick={() => setQuotaTarget(null)}>取消</Button>
+            <Button type="button" variant="gold" loading={quotaSaving} disabled={quotaLoading || !quotaSnapshot} onClick={() => void saveQuota()}>保存使用量</Button>
+          </>
+        )}
+      >
+        {quotaLoading || !quotaSnapshot ? (
+          <div className="py-10 text-center text-sm text-ink-400">加载中...</div>
+        ) : (
+          <div className="space-y-6">
+            <section>
+              <div className="mb-3">
+                <h3 className="font-medium text-ink-900">个人资源库基础容量</h3>
+                <p className="mt-1 text-xs text-ink-500">每个有效捐赠额外增加 10 道题或 10 份对应资源；有效捐赠需保留在平台且至少被 5 个其他用户创建过副本。</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {RESOURCE_QUOTA_FIELDS.map(([key, label]) => {
+                  const status = quotaSnapshot.resources[key];
+                  return (
+                    <Input
+                      key={key}
+                      label={`${label}基础容量`}
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={quotaDraft.resourceBaseCapacities?.[key] ?? 0}
+                      onChange={(event) => setQuotaDraft((current) => ({
+                        ...current,
+                        resourceBaseCapacities: {
+                          ...(current.resourceBaseCapacities || {}),
+                          [key]: Math.max(0, Math.trunc(Number(event.target.value) || 0)),
+                        },
+                      }))}
+                      hint={`已用 ${status.used}；有效捐赠 ${status.effectiveDonations}，扩容 +${status.donationBonus}；当前总容量 ${status.capacity}`}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+            <section className="border-t border-ink-100 pt-5">
+              <div className="mb-3">
+                <h3 className="font-medium text-ink-900">我的考试剩余次数</h3>
+                <p className="mt-1 text-xs text-ink-500">考场布置、监考表和成绩统计默认各 50 次；每次导出或发布扣减 1 次。</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {EXAM_QUOTA_FIELDS.map(([key, label]) => (
+                  <Input
+                    key={key}
+                    label={`${label}剩余次数`}
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={quotaDraft.examRemainingUses?.[key] ?? 0}
+                    onChange={(event) => setQuotaDraft((current) => ({
+                      ...current,
+                      examRemainingUses: {
+                        ...(current.examRemainingUses || {}),
+                        [key]: Math.max(0, Math.trunc(Number(event.target.value) || 0)),
+                      },
+                    }))}
+                  />
+                ))}
+              </div>
+            </section>
           </div>
         )}
       </Modal>

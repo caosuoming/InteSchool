@@ -12,6 +12,7 @@ import type {
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { knowledgeService } from "./knowledge.js";
+import { assertResourceCapacity } from "./quota.js";
 import {
   HIGH_SIMILARITY_THRESHOLD,
   questionStemSimilarity,
@@ -200,6 +201,7 @@ export const questionService = {
   ): Promise<Question> {
     await delay(400);
     maybeThrowError();
+    assertResourceCapacity(teacherId, "question");
     const similar = similarQuestionCandidates(
       input.stem,
       schoolId,
@@ -252,6 +254,7 @@ export const questionService = {
     maybeThrowError();
     const source = db.read("questions").find((question) => question.id === id);
     if (!source) throw new Error("题目不存在");
+    assertResourceCapacity(source.teacherId, "question");
 
     const adaptedFields: QuestionAdaptationInput = {
       stem: input.stem.trim(),
@@ -426,6 +429,7 @@ export const questionService = {
   ): Promise<Question[]> {
     await delay(800);
     maybeThrowError();
+    assertResourceCapacity(teacherId, "question", questions.length);
     const acceptedStems: string[] = [];
     for (const input of questions) {
       const existingSimilar = similarQuestionCandidates(input.stem, schoolId)[0];

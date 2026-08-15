@@ -7,6 +7,7 @@ import type {
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { assertResourceCapacity } from "./quota.js";
 
 function matchFilter(m: Material, filter: ResourceFilter): boolean {
   if (filter.keyword) {
@@ -76,6 +77,7 @@ export const materialService = {
   ): Promise<Material> {
     await delay(400);
     maybeThrowError();
+    assertResourceCapacity(teacherId, "material");
     const now = new Date().toISOString();
     const material: Material = {
       id: genId("mat"),

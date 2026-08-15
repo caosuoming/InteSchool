@@ -26,6 +26,7 @@ import { knowledgeService } from "@/services/knowledge";
 import { reflectionService } from "@/services/reflection";
 import { basketService } from "@/services/basket";
 import { resourceFolderService } from "@/services/resourceFolder";
+import { quotaService } from "@/services/quota";
 import { classService } from "@/services/class";
 import { analyticsService, type KnowledgeMastery } from "@/services/analytics";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -46,6 +47,7 @@ import type {
   DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
   LessonDocumentBlock,
   ResourceFolder, ResourceFolderType,
+  UserQuotaSnapshot,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { genId } from "@/lib/service-utils";
@@ -551,6 +553,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [coursewares, setCoursewares] = useState<Courseware[]>([]);
   const [coursewarePushKey, setCoursewarePushKey] = useState("");
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [quota, setQuota] = useState<UserQuotaSnapshot | null>(null);
   const [resourceFolders, setResourceFolders] = useState<ResourceFolder[]>([]);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
   const knownFolderIdsRef = useRef<Set<string>>(new Set());
@@ -846,7 +849,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
     };
     try {
-      const [qData, lecData, examData, cwData, matData, completedLessons] = await Promise.all([
+      const [qData, lecData, examData, cwData, matData, completedLessons, quotaSnapshot] = await Promise.all([
         questionService.listQuestions({ ...baseFilter, teacherId: teacher?.id }),
         lectureService.listLectures({ ...baseFilter, teacherId: teacher?.id }),
         examPaperService.listPapers({ ...baseFilter, teacherId: teacher?.id }),
@@ -859,6 +862,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             lifecycleStatus: "completed",
           })
           : Promise.resolve([]),
+        teacher?.id ? quotaService.getQuota(teacher.id).catch(() => null) : Promise.resolve(null),
       ]);
       const safeQuestions = qData || [];
       const safeLectures = lecData || [];
@@ -870,6 +874,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       setExamPapers(safeExamPapers);
       setCoursewares(safeCoursewares);
       setMaterials(safeMaterials);
+      setQuota(quotaSnapshot);
       // 保存完整列表（含拆解副本），用于查找源资源的拆解副本
       setAllExamPapers(safeExamPapers);
       setAllLectures(safeLectures);
@@ -1453,6 +1458,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   ]);
 
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
+  const activeResourceQuota = activeTab === "basket" ? null : quota?.resources[activeTab] || null;
   const hasCompletedLesson = (resourceType: "examPaper" | "lecture", resourceId: string) => (
     completedLessonSourceKeys.has(`${resourceType}:${resourceId}`)
   );
@@ -3019,6 +3025,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 pageSize={resourcePageSize}
                 pageSizeOptions={[10, 20, 50, 100]}
                 itemLabel="项"
+                summaryExtra={activeResourceQuota ? (
+                  <span className="text-xs text-ink-500">
+                    容量 {activeResourceQuota.used}/{activeResourceQuota.capacity}
+                    {activeResourceQuota.donationBonus > 0
+                      ? `（有效捐赠扩容 +${activeResourceQuota.donationBonus}）`
+                      : ""}
+                  </span>
+                ) : undefined}
                 onPageChange={(page) => setResourcePage(Math.min(totalResourcePages, Math.max(1, page)))}
                 onPageSizeChange={(pageSize) => {
                   setResourcePageSize(pageSize);
@@ -3527,6 +3541,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 pageSize={resourcePageSize}
                 pageSizeOptions={[10, 20, 50, 100]}
                 itemLabel="项"
+                summaryExtra={activeResourceQuota ? (
+                  <span className="text-xs text-ink-500">
+                    容量 {activeResourceQuota.used}/{activeResourceQuota.capacity}
+                    {activeResourceQuota.donationBonus > 0
+                      ? `（有效捐赠扩容 +${activeResourceQuota.donationBonus}）`
+                      : ""}
+                  </span>
+                ) : undefined}
                 onPageChange={(page) => setResourcePage(Math.min(totalResourcePages, Math.max(1, page)))}
                 onPageSizeChange={(pageSize) => {
                   setResourcePageSize(pageSize);

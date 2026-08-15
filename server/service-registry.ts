@@ -20,6 +20,7 @@ import { notificationService } from "./domain/notification.js";
 import { organizationService } from "./domain/organization.js";
 import { prepService } from "./domain/prep.js";
 import { questionService } from "./domain/question.js";
+import { quotaService } from "./domain/quota.js";
 import { reflectionService } from "./domain/reflection.js";
 import { resourceFolderService } from "./domain/resourceFolder.js";
 import { schoolService } from "./domain/school.js";
@@ -51,6 +52,7 @@ export const serviceRegistry = {
   organization: organizationService,
   prep: prepService,
   question: questionService,
+  quota: quotaService,
   reflection: reflectionService,
   resourceFolder: resourceFolderService,
   school: schoolService,

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface PaginationBarProps {
@@ -7,6 +8,7 @@ interface PaginationBarProps {
   pageSize: number;
   pageSizeOptions: number[];
   itemLabel: string;
+  summaryExtra?: ReactNode;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
 }
@@ -47,6 +49,7 @@ export function PaginationBar({
   pageSize,
   pageSizeOptions,
   itemLabel,
+  summaryExtra,
   onPageChange,
   onPageSizeChange,
 }: PaginationBarProps) {
@@ -59,6 +62,7 @@ export function PaginationBar({
         <span className="text-xs text-ink-500">
           显示 {startItem}-{endItem} {itemLabel}，共 {totalItems} {itemLabel}
         </span>
+        {summaryExtra}
         <label className="flex items-center gap-1.5 text-xs text-ink-400">
           每页
           <select

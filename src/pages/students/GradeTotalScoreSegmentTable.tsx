@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/stores/ui";
+import { useAuthStore } from "@/stores/auth";
+import { quotaService } from "@/services/quota";
 
 interface GradeTotalScoreSegmentTableProps {
   exam: GradeExam;
@@ -167,6 +169,9 @@ export function GradeTotalScoreSegmentTable({
   const exportReport = async () => {
     setExporting(true);
     try {
+      const teacherId = useAuthStore.getState().teacher?.id;
+      if (!teacherId) throw new Error("请先登录");
+      await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
       await exportGradeTotalScoreSegmentReport(report);
       toast.success("总分分数段汇总表已导出");
     } catch (error) {
