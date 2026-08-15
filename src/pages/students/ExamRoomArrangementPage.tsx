@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -56,13 +56,21 @@ type PrintDensity = "normal" | "compact";
 
 const DESK_LABEL_PAGE_HEIGHT_MM = 370;
 const DESK_LABEL_PAGE_MARGIN_MM = 12.7;
+const DESK_LABEL_COLUMNS = 5;
+
+type DeskLabel = ReturnType<typeof groupDeskLabels>[number];
+type DeskLabelRow = {
+  key: string;
+  roomId: string;
+  labels: DeskLabel[];
+};
 
 function getDeskLabelDensity(maxAssignments: number): PrintDensity {
   return Math.max(1, maxAssignments) <= 2 ? "normal" : "compact";
 }
 
 function estimateDeskLabelHeight(
-  label: ReturnType<typeof groupDeskLabels>[number],
+  label: DeskLabel,
   density: PrintDensity,
 ): number {
   const assignmentCount = Math.max(1, label.assignments.length);
@@ -78,25 +86,54 @@ function estimateDeskLabelHeight(
     + extraSubjectLines * wrappedSubjectLineHeight;
 }
 
+function buildDeskLabelRows(labels: DeskLabel[], columns = DESK_LABEL_COLUMNS): DeskLabelRow[] {
+  const rows: DeskLabelRow[] = [];
+  let currentRoomId = "";
+  let currentLabels: DeskLabel[] = [];
+
+  const flush = () => {
+    if (currentLabels.length === 0) return;
+    rows.push({
+      key: `${currentRoomId}:${currentLabels[0].seatNo}`,
+      roomId: currentRoomId,
+      labels: currentLabels,
+    });
+    currentLabels = [];
+  };
+
+  for (const label of labels) {
+    if (currentLabels.length > 0 && (label.roomId !== currentRoomId || currentLabels.length >= columns)) {
+      flush();
+    }
+    if (currentLabels.length === 0) currentRoomId = label.roomId;
+    currentLabels.push(label);
+  }
+  flush();
+  return rows;
+}
+
 function paginateDeskLabels(
-  labels: ReturnType<typeof groupDeskLabels>,
+  rows: DeskLabelRow[],
+  measuredRowHeights?: number[],
 ): {
   columns: number;
   density: PrintDensity;
-  pages: ReturnType<typeof groupDeskLabels>[];
+  pages: DeskLabelRow[][];
 } {
-  const columns = 5;
-  const maxAssignments = Math.max(...labels.map((label) => label.assignments.length), 1);
+  const columns = DESK_LABEL_COLUMNS;
+  const maxAssignments = Math.max(...rows.flatMap((row) => row.labels).map((label) => label.assignments.length), 1);
   const density = getDeskLabelDensity(maxAssignments);
   const gap = density === "normal" ? 1.4 : 1;
   const availableHeight = DESK_LABEL_PAGE_HEIGHT_MM - DESK_LABEL_PAGE_MARGIN_MM * 2;
-  const pages: ReturnType<typeof groupDeskLabels>[] = [];
-  let page: ReturnType<typeof groupDeskLabels> = [];
+  const pages: DeskLabelRow[][] = [];
+  let page: DeskLabelRow[] = [];
   let usedHeight = 0;
 
-  for (let index = 0; index < labels.length; index += columns) {
-    const row = labels.slice(index, index + columns);
-    const rowHeight = Math.max(...row.map((label) => estimateDeskLabelHeight(label, density)));
+  for (const [index, row] of rows.entries()) {
+    const measuredHeight = measuredRowHeights?.[index];
+    const rowHeight = measuredHeight && measuredHeight > 0
+      ? measuredHeight
+      : Math.max(...row.labels.map((label) => estimateDeskLabelHeight(label, density)));
     const nextHeight = usedHeight + (page.length > 0 ? gap : 0) + rowHeight;
     if (page.length > 0 && nextHeight > availableHeight) {
       pages.push(page);
@@ -104,7 +141,7 @@ function paginateDeskLabels(
       usedHeight = 0;
     }
     if (page.length > 0) usedHeight += gap;
-    page.push(...row);
+    page.push(row);
     usedHeight += rowHeight;
   }
   if (page.length > 0) pages.push(page);
@@ -160,6 +197,46 @@ function subjectLines(subjectLabel: string, subjectsPerLine = 3): string[] {
     lines.push(subjects.slice(index, index + subjectsPerLine).join("、"));
   }
   return lines;
+}
+
+function DeskLabelPrintCard({
+  label,
+  arrangement,
+  showStudentNo,
+  showAdmissionNo,
+  startRow = false,
+}: {
+  label: DeskLabel;
+  arrangement: ExamArrangement;
+  showStudentNo: boolean;
+  showAdmissionNo: boolean;
+  startRow?: boolean;
+}) {
+  return (
+    <section
+      className="exam-desk-label"
+      style={startRow ? { gridColumnStart: 1 } : undefined}
+    >
+      <div className="exam-desk-label-title">{arrangement.name}</div>
+      <div className="exam-desk-label-meta"><span>{label.roomLocation}</span><span>{arrangement.examDate || "考试日期待定"}</span></div>
+      <div className="exam-desk-label-seat"><span>{label.roomNumber}</span><strong>{label.seatNo} 号</strong></div>
+      <div className="exam-desk-label-assignments">
+        {label.assignments.map((assignment) => (
+          <div key={assignment.id} className="exam-desk-label-assignment">
+            <div className="exam-desk-label-assignment-main">
+              <span className="exam-desk-label-name">{assignment.studentName}</span>
+              <span className="exam-desk-label-subject">{assignment.subjectLabel}</span>
+              <span className="exam-desk-label-class">{assignment.className}</span>
+            </div>
+            <div className="exam-desk-label-assignment-meta">
+              {showStudentNo && <span>学号 {assignment.studentNo}</span>}
+              {showAdmissionNo && <span className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function uniqueSubjects(values: string[]): string[] {
@@ -601,6 +678,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [newPlanName, setNewPlanName] = useState("");
   const classPrintRef = useRef<HTMLDivElement>(null);
   const deskPrintRef = useRef<HTMLDivElement>(null);
+  const deskMeasureRef = useRef<HTMLDivElement>(null);
+  const [deskRowMeasurement, setDeskRowMeasurement] = useState<{ signature: string; heights: number[] } | null>(null);
 
   const selectedArrangement = arrangements.find((item) => item.id === selectedArrangementId) || null;
   const assignments = useMemo(() => (
@@ -618,6 +697,59 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     () => deskRoomGroups.filter((group) => selectedRoomIds.has(group.roomId)),
     [deskRoomGroups, selectedRoomIds],
   );
+  const deskLabelRows = useMemo(
+    () => buildDeskLabelRows(selectedDeskRoomGroups.flatMap((group) => group.labels)),
+    [selectedDeskRoomGroups],
+  );
+  const deskMeasurementSignature = useMemo(() => [
+    showDeskStudentNo ? "student-no" : "no-student-no",
+    showDeskAdmissionNo ? "admission-no" : "no-admission-no",
+    ...deskLabelRows.map((row) => `${row.key}:${row.labels.map((label) => label.key).join(",")}`),
+  ].join("|"), [deskLabelRows, showDeskAdmissionNo, showDeskStudentNo]);
+  const deskPrintLayout = useMemo(() => paginateDeskLabels(
+    deskLabelRows,
+    deskRowMeasurement?.signature === deskMeasurementSignature ? deskRowMeasurement.heights : undefined,
+  ), [deskLabelRows, deskMeasurementSignature, deskRowMeasurement]);
+
+  useLayoutEffect(() => {
+    const host = deskMeasureRef.current;
+    if (!host || deskLabelRows.length === 0 || previewMode !== "desk") return;
+
+    let cancelled = false;
+    let frame = 0;
+    const measure = () => {
+      if (cancelled) return;
+      const hostWidth = host.getBoundingClientRect().width;
+      const rowElements = [...host.querySelectorAll<HTMLElement>("[data-desk-measure-row]")];
+      if (hostWidth <= 0 || rowElements.length !== deskLabelRows.length) return;
+      const contentWidthMm = 260 - DESK_LABEL_PAGE_MARGIN_MM * 2;
+      const mmPerPx = contentWidthMm / hostWidth;
+      const heights = rowElements.map((row) => Math.round(row.getBoundingClientRect().height * mmPerPx * 100) / 100);
+      if (heights.some((height) => height <= 0)) return;
+      setDeskRowMeasurement((current) => {
+        if (current?.signature === deskMeasurementSignature
+          && current.heights.length === heights.length
+          && current.heights.every((height, index) => Math.abs(height - heights[index]) < 0.05)) {
+          return current;
+        }
+        return { signature: deskMeasurementSignature, heights };
+      });
+    };
+
+    measure();
+    if (document.fonts?.ready) {
+      void document.fonts.ready.then(() => {
+        if (!cancelled) frame = window.requestAnimationFrame(measure);
+      });
+    }
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    resizeObserver?.observe(host);
+    return () => {
+      cancelled = true;
+      if (frame) window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+    };
+  }, [deskLabelRows, deskMeasurementSignature, previewMode]);
   const examGroups = useMemo(() => (
     draft && context ? summarizeExamGroups(draft, context) : []
   ), [context, draft]);
@@ -1764,53 +1896,65 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           )}
 
           {previewMode === "desk" && selectedDeskLabels.length > 0 && selectedArrangement && (
-            <div ref={deskPrintRef} className="print-only exam-desk-label-sheet" aria-hidden="true">
-              {(() => {
-                const layout = paginateDeskLabels(selectedDeskLabels);
-                return layout.pages.map((pageLabels, pageIndex) => {
-                  return (
+            <>
+              <div ref={deskMeasureRef} className="exam-desk-label-measure" aria-hidden="true">
+                {deskLabelRows.map((row, rowIndex) => (
+                  <div
+                    key={`desk-label-measure-row-${row.key}`}
+                    className="exam-desk-label-page exam-desk-label-measure-row"
+                    data-density={deskPrintLayout.density}
+                    data-desk-measure-row={rowIndex}
+                    style={{
+                      gridTemplateColumns: `repeat(${deskPrintLayout.columns}, minmax(0, 1fr))`,
+                      gridAutoRows: "max-content",
+                      alignItems: "stretch",
+                      alignContent: "start",
+                    }}
+                  >
+                    {row.labels.map((label) => (
+                      <DeskLabelPrintCard
+                        key={`measure-${label.key}`}
+                        label={label}
+                        arrangement={selectedArrangement}
+                        showStudentNo={showDeskStudentNo}
+                        showAdmissionNo={showDeskAdmissionNo}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div ref={deskPrintRef} className="print-only exam-desk-label-sheet" aria-hidden="true">
+                {deskPrintLayout.pages.map((pageRows, pageIndex) => (
                   <div
                     key={`desk-label-page-${pageIndex}`}
                     className="exam-desk-label-page"
-                    data-density={layout.density}
-                    data-columns={layout.columns}
+                    data-density={deskPrintLayout.density}
+                    data-columns={deskPrintLayout.columns}
+                    data-rows={pageRows.length}
                     data-page-index={pageIndex + 1}
                     data-testid="desk-label-print-page"
                     style={{
-                      gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
+                      gridTemplateColumns: `repeat(${deskPrintLayout.columns}, minmax(0, 1fr))`,
                       gridAutoRows: "max-content",
                       alignItems: "stretch",
                       alignContent: "start",
                       padding: `${DESK_LABEL_PAGE_MARGIN_MM}mm`,
                     }}
                   >
-                    {pageLabels.map((group) => (
-                    <section key={group.key} className="exam-desk-label">
-                      <div className="exam-desk-label-title">{selectedArrangement.name}</div>
-                      <div className="exam-desk-label-meta"><span>{group.roomLocation}</span><span>{selectedArrangement.examDate || "考试日期待定"}</span></div>
-                      <div className="exam-desk-label-seat"><span>{group.roomNumber}</span><strong>{group.seatNo} 号</strong></div>
-                      <div className="exam-desk-label-assignments">
-                        {group.assignments.map((assignment) => (
-                          <div key={assignment.id} className="exam-desk-label-assignment">
-                            <div className="exam-desk-label-assignment-main">
-                              <span className="exam-desk-label-name">{assignment.studentName}</span>
-                              <span className="exam-desk-label-subject">{assignment.subjectLabel}</span>
-                              <span className="exam-desk-label-class">{assignment.className}</span>
-                            </div>
-                            <div className="exam-desk-label-assignment-meta">
-                              {showDeskStudentNo && <span>学号 {assignment.studentNo}</span>}
-                              {showDeskAdmissionNo && <span className="exam-desk-label-admission">准考证号 {assignment.admissionNo}</span>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                    ))}
+                    {pageRows.flatMap((row) => row.labels.map((label, labelIndex) => (
+                      <DeskLabelPrintCard
+                        key={label.key}
+                        label={label}
+                        arrangement={selectedArrangement}
+                        showStudentNo={showDeskStudentNo}
+                        showAdmissionNo={showDeskAdmissionNo}
+                        startRow={labelIndex === 0}
+                      />
+                    )))}
                   </div>
-                  );
-                });
-              })()}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </>
       )}
