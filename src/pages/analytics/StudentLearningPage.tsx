@@ -2,12 +2,13 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   BarChart3, Users, GraduationCap, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, AlertCircle, Circle, TrendingUp,
-  Award, FileText, Calendar, User, Clock, Network,
+  Award, FileText, Calendar, User, Clock, Network, BookOpen,
   ArrowUpToLine, ArrowDownToLine,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
 import { settingsService } from "@/services/settings";
+import { knowledgeService } from "@/services/knowledge";
 import { analyticsService, type KnowledgeMastery, type StudentAnswerDetail, type DateRange } from "@/services/analytics";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
@@ -15,7 +16,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory } from "@/types";
+import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory, Chapter } from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import {
@@ -23,6 +24,8 @@ import {
   orderKnowledgeMasteryRows,
   type KnowledgePointPlacement,
 } from "./student-learning-table";
+import { buildChapterMastery } from "./student-learning-chapters";
+import { ChapterMasteryCard } from "./ChapterMasteryCard";
 
 const questionTypeLabel: Record<string, string> = {
   single: "单选",
@@ -50,6 +53,7 @@ const scoreConfig: Record<AnswerScore, { label: string; color: string; bg: strin
 };
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
+type MasteryView = "chapter" | "knowledge";
 
 const timeRangeOptions: { value: TimeRangeKey; label: string }[] = [
   { value: "all", label: "全部时间" },
@@ -103,6 +107,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
   const [classTypes, setClassTypes] = useState<ClassTypeCategory[]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
   const [studentsByClass, setStudentsByClass] = useState<Record<string, Student[]>>({});
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -111,6 +116,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const [answerDetails, setAnswerDetails] = useState<StudentAnswerDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
+  const [masteryView, setMasteryView] = useState<MasteryView>("chapter");
 
   // 对比数据
   const [sameGradeTypeAvg, setSameGradeTypeAvg] = useState<KnowledgeMastery[]>([]);
@@ -126,6 +132,10 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
     () => orderKnowledgeMasteryRows(mastery, knowledgePointPlacements),
     [knowledgePointPlacements, mastery],
   );
+  const chapterMastery = useMemo(
+    () => buildChapterMastery(chapters, answerDetails),
+    [answerDetails, chapters],
+  );
   const allKnowledgePointsSelected = mastery.length > 0
     && mastery.every((item) => selectedKnowledgePointIds.has(item.knowledgePointId));
 
@@ -133,13 +143,15 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   useEffect(() => {
     const load = async () => {
       setLoadingList(true);
-      const [allClasses, ct] = await Promise.all([
+      const [allClasses, ct, chapterList] = await Promise.all([
         classService.listMyClasses(schoolId, teacher?.id || ""),
         settingsService.listClassTypes(schoolId),
+        knowledgeService.listChapters(schoolId),
       ]);
       setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
       setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
       setClassTypes(ct);
+      setChapters(chapterList);
       setLoadingList(false);
     };
     load();
@@ -223,6 +235,16 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
       weak,
     };
   }, [mastery, answerDetails]);
+
+  const chapterOverview = useMemo(() => {
+    const trained = chapterMastery.filter((item) => item.totalAttempts > 0);
+    return {
+      total: chapterMastery.length,
+      trained: trained.length,
+      mastered: trained.filter((item) => item.masteryLevel === "mastered").length,
+      weak: trained.filter((item) => item.masteryLevel === "weak").length,
+    };
+  }, [chapterMastery]);
 
   const selectClass = (cls: AnyClass) => {
     setSelectedKnowledgePointIds(new Set());
@@ -510,10 +532,16 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                 <Card className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-xs text-ink-500 mb-1">已掌握知识点</div>
+                      <div className="text-xs text-ink-500 mb-1">
+                        {masteryView === "chapter" ? "已掌握章节课" : "已掌握知识点"}
+                      </div>
                       <div className="font-serif text-2xl font-bold text-ink-900">
-                        <span className="text-emerald-600">{overview.mastered}</span>
-                        <span className="text-ink-400 text-base"> / {overview.totalKps}</span>
+                        <span className="text-emerald-600">
+                          {masteryView === "chapter" ? chapterOverview.mastered : overview.mastered}
+                        </span>
+                        <span className="text-ink-400 text-base">
+                          {" / "}{masteryView === "chapter" ? chapterOverview.total : overview.totalKps}
+                        </span>
                       </div>
                     </div>
                     <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
@@ -524,8 +552,12 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                 <Card className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-xs text-ink-500 mb-1">薄弱知识点</div>
-                      <div className="font-serif text-2xl font-bold text-red-600">{overview.weak}</div>
+                      <div className="text-xs text-ink-500 mb-1">
+                        {masteryView === "chapter" ? "薄弱章节课" : "薄弱知识点"}
+                      </div>
+                      <div className="font-serif text-2xl font-bold text-red-600">
+                        {masteryView === "chapter" ? chapterOverview.weak : overview.weak}
+                      </div>
                     </div>
                     <div className="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center">
                       <AlertCircle className="w-4 h-4 text-red-500" />
@@ -534,7 +566,77 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                 </Card>
               </div>
 
-              {/* 知识点掌握情况 */}
+              {/* 章节课 / 知识点掌握情况切换 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3" role="tablist" aria-label="训练与掌握情况视图">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={masteryView === "chapter"}
+                  onClick={() => setMasteryView("chapter")}
+                  className={cn(
+                    "rounded-xl border p-4 text-left transition-all",
+                    masteryView === "chapter"
+                      ? "border-gold-400 bg-gold-50/70 shadow-sm ring-1 ring-gold-200"
+                      : "border-ink-100 bg-paper hover:border-ink-200 hover:bg-mist/30",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className={cn(
+                        "font-serif text-base font-semibold",
+                        masteryView === "chapter" ? "text-gold-800" : "text-ink-800",
+                      )}>
+                        章节课训练与掌握情况
+                      </div>
+                      <div className="mt-1 text-xs text-ink-500">
+                        共 {chapterOverview.total} 个章节课，已训练 {chapterOverview.trained} 个
+                      </div>
+                    </div>
+                    <div className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-lg",
+                      masteryView === "chapter" ? "bg-gold-100 text-gold-700" : "bg-mist text-ink-400",
+                    )}>
+                      <BookOpen className="h-4 w-4" />
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={masteryView === "knowledge"}
+                  onClick={() => setMasteryView("knowledge")}
+                  className={cn(
+                    "rounded-xl border p-4 text-left transition-all",
+                    masteryView === "knowledge"
+                      ? "border-gold-400 bg-gold-50/70 shadow-sm ring-1 ring-gold-200"
+                      : "border-ink-100 bg-paper hover:border-ink-200 hover:bg-mist/30",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className={cn(
+                        "font-serif text-base font-semibold",
+                        masteryView === "knowledge" ? "text-gold-800" : "text-ink-800",
+                      )}>
+                        知识点训练与掌握情况
+                      </div>
+                      <div className="mt-1 text-xs text-ink-500">
+                        共 {overview.totalKps} 个知识点，已训练 {overview.trainedKps} 个
+                      </div>
+                    </div>
+                    <div className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-lg",
+                      masteryView === "knowledge" ? "bg-gold-100 text-gold-700" : "bg-mist text-ink-400",
+                    )}>
+                      <Network className="h-4 w-4" />
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {masteryView === "chapter" ? (
+                <ChapterMasteryCard mastery={chapterMastery} />
+              ) : (
               <Card className="relative">
                 <CardHeader
                   title="知识点训练与掌握情况"
@@ -822,6 +924,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                   </div>
                 )}
               </Card>
+              )}
 
               {/* 做过的题目列表 */}
               <Card>
