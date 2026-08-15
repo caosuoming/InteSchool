@@ -527,6 +527,23 @@
     --desk-content-shift: -1.6mm;
     --desk-seat-shift: -1.6mm;
   }
+  .exam-desk-label-measure {
+    position: fixed;
+    top: 0;
+    left: -100000px;
+    width: 234.6mm;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .exam-desk-label-measure-row {
+    width: 100%;
+    height: auto;
+    padding: 0;
+    break-after: auto;
+    overflow: visible;
+    page: auto;
+  }
   .exam-desk-label {
     break-inside: avoid;
     min-width: 0;

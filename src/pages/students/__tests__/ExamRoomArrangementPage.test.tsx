@@ -567,6 +567,56 @@ describe("ExamRoomArrangementPage", () => {
     expect(printPage.style.padding).toBe("12.7mm");
   });
 
+  it("repaginates desk labels from their measured 8K row heights", async () => {
+    const pxPerMm = 96 / 25.4;
+    const rect = (width: number, height: number): DOMRect => ({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      top: 0,
+      right: width,
+      bottom: height,
+      left: 0,
+      toJSON: () => ({}),
+    });
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getBoundingClientRect() {
+      if (this.classList.contains("exam-desk-label-measure")) return rect(234.6 * pxPerMm, 0);
+      if (this.hasAttribute("data-desk-measure-row")) return rect(234.6 * pxPerMm, 25 * pxPerMm);
+      return originalGetBoundingClientRect.call(this);
+    });
+
+    try {
+      const user = userEvent.setup();
+      const assignments = Array.from({ length: 60 }, (_, index) => ({
+        ...savedArrangement.assignments[0],
+        id: `combined:student-${index + 1}`,
+        studentId: `student-${index + 1}`,
+        studentName: `学生${index + 1}`,
+        studentNo: String(index + 1).padStart(3, "0"),
+        seatNo: index + 1,
+        admissionNo: `20260510${String(index + 1).padStart(6, "0")}`,
+      }));
+      vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{
+        ...savedArrangement,
+        rooms: [{ ...savedArrangement.rooms[0], capacity: 60 }],
+        assignments,
+      }]);
+      renderPage();
+
+      await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+      await user.click(await screen.findByRole("tab", { name: "桌贴预览" }));
+
+      await waitFor(() => expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1));
+      const printPage = screen.getByTestId("desk-label-print-page");
+      expect(printPage).toHaveAttribute("data-rows", "12");
+      expect(printPage.querySelectorAll(".exam-desk-label")).toHaveLength(60);
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
   it("splits a large class over multiple readable A4 pages", async () => {
     const user = userEvent.setup();
     const students = Array.from({ length: 67 }, (_, index) => ({
@@ -611,14 +661,15 @@ describe("ExamRoomArrangementPage", () => {
     const user = userEvent.setup();
     const secondRoom = {
       id: "room-2",
-      name: "2考场",
-      number: "2考场",
+      name: "高三（2）班",
+      number: "高三（2）班",
       location: "教学楼 302",
       capacity: 30,
     };
-    const assignments = Array.from({ length: 60 }, (_, index) => {
-      const room = index < 30 ? savedArrangement.rooms[0] : secondRoom;
-      const seatNo = (index % 30) + 1;
+    const assignments = Array.from({ length: 58 }, (_, index) => {
+      const firstRoomCount = 28;
+      const room = index < firstRoomCount ? savedArrangement.rooms[0] : secondRoom;
+      const seatNo = index < firstRoomCount ? index + 1 : index - firstRoomCount + 1;
       return {
         ...savedArrangement.assignments[0],
         id: `combined:student-${index + 1}`,
@@ -646,9 +697,11 @@ describe("ExamRoomArrangementPage", () => {
     const pages = screen.getAllByTestId("desk-label-print-page");
     expect(pages).toHaveLength(2);
     expect(pages[0]).toHaveAttribute("data-columns", "5");
-    expect(pages[0].querySelectorAll(".exam-desk-label")).toHaveLength(55);
+    expect(pages[0].querySelectorAll(".exam-desk-label")).toHaveLength(53);
     expect(pages[1].querySelectorAll(".exam-desk-label")).toHaveLength(5);
     expect(pages[0]).toHaveTextContent("教学楼 301");
     expect(pages[0]).toHaveTextContent("教学楼 302");
+    const firstPageLabels = [...pages[0].querySelectorAll<HTMLElement>(".exam-desk-label")];
+    expect(firstPageLabels[28].style.gridColumnStart).toBe("1");
   });
 });
