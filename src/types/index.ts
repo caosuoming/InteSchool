@@ -1303,6 +1303,8 @@ export interface DonationAlbumSnapshot {
   name: string;
   resourceType: ResourceFolderType;
   libraryLabel: "试卷库" | "讲义库" | "课件库";
+  /** 平台资源库中的置顶状态；旧数据缺省为未置顶。 */
+  pinned?: boolean;
 }
 
 /** 分享目标范围 */

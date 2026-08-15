@@ -147,8 +147,8 @@ describe("platform resource donations", () => {
       const first = await shareService.donateResources("teacher-a", "school-a", requests);
       expect(first).toHaveLength(2);
       expect(first.map((record) => record.donationAlbum)).toEqual([
-        { id: "album-1", name: "函数专题", resourceType: "examPaper", libraryLabel: "试卷库" },
-        { id: "album-1", name: "函数专题", resourceType: "examPaper", libraryLabel: "试卷库" },
+        { id: "album-1", name: "函数专题", resourceType: "examPaper", libraryLabel: "试卷库", pinned: false },
+        { id: "album-1", name: "函数专题", resourceType: "examPaper", libraryLabel: "试卷库", pinned: false },
       ]);
 
       const repeated = await shareService.donateResources("teacher-a", "school-a", requests);
@@ -222,6 +222,12 @@ describe("platform resource donations", () => {
       expect((await shareService.listPublicDonations("teacher-c"))
         .filter((record) => record.donationAlbum?.id === "album-a")
         .every((record) => record.donationAlbum?.name === "函数总复习"))
+        .toBe(true);
+
+      await shareService.setDonationAlbumPinned("teacher-c", "数学", "album-a", true);
+      expect((await shareService.listPublicDonations("teacher-c"))
+        .filter((record) => record.donationAlbum?.id === "album-a")
+        .every((record) => record.donationAlbum?.pinned === true))
         .toBe(true);
 
       await shareService.setDonationAlbum("teacher-c", "数学", free.id, "album-a");

@@ -143,6 +143,15 @@ export const shareService = {
     return rpcCall("share", "renameDonationAlbum", [teacherId, subject, albumId, name]) as any;
   },
 
+  async setDonationAlbumPinned(
+    teacherId: string,
+    subject: string,
+    albumId: string,
+    pinned: boolean,
+  ): Promise<ShareRecord[]> {
+    return rpcCall("share", "setDonationAlbumPinned", [teacherId, subject, albumId, pinned]) as any;
+  },
+
   async mergeDonationAlbums(
     teacherId: string,
     subject: string,

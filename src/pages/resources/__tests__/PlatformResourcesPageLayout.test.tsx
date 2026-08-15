@@ -44,6 +44,7 @@ vi.mock("@/services/share", () => ({
     updateDonationResource: vi.fn(),
     setSubjectModerator: vi.fn(),
     renameDonationAlbum: vi.fn(),
+    setDonationAlbumPinned: vi.fn(),
     mergeDonationAlbums: vi.fn(),
     setDonationAlbum: vi.fn(),
     updateDonationOrder: vi.fn(),
@@ -297,7 +298,8 @@ describe("PlatformResourcesPage layout and filters", () => {
     });
   });
 
-  it("shows the album name and source resource library on donated documents", async () => {
+  it("groups donated album documents in the regular list with their source library", async () => {
+    const user = userEvent.setup();
     const albumDonation = donationRecord("donation-album", "teacher-other", "examPaper", albumPaper);
     albumDonation.donationAlbum = {
       id: "album-1",
@@ -309,9 +311,65 @@ describe("PlatformResourcesPage layout and filters", () => {
 
     renderPage();
 
+    expect(await screen.findByRole("group", { name: "平台专辑：函数专题" })).toBeInTheDocument();
+    expect(screen.getByText("试卷库 · 1 个文档")).toBeInTheDocument();
+    expect(screen.queryByText("函数专题试卷")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "展开专辑：函数专题" }));
     expect(await screen.findByText("函数专题试卷")).toBeInTheDocument();
-    expect(screen.getByText("专辑：函数专题 · 试卷库")).toBeInTheDocument();
     expect(screen.getByLabelText("试卷标识")).toBeInTheDocument();
+  });
+
+  it("mixes unpinned albums with standalone resources by platform order", async () => {
+    const albumDonation = donationRecord("donation-album", "teacher-other", "examPaper", albumPaper);
+    albumDonation.platformOrder = 2;
+    albumDonation.donationAlbum = {
+      id: "album-1",
+      name: "函数专题",
+      resourceType: "examPaper",
+      libraryLabel: "试卷库",
+    };
+    const freePaper: ExamPaper = {
+      ...albumPaper,
+      id: "paper-free-first",
+      title: "平台顺序更靠前的试卷",
+    };
+    const freeDonation = donationRecord("donation-free-first", "teacher-other", "examPaper", freePaper);
+    freeDonation.platformOrder = 1;
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([albumDonation, freeDonation]);
+
+    renderPage();
+
+    const standalone = await screen.findByText("平台顺序更靠前的试卷");
+    const album = screen.getByRole("group", { name: "平台专辑：函数专题" });
+    expect(standalone.compareDocumentPosition(album) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps a pinned platform album ahead of standalone resources", async () => {
+    const albumDonation = donationRecord("donation-album", "teacher-other", "examPaper", albumPaper);
+    albumDonation.platformOrder = 2;
+    albumDonation.donationAlbum = {
+      id: "album-1",
+      name: "函数专题",
+      resourceType: "examPaper",
+      libraryLabel: "试卷库",
+      pinned: true,
+    };
+    const freePaper: ExamPaper = {
+      ...albumPaper,
+      id: "paper-free-first",
+      title: "平台顺序更靠前的试卷",
+    };
+    const freeDonation = donationRecord("donation-free-first", "teacher-other", "examPaper", freePaper);
+    freeDonation.platformOrder = 1;
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([albumDonation, freeDonation]);
+
+    renderPage();
+
+    const album = await screen.findByRole("group", { name: "平台专辑：函数专题" });
+    const standalone = screen.getByText("平台顺序更靠前的试卷");
+    expect(album.compareDocumentPosition(standalone) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText("已置顶")).toBeInTheDocument();
   });
 
   it("previews platform documents and saves a copy from the preview", async () => {

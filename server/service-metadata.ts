@@ -1402,6 +1402,12 @@ export const serviceParameters = {
       "albumId",
       "name"
     ],
+    "setDonationAlbumPinned": [
+      "teacherId",
+      "subject",
+      "albumId",
+      "pinned"
+    ],
     "mergeDonationAlbums": [
       "teacherId",
       "subject",
