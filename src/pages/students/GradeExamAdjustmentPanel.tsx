@@ -3,6 +3,7 @@ import { Copy, History, Search, Send, SlidersHorizontal, Undo2 } from "lucide-re
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Select } from "@/components/ui/Input";
+import { isAssignableGradeSubject } from "@/lib/grade-subjects";
 import { gradeService } from "@/services/grade";
 import { toast } from "@/stores/ui";
 import type {
@@ -70,6 +71,7 @@ function ScoreEditor({
       value={draft}
       disabled={disabled}
       hint={hint}
+      className="px-2.5 py-1.5 text-sm"
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => void commit()}
       onKeyDown={(event) => {
@@ -82,6 +84,43 @@ function ScoreEditor({
 function studentLabel(record: GradeScoreRecord): string {
   const suffix = [record.className, record.studentNo].filter(Boolean).join(" · ");
   return suffix ? `${record.studentName} · ${suffix}` : record.studentName;
+}
+
+function hasNumericScore(record: GradeScoreRecord, subject: string): boolean {
+  return [
+    record.scores[subject],
+    record.sourceAssignedScores?.[subject],
+    record.assignedScores[subject],
+  ].some((value) => typeof value === "number" && Number.isFinite(value));
+}
+
+function inferSelectedSubjects(subjectSelection: string | undefined): Set<string> {
+  const selected = new Set(["语文", "数学", "英语"]);
+  if (!subjectSelection) return selected;
+  const aliases: Array<[string, string]> = [
+    ["物", "物理"],
+    ["化", "化学"],
+    ["生", "生物"],
+    ["政", "政治"],
+    ["史", "历史"],
+    ["地", "地理"],
+  ];
+  aliases.forEach(([alias, subject]) => {
+    if (subjectSelection.includes(alias) || subjectSelection.includes(subject)) selected.add(subject);
+  });
+  return selected;
+}
+
+function visibleSubjectsForRecord(exam: GradeExam, record: GradeScoreRecord): string[] {
+  const subjectSelection = record.subjectSelection?.trim();
+  const selected = inferSelectedSubjects(subjectSelection);
+  const visible = exam.subjects.filter((subject) =>
+    hasNumericScore(record, subject) || (Boolean(subjectSelection) && selected.has(subject)),
+  );
+  if (visible.length > 0) return visible;
+
+  const classSetting = exam.settings.classSubjects.find((item) => item.classId === record.classId);
+  return exam.subjects.filter((subject) => classSetting?.examSubjects.includes(subject));
 }
 
 export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjustmentPanelProps) {
@@ -128,6 +167,10 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
   const history = useMemo(
     () => [...(exam.scoreAdjustments || [])].reverse(),
     [exam.scoreAdjustments],
+  );
+  const visibleSubjects = useMemo(
+    () => selectedRecord ? visibleSubjectsForRecord(exam, selectedRecord) : [],
+    [exam, selectedRecord],
   );
 
   const saveMetadata = async () => {
@@ -290,7 +333,7 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
           <div className="mt-0.5 text-xs text-ink-500">
             {published
               ? "当前成绩已发布；请先撤回发布，再继续修改学生成绩。"
-              : "可下拉选择或搜索学生。修改分数后失焦即保存；赋分留空表示恢复按原始分和当前规则自动计算。"}
+              : "可下拉选择或搜索学生。修改分数后失焦即保存；需要赋分的科目留空时恢复按原始分和当前规则自动计算。"}
           </div>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
@@ -337,17 +380,23 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
         {selectedRecord ? (
           <div
             aria-label="各科成绩"
-            className="grid grid-flow-col auto-cols-[minmax(14rem,1fr)] gap-3 overflow-x-auto pb-1"
+            className="flex gap-2 overflow-x-auto pb-1"
           >
-            {exam.subjects.map((subject) => {
-              const assignedConfigured = Object.prototype.hasOwnProperty.call(exam.settings.assignmentRules, subject)
-                || selectedRecord.sourceAssignedScores?.[subject] !== undefined;
+            {visibleSubjects.map((subject) => {
+              const assignedConfigured = isAssignableGradeSubject(subject) && (
+                Object.prototype.hasOwnProperty.call(exam.settings.assignmentRules, subject)
+                || typeof selectedRecord.sourceAssignedScores?.[subject] === "number"
+              );
               const rawKey = `${selectedRecord.studentId}:${subject}:raw`;
               const assignedKey = `${selectedRecord.studentId}:${subject}:assigned`;
               return (
-                <div key={subject} className="rounded-lg border border-ink-200 bg-ink-50/30 p-3">
-                  <div className="mb-3 text-sm font-medium text-ink-800">{subject}</div>
-                  <div className={assignedConfigured ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"}>
+                <div
+                  key={subject}
+                  aria-label={`${subject}成绩`}
+                  className={`${assignedConfigured ? "w-[17rem]" : "w-36"} shrink-0 rounded-lg border border-ink-200 bg-ink-50/30 p-2.5`}
+                >
+                  <div className="mb-2 text-sm font-medium text-ink-800">{subject}</div>
+                  <div className={assignedConfigured ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
                     <ScoreEditor
                       label={assignedConfigured ? "原始分" : "成绩"}
                       value={selectedRecord.scores[subject]}
