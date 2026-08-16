@@ -1,7 +1,7 @@
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
-  Table, TableRow, TableCell, WidthType, AlignmentType,
-  BorderStyle, convertInchesToTwip, ImportedXmlComponent,
+  AlignmentType,
+  BorderStyle, convertInchesToTwip, ImportedXmlComponent, ImageRun,
   type ParagraphChild,
 } from "docx";
 import { saveAs } from "file-saver";
@@ -9,9 +9,16 @@ import katex from "katex";
 import { mml2omml } from "mathml2omml";
 import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
+import {
+  parseDocumentImageDisplaySize,
+  parseOfficeMetafileLayout,
+} from "@/lib/office-metafile";
 
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+const IMAGE_MARKER_START = "\uE300";
+const IMAGE_MARKER_END = "\uE301";
+const MAX_DOCUMENT_IMAGE_WIDTH = 640;
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -21,6 +28,15 @@ interface DocumentTextStyle {
   color?: string;
   font?: string;
 }
+
+interface DocumentImageReference {
+  source: string;
+  alt: string;
+  width: number | null;
+  height: number | null;
+}
+
+type RasterImageType = "jpg" | "png" | "gif" | "bmp";
 
 function importedXmlElement(element: Element): ImportedXmlComponent {
   const attributes: Record<string, string> = {};
@@ -89,6 +105,14 @@ function applyOmmlRunStyle(root: Element, style: DocumentTextStyle): void {
   }
 }
 
+function escapeOmmlTextContent(omml: string): string {
+  return omml.replace(
+    /(<m:t\b[^>]*>)([\s\S]*?)(<\/m:t>)/g,
+    (_match, opening: string, text: string, closing: string) =>
+      `${opening}${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}${closing}`,
+  );
+}
+
 function latexToOmml(latex: string, style: DocumentTextStyle = {}): ParagraphChild | null {
   try {
     const rendered = katex.renderToString(latex, {
@@ -98,7 +122,7 @@ function latexToOmml(latex: string, style: DocumentTextStyle = {}): ParagraphChi
     const mathml = rendered.match(/<math\b[\s\S]*?<\/math>/i)?.[0]
       ?.replace(/<annotation\b[\s\S]*?<\/annotation>/gi, "");
     if (!mathml) return null;
-    const omml = mml2omml(mathml);
+    const omml = escapeOmmlTextContent(mml2omml(mathml));
     const xml = new DOMParser().parseFromString(omml, "application/xml");
     if (xml.getElementsByTagName("parsererror").length > 0) return null;
     applyOmmlRunStyle(xml.documentElement, style);
@@ -169,7 +193,7 @@ function createParagraph(
       size: options.size,
       color: options.color,
     }),
-    alignment: options.alignment,
+    alignment: options.alignment ?? AlignmentType.LEFT,
     spacing: options.spacing,
   });
 }
@@ -180,6 +204,7 @@ function createLabeledParagraph(label: string, content: string, labelColor = "0B
       textRun(`【${label}】`, { bold: true, color: labelColor, size: 22 }),
       ...documentTextChildren(content, { size: 22 }),
     ],
+    alignment: AlignmentType.LEFT,
     spacing: { line: 360 },
   });
 }
@@ -188,83 +213,20 @@ function createHeading(text: string, level: (typeof HeadingLevel)[keyof typeof H
   return new Paragraph({
     children: documentTextChildren(text),
     heading: level,
+    alignment: AlignmentType.LEFT,
     spacing: { before: 240, after: 120 },
   });
 }
 
-function createOptionsTable(options: string[]): Table {
-  const rows: TableRow[] = [];
-  const half = Math.ceil(options.length / 2);
-
-  for (let i = 0; i < half; i++) {
-    const cells: TableCell[] = [];
-    const leftIdx = i;
-    const rightIdx = i + half;
-
-    cells.push(
-      new TableCell({
-        width: { size: 50, type: WidthType.PERCENTAGE },
-        borders: {
-          top: { style: BorderStyle.NONE },
-          bottom: { style: BorderStyle.NONE },
-          left: { style: BorderStyle.NONE },
-          right: { style: BorderStyle.NONE },
-        },
-        children: [
-          new Paragraph({
-            children: [
-              textRun(`${String.fromCharCode(65 + leftIdx)}. `, { bold: true, size: 22 }),
-              ...documentTextChildren(options[leftIdx], { size: 22 }),
-            ],
-            spacing: { line: 360 },
-          }),
-        ],
-      }),
-    );
-
-    if (rightIdx < options.length) {
-      cells.push(
-        new TableCell({
-          width: { size: 50, type: WidthType.PERCENTAGE },
-          borders: {
-            top: { style: BorderStyle.NONE },
-            bottom: { style: BorderStyle.NONE },
-            left: { style: BorderStyle.NONE },
-            right: { style: BorderStyle.NONE },
-          },
-          children: [
-            new Paragraph({
-              children: [
-                textRun(`${String.fromCharCode(65 + rightIdx)}. `, { bold: true, size: 22 }),
-                ...documentTextChildren(options[rightIdx], { size: 22 }),
-              ],
-              spacing: { line: 360 },
-            }),
-          ],
-        }),
-      );
-    } else {
-      cells.push(
-        new TableCell({
-          width: { size: 50, type: WidthType.PERCENTAGE },
-          borders: {
-            top: { style: BorderStyle.NONE },
-            bottom: { style: BorderStyle.NONE },
-            left: { style: BorderStyle.NONE },
-            right: { style: BorderStyle.NONE },
-          },
-          children: [],
-        }),
-      );
-    }
-
-    rows.push(new TableRow({ children: cells }));
-  }
-
-  return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    rows,
-  });
+async function createOptionParagraphs(options: string[]): Promise<Paragraph[]> {
+  return Promise.all(options.map(async (option, index) => new Paragraph({
+    children: [
+      textRun(`${String.fromCharCode(65 + index)}. `, { bold: true, size: 22 }),
+      ...await documentRichChildren(option, { size: 22 }),
+    ],
+    alignment: AlignmentType.LEFT,
+    spacing: { line: 360, after: 60 },
+  })));
 }
 
 const STRUCTURED_MATH_SELECTOR = "i.math-variable, sub, sup";
@@ -384,6 +346,38 @@ function richInlineMathLatex(node: Node): string {
   return content;
 }
 
+const RAW_LATEX_MARKER_START = "\uE400";
+const RAW_LATEX_MARKER_END = "\uE401";
+
+function decodeCommonHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'");
+}
+
+function protectRawLatex(value: string): { text: string; formulas: string[] } {
+  const formulas: string[] = [];
+  const text = value.replace(
+    /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g,
+    (formula) => {
+      const index = formulas.push(decodeCommonHtmlEntities(formula)) - 1;
+      return `${RAW_LATEX_MARKER_START}${index}${RAW_LATEX_MARKER_END}`;
+    },
+  );
+  return { text, formulas };
+}
+
+function restoreRawLatex(value: string, formulas: string[]): string {
+  if (formulas.length === 0) return value;
+  return value.replace(/\uE400(\d+)\uE401/g, (_marker, index: string) =>
+    formulas[Number(index)] || "",
+  );
+}
+
 function restoreStructuredInlineMath(
   value: string,
   formulas: string[],
@@ -433,7 +427,8 @@ function replaceStructuredMath(container: HTMLElement): string[] {
 
 function plainDocumentText(value: string | undefined): string {
   if (!value) return "";
-  const withLineBreaks = value
+  const protectedLatex = protectRawLatex(value);
+  const withLineBreaks = protectedLatex.text
     .replace(/<br\s*\/?\s*>/gi, "\n")
     .replace(/<\/(?:p|div|li|h[1-6])>/gi, "\n");
 
@@ -442,22 +437,319 @@ function plainDocumentText(value: string | undefined): string {
     container.innerHTML = withLineBreaks;
     replaceRenderedMath(container);
     const structuredMath = replaceStructuredMath(container);
-    return restoreStructuredInlineMath(container.textContent || "", structuredMath)
+    return restoreRawLatex(
+      restoreStructuredInlineMath(container.textContent || "", structuredMath),
+      protectedLatex.formulas,
+    )
       .replace(/\u00a0/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   }
 
-  return withLineBreaks
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, "\"")
-    .replace(/&#39;/gi, "'")
+  return restoreRawLatex(
+    decodeCommonHtmlEntities(withLineBreaks.replace(/<[^>]*>/g, "")),
+    protectedLatex.formulas,
+  )
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+
+function documentImageMarker(index: number): string {
+  return `${IMAGE_MARKER_START}${index}${IMAGE_MARKER_END}`;
+}
+
+function positiveDimension(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function extractRichDocumentContent(value: string | undefined): {
+  text: string;
+  images: DocumentImageReference[];
+} {
+  if (!value) return { text: "", images: [] };
+
+  const images: DocumentImageReference[] = [];
+  const appendImage = (
+    source: string,
+    alt = "文档图片",
+    width: number | null = null,
+    height: number | null = null,
+  ): string => {
+    const displaySize = parseDocumentImageDisplaySize(source);
+    const index = images.push({
+      source,
+      alt,
+      width: width ?? displaySize?.width ?? null,
+      height: height ?? displaySize?.height ?? null,
+    }) - 1;
+    return documentImageMarker(index);
+  };
+
+  let marked = value.replace(
+    /!\[([^\]]*)\]\(([^\s)]+)(?:\s+["'][^"']*["'])?\)/g,
+    (_match, alt: string, source: string) => appendImage(source, alt || "文档图片"),
+  );
+  const protectedLatex = protectRawLatex(marked);
+  marked = protectedLatex.text
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/(?:p|div|li|h[1-6])>/gi, "\n");
+
+  if (typeof document !== "undefined") {
+    const container = document.createElement("div");
+    container.innerHTML = marked;
+    container.querySelectorAll<HTMLImageElement>("img[src]").forEach((image) => {
+      const source = image.getAttribute("src")?.trim();
+      if (!source) {
+        image.remove();
+        return;
+      }
+      const width = positiveDimension(image.dataset.officeWidth || image.getAttribute("width"));
+      const height = positiveDimension(image.dataset.officeHeight || image.getAttribute("height"));
+      image.replaceWith(document.createTextNode(appendImage(
+        source,
+        image.alt || "文档图片",
+        width,
+        height,
+      )));
+    });
+    replaceRenderedMath(container);
+    const structuredMath = replaceStructuredMath(container);
+    return {
+      text: restoreRawLatex(
+        restoreStructuredInlineMath(container.textContent || "", structuredMath),
+        protectedLatex.formulas,
+      )
+        .replace(/\u00a0/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim(),
+      images,
+    };
+  }
+
+  marked = marked.replace(
+    /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi,
+    (_match, source: string) => appendImage(source),
+  );
+  return {
+    text: restoreRawLatex(
+      decodeCommonHtmlEntities(marked.replace(/<[^>]*>/g, "")),
+      protectedLatex.formulas,
+    )
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+    images,
+  };
+}
+
+function rasterTypeFromContentType(contentType: string | null): RasterImageType | null {
+  const normalized = contentType?.split(";", 1)[0]?.trim().toLowerCase();
+  if (normalized === "image/png") return "png";
+  if (normalized === "image/jpeg" || normalized === "image/jpg") return "jpg";
+  if (normalized === "image/gif") return "gif";
+  if (normalized === "image/bmp" || normalized === "image/x-ms-bmp") return "bmp";
+  return null;
+}
+
+function rasterTypeFromData(data: Uint8Array): RasterImageType | null {
+  if (data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47)
+    return "png";
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff)
+    return "jpg";
+  if (data.length >= 6 && String.fromCharCode(...data.slice(0, 6)).startsWith("GIF"))
+    return "gif";
+  if (data.length >= 2 && data[0] === 0x42 && data[1] === 0x4d)
+    return "bmp";
+  return null;
+}
+
+function jpegDimensions(data: Uint8Array): { width: number; height: number } | null {
+  let offset = 2;
+  while (offset + 8 < data.length) {
+    if (data[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = data[offset + 1];
+    if (marker === 0xd8 || marker === 0xd9) {
+      offset += 2;
+      continue;
+    }
+    if (offset + 4 > data.length) return null;
+    const length = (data[offset + 2] << 8) | data[offset + 3];
+    if (length < 2 || offset + 2 + length > data.length) return null;
+    if (
+      marker >= 0xc0 && marker <= 0xcf
+      && ![0xc4, 0xc8, 0xcc].includes(marker)
+      && offset + 8 < data.length
+    ) {
+      return {
+        height: (data[offset + 5] << 8) | data[offset + 6],
+        width: (data[offset + 7] << 8) | data[offset + 8],
+      };
+    }
+    offset += 2 + length;
+  }
+  return null;
+}
+
+function rasterDimensions(
+  data: Uint8Array,
+  type: RasterImageType,
+): { width: number; height: number } | null {
+  if (type === "png" && data.length >= 24) {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  }
+  if (type === "gif" && data.length >= 10) {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
+  }
+  if (type === "bmp" && data.length >= 26) {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    return {
+      width: Math.abs(view.getInt32(18, true)),
+      height: Math.abs(view.getInt32(22, true)),
+    };
+  }
+  if (type === "jpg") return jpegDimensions(data);
+  return null;
+}
+
+function decodeRasterDataUrl(value: string): { data: Uint8Array; type: RasterImageType } | null {
+  const match = value.match(/^data:image\/(png|jpe?g|gif|bmp);base64,([a-z0-9+/=]+)$/i);
+  if (!match) return null;
+  const binary = atob(match[2]);
+  const data = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return { data, type: match[1].toLowerCase().startsWith("jp") ? "jpg" : match[1].toLowerCase() as RasterImageType };
+}
+
+function imageTransformation(
+  image: DocumentImageReference,
+  intrinsic: { width: number; height: number } | null,
+): { width: number; height: number } {
+  const preferred = image.width && image.height
+    ? { width: image.width, height: image.height }
+    : intrinsic && intrinsic.width > 0 && intrinsic.height > 0
+      ? intrinsic
+      : { width: 480, height: 320 };
+  const scale = Math.min(1, MAX_DOCUMENT_IMAGE_WIDTH / preferred.width);
+  return {
+    width: Math.max(1, Math.round(preferred.width * scale)),
+    height: Math.max(1, Math.round(preferred.height * scale)),
+  };
+}
+
+async function loadDocumentImage(image: DocumentImageReference): Promise<ImageRun | null> {
+  try {
+    let data: Uint8Array;
+    let type: RasterImageType | null;
+    const dataUrl = decodeRasterDataUrl(image.source);
+    if (dataUrl) {
+      data = dataUrl.data;
+      type = dataUrl.type;
+    } else {
+      const response = await fetch(image.source, { credentials: "same-origin" });
+      if (!response.ok) return null;
+      const raw = new Uint8Array(await response.arrayBuffer());
+      const metafile = parseOfficeMetafileLayout(image.source);
+      if (metafile) {
+        const { convertEmfToDataUrl, convertWmfToDataUrl } = await import("emf-converter");
+        const convertMetafile = metafile.format === "wmf" ? convertWmfToDataUrl : convertEmfToDataUrl;
+        const converted = await convertMetafile(raw.buffer, {
+          maxWidth: Math.min(2400, Math.max(64, Math.ceil((image.width || 1200) * 2))),
+          maxHeight: Math.min(1600, Math.max(64, Math.ceil((image.height || 800) * 2))),
+          dpiScale: 2,
+        });
+        const raster = converted ? decodeRasterDataUrl(converted) : null;
+        if (!raster) return null;
+        data = raster.data;
+        type = raster.type;
+      } else {
+        data = raw;
+        type = rasterTypeFromContentType(response.headers.get("content-type")) || rasterTypeFromData(raw);
+      }
+    }
+    if (!type) return null;
+    return new ImageRun({
+      type,
+      data,
+      transformation: imageTransformation(image, rasterDimensions(data, type)),
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function documentRichChildren(
+  value: string | undefined,
+  style: DocumentTextStyle = {},
+): Promise<ParagraphChild[]> {
+  const { text: extractedText, images } = extractRichDocumentContent(value);
+  const text = mergeInlineFormulaRuns(extractedText);
+  if (!text) return [textRun("", style)];
+
+  const children: ParagraphChild[] = [];
+  const tokenPattern = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$|\uE300(\d+)\uE301/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      children.push(...textRunsWithLineBreaks(text.slice(cursor, match.index), style));
+    }
+    if (match[3] !== undefined) {
+      const image = images[Number(match[3])];
+      const imageRun = image ? await loadDocumentImage(image) : null;
+      if (imageRun) children.push(imageRun);
+      else if (image?.alt) children.push(textRun(`[${image.alt}]`, style));
+    } else {
+      const latex = (match[1] ?? match[2] ?? "").trim();
+      const formula = latex ? latexToOmml(latex, style) : null;
+      if (formula) children.push(formula);
+      else children.push(...textRunsWithLineBreaks(match[0], style));
+    }
+    cursor = tokenPattern.lastIndex;
+  }
+  if (cursor < text.length) children.push(...textRunsWithLineBreaks(text.slice(cursor), style));
+  return children.length > 0 ? children : [textRun("", style)];
+}
+
+async function createRichParagraph(
+  value: string | undefined,
+  options: {
+    bold?: boolean;
+    size?: number;
+    color?: string;
+    alignment?: (typeof AlignmentType)[keyof typeof AlignmentType];
+    spacing?: { before?: number; after?: number; line?: number };
+  } = {},
+): Promise<Paragraph> {
+  return new Paragraph({
+    children: await documentRichChildren(value, {
+      bold: options.bold,
+      size: options.size,
+      color: options.color,
+    }),
+    alignment: options.alignment ?? AlignmentType.LEFT,
+    spacing: options.spacing,
+  });
+}
+
+async function createRichLabeledParagraph(
+  label: string,
+  content: string,
+  labelColor = "0B2545",
+): Promise<Paragraph> {
+  return new Paragraph({
+    children: [
+      textRun(`【${label}】`, { bold: true, color: labelColor, size: 22 }),
+      ...await documentRichChildren(content, { size: 22 }),
+    ],
+    alignment: AlignmentType.LEFT,
+    spacing: { line: 360 },
+  });
 }
 
 function safeDocxFileName(title: string, fallback = "试卷"): string {
@@ -465,42 +757,42 @@ function safeDocxFileName(title: string, fallback = "试卷"): string {
   return `${normalized || fallback}.docx`;
 }
 
-function appendExamQuestion(
-  children: Array<Paragraph | Table>,
+async function appendExamQuestion(
+  children: Paragraph[],
   question: ExamPaperQuestion,
   linkedQuestion: Question | undefined,
   number: number,
   stemOverride?: string,
-) {
-  const stem = plainDocumentText(stemOverride || question.stem || linkedQuestion?.stem);
+): Promise<void> {
+  const stem = stemOverride || question.stem || linkedQuestion?.stem || "";
   const options = question.options?.length ? question.options : linkedQuestion?.options;
-  const answer = plainDocumentText(question.answer || linkedQuestion?.answer);
-  const analysis = plainDocumentText(question.analysis || linkedQuestion?.analysis);
+  const answer = question.answer || linkedQuestion?.answer || "暂无答案";
+  const analysis = question.analysis || linkedQuestion?.analysis || "暂无解析";
 
   children.push(
     new Paragraph({
       children: [
         textRun(`${number}. `, { bold: true, size: 24 }),
-        ...documentTextChildren(stem, { size: 24 }),
-        textRun(`  （${question.score} 分）`, { color: "6B7280", size: 20 }),
+        ...await documentRichChildren(stem, { size: 24 }),
       ],
+      alignment: AlignmentType.LEFT,
       spacing: { before: 240, after: 120, line: 360 },
     }),
   );
 
   if (options?.length) {
-    children.push(createOptionsTable(options.map((option) => plainDocumentText(option))));
+    children.push(...await createOptionParagraphs(options));
   }
 
-  children.push(createLabeledParagraph("答案", answer || "暂无答案", "059669"));
-  children.push(createLabeledParagraph("解析", analysis || "暂无解析", "D4A24C"));
+  children.push(await createRichLabeledParagraph("答案", answer, "059669"));
+  children.push(await createRichLabeledParagraph("解析", analysis, "D4A24C"));
 }
 
 export async function buildExamPaperDocxBlob(
   paper: ExamPaper,
   questionsById: Record<string, Question> = {},
 ): Promise<Blob> {
-  const children: Array<Paragraph | Table> = [];
+  const children: Paragraph[] = [];
   const contentBlocks = paper.contentBlocks || [];
 
   if (contentBlocks.length > 0) {
@@ -524,28 +816,28 @@ export async function buildExamPaperDocxBlob(
       }
       if (block.type === "knowledge") {
         if (block.title) children.push(createHeading(plainDocumentText(block.title), HeadingLevel.HEADING_3));
-        if (content) children.push(createParagraph(content, { spacing: { line: 360 } }));
+        if (block.content.trim()) children.push(await createRichParagraph(block.content, { spacing: { line: 360 } }));
         continue;
       }
       if (block.type === "question") {
         const question = paper.questions.find((item) => item.id === block.examPaperQuestionId)
           || paper.questions.find((item) => item.questionId && item.questionId === block.questionId);
         if (!question) {
-          if (content) children.push(createParagraph(content, { spacing: { line: 360 } }));
+          if (block.content.trim()) children.push(await createRichParagraph(block.content, { spacing: { line: 360 } }));
           continue;
         }
         questionNumber += 1;
         const linkedQuestionId = question.questionId || block.questionId;
-        appendExamQuestion(
+        await appendExamQuestion(
           children,
           question,
           linkedQuestionId ? questionsById[linkedQuestionId] : undefined,
           questionNumber,
-          content,
+          block.content,
         );
         continue;
       }
-      if (content) children.push(createParagraph(content, { spacing: { line: 360 } }));
+      if (block.content.trim()) children.push(await createRichParagraph(block.content, { spacing: { line: 360 } }));
     }
   } else {
     children.push(
@@ -557,7 +849,7 @@ export async function buildExamPaperDocxBlob(
       }),
     );
     if (paper.description) {
-      children.push(createParagraph(plainDocumentText(paper.description), {
+      children.push(await createRichParagraph(paper.description, {
         color: "6B7280",
         alignment: AlignmentType.CENTER,
         spacing: { after: 120 },
@@ -572,14 +864,14 @@ export async function buildExamPaperDocxBlob(
         spacing: { after: 360 },
       },
     ));
-    paper.questions.forEach((question, index) => {
-      appendExamQuestion(
+    for (const [index, question] of paper.questions.entries()) {
+      await appendExamQuestion(
         children,
         question,
         question.questionId ? questionsById[question.questionId] : undefined,
         index + 1,
       );
-    });
+    }
   }
 
   if (children.length === 0) {
@@ -616,41 +908,42 @@ export async function generateExamPaperDocx(
   saveAs(blob, fileName);
 }
 
-function appendLectureQuestion(
-  children: Array<Paragraph | Table>,
+async function appendLectureQuestion(
+  children: Paragraph[],
   section: LectureSection,
   question: Question | undefined,
   number: number,
-) {
+): Promise<void> {
   const label = section.customLabel || `${number}.`;
   const stem = question?.stem || section.content || section.title;
   children.push(new Paragraph({
     children: [
       textRun(`${label} `, { bold: true, size: 24 }),
-      ...documentTextChildren(stem, { size: 24 }),
+      ...await documentRichChildren(stem, { size: 24 }),
     ],
+    alignment: AlignmentType.LEFT,
     spacing: { before: 240, after: 120, line: 360 },
   }));
-  if (question?.options?.length) children.push(createOptionsTable(question.options));
+  if (question?.options?.length) children.push(...await createOptionParagraphs(question.options));
   if (question) {
-    children.push(createLabeledParagraph("答案", question.answer || "暂无答案", "059669"));
-    children.push(createLabeledParagraph("解析", question.analysis || "暂无解析", "D4A24C"));
+    children.push(await createRichLabeledParagraph("答案", question.answer || "暂无答案", "059669"));
+    children.push(await createRichLabeledParagraph("解析", question.analysis || "暂无解析", "D4A24C"));
   }
 }
 
-function appendLectureSections(
-  children: Array<Paragraph | Table>,
+async function appendLectureSections(
+  children: Paragraph[],
   sections: LectureSection[],
   questionsById: Record<string, Question>,
   questionCounter: { value: number },
   depth = 0,
   documentTitleSectionId: string | null = null,
-) {
+): Promise<void> {
   for (const section of sections) {
     if (section.id === documentTitleSectionId) continue;
     if (section.type === "question") {
       questionCounter.value += 1;
-      appendLectureQuestion(
+      await appendLectureQuestion(
         children,
         section,
         section.questionId ? questionsById[section.questionId] : undefined,
@@ -662,21 +955,21 @@ function appendLectureSections(
         plainDocumentText(heading),
         depth > 0 ? HeadingLevel.HEADING_3 : HeadingLevel.HEADING_2,
       ));
-      if (section.content) children.push(createParagraph(section.content, { spacing: { line: 360 } }));
+      if (section.content) children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
     } else if (section.type === "knowledge") {
-      if (section.content) children.push(createParagraph(section.content, { spacing: { line: 360 } }));
+      if (section.content) children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
     } else if (section.content || !["空白行", "[空白行]"].includes(section.title)) {
       if (section.title && !["正文", "文档正文"].includes(section.title)) {
         const heading = section.customLabel ? `${section.customLabel} ${section.title}` : section.title;
         children.push(createHeading(plainDocumentText(heading), HeadingLevel.HEADING_3));
       }
-      if (section.content) children.push(createParagraph(section.content, { spacing: { line: 360 } }));
+      if (section.content) children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
       else children.push(createParagraph(" ", { spacing: { after: 240 } }));
     } else {
       children.push(createParagraph(" ", { spacing: { after: 240 } }));
     }
     if (section.children?.length) {
-      appendLectureSections(
+      await appendLectureSections(
         children,
         section.children,
         questionsById,
@@ -692,7 +985,7 @@ export async function buildLectureDocxBlob(
   lecture: Lecture,
   questionsById: Record<string, Question> = {},
 ): Promise<Blob> {
-  const children: Array<Paragraph | Table> = [];
+  const children: Paragraph[] = [];
   const documentTitle = lecture.contentBlocks
     ?.find((block) => block.type === "documentTitle")
     ?.content.trim() || lecture.title;
@@ -707,13 +1000,13 @@ export async function buildLectureDocxBlob(
     spacing: { after: 360 },
   }));
   if (lecture.description) {
-    children.push(createParagraph(lecture.description, {
+    children.push(await createRichParagraph(lecture.description, {
       color: "6B7280",
       alignment: AlignmentType.CENTER,
       spacing: { after: 180 },
     }));
   }
-  appendLectureSections(
+  await appendLectureSections(
     children,
     lecture.sections,
     questionsById,
@@ -762,7 +1055,7 @@ export async function generateQuestionDocx(
 ): Promise<void> {
   const { chapterNames = [], pointNames = [], remarks = [] } = options;
 
-  const children: (Paragraph | Table)[] = [];
+  const children: Paragraph[] = [];
 
   children.push(
     new Paragraph({
@@ -790,16 +1083,16 @@ export async function generateQuestionDocx(
   );
 
   children.push(createHeading("题干"));
-  children.push(createParagraph(question.stem, { spacing: { line: 360 } }));
+  children.push(await createRichParagraph(question.stem, { spacing: { line: 360 } }));
 
   if (question.options && question.options.length > 0) {
     children.push(createHeading("选项"));
-    children.push(createOptionsTable(question.options));
+    children.push(...await createOptionParagraphs(question.options));
   }
 
   children.push(createHeading("答案"));
   children.push(
-    createParagraph(question.answer, {
+    await createRichParagraph(question.answer, {
       bold: true,
       color: "059669",
       spacing: { line: 360 },
@@ -807,7 +1100,7 @@ export async function generateQuestionDocx(
   );
 
   children.push(createHeading("解析"));
-  children.push(createParagraph(question.analysis, { spacing: { line: 360 } }));
+  children.push(await createRichParagraph(question.analysis, { spacing: { line: 360 } }));
 
   if (chapterNames.length > 0 || pointNames.length > 0) {
     children.push(createHeading("关联信息"));
@@ -821,17 +1114,18 @@ export async function generateQuestionDocx(
 
   if (remarks.length > 0) {
     children.push(createHeading("教师备注"));
-    remarks.forEach((remark, idx) => {
+    for (const [idx, remark] of remarks.entries()) {
       children.push(
         new Paragraph({
           children: [
             textRun(`${idx + 1}. `, { bold: true, color: "D4A24C", size: 22 }),
-            ...documentTextChildren(remark, { size: 22 }),
+            ...await documentRichChildren(remark, { size: 22 }),
           ],
+          alignment: AlignmentType.LEFT,
           spacing: { line: 360 },
         }),
       );
-    });
+    }
   }
 
   const doc = new Document({
@@ -871,7 +1165,7 @@ export async function generateQuestionsDocx(
     includeAnswers = true,
   } = options;
 
-  const children: (Paragraph | Table)[] = [];
+  const children: Paragraph[] = [];
 
   children.push(
     new Paragraph({
@@ -891,7 +1185,7 @@ export async function generateQuestionsDocx(
     }),
   );
 
-  questions.forEach((question, qIndex) => {
+  for (const [qIndex, question] of questions.entries()) {
     children.push(
       new Paragraph({
         children: [
@@ -912,10 +1206,10 @@ export async function generateQuestionsDocx(
       }),
     );
 
-    children.push(createParagraph(question.stem, { spacing: { line: 360 } }));
+    children.push(await createRichParagraph(question.stem, { spacing: { line: 360 } }));
 
     if (question.options && question.options.length > 0) {
-      children.push(createOptionsTable(question.options));
+      children.push(...await createOptionParagraphs(question.options));
     }
 
     if (includeAnswers) {
@@ -923,8 +1217,9 @@ export async function generateQuestionsDocx(
         new Paragraph({
           children: [
             textRun("答案：", { bold: true, color: "059669", size: 22 }),
-            ...documentTextChildren(question.answer, { color: "059669", size: 22 }),
+            ...await documentRichChildren(question.answer, { color: "059669", size: 22 }),
           ],
+          alignment: AlignmentType.LEFT,
           spacing: { before: 120, line: 360 },
         }),
       );
@@ -934,8 +1229,9 @@ export async function generateQuestionsDocx(
           new Paragraph({
             children: [
               textRun("解析：", { bold: true, color: "D4A24C", size: 22 }),
-              ...documentTextChildren(question.analysis, { size: 22 }),
+              ...await documentRichChildren(question.analysis, { size: 22 }),
             ],
+            alignment: AlignmentType.LEFT,
             spacing: { line: 360 },
           }),
         );
@@ -951,7 +1247,7 @@ export async function generateQuestionsDocx(
         spacing: { before: 240, after: 240 },
       }),
     );
-  });
+  }
 
   const doc = new Document({
     sections: [

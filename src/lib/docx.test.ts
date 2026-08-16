@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExamPaper, Lecture, Question } from "@/types";
 
 const saveAsMock = vi.hoisted(() => vi.fn());
+const fetchMock = vi.hoisted(() => vi.fn());
 
 vi.mock("file-saver", () => ({
   saveAs: saveAsMock,
@@ -106,6 +107,8 @@ async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
 
 beforeEach(() => {
   saveAsMock.mockReset();
+  fetchMock.mockReset();
+  vi.stubGlobal("fetch", fetchMock);
 });
 
 describe("generateExamPaperDocx", () => {
@@ -122,7 +125,80 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("【答案】");
     expect(documentXml).toContain("A");
     expect(documentXml).toContain("根据函数定义判断。");
+    expect(documentXml).toContain("A. ");
+    expect(documentXml).toContain("B. ");
+    expect(documentXml).not.toContain("<w:tbl");
+    expect(documentXml).not.toContain("（5 分）");
     expect(documentXml).not.toContain("题库中的旧题干");
+  });
+
+  it("preserves rich-text images in the generated DOCX and keeps body paragraphs left-aligned", async () => {
+    const png = Uint8Array.from(atob(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n0sAAAAASUVORK5CYII=",
+    ), (character) => character.charCodeAt(0));
+    fetchMock.mockResolvedValue(new Response(png, {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    }));
+
+    const illustratedPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [],
+      contentBlocks: [{
+        id: "illustrated-knowledge",
+        type: "knowledge",
+        content: [
+          "观察下图并计算 $x^2+1$：",
+          "![函数图像](/api/files/file-1/assets/rId5?officeWidth=200&officeHeight=100)",
+        ].join("\n"),
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(illustratedPaper);
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const mediaFiles = Object.keys(zip.files).filter((name) => name.startsWith("word/media/") && !name.endsWith("/"));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/files/file-1/assets/rId5?officeWidth=200&officeHeight=100",
+      { credentials: "same-origin" },
+    );
+    expect(mediaFiles).toHaveLength(1);
+    expect(documentXml).toContain("<w:drawing>");
+    expect(documentXml).toContain("<m:oMath");
+    expect(documentXml).toMatch(/<w:jc w:val="left"\s*\/>/);
+    expect(documentXml).not.toMatch(/<w:jc w:val="(?:both|distribute)"/);
+    expect(documentXml).not.toContain("<img");
+  });
+
+  it("keeps comparison-heavy set formulas intact before converting them to Office Math", async () => {
+    const setPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: "设 $B=\\{x|{x}^{2}-5x<0\\}$，选择正确的集合。",
+        options: [
+          "$\\{x|0<x<5\\}$",
+          "$\\{x|1\\leq x<5\\}$",
+          "$\\{x|0\\leq x<1\\}$",
+          "$\\{x|1<x<5\\}$",
+        ],
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: "设 $B=\\{x|{x}^{2}-5x<0\\}$，选择正确的集合。",
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(setPaper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml.match(/<m:oMath/g)).toHaveLength(5);
+    expect(documentXml).not.toContain("$B=");
+    expect(documentXml).not.toContain("$\\{x|");
+    expect(documentXml).not.toContain("<w:tbl");
+    expect(documentXml).not.toContain("（5 分）");
   });
 
   it("emits editable Office math with the surrounding text size and a complete math font", async () => {
