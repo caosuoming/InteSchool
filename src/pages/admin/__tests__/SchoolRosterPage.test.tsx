@@ -27,6 +27,7 @@ vi.mock("@/services/class", () => ({
     restoreSchoolClass: vi.fn(),
     restoreStudent: vi.fn(),
     updateSchoolClass: vi.fn(),
+    addStudent: vi.fn(),
     updateStudent: vi.fn(),
     transferStudent: vi.fn(),
     suspendStudent: vi.fn(),
@@ -198,6 +199,12 @@ describe("SchoolRosterPage", () => {
       graduatedStudents: 1,
     });
     vi.mocked(classService.updateSchoolClass).mockResolvedValue(classes[0]);
+    vi.mocked(classService.addStudent).mockResolvedValue({
+      ...student,
+      id: "student-new",
+      name: "李同学",
+      studentNo: "20260002",
+    });
     vi.mocked(authService.updateTeacherTeachingProfile).mockResolvedValue(managedTeachers[0]);
     vi.mocked(classService.updateStudent).mockResolvedValue(student);
     vi.mocked(classService.transferStudent).mockResolvedValue(student);
@@ -323,6 +330,38 @@ describe("SchoolRosterPage", () => {
         gender: "female",
       });
     });
+  });
+
+  it("adds a single student to the selected class", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增学生" }));
+    fireEvent.change(screen.getByLabelText("姓名"), { target: { value: " 李同学 " } });
+    fireEvent.change(screen.getByLabelText("学号"), { target: { value: " 20260002 " } });
+    fireEvent.change(screen.getByLabelText("选科"), { target: { value: "物化地" } });
+    fireEvent.change(screen.getByLabelText("性别"), { target: { value: "female" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加学生" }));
+
+    await waitFor(() => {
+      expect(classService.addStudent).toHaveBeenCalledWith(classes[0].id, "school-1", {
+        name: "李同学",
+        studentNo: "20260002",
+        grade: "高二",
+        gender: "female",
+        subjectSelection: "物化地",
+      });
+    });
+  });
+
+  it("rejects a duplicate student number before creating a student", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增学生" }));
+    fireEvent.change(screen.getByLabelText("姓名"), { target: { value: "重名学号同学" } });
+    fireEvent.change(screen.getByLabelText("学号"), { target: { value: student.studentNo } });
+    fireEvent.click(screen.getByRole("button", { name: "添加学生" }));
+
+    await waitFor(() => expect(classService.addStudent).not.toHaveBeenCalled());
   });
 
   it("supports transfer, suspension, and transfer-out from the student editor", async () => {

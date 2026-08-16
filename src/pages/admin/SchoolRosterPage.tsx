@@ -241,6 +241,11 @@ export default function SchoolRosterPage() {
   const [editStudentGrade, setEditStudentGrade] = useState("");
   const [editStudentGender, setEditStudentGender] = useState<"male" | "female">("male");
   const [editStudentTransferClassId, setEditStudentTransferClassId] = useState("");
+  const [addStudentOpen, setAddStudentOpen] = useState(false);
+  const [newStudentName, setNewStudentName] = useState("");
+  const [newStudentNo, setNewStudentNo] = useState("");
+  const [newStudentSubjectSelection, setNewStudentSubjectSelection] = useState("");
+  const [newStudentGender, setNewStudentGender] = useState<"male" | "female">("male");
 
   const load = useCallback(async () => {
     if (!schoolId) return;
@@ -352,6 +357,43 @@ export default function SchoolRosterPage() {
     toast.success(`已新增 ${created.length} 个班级`);
     setClassNames("");
     setClassModalOpen(false);
+    await load();
+  });
+
+  const openAddStudent = () => {
+    if (!selectedClass) return;
+    setNewStudentName("");
+    setNewStudentNo("");
+    setNewStudentSubjectSelection("");
+    setNewStudentGender("male");
+    setAddStudentOpen(true);
+  };
+
+  const handleAddStudent = () => run(async () => {
+    if (!selectedClass) return;
+    const name = newStudentName.trim();
+    const studentNo = newStudentNo.trim();
+    if (!name || !studentNo) {
+      toast.error("请填写姓名与学号");
+      return;
+    }
+    const duplicate = students.find((item) =>
+      item.status !== "deleted"
+      && item.studentNo.trim().toLocaleLowerCase("zh-CN") === studentNo.toLocaleLowerCase("zh-CN"),
+    );
+    if (duplicate) {
+      toast.error(`学号 ${studentNo} 已被“${duplicate.name}”使用`);
+      return;
+    }
+    await classService.addStudent(selectedClass.id, schoolId, {
+      name,
+      studentNo,
+      grade: selectedClass.grade,
+      gender: newStudentGender,
+      subjectSelection: newStudentSubjectSelection.trim() || undefined,
+    });
+    toast.success(`已将“${name}”加入“${selectedClass.name}”`);
+    setAddStudentOpen(false);
     await load();
   });
 
@@ -914,12 +956,24 @@ export default function SchoolRosterPage() {
           </Card>
 
           <Card>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-serif text-lg font-semibold text-ink-900">{selectedClass?.name || "学生名单"}</h2>
-                <p className="mt-1 text-xs text-ink-500">选中班级后可直接编辑姓名、学号、选科、年级和性别；Excel 仍支持批量导入。</p>
+                <p className="mt-1 text-xs text-ink-500">选中班级后可新增个别学生，或直接编辑现有学生；Excel 仍支持批量导入。</p>
               </div>
-              <Badge variant="teal">{classStudents.length} 人</Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="teal">{classStudents.length} 人</Badge>
+                {selectedClass && (
+                  <Button
+                    size="sm"
+                    variant="gold"
+                    onClick={openAddStudent}
+                    disabled={selectedClass.status !== "active" || selectedGrade?.status === "graduated"}
+                  >
+                    <Plus className="h-3.5 w-3.5" />新增学生
+                  </Button>
+                )}
+              </div>
             </div>
             {!selectedClass ? (
               <EmptyState icon={<FileSpreadsheet className="h-7 w-7" />} title="请选择班级" description="从上方选择年级和班级查看学生。" />
@@ -1256,6 +1310,52 @@ export default function SchoolRosterPage() {
             )}
             <p className="mt-1.5 text-xs text-ink-400">班主任与任课教师可独立设置；保存后同步更新教师的教学资料。</p>
           </fieldset>
+        </div>
+      </Modal>
+
+      <Modal
+        open={addStudentOpen}
+        onClose={() => setAddStudentOpen(false)}
+        title="新增学生"
+        description={selectedClass ? `加入班级：${selectedClass.name}` : undefined}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAddStudentOpen(false)}>取消</Button>
+            <Button variant="gold" onClick={handleAddStudent} loading={working}>添加学生</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Input
+            label="姓名"
+            value={newStudentName}
+            onChange={(event) => setNewStudentName(event.target.value)}
+            autoFocus
+          />
+          <Input
+            label="学号"
+            value={newStudentNo}
+            onChange={(event) => setNewStudentNo(event.target.value)}
+          />
+          <Input
+            label="选科"
+            placeholder="如：物化生、史政地"
+            value={newStudentSubjectSelection}
+            onChange={(event) => setNewStudentSubjectSelection(event.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="年级" value={selectedClass?.grade || ""} disabled />
+            <Select
+              label="性别"
+              value={newStudentGender}
+              onChange={(event) => setNewStudentGender(event.target.value as "male" | "female")}
+              options={[
+                { value: "male", label: "男" },
+                { value: "female", label: "女" },
+              ]}
+            />
+          </div>
         </div>
       </Modal>
 

@@ -21,6 +21,7 @@ export interface StudentInput {
   studentNo: string;
   grade?: string;
   gender?: "male" | "female";
+  subjectSelection?: string;
   isExternal?: boolean;
   externalSchool?: string;
 }
