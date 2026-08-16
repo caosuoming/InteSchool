@@ -69,6 +69,33 @@ function determinantWithSubscripts(): string {
   `;
 }
 
+function vectorEquationSystem(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:eqArr>
+        <m:e>
+          <m:acc>
+            <m:accPr><m:chr m:val="⃗"/></m:accPr>
+            <m:e><m:r><m:t>a</m:t></m:r></m:e>
+          </m:acc>
+          <m:r><m:t>=</m:t></m:r>
+          <m:acc>
+            <m:accPr><m:chr m:val="⃗"/></m:accPr>
+            <m:e><m:r><m:t>b</m:t></m:r></m:e>
+          </m:acc>
+        </m:e>
+        <m:e>
+          <m:acc>
+            <m:accPr><m:chr m:val="⃗"/></m:accPr>
+            <m:e><m:r><m:t>c</m:t></m:r></m:e>
+          </m:acc>
+          <m:r><m:t>=0</m:t></m:r>
+        </m:e>
+      </m:eqArr>
+    </m:oMath>
+  `;
+}
+
 describe("ommlToLatex", () => {
   it("keeps ordinary Latin set-name letters as ordinary variables", () => {
     expect(ommlToLatex(mathRun("C+Q+N+R+Z"))).toBe("C+Q+N+R+Z");
@@ -100,6 +127,12 @@ describe("ommlToLatex", () => {
   it("keeps nested subscript expressions inside their matrix cells", () => {
     expect(ommlToLatex(determinantWithSubscripts())).toBe(
       String.raw`\left|\begin{matrix} 4{a}_{5} & 1 \\ {a}_{3} & 1 \end{matrix}\right|=0`,
+    );
+  });
+
+  it("does not turn nested vector operands into extra equation rows", () => {
+    expect(ommlToLatex(vectorEquationSystem())).toBe(
+      "\\begin{cases}\n\\vec{a}=\\vec{b} \\\\\n\\vec{c}=0\n\\end{cases}",
     );
   });
 });

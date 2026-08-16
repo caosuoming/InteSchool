@@ -495,7 +495,7 @@ function mapFunction(name: string): string | null {
  */
 function convertEqArr(el: Element): string {
   const rows: string[] = [];
-  const rowEls = el.getElementsByTagNameNS(MATH_NS, "e");
+  const rowEls = directMathChildren(el, "e");
 
   for (let i = 0; i < rowEls.length; i++) {
     const rowContent = convertChildren(rowEls[i]);
