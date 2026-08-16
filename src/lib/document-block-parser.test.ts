@@ -334,6 +334,37 @@ describe("document block parser", () => {
     });
   });
 
+  it("keeps standalone numbered sub-question detail headings in analysis", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "21. 已知函数 f(x)，完成下列各问。",
+        "【解析】",
+        "【分析】（1）先构造辅助函数并讨论单调性。",
+        "（2）再利用根的关系完成证明。",
+        "【小问 1 详解】",
+        "先研究辅助函数的导数符号。",
+        "【小问 2 详解】",
+        "再代入边界条件得到结论。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      analysis: [
+        "【小问 1 详解】",
+        "先研究辅助函数的导数符号。",
+        "【小问 2 详解】",
+        "再代入边界条件得到结论。",
+      ].join("\n"),
+      summary: [
+        "（1）先构造辅助函数并讨论单调性。",
+        "（2）再利用根的关系完成证明。",
+      ].join("\n"),
+    });
+  });
+
   it("recognizes numbered sub-question detail markers in inline answer regions", () => {
     const blocks = parseDocumentBlocks(
       [
@@ -814,6 +845,34 @@ describe("document block parser", () => {
       summary: [
         "1. 构造隔项等差数列：两式相减得到公差。",
         "2. 构造隔项等比数列：两式相除得到公比。",
+      ].join("\n"),
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "8. 已知另一数列，求其前 n 项和。",
+    });
+  });
+
+  it("keeps a numbered list in summary even when the summary starts with unnumbered text", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "7. 已知数列满足递推关系，求其通项公式。",
+        "【分析】",
+        "先把解题过程归纳为两个步骤。",
+        "1. 构造隔项等差数列并求公差。",
+        "2. 构造隔项等比数列并求公比。",
+        "8. 已知另一数列，求其前 n 项和。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      summary: [
+        "先把解题过程归纳为两个步骤。",
+        "1. 构造隔项等差数列并求公差。",
+        "2. 构造隔项等比数列并求公比。",
       ].join("\n"),
     });
     expect(blocks[1]).toMatchObject({
