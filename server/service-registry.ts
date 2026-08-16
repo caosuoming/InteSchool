@@ -11,6 +11,7 @@ import { examArrangementService } from "./domain/examArrangement.js";
 import { examPublishService } from "./domain/examPublish.js";
 import { extractService } from "./domain/extract.js";
 import { gradeService } from "./domain/grade.js";
+import { helpService } from "./domain/help.js";
 import { knowledgeService } from "./domain/knowledge.js";
 import { lectureService } from "./domain/lecture.js";
 import { lessonCoursewareService } from "./domain/lessonCourseware.js";
@@ -43,6 +44,7 @@ export const serviceRegistry = {
   examPublish: examPublishService,
   extract: extractService,
   grade: gradeService,
+  help: helpService,
   knowledge: knowledgeService,
   lecture: lectureService,
   lessonCourseware: lessonCoursewareService,

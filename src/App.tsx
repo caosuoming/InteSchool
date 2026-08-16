@@ -51,6 +51,7 @@ const StudentGradesPage = lazy(() => import("@/pages/students/StudentGradesPage"
 const PublishedGradeReportPage = lazy(() => import("@/pages/students/PublishedGradeReportPage"));
 const MyExamsPage = lazy(() => import("@/pages/exams/MyExamsPage"));
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
+const HelpPage = lazy(() => import("@/pages/help/HelpPage"));
 
 function RouteLoading() {
   return (
@@ -141,6 +142,7 @@ export default function App() {
             <Route path="/import" element={<Navigate to="/upload" replace />} />
 
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/help" element={<HelpPage />} />
             <Route path="/baskets" element={<BasketsPage />} />
             <Route path="/baskets/:id" element={<BasketsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />

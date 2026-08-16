@@ -118,6 +118,18 @@ function canReadFile(
   if (!teacher) return false;
   if (file.ownerId === teacher.id || (file.schoolId && file.schoolId === teacher.schoolId)) return true;
   const state = store.loadState();
+  if (file.mimeType.startsWith("image/")) {
+    const publishedInHelp = [
+      ...((state.helpTopics || []) as Array<Record<string, unknown>>),
+      ...((state.helpReplies || []) as Array<Record<string, unknown>>),
+    ].some((record) => {
+      if (record.authorId !== file.ownerId || !Array.isArray(record.attachments)) return false;
+      return record.attachments.some((attachment) => (
+        attachment && typeof attachment === "object" && (attachment as { id?: unknown }).id === file.id
+      ));
+    });
+    if (publishedInHelp) return true;
+  }
   const correction = ((state.platformResourceCorrections || []) as Array<{
     donationId: string;
     reporterTeacherId: string;

@@ -6,6 +6,7 @@ import {
   FolderOpen, Download,
   ChevronDown, ChevronRight, Building2, Cloud,
   BookOpen, Check, Crown, ClipboardCheck, ClipboardList, MapPinned, FileSpreadsheet,
+  CircleHelp,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -160,7 +161,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         )}
       >
         {/* Logo */}
-        <div className="relative h-16 flex items-center justify-between px-4 border-b border-ink-800">
+        <div className="relative h-20 flex items-center justify-between px-4 border-b border-ink-800">
           <Link to="/dashboard" className="flex items-center gap-2.5 min-w-0">
             <BrandMark className="w-9 h-9" />
             {!sidebarCollapsed && (
@@ -170,7 +171,21 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </div>
             )}
           </Link>
-          <NotificationBell teacherId={teacher.id} collapsed={sidebarCollapsed} />
+          <div className={cn(!sidebarCollapsed && "flex flex-col items-center gap-0.5")}>
+            <NotificationBell teacherId={teacher.id} collapsed={sidebarCollapsed} />
+            <Link
+              to="/help"
+              className={cn(
+                "flex items-center justify-center rounded-md text-ink-400 hover:bg-ink-800 hover:text-paper transition-colors",
+                sidebarCollapsed ? "absolute right-1 top-9 w-6 h-6" : "w-8 h-6",
+                isActive("/help") && "bg-gold-400/15 text-gold-300",
+              )}
+              title="帮助与许愿"
+              aria-label="帮助与许愿"
+            >
+              <CircleHelp className={sidebarCollapsed ? "w-3.5 h-3.5" : "w-4 h-4"} />
+            </Link>
+          </div>
         </div>
 
         {/* 身份切换（所属单位） */}

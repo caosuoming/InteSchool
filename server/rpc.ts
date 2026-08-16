@@ -430,7 +430,7 @@ function authorize(
     validateEmbeddedIdentity(value, teacher, admin, name);
   });
 
-  if (service !== "school" && !teacher.schoolId) {
+  if (service !== "school" && service !== "help" && !teacher.schoolId) {
     throw new Error("请先完成学校认证");
   }
 
