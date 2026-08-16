@@ -150,7 +150,7 @@
 
   /* KaTeX's inline box sits slightly high beside the app's Chinese body fonts. */
   .question-answer-content .katex-formula:not(.katex-formula-block) > .katex {
-    vertical-align: -0.05em;
+    vertical-align: -0.08em;
   }
 
   .question-answer-content .formula-inline {
