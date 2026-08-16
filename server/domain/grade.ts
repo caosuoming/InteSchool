@@ -945,6 +945,9 @@ export const gradeService = {
     if (kind !== "raw" && kind !== "assigned") throw new Error("成绩修改口径不正确");
     const record = current.records.find((item) => item.studentId === studentId);
     if (!record) throw new Error("该考试不存在所选学生成绩");
+    if (kind === "assigned" && typeof record.sourceAssignedScores?.[subject] !== "number") {
+      throw new Error("仅可修改导入成绩中已有的赋分");
+    }
 
     const nextValue = normalizeAdjustedScore(value);
     const previousValue = kind === "raw"
