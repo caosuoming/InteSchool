@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { StudentAnswerDetail } from "@/services/analytics";
 import type { AnswerRecord, Chapter, Question } from "@/types";
-import { buildChapterMastery } from "./student-learning-chapters";
+import {
+  applyChapterPlacement,
+  buildChapterMastery,
+  orderVisibleChapterMastery,
+} from "./student-learning-chapters";
 
 const chapters: Chapter[] = [
   { id: "chapter-root", schoolId: "school-1", parentId: null, name: "必修第一章", order: 1, level: 0 },
@@ -56,6 +60,7 @@ describe("buildChapterMastery", () => {
 
     expect(mastery.map((item) => item.chapterId)).toEqual(["chapter-root", "chapter-a", "chapter-b"]);
     expect(mastery[0]).toMatchObject({
+      parentId: null,
       chapterPath: ["必修第一章"],
       totalAttempts: 3,
       correctCount: 1,
@@ -64,6 +69,7 @@ describe("buildChapterMastery", () => {
       masteryLevel: "weak",
     });
     expect(mastery[1]).toMatchObject({
+      parentId: "chapter-root",
       chapterPath: ["必修第一章", "集合"],
       totalAttempts: 2,
       correctCount: 1,
@@ -76,5 +82,34 @@ describe("buildChapterMastery", () => {
     const mastery = buildChapterMastery(chapters, []);
     expect(mastery).toHaveLength(3);
     expect(mastery.every((item) => item.masteryLevel === "untrained")).toBe(true);
+  });
+
+  it("cascades parent placement to descendants while preserving collapsible tree order", () => {
+    const mastery = buildChapterMastery([
+      ...chapters,
+      { id: "chapter-second", schoolId: "school-1", parentId: null, name: "必修第二章", order: 2, level: 0 },
+    ], []);
+
+    const placements = applyChapterPlacement(
+      mastery,
+      {},
+      new Set(["chapter-root"]),
+      "bottom",
+    );
+    expect(placements).toMatchObject({
+      "chapter-root": "bottom",
+      "chapter-a": "bottom",
+      "chapter-b": "bottom",
+    });
+    expect(orderVisibleChapterMastery(mastery, placements, new Set()).map((item) => item.chapterId)).toEqual([
+      "chapter-second",
+      "chapter-root",
+      "chapter-a",
+      "chapter-b",
+    ]);
+    expect(orderVisibleChapterMastery(mastery, placements, new Set(["chapter-root"])).map((item) => item.chapterId)).toEqual([
+      "chapter-second",
+      "chapter-root",
+    ]);
   });
 });

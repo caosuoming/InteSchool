@@ -63,7 +63,9 @@ describe("StudentLearningPage", () => {
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([]);
     vi.mocked(settingsService.listClassTypes).mockResolvedValue([]);
     vi.mocked(knowledgeService.listChapters).mockResolvedValue([
-      { id: "chapter-1", schoolId: "school-1", parentId: null, name: "集合章节", order: 1, level: 0 },
+      { id: "book-1", schoolId: "school-1", parentId: null, name: "苏教必修第一册", order: 1, level: 0 },
+      { id: "chapter-1", schoolId: "school-1", parentId: "book-1", name: "集合章节", order: 1, level: 1 },
+      { id: "book-2", schoolId: "school-1", parentId: null, name: "苏教必修第二册", order: 2, level: 0 },
     ]);
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([
       {
@@ -84,7 +86,7 @@ describe("StudentLearningPage", () => {
     vi.mocked(analyticsService.getClassAverageMastery).mockResolvedValue([]);
   });
 
-  it("supports resizable navigation, parent paths, and floating row actions", async () => {
+  it("supports compact knowledge paths and selectable collapsible chapter ordering", async () => {
     render(<StudentLearningPage />);
 
     expect(screen.getByRole("separator", { name: "调整左侧列表宽度" })).toBeInTheDocument();
@@ -95,15 +97,29 @@ describe("StudentLearningPage", () => {
       expect(screen.getByText("集合章节")).toBeInTheDocument();
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "折叠章节 苏教必修第一册" }));
+    expect(screen.queryByText("集合章节")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开章节 苏教必修第一册" }));
+    expect(screen.getByText("集合章节")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择章节课 苏教必修第一册" }));
+    expect(screen.getByRole("toolbar", { name: "章节课排序操作" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "正常" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "沉底" }));
+
+    const chapterRows = screen.getAllByRole("row").map((row) => row.textContent ?? "");
+    expect(chapterRows.findIndex((text) => text.includes("苏教必修第二册")))
+      .toBeLessThan(chapterRows.findIndex((text) => text.includes("苏教必修第一册")));
+
     fireEvent.click(screen.getByRole("tab", { name: /知识点训练与掌握情况/ }));
-    expect(await screen.findByText("集合的概念")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "显示知识点的父节点" })).not.toBeInTheDocument();
+    const compactKnowledgePoint = await screen.findByTitle("集合\\集合的概念");
+    expect(compactKnowledgePoint).toHaveTextContent("...\\集合的概念");
 
-    fireEvent.click(screen.getByRole("button", { name: "显示知识点的父节点" }));
-    expect(await screen.findByText("集合\\集合的概念")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择知识点 集合\\集合的概念" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择知识点 ...\\集合的概念" }));
     expect(screen.getByRole("toolbar", { name: "知识点排序操作" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "置顶" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "正常" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "沉底" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "置顶" }));

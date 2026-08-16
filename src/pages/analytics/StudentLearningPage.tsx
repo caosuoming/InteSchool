@@ -3,7 +3,7 @@ import {
   BarChart3, Users, GraduationCap, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, AlertCircle, Circle, TrendingUp,
   Award, FileText, Calendar, User, Clock, Network, BookOpen,
-  ArrowUpToLine, ArrowDownToLine,
+  ArrowUpToLine, ArrowDownToLine, Minus,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
@@ -21,6 +21,7 @@ import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import {
   knowledgePointDisplayName,
+  knowledgePointFullPath,
   orderKnowledgeMasteryRows,
   type KnowledgePointPlacement,
 } from "./student-learning-table";
@@ -123,7 +124,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const [prevBestClass, setPrevBestClass] = useState<{ mastery: KnowledgeMastery[]; className: string } | null>(null);
   const [classAvgMastery, setClassAvgMastery] = useState<KnowledgeMastery[]>([]);
   const [showComparison, setShowComparison] = useState(true);
-  const [showParentNodes, setShowParentNodes] = useState(false);
   const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<Set<string>>(new Set());
   const [knowledgePointPlacements, setKnowledgePointPlacements] = useState<Record<string, KnowledgePointPlacement>>({});
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("all");
@@ -635,7 +635,10 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
               </div>
 
               {masteryView === "chapter" ? (
-                <ChapterMasteryCard mastery={chapterMastery} />
+                <ChapterMasteryCard
+                  key={`${selection.type}:${selection.classId}:${selection.studentId ?? ""}`}
+                  mastery={chapterMastery}
+                />
               ) : (
               <Card className="relative">
                 <CardHeader
@@ -643,20 +646,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                   subtitle={`共 ${overview.totalKps} 个知识点，已训练 ${overview.trainedKps} 个`}
                   action={
                     <div className="flex flex-wrap items-center justify-end gap-3">
-                      <button
-                        type="button"
-                        aria-pressed={showParentNodes}
-                        onClick={() => setShowParentNodes((visible) => !visible)}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                          showParentNodes
-                            ? "border-gold-300 bg-gold-50 text-gold-700"
-                            : "border-ink-200 text-ink-600 hover:border-ink-300 hover:bg-mist",
-                        )}
-                      >
-                        <Network className="w-3.5 h-3.5" />
-                        显示知识点的父节点
-                      </button>
                       {showComparison && hasComparisonData(selection, sameGradeTypeAvg, prevBestClass, classAvgMastery) && (
                         <div className="flex items-center gap-3 text-xs text-ink-500">
                           <div className="flex items-center gap-1.5">
@@ -727,7 +716,8 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                             const cfg = masteryConfig[m.masteryLevel];
                             const MasteryIcon = cfg.icon;
                             const selected = selectedKnowledgePointIds.has(m.knowledgePointId);
-                            const displayName = knowledgePointDisplayName(m, showParentNodes);
+                            const displayName = knowledgePointDisplayName(m);
+                            const fullPath = knowledgePointFullPath(m);
                             return (
                               <tr
                                 key={m.knowledgePointId}
@@ -745,7 +735,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                       onChange={() => toggleKnowledgePoint(m.knowledgePointId)}
                                       className="w-3.5 h-3.5 flex-shrink-0 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
                                     />
-                                    <span className="whitespace-nowrap" title={displayName}>{displayName}</span>
+                                    <span className="whitespace-nowrap" title={fullPath}>{displayName}</span>
                                   </label>
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-mono text-ink-700">
@@ -911,6 +901,14 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                       >
                         <ArrowUpToLine className="w-3.5 h-3.5" />
                         置顶
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => placeSelectedKnowledgePoints("normal")}
+                        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-mist"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                        正常
                       </button>
                       <button
                         type="button"
