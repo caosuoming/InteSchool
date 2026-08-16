@@ -908,7 +908,7 @@ export function ExtractReviewModal({
             </select>
           </div>
           <div
-            className="whitespace-pre-wrap text-ink-700"
+            className={cn("whitespace-pre-wrap text-ink-700", field === "answer" && "question-answer-content")}
             dangerouslySetInnerHTML={{ __html: renderExtractText(value, allKeywords, true) }}
           />
         </div>

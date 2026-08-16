@@ -3544,7 +3544,7 @@ function PreviewQuestionItem({
             <div className="space-y-2 pl-5 mt-2 animate-fade-in">
               <div className="p-2 rounded bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900">
                 <span className="font-bold">答案：</span>
-                <MathHtml className="inline text-emerald-900">{pq.answer}</MathHtml>
+                <MathHtml className="question-answer-content inline text-emerald-900">{pq.answer}</MathHtml>
               </div>
               <div className="p-2 rounded bg-gold-50/30 border border-gold-200 text-sm text-ink-800">
                 <span className="font-bold text-gold-700">解析：</span>
@@ -3678,7 +3678,7 @@ function EditQuestionRow({
             <div className="mt-2 space-y-1.5 animate-fade-in pl-4">
               <div className="text-xs p-2 rounded bg-emerald-50/40 border border-emerald-200">
                 <span className="font-bold text-emerald-700">答案：</span>
-                <MathHtml className="inline text-emerald-900">{pq.answer}</MathHtml>
+                <MathHtml className="question-answer-content inline text-emerald-900">{pq.answer}</MathHtml>
               </div>
               <div className="text-xs p-2 rounded bg-gold-50/30 border border-gold-200">
                 <span className="font-bold text-gold-700">解析：</span>

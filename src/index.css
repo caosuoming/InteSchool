@@ -147,6 +147,15 @@
     font-family: "Times New Roman", Times, serif;
     font-style: italic;
   }
+
+  /* KaTeX's inline box sits slightly high beside the app's Chinese body fonts. */
+  .question-answer-content .katex-formula:not(.katex-formula-block) > .katex {
+    vertical-align: -0.05em;
+  }
+
+  .question-answer-content .formula-inline {
+    vertical-align: 0 !important;
+  }
 }
 
 @layer utilities {

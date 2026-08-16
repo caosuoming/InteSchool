@@ -804,7 +804,7 @@ export function LessonEditorInspector({
             )}
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
               <div className="mb-1 text-xs font-medium text-emerald-700">参考答案</div>
-              <MathHtml className="text-emerald-900">{questionDetail.answer || "暂无答案"}</MathHtml>
+              <MathHtml className="question-answer-content text-emerald-900">{questionDetail.answer || "暂无答案"}</MathHtml>
             </div>
             <div className="rounded-lg border border-gold-200 bg-gold-50 p-3">
               <div className="mb-1 text-xs font-medium text-gold-700">解析</div>

@@ -170,7 +170,7 @@ export function LectureSectionEditorRow({
                 <div className="space-y-2">
                   <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2 text-xs text-ink-800">
                     <span className="font-medium text-emerald-700">答案：</span>
-                    <MathHtml className="mt-1">{question.answer}</MathHtml>
+                    <MathHtml className="question-answer-content mt-1">{question.answer}</MathHtml>
                   </div>
                   <div className="rounded border border-gold-200 bg-gold-50/30 p-2 text-xs text-ink-800">
                     <span className="font-medium text-gold-700">解析：</span>

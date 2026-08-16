@@ -787,7 +787,7 @@ function ParsedQuestionItem({ question: q, index, onToggle }: ParsedQuestionItem
           <div className="grid sm:grid-cols-2 gap-2 mb-2">
             <div className="p-2 rounded bg-emerald-50/40 border border-emerald-200">
               <div className="text-emerald-700 font-medium mb-0.5 text-xs">答案</div>
-              <MathHtml className="text-ink-900 whitespace-pre-wrap text-xs">{q.answer}</MathHtml>
+              <MathHtml className="question-answer-content text-ink-900 whitespace-pre-wrap text-xs">{q.answer}</MathHtml>
             </div>
             <div className="p-2 rounded bg-gold-50/30 border border-gold-200">
               <div className="text-gold-700 font-medium mb-0.5 text-xs">解析</div>

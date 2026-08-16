@@ -28,7 +28,7 @@ export function QuestionExpandedDetails({
             contentClassName,
           )}
         >
-          <MathHtml>{question.answer}</MathHtml>
+          <MathHtml className="question-answer-content">{question.answer}</MathHtml>
         </div>
       </div>
 

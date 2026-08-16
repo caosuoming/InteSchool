@@ -442,7 +442,7 @@ export function QuestionDuplicateReviewModal({
                     const incomingValue = displayValue(item.incoming[key]);
                     const selected = resolution.fields[key];
                     return (
-                      <div key={key} className="grid grid-cols-1 md:grid-cols-2">
+                      <div key={key} className={cn("grid grid-cols-1 md:grid-cols-2", key === "answer" && "question-answer-content")}>
                         <div className={cn(
                           "p-4 md:border-r",
                           selectedOnSide(selected, "existing") ? "bg-gold-50/40" : "bg-paper",

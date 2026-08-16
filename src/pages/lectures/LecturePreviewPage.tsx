@@ -861,7 +861,7 @@ function QuestionPreviewContent({
           <div className="space-y-2 animate-fade-in">
             <div className="p-2.5 rounded-md bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900 flex items-start gap-1">
               <span className="font-bold flex-shrink-0">答案：</span>
-              <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{question.answer}</MathHtml>
+              <MathHtml className="question-answer-content min-w-0 flex-1 whitespace-pre-wrap">{question.answer}</MathHtml>
             </div>
             <div className="p-2.5 rounded-md bg-gold-50/30 border border-gold-200 text-sm text-ink-900 leading-relaxed flex items-start gap-1">
               <span className="font-bold text-gold-700 flex-shrink-0">解析：</span>
