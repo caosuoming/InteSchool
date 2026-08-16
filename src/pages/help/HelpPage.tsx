@@ -562,7 +562,7 @@ export default function HelpPage() {
             onChange={(event) => setTopicType(event.target.value as HelpTopicType)}
             options={Object.entries(topicMeta).map(([value, meta]) => ({ value, label: meta.label }))}
           />
-          {board.categories.length > 0 && (
+          {board.canManage && board.categories.length > 0 && (
             <Select
               label="分类"
               value={topicCategoryId}

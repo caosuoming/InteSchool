@@ -106,6 +106,12 @@ describe("helpService", () => {
       await expect(helpService.createCategory("使用帮助", user)).rejects.toThrow("学校管理员");
 
       const category = await helpService.createCategory("使用帮助", admin);
+      await expect(helpService.createTopic({
+        type: "question",
+        title: "普通用户不能自行归类",
+        content: "分类由管理员维护",
+        categoryId: category.id,
+      }, user)).rejects.toThrow("学校管理员");
       await helpService.setTopicCategory(first.id, category.id, admin);
       await helpService.moveTopic(first.id, "up", admin);
       let board = await helpService.getBoard(admin);
@@ -119,6 +125,22 @@ describe("helpService", () => {
       board = await helpService.getBoard(admin);
       expect(board.topics).toHaveLength(1);
       expect(board.topics[0].replies).toHaveLength(0);
+    });
+  });
+
+  it("lets administrators assign a category while creating a topic", async () => {
+    const appState = state();
+    const admin = teacher("admin", "school_admin");
+
+    await runWithState(appState, async () => {
+      const category = await helpService.createCategory("使用帮助", admin);
+      const topic = await helpService.createTopic({
+        type: "question",
+        title: "管理员直接归类",
+        content: "管理员发帖时可以指定分类",
+        categoryId: category.id,
+      }, admin);
+      expect(topic.categoryId).toBe(category.id);
     });
   });
 

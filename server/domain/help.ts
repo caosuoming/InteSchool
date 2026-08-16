@@ -112,6 +112,9 @@ export const helpService = {
     if (!content) throw new Error("请输入话题内容");
     if (content.length > 5000) throw new Error("话题内容不能超过 5000 字");
     const categoryId = input.categoryId || null;
+    if (categoryId && !canManage(teacher)) {
+      throw new Error("话题归类需要学校管理员权限");
+    }
     if (categoryId && !(db.read("helpCategories") as HelpCategory[]).some((item) => item.id === categoryId)) {
       throw new Error("分类不存在");
     }
