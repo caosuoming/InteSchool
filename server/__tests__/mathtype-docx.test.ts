@@ -99,6 +99,18 @@ const SIMPLE_MATHML = `
   <mrow><mi>x</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac></mrow>
 </math>`;
 
+const MATRIX_MATHML = `
+<math xmlns="http://www.w3.org/1998/Math/MathML">
+  <mrow>
+    <mo>|</mo>
+    <mtable>
+      <mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr>
+      <mtr><mtd><mi>c</mi></mtd><mtd><mi>d</mi></mtd></mtr>
+    </mtable>
+    <mo>|</mo>
+  </mrow>
+</math>`;
+
 describe("MathType DOCX conversion", () => {
   it("replaces embedded MathType objects with editable OMML and removes obsolete parts", async () => {
     const decoder: MathTypeDecoder = vi.fn(async (equations) => {
@@ -132,6 +144,23 @@ describe("MathType DOCX conversion", () => {
     expect(relationshipsXml).not.toContain("rIdPreview");
     expect(converted.file("word/embeddings/oleObject1.bin")).toBeNull();
     expect(converted.file("word/media/image1.wmf")).toBeNull();
+  });
+
+  it("preserves matrix rows and columns when converting decoded MathML to OMML", async () => {
+    const result = await convertMathTypeDocxToOmml(
+      await createDocx(),
+      async () => new Map([["rIdEquation", MATRIX_MATHML]]),
+    );
+    const converted = await JSZip.loadAsync(result.buffer);
+    const documentXml = await converted.file("word/document.xml")!.async("string");
+
+    expect(result.convertedCount).toBe(1);
+    expect(documentXml.match(/<m:mr>/g)).toHaveLength(2);
+    expect(documentXml.match(/<m:e>/g)).toHaveLength(4);
+    expect(documentXml).toMatch(/<m:t[^>]*>a<\/m:t>/);
+    expect(documentXml).toMatch(/<m:t[^>]*>b<\/m:t>/);
+    expect(documentXml).toMatch(/<m:t[^>]*>c<\/m:t>/);
+    expect(documentXml).toMatch(/<m:t[^>]*>d<\/m:t>/);
   });
 
   it("detects MathType from the OLE payload when ProgID is generic", async () => {

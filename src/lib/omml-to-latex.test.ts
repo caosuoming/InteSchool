@@ -38,6 +38,37 @@ function piecewiseFunction(endCharacter = "."): string {
   `;
 }
 
+function determinantWithSubscripts(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:r><m:t>|</m:t></m:r>
+      <m:m>
+        <m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="2"/></m:mcPr></m:mc></m:mcs></m:mPr>
+        <m:mr>
+          <m:e>
+            <m:r><m:t>4</m:t></m:r>
+            <m:sSub>
+              <m:e><m:r><m:t>a</m:t></m:r></m:e>
+              <m:sub><m:r><m:t>5</m:t></m:r></m:sub>
+            </m:sSub>
+          </m:e>
+          <m:e><m:r><m:t>1</m:t></m:r></m:e>
+        </m:mr>
+        <m:mr>
+          <m:e>
+            <m:sSub>
+              <m:e><m:r><m:t>a</m:t></m:r></m:e>
+              <m:sub><m:r><m:t>3</m:t></m:r></m:sub>
+            </m:sSub>
+          </m:e>
+          <m:e><m:r><m:t>1</m:t></m:r></m:e>
+        </m:mr>
+      </m:m>
+      <m:r><m:t>|=0</m:t></m:r>
+    </m:oMath>
+  `;
+}
+
 describe("ommlToLatex", () => {
   it("keeps ordinary Latin set-name letters as ordinary variables", () => {
     expect(ommlToLatex(mathRun("C+Q+N+R+Z"))).toBe("C+Q+N+R+Z");
@@ -64,5 +95,11 @@ describe("ommlToLatex", () => {
 
     expect(latex).toContain("\\right.");
     expect(latex).not.toContain("\\right)");
+  });
+
+  it("keeps nested subscript expressions inside their matrix cells", () => {
+    expect(ommlToLatex(determinantWithSubscripts())).toBe(
+      String.raw`\left|\begin{matrix} 4{a}_{5} & 1 \\ {a}_{3} & 1 \end{matrix}\right|=0`,
+    );
   });
 });

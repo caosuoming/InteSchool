@@ -42,8 +42,24 @@ export function ommlToLatex(mathEl: Element | string): string {
     element = mathEl;
   }
   
-  const latex = convertNode(element).trim();
+  const latex = stretchMatrixDelimiters(convertNode(element).trim());
   return latex || "";
+}
+
+function stretchMatrixDelimiters(latex: string): string {
+  return latex
+    .replace(
+      /\|\\begin\{matrix\}([\s\S]*?)\\end\{matrix\}\|/g,
+      String.raw`\left|\begin{matrix}$1\end{matrix}\right|`,
+    )
+    .replace(
+      /\(\\begin\{matrix\}([\s\S]*?)\\end\{matrix\}\)/g,
+      String.raw`\left(\begin{matrix}$1\end{matrix}\right)`,
+    )
+    .replace(
+      /\[\\begin\{matrix\}([\s\S]*?)\\end\{matrix\}\]/g,
+      String.raw`\left[\begin{matrix}$1\end{matrix}\right]`,
+    );
 }
 
 /**
@@ -512,11 +528,11 @@ function convertEqArr(el: Element): string {
  */
 function convertMatrix(el: Element): string {
   const rows: string[] = [];
-  const rowEls = el.getElementsByTagNameNS(MATH_NS, "mr");
+  const rowEls = directMathChildren(el, "mr");
 
   for (let i = 0; i < rowEls.length; i++) {
     const cells: string[] = [];
-    const cellEls = rowEls[i].getElementsByTagNameNS(MATH_NS, "e");
+    const cellEls = directMathChildren(rowEls[i], "e");
     for (let j = 0; j < cellEls.length; j++) {
       cells.push(convertChildren(cellEls[j]));
     }
@@ -526,6 +542,14 @@ function convertMatrix(el: Element): string {
   // OMML stores visible delimiters in a surrounding m:d element. m:mcs only
   // describes matrix columns and must not introduce parentheses by itself.
   return `\\begin{matrix} ${rows.join(" \\\\ ")} \\end{matrix}`;
+}
+
+function directMathChildren(parent: Element, localName: string): Element[] {
+  return Array.from(parent.childNodes).filter((node): node is Element =>
+    node.nodeType === ELEMENT_NODE
+    && (node as Element).namespaceURI === MATH_NS
+    && (node as Element).localName === localName
+  );
 }
 
 /**
