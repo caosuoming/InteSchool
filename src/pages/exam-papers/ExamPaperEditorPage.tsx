@@ -1588,17 +1588,15 @@ export default function ExamPaperEditorPage() {
                     <PreviewQuestionPair
                       key={block.id}
                       left={(
-                        <section className="flex items-start gap-2 rounded-md border border-ink-100 p-4">
+                        <section className="py-4">
                           <ExtractedQuestionContent
                             number={questionNumber}
                             stem={display.stem}
                             options={display.options}
                             answer={display.answer}
                             analysis={display.analysis}
+                            optionVariant="plain"
                           />
-                          {paperQuestion && (
-                            <span className="flex-shrink-0 text-xs font-medium text-gold-700">{paperQuestion.score} 分</span>
-                          )}
                         </section>
                       )}
                       right={paperQuestion ? (
@@ -3509,7 +3507,7 @@ function PreviewQuestionItem({
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="border border-ink-100 rounded-md p-4 hover:border-ink-200 transition-colors">
+    <div className="py-4">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           {/* 题干（编号+题目） */}
@@ -3530,11 +3528,21 @@ function PreviewQuestionItem({
                 <div key={i} className={cn(
                   "px-2 py-1.5 text-sm flex items-center gap-1.5 min-w-0",
                   expanded && pq.answer.includes(String.fromCharCode(65 + i))
-                    ? "rounded bg-emerald-50/50 text-emerald-900"
+                    ? "text-emerald-900"
                     : "",
                 )}>
-                  <span className="font-mono font-semibold text-ink-600 flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
-                  <MathHtml className="min-w-0 flex-1 text-ink-800">{opt}</MathHtml>
+                  <span className={cn(
+                    "font-mono font-semibold flex-shrink-0",
+                    expanded && pq.answer.includes(String.fromCharCode(65 + i))
+                      ? "text-emerald-900"
+                      : "text-ink-600",
+                  )}>{String.fromCharCode(65 + i)}.</span>
+                  <MathHtml className={cn(
+                    "min-w-0 flex-1",
+                    expanded && pq.answer.includes(String.fromCharCode(65 + i))
+                      ? "text-emerald-900"
+                      : "text-ink-800",
+                  )}>{opt}</MathHtml>
                 </div>
               ))}
             </div>
