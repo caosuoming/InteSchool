@@ -595,6 +595,8 @@ export interface ExamArrangementInput {
   selectionSubjects?: Record<string, string[]>;
   /** 勾选的科目单独排考场，其余科目合并为一个场次。 */
   separateSubjects?: string[];
+  /** 同一组科目在同一时间考试；同组单独排考科目共享考场容量。 */
+  simultaneousSubjectGroups?: string[][];
   /** 随机排座或按最近一次考试年级名次排座。 */
   seatOrder?: ExamSeatOrder;
   rooms: ExamRoomConfig[];
