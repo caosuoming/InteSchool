@@ -2,10 +2,17 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyExamsPage from "@/pages/exams/MyExamsPage";
+import { examArrangementService } from "@/services/examArrangement";
 import { gradeService } from "@/services/grade";
 import { quotaService } from "@/services/quota";
 import { useAuthStore } from "@/stores/auth";
-import type { GradeCohort, Teacher, TeacherAffiliation } from "@/types";
+import type { ExamArrangement, GradeCohort, Teacher, TeacherAffiliation } from "@/types";
+
+vi.mock("@/services/examArrangement", () => ({
+  examArrangementService: {
+    listArrangements: vi.fn(),
+  },
+}));
 
 vi.mock("@/services/grade", () => ({
   gradeService: {
@@ -77,6 +84,7 @@ describe("MyExamsPage", () => {
     });
     vi.mocked(gradeService.getCohortSettings).mockResolvedValue(null);
     vi.mocked(gradeService.listExams).mockResolvedValue([]);
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([]);
     vi.mocked(quotaService.getQuota).mockResolvedValue({
       teacherId: "teacher-1",
       resources: {
@@ -119,5 +127,55 @@ describe("MyExamsPage", () => {
       "成绩统计剩余 50 次",
     ]);
     expect(screen.queryByText("成绩处理")).not.toBeInTheDocument();
+  });
+
+  it("builds a print-room statistics table from a saved room arrangement", async () => {
+    const savedArrangement: ExamArrangement = {
+      id: "arrangement-1",
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      cohortKey: cohort.key,
+      cohortLabel: cohort.label,
+      name: "高三期中考试",
+      examDate: "2026-10-20",
+      mode: "combination",
+      subjectSetupMode: "selection",
+      subjects: ["语文", "数学", "英语", "物理", "化学", "生物"],
+      separateSubjects: [],
+      rooms: [{ id: "room-1", name: "1考场", number: "1考场", location: "高三1班教室", capacity: 40 }],
+      classRules: [],
+      studentSubjects: [{ studentId: "student-1", subjects: ["语文", "数学", "英语", "物理", "化学", "生物"] }],
+      assignments: [{
+        id: "combined:student-1",
+        studentId: "student-1",
+        studentName: "学生甲",
+        studentNo: "001",
+        classId: "class-1",
+        className: "高三（1）班",
+        subjectLabel: "语文 / 数学 / 英语 / 物理 / 化学 / 生物",
+        sessionKey: "combined",
+        roomId: "room-1",
+        roomName: "1考场",
+        roomNumber: "1考场",
+        roomLocation: "高三1班教室",
+        seatNo: 1,
+        admissionNo: "20261020010001",
+      }],
+      createdAt: "2026-08-16T00:00:00.000Z",
+      updatedAt: "2026-08-16T00:00:00.000Z",
+    };
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([savedArrangement]);
+
+    render(
+      <MemoryRouter initialEntries={[`/my-exams/invigilation?cohort=${cohort.key}`]}>
+        <MyExamsPage section="invigilation" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "文印室统计表" })).toBeInTheDocument();
+    expect(screen.getByLabelText("选择文印室统计表考试")).toHaveDisplayValue("高三期中考试 · 2026-10-20");
+    expect(screen.getByText("高三1班教室")).toBeInTheDocument();
+    expect(screen.getByText("物化生")).toBeInTheDocument();
+    expect(screen.getByText("语数外")).toBeInTheDocument();
   });
 });

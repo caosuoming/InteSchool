@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Copy,
+  Download,
   FileSpreadsheet,
   MapPinned,
   Save,
@@ -16,8 +17,10 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { gradeService } from "@/services/grade";
+import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
 import type {
+  ExamArrangement,
   GradeCohort,
   GradeCohortSettings,
   GradeExam,
@@ -49,6 +52,8 @@ import { GradeTotalScoreRankingTable } from "@/pages/students/GradeTotalScoreRan
 import { GradeExamAdjustmentPanel } from "@/pages/students/GradeExamAdjustmentPanel";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { GRADE_SUBJECT_OPTIONS } from "@/lib/grade-spreadsheet";
+import { buildExamPrintRoomStatistics } from "@/lib/exam-print-room-statistics";
+import { downloadExamPrintRoomStatistics } from "@/lib/exam-arrangement-export";
 
 export type MyExamsSection = "rooms" | "invigilation" | "grades";
 
@@ -92,22 +97,212 @@ function ExamSectionTabs({
   );
 }
 
-function InvigilationTableSection() {
-  return (
-    <Card>
-      <EmptyState
-        icon={<ClipboardCheck className="h-8 w-8" />}
-        title="暂无监考表"
-        description="请先完成考场布置并生成考场方案，再维护对应的监考安排。"
-        action={(
-          <Link to="/my-exams/rooms">
-            <Button variant="outline">
-              前往考场布置<ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
-        )}
-      />
+function InvigilationTableSection({
+  schoolId,
+  teacherId,
+  cohorts,
+  cohortKey,
+  onCohortChange,
+}: {
+  schoolId: string;
+  teacherId: string;
+  cohorts: GradeCohort[];
+  cohortKey: string;
+  onCohortChange: (value: string) => void;
+}) {
+  const [arrangements, setArrangements] = useState<ExamArrangement[]>([]);
+  const [selectedArrangementId, setSelectedArrangementId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    if (!cohortKey) {
+      setArrangements([]);
+      setSelectedArrangementId("");
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    examArrangementService.listArrangements(schoolId, cohortKey)
+      .then((items) => {
+        if (!active) return;
+        setArrangements(items);
+        setSelectedArrangementId((current) => (
+          items.some((item) => item.id === current) ? current : items[0]?.id || ""
+        ));
+      })
+      .catch((error) => {
+        if (!active) return;
+        setArrangements([]);
+        setSelectedArrangementId("");
+        toast.error("加载考试方案失败", error instanceof Error ? error.message : undefined);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [cohortKey, schoolId]);
+
+  const selectedArrangement = useMemo(
+    () => arrangements.find((item) => item.id === selectedArrangementId) || arrangements[0] || null,
+    [arrangements, selectedArrangementId],
+  );
+  const statistics = useMemo(
+    () => selectedArrangement ? buildExamPrintRoomStatistics(selectedArrangement) : null,
+    [selectedArrangement],
+  );
+
+  const download = async () => {
+    if (!selectedArrangement) return;
+    setDownloading(true);
+    try {
+      await quotaService.consumeExamUsage(teacherId, "invigilation");
+      await downloadExamPrintRoomStatistics(selectedArrangement);
+    } catch (error) {
+      toast.error("下载文印室统计表失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const controls = (
+    <Card className="mb-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+        <div className="grid flex-1 gap-4 sm:grid-cols-2">
+          <Select
+            label="选择年级"
+            aria-label="选择监考表年级"
+            value={cohortKey}
+            onChange={(event) => onCohortChange(event.target.value)}
+            options={cohorts.map((cohort) => ({ value: cohort.key, label: cohort.label }))}
+          />
+          <Select
+            label="选择考试"
+            aria-label="选择文印室统计表考试"
+            value={selectedArrangementId}
+            onChange={(event) => setSelectedArrangementId(event.target.value)}
+            options={arrangements.map((arrangement) => ({
+              value: arrangement.id,
+              label: `${arrangement.name}${arrangement.examDate ? ` · ${arrangement.examDate}` : ""}`,
+            }))}
+            placeholder={loading ? "正在加载考试方案…" : "请选择考试方案"}
+            disabled={loading || arrangements.length === 0}
+          />
+        </div>
+        <Button
+          variant="gold"
+          onClick={() => void download()}
+          disabled={!selectedArrangement || downloading || !statistics?.rooms.length}
+        >
+          {downloading ? <Spinner size={16} /> : <Download className="h-4 w-4" />}
+          下载 Excel
+        </Button>
+      </div>
     </Card>
+  );
+
+  if (loading && arrangements.length === 0) {
+    return (
+      <>
+        {controls}
+        <Card><div className="flex justify-center py-20"><Spinner size={28} /></div></Card>
+      </>
+    );
+  }
+
+  if (!selectedArrangement || !statistics?.rooms.length) {
+    return (
+      <>
+        {controls}
+        <Card>
+          <EmptyState
+            icon={<ClipboardCheck className="h-8 w-8" />}
+            title="暂无监考表"
+            description="请先完成考场布置并生成考场方案，再生成对应的文印室统计表。"
+            action={(
+              <Link to="/my-exams/rooms">
+                <Button variant="outline">
+                  前往考场布置<ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            )}
+          />
+        </Card>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {controls}
+      <Card>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-ink-900">文印室统计表</h2>
+            <p className="mt-1 text-sm text-ink-500">
+              {selectedArrangement.name} · 按考场统计各科试卷份数，空白格表示该考场无需该科试卷。
+            </p>
+          </div>
+          <Badge>{statistics.rooms.length} 个考场</Badge>
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-ink-100">
+          <table className="min-w-max border-collapse text-sm">
+            <tbody>
+              <tr className="bg-ink-50 font-medium text-ink-800">
+                <th className="sticky left-0 z-10 min-w-28 border-b border-r border-ink-100 bg-ink-50 px-4 py-3 text-left">考场号</th>
+                {statistics.rooms.map((room) => (
+                  <th key={room.roomId} className="min-w-28 border-b border-r border-ink-100 px-4 py-3 text-center last:border-r-0">
+                    {room.roomNumber}
+                  </th>
+                ))}
+                <th className="min-w-24 border-b border-ink-100 px-4 py-3 text-center">合计</th>
+              </tr>
+              <tr>
+                <th className="sticky left-0 z-10 border-b border-r border-ink-100 bg-paper px-4 py-3 text-left font-medium text-ink-700">考试地点</th>
+                {statistics.rooms.map((room) => (
+                  <td key={room.roomId} className="border-b border-r border-ink-100 px-4 py-3 text-center text-ink-700 last:border-r-0">
+                    {room.roomLocation}
+                  </td>
+                ))}
+                <td className="border-b border-ink-100 px-4 py-3" />
+              </tr>
+              <tr>
+                <th className="sticky left-0 z-10 border-b border-r border-ink-100 bg-paper px-4 py-3 text-left font-medium text-ink-700">组合</th>
+                {statistics.rooms.map((room) => (
+                  <td key={room.roomId} className="border-b border-r border-ink-100 px-4 py-3 text-center font-medium text-ink-800 last:border-r-0">
+                    {room.selectionLabel}
+                  </td>
+                ))}
+                <td className="border-b border-ink-100 px-4 py-3" />
+              </tr>
+              {statistics.rows.map((row) => (
+                <tr key={row.label}>
+                  <th className="sticky left-0 z-10 border-b border-r border-ink-100 bg-paper px-4 py-3 text-left font-medium text-ink-800 last:border-b-0">
+                    {row.label}
+                  </th>
+                  {row.counts.map((count, index) => (
+                    <td
+                      key={statistics.rooms[index].roomId}
+                      className={cn(
+                        "border-b border-r border-ink-100 px-4 py-3 text-center tabular-nums text-ink-800",
+                        count === 0 && "bg-amber-100/70",
+                      )}
+                    >
+                      {count || ""}
+                    </td>
+                  ))}
+                  <td className="border-b border-ink-100 px-4 py-3 text-center font-semibold tabular-nums text-ink-900">
+                    {row.total}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </>
   );
 }
 
@@ -675,7 +870,13 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
       ) : section === "rooms" ? (
         <ExamRoomArrangementPage embedded />
       ) : section === "invigilation" ? (
-        <InvigilationTableSection />
+        <InvigilationTableSection
+          schoolId={schoolId}
+          teacherId={teacher.id}
+          cohorts={cohorts}
+          cohortKey={cohortKey}
+          onCohortChange={changeCohort}
+        />
       ) : (
         <GradePreprocessing
           schoolId={schoolId}
