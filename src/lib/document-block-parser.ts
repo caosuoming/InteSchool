@@ -400,6 +400,33 @@ function shouldContinueNumberedSummary(
 
 const nestedQuestionMarkerPattern = /^(?:[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]|[①-⑳])\s*/i;
 
+function leadingNestedSubQuestionIndex(text: string): number | undefined {
+  const trimmed = text.trim();
+  const circled = /^([①-⑳])/.exec(trimmed);
+  if (circled) return circled[1].codePointAt(0)! - 0x245f;
+
+  const normalized = normalizeStructuralText(trimmed);
+  const numeric = /^[（(]\s*([\d０-９]{1,3})\s*[）)]/.exec(normalized);
+  if (numeric) return Number(normalizeQuestionNumber(numeric[1]));
+  return undefined;
+}
+
+function shouldContinueSequentialSubQuestion(
+  line: string,
+  block: Partial<DocumentBlock>,
+  field: QuestionField,
+): boolean {
+  const candidate = leadingNestedSubQuestionIndex(line);
+  if (!candidate) return false;
+
+  const previous = (block[field] || "")
+    .split("\n")
+    .map(leadingNestedSubQuestionIndex)
+    .filter((index): index is number => index !== undefined)
+    .at(-1);
+  return previous !== undefined && candidate === previous + 1;
+}
+
 function isNestedTrailingAnswerLine(
   line: string,
   entry: { number: string },
@@ -955,6 +982,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     }
 
     if (currentBlock.type === "question") {
+      if (shouldContinueSequentialSubQuestion(line, currentBlock, currentQuestionField)) {
+        appendQuestionField(currentBlock, currentQuestionField, line);
+        continue;
+      }
       const explicitSolution = extractExplicitSolution(
         line,
         currentBlock,
