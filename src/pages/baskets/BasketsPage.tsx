@@ -751,7 +751,7 @@ function BasketQuestionCard({
 
             {/* 答案 */}
             <div className="p-2 rounded-md bg-emerald-50/40 border border-emerald-200 text-xs text-emerald-900 font-medium">
-              <span>答案：</span><MathHtml>{question.answer}</MathHtml>
+              <span>答案：</span><MathHtml className="question-answer-content">{question.answer}</MathHtml>
             </div>
 
             {/* 解析 */}

@@ -165,7 +165,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1.5">答案</div>
         <div className="p-3 rounded-md bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900 font-medium whitespace-pre-wrap">
-          <MathHtml>{question.answer}</MathHtml>
+          <MathHtml className="question-answer-content">{question.answer}</MathHtml>
         </div>
       </div>
 

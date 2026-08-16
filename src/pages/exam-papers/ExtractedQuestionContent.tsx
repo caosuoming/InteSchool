@@ -89,7 +89,7 @@ export function ExtractedQuestionContent({
         <div className={cn("mt-2 space-y-2 animate-fade-in", number !== undefined && "pl-6")}>
           <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2 text-sm text-emerald-900">
             <span className="font-bold">答案：</span>
-            {answer ? <MathHtml className="inline text-emerald-900">{answer}</MathHtml> : <span className="text-ink-400">暂无答案</span>}
+            {answer ? <MathHtml className="question-answer-content inline text-emerald-900">{answer}</MathHtml> : <span className="text-ink-400">暂无答案</span>}
           </div>
           <div className="rounded border border-gold-200 bg-gold-50/30 p-2 text-sm text-ink-800">
             <span className="font-bold text-gold-700">解析：</span>

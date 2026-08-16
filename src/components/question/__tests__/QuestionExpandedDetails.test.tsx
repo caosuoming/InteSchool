@@ -34,6 +34,22 @@ describe("QuestionExpandedDetails", () => {
     expect(screen.getAllByText("讲解视频")).toHaveLength(2);
   });
 
+  it("marks rendered answers for inline formula baseline alignment", () => {
+    const { container } = render(
+      <QuestionExpandedDetails
+        question={{
+          id: "question-math-answer",
+          answer: "当 $x=1$ 时成立",
+          analysis: "逐步解析",
+        }}
+      />,
+    );
+
+    const answer = container.querySelector(".question-answer-content");
+    expect(answer).not.toBeNull();
+    expect(answer?.querySelector(".katex-formula:not(.katex-formula-block) > .katex")).not.toBeNull();
+  });
+
   it("does not render an empty summary section", () => {
     const { container } = render(
       <QuestionExpandedDetails

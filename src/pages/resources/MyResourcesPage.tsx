@@ -2663,7 +2663,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 <div className="mt-3 grid gap-3 rounded-md border border-ink-100 bg-paper/70 p-3">
                                   <div>
                                     <div className="text-xs font-medium text-ink-500 mb-1">答案</div>
-                                    <MathHtml className="text-sm text-ink-800">{q.answer || "暂无答案"}</MathHtml>
+                                    <MathHtml className="question-answer-content text-sm text-ink-800">{q.answer || "暂无答案"}</MathHtml>
                                   </div>
                                   <div>
                                     <div className="text-xs font-medium text-ink-500 mb-1">解析</div>
@@ -4260,7 +4260,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
             <div className="text-xs text-ink-600 space-y-1.5 mt-2 bg-mist/40 p-2 rounded">
               <div>
                 <span className="text-ink-400">答案：</span>
-                <MathHtml className="text-ink-800">{question.answer}</MathHtml>
+                <MathHtml className="question-answer-content text-ink-800">{question.answer}</MathHtml>
               </div>
               {question.analysis && (
                 <div>

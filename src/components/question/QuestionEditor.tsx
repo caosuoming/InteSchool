@@ -442,7 +442,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           {needsRichPreview(form.answer) && (
             <div className="mt-2 rounded-md border border-emerald-100 bg-emerald-50/40 p-2">
               <div className="mb-1 text-[11px] text-emerald-700">答案预览：</div>
-              <MathHtml className="prose-sm whitespace-pre-wrap text-sm text-emerald-800">
+              <MathHtml className="question-answer-content prose-sm whitespace-pre-wrap text-sm text-emerald-800">
                 {form.answer}
               </MathHtml>
             </div>
