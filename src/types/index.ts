@@ -750,6 +750,8 @@ export interface GradeTotalScoreSegmentOptions {
   subjectScoreSegmentThresholds?: Record<string, number[]>;
   /** 各班级随届保存的高分、一本和本科目标人数。 */
   classTargets?: Record<string, GradeTotalScoreClassTargets>;
+  /** 表五展示的总分前 N 名人数。 */
+  totalScoreTopN?: number;
 }
 
 export interface GradeStatisticsTemplate {

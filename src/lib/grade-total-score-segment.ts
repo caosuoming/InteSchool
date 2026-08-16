@@ -100,7 +100,7 @@ export function resolveTotalScoreSegmentRange(template: GradeStatisticsTemplate)
   };
 }
 
-function selectionTrack(value: string): GradeAcademicTrackClassification {
+export function inferGradeAcademicTrackFromSelection(value: string): GradeAcademicTrackClassification {
   const normalized = value.replace(/[\s、,，/|+]+/g, "");
   const withoutBiology = normalized.replace(/生物/g, "");
   const hasPhysics = normalized.includes("物理") || withoutBiology.includes("物");
@@ -133,7 +133,7 @@ export function inferGradeClassAcademicTrack(
   let scienceVotes = 0;
   let artsVotes = 0;
   selections.forEach((selection) => {
-    const track = selectionTrack(selection);
+    const track = inferGradeAcademicTrackFromSelection(selection);
     if (track === "science") scienceVotes += 1;
     if (track === "arts") artsVotes += 1;
   });
@@ -376,7 +376,7 @@ export function buildGradeTotalScoreSegmentReport(
   ];
 
   return {
-    title: `${exam.cohortLabel}${exam.name}总分分数段汇总表`,
+    title: `${exam.cohortLabel}${exam.name}总分分数段汇总表（${template.scoreMode === "raw" ? "原始分" : "赋分"}）`,
     reportDate: exam.examDate || exam.createdAt.slice(0, 10),
     segmentMax,
     segmentMin,

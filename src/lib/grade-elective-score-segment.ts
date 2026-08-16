@@ -112,7 +112,14 @@ export function buildGradeElectiveScoreSegmentReport(
       const hasImportedAssignedScores = exam.records.some(
         (record) => typeof record.sourceAssignedScores?.[subject] === "number",
       );
-      const rules = assignmentRulesForSubject(settings, subject, hasImportedAssignedScores);
+      const usesAssignedScores = (classOptions.classOrder || []).some((classId) => {
+        if (hiddenClassIds.has(classId)) return false;
+        const mode = classOptions.subjectScoreModes?.[classId]?.[subject];
+        return mode === "assigned" || mode === "both";
+      });
+      const rules = usesAssignedScores
+        ? assignmentRulesForSubject(settings, subject, hasImportedAssignedScores)
+        : [];
       const gradeLabels = rules.map((rule) => rule.label);
       const rows = (classOptions.classOrder || [])
         .filter((classId) => !hiddenClassIds.has(classId))
