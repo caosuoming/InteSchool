@@ -225,6 +225,36 @@ describe("class lifecycle service", () => {
     });
   });
 
+  it("adds one student to a school class and rejects duplicate student numbers", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      const created = await classService.addStudent("class-2", "school-1", {
+        name: " 新学生 ",
+        studentNo: " 005 ",
+        gender: "female",
+        subjectSelection: " 物化地 ",
+      });
+
+      expect(created).toMatchObject({
+        name: "新学生",
+        studentNo: "005",
+        classId: "class-2",
+        schoolId: "school-1",
+        grade: "高三",
+        gender: "female",
+        subjectSelection: "物化地",
+        status: "active",
+      });
+      expect((state.schoolClasses as Array<{ id: string; studentCount: number }>).find((item) => item.id === "class-2")?.studentCount).toBe(2);
+
+      await expect(classService.addStudent("class-1", "school-1", {
+        name: "重复学号",
+        studentNo: "005",
+      })).rejects.toThrow("学号 005 已被“新学生”使用");
+    });
+  });
+
   it("imports a roster, creates missing classes, and skips duplicate student numbers", async () => {
     const state = createState();
 

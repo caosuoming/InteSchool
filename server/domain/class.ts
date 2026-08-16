@@ -13,6 +13,7 @@ export interface StudentInput {
   studentNo: string;
   grade?: string;
   gender?: "male" | "female";
+  subjectSelection?: string;
   isExternal?: boolean;
   externalSchool?: string;
 }
@@ -207,18 +208,34 @@ export const classService = {
     await delay(300);
     maybeThrowError();
     const schoolClass = db.read("schoolClasses").find((item) => item.id === classId);
+    const personalClass = db.read("personalClasses").find((item) => item.id === classId);
+    if (!schoolClass && !personalClass) throw new Error("班级不存在");
+    if (schoolClass && schoolClass.schoolId !== schoolId) throw new Error("班级不属于当前学校");
     if (schoolClass?.status === "graduated") throw new Error("已毕业班级不能新增学生");
     if (schoolClass?.status === "deleted") throw new Error("回收站中的班级不能新增学生");
+    const name = input.name.trim();
+    const studentNo = input.studentNo.trim();
+    if (!name) throw new Error("请填写学生姓名");
+    if (!studentNo) throw new Error("请填写学生学号");
+    if (schoolClass) {
+      const duplicate = db.read("students").find((item) =>
+        item.schoolId === schoolId
+        && item.status !== "deleted"
+        && item.studentNo.trim().toLocaleLowerCase("zh-CN") === studentNo.toLocaleLowerCase("zh-CN"),
+      );
+      if (duplicate) throw new Error(`学号 ${studentNo} 已被“${duplicate.name}”使用`);
+    }
     const student: Student = {
       id: genId("stu"),
-      name: input.name,
-      studentNo: input.studentNo,
+      name,
+      studentNo,
       classId,
       schoolId,
-      grade: input.grade || "",
+      grade: input.grade?.trim() || schoolClass?.grade || "",
       gender: input.gender,
+      subjectSelection: cleanOptional(input.subjectSelection),
       isExternal: input.isExternal,
-      externalSchool: input.externalSchool,
+      externalSchool: cleanOptional(input.externalSchool),
       status: "active",
       archiveStatus: input.isExternal ? "visiting" : "attending",
     };
