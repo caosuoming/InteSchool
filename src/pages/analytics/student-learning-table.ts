@@ -1,6 +1,6 @@
 import type { KnowledgeMastery } from "@/services/analytics";
 
-export type KnowledgePointPlacement = "top" | "bottom";
+export type KnowledgePointPlacement = "top" | "normal" | "bottom";
 
 const masteryOrder: Record<KnowledgeMastery["masteryLevel"], number> = {
   weak: 0,
@@ -9,20 +9,21 @@ const masteryOrder: Record<KnowledgeMastery["masteryLevel"], number> = {
   untrained: 3,
 };
 
-const placementOrder: Record<KnowledgePointPlacement | "normal", number> = {
+const placementOrder: Record<KnowledgePointPlacement, number> = {
   top: 0,
   normal: 1,
   bottom: 2,
 };
 
-export function knowledgePointDisplayName(
-  mastery: KnowledgeMastery,
-  showParentNodes: boolean,
-): string {
-  if (!showParentNodes || !mastery.knowledgePointPath?.length) {
-    return mastery.knowledgePointName;
-  }
-  return mastery.knowledgePointPath.join("\\");
+export function knowledgePointDisplayName(mastery: KnowledgeMastery): string {
+  const path = mastery.knowledgePointPath?.filter(Boolean) ?? [];
+  if (path.length <= 1) return mastery.knowledgePointName;
+  return `...\\${path[path.length - 1]}`;
+}
+
+export function knowledgePointFullPath(mastery: KnowledgeMastery): string {
+  const path = mastery.knowledgePointPath?.filter(Boolean) ?? [];
+  return path.length > 0 ? path.join("\\") : mastery.knowledgePointName;
 }
 
 export function orderKnowledgeMasteryRows(
