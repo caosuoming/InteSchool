@@ -460,7 +460,7 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
 }
 
 function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind | null {
-  const normalized = text
+  const normalized = normalizeStructuralText(text)
     .replace(/\s+/g, "")
     .replace(/^[【［[(（]+/, "")
     .replace(/[】］\])）:：]+$/, "");

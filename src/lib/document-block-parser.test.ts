@@ -810,6 +810,43 @@ describe("document block parser", () => {
     });
   });
 
+  it("keeps the last essay sub-question in the stem and maps a noisy trailing reference-answer section", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "19. 已知函数 f(x)，且存在 x0 使 f(x0)=x0。",
+        "（1）证明：f(x) 是 R 上的单调增函数；",
+        "（2）设 xn、yn 满足给定递推关系，证明 xn<xn+1<x0<yn+1<yn；",
+        "（3）证明：(yn+1-xn+1)/(yn-xn)<1/2。",
+        "参\u200b考答案",
+        "1. B",
+        "2. C",
+        "19. 【答案】（1）证明见解析；（2）证明见解析；（3）证明见解析。",
+        "【解析】分别利用导数、单调性与递推关系完成证明。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(3);
+    expect(blocks[2]).toMatchObject({
+      type: "question",
+      content: [
+        "19. 已知函数 f(x)，且存在 x0 使 f(x0)=x0。",
+        "（1）证明：f(x) 是 R 上的单调增函数；",
+        "（2）设 xn、yn 满足给定递推关系，证明 xn<xn+1<x0<yn+1<yn；",
+        "（3）证明：(yn+1-xn+1)/(yn-xn)<1/2。",
+      ].join("\n"),
+      answer: "（1）证明见解析；（2）证明见解析；（3）证明见解析。",
+      analysis: "分别利用导数、单调性与递推关系完成证明。",
+    });
+    expect(blocks.map((block) => block.answer)).toEqual([
+      "B",
+      "C",
+      "（1）证明见解析；（2）证明见解析；（3）证明见解析。",
+    ]);
+  });
+
   it.each(["（1）证明 命题成立。", "（2）证明：命题成立。", "（1）证 命题成立。", "（2）证明由导数符号可得。"]) (
     "treats proof sub-question line %s as analysis when the stem asks for a proof",
     (solutionLine) => {
