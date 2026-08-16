@@ -117,6 +117,23 @@ export interface ExtractedFileContent {
   warnings: string[];
 }
 
+interface PendingFileExtraction {
+  status: "processing";
+}
+
+const FILE_EXTRACTION_POLL_INTERVAL_MS = 2_000;
+const FILE_EXTRACTION_POLL_TIMEOUT_MS = 10 * 60_000;
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isPendingFileExtraction(
+  result: ExtractedFileContent | PendingFileExtraction,
+): result is PendingFileExtraction {
+  return "status" in result && result.status === "processing";
+}
+
 export async function extractStoredFile(
   fileUrl: string,
   options: { textOnly?: boolean } = {},
@@ -124,8 +141,26 @@ export async function extractStoredFile(
   if (!fileUrl.startsWith("/api/files/")) {
     throw new Error("该资源不是服务端托管文件");
   }
-  const suffix = options.textOnly ? "?textOnly=1" : "";
-  return apiRequest<ExtractedFileContent>(`${fileUrl}/content${suffix}`);
+  if (!options.textOnly) {
+    return apiRequest<ExtractedFileContent>(`${fileUrl}/content`);
+  }
+
+  const startedAt = Date.now();
+  let retry = true;
+  while (true) {
+    const suffix = retry
+      ? "?textOnly=1&async=1&retry=1"
+      : "?textOnly=1&async=1";
+    const result = await apiRequest<ExtractedFileContent | PendingFileExtraction>(
+      `${fileUrl}/content${suffix}`,
+    );
+    retry = false;
+    if (!isPendingFileExtraction(result)) return result;
+    if (Date.now() - startedAt >= FILE_EXTRACTION_POLL_TIMEOUT_MS) {
+      throw new Error("文档解析时间过长，请稍后重试");
+    }
+    await wait(FILE_EXTRACTION_POLL_INTERVAL_MS);
+  }
 }
 
 export async function importStoredFile<T>(fileId: string): Promise<T> {

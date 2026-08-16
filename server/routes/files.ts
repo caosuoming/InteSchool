@@ -164,6 +164,8 @@ export async function registerFileRoutes(
   const inFlightExtractions = new Map<string, ReturnType<typeof extractDocument>>();
   const extractedTextCache = new Map<string, Awaited<ReturnType<typeof extractDocument>>>();
   const extractedPreviewCache = new Map<string, Awaited<ReturnType<typeof extractDocument>>>();
+  const asyncTextExtractions = new Map<string, ReturnType<typeof extractDocument>>();
+  const asyncTextExtractionFailures = new Map<string, Error>();
   const setRecentExtraction = (
     cache: Map<string, Awaited<ReturnType<typeof extractDocument>>>,
     fileId: string,
@@ -181,6 +183,7 @@ export async function registerFileRoutes(
     extracted: Awaited<ReturnType<typeof extractDocument>>,
   ) => {
     const textOnly = { ...extracted, html: "" };
+    asyncTextExtractionFailures.delete(fileId);
     setRecentExtraction(extractedTextCache, fileId, textOnly);
     return textOnly;
   };
@@ -216,6 +219,35 @@ export async function registerFileRoutes(
       inFlightExtractions.delete(key);
     });
     inFlightExtractions.set(key, extraction);
+    return extraction;
+  };
+  const rememberAsyncTextExtractionFailure = (fileId: string, error: Error) => {
+    asyncTextExtractionFailures.delete(fileId);
+    asyncTextExtractionFailures.set(fileId, error);
+    if (asyncTextExtractionFailures.size > 8) {
+      const oldestFileId = asyncTextExtractionFailures.keys().next().value;
+      if (oldestFileId) asyncTextExtractionFailures.delete(oldestFileId);
+    }
+  };
+  const startAsyncTextExtraction = (file: StoredFile) => {
+    const existing = asyncTextExtractions.get(file.id);
+    if (existing) return existing;
+
+    const extraction = extractStoredDocument(file, false);
+    asyncTextExtractions.set(file.id, extraction);
+    void extraction.then(
+      () => {
+        asyncTextExtractions.delete(file.id);
+        asyncTextExtractionFailures.delete(file.id);
+      },
+      (unknownError) => {
+        asyncTextExtractions.delete(file.id);
+        const error = unknownError instanceof Error
+          ? unknownError
+          : new Error("文档解析失败");
+        rememberAsyncTextExtractionFailure(file.id, error);
+      },
+    );
     return extraction;
   };
 
@@ -313,9 +345,26 @@ export async function registerFileRoutes(
     if (!canReadFile(store, teacher, file)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
+    const query = request.query as { textOnly?: string; async?: string; retry?: string };
     const textOnly = ["1", "true"].includes(
-      String((request.query as { textOnly?: string }).textOnly || "").toLowerCase(),
+      String(query.textOnly || "").toLowerCase(),
     );
+    const asyncExtraction = textOnly && ["1", "true"].includes(
+      String(query.async || "").toLowerCase(),
+    );
+    if (asyncExtraction) {
+      reply.header("Cache-Control", "no-store");
+      const cached = extractedTextCache.get(file.id);
+      if (cached) return cached;
+
+      const retry = ["1", "true"].includes(String(query.retry || "").toLowerCase());
+      if (retry) asyncTextExtractionFailures.delete(file.id);
+      const previousFailure = asyncTextExtractionFailures.get(file.id);
+      if (previousFailure) throw previousFailure;
+
+      startAsyncTextExtraction(file);
+      return reply.code(202).send({ status: "processing" });
+    }
     return extractStoredDocument(file, !textOnly);
   });
 

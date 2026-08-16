@@ -25,6 +25,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   setCsrfToken(null);
   vi.unstubAllGlobals();
 });
@@ -159,18 +160,23 @@ describe("api service", () => {
       .rejects.toThrow("该资源不是服务端托管文件");
 
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ text: "body", html: "<pre>body</pre>", format: "text", warnings: [] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "processing" }, 202))
+      .mockResolvedValueOnce(jsonResponse({ text: "body", html: "", format: "text", warnings: [] }))
       .mockResolvedValueOnce(jsonResponse({ id: "document-1" }));
 
-    await expect(extractStoredFile("/api/files/file-1", { textOnly: true }))
-      .resolves.toMatchObject({ text: "body", format: "text" });
+    vi.useFakeTimers();
+    const extraction = extractStoredFile("/api/files/file-1", { textOnly: true });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(extraction).resolves.toMatchObject({ text: "body", format: "text" });
+    vi.useRealTimers();
     setCsrfToken("import-csrf");
     await expect(importStoredFile<{ id: string }>("file / 1"))
       .resolves.toEqual({ id: "document-1" });
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/files/file-1/content?textOnly=1");
-    expect(fetchMock.mock.calls[1][0]).toBe("/api/files/file%20%2F%201/import");
-    expect(new Headers(fetchMock.mock.calls[1][1]?.headers).get("X-InteSchool-CSRF"))
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/files/file-1/content?textOnly=1&async=1&retry=1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/files/file-1/content?textOnly=1&async=1");
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/files/file%20%2F%201/import");
+    expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get("X-InteSchool-CSRF"))
       .toBe("import-csrf");
   });
 });
