@@ -105,6 +105,16 @@ async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
   });
 }
 
+function optionParagraphs(documentXml: string): Element[] {
+  const xml = new DOMParser().parseFromString(documentXml, "application/xml");
+  return Array.from(xml.getElementsByTagName("w:p")).filter((paragraph) => {
+    const text = Array.from(paragraph.getElementsByTagName("w:t"))
+      .map((node) => node.textContent || "")
+      .join("");
+    return /A\. |B\. |C\. |D\. /.test(text);
+  });
+}
+
 beforeEach(() => {
   saveAsMock.mockReset();
   fetchMock.mockReset();
@@ -112,6 +122,69 @@ beforeEach(() => {
 });
 
 describe("generateExamPaperDocx", () => {
+  it("lays out short choice options evenly on one line", async () => {
+    const paper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        options: ["甲", "乙", "丙", "丁"],
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(paper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const paragraphs = optionParagraphs(documentXml);
+
+    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs[0].getElementsByTagName("w:tab")).toHaveLength(6);
+    expect(paragraphs[0].textContent).toContain("A. 甲B. 乙C. 丙D. 丁");
+  });
+
+  it("falls back to two choice options per line when four columns are too narrow", async () => {
+    const paper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        options: ["这是八个汉字选项", "也是八个汉字选项", "仍是八个汉字选项", "最后八个汉字选项"],
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(paper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const paragraphs = optionParagraphs(documentXml);
+
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[0].textContent).toContain("A. 这是八个汉字选项B. 也是八个汉字选项");
+    expect(paragraphs[1].textContent).toContain("C. 仍是八个汉字选项D. 最后八个汉字选项");
+    expect(paragraphs.every((paragraph) => paragraph.getElementsByTagName("w:tab").length === 2)).toBe(true);
+  });
+
+  it("falls back to one choice option per line when two columns are too narrow", async () => {
+    const paper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        options: [
+          "这是一个明显超过半行宽度的很长中文选择题选项",
+          "这是另一个明显超过半行宽度的很长中文选择题选项",
+          "这是第三个明显超过半行宽度的很长中文选择题选项",
+          "这是最后一个明显超过半行宽度的很长中文选择题选项",
+        ],
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(paper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const paragraphs = optionParagraphs(documentXml);
+
+    expect(paragraphs).toHaveLength(4);
+    expect(paragraphs.map((paragraph) => paragraph.textContent?.slice(0, 3))).toEqual(["A. ", "B. ", "C. ", "D. "]);
+    expect(paragraphs.every((paragraph) => paragraph.getElementsByTagName("w:tab").length === 0)).toBe(true);
+  });
+
   it("downloads the structured document with the edited question content", async () => {
     await generateExamPaperDocx(structuredPaper, { [linkedQuestion.id]: linkedQuestion });
 

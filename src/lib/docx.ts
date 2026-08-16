@@ -1,6 +1,6 @@
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
-  AlignmentType,
+  AlignmentType, Tab, TabStopPosition, TabStopType,
   BorderStyle, convertInchesToTwip, ImportedXmlComponent, ImageRun,
   type ParagraphChild,
 } from "docx";
@@ -19,6 +19,9 @@ const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const IMAGE_MARKER_START = "\uE300";
 const IMAGE_MARKER_END = "\uE301";
 const MAX_DOCUMENT_IMAGE_WIDTH = 640;
+const OPTION_LAYOUT_WIDTH_TWIPS = TabStopPosition.MAX;
+const OPTION_LABEL_WIDTH_TWIPS = 330;
+const OPTION_COLUMN_GAP_TWIPS = 360;
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 
@@ -218,15 +221,68 @@ function createHeading(text: string, level: (typeof HeadingLevel)[keyof typeof H
   });
 }
 
+function optionCharacterWidthTwips(character: string): number {
+  if (/\s/u.test(character)) return 55;
+  if ((character.codePointAt(0) || 0) <= 0xff) return 110;
+  return 220;
+}
+
+function estimatedOptionWidthTwips(option: string): number {
+  const text = plainDocumentText(option);
+  if (!text) return OPTION_LABEL_WIDTH_TWIPS + OPTION_COLUMN_GAP_TWIPS;
+  if (text.includes("\n") || /<img\b|!\[[^\]]*\]\(/i.test(option)) {
+    return OPTION_LAYOUT_WIDTH_TWIPS + 1;
+  }
+
+  const textWidth = Array.from(text).reduce(
+    (width, character) => width + optionCharacterWidthTwips(character),
+    0,
+  );
+  return OPTION_LABEL_WIDTH_TWIPS + textWidth + OPTION_COLUMN_GAP_TWIPS;
+}
+
+function optionColumnCount(options: string[]): number {
+  if (options.length <= 1) return 1;
+  const widths = options.map(estimatedOptionWidthTwips);
+  const candidates = [options.length, 2, 1]
+    .filter((columns, index, values) => columns <= options.length && values.indexOf(columns) === index);
+
+  return candidates.find((columns) => {
+    const columnWidth = OPTION_LAYOUT_WIDTH_TWIPS / columns;
+    return widths.every((width) => width <= columnWidth);
+  }) || 1;
+}
+
 async function createOptionParagraphs(options: string[]): Promise<Paragraph[]> {
-  return Promise.all(options.map(async (option, index) => new Paragraph({
-    children: [
-      textRun(`${String.fromCharCode(65 + index)}. `, { bold: true, size: 22 }),
-      ...await documentRichChildren(option, { size: 22 }),
-    ],
-    alignment: AlignmentType.LEFT,
-    spacing: { line: 360, after: 60 },
-  })));
+  const columns = optionColumnCount(options);
+  const paragraphs: Paragraph[] = [];
+
+  for (let rowStart = 0; rowStart < options.length; rowStart += columns) {
+    const rowEnd = Math.min(options.length, rowStart + columns);
+    const children: ParagraphChild[] = [];
+
+    for (let index = rowStart; index < rowEnd; index += 1) {
+      children.push(
+        textRun(`${String.fromCharCode(65 + index)}. `, { bold: true, size: 22 }),
+        ...await documentRichChildren(options[index], { size: 22 }),
+      );
+      if (index + 1 < rowEnd) children.push(new TextRun({ children: [new Tab()] }));
+    }
+
+    paragraphs.push(new Paragraph({
+      children,
+      alignment: AlignmentType.LEFT,
+      spacing: { line: 360, after: 60 },
+      tabStops: columns > 1
+        ? Array.from({ length: columns - 1 }, (_, index) => ({
+          type: TabStopType.LEFT,
+          position: Math.round(OPTION_LAYOUT_WIDTH_TWIPS * (index + 1) / columns),
+        }))
+        : undefined,
+    }));
+  }
+
+  return paragraphs;
 }
 
 const STRUCTURED_MATH_SELECTOR = "i.math-variable, sub, sup";
