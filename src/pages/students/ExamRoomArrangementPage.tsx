@@ -317,6 +317,28 @@ function sameSubjects(left: string[], right: string[]): boolean {
   return uniqueSubjects(left).join("\0") === uniqueSubjects(right).join("\0");
 }
 
+function normalizeSimultaneousSubjectGroupsForDraft(groups: string[][] | undefined, subjects: string[]): string[][] {
+  const subjectSet = new Set(subjects);
+  const claimed = new Set<string>();
+  return (groups || []).map((group) => uniqueSubjects(group || []).filter((subject) => {
+    if (!subjectSet.has(subject) || claimed.has(subject)) return false;
+    claimed.add(subject);
+    return true;
+  }));
+}
+
+function defaultSimultaneousSubjectGroups(
+  subjects: string[],
+  studentSubjects: ExamStudentSubjectSelection[],
+): string[][] {
+  const defaultGroup = ["物理", "历史"].filter((subject) => subjects.includes(subject));
+  if (defaultGroup.length < 2) return [];
+  const hasConflict = studentSubjects.some((selection) => (
+    !selection.absent && defaultGroup.filter((subject) => selection.subjects.includes(subject)).length > 1
+  ));
+  return hasConflict ? [] : [defaultGroup];
+}
+
 function mostCommonClassSubjects(
   classId: string,
   context: ExamArrangementContext,
@@ -441,6 +463,7 @@ function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInp
     subjects: [...DEFAULT_SUBJECTS],
     selectionSubjects,
     separateSubjects: [],
+    simultaneousSubjectGroups: defaultSimultaneousSubjectGroups(DEFAULT_SUBJECTS, studentSubjects),
     seatOrder: "random",
     rooms,
     groupRoomIds: {},
@@ -477,6 +500,7 @@ function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementC
     subjects,
     selectionSubjects,
     separateSubjects: uniqueSubjects(current.separateSubjects || []).filter((subject) => subjects.includes(subject)),
+    simultaneousSubjectGroups: normalizeSimultaneousSubjectGroupsForDraft(current.simultaneousSubjectGroups, subjects),
     seatOrder: current.seatOrder || "random",
     rooms,
     classRules: normalizeClassRules(current.classRules, context, subjects, rooms),
@@ -508,6 +532,7 @@ function cloneDraft(arrangement: ExamArrangement, context: ExamArrangementContex
     subjects: structuredClone(arrangement.subjects),
     selectionSubjects: structuredClone(arrangement.selectionSubjects || {}),
     separateSubjects: structuredClone(arrangement.separateSubjects || []),
+    simultaneousSubjectGroups: structuredClone(arrangement.simultaneousSubjectGroups || []),
     seatOrder: arrangement.seatOrder,
     rooms: structuredClone(arrangement.rooms),
     groupRoomIds: structuredClone(arrangement.groupRoomIds || {}),
@@ -946,6 +971,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
         ...current,
         subjects,
         separateSubjects: current.separateSubjects?.filter((item) => item !== subject),
+        simultaneousSubjectGroups: current.simultaneousSubjectGroups?.map((group) => group.filter((item) => item !== subject)),
         selectionSubjects: Object.fromEntries(Object.entries(current.selectionSubjects || {}).map(([name, items]) => [
           name,
           enabled ? items.filter((item) => item !== subject) : items,
@@ -989,6 +1015,34 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
         separateSubjects: selected.includes(subject)
           ? selected.filter((item) => item !== subject)
           : uniqueSubjects([...selected, subject]),
+      };
+    });
+  };
+
+  const addSimultaneousSubjectGroup = () => {
+    updateDraft((current) => ({
+      ...current,
+      simultaneousSubjectGroups: [...(current.simultaneousSubjectGroups || []), []],
+    }));
+  };
+
+  const removeSimultaneousSubjectGroup = (groupIndex: number) => {
+    updateDraft((current) => ({
+      ...current,
+      simultaneousSubjectGroups: (current.simultaneousSubjectGroups || []).filter((_, index) => index !== groupIndex),
+    }));
+  };
+
+  const toggleSimultaneousSubject = (groupIndex: number, subject: string) => {
+    updateDraft((current) => {
+      const groups = current.simultaneousSubjectGroups || [];
+      const group = groups[groupIndex] || [];
+      const nextGroup = group.includes(subject)
+        ? group.filter((item) => item !== subject)
+        : uniqueSubjects([...group, subject]);
+      return {
+        ...current,
+        simultaneousSubjectGroups: groups.map((items, index) => index === groupIndex ? nextGroup : items),
       };
     });
   };
@@ -1514,6 +1568,60 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
                   参与合并的科目：{draft.subjects.filter((subject) => !(draft.separateSubjects || []).includes(subject)).join("、") || "无"}
                   {(draft.subjects.length > (draft.separateSubjects || []).length) && "；每名学生仅合并本人实际参加的科目"}
+                </div>
+                <div className="mt-4 border-t border-ink-100 pt-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-ink-800">同时考试组合</div>
+                      <div className="mt-1 text-xs text-ink-500">同一组科目在同一时间考试。选科数据允许时自动预设物理、历史同场；混合考场会按选科（无选科信息时按学科）连续排座。</div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={addSimultaneousSubjectGroup}><Plus className="h-3.5 w-3.5" />增加组合</Button>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {(draft.simultaneousSubjectGroups || []).map((group, groupIndex) => {
+                      const separateCount = group.filter((subject) => (draft.separateSubjects || []).includes(subject)).length;
+                      const mixedArrangementMode = group.length >= 2 && separateCount > 0 && separateCount < group.length;
+                      const conflictCount = draft.studentSubjects.filter((selection) => (
+                        !selection.absent && group.filter((subject) => selection.subjects.includes(subject)).length > 1
+                      )).length;
+                      return (
+                        <div key={groupIndex} className="rounded-lg border border-ink-100 bg-paper p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-xs font-medium text-ink-700">同时场次 {groupIndex + 1}</div>
+                            <Button variant="ghost" size="sm" onClick={() => removeSimultaneousSubjectGroup(groupIndex)}><Trash2 className="h-3.5 w-3.5" />删除组合</Button>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {draft.subjects.map((subject) => {
+                              const usedByOtherGroup = (draft.simultaneousSubjectGroups || []).some((items, index) => index !== groupIndex && items.includes(subject));
+                              return (
+                                <CheckboxPill
+                                  key={subject}
+                                  checked={group.includes(subject)}
+                                  label={subject}
+                                  disabled={usedByOtherGroup}
+                                  onClick={() => toggleSimultaneousSubject(groupIndex, subject)}
+                                />
+                              );
+                            })}
+                          </div>
+                          <div className={cn("mt-2 text-xs", group.length < 2 || mixedArrangementMode || conflictCount > 0 ? "text-red-600" : "text-ink-500")}>
+                            {group.length < 2
+                              ? "请至少选择两个科目。"
+                              : mixedArrangementMode
+                                ? "同一同时考试组合中的科目需全部单独排，或全部参与合并安排。"
+                                : conflictCount > 0
+                                  ? `有 ${conflictCount} 名学生同时参加本组中的多个科目，请先调整学生考试科目或同时考试组合。`
+                                  : separateCount === group.length
+                                    ? "同组单独排考科目共享同一场次的考场容量。"
+                                    : "同组科目参与同一套合并座位时，将按选科或学科相对集中。"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {(draft.simultaneousSubjectGroups || []).length === 0 && (
+                      <div className="rounded-lg border border-dashed border-ink-200 px-4 py-5 text-center text-xs text-ink-400">未设置同时考试科目；各单独排考科目按不同场次处理。</div>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-4 border-t border-ink-100 pt-4">
                   <div className="text-sm font-medium text-ink-800">考试组合使用考场</div>

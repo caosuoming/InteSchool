@@ -121,6 +121,70 @@ describe("generateExamAssignments", () => {
     expect(assignments.find((item) => item.studentId === "student-1" && item.sessionKey === "combined")?.subjectLabel).toBe("化学");
   });
 
+  it("shares room capacity across separately arranged subjects in the same simultaneous session", () => {
+    const simultaneous = input("subject");
+    simultaneous.separateSubjects = ["物理", "化学"];
+    simultaneous.simultaneousSubjectGroups = [["物理", "化学"]];
+    simultaneous.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: ["物理"] },
+    ];
+    simultaneous.rooms = [{ id: "room-a", name: "第一考场", capacity: 2 }];
+    simultaneous.classRules = simultaneous.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+
+    expect(() => generateExamAssignments(simultaneous, context)).toThrow(/考场容量不足/);
+
+    simultaneous.rooms[0].capacity = 3;
+    const assignments = generateExamAssignments(simultaneous, context);
+    expect(new Set(assignments.map((item) => item.sessionKey))).toEqual(new Set(["simultaneous:物理|化学"]));
+    expect(summarizeExamGroups(simultaneous, context)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "subject:物理", sessionKey: "simultaneous:物理|化学", studentCount: 2 }),
+      expect.objectContaining({ key: "subject:化学", sessionKey: "simultaneous:物理|化学", studentCount: 1 }),
+    ]));
+  });
+
+  it("rejects a student who is configured for two subjects that occur simultaneously", () => {
+    const simultaneous = input("subject");
+    simultaneous.separateSubjects = ["物理", "化学"];
+    simultaneous.simultaneousSubjectGroups = [["物理", "化学"]];
+
+    expect(() => generateExamAssignments(simultaneous, context)).toThrow(/学生 甲 同时参加「物理、化学」/);
+  });
+
+  it("keeps subjects contiguous by seat number inside a mixed simultaneous room", () => {
+    const simultaneous = input("subject");
+    simultaneous.separateSubjects = ["物理", "化学"];
+    simultaneous.simultaneousSubjectGroups = [["物理", "化学"]];
+    simultaneous.seatOrder = "previousRank";
+    simultaneous.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: ["物理"] },
+    ];
+    simultaneous.rooms = [{ id: "room-a", name: "第一考场", capacity: 3 }];
+    simultaneous.classRules = simultaneous.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+    const rankedContext: ExamArrangementContext = {
+      ...context,
+      previousGradeRanks: {
+        "student-1": 1,
+        "student-2": 2,
+        "student-3": 3,
+      },
+    };
+
+    const assignments = generateExamAssignments(simultaneous, rankedContext)
+      .sort((left, right) => left.seatNo - right.seatNo);
+
+    expect(assignments.map((item) => item.subjectLabel)).toEqual(["物理", "物理", "化学"]);
+  });
+
   it("summarizes the actual student count for every exam group", () => {
     const mixed = input("combination");
     mixed.separateSubjects = ["物理"];

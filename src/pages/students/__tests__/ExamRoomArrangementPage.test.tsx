@@ -242,6 +242,11 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.queryByText("实际考试组合人数")).not.toBeInTheDocument();
     expect(screen.queryByText("考试组合对应考场")).not.toBeInTheDocument();
     expect(screen.getByText("考试组合使用考场")).toBeInTheDocument();
+    expect(screen.getByText("同时考试组合")).toBeInTheDocument();
+    const simultaneousCard = screen.getByText("同时场次 1").closest<HTMLElement>("div.rounded-lg");
+    expect(simultaneousCard).not.toBeNull();
+    expect(within(simultaneousCard!).getByRole("button", { name: "物理" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(simultaneousCard!).getByRole("button", { name: "历史" })).toHaveAttribute("aria-pressed", "true");
 
     await user.clear(screen.getByLabelText("批量考场容量"));
     await user.type(screen.getByLabelText("批量考场容量"), "32");

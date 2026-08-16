@@ -16,6 +16,7 @@ interface SeatTask {
   subjectLabel: string;
   sessionKey: string;
   eligibleRoomIds: string[];
+  concentrationKey?: string;
   seatPreference?: ExamStudentSeatPreference;
 }
 
@@ -42,9 +43,60 @@ function stableHash(value: string): number {
 }
 
 function examGroupKey(sessionKey: string, selectedSubjects: string[]): string {
-  return sessionKey === "combined"
-    ? `combined:${selectedSubjects.join("|")}`
-    : sessionKey;
+  if (sessionKey === "combined") return `combined:${selectedSubjects.join("|")}`;
+  if (sessionKey.startsWith("simultaneous:") && selectedSubjects.length === 1) {
+    return `subject:${selectedSubjects[0]}`;
+  }
+  return sessionKey;
+}
+
+function normalizeSimultaneousSubjectGroups(
+  input: ExamArrangementInput,
+  subjects: string[],
+  strict = false,
+): string[][] {
+  const subjectSet = new Set(subjects);
+  const claimed = new Set<string>();
+  const groups: string[][] = [];
+
+  for (const source of input.simultaneousSubjectGroups || []) {
+    const unknown = uniqueStrings(source || []).filter((subject) => !subjectSet.has(subject));
+    if (strict && unknown.length > 0) {
+      throw new Error(`同时考试组合包含未启用科目：${unknown.join("、")}`);
+    }
+    const normalized = subjects.filter((subject) => source?.includes(subject));
+    const duplicated = normalized.filter((subject) => claimed.has(subject));
+    if (strict && duplicated.length > 0) {
+      throw new Error(`科目不能同时属于多个同时考试组合：${duplicated.join("、")}`);
+    }
+    const available = normalized.filter((subject) => !claimed.has(subject));
+    if (strict && available.length < 2) {
+      throw new Error("每个同时考试组合至少需要两个科目");
+    }
+    if (available.length < 2) continue;
+    available.forEach((subject) => claimed.add(subject));
+    groups.push(available);
+  }
+  return groups;
+}
+
+function simultaneousSessionKey(subject: string, groups: string[][]): string {
+  const group = groups.find((items) => items.includes(subject));
+  return group ? `simultaneous:${group.join("|")}` : `subject:${subject}`;
+}
+
+function taskConcentrationKey(student: Student, selectedSubjects: string[], groups: string[][]): string | undefined {
+  const focused: string[] = [];
+  groups.forEach((group, groupIndex) => {
+    group.forEach((subject, subjectIndex) => {
+      if (selectedSubjects.includes(subject)) {
+        focused.push(`${String(groupIndex).padStart(2, "0")}:${String(subjectIndex).padStart(2, "0")}`);
+      }
+    });
+  });
+  if (focused.length === 0) return undefined;
+  const selection = student.subjectSelection?.trim();
+  return `${focused.join("|")}:${selection || selectedSubjects.join("|")}`;
 }
 
 export function summarizeExamGroups(
@@ -52,6 +104,7 @@ export function summarizeExamGroups(
   context: ExamArrangementContext,
 ): ExamGroupSummary[] {
   const subjects = uniqueStrings(input.subjects || []);
+  const simultaneousGroups = normalizeSimultaneousSubjectGroups(input, subjects);
   const separateSubjects = new Set(uniqueStrings(
     input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
   ).filter((subject) => subjects.includes(subject)));
@@ -92,7 +145,7 @@ export function summarizeExamGroups(
     const selectedCombinedSubjects = combinedSubjects.filter((subject) => selected.includes(subject));
     addGroup(student, "combined", selectedCombinedSubjects);
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
-      addGroup(student, `subject:${subject}`, [subject]);
+      addGroup(student, simultaneousSessionKey(subject, simultaneousGroups), [subject]);
     }
   }
 
@@ -224,6 +277,7 @@ function createTask(
   rules: Map<string, ExamClassRoomRule>,
   allRoomIds: string[],
   groupRoomIds: Record<string, string[]>,
+  simultaneousGroups: string[][],
   roomGroupKey?: string,
   fallbackRoomGroupKey?: string,
   seatPreference?: ExamStudentSeatPreference,
@@ -243,7 +297,15 @@ function createTask(
   if (eligibleRoomIds.length === 0) {
     throw new Error(`「${className}」学生 ${student.name} 的「${subjectLabel}」没有共同可用考场`);
   }
-  return { student, className, subjectLabel, sessionKey, eligibleRoomIds, seatPreference };
+  return {
+    student,
+    className,
+    subjectLabel,
+    sessionKey,
+    eligibleRoomIds,
+    concentrationKey: taskConcentrationKey(student, selectedSubjects, simultaneousGroups),
+    seatPreference,
+  };
 }
 
 function buildTasks(
@@ -268,6 +330,13 @@ function buildTasks(
   const separateSubjects = new Set(uniqueStrings(
     input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
   ).filter((subject) => subjects.includes(subject)));
+  const simultaneousGroups = normalizeSimultaneousSubjectGroups(input, subjects, true);
+  for (const group of simultaneousGroups) {
+    const separateCount = group.filter((subject) => separateSubjects.has(subject)).length;
+    if (separateCount !== 0 && separateCount !== group.length) {
+      throw new Error(`同时考试组合「${group.join("、")}」中的科目需全部单独排，或全部参与合并安排`);
+    }
+  }
   const combinedSubjects = subjects.filter((subject) => !separateSubjects.has(subject));
   const legacyCombinedGroupKey = examGroupKey("combined", combinedSubjects);
   const tasks: SeatTask[] = [];
@@ -277,6 +346,12 @@ function buildTasks(
     if (!selection || selection.absent) continue;
     const selected = subjects.filter((subject) => selection.subjects.includes(subject));
     if (selected.length === 0) continue;
+    for (const group of simultaneousGroups) {
+      const conflicts = group.filter((subject) => selected.includes(subject));
+      if (conflicts.length > 1) {
+        throw new Error(`学生 ${student.name} 同时参加「${conflicts.join("、")}」，不能安排在同一考试场次`);
+      }
+    }
     const classItem = classMap.get(student.classId);
     if (!classItem) continue;
 
@@ -290,6 +365,7 @@ function buildTasks(
         rules,
         allRoomIds,
         groupRoomIds,
+        simultaneousGroups,
         undefined,
         legacyCombinedGroupKey,
         selection.seatPreference,
@@ -299,12 +375,13 @@ function buildTasks(
       tasks.push(createTask(
         student,
         classItem.name,
-        `subject:${subject}`,
+        simultaneousSessionKey(subject, simultaneousGroups),
         [subject],
         rules,
         allRoomIds,
         groupRoomIds,
-        undefined,
+        simultaneousGroups,
+        `subject:${subject}`,
         undefined,
         selection.seatPreference,
       ));
@@ -338,6 +415,21 @@ function compareTasks(
   return left.className.localeCompare(right.className, "zh-CN")
     || left.student.studentNo.localeCompare(right.student.studentNo, "zh-CN")
     || left.student.id.localeCompare(right.student.id);
+}
+
+function compareSeatTasks(
+  left: SeatTask,
+  right: SeatTask,
+  seatOrder: ExamSeatOrder,
+  context: ExamArrangementContext,
+  seed: string,
+): number {
+  const preferenceRank = (preference?: ExamStudentSeatPreference) => preference === "first" ? 0 : preference === "last" ? 2 : 1;
+  const preferenceDifference = preferenceRank(left.seatPreference) - preferenceRank(right.seatPreference);
+  if (preferenceDifference !== 0) return preferenceDifference;
+  const concentrationDifference = (left.concentrationKey || "~").localeCompare(right.concentrationKey || "~", "zh-CN");
+  if (concentrationDifference !== 0) return concentrationDifference;
+  return compareTasks(left, right, seatOrder, context, seed, false);
 }
 
 function allocateSession(
@@ -380,7 +472,7 @@ function allocateSession(
   for (const room of rooms) {
     planned
       .filter((item) => item.room.id === room.id)
-      .sort((left, right) => compareTasks(left.task, right.task, seatOrder, context, seed))
+      .sort((left, right) => compareSeatTasks(left.task, right.task, seatOrder, context, seed))
       .forEach((item, index) => seatNumbers.set(item.task, index + 1));
   }
 

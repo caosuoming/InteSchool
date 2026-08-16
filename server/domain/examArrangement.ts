@@ -28,6 +28,7 @@ function readArrangements(): ExamArrangement[] {
       separateSubjects: structuredClone(
         item.separateSubjects ?? (item.mode === "subject" ? item.subjects : []),
       ),
+      simultaneousSubjectGroups: structuredClone(item.simultaneousSubjectGroups || []),
       seatOrder: item.seatOrder || "random",
       groupRoomIds: structuredClone(item.groupRoomIds || {}),
       rooms,
@@ -100,6 +101,7 @@ export const examArrangementService = {
       subjectSetupMode: input.subjectSetupMode || "all",
       selectionSubjects: structuredClone(input.selectionSubjects || {}),
       separateSubjects: structuredClone(separateSubjects),
+      simultaneousSubjectGroups: structuredClone(input.simultaneousSubjectGroups || []),
       seatOrder: input.seatOrder || "random",
       groupRoomIds: structuredClone(input.groupRoomIds || {}),
       rooms: input.rooms.map((room) => ({
@@ -136,6 +138,7 @@ export const examArrangementService = {
       subjects: [...preparedInput.subjects],
       selectionSubjects: structuredClone(preparedInput.selectionSubjects),
       separateSubjects: structuredClone(preparedInput.separateSubjects),
+      simultaneousSubjectGroups: structuredClone(preparedInput.simultaneousSubjectGroups),
       seatOrder: preparedInput.seatOrder,
       groupRoomIds: structuredClone(preparedInput.groupRoomIds),
       rooms: structuredClone(preparedInput.rooms),
