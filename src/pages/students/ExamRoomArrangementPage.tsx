@@ -226,7 +226,11 @@ function DeskLabelPrintCard({
           <div key={assignment.id} className="exam-desk-label-assignment">
             <div className="exam-desk-label-assignment-main">
               <span className="exam-desk-label-name">{assignment.studentName}</span>
-              <span className="exam-desk-label-subject">{assignment.subjectLabel}</span>
+              <span className="exam-desk-label-subject">
+                {subjectLines(assignment.subjectLabel).map((line, lineIndex) => (
+                  <span key={`${lineIndex}-${line}`}>{line}</span>
+                ))}
+              </span>
               <span className="exam-desk-label-class">{assignment.className}</span>
             </div>
             <div className="exam-desk-label-assignment-meta">

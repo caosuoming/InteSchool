@@ -433,6 +433,12 @@ describe("ExamRoomArrangementPage", () => {
     expect(deskPrintPage.style.alignItems).toBe("stretch");
     expect(deskPrintPage.querySelector(".exam-desk-label-assignment-main")).toHaveTextContent("张同学");
     expect(deskPrintPage.querySelector(".exam-desk-label-assignment-main")).toHaveTextContent("高三（1）班");
+    expect([...deskPrintPage.querySelectorAll(".exam-desk-label-subject")].map((subject) => (
+      [...subject.querySelectorAll("span")].map((line) => line.textContent)
+    ))).toEqual([
+      ["语文、数学、英语", "化学、生物"],
+      ["物理"],
+    ]);
     expect(deskPrintPage.querySelector(".exam-desk-label-meta")?.children[0]).toHaveTextContent("教学楼 301");
     expect(deskPrintPage.querySelector(".exam-desk-label-meta")?.children[1]).toHaveTextContent("2026-05-10");
 
