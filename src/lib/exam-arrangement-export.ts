@@ -1,4 +1,5 @@
 import type { ExamArrangement, ExamSeatAssignment } from "@/types";
+import { buildExamPrintRoomStatistics } from "./exam-print-room-statistics";
 
 export interface ExamDeskLabelGroup {
   key: string;
@@ -203,6 +204,47 @@ function spreadsheetCells() {
     ...border,
   });
   return { header, cell };
+}
+
+export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangement): Promise<void> {
+  const statistics = buildExamPrintRoomStatistics(arrangement);
+  if (statistics.rooms.length === 0) throw new Error("当前考试方案暂无已安排考场");
+
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const { header, cell } = spreadsheetCells();
+  const centeredCell = (value: string | number) => ({
+    ...cell(value),
+    align: "center" as const,
+  });
+  const countCell = (value: number) => ({
+    ...centeredCell(value || ""),
+    backgroundColor: value ? undefined : "#FFF59D",
+  });
+  const totalCell = (value: number) => ({
+    ...centeredCell(value),
+    fontWeight: "bold" as const,
+    backgroundColor: "#F1F4F8",
+  });
+
+  await writeXlsxFile([{
+    sheet: "文印室统计表",
+    data: [
+      [header("考场号"), ...statistics.rooms.map((room) => header(room.roomNumber)), header("合计")],
+      [header("考试地点"), ...statistics.rooms.map((room) => centeredCell(room.roomLocation)), centeredCell("")],
+      [header("组合"), ...statistics.rooms.map((room) => centeredCell(room.selectionLabel)), centeredCell("")],
+      ...statistics.rows.map((row) => [
+        header(row.label),
+        ...row.counts.map(countCell),
+        totalCell(row.total),
+      ]),
+    ],
+    stickyRowsCount: 3,
+    columns: [
+      { width: 16 },
+      ...statistics.rooms.map(() => ({ width: 14 })),
+      { width: 14 },
+    ],
+  }]).toFile(`${safeFileName(arrangement.name)}_文印室统计表.xlsx`);
 }
 
 export async function downloadClassArrangements(
