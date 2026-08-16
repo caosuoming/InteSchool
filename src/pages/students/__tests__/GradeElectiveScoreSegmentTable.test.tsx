@@ -111,4 +111,42 @@ describe("GradeElectiveScoreSegmentTable", () => {
     const savedTemplate = onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id);
     expect(savedTemplate?.totalScoreSegmentOptions?.subjectScoreSegmentThresholds?.化学).toEqual([95, 85, 75]);
   });
+
+  it("hides grade-band columns when table one uses raw scores only", () => {
+    const classAverageTemplate: GradeStatisticsTemplate = {
+      id: "class-average",
+      kind: "classAverage",
+      name: "班级平均分表",
+      enabled: true,
+      scoreMode: "raw",
+      subjects: ["化学"],
+      classAverageOptions: {
+        classOrder: ["class-1"],
+        subjectScoreModes: {
+          "class-1": { 化学: "raw" },
+        },
+        totalScoreMode: "raw",
+      },
+    };
+
+    render(
+      <GradeElectiveScoreSegmentTable
+        exam={exam}
+        settings={{ ...exam.settings, templates: [classAverageTemplate, template] }}
+        template={template}
+        classAverageTemplate={classAverageTemplate}
+        context={context}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const chemistryTable = screen.getByText("2027届高二四校联合考试化学选修分数段统计表")
+      .closest("section")?.querySelector("table");
+    expect(chemistryTable).not.toBeNull();
+    for (const label of ["A", "B", "C", "D", "E"]) {
+      expect(within(chemistryTable!).queryByRole("columnheader", { name: label })).not.toBeInTheDocument();
+    }
+    expect(within(chemistryTable!).getByRole("columnheader", { name: "90分以上" })).toBeInTheDocument();
+    expect(screen.getByText(/表一仅使用原始分时不显示等级人数/)).toBeInTheDocument();
+  });
 });

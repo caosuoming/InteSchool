@@ -70,6 +70,7 @@ export function GradeElectiveScoreSegmentTable({
     settings,
     effectiveClassAverageTemplate,
   ), [context, effectiveClassAverageTemplate, effectiveTemplate, exam, settings]);
+  const hasGradeStatistics = report.subjects.some((subject) => subject.gradeLabels.length > 0);
 
   const updateThresholds = (subject: string, value: string) => {
     const thresholds = parseThresholds(value);
@@ -129,7 +130,9 @@ export function GradeElectiveScoreSegmentTable({
           <div>
             <div className="font-medium text-ink-900">表四、选修分数段</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              分别统计化学、生物、政治、地理的实考人数、A-E 等级人数和原始分累计达分人数；任课教师来自当前年级配置。
+              {hasGradeStatistics
+                ? "分别统计化学、生物、政治、地理的实考人数、A-E 等级人数和原始分累计达分人数；任课教师来自当前年级配置。"
+                : "分别统计化学、生物、政治、地理的实考人数和原始分累计达分人数；表一仅使用原始分时不显示等级人数。"}
             </div>
           </div>
         </div>
@@ -161,7 +164,7 @@ export function GradeElectiveScoreSegmentTable({
             ))}
           </div>
           <div className="mt-2 text-[11px] text-ink-400">
-            A-E 等级按当前赋分规则统计；后续阈值按原始分从高到低累计统计。以逗号或空格分隔多个阈值；{autoSaving ? "正在自动保存…" : "失焦后自动保存到当前届年级。"}
+            {hasGradeStatistics ? "A-E 等级按当前赋分规则统计；" : "当前表一仅显示原始分，不统计 A-E 等级；"}后续阈值按原始分从高到低累计统计。以逗号或空格分隔多个阈值；{autoSaving ? "正在自动保存…" : "失焦后自动保存到当前届年级。"}
           </div>
         </div>
       )}

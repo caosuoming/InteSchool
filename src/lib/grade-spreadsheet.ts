@@ -5,6 +5,7 @@ import {
   type GradeClassAverageReport,
 } from "./grade-class-average.js";
 import type { GradeTotalScoreSegmentReport } from "./grade-total-score-segment.js";
+import type { GradeTotalScoreRankingReport } from "./grade-total-score-ranking.js";
 import type { GradeSubjectScoreSegmentReport } from "./grade-subject-score-segment.js";
 import type { GradeElectiveScoreSegmentReport } from "./grade-elective-score-segment.js";
 import { buildGradeReportTable } from "./grade-reports.js";
@@ -563,6 +564,60 @@ export async function exportGradeTotalScoreSegmentReport(
     ],
     stickyRowsCount: 2,
   }).toFile(`${safeName}.xlsx`);
+}
+
+export async function exportGradeTotalScoreRankingReport(
+  report: GradeTotalScoreRankingReport,
+): Promise<void> {
+  if (report.tables.length === 0) throw new Error("暂无可导出的总分排名");
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const border = { borderStyle: "thin" as const, borderColor: "#9CA3AF" };
+  const cell = (value: string | number | null, options: Record<string, unknown> = {}) => ({
+    value: value ?? undefined,
+    type: typeof value === "number" ? Number : String,
+    align: "center" as const,
+    alignVertical: "center" as const,
+    height: 22,
+    ...border,
+    ...options,
+  });
+  const sheets = report.tables.map((table) => ({
+    sheet: table.key === "science" ? "理科" : table.key === "arts" ? "文科" : "总分排名",
+    data: [
+      [
+        cell(table.title, { fontWeight: "bold", fontSize: 16, align: "left" }),
+        cell(null),
+        cell(null),
+        cell(null),
+        cell(report.reportDate.replace(/-/g, "."), { fontWeight: "bold" }),
+      ],
+      [
+        cell("名次", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        cell("学号", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        cell("姓名", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        cell("班级", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+        cell(`总分（${report.scoreModeLabel}）`, { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+      ],
+      ...table.rows.map((row) => [
+        cell(row.rank),
+        cell(row.studentNo),
+        cell(row.studentName),
+        cell(row.classLabel),
+        cell(row.score),
+      ]),
+    ],
+    stickyRowsCount: 2,
+    columns: [
+      { width: 10 },
+      { width: 16 },
+      { width: 14 },
+      { width: 14 },
+      { width: 14 },
+    ],
+  }));
+  const safeName = `${report.tables[0].title}${report.tables.length > 1 ? "等" : ""}`
+    .replace(/[\\/:*?"<>|]/g, "_");
+  await writeXlsxFile(sheets).toFile(`${safeName}.xlsx`);
 }
 
 export async function exportGradeSubjectScoreSegmentReport(

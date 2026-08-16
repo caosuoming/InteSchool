@@ -322,6 +322,9 @@ function normalizeTotalScoreSegmentOptions(
     trackThresholds: normalizeTrackThresholds(options.trackThresholds),
     subjectScoreSegmentThresholds,
     classTargets,
+    totalScoreTopN: Number.isFinite(options.totalScoreTopN)
+      ? Math.max(1, Math.min(1000, Math.round(Number(options.totalScoreTopN))))
+      : undefined,
   };
 }
 

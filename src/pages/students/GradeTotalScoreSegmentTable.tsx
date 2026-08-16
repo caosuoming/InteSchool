@@ -17,7 +17,7 @@ import {
 import { exportGradeTotalScoreSegmentReport } from "@/lib/grade-spreadsheet";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { Input, Select } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
@@ -72,6 +72,7 @@ export function GradeTotalScoreSegmentTable({
     ),
     [context, effectiveClassAverageTemplate, effectiveTemplate, exam],
   );
+  const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";
 
   const updateTemplate = (patch: Partial<GradeStatisticsTemplate>) => {
     const nextSettings = {
@@ -189,13 +190,27 @@ export function GradeTotalScoreSegmentTable({
             <Table2 className="h-4 w-4" />
           </div>
           <div>
-            <div className="font-medium text-ink-900">表二、总分分数段汇总表</div>
+            <div className="font-medium text-ink-900">表二、总分分数段汇总表（{scoreModeLabel}）</div>
             <div className="mt-0.5 text-xs text-ink-500">
               按物理类、历史类分组汇总达到各总分阈值的累计人数，并自动生成理科小计、文科小计和总计。
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-32">
+            <Select
+              aria-label="表二总分类型"
+              value={effectiveTemplate.scoreMode}
+              onChange={(event) => {
+                updateTemplate({ scoreMode: event.target.value as GradeStatisticsTemplate["scoreMode"] });
+                void autoSave();
+              }}
+              options={[
+                { value: "raw", label: "原始分" },
+                { value: "assigned", label: "赋分" },
+              ]}
+            />
+          </div>
           <Button variant="outline" size="sm" onClick={() => setAdjusting((value) => !value)}>
             <SlidersHorizontal className="h-3.5 w-3.5" />
             {adjusting ? "收起调整" : "调整分数段"}
