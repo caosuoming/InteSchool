@@ -771,6 +771,45 @@ describe("document block parser", () => {
     expect(blocks[0].analysis).toBe("分别使用方程与导数方法。");
   });
 
+  it("keeps sequential proof sub-questions in the stem and numbered proof answers in the answer", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "19. 已知函数 f(x)=4ax+axcosx-3sinx。",
+        "(1) 当 a=1 时，求 f(x) 在点 (0,f(0)) 处的切线方程；",
+        "(2) 当 a≥3/5 时，证明：对任意 x≥0，都有 f(x)≥0；",
+        "(3) 证明：sum(sin(1/(k+2)))<ln(n+1)。",
+        "【答案】(1) y=2x",
+        "(2) 证明见解析",
+        "(3) 证明见解析",
+        "【解析】(1) 利用导数的几何意义可得所求切线方程。",
+        "(2) 构造函数并利用单调性证明。",
+        "(3) 利用放缩法证明。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: [
+        "19. 已知函数 f(x)=4ax+axcosx-3sinx。",
+        "(1) 当 a=1 时，求 f(x) 在点 (0,f(0)) 处的切线方程；",
+        "(2) 当 a≥3/5 时，证明：对任意 x≥0，都有 f(x)≥0；",
+        "(3) 证明：sum(sin(1/(k+2)))<ln(n+1)。",
+      ].join("\n"),
+      answer: [
+        "(1) y=2x",
+        "(2) 证明见解析",
+        "(3) 证明见解析",
+      ].join("\n"),
+      analysis: [
+        "(1) 利用导数的几何意义可得所求切线方程。",
+        "(2) 构造函数并利用单调性证明。",
+        "(3) 利用放缩法证明。",
+      ].join("\n"),
+    });
+  });
+
   it.each(["（1）证明 命题成立。", "（2）证明：命题成立。", "（1）证 命题成立。", "（2）证明由导数符号可得。"]) (
     "treats proof sub-question line %s as analysis when the stem asks for a proof",
     (solutionLine) => {
