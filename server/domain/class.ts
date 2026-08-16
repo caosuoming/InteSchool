@@ -856,7 +856,7 @@ export const classService = {
   },
 
   /**
-   * 恢复学生（从挂起状态恢复到某个班级）。
+   * 恢复学生学籍（从休学或转学回收状态恢复到某个班级）。
    * @param studentId 学生ID
    * @param toClassId 恢复后进入的班级ID（可选，不传则回到原班级）
    */
@@ -868,7 +868,9 @@ export const classService = {
     maybeThrowError();
     const student = db.read("students").find((s) => s.id === studentId);
     if (!student) throw new Error("学生不存在");
-    if (student.status !== "suspended") throw new Error("学生未处于挂起状态");
+    if (student.status !== "suspended" && student.status !== "transferred") {
+      throw new Error("学生未处于休学或转学状态");
+    }
 
     let updated: Student | null = null;
     const now = new Date().toISOString();
