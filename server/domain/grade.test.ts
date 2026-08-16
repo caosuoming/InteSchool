@@ -317,6 +317,19 @@ describe("grade service", () => {
       }];
       const recalculated = await gradeService.updateExamSettings(exam.id, settings);
       expect(recalculated.records[0].assignedScores).toEqual({ 化学: 88, 生物: 91 });
+
+      const adjustedAssigned = await gradeService.adjustExamScore(
+        exam.id,
+        "student-1",
+        "化学",
+        "assigned",
+        89,
+        appState.teachers[0] as any,
+      );
+      expect(adjustedAssigned.records[0]).toMatchObject({
+        sourceAssignedScores: { 化学: 89, 生物: 91 },
+        assignedScores: { 化学: 89, 生物: 91 },
+      });
     });
   });
 
@@ -388,6 +401,15 @@ describe("grade service", () => {
           changedByName: "数学老师",
         }),
       ]);
+
+      await expect(gradeService.adjustExamScore(
+        exam.id,
+        "student-1",
+        "数学",
+        "assigned",
+        79,
+        appState.teachers[0] as any,
+      )).rejects.toThrow("仅可修改导入成绩中已有的赋分");
     });
   });
 

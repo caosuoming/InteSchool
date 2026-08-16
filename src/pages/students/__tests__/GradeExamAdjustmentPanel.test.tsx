@@ -117,7 +117,29 @@ describe("GradeExamAdjustmentPanel", () => {
     const scoreRow = screen.getByLabelText("各科成绩");
     expect(scoreRow).toHaveClass("flex", "overflow-x-auto");
     expect(scoreRow.children).toHaveLength(subjects.length);
-    expect(screen.getByLabelText("语文成绩")).toHaveClass("w-36", "shrink-0");
+    expect(screen.getByLabelText("语文成绩")).toHaveClass("w-fit", "shrink-0");
+  });
+
+  it("hides rule-generated assigned scores and only lets the raw score be edited", () => {
+    const initial = buildExam();
+    const exam: GradeExam = {
+      ...initial,
+      subjects: ["化学"],
+      records: initial.records.map((record) => ({
+        ...record,
+        subjectSelection: "物化生",
+        scores: { 化学: 88 },
+        assignedScores: { 化学: 92 },
+      })),
+      settings: buildDefaultGradeSettings(["化学"], ["class-1"]),
+    };
+
+    render(<Harness initial={exam} />);
+
+    const chemistry = screen.getByLabelText("化学成绩");
+    expect(within(chemistry).getByRole("spinbutton", { name: "原始分" })).toHaveValue(88);
+    expect(within(chemistry).queryByRole("spinbutton", { name: "赋分" })).not.toBeInTheDocument();
+    expect(chemistry).toHaveClass("w-fit", "shrink-0");
   });
 
   it("shows only the student's exam subjects and only offers assigned scores for assignable subjects", () => {
@@ -166,7 +188,7 @@ describe("GradeExamAdjustmentPanel", () => {
     const chinese = screen.getByLabelText("语文成绩");
     expect(within(chinese).getByRole("spinbutton", { name: "成绩" })).toHaveValue(120);
     expect(within(chinese).queryByRole("spinbutton", { name: "赋分" })).not.toBeInTheDocument();
-    expect(chinese).toHaveClass("w-36", "shrink-0");
+    expect(chinese).toHaveClass("w-fit", "shrink-0");
 
     const physics = screen.getByLabelText("物理成绩");
     expect(within(physics).queryByRole("spinbutton", { name: "赋分" })).not.toBeInTheDocument();
@@ -174,7 +196,7 @@ describe("GradeExamAdjustmentPanel", () => {
     const chemistry = screen.getByLabelText("化学成绩");
     expect(within(chemistry).getByRole("spinbutton", { name: "原始分" })).toHaveValue(88);
     expect(within(chemistry).getByRole("spinbutton", { name: "赋分" })).toHaveValue(91);
-    expect(chemistry.className).toContain("w-[17rem]");
+    expect(chemistry).toHaveClass("w-fit", "shrink-0");
   });
 
   it("publishes, exposes a share link, locks editing, and withdraws publication", async () => {

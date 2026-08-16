@@ -61,23 +61,27 @@ function ScoreEditor({
     }
   };
 
+  const editorWidth = Math.min(9, Math.max(5.5, 3.75 + draft.length * 0.55));
+
   return (
-    <Input
-      label={label}
-      type="number"
-      step="0.01"
-      min={-1000}
-      max={1000}
-      value={draft}
-      disabled={disabled}
-      hint={hint}
-      className="px-2.5 py-1.5 text-sm"
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => void commit()}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
-      }}
-    />
+    <div className="shrink-0" style={{ width: `${editorWidth}rem` }}>
+      <Input
+        label={label}
+        type="number"
+        step="0.01"
+        min={-1000}
+        max={1000}
+        value={draft}
+        disabled={disabled}
+        hint={hint}
+        className="px-2 py-1.5 text-sm tabular-nums"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+    </div>
   );
 }
 
@@ -353,7 +357,7 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
           <div className="mt-0.5 text-xs text-ink-500">
             {published
               ? "当前成绩已发布；请先撤回发布，再继续修改学生成绩。"
-              : "可下拉选择或搜索学生。修改分数后失焦即保存；需要赋分的科目留空时恢复按原始分和当前规则自动计算。"}
+              : "可下拉选择或搜索学生。修改分数后失焦即保存；系统按规则计算的赋分不显示，只能修改原始分；导入表中已有的赋分可直接调整。"}
           </div>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
@@ -403,9 +407,10 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
             className="flex gap-2 overflow-x-auto pb-1"
           >
             {visibleSubjects.map((subject) => {
-              const assignedConfigured = isAssignableGradeSubject(subject) && (
-                Object.prototype.hasOwnProperty.call(exam.settings.assignmentRules, subject)
-                || typeof selectedRecord.sourceAssignedScores?.[subject] === "number"
+              const hasImportedAssignedScore = typeof selectedRecord.sourceAssignedScores?.[subject] === "number";
+              const usesAssignedScore = hasImportedAssignedScore || (
+                isAssignableGradeSubject(subject)
+                && Object.prototype.hasOwnProperty.call(exam.settings.assignmentRules, subject)
               );
               const rawKey = `${selectedRecord.studentId}:${subject}:raw`;
               const assignedKey = `${selectedRecord.studentId}:${subject}:assigned`;
@@ -413,22 +418,22 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
                 <div
                   key={subject}
                   aria-label={`${subject}成绩`}
-                  className={`${assignedConfigured ? "w-[17rem]" : "w-36"} shrink-0 rounded-lg border border-ink-200 bg-ink-50/30 p-2.5`}
+                  className="w-fit shrink-0 rounded-lg border border-ink-200 bg-ink-50/30 p-2"
                 >
-                  <div className="mb-2 text-sm font-medium text-ink-800">{subject}</div>
-                  <div className={assignedConfigured ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
+                  <div className="mb-1.5 text-xs font-medium text-ink-800">{subject}</div>
+                  <div className="flex gap-2">
                     <ScoreEditor
-                      label={assignedConfigured ? "原始分" : "成绩"}
+                      label={usesAssignedScore ? "原始分" : "成绩"}
                       value={selectedRecord.scores[subject]}
                       disabled={published || savingScore !== null}
                       onCommit={(value) => saveScore(subject, "raw", value)}
                     />
-                    {assignedConfigured && (
+                    {hasImportedAssignedScore && (
                       <ScoreEditor
                         label="赋分"
                         value={selectedRecord.assignedScores[subject]}
                         disabled={published || savingScore !== null}
-                        hint={selectedRecord.sourceAssignedScores?.[subject] == null ? "当前为自动计算" : "当前为手工/导入赋分"}
+                        hint="导入赋分"
                         onCommit={(value) => saveScore(subject, "assigned", value)}
                       />
                     )}
