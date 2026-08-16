@@ -11,6 +11,7 @@ interface ExtractedQuestionContentProps {
   answer: string;
   analysis: string;
   compact?: boolean;
+  optionVariant?: "boxed" | "plain";
 }
 
 export function ExtractedQuestionContent({
@@ -20,6 +21,7 @@ export function ExtractedQuestionContent({
   answer,
   analysis,
   compact = false,
+  optionVariant = "boxed",
 }: ExtractedQuestionContentProps) {
   const [expanded, setExpanded] = useState(false);
   const toggleExpanded = () => setExpanded((value) => !value);
@@ -69,16 +71,23 @@ export function ExtractedQuestionContent({
               <div
                 key={`${optionLabel}-${option}`}
                 className={cn(
-                  "flex min-w-0 items-start gap-1.5 rounded border px-2 py-1.5 text-sm",
-                  isAnswer
+                  "flex min-w-0 items-start gap-1.5 py-1.5 text-sm",
+                  optionVariant === "boxed" && "rounded border px-2",
+                  optionVariant === "boxed" && (isAnswer
                     ? "border-emerald-200 bg-emerald-50/50"
-                    : "border-ink-100",
+                    : "border-ink-100"),
                 )}
               >
-                <span className="flex-shrink-0 font-mono font-semibold text-ink-600">
+                <span className={cn(
+                  "flex-shrink-0 font-mono font-semibold",
+                  isAnswer ? "text-emerald-900" : "text-ink-600",
+                )}>
                   {optionLabel}.
                 </span>
-                <MathHtml className="min-w-0 flex-1 text-ink-800">{option}</MathHtml>
+                <MathHtml className={cn(
+                  "min-w-0 flex-1",
+                  isAnswer ? "text-emerald-900" : "text-ink-800",
+                )}>{option}</MathHtml>
               </div>
             );
           })}

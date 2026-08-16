@@ -354,6 +354,12 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.queryByText("版面：")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打印" })).not.toBeInTheDocument();
 
+    const previewQuestion = screen.getByText(question.stem).closest("section");
+    expect(previewQuestion).not.toBeNull();
+    expect(previewQuestion).not.toHaveClass("border");
+    expect(within(previewQuestion as HTMLElement).queryByText("5 分")).not.toBeInTheDocument();
+    expect(screen.getByText("实数集").parentElement).not.toHaveClass("border", "rounded");
+
     const previewControls = screen.getByTestId("exam-paper-preview-details");
     expect(previewControls).toHaveTextContent("题目信息");
     expect(previewControls).toHaveClass("preview-sticky-controls");

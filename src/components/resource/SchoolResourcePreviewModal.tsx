@@ -57,7 +57,7 @@ function DocumentBlocksPreview({ blocks }: { blocks: ExtractedDocumentBlock[] })
       {blocks.map((block, index) => {
         if (block.type === "question") {
           return (
-            <div key={block.id} className="rounded-md border border-ink-100 p-3">
+            <div key={block.id} className="py-3">
               <div className="mb-1 text-xs font-medium text-ink-400">第 {index + 1} 项 · 题目</div>
               <MathHtml className="whitespace-pre-wrap text-sm leading-relaxed text-ink-900">
                 {block.content}
@@ -96,15 +96,15 @@ export function ExamPaperPreview({ paper }: { paper: ExamPaper }) {
       {paper.questions.length > 0 ? (
         <div className="space-y-4">
           {paper.questions.map((question, index) => (
-            <div key={question.id} className="rounded-md border border-ink-100 bg-paper p-3">
+            <div key={question.id} className="py-3">
               <ExtractedQuestionContent
                 number={index + 1}
                 stem={question.stem}
                 options={question.options}
                 answer={question.answer}
                 analysis={question.analysis}
+                optionVariant="plain"
               />
-              <div className="mt-2 text-right text-xs text-ink-400">{question.score} 分</div>
             </div>
           ))}
         </div>

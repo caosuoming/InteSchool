@@ -69,4 +69,25 @@ describe("ExtractedQuestionContent", () => {
 
     expect(container.querySelector(".grid")).toHaveClass("grid-cols-1");
   });
+
+  it("renders paper-preview options without rectangular boxes", () => {
+    const { container } = render(
+      <ExtractedQuestionContent
+        stem="题干"
+        options={["选项 A", "选项 B"]}
+        answer="A"
+        analysis="解析"
+        optionVariant="plain"
+      />,
+    );
+
+    const option = screen.getByText("选项 A").parentElement;
+    expect(option).not.toHaveClass("border");
+    expect(option).not.toHaveClass("rounded");
+
+    fireEvent.click(screen.getByRole("button", { name: "点击展开答案和解析" }));
+    expect(option).not.toHaveClass("bg-emerald-50/50");
+    expect(screen.getByText("选项 A")).toHaveClass("text-emerald-900");
+    expect(container.querySelector(".grid")).toBeInTheDocument();
+  });
 });
