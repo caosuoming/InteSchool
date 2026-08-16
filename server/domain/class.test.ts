@@ -151,6 +151,31 @@ describe("class lifecycle service", () => {
     });
   });
 
+  it("restores both suspended and transferred students to active enrollment", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      await classService.transferOutStudent("student-transfer");
+
+      const resumed = await classService.resumeStudent("student-suspended", "class-1");
+      const transferRestored = await classService.resumeStudent("student-transfer", "class-1");
+
+      expect(resumed).toMatchObject({
+        id: "student-suspended",
+        status: "active",
+        archiveStatus: "attending",
+        classId: "class-1",
+      });
+      expect(transferRestored).toMatchObject({
+        id: "student-transfer",
+        status: "active",
+        archiveStatus: "attending",
+        classId: "class-1",
+      });
+      expect(getClass(state, "class-1")).toMatchObject({ studentCount: 3 });
+    });
+  });
+
   it("graduates every active student in a class and leaves suspended students untouched", async () => {
     const state = createState();
 

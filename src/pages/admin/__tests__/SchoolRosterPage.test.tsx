@@ -28,6 +28,10 @@ vi.mock("@/services/class", () => ({
     restoreStudent: vi.fn(),
     updateSchoolClass: vi.fn(),
     updateStudent: vi.fn(),
+    transferStudent: vi.fn(),
+    suspendStudent: vi.fn(),
+    transferOutStudent: vi.fn(),
+    resumeStudent: vi.fn(),
   },
 }));
 
@@ -196,6 +200,10 @@ describe("SchoolRosterPage", () => {
     vi.mocked(classService.updateSchoolClass).mockResolvedValue(classes[0]);
     vi.mocked(authService.updateTeacherTeachingProfile).mockResolvedValue(managedTeachers[0]);
     vi.mocked(classService.updateStudent).mockResolvedValue(student);
+    vi.mocked(classService.transferStudent).mockResolvedValue(student);
+    vi.mocked(classService.suspendStudent).mockResolvedValue({ ...student, status: "suspended" });
+    vi.mocked(classService.transferOutStudent).mockResolvedValue({ ...student, status: "transferred" });
+    vi.mocked(classService.resumeStudent).mockResolvedValue(student);
     vi.mocked(classService.bulkImportStudents).mockResolvedValue({
       createdClasses: 0,
       createdStudents: 1,
@@ -314,6 +322,70 @@ describe("SchoolRosterPage", () => {
         grade: "高三",
         gender: "female",
       });
+    });
+  });
+
+  it("supports transfer, suspension, and transfer-out from the student editor", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "休学" }));
+    await waitFor(() => {
+      expect(classService.suspendStudent).toHaveBeenCalledWith(student.id);
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "转学" }));
+    await waitFor(() => {
+      expect(classService.transferOutStudent).toHaveBeenCalledWith(student.id);
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.change(screen.getByLabelText("转入班级"), { target: { value: classes[1].id } });
+    fireEvent.click(screen.getByRole("button", { name: "转班" }));
+    await waitFor(() => {
+      expect(classService.transferStudent).toHaveBeenCalledWith(student.id, classes[1].id);
+    });
+    expect(confirm).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps suspended and transferred students in dedicated recoverable bins", async () => {
+    const suspendedStudent: Student = {
+      ...student,
+      id: "student-suspended",
+      name: "休学同学",
+      status: "suspended",
+      suspendedAt: "2026-08-10T00:00:00.000Z",
+    };
+    const transferredStudent: Student = {
+      ...student,
+      id: "student-transferred",
+      name: "转学同学",
+      status: "transferred",
+      transferredAt: "2026-08-11T00:00:00.000Z",
+    };
+    vi.mocked(classService.listStudentsBySchool).mockResolvedValue([
+      student,
+      suspendedStudent,
+      transferredStudent,
+    ]);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "休学回收站 (1)" }));
+    expect(await screen.findByText("休学学生回收站")).toBeInTheDocument();
+    expect(screen.getByText("休学同学")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "复学" }));
+    await waitFor(() => {
+      expect(classService.resumeStudent).toHaveBeenCalledWith(suspendedStudent.id, classes[0].id);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "转学回收站 (1)" }));
+    expect(await screen.findByText("转学学生回收站")).toBeInTheDocument();
+    expect(screen.getByText("转学同学")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "撤销转学" }));
+    await waitFor(() => {
+      expect(classService.resumeStudent).toHaveBeenCalledWith(transferredStudent.id, classes[0].id);
     });
   });
 

@@ -3,14 +3,17 @@ import { useNavigate } from "react-router";
 import {
   ArchiveRestore,
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
   Download,
   FileSpreadsheet,
   GraduationCap,
   Layers,
+  PauseCircle,
   Pencil,
   Plus,
   RotateCcw,
+  School,
   Trash2,
   Upload,
   Users,
@@ -44,6 +47,7 @@ import type {
 } from "@/types";
 
 const EMPTY_RECYCLE_BIN: SchoolRosterRecycleBin = { classes: [], students: [] };
+type RosterView = "manage" | "deleted" | "suspended" | "transferred";
 
 function classBelongsToGrade(item: SchoolClass, grade: SchoolGrade): boolean {
   if (item.gradeId) return item.gradeId === grade.id;
@@ -213,7 +217,7 @@ export default function SchoolRosterPage() {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
-  const [showRecycleBin, setShowRecycleBin] = useState(false);
+  const [rosterView, setRosterView] = useState<RosterView>("manage");
   const [pendingRosterImport, setPendingRosterImport] = useState<PendingRosterImport | null>(null);
 
   const [gradeModalOpen, setGradeModalOpen] = useState(false);
@@ -236,6 +240,7 @@ export default function SchoolRosterPage() {
   const [editStudentSubjectSelection, setEditStudentSubjectSelection] = useState("");
   const [editStudentGrade, setEditStudentGrade] = useState("");
   const [editStudentGender, setEditStudentGender] = useState<"male" | "female">("male");
+  const [editStudentTransferClassId, setEditStudentTransferClassId] = useState("");
 
   const load = useCallback(async () => {
     if (!schoolId) return;
@@ -287,6 +292,14 @@ export default function SchoolRosterPage() {
   const classStudents = useMemo(
     () => students.filter((item) => item.classId === selectedClassId && item.status === "active"),
     [selectedClassId, students],
+  );
+  const suspendedStudents = useMemo(
+    () => students.filter((item) => item.status === "suspended"),
+    [students],
+  );
+  const transferredStudents = useMemo(
+    () => students.filter((item) => item.status === "transferred"),
+    [students],
   );
   const classTypeById = useMemo(
     () => new Map(classTypes.map((item) => [item.id, item])),
@@ -534,7 +547,14 @@ export default function SchoolRosterPage() {
     setEditStudentSubjectSelection(item.subjectSelection || "");
     setEditStudentGrade(item.grade || selectedGrade?.grade || "");
     setEditStudentGender(item.gender || "male");
+    setEditStudentTransferClassId("");
     setEditStudentOpen(true);
+  };
+
+  const closeEditStudent = () => {
+    setEditStudentOpen(false);
+    setEditingStudent(null);
+    setEditStudentTransferClassId("");
   };
 
   const handleEditStudent = () => run(async () => {
@@ -564,8 +584,59 @@ export default function SchoolRosterPage() {
       gender: editStudentGender,
     });
     toast.success(`已更新学生“${name}”`);
-    setEditStudentOpen(false);
-    setEditingStudent(null);
+    closeEditStudent();
+    await load();
+  });
+
+  const handleTransferStudent = () => run(async () => {
+    if (!editingStudent) return;
+    if (!editStudentTransferClassId) {
+      toast.error("请选择目标班级");
+      return;
+    }
+    const targetClass = classes.find((item) => item.id === editStudentTransferClassId);
+    if (!targetClass || targetClass.status !== "active") {
+      toast.error("目标班级不可用");
+      return;
+    }
+    if (!window.confirm(`确定将“${editingStudent.name}”转入“${targetClass.name}”吗？历史学情数据会继续保留。`)) return;
+    await classService.transferStudent(editingStudent.id, targetClass.id);
+    toast.success(`“${editingStudent.name}”已转入“${targetClass.name}”`);
+    closeEditStudent();
+    const targetGrade = grades.find((item) => classBelongsToGrade(targetClass, item));
+    if (targetGrade) setSelectedGradeId(targetGrade.id);
+    setSelectedClassId(targetClass.id);
+    await load();
+  });
+
+  const handleSuspendStudent = () => run(async () => {
+    if (!editingStudent) return;
+    if (!window.confirm(`确定将“${editingStudent.name}”设为休学吗？学生会移入休学回收站，学情数据完整保留。`)) return;
+    await classService.suspendStudent(editingStudent.id);
+    toast.success(`“${editingStudent.name}”已休学并移入休学回收站`);
+    closeEditStudent();
+    await load();
+  });
+
+  const handleTransferOutStudent = () => run(async () => {
+    if (!editingStudent) return;
+    if (!window.confirm(`确定将“${editingStudent.name}”设为转学离校吗？学生会移入转学回收站，历史学情数据完整保留。`)) return;
+    await classService.transferOutStudent(editingStudent.id);
+    toast.success(`“${editingStudent.name}”已转学并移入转学回收站`);
+    closeEditStudent();
+    await load();
+  });
+
+  const handleRestoreEnrollment = (item: Student) => run(async () => {
+    const targetClass = classes.find((candidate) => candidate.id === item.classId && candidate.status === "active");
+    if (!targetClass) {
+      toast.error("原班级不可用", "请先恢复学生原班级后再恢复学籍");
+      return;
+    }
+    await classService.resumeStudent(item.id, targetClass.id);
+    toast.success(item.status === "suspended"
+      ? `“${item.name}”已复学并恢复到“${targetClass.name}”`
+      : `已撤销“${item.name}”的转学状态并恢复到“${targetClass.name}”`);
     await load();
   });
 
@@ -611,9 +682,17 @@ export default function SchoolRosterPage() {
               <Layers className="h-4 w-4" />
               个人教学班
             </Button>
-            <Button variant={showRecycleBin ? "ink" : "outline"} onClick={() => setShowRecycleBin((value) => !value)}>
+            <Button variant={rosterView === "deleted" ? "ink" : "outline"} onClick={() => setRosterView(rosterView === "deleted" ? "manage" : "deleted")}>
               <ArchiveRestore className="h-4 w-4" />
-              回收站 ({recycleBin.classes.length + recycleBin.students.length})
+              删除回收站 ({recycleBin.classes.length + recycleBin.students.length})
+            </Button>
+            <Button variant={rosterView === "suspended" ? "ink" : "outline"} onClick={() => setRosterView(rosterView === "suspended" ? "manage" : "suspended")}>
+              <PauseCircle className="h-4 w-4" />
+              休学回收站 ({suspendedStudents.length})
+            </Button>
+            <Button variant={rosterView === "transferred" ? "ink" : "outline"} onClick={() => setRosterView(rosterView === "transferred" ? "manage" : "transferred")}>
+              <School className="h-4 w-4" />
+              转学回收站 ({transferredStudents.length})
             </Button>
             <Button variant="gold" onClick={() => setGradeModalOpen(true)}>
               <Plus className="h-4 w-4" />
@@ -623,14 +702,14 @@ export default function SchoolRosterPage() {
         }
       />
 
-      {showRecycleBin ? (
+      {rosterView === "deleted" ? (
         <Card>
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="font-serif text-lg font-semibold text-ink-900">班级与学生回收站</h2>
+              <h2 className="font-serif text-lg font-semibold text-ink-900">班级与学生删除回收站</h2>
               <p className="mt-1 text-xs text-ink-500">恢复班级时会一并恢复随班级删除的学生；单独删除的学生可独立恢复。</p>
             </div>
-            <Button variant="ghost" onClick={() => setShowRecycleBin(false)}>返回管理</Button>
+            <Button variant="ghost" onClick={() => setRosterView("manage")}>返回管理</Button>
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
             <RecycleSection title="已删除班级" empty="暂无已删除班级">
@@ -664,6 +743,34 @@ export default function SchoolRosterPage() {
             </RecycleSection>
           </div>
         </Card>
+      ) : rosterView === "suspended" ? (
+        <StudentLifecycleRecycleBin
+          title="休学学生回收站"
+          description="休学学生不会出现在在读名单中；所有历史学情数据完整保留，可恢复到原班级。"
+          empty="暂无休学学生"
+          students={suspendedStudents}
+          classes={classes}
+          dateField="suspendedAt"
+          dateLabel="休学时间"
+          restoreLabel="复学"
+          working={working}
+          onRestore={handleRestoreEnrollment}
+          onBack={() => setRosterView("manage")}
+        />
+      ) : rosterView === "transferred" ? (
+        <StudentLifecycleRecycleBin
+          title="转学学生回收站"
+          description="转学学生不会出现在在读名单中；历史学情数据完整保留，误操作时可撤销并恢复原班。"
+          empty="暂无转学学生"
+          students={transferredStudents}
+          classes={classes}
+          dateField="transferredAt"
+          dateLabel="转学时间"
+          restoreLabel="撤销转学"
+          working={working}
+          onRestore={handleRestoreEnrollment}
+          onBack={() => setRosterView("manage")}
+        />
       ) : (
         <div className="space-y-5">
           <Card>
@@ -1154,19 +1261,13 @@ export default function SchoolRosterPage() {
 
       <Modal
         open={editStudentOpen}
-        onClose={() => {
-          setEditStudentOpen(false);
-          setEditingStudent(null);
-        }}
+        onClose={closeEditStudent}
         title="编辑学生资料"
         description={selectedClass ? `所属班级：${selectedClass.name}` : undefined}
-        size="sm"
+        size="md"
         footer={
           <>
-            <Button variant="ghost" onClick={() => {
-              setEditStudentOpen(false);
-              setEditingStudent(null);
-            }}>取消</Button>
+            <Button variant="ghost" onClick={closeEditStudent}>取消</Button>
             <Button variant="gold" onClick={handleEditStudent} loading={working}>保存修改</Button>
           </>
         }
@@ -1192,9 +1293,121 @@ export default function SchoolRosterPage() {
               ]}
             />
           </div>
+          <div className="border-t border-ink-100 pt-4">
+            <div className="mb-3">
+              <div className="text-sm font-medium text-ink-800">学籍操作</div>
+              <div className="mt-1 text-xs text-ink-500">转班、休学和转学独立执行，不会删除学生的历史学情数据。</div>
+            </div>
+            <div className="space-y-3 rounded-lg border border-ink-100 bg-mist/40 p-3">
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                <Select
+                  label="转入班级"
+                  value={editStudentTransferClassId}
+                  onChange={(event) => setEditStudentTransferClassId(event.target.value)}
+                  placeholder="请选择目标班级"
+                  options={classes
+                    .filter((item) => item.status === "active" && item.id !== editingStudent?.classId)
+                    .map((item) => ({ value: item.id, label: `${item.grade} · ${item.name}` }))}
+                />
+                <Button variant="outline" onClick={handleTransferStudent} loading={working}>
+                  <ArrowRightLeft className="h-3.5 w-3.5" />转班
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2 border-t border-ink-100 pt-3">
+                <Button variant="outline" onClick={handleSuspendStudent} loading={working}>
+                  <PauseCircle className="h-3.5 w-3.5" />休学
+                </Button>
+                <Button variant="outline" onClick={handleTransferOutStudent} loading={working}>
+                  <School className="h-3.5 w-3.5" />转学
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </Modal>
     </div>
+  );
+}
+
+function StudentLifecycleRecycleBin({
+  title,
+  description,
+  empty,
+  students,
+  classes,
+  dateField,
+  dateLabel,
+  restoreLabel,
+  working,
+  onRestore,
+  onBack,
+}: {
+  title: string;
+  description: string;
+  empty: string;
+  students: Student[];
+  classes: SchoolClass[];
+  dateField: "suspendedAt" | "transferredAt";
+  dateLabel: string;
+  restoreLabel: string;
+  working: boolean;
+  onRestore: (student: Student) => void;
+  onBack: () => void;
+}) {
+  return (
+    <Card>
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="font-serif text-lg font-semibold text-ink-900">{title}</h2>
+          <p className="mt-1 text-xs text-ink-500">{description}</p>
+        </div>
+        <Button variant="ghost" onClick={onBack}>返回管理</Button>
+      </div>
+      {students.length === 0 ? (
+        <EmptyState icon={<ArchiveRestore className="h-7 w-7" />} title={empty} description="当前没有需要处理的学生。" />
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-ink-100">
+          <table className="min-w-[680px] w-full text-sm">
+            <thead className="bg-mist text-xs text-ink-500">
+              <tr>
+                <th className="px-4 py-2.5 text-left font-medium">姓名</th>
+                <th className="px-4 py-2.5 text-left font-medium">学号</th>
+                <th className="px-4 py-2.5 text-left font-medium">原班级</th>
+                <th className="px-4 py-2.5 text-left font-medium">{dateLabel}</th>
+                <th className="px-4 py-2.5 text-right font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-100">
+              {students.map((student) => {
+                const originalClass = classes.find((item) => item.id === student.classId);
+                const restoreAvailable = originalClass?.status === "active";
+                const dateValue = student[dateField];
+                return (
+                  <tr key={student.id} className="hover:bg-mist/60">
+                    <td className="px-4 py-3 font-medium text-ink-900">{student.name}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink-600">{student.studentNo || "—"}</td>
+                    <td className="px-4 py-3 text-ink-600">{originalClass?.name || "原班级不可用"}</td>
+                    <td className="px-4 py-3 text-xs text-ink-500">{dateValue ? new Date(dateValue).toLocaleDateString("zh-CN") : "—"}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        loading={working}
+                        disabled={!restoreAvailable}
+                        title={restoreAvailable ? undefined : "请先恢复学生原班级"}
+                        onClick={() => onRestore(student)}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />{restoreLabel}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 
