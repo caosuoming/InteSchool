@@ -285,6 +285,41 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).not.toContain("(-1)n-1nan");
   });
 
+  it("coalesces fragmented imported scripts before converting them to Office math", async () => {
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [],
+      contentBlocks: [{
+        id: "fragmented-script-formula",
+        type: "knowledge",
+        content: [
+          "由数列",
+          '<i class="math-variable">a</i><sub><i class="math-variable">n</i></sub>',
+          "定义得：",
+          '<i class="math-variable">b</i><sub><i class="math-variable">n</i></sub>',
+          "=",
+          '<i class="math-variable">a</i>',
+          "<sub>2</sub><sub>n</sub><sub>−</sub><sub>1</sub>",
+          "=",
+          '<i class="math-variable">q</i>',
+          "<sup>n</sup><sup>−</sup><sup>1</sup>。",
+        ].join(""),
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper);
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml.match(/<m:oMath\b/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(documentXml).toContain("<m:sSub>");
+    expect(documentXml).toContain("<m:sSup>");
+    expect(documentXml).not.toContain("$_{");
+    expect(documentXml).not.toContain("$b_");
+    expect(documentXml).not.toContain("a_{2}_{n}");
+    expect(documentXml).not.toContain("q^{n}^{-");
+  });
+
   it("merges consecutive imported formula fragments into one Office Math expression", async () => {
     const formulaPaper: ExamPaper = {
       ...structuredPaper,

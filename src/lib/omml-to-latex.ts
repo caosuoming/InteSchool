@@ -316,12 +316,16 @@ function convertNary(el: Element): string {
   const sup = getMathChild(el, "sup");
   const e = getMathChild(el, "e");
 
-  let result = operator;
+  let result = shouldStackNaryLimits(chr) ? `${operator}\\limits` : operator;
   if (sub) result += `_{${sub}}`;
   if (sup) result += `^{${sup}}`;
   result += ` ${e}`;
 
   return result;
+}
+
+function shouldStackNaryLimits(chr: string): boolean {
+  return ["∑", "∏", "∐", "⋃", "⋂", "⨁", "⨂"].includes(chr);
 }
 
 function mapNaryOperator(chr: string): string {

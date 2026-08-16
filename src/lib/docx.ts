@@ -115,7 +115,7 @@ function escapeOmmlTextContent(omml: string): string {
 
 function latexToOmml(latex: string, style: DocumentTextStyle = {}): ParagraphChild | null {
   try {
-    const rendered = katex.renderToString(latex, {
+    const rendered = katex.renderToString(normalizeAdjacentLatexScripts(latex), {
       throwOnError: true,
       output: "mathml",
     });
@@ -255,6 +255,67 @@ function normalizeMathContextText(value: string): string {
     .replace(/＋/g, "+")
     .replace(/＜/g, "<")
     .replace(/＞/g, ">");
+}
+
+function readLatexScriptGroup(
+  value: string,
+  markerIndex: number,
+): { content: string; end: number } | null {
+  if (!["_", "^"].includes(value[markerIndex]) || value[markerIndex + 1] !== "{") {
+    return null;
+  }
+
+  let depth = 0;
+  for (let index = markerIndex + 1; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === "\\") {
+      index += 1;
+      continue;
+    }
+    if (character === "{") {
+      depth += 1;
+      continue;
+    }
+    if (character === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          content: value.slice(markerIndex + 2, index),
+          end: index + 1,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function normalizeAdjacentLatexScripts(value: string): string {
+  let result = "";
+  let cursor = 0;
+
+  while (cursor < value.length) {
+    const first = readLatexScriptGroup(value, cursor);
+    if (!first) {
+      result += value[cursor];
+      cursor += 1;
+      continue;
+    }
+
+    const marker = value[cursor];
+    let content = normalizeMathContextText(first.content);
+    let end = first.end;
+    while (end < value.length && value[end] === marker) {
+      const next = readLatexScriptGroup(value, end);
+      if (!next) break;
+      content += normalizeMathContextText(next.content);
+      end = next.end;
+    }
+
+    result += `${marker}{${content}}`;
+    cursor = end;
+  }
+
+  return result;
 }
 
 function isEnumerationPrefix(value: string): boolean {

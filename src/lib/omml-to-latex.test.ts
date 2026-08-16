@@ -96,6 +96,24 @@ function vectorEquationSystem(): string {
   `;
 }
 
+function finiteSum(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:nary>
+        <m:naryPr><m:chr m:val="∑"/></m:naryPr>
+        <m:sub><m:r><m:t>i=1</m:t></m:r></m:sub>
+        <m:sup><m:r><m:t>n</m:t></m:r></m:sup>
+        <m:e>
+          <m:sSub>
+            <m:e><m:r><m:t>b</m:t></m:r></m:e>
+            <m:sub><m:r><m:t>i</m:t></m:r></m:sub>
+          </m:sSub>
+        </m:e>
+      </m:nary>
+    </m:oMath>
+  `;
+}
+
 describe("ommlToLatex", () => {
   it("keeps ordinary Latin set-name letters as ordinary variables", () => {
     expect(ommlToLatex(mathRun("C+Q+N+R+Z"))).toBe("C+Q+N+R+Z");
@@ -133,6 +151,12 @@ describe("ommlToLatex", () => {
   it("does not turn nested vector operands into extra equation rows", () => {
     expect(ommlToLatex(vectorEquationSystem())).toBe(
       "\\begin{cases}\n\\vec{a}=\\vec{b} \\\\\n\\vec{c}=0\n\\end{cases}",
+    );
+  });
+
+  it("keeps finite-sum bounds above and below the operator in inline previews", () => {
+    expect(ommlToLatex(finiteSum())).toBe(
+      String.raw`\sum\limits_{i=1}^{n} {b}_{i}`,
     );
   });
 });
