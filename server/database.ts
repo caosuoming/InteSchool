@@ -32,6 +32,7 @@ export const COLLECTIONS = [
   "schoolCreationApplications",
   "gradeExams", "gradePublications", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements",
   "notifications", "parentAuthorizations", "parentAccounts",
+  "helpTopics", "helpReplies", "helpCategories",
 ] as const;
 
 type CollectionName = (typeof COLLECTIONS)[number];

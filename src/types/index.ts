@@ -2498,6 +2498,66 @@ export interface AppNotification {
   readAt: string | null;
 }
 
+// ============ 帮助与许愿 ============
+
+export type HelpTopicType = "question" | "suggestion" | "wish";
+export type HelpReplyType = "follow_up" | "answer";
+
+export interface HelpAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  url: string;
+}
+
+export interface HelpCategory {
+  id: string;
+  name: string;
+  sortOrder: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HelpReply {
+  id: string;
+  topicId: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  type: HelpReplyType;
+  content: string;
+  attachments: HelpAttachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HelpTopic {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  type: HelpTopicType;
+  title: string;
+  content: string;
+  categoryId: string | null;
+  attachments: HelpAttachment[];
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HelpTopicView extends HelpTopic {
+  replies: HelpReply[];
+}
+
+export interface HelpBoardSnapshot {
+  topics: HelpTopicView[];
+  categories: HelpCategory[];
+  canManage: boolean;
+}
+
 // ============ 课后反思 ============
 
 /** 反思关联的资源类型 */

@@ -1,4 +1,44 @@
 export const serviceParameters = {
+  "help": {
+    "getBoard": [
+      "teacher"
+    ],
+    "createTopic": [
+      "input",
+      "teacher"
+    ],
+    "addReply": [
+      "topicId",
+      "input",
+      "teacher"
+    ],
+    "createCategory": [
+      "nameInput",
+      "teacher"
+    ],
+    "deleteCategory": [
+      "categoryId",
+      "teacher"
+    ],
+    "setTopicCategory": [
+      "topicId",
+      "categoryId",
+      "teacher"
+    ],
+    "moveTopic": [
+      "topicId",
+      "direction",
+      "teacher"
+    ],
+    "deleteTopic": [
+      "topicId",
+      "teacher"
+    ],
+    "deleteReply": [
+      "replyId",
+      "teacher"
+    ]
+  },
   "notification": {
     "listNotifications": [
       "teacherId"
