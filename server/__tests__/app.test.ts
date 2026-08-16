@@ -1959,6 +1959,49 @@ describe("production backend", () => {
     expect(document.sections.some((section) => section.content.includes("集合是确定对象的总体"))).toBe(true);
   });
 
+  it("polls long-running text extraction without holding one HTTP request open", async () => {
+    const session = await login(built.app);
+    const multipart = multipartPayload("long-running.txt", "第一章 集合\n1. 集合的定义\n");
+    const upload = await built.app.inject({
+      method: "POST",
+      url: "/api/files",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+        "content-type": multipart.contentType,
+      },
+      payload: multipart.body,
+    });
+    const file = upload.json<{ url: string }>();
+
+    const started = await built.app.inject({
+      method: "GET",
+      url: `${file.url}/content?textOnly=1&async=1&retry=1`,
+      headers: { cookie: session.cookie },
+    });
+    expect(started.statusCode).toBe(202);
+    expect(started.json()).toEqual({ status: "processing" });
+    expect(started.headers["cache-control"]).toBe("no-store");
+
+    let completed = await built.app.inject({
+      method: "GET",
+      url: `${file.url}/content?textOnly=1&async=1`,
+      headers: { cookie: session.cookie },
+    });
+    for (let attempt = 0; attempt < 10 && completed.statusCode === 202; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      completed = await built.app.inject({
+        method: "GET",
+        url: `${file.url}/content?textOnly=1&async=1`,
+        headers: { cookie: session.cookie },
+      });
+    }
+
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json<{ text: string; html: string }>().text).toContain("集合的定义");
+    expect(completed.json<{ text: string; html: string }>().html).toBe("");
+  });
+
   it("serves embedded DOCX images through authenticated asset URLs", async () => {
     const session = await login(built.app);
     const fileId = randomUUID();
