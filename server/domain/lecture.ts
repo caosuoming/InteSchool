@@ -9,7 +9,7 @@ import type {
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
-import { questionService } from "./question.js";
+import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
@@ -513,6 +513,9 @@ export const lectureService = {
         ? { ...lecture, extractStatus: "done", updatedAt: now }
         : lecture
     )));
+    recordQuestionUsage(
+      collectQuestionIds(copy.sections),
+    );
     return copy;
   },
 
