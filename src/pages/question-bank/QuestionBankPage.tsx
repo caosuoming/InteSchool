@@ -18,6 +18,7 @@ import { classService } from "@/services/class";
 import { analyticsService, type DateRange } from "@/services/analytics";
 import { prepService } from "@/services/prep";
 import { lectureService } from "@/services/lecture";
+import { examPaperService } from "@/services/examPaper";
 import { quotaService } from "@/services/quota";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { toast } from "@/stores/ui";
@@ -45,7 +46,7 @@ import { useTagPrefsStore } from "@/stores/tagPrefs";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { useQuestionMetadataOptions } from "@/hooks/useQuestionMetadataOptions";
-import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ResourceSemester, QuestionSearchField, UserQuotaSnapshot } from "@/types";
+import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ExamPaper, ResourceSemester, QuestionSearchField, UserQuotaSnapshot } from "@/types";
 import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { inferScore } from "@/services/analytics";
@@ -239,6 +240,7 @@ export default function QuestionBankPage({
 
   // 讲义列表（用于查重、已选用判断、使用次数详情）
   const [lectures, setLectures] = useState<Lecture[]>([]);
+  const [examPapers, setExamPapers] = useState<ExamPaper[]>([]);
 
   // 使用次数详情弹窗
   const [usageDetailModal, setUsageDetailModal] = useState<{
@@ -443,10 +445,11 @@ export default function QuestionBankPage({
     prepService.getUsedQuestionIds(teacher.id).then(setUsedQuestionIds);
   }, [teacher]);
 
-  // 加载讲义列表（用于使用次数详情和已选用判断）
+  // 加载讲义和试卷列表（用于使用次数详情和已选用判断）
   useEffect(() => {
     if (!teacher?.schoolId) return;
     lectureService.listLectures({ schoolId: teacher.schoolId }).then(setLectures);
+    examPaperService.listPapers({ schoolId: teacher.schoolId }).then(setExamPapers);
   }, [teacher]);
 
   // 初始化替换题目的表单
@@ -481,6 +484,10 @@ export default function QuestionBankPage({
   const getLecturesUsingQuestion = useCallback((questionId: string): Lecture[] => {
     return lectures.filter((l) => sectionContainsQuestion(l.sections, questionId));
   }, [lectures, sectionContainsQuestion]);
+
+  const getExamPapersUsingQuestion = useCallback((questionId: string): ExamPaper[] => {
+    return examPapers.filter((paper) => paper.questions.some((question) => question.questionId === questionId));
+  }, [examPapers]);
 
   // 判断某题目是否被选中学生的讲义引用
   const isQuestionUsedBySelectedStudents = useCallback((questionId: string): boolean => {
@@ -1611,7 +1618,14 @@ export default function QuestionBankPage({
           <div className="space-y-3">
             {(() => {
               const usingLectures = getLecturesUsingQuestion(usageDetailModal.question.id);
-              if (usingLectures.length === 0) {
+              const usingExamPapers = getExamPapersUsingQuestion(usageDetailModal.question.id);
+              const usingResources = [
+                ...usingLectures.map((resource) => ({ type: "lecture" as const, resource })),
+                ...usingExamPapers.map((resource) => ({ type: "examPaper" as const, resource })),
+              ].sort((a, b) =>
+                new Date(b.resource.updatedAt).getTime() - new Date(a.resource.updatedAt).getTime(),
+              );
+              if (usingResources.length === 0) {
                 return (
                   <div className="py-8 text-center text-sm text-ink-500">
                     <FileText className="w-8 h-8 mx-auto mb-2 text-ink-300" />
@@ -1622,11 +1636,11 @@ export default function QuestionBankPage({
               return (
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-ink-500 mb-2">
-                    共 {usingLectures.length} 个讲义/试卷使用了此题目：
+                    共 {usingResources.length} 个讲义/试卷使用了此题目：
                   </div>
-                  {usingLectures.map((lec) => (
+                  {usingResources.map(({ type, resource }) => (
                     <div
-                      key={lec.id}
+                      key={`${type}:${resource.id}`}
                       className="flex items-center justify-between p-3 rounded-md border border-ink-200 hover:border-gold-300 hover:bg-gold-50/30 transition-all group"
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1634,14 +1648,19 @@ export default function QuestionBankPage({
                           <FileText className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-ink-900 truncate">{lec.title}</div>
+                          <div className="text-sm font-medium text-ink-900 truncate">
+                            {resource.title}
+                            <span className="ml-2 text-[10px] font-normal text-ink-400">
+                              {type === "lecture" ? "讲义" : "试卷"}
+                            </span>
+                          </div>
                           <div className="text-xs text-ink-500 mt-0.5">
-                            {lec.grade} · {lec.schoolYear} ·
+                            {resource.grade} · {resource.schoolYear} ·
                             <span className={cn(
                               "ml-1 px-1.5 py-0.5 rounded text-[10px]",
-                              lec.status === "published" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                              resource.status === "published" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
                             )}>
-                              {lec.status === "published" ? "已发布" : "草稿"}
+                              {resource.status === "published" ? "已发布" : "草稿"}
                             </span>
                           </div>
                         </div>
@@ -1649,10 +1668,14 @@ export default function QuestionBankPage({
                       <button
                         onClick={() => {
                           setUsageDetailModal(null);
-                          navigate(`/lectures/${lec.id}/preview`);
+                          navigate(
+                            type === "lecture"
+                              ? `/lectures/${resource.id}/preview`
+                              : `/exam-papers/${resource.id}/preview`,
+                          );
                         }}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-gold-700 hover:bg-gold-100 transition-colors flex-shrink-0 ml-3"
-                        title="进入讲义预览"
+                        title={`进入${type === "lecture" ? "讲义" : "试卷"}预览`}
                       >
                         预览
                         <ExternalLink className="w-3 h-3" />

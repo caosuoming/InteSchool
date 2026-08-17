@@ -44,6 +44,19 @@ export interface QuestionInput {
   duplicateDecision?: "add";
 }
 
+export function recordQuestionUsage(questionIds: readonly string[]): void {
+  const uniqueQuestionIds = new Set(questionIds);
+  if (uniqueQuestionIds.size === 0) return;
+  const now = new Date().toISOString();
+  db.update("questions", (list) =>
+    list.map((question) =>
+      uniqueQuestionIds.has(question.id)
+        ? { ...question, usageCount: question.usageCount + 1, lastUsedAt: now }
+        : question,
+    ),
+  );
+}
+
 function similarQuestionCandidates(
   stem: string,
   schoolId: string,
@@ -479,11 +492,6 @@ export const questionService = {
   },
 
   async incrementUsage(questionId: string): Promise<void> {
-    const now = new Date().toISOString();
-    db.update("questions", (list) =>
-      list.map((q) =>
-        q.id === questionId ? { ...q, usageCount: q.usageCount + 1, lastUsedAt: now } : q,
-      ),
-    );
+    recordQuestionUsage([questionId]);
   },
 };

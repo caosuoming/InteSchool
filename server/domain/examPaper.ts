@@ -7,7 +7,7 @@ import type {
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
-import { questionService } from "./question.js";
+import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { sanitizeExamPaperPatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
@@ -311,6 +311,9 @@ export const examPaperService = {
         ? { ...paper, extractStatus: "done", updatedAt: now }
         : paper
     )));
+    recordQuestionUsage(
+      copiedQuestions.flatMap((question) => question.questionId ? [question.questionId] : []),
+    );
     return copy;
   },
 

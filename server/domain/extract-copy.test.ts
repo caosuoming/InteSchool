@@ -187,6 +187,10 @@ describe("document extract copies", () => {
       });
       expect((appState.examPapers as ExamPaper[]).find((paper) => paper.id === "paper-source"))
         .toMatchObject({ extractStatus: "done" });
+      expect(appState.questions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "bank-question-1", usageCount: 1, lastUsedAt: expect.any(String) }),
+        expect.objectContaining({ id: "bank-question-2", usageCount: 1, lastUsedAt: expect.any(String) }),
+      ]));
     });
   });
 
@@ -238,6 +242,10 @@ describe("document extract copies", () => {
       });
       expect((appState.lectures as Lecture[]).find((lecture) => lecture.id === "lecture-source"))
         .toMatchObject({ extractStatus: "done" });
+      expect(appState.questions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "bank-question-1", usageCount: 1, lastUsedAt: expect.any(String) }),
+        expect.objectContaining({ id: "bank-question-2", usageCount: 1, lastUsedAt: expect.any(String) }),
+      ]));
     });
   });
 
