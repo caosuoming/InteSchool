@@ -138,7 +138,12 @@ const difficultyVariant = ["", "green", "green", "amber", "red", "red"];
 interface QuestionGroup {
   type: string;
   label: string;
-  questions: { pq: ExamPaperQuestion; index: number; question: Question | null | undefined }[];
+  questions: {
+    pq: ExamPaperQuestion;
+    index: number;
+    displayIndex: number;
+    question: Question | null | undefined;
+  }[];
 }
 
 const typeOrder = ["single", "multiple", "judge", "short", "essay"];
@@ -163,10 +168,19 @@ const groupByType = (questions: ExamPaperQuestion[], qMap: Record<string, Questi
     if (!groups[qType]) {
       groups[qType] = { type: qType, label: typeLabels[qType] || qType, questions: [] };
     }
-    groups[qType].questions.push({ pq, index: idx, question: q });
+    groups[qType].questions.push({ pq, index: idx, displayIndex: -1, question: q });
   });
 
-  return effectiveOrder.filter((t) => groups[t]).map((t) => groups[t]);
+  let displayIndex = 0;
+  return effectiveOrder
+    .filter((t) => groups[t])
+    .map((t) => ({
+      ...groups[t],
+      questions: groups[t].questions.map((item) => ({
+        ...item,
+        displayIndex: displayIndex++,
+      })),
+    }));
 };
 
 type AddSource = "choose" | "basket" | "bank" | "examPaper" | "lecture";
@@ -1660,11 +1674,11 @@ export default function ExamPaperEditorPage() {
                   ...group.questions.map((item) => (
                     <PreviewQuestionPair
                       key={item.pq.id}
-                      left={<PreviewQuestionItem pq={item.pq} index={item.index} />}
+                      left={<PreviewQuestionItem pq={item.pq} index={item.displayIndex} />}
                       right={(
                         <PreviewQuestionDetails
                           pq={item.pq}
-                          index={item.index}
+                          index={item.displayIndex}
                           question={item.question}
                           progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
                           chapterTree={chapterTree}
@@ -2233,7 +2247,7 @@ export default function ExamPaperEditorPage() {
                           <div key={item.pq.id} className="space-y-1">
                             <EditQuestionRow
                               pq={item.pq}
-                              index={item.index}
+                              index={item.displayIndex}
                               total={paperQuestions.length}
                               question={item.question}
                               progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
@@ -2248,7 +2262,7 @@ export default function ExamPaperEditorPage() {
                               sidebar={(
                                 <EditQuestionCatalogPanel
                                   pq={item.pq}
-                                  index={item.index}
+                                  index={item.displayIndex}
                                   question={item.question}
                                   schoolId={schoolId}
                                   chapterTree={chapterTree}
@@ -2267,7 +2281,7 @@ export default function ExamPaperEditorPage() {
                                 <ResourceCommentButton
                                   taskId={prepTaskId}
                                   targetId={item.pq.id}
-                                  targetLabel={`第 ${item.index + 1} 题`}
+                                  targetLabel={`第 ${item.displayIndex + 1} 题`}
                                   password={prepPassword || undefined}
                                   comments={prepComments}
                                   onCommentsChange={setPrepComments}

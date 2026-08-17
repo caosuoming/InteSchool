@@ -713,6 +713,54 @@ describe("ExamPaperEditorPage preview", () => {
     );
   });
 
+  it("numbers grouped questions continuously in their displayed order", async () => {
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+      questions: [
+        paper.questions[0],
+        {
+          ...paper.questions[0],
+          id: "paper-question-2",
+          questionId: secondQuestion.id,
+          type: secondQuestion.type,
+          stem: secondQuestion.stem,
+          options: secondQuestion.options,
+          answer: secondQuestion.answer,
+          analysis: secondQuestion.analysis,
+        },
+        {
+          ...paper.questions[0],
+          id: "paper-question-3",
+          questionId: sameTypeQuestion.id,
+          type: sameTypeQuestion.type,
+          stem: sameTypeQuestion.stem,
+          options: sameTypeQuestion.options,
+          answer: sameTypeQuestion.answer,
+          analysis: sameTypeQuestion.analysis,
+        },
+      ],
+      totalScore: 15,
+    });
+    mocks.listQuestions.mockResolvedValue([question, secondQuestion, sameTypeQuestion]);
+
+    renderEditorPage();
+
+    const secondDetails = await screen.findByTestId("exam-editor-question-details-2");
+    expect(secondDetails).toHaveTextContent("第 2 题目录");
+    expect(secondDetails).toHaveTextContent("单选");
+    expect(screen.getByTestId("exam-editor-question-details-3")).toHaveTextContent("解答");
+
+    const laterSingleRow = screen.getByText(sameTypeQuestion.stem).closest("div.border");
+    expect(laterSingleRow).not.toBeNull();
+    expect(within(laterSingleRow as HTMLElement).getByText("2.")).toBeInTheDocument();
+
+    const essayRow = screen.getByText(secondQuestion.stem).closest("div.border");
+    expect(essayRow).not.toBeNull();
+    expect(within(essayRow as HTMLElement).getByText("3.")).toBeInTheDocument();
+  });
+
   it("supports grouped score changes and aligned catalog-related controls in the editor", async () => {
     mocks.getPaper.mockResolvedValue({
       ...paper,
