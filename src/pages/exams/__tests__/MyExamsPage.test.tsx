@@ -189,6 +189,8 @@ describe("MyExamsPage", () => {
     const durationHeading = screen.getByRole("heading", { name: "监考时长" });
     const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
     const timesHeading = screen.getByRole("heading", { name: "配置二、考试时间配置" });
+    expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();
     expect(tableOneHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tableTwoHeading.compareDocumentPosition(durationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(durationHeading.compareDocumentPosition(teachersHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

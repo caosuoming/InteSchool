@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ClipboardCheck, Download, Plus, Save, Trash2, UsersRound } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, ClipboardCheck, Download, Plus, Save, Trash2, Upload, UsersRound } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -15,6 +15,11 @@ import type {
 import { buildExamPrintRoomStatistics } from "@/lib/exam-print-room-statistics";
 import { buildExamInvigilationTable } from "@/lib/exam-invigilation";
 import { downloadExamPrintRoomStatistics } from "@/lib/exam-arrangement-export";
+import {
+  downloadInvigilationTeacherTemplate,
+  mergeInvigilationTeachers,
+  readInvigilationTeacherFile,
+} from "@/lib/exam-invigilation-teacher-spreadsheet";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -170,8 +175,10 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [importingTeachers, setImportingTeachers] = useState(false);
   const [batchText, setBatchText] = useState("");
   const [statsSort, setStatsSort] = useState<"minutes" | "subject" | "name">("minutes");
+  const teacherFileInputRef = useRef<HTMLInputElement>(null);
   const [historyArrangementIds, setHistoryArrangementIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -228,6 +235,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     () => selectedArrangement && config ? buildExamInvigilationTable(selectedArrangement, config) : null,
     [selectedArrangement, config],
   );
+  const cohortLabel = useMemo(
+    () => cohorts.find((cohort) => cohort.key === cohortKey)?.label || selectedArrangement?.cohortLabel || "",
+    [cohortKey, cohorts, selectedArrangement?.cohortLabel],
+  );
+  const teacherMap = useMemo(() => new Map((config?.teachers || []).map((teacher) => [teacher.id, teacher])), [config]);
   const historicalArrangements = useMemo(() => {
     if (!selectedArrangement) return [];
     const currentDate = arrangementDateKey(selectedArrangement);
@@ -346,6 +358,34 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     }
     updateConfig((next) => { next.teachers.push(...parsed); });
     setBatchText("");
+  };
+
+  const downloadTeacherTemplate = async () => {
+    if (!selectedArrangement || !config || !cohortLabel) return;
+    try {
+      await downloadInvigilationTeacherTemplate(cohortLabel, selectedArrangement.subjects, config.teachers);
+    } catch (error) {
+      toast.error("下载监考教师模板失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const importTeacherFile = async (file: File) => {
+    if (!selectedArrangement || !cohortLabel || !config) return;
+    setImportingTeachers(true);
+    try {
+      const rows = await readInvigilationTeacherFile(file, cohortLabel, selectedArrangement.subjects);
+      const result = mergeInvigilationTeachers(config.teachers, rows, () => newTeacherId("excel"));
+      updateConfig((next) => { next.teachers = result.teachers; });
+      const details = [
+        result.addedCount ? `新增 ${result.addedCount} 位` : "",
+        result.mergedCount ? `更新 ${result.mergedCount} 位角色标记` : "",
+      ].filter(Boolean).join("，");
+      toast.success("监考教师导入完成", details || "未发现需要新增或更新的教师");
+    } catch (error) {
+      toast.error("导入监考教师失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setImportingTeachers(false);
+    }
   };
 
   const controls = (
@@ -598,14 +638,34 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
 
       <div className="mb-4 grid gap-4 xl:grid-cols-2">
         <Card>
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">配置一、监考老师名单</h2>
               <p className="mt-1 text-xs text-ink-500">可批量添加，也可逐条修改；备课组长用于场外监考，领导用于巡回。</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => updateConfig((next) => next.teachers.push({ id: newTeacherId("teacher"), name: "", subject: selectedArrangement.subjects[0] || "" }))}>
-              <Plus className="h-4 w-4" />添加教师
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => void downloadTeacherTemplate()}>
+                <Download className="h-4 w-4" />下载导入模板
+              </Button>
+              <Button variant="outline" size="sm" disabled={importingTeachers} onClick={() => teacherFileInputRef.current?.click()}>
+                {importingTeachers ? <Spinner size={16} /> : <Upload className="h-4 w-4" />}上传 Excel
+              </Button>
+              <input
+                ref={teacherFileInputRef}
+                type="file"
+                className="hidden"
+                accept=".xlsx,.xlsm"
+                aria-label="上传监考教师 Excel"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void importTeacherFile(file);
+                }}
+              />
+              <Button variant="outline" size="sm" onClick={() => updateConfig((next) => next.teachers.push({ id: newTeacherId("teacher"), name: "", subject: selectedArrangement.subjects[0] || "" }))}>
+                <Plus className="h-4 w-4" />添加教师
+              </Button>
+            </div>
           </div>
           <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
             {config.teachers.map((teacher, index) => (
