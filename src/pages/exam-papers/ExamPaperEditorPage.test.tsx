@@ -334,7 +334,7 @@ describe("ExamPaperEditorPage preview", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "添加题目" })[0]);
     fireEvent.click(screen.getByRole("button", { name: "资源篮" }));
     fireEvent.click(await screen.findByRole("button", { name: "复习篮 (1)" }));
-    fireEvent.click(await screen.findByText(secondQuestion.stem));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择第 1 道题" }));
     fireEvent.click(screen.getByRole("button", { name: "添加选中题目" }));
 
     await waitFor(() => {
@@ -342,6 +342,44 @@ describe("ExamPaperEditorPage preview", () => {
       expect(mocks.removeQuestion).toHaveBeenCalledWith(basket.id, secondQuestion.id);
     });
     confirmSpy.mockRestore();
+  });
+
+  it("filters question-bank choices by chapter and knowledge directories", async () => {
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+    });
+    mocks.listQuestions.mockResolvedValue([question, sameTypeQuestion]);
+
+    renderEditorPage();
+    await screen.findByLabelText("文档名");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "添加题目" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "题库" }).at(-1)!);
+
+    const chapterSearch = await screen.findByPlaceholderText("搜索章节课...");
+    const chapterPanel = chapterSearch.closest(".rounded-lg");
+    expect(chapterPanel).not.toBeNull();
+    fireEvent.click(within(chapterPanel as HTMLElement).getByText("函数与方程").closest("div")!.querySelector("button")!);
+
+    await waitFor(() => {
+      expect(mocks.listQuestions).toHaveBeenCalledWith(expect.objectContaining({
+        chapterIds: ["chapter-1"],
+      }));
+    });
+
+    const knowledgeSearch = screen.getByPlaceholderText("搜索知识点...");
+    const knowledgePanel = knowledgeSearch.closest(".rounded-lg");
+    expect(knowledgePanel).not.toBeNull();
+    fireEvent.click(within(knowledgePanel as HTMLElement).getByText("函数定义域").closest("div")!.querySelector("button")!);
+
+    await waitFor(() => {
+      expect(mocks.listQuestions).toHaveBeenCalledWith(expect.objectContaining({
+        chapterIds: ["chapter-1"],
+        knowledgePointIds: ["knowledge-1"],
+      }));
+    });
   });
 
   it("shows the current title first and aligns per-question details beside the paper", async () => {
