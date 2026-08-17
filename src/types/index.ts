@@ -529,6 +529,40 @@ export type ExamArrangementMode = "combination" | "subject";
 export type ExamSubjectSetupMode = "all" | "selection" | "academicNonSelection";
 export type ExamSeatOrder = "random" | "previousRank";
 export type ExamStudentSeatPreference = "first" | "last";
+export type ExamInvigilationPeriod = "morning" | "afternoon";
+
+export interface ExamInvigilationTeacher {
+  id: string;
+  name: string;
+  subject: string;
+  /** 备课组长优先安排场外监考。 */
+  isPrepLeader?: boolean;
+  /** 年级/学校领导优先安排巡回。 */
+  isLeader?: boolean;
+}
+
+export interface ExamSubjectExamTime {
+  subject: string;
+  date: string;
+  period: ExamInvigilationPeriod;
+  /** HH:mm，本地考试时间。 */
+  time: string;
+  /** 用于监考时长实时统计；默认 120 分钟。 */
+  durationMinutes: number;
+}
+
+export interface ExamInvigilationSlotOverride {
+  /** null 表示显式留空；缺少键表示继续使用自动排表结果。 */
+  roomTeacherIds: Record<string, string | null>;
+  outsideTeacherId?: string | null;
+  patrolTeacherId?: string | null;
+}
+
+export interface ExamInvigilationConfig {
+  teachers: ExamInvigilationTeacher[];
+  subjectTimes: ExamSubjectExamTime[];
+  overrides?: Record<string, ExamInvigilationSlotOverride>;
+}
 
 export interface ExamRoomConfig {
   id: string;
@@ -612,6 +646,8 @@ export interface ExamArrangement extends Omit<ExamArrangementInput, "id"> {
   teacherId: string;
   cohortLabel: string;
   assignments: ExamSeatAssignment[];
+  /** 当前考试对应的监考名单、考试时间和人工调整。 */
+  invigilation?: ExamInvigilationConfig;
   createdAt: string;
   updatedAt: string;
 }
@@ -620,6 +656,7 @@ export interface ExamArrangementContext {
   cohort: GradeCohort;
   classes: SchoolClass[];
   students: Student[];
+  teachers?: GradeTeacherOption[];
   /** 最近一次同年级考试的年级名次。 */
   previousGradeRanks?: Record<string, number>;
 }
@@ -630,6 +667,7 @@ export interface GradeTeacherOption {
   subject: string;
   teachingClassIds?: string[];
   homeroomClassIds?: string[];
+  roles?: TeacherRole[];
 }
 
 export interface GradeImportContext {

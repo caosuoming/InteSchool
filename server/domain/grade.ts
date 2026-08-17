@@ -110,6 +110,7 @@ function teacherOptions(schoolId: string): GradeTeacherOption[] {
         subject: affiliation.subject,
         teachingClassIds: affiliation.teachingClassIds || [],
         homeroomClassIds: affiliation.homeroomClassIds || [],
+        roles: affiliation.roles || [],
       }];
     })
     .sort((left, right) => left.subject.localeCompare(right.subject, "zh-CN") || left.name.localeCompare(right.name, "zh-CN"));

@@ -3,6 +3,7 @@ import type {
   ExamArrangement,
   ExamArrangementContext,
   ExamArrangementInput,
+  ExamInvigilationConfig,
   GradeCohort,
 } from "@/types";
 
@@ -25,6 +26,14 @@ export const examArrangementService = {
     input: ExamArrangementInput,
   ): Promise<ExamArrangement> {
     return rpcCall("examArrangement", "saveArrangement", [schoolId, teacherId, input]) as Promise<ExamArrangement>;
+  },
+
+  async saveInvigilationConfig(
+    schoolId: string,
+    arrangementId: string,
+    config: ExamInvigilationConfig,
+  ): Promise<ExamArrangement> {
+    return rpcCall("examArrangement", "saveInvigilationConfig", [schoolId, arrangementId, config]) as Promise<ExamArrangement>;
   },
 
   async deleteArrangement(arrangementId: string): Promise<void> {

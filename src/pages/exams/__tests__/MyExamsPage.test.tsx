@@ -11,6 +11,8 @@ import type { ExamArrangement, GradeCohort, Teacher, TeacherAffiliation } from "
 vi.mock("@/services/examArrangement", () => ({
   examArrangementService: {
     listArrangements: vi.fn(),
+    getContext: vi.fn(),
+    saveInvigilationConfig: vi.fn(),
   },
 }));
 
@@ -85,6 +87,12 @@ describe("MyExamsPage", () => {
     vi.mocked(gradeService.getCohortSettings).mockResolvedValue(null);
     vi.mocked(gradeService.listExams).mockResolvedValue([]);
     vi.mocked(examArrangementService.listArrangements).mockResolvedValue([]);
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      cohort,
+      classes: [],
+      students: [],
+      teachers: [],
+    });
     vi.mocked(quotaService.getQuota).mockResolvedValue({
       teacherId: "teacher-1",
       resources: {
@@ -177,5 +185,9 @@ describe("MyExamsPage", () => {
     expect(screen.getByText("高三1班教室")).toBeInTheDocument();
     expect(screen.getByText("物化生")).toBeInTheDocument();
     expect(screen.getByText("语数外")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任课教师名单" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "考试时间配置" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "监考表" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "监考时长" })).toBeInTheDocument();
   });
 });

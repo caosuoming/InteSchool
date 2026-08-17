@@ -1,5 +1,6 @@
 import type { ExamArrangement, ExamSeatAssignment } from "@/types";
 import { buildExamPrintRoomStatistics } from "./exam-print-room-statistics";
+import { buildExamInvigilationTable } from "./exam-invigilation";
 
 export interface ExamDeskLabelGroup {
   key: string;
@@ -226,7 +227,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
     backgroundColor: "#F1F4F8",
   });
 
-  await writeXlsxFile([{
+  const sheets = [{
     sheet: "文印室统计表",
     data: [
       [header("考场号"), ...statistics.rooms.map((room) => header(room.roomNumber)), header("合计")],
@@ -244,7 +245,37 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
       ...statistics.rooms.map(() => ({ width: 14 })),
       { width: 14 },
     ],
-  }]).toFile(`${safeFileName(arrangement.name)}_文印室统计表.xlsx`);
+  }];
+
+  if (arrangement.invigilation) {
+    const invigilation = buildExamInvigilationTable(arrangement, arrangement.invigilation);
+    if (invigilation.rows.length > 0) {
+      const teacherMap = new Map(arrangement.invigilation.teachers.map((teacher) => [teacher.id, teacher.name]));
+      sheets.push({
+        sheet: "监考表",
+        data: [
+          [header("考试地址"), ...invigilation.rooms.map((room) => centeredCell(room.roomLocation)), header("场外监考"), header("巡回")],
+          [header("考场号"), ...invigilation.rooms.map((room) => centeredCell(room.roomNumber)), centeredCell(""), centeredCell("")],
+          [header("试场人数"), ...invigilation.rooms.map((room) => centeredCell(room.studentCount)), centeredCell(""), centeredCell("")],
+          ...invigilation.rows.map((row) => [
+            header(`${row.date} ${row.period === "morning" ? "上午" : "下午"} ${row.time}\n${row.subjectLabel}`),
+            ...invigilation.rooms.map((room) => centeredCell(teacherMap.get(row.roomTeacherIds[room.roomId] || "") || "")),
+            centeredCell(teacherMap.get(row.outsideTeacherId || "") || ""),
+            centeredCell(teacherMap.get(row.patrolTeacherId || "") || ""),
+          ]),
+        ],
+        stickyRowsCount: 3,
+        columns: [
+          { width: 24 },
+          ...invigilation.rooms.map(() => ({ width: 16 })),
+          { width: 16 },
+          { width: 16 },
+        ],
+      });
+    }
+  }
+
+  await writeXlsxFile(sheets).toFile(`${safeFileName(arrangement.name)}_文印室统计表.xlsx`);
 }
 
 export async function downloadClassArrangements(
