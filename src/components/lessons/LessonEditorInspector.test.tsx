@@ -108,6 +108,32 @@ describe("LessonEditorInspector", () => {
     expect(onUpdateTextStyle).toHaveBeenLastCalledWith("stem", 34);
   });
 
+  it("renders formulas in the content list and selected text properties", async () => {
+    const user = userEvent.setup();
+    const formulaElement: LessonSlideElement = {
+      ...element,
+      id: "formula-element",
+      content: "A. $\\frac{3}{2}$",
+    };
+    const onUpdateElement = vi.fn();
+    renderInspector({
+      elements: [formulaElement],
+      selectedElement: formulaElement,
+      onUpdateElement,
+    });
+
+    expect(document.querySelector(".katex")).not.toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "属性" }));
+    const editor = screen.getByRole("textbox", { name: "文本内容" });
+    expect(editor.querySelector(".katex")).not.toBeNull();
+
+    editor.innerHTML = "B. $x^2$";
+    fireEvent.blur(editor);
+    expect(onUpdateElement).toHaveBeenLastCalledWith({ content: "B. $x^2$" });
+    expect(editor.querySelector(".katex")).not.toBeNull();
+  });
+
   it("exposes element and order animation controls plus the two association groups", async () => {
     const user = userEvent.setup();
     const onLoadRelatedQuestions = vi.fn();
