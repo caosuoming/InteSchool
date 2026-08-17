@@ -208,9 +208,19 @@ export const examArrangementService = {
           : {}),
       },
     ]));
+    const teacherNotes = Object.fromEntries(Object.entries(config.teacherNotes || {}).flatMap(([teacherId, note]) => {
+      if (!teacherIds.has(teacherId)) return [];
+      const value = note.trim();
+      return value ? [[teacherId, value]] : [];
+    }));
     const updated: ExamArrangement = {
       ...current,
-      invigilation: { teachers, subjectTimes, overrides: validOverrides },
+      invigilation: {
+        teachers,
+        subjectTimes,
+        overrides: validOverrides,
+        ...(Object.keys(teacherNotes).length ? { teacherNotes } : {}),
+      },
       updatedAt: new Date().toISOString(),
     };
     db.update("examArrangements", (items: ExamArrangement[]) => items.map((item) => (

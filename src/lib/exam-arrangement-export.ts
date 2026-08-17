@@ -228,7 +228,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
   });
 
   const sheets = [{
-    sheet: "文印室统计表",
+    sheet: "表一、文印室统计表",
     data: [
       [header("考场号"), ...statistics.rooms.map((room) => header(room.roomNumber)), header("合计")],
       [header("考试地点"), ...statistics.rooms.map((room) => centeredCell(room.roomLocation)), centeredCell("")],
@@ -252,7 +252,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
     if (invigilation.rows.length > 0) {
       const teacherMap = new Map(arrangement.invigilation.teachers.map((teacher) => [teacher.id, teacher.name]));
       sheets.push({
-        sheet: "监考表",
+        sheet: "表二、监考表",
         data: [
           [header("考试地址"), ...invigilation.rooms.map((room) => centeredCell(room.roomLocation)), header("场外监考"), header("巡回")],
           [header("考场号"), ...invigilation.rooms.map((room) => centeredCell(room.roomNumber)), centeredCell(""), centeredCell("")],

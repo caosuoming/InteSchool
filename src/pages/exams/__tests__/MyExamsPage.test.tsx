@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyExamsPage from "@/pages/exams/MyExamsPage";
@@ -180,16 +180,86 @@ describe("MyExamsPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("heading", { name: "文印室统计表" })).toBeInTheDocument();
+    const tableOneHeading = await screen.findByRole("heading", { name: "表一、文印室统计表" });
     expect(screen.getByLabelText("选择文印室统计表考试")).toHaveDisplayValue("高三期中考试 · 2026-10-20");
     expect(screen.getByText("高三1班教室")).toBeInTheDocument();
     expect(screen.getByText("物化生")).toBeInTheDocument();
     expect(screen.getByText("语数外")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "任课教师名单" })).toBeInTheDocument();
+    const tableTwoHeading = screen.getByRole("heading", { name: "表二、监考表" });
+    const durationHeading = screen.getByRole("heading", { name: "监考时长" });
+    const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
+    const timesHeading = screen.getByRole("heading", { name: "配置二、考试时间配置" });
     expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "考试时间配置" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "监考表" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "监考时长" })).toBeInTheDocument();
+    expect(tableOneHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tableTwoHeading.compareDocumentPosition(durationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(durationHeading.compareDocumentPosition(teachersHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(teachersHeading.compareDocumentPosition(timesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("accumulates selected previous invigilation durations", async () => {
+    const baseArrangement: ExamArrangement = {
+      id: "current",
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      cohortKey: cohort.key,
+      cohortLabel: cohort.label,
+      name: "十月月考",
+      examDate: "2026-10-20",
+      mode: "subject",
+      subjectSetupMode: "all",
+      subjects: ["数学"],
+      separateSubjects: ["数学"],
+      rooms: [{ id: "room-1", name: "1考场", number: "1考场", location: "一楼", capacity: 40 }],
+      classRules: [],
+      studentSubjects: [{ studentId: "student-1", subjects: ["数学"] }],
+      assignments: [{
+        id: "math:student-1",
+        studentId: "student-1",
+        studentName: "学生甲",
+        studentNo: "001",
+        classId: "class-1",
+        className: "高三（1）班",
+        subjectLabel: "数学",
+        sessionKey: "数学",
+        roomId: "room-1",
+        roomName: "1考场",
+        roomNumber: "1考场",
+        roomLocation: "一楼",
+        seatNo: 1,
+        admissionNo: "001",
+      }],
+      invigilation: {
+        teachers: [{ id: "teacher-math", name: "张老师", subject: "数学" }],
+        subjectTimes: [{ subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 }],
+        overrides: {},
+      },
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    };
+    const previousArrangement: ExamArrangement = {
+      ...baseArrangement,
+      id: "previous",
+      name: "九月月考",
+      examDate: "2026-09-20",
+      invigilation: {
+        teachers: [{ id: "teacher-math", name: "张老师", subject: "数学" }],
+        subjectTimes: [{ subject: "数学", date: "2026-09-20", period: "morning", time: "08:00", durationMinutes: 120 }],
+        overrides: {},
+      },
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([baseArrangement, previousArrangement]);
+
+    render(
+      <MemoryRouter initialEntries={[`/my-exams/invigilation?cohort=${cohort.key}`]}>
+        <MyExamsPage section="invigilation" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findAllByText("1 小时 30 分钟")).toHaveLength(2);
+    fireEvent.click(screen.getByLabelText("累计 九月月考"));
+    expect(await screen.findByText("3 小时 30 分钟")).toBeInTheDocument();
   });
 });
