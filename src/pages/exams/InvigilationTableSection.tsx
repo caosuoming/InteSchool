@@ -8,7 +8,6 @@ import type {
   ExamArrangement,
   ExamInvigilationConfig,
   ExamInvigilationPeriod,
-  ExamInvigilationSlotOverride,
   ExamInvigilationTeacher,
   GradeCohort,
   GradeTeacherOption,
@@ -131,65 +130,32 @@ function arrangementDateKey(arrangement: ExamArrangement): string {
   return arrangement.examDate || arrangement.createdAt;
 }
 
-function cellOverrideValue(
-  override: ExamInvigilationSlotOverride | undefined,
-  kind: "room" | "outside",
-  roomId?: string,
-): string | null | undefined {
-  if (!override) return undefined;
-  if (kind === "room") {
-    if (!roomId || !Object.prototype.hasOwnProperty.call(override.roomTeacherIds, roomId)) return undefined;
-    return override.roomTeacherIds[roomId];
-  }
-  if (!Object.prototype.hasOwnProperty.call(override, "outsideTeacherId")) return undefined;
-  return override.outsideTeacherId;
+type InvigilationCellKind = "room" | "outside";
+
+interface InvigilationCellTarget {
+  rowKey: string;
+  kind: InvigilationCellKind;
+  roomId?: string;
 }
 
-function TeacherSelect({
-  computedTeacherId,
-  overrideValue,
-  teachers,
-  disabled,
-  highlighted,
-  onChange,
-  onTeacherSelect,
-  ariaLabel,
-}: {
-  computedTeacherId: string | null;
-  overrideValue: string | null | undefined;
-  teachers: ExamInvigilationTeacher[];
-  disabled?: boolean;
-  highlighted?: boolean;
-  onChange: (value: string) => void;
-  onTeacherSelect: (teacherId: string) => void;
-  ariaLabel: string;
-}) {
-  const teacherMap = new Map(teachers.map((teacher) => [teacher.id, teacher]));
-  const autoLabel = computedTeacherId ? `自动：${teacherMap.get(computedTeacherId)?.name || "未知教师"}` : "自动：空缺";
-  const value = overrideValue === undefined ? "__auto__" : overrideValue === null ? "__blank__" : overrideValue;
-  return (
-    <select
-      aria-label={ariaLabel}
-      className={cn(
-        "min-w-28 rounded-md border px-2 py-1.5 text-xs text-ink-800 outline-none transition-colors focus:border-gold-400",
-        highlighted ? "border-yellow-500 bg-[#fff88a]" : "border-ink-200 bg-paper",
-      )}
-      value={value}
-      disabled={disabled}
-      onFocus={() => { if (computedTeacherId) onTeacherSelect(computedTeacherId); }}
-      onChange={(event) => {
-        const next = event.target.value;
-        onChange(next);
-        if (next !== "__auto__" && next !== "__blank__") onTeacherSelect(next);
-      }}
-    >
-      <option value="__auto__">{autoLabel}</option>
-      <option value="__blank__">留空</option>
-      {teachers.map((teacher) => (
-        <option key={teacher.id} value={teacher.id}>{teacher.name} · {teacher.subject}</option>
-      ))}
-    </select>
-  );
+function cellTargetKey(target: InvigilationCellTarget): string {
+  return `${target.rowKey}\u0000${target.kind}\u0000${target.roomId || ""}`;
+}
+
+function writeCellOverride(
+  config: ExamInvigilationConfig,
+  target: InvigilationCellTarget,
+  teacherId: string | null | undefined,
+) {
+  config.overrides ||= {};
+  const override = config.overrides[target.rowKey] ||= { roomTeacherIds: {} };
+  if (target.kind === "room" && target.roomId) {
+    if (teacherId === undefined) delete override.roomTeacherIds[target.roomId];
+    else override.roomTeacherIds[target.roomId] = teacherId;
+    return;
+  }
+  if (teacherId === undefined) delete override.outsideTeacherId;
+  else override.outsideTeacherId = teacherId;
 }
 
 export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortKey, onCohortChange }: Props) {
@@ -204,6 +170,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const [batchText, setBatchText] = useState("");
   const [statsSort, setStatsSort] = useState<"minutes" | "subject" | "name">("minutes");
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+  const [selectedCells, setSelectedCells] = useState<InvigilationCellTarget[]>([]);
   const teacherFileInputRef = useRef<HTMLInputElement>(null);
   const [historyArrangementIds, setHistoryArrangementIds] = useState<string[]>([]);
 
@@ -244,9 +211,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   useEffect(() => {
     if (!selectedArrangement) {
       setConfig(null);
+      setSelectedCells([]);
       return;
     }
     setConfig(configForArrangement(selectedArrangement, teacherOptions));
+    setSelectedCells([]);
   }, [selectedArrangement, teacherOptions]);
 
   useEffect(() => {
@@ -318,6 +287,32 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     });
   };
 
+  const isCellSelected = (target: InvigilationCellTarget) => {
+    const key = cellTargetKey(target);
+    return selectedCells.some((item) => cellTargetKey(item) === key);
+  };
+
+  const toggleCellSelection = (target: InvigilationCellTarget) => {
+    const key = cellTargetKey(target);
+    setSelectedCells((current) => {
+      if (current.some((item) => cellTargetKey(item) === key)) {
+        return current.filter((item) => cellTargetKey(item) !== key);
+      }
+      if (current.length >= 2) return [target];
+      return [...current, target];
+    });
+  };
+
+  const getCellTeacherId = (target: InvigilationCellTarget): string | null => {
+    const row = invigilation?.rows.find((item) => item.key === target.rowKey);
+    if (!row) return null;
+    if (target.kind === "room") return target.roomId ? row.roomTeacherIds[target.roomId] || null : null;
+    return row.outsideTeacherId;
+  };
+
+  const selectedCellTeacherIds = selectedCells.map(getCellTeacherId);
+  const canSwapSelectedCells = selectedCells.length === 2 && selectedCellTeacherIds.every(Boolean);
+
   const saveConfig = async () => {
     if (!selectedArrangement || !config) return;
     const invalidRow = buildExamInvigilationTable(selectedArrangement, config).rows.find((row) => row.duplicateTeacherIds.length > 0);
@@ -358,37 +353,23 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     }
   };
 
-  const setCellTeacher = (
-    rowKey: string,
-    kind: "room" | "outside",
-    value: string,
-    roomId?: string,
-  ) => {
-    if (!selectedArrangement || !config) return;
+  const setCellTeacher = (target: InvigilationCellTarget, value: string) => {
+    if (!selectedArrangement || !config) return false;
     const next = cloneConfig(config);
-    next.overrides ||= {};
-    const override = next.overrides[rowKey] ||= { roomTeacherIds: {} };
     const normalized = value === "__auto__" ? undefined : value === "__blank__" ? null : value;
-
-    if (kind === "room" && roomId) {
-      if (normalized === undefined) delete override.roomTeacherIds[roomId];
-      else override.roomTeacherIds[roomId] = normalized;
-    } else if (kind === "outside") {
-      if (normalized === undefined) delete override.outsideTeacherId;
-      else override.outsideTeacherId = normalized;
-    }
+    writeCellOverride(next, target, normalized);
 
     if (typeof normalized === "string") {
-      const row = buildExamInvigilationTable(selectedArrangement, next).rows.find((item) => item.key === rowKey);
+      const row = buildExamInvigilationTable(selectedArrangement, next).rows.find((item) => item.key === target.rowKey);
       if (row?.duplicateTeacherIds.includes(normalized)) {
         toast.error("同一场监考不能安排同一位老师", `${teacherMap.get(normalized)?.name || "该教师"} 已在本场考试中承担其他监考任务。`);
-        return;
+        return false;
       }
       setSelectedTeacherId(normalized);
     }
     setConfig(next);
+    return true;
   };
-
   const addPatrolTeacher = (teacherId: string) => {
     if (!selectedArrangement || !config || !teacherId || config.patrolTeacherIds?.includes(teacherId)) return;
     const next = cloneConfig(config);
@@ -428,6 +409,27 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       }
     }
     setConfig(next);
+  };
+
+  const assignSelectedTeacher = (teacherId: string) => {
+    if (selectedCells.length !== 1) return;
+    if (setCellTeacher(selectedCells[0], teacherId)) setSelectedCells([]);
+  };
+
+  const setSelectedCellMode = (value: "__auto__" | "__blank__") => {
+    if (selectedCells.length !== 1) return;
+    if (setCellTeacher(selectedCells[0], value)) setSelectedCells([]);
+  };
+
+  const swapSelectedCells = () => {
+    if (!canSwapSelectedCells) return;
+    const [first, second] = selectedCells;
+    const [firstTeacherId, secondTeacherId] = selectedCellTeacherIds as [string, string];
+    updateConfig((next) => {
+      writeCellOverride(next, first, secondTeacherId);
+      writeCellOverride(next, second, firstTeacherId);
+    });
+    setSelectedCells([]);
   };
 
   const addBatchTeachers = () => {
@@ -576,9 +578,17 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">表二、监考表</h2>
-              <p className="mt-1 text-xs text-ink-500">同一地址的考场会合并表头；选择表内教师可高亮全部同名安排，同一场重复安排会立即提示。</p>
+              <p className="mt-1 text-xs text-ink-500">勾选一个考场或场外监考单元格后，可在“监考时长”中点击老师姓名填入；勾选两个已有安排的单元格可交换。</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {selectedCells.length === 1 && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedCellMode("__auto__")}>恢复自动</Button>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedCellMode("__blank__")}>留空</Button>
+                </>
+              )}
+              {canSwapSelectedCells && <Button variant="gold" size="sm" onClick={swapSelectedCells}>是否交换</Button>}
+              {selectedCells.length > 0 && <Button variant="outline" size="sm" onClick={() => setSelectedCells([])}>取消选择</Button>}
               {selectedTeacherId && teacherMap.get(selectedTeacherId) && (
                 <button type="button" className="rounded-full bg-[#fff86b] px-2.5 py-1 text-xs font-medium text-ink-800" onClick={() => setSelectedTeacherId(null)}>
                   高亮：{teacherMap.get(selectedTeacherId)?.name} · 清除
@@ -620,7 +630,6 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                     {invigilation.rooms.map((room) => <td key={room.roomId} className="border-b border-r border-[#b6c7cf] px-3 py-2 text-center">{room.studentCount}</td>)}
                   </tr>
                   {invigilation.rows.map((row, rowIndex) => {
-                    const override = config.overrides?.[row.key];
                     return (
                       <tr key={row.key}>
                         <td className="border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-3 py-2 text-center text-xs font-medium text-ink-800">{formatExamDateWithWeekday(row.date)}</td>
@@ -630,47 +639,85 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                         {invigilation.rooms.map((room) => {
                           const count = row.roomStudentCounts[room.roomId] || 0;
                           const assignedTeacherId = row.roomTeacherIds[room.roomId];
+                          const target: InvigilationCellTarget = { rowKey: row.key, kind: "room", roomId: room.roomId };
+                          const selected = isCellSelected(target);
                           const highlighted = Boolean(selectedTeacherId && assignedTeacherId === selectedTeacherId);
                           const duplicate = Boolean(assignedTeacherId && row.duplicateTeacherIds.includes(assignedTeacherId));
                           return (
-                            <td key={room.roomId} className={cn(
-                              "border-b border-r border-[#b6c7cf] px-2 py-2 text-center transition-colors",
-                              !count && "bg-ink-50/60",
-                              highlighted && "bg-[#fff86b]",
-                              duplicate && "ring-2 ring-inset ring-red-400",
-                            )}>
+                            <td
+                              key={room.roomId}
+                              className={cn(
+                                "border-b border-r border-[#b6c7cf] px-2 py-2 text-center transition-colors",
+                                !count && "bg-ink-50/60",
+                                count && "cursor-pointer hover:bg-gold-50/60",
+                                highlighted && "bg-[#fff86b]",
+                                selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
+                                duplicate && "ring-2 ring-inset ring-red-400",
+                              )}
+                              onClick={count ? () => toggleCellSelection(target) : undefined}
+                            >
                               {count ? (
-                                <div>
-                                  <TeacherSelect
-                                    ariaLabel={`${row.subjectLabel} ${room.roomNumber}监考教师`}
-                                    computedTeacherId={assignedTeacherId}
-                                    overrideValue={cellOverrideValue(override, "room", room.roomId)}
-                                    teachers={config.teachers}
-                                    highlighted={highlighted}
-                                    onTeacherSelect={setSelectedTeacherId}
-                                    onChange={(value) => setCellTeacher(row.key, "room", value, room.roomId)}
+                                <div className="relative min-h-12 px-4 py-1">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`选择 ${row.subjectLabel} ${room.roomNumber}监考单元格`}
+                                    className="absolute left-0 top-0 h-3.5 w-3.5 accent-gold-500"
+                                    checked={selected}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onChange={() => toggleCellSelection(target)}
                                   />
+                                  <button
+                                    type="button"
+                                    className="pt-1 text-xs font-medium text-ink-800 hover:text-gold-700"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      if (assignedTeacherId) setSelectedTeacherId(assignedTeacherId);
+                                    }}
+                                  >
+                                    {teacherMap.get(assignedTeacherId || "")?.name || "空缺"}
+                                  </button>
                                   <div className="mt-1 text-[10px] text-ink-400">{count} 人</div>
                                 </div>
                               ) : <span className="text-xs text-ink-300">无学生</span>}
                             </td>
                           );
                         })}
-                        <td className={cn(
-                          "border-b border-r border-[#b6c7cf] px-2 py-2 text-center transition-colors",
-                          selectedTeacherId === row.outsideTeacherId && "bg-[#fff86b]",
-                          row.outsideTeacherId && row.duplicateTeacherIds.includes(row.outsideTeacherId) && "ring-2 ring-inset ring-red-400",
-                        )}>
-                          <TeacherSelect
-                            ariaLabel={`${row.subjectLabel}场外监考`}
-                            computedTeacherId={row.outsideTeacherId}
-                            overrideValue={cellOverrideValue(override, "outside")}
-                            teachers={config.teachers}
-                            highlighted={Boolean(selectedTeacherId && selectedTeacherId === row.outsideTeacherId)}
-                            onTeacherSelect={setSelectedTeacherId}
-                            onChange={(value) => setCellTeacher(row.key, "outside", value)}
-                          />
-                        </td>
+                        {(() => {
+                          const target: InvigilationCellTarget = { rowKey: row.key, kind: "outside" };
+                          const selected = isCellSelected(target);
+                          return (
+                            <td
+                              className={cn(
+                                "cursor-pointer border-b border-r border-[#b6c7cf] px-2 py-2 text-center transition-colors hover:bg-gold-50/60",
+                                selectedTeacherId === row.outsideTeacherId && "bg-[#fff86b]",
+                                selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
+                                row.outsideTeacherId && row.duplicateTeacherIds.includes(row.outsideTeacherId) && "ring-2 ring-inset ring-red-400",
+                              )}
+                              onClick={() => toggleCellSelection(target)}
+                            >
+                              <div className="relative min-h-12 px-4 py-1">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`选择 ${row.subjectLabel}场外监考单元格`}
+                                  className="absolute left-0 top-0 h-3.5 w-3.5 accent-gold-500"
+                                  checked={selected}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={() => toggleCellSelection(target)}
+                                />
+                                <button
+                                  type="button"
+                                  className="pt-1 text-xs font-medium text-ink-800 hover:text-gold-700"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (row.outsideTeacherId) setSelectedTeacherId(row.outsideTeacherId);
+                                  }}
+                                >
+                                  {teacherMap.get(row.outsideTeacherId || "")?.name || "空缺"}
+                                </button>
+                              </div>
+                            </td>
+                          );
+                        })()}
                         {rowIndex === 0 && (
                           <td
                             rowSpan={invigilation.rows.length}
@@ -730,6 +777,12 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
             <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "按时长" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
           </div>
 
+          <div className="mb-3 rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
+            {selectedCells.length === 0 && "先勾选一个考场或场外监考单元格，再点击下方老师姓名填入。"}
+            {selectedCells.length === 1 && "已选 1 个单元格，点击下方老师姓名即可填入。"}
+            {selectedCells.length === 2 && (canSwapSelectedCells ? "已选 2 个已有安排，可点击“是否交换”。" : "已选 2 个单元格；只有两个单元格均已有老师时才能交换。")}
+          </div>
+
           <div className="mb-4 rounded-xl border border-ink-100 bg-ink-50/50 p-3">
             <div className="mb-2 text-xs font-medium text-ink-700">累计范围（勾选往期监考表）</div>
             {historicalArrangements.length ? (
@@ -770,7 +823,17 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
               <tbody>
                 {sortedTeacherStats.map((stat) => (
                   <tr key={stat.teacherId} className="border-b border-ink-50 last:border-0">
-                    <td className="px-3 py-2.5 font-medium text-ink-800">{stat.name}</td>
+                    <td className="px-3 py-2.5 font-medium text-ink-800">
+                      <button
+                        type="button"
+                        aria-label={`将 ${stat.name} 填入选中单元格`}
+                        className="text-left font-medium text-ink-800 enabled:hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-400"
+                        disabled={selectedCells.length !== 1}
+                        onClick={() => assignSelectedTeacher(stat.teacherId)}
+                      >
+                        {stat.name}
+                      </button>
+                    </td>
                     <td className="px-3 py-2.5 text-ink-600">{stat.subject}</td>
                     <td className="px-3 py-2.5 text-center tabular-nums text-ink-600">{stat.sessions}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{formatMinutes(stat.minutes)}</td>
