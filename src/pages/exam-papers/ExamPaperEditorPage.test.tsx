@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   listSettings: vi.fn(),
   getChapterTree: vi.fn(),
   getKnowledgeTree: vi.fn(),
-  generateExamPaperDocx: vi.fn(),
+  downloadExamPaperDocxVariants: vi.fn(),
   createLessonFromExamPaper: vi.fn(),
   getLessonCoursewareBySource: vi.fn(),
   listAnswerRecordsByStudents: vi.fn(),
@@ -105,7 +105,7 @@ vi.mock("@/services/analytics", () => ({
   },
 }));
 vi.mock("@/lib/docx", () => ({
-  generateExamPaperDocx: mocks.generateExamPaperDocx,
+  downloadExamPaperDocxVariants: mocks.downloadExamPaperDocxVariants,
 }));
 
 import ExamPaperEditorPage from "./ExamPaperEditorPage";
@@ -301,7 +301,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listSettings.mockResolvedValue([]);
     mocks.getChapterTree.mockResolvedValue(chapterTree);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
-    mocks.generateExamPaperDocx.mockResolvedValue(undefined);
+    mocks.downloadExamPaperDocxVariants.mockResolvedValue(undefined);
     mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
     mocks.getLessonCoursewareBySource.mockResolvedValue(null);
     mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
@@ -413,14 +413,21 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.queryByRole("button", { name: "收起信息栏" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    expect(screen.getByText("学生用卷（无答案）")).toBeInTheDocument();
+    expect(screen.getByText("教师用卷（含答案解析）")).toBeInTheDocument();
+    expect(screen.getByText("普通用卷（答案解析在最后）")).toBeInTheDocument();
+    expect(screen.getByText("纯答案版")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("学生用卷（无答案）"));
+    fireEvent.click(screen.getByRole("button", { name: "下载 2 个版本" }));
     await waitFor(() => {
-      expect(mocks.generateExamPaperDocx).toHaveBeenCalledOnce();
+      expect(mocks.downloadExamPaperDocxVariants).toHaveBeenCalledOnce();
     });
-    expect(mocks.generateExamPaperDocx.mock.calls[0][0]).toMatchObject({
+    expect(mocks.downloadExamPaperDocxVariants.mock.calls[0][0]).toMatchObject({
       id: paper.id,
       title: paper.title,
       contentBlocks: paper.contentBlocks,
     });
+    expect(mocks.downloadExamPaperDocxVariants.mock.calls[0][2]).toEqual(["teacher", "student"]);
   });
 
   it("creates an editable copy directly from preview", async () => {

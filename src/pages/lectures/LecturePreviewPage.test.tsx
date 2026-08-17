@@ -16,7 +16,7 @@ const basketMocks = vi.hoisted(() => ({
   removeQuestion: vi.fn(),
 }));
 const documentMocks = vi.hoisted(() => ({
-  generateLectureDocx: vi.fn(),
+  downloadLectureDocxVariants: vi.fn(),
 }));
 
 const teacher = {
@@ -33,7 +33,7 @@ vi.mock("@/services/lecture", () => ({
   lectureService: { getLecture: vi.fn(), updateLecture: vi.fn(), duplicateLecture: vi.fn() },
 }));
 vi.mock("@/lib/docx", () => ({
-  generateLectureDocx: documentMocks.generateLectureDocx,
+  downloadLectureDocxVariants: documentMocks.downloadLectureDocxVariants,
 }));
 vi.mock("@/services/class", () => ({
   classService: {
@@ -260,7 +260,7 @@ describe("LecturePreviewPage", () => {
     vi.mocked(analyticsService.batchSaveAnswerRecords).mockResolvedValue([]);
     vi.mocked(lectureService.updateLecture).mockResolvedValue(lecture);
     vi.mocked(lectureService.duplicateLecture).mockResolvedValue({ ...lecture, id: "lecture-copy" });
-    documentMocks.generateLectureDocx.mockResolvedValue(undefined);
+    documentMocks.downloadLectureDocxVariants.mockResolvedValue(undefined);
     vi.mocked(lessonCoursewareService.getCoursewareBySource).mockResolvedValue(null);
     vi.mocked(lessonCoursewareService.createFromLecture).mockResolvedValue({ id: "lesson-courseware-1" } as any);
     basketMocks.listBaskets.mockResolvedValue([]);
@@ -318,10 +318,18 @@ describe("LecturePreviewPage", () => {
 
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
     fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    expect(screen.getByText("学生用卷（无答案）")).toBeInTheDocument();
+    expect(screen.getByText("教师用卷（含答案解析）")).toBeInTheDocument();
+    expect(screen.getByText("普通用卷（答案解析在最后）")).toBeInTheDocument();
+    expect(screen.getByText("纯答案版")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("普通用卷（答案解析在最后）"));
+    fireEvent.click(screen.getByRole("button", { name: "下载 2 个版本" }));
     await waitFor(() => {
-      expect(documentMocks.generateLectureDocx).toHaveBeenCalledWith(lecture, {
-        [question.id]: question,
-      });
+      expect(documentMocks.downloadLectureDocxVariants).toHaveBeenCalledWith(
+        lecture,
+        { [question.id]: question },
+        ["teacher", "normal"],
+      );
     });
 
     fireEvent.click(screen.getByRole("button", { name: "创建副本" }));

@@ -12,6 +12,7 @@ vi.mock("file-saver", () => ({
 import {
   buildExamPaperDocxBlob,
   buildLectureDocxBlob,
+  downloadExamPaperDocxVariants,
   generateExamPaperDocx,
   generateQuestionsDocx,
 } from "@/lib/docx";
@@ -122,6 +123,82 @@ beforeEach(() => {
 });
 
 describe("generateExamPaperDocx", () => {
+  it("supports student, normal, and answer-only paper variants", async () => {
+    const multiplePaper: ExamPaper = {
+      ...structuredPaper,
+      layoutMode: "flat",
+      questions: [{
+        ...structuredPaper.questions[0],
+        type: "multiple",
+        answer: "AC",
+        analysis: "A、C 均满足条件。",
+      }],
+    };
+
+    const studentBlob = await buildExamPaperDocxBlob(
+      multiplePaper,
+      { [linkedQuestion.id]: linkedQuestion },
+      { mode: "student" },
+    );
+    const studentZip = await JSZip.loadAsync(await blobToArrayBuffer(studentBlob));
+    const studentXml = await studentZip.file("word/document.xml")!.async("string");
+    expect(studentXml).toContain("函数 f(x) 的定义域是？");
+    expect(studentXml).toContain("（多选）");
+    expect(studentXml).not.toContain("【答案】");
+    expect(studentXml).not.toContain("A、C 均满足条件。");
+
+    const normalBlob = await buildExamPaperDocxBlob(
+      multiplePaper,
+      { [linkedQuestion.id]: linkedQuestion },
+      { mode: "normal" },
+    );
+    const normalZip = await JSZip.loadAsync(await blobToArrayBuffer(normalBlob));
+    const normalXml = await normalZip.file("word/document.xml")!.async("string");
+    expect(normalXml).toContain("答案解析");
+    expect(normalXml).not.toContain("【答案】");
+    expect(normalXml.indexOf("答案解析")).toBeGreaterThan(normalXml.indexOf("函数 f(x) 的定义域是？"));
+    expect(normalXml.indexOf("A、C 均满足条件。")).toBeGreaterThan(normalXml.indexOf("答案解析"));
+
+    const answersBlob = await buildExamPaperDocxBlob(
+      multiplePaper,
+      { [linkedQuestion.id]: linkedQuestion },
+      { mode: "answers" },
+    );
+    const answersZip = await JSZip.loadAsync(await blobToArrayBuffer(answersBlob));
+    const answersXml = await answersZip.file("word/document.xml")!.async("string");
+    expect(answersXml).toContain("答案");
+    expect(answersXml).toContain("AC");
+    expect(answersXml).not.toContain("函数 f(x) 的定义域是？");
+    expect(answersXml).not.toContain("A、C 均满足条件。");
+  });
+
+  it("only marks multiple-choice questions in flat paper layout", async () => {
+    const groupedPaper: ExamPaper = {
+      ...structuredPaper,
+      layoutMode: "grouped",
+      questions: [{ ...structuredPaper.questions[0], type: "multiple" }],
+    };
+    const blob = await buildExamPaperDocxBlob(groupedPaper, {}, { mode: "student" });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml).not.toContain("（多选）");
+  });
+
+  it("bundles multiple selected paper variants into one zip download", async () => {
+    await downloadExamPaperDocxVariants(
+      structuredPaper,
+      { [linkedQuestion.id]: linkedQuestion },
+      ["student", "teacher"],
+    );
+
+    expect(saveAsMock).toHaveBeenCalledOnce();
+    expect(saveAsMock.mock.calls[0][1]).toBe("函数_测试试卷_下载版本.zip");
+    const archive = await JSZip.loadAsync(await blobToArrayBuffer(saveAsMock.mock.calls[0][0] as Blob));
+    expect(archive.file("函数_测试试卷_学生用卷.docx")).not.toBeNull();
+    expect(archive.file("函数_测试试卷_教师用卷.docx")).not.toBeNull();
+  });
+
   it("lays out short choice options evenly on one line", async () => {
     const paper: ExamPaper = {
       ...structuredPaper,
@@ -532,6 +609,81 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("例1");
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:sSup>");
+  });
+
+  it("supports lecture download modes and marks multiple-choice questions", async () => {
+    const lectureQuestion: Question = {
+      ...linkedQuestion,
+      type: "multiple",
+      stem: "下列结论正确的是？",
+      answer: "AC",
+      analysis: "逐项判断可得 A、C 正确。",
+    };
+    const lecture: Lecture = {
+      id: "lecture-modes",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      title: "多选讲义",
+      description: "",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期",
+      classIds: [],
+      studentIds: [],
+      sections: [{
+        id: "knowledge",
+        title: "知识块",
+        type: "knowledge",
+        content: "先复习概念。",
+        children: [{
+          id: "question",
+          title: "例题",
+          type: "question",
+          content: "",
+          questionId: lectureQuestion.id,
+          children: [],
+        }],
+      }],
+      version: 1,
+      status: "draft",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    const studentBlob = await buildLectureDocxBlob(
+      lecture,
+      { [lectureQuestion.id]: lectureQuestion },
+      { mode: "student" },
+    );
+    const studentZip = await JSZip.loadAsync(await blobToArrayBuffer(studentBlob));
+    const studentXml = await studentZip.file("word/document.xml")!.async("string");
+    expect(studentXml).toContain("（多选）");
+    expect(studentXml).toContain("下列结论正确的是？");
+    expect(studentXml).not.toContain("【答案】");
+
+    const normalBlob = await buildLectureDocxBlob(
+      lecture,
+      { [lectureQuestion.id]: lectureQuestion },
+      { mode: "normal" },
+    );
+    const normalZip = await JSZip.loadAsync(await blobToArrayBuffer(normalBlob));
+    const normalXml = await normalZip.file("word/document.xml")!.async("string");
+    expect(normalXml.indexOf("答案解析")).toBeGreaterThan(normalXml.indexOf("下列结论正确的是？"));
+    expect(normalXml).toContain("逐项判断可得 A、C 正确。");
+
+    const answersBlob = await buildLectureDocxBlob(
+      lecture,
+      { [lectureQuestion.id]: lectureQuestion },
+      { mode: "answers" },
+    );
+    const answersZip = await JSZip.loadAsync(await blobToArrayBuffer(answersBlob));
+    const answersXml = await answersZip.file("word/document.xml")!.async("string");
+    expect(answersXml).toContain("AC");
+    expect(answersXml).not.toContain("下列结论正确的是？");
+    expect(answersXml).not.toContain("先复习概念。");
+    expect(answersXml).not.toContain("逐项判断可得 A、C 正确。");
   });
 
   it("restores imported rich-text scripts in lecture downloads", async () => {

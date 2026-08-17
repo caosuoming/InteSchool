@@ -26,10 +26,14 @@ import {
   type PreviewSidebarVisibility,
 } from "@/components/editor/PreviewSidebarControls";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
+import { DocumentDownloadModeModal } from "@/components/resource/DocumentDownloadModeModal";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, LessonCourseware, Question, Student, TreeNode } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
-import { generateLectureDocx } from "@/lib/docx";
+import {
+  downloadLectureDocxVariants,
+  type DocumentDownloadMode,
+} from "@/lib/docx";
 
 type PaperSize = "A4" | "8K";
 
@@ -93,6 +97,8 @@ export default function LecturePreviewPage() {
   const [markingAllDone, setMarkingAllDone] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloadModes, setDownloadModes] = useState<DocumentDownloadMode[]>(["teacher"]);
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
   const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
   const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
@@ -297,8 +303,12 @@ export default function LecturePreviewPage() {
       for (const [questionId, question] of Object.entries(questions)) {
         if (question) availableQuestions[questionId] = question;
       }
-      await generateLectureDocx(lecture, availableQuestions);
-      toast.success("讲义已下载", "数学公式已优先转换为 MathType 格式");
+      await downloadLectureDocxVariants(lecture, availableQuestions, downloadModes);
+      setDownloadModalOpen(false);
+      toast.success(
+        downloadModes.length > 1 ? `已下载 ${downloadModes.length} 个讲义版本` : "讲义已下载",
+        "数学公式已优先转换为 MathType 格式",
+      );
     } catch (error) {
       toast.error("下载失败", error instanceof Error ? error.message : "无法生成讲义文档");
     } finally {
@@ -446,7 +456,7 @@ export default function LecturePreviewPage() {
                 创建副本
               </Button>
             )}
-            <Button variant="outline" onClick={handleDownload} loading={downloading}>
+            <Button variant="outline" onClick={() => setDownloadModalOpen(true)}>
               <Download className="w-4 h-4" />
               下载
             </Button>
@@ -462,6 +472,16 @@ export default function LecturePreviewPage() {
             </Button>
           </div>
         }
+      />
+
+      <DocumentDownloadModeModal
+        open={downloadModalOpen}
+        onClose={() => setDownloadModalOpen(false)}
+        selectedModes={downloadModes}
+        onSelectedModesChange={setDownloadModes}
+        onDownload={() => void handleDownload()}
+        loading={downloading}
+        resourceLabel="讲义"
       />
 
       <Card className="no-print p-4 mb-4">
