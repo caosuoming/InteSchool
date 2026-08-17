@@ -108,6 +108,10 @@ function formatMinutes(minutes: number): string {
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
 
+function arrangementDateKey(arrangement: ExamArrangement): string {
+  return arrangement.examDate || arrangement.createdAt;
+}
+
 function cellOverrideValue(
   override: ExamInvigilationSlotOverride | undefined,
   kind: "room" | "outside" | "patrol",
@@ -168,6 +172,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const [downloading, setDownloading] = useState(false);
   const [batchText, setBatchText] = useState("");
   const [statsSort, setStatsSort] = useState<"minutes" | "subject" | "name">("minutes");
+  const [historyArrangementIds, setHistoryArrangementIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!cohortKey) {
@@ -211,6 +216,10 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     setConfig(configForArrangement(selectedArrangement, teacherOptions));
   }, [selectedArrangement, teacherOptions]);
 
+  useEffect(() => {
+    setHistoryArrangementIds([]);
+  }, [selectedArrangement?.id]);
+
   const statistics = useMemo(
     () => selectedArrangement ? buildExamPrintRoomStatistics(selectedArrangement) : null,
     [selectedArrangement],
@@ -219,15 +228,48 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     () => selectedArrangement && config ? buildExamInvigilationTable(selectedArrangement, config) : null,
     [selectedArrangement, config],
   );
-  const teacherMap = useMemo(() => new Map((config?.teachers || []).map((teacher) => [teacher.id, teacher])), [config]);
-  const sortedTeacherStats = useMemo(() => {
+  const historicalArrangements = useMemo(() => {
+    if (!selectedArrangement) return [];
+    const currentDate = arrangementDateKey(selectedArrangement);
+    return arrangements
+      .filter((item) => (
+        item.id !== selectedArrangement.id
+        && Boolean(item.invigilation)
+        && arrangementDateKey(item) < currentDate
+      ))
+      .sort((left, right) => arrangementDateKey(right).localeCompare(arrangementDateKey(left)));
+  }, [arrangements, selectedArrangement]);
+
+  const cumulativeTeacherStats = useMemo(() => {
     if (!invigilation) return [];
-    return [...invigilation.teacherStats].sort((left, right) => {
-      if (statsSort === "minutes") return right.minutes - left.minutes || left.name.localeCompare(right.name, "zh-CN");
+    const selectedHistory = new Set(historyArrangementIds);
+    const historicalTables = historicalArrangements
+      .filter((arrangement) => selectedHistory.has(arrangement.id) && arrangement.invigilation)
+      .map((arrangement) => buildExamInvigilationTable(arrangement, arrangement.invigilation!));
+
+    return invigilation.teacherStats.map((stat) => {
+      let historicalMinutes = 0;
+      for (const table of historicalTables) {
+        const matched = table.teacherStats.find((item) => (
+          item.teacherId === stat.teacherId
+          || (item.name === stat.name && item.subject === stat.subject)
+        ));
+        historicalMinutes += matched?.minutes || 0;
+      }
+      return {
+        ...stat,
+        cumulativeMinutes: stat.minutes + historicalMinutes,
+      };
+    });
+  }, [historicalArrangements, historyArrangementIds, invigilation]);
+
+  const sortedTeacherStats = useMemo(() => {
+    return [...cumulativeTeacherStats].sort((left, right) => {
+      if (statsSort === "minutes") return right.cumulativeMinutes - left.cumulativeMinutes || left.name.localeCompare(right.name, "zh-CN");
       if (statsSort === "subject") return left.subject.localeCompare(right.subject, "zh-CN") || left.name.localeCompare(right.name, "zh-CN");
       return left.name.localeCompare(right.name, "zh-CN");
     });
-  }, [invigilation, statsSort]);
+  }, [cumulativeTeacherStats, statsSort]);
 
   const updateConfig = (mutate: (current: ExamInvigilationConfig) => void) => {
     setConfig((current) => {
@@ -354,7 +396,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           <EmptyState
             icon={<ClipboardCheck className="h-8 w-8" />}
             title="暂无监考表"
-            description="请先完成考场布置并生成考场方案，再配置任课教师和考试时间。"
+            description="请先完成考场布置并生成考场方案，再配置监考老师和考试时间。"
             action={<Link to="/my-exams/rooms"><Button variant="outline">前往考场布置<ArrowRight className="h-4 w-4" /></Button></Link>}
           />
         </Card>
@@ -368,7 +410,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       <Card className="mb-4">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-ink-900">文印室统计表</h2>
+            <h2 className="text-base font-semibold text-ink-900">表一、文印室统计表</h2>
             <p className="mt-1 text-sm text-ink-500">{selectedArrangement.name} · 按考场统计各科试卷份数，空白格表示该考场无需该科试卷。</p>
           </div>
           <Badge>{statistics.rooms.length} 个考场</Badge>
@@ -403,65 +445,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
         </div>
       </Card>
 
-      <div className="mb-4 grid gap-4 xl:grid-cols-2">
-        <Card>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-ink-900">任课教师名单</h2>
-              <p className="mt-1 text-xs text-ink-500">可批量添加，也可逐条修改；备课组长用于场外监考，领导用于巡回。</p>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => updateConfig((next) => next.teachers.push({ id: newTeacherId("teacher"), name: "", subject: selectedArrangement.subjects[0] || "" }))}>
-              <Plus className="h-4 w-4" />添加教师
-            </Button>
-          </div>
-          <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-            {config.teachers.map((teacher, index) => (
-              <div key={teacher.id} className="grid grid-cols-[minmax(90px,0.8fr)_minmax(100px,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-ink-100 p-2">
-                <select className="input-base py-1.5 text-sm" value={teacher.subject} onChange={(event) => updateConfig((next) => { next.teachers[index].subject = event.target.value; })}>
-                  {selectedArrangement.subjects.map((subject) => <option key={subject}>{subject}</option>)}
-                </select>
-                <input aria-label={`教师姓名 ${index + 1}`} className="input-base py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
-                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} />备课组长</label>
-                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isLeader = event.target.checked; })} />领导</label>
-                <button aria-label={`删除教师 ${teacher.name || index + 1}`} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600" onClick={() => updateConfig((next) => { next.teachers.splice(index, 1); })}><Trash2 className="h-4 w-4" /></button>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-            <Textarea label="批量添加" value={batchText} onChange={(event) => setBatchText(event.target.value)} placeholder={"每行：学科 姓名 [备课组长] [领导]\n例如：数学 张老师 备课组长"} className="min-h-20" />
-            <Button variant="outline" onClick={addBatchTeachers}><UsersRound className="h-4 w-4" />批量加入</Button>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="mb-4">
-            <h2 className="text-base font-semibold text-ink-900">考试时间配置</h2>
-            <p className="mt-1 text-xs text-ink-500">日期、上下午和具体时刻相同的学科会自动视为同时考试；时长用于监考统计。</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-sm">
-              <thead><tr className="border-b border-ink-100 text-left text-xs text-ink-500"><th className="px-2 py-2">学科</th><th className="px-2 py-2">日期</th><th className="px-2 py-2">时段</th><th className="px-2 py-2">时刻</th><th className="px-2 py-2">时长（分钟）</th></tr></thead>
-              <tbody>
-                {config.subjectTimes.map((item, index) => (
-                  <tr key={item.subject} className="border-b border-ink-50 last:border-0">
-                    <td className="px-2 py-2 font-medium text-ink-800">{item.subject}</td>
-                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试日期`} type="date" value={item.date} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].date = event.target.value; })} className="py-1.5" /></td>
-                    <td className="px-2 py-2"><Select aria-label={`${item.subject}考试时段`} value={item.period} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].period = event.target.value as "morning" | "afternoon"; })} options={[{ value: "morning", label: "上午" }, { value: "afternoon", label: "下午" }]} className="py-1.5" /></td>
-                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试时刻`} type="time" value={item.time} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].time = event.target.value; })} className="py-1.5" /></td>
-                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试时长`} type="number" min={1} value={item.durationMinutes} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].durationMinutes = Math.max(1, Number(event.target.value) || 1); })} className="py-1.5" /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="mb-4 space-y-4">
         <Card className="min-w-0">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-ink-900">监考表</h2>
+              <h2 className="text-base font-semibold text-ink-900">表二、监考表</h2>
               <p className="mt-1 text-xs text-ink-500">自动安排会随名单、时间和人工调整实时重算。下拉框可指定教师、留空或恢复自动安排。</p>
             </div>
             <Badge>{invigilation?.rows.length || 0} 个场次</Badge>
@@ -531,21 +519,138 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
         </Card>
 
         <Card>
-          <div className="mb-4 flex items-end justify-between gap-2">
-            <div><h2 className="text-base font-semibold text-ink-900">监考时长</h2><p className="mt-1 text-xs text-ink-500">实时统计全部监考、场外和巡回安排。</p></div>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-ink-900">监考时长</h2>
+              <p className="mt-1 text-xs text-ink-500">本次监考、场外和巡回均计入时长；可勾选往期监考表计算累计时长。</p>
+            </div>
             <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "按时长" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
           </div>
-          <div className="max-h-[620px] space-y-2 overflow-y-auto pr-1">
-            {sortedTeacherStats.map((stat) => (
-              <div key={stat.teacherId} className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 px-3 py-2">
-                <div className="min-w-0"><div className="truncate text-sm font-medium text-ink-800">{stat.name}</div><div className="text-[11px] text-ink-400">{stat.subject} · {stat.sessions} 场</div></div>
-                <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-ink-700">{formatMinutes(stat.minutes)}</div>
+
+          <div className="mb-4 rounded-xl border border-ink-100 bg-ink-50/50 p-3">
+            <div className="mb-2 text-xs font-medium text-ink-700">累计范围（勾选往期监考表）</div>
+            {historicalArrangements.length ? (
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                {historicalArrangements.map((arrangement) => (
+                  <label key={arrangement.id} className="flex items-center gap-2 text-xs text-ink-600">
+                    <input
+                      type="checkbox"
+                      aria-label={`累计 ${arrangement.name}`}
+                      checked={historyArrangementIds.includes(arrangement.id)}
+                      onChange={(event) => setHistoryArrangementIds((current) => (
+                        event.target.checked
+                          ? [...current, arrangement.id]
+                          : current.filter((id) => id !== arrangement.id)
+                      ))}
+                    />
+                    <span>{arrangement.name}{arrangement.examDate ? ` · ${arrangement.examDate}` : ""}</span>
+                  </label>
+                ))}
               </div>
-            ))}
-            {!sortedTeacherStats.length && <div className="py-10 text-center text-xs text-ink-400">暂无教师</div>}
+            ) : (
+              <div className="text-xs text-ink-400">暂无更早且已保存监考配置的考试。</div>
+            )}
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-ink-100">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="border-b border-ink-100 bg-ink-50 text-left text-xs text-ink-500">
+                  <th className="px-3 py-2.5">姓名</th>
+                  <th className="px-3 py-2.5">学科</th>
+                  <th className="px-3 py-2.5 text-center">本次场次</th>
+                  <th className="px-3 py-2.5 text-right">本次时长</th>
+                  <th className="px-3 py-2.5 text-right">累计时长</th>
+                  <th className="min-w-56 px-3 py-2.5">备注</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedTeacherStats.map((stat) => (
+                  <tr key={stat.teacherId} className="border-b border-ink-50 last:border-0">
+                    <td className="px-3 py-2.5 font-medium text-ink-800">{stat.name}</td>
+                    <td className="px-3 py-2.5 text-ink-600">{stat.subject}</td>
+                    <td className="px-3 py-2.5 text-center tabular-nums text-ink-600">{stat.sessions}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{formatMinutes(stat.minutes)}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-ink-900">{formatMinutes(stat.cumulativeMinutes)}</td>
+                    <td className="px-3 py-2">
+                      <Input
+                        aria-label={`${stat.name}监考备注`}
+                        value={config.teacherNotes?.[stat.teacherId] || ""}
+                        onChange={(event) => updateConfig((next) => {
+                          next.teacherNotes ||= {};
+                          if (event.target.value) next.teacherNotes[stat.teacherId] = event.target.value;
+                          else delete next.teacherNotes[stat.teacherId];
+                        })}
+                        placeholder="可手动填写"
+                        className="py-1.5 text-xs"
+                      />
+                    </td>
+                  </tr>
+                ))}
+                {!sortedTeacherStats.length && (
+                  <tr><td colSpan={6} className="py-10 text-center text-xs text-ink-400">暂无教师</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </Card>
       </div>
+
+      <div className="mb-4 grid gap-4 xl:grid-cols-2">
+        <Card>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-ink-900">配置一、监考老师名单</h2>
+              <p className="mt-1 text-xs text-ink-500">可批量添加，也可逐条修改；备课组长用于场外监考，领导用于巡回。</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => updateConfig((next) => next.teachers.push({ id: newTeacherId("teacher"), name: "", subject: selectedArrangement.subjects[0] || "" }))}>
+              <Plus className="h-4 w-4" />添加教师
+            </Button>
+          </div>
+          <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+            {config.teachers.map((teacher, index) => (
+              <div key={teacher.id} className="grid grid-cols-[minmax(90px,0.8fr)_minmax(100px,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-ink-100 p-2">
+                <select className="input-base py-1.5 text-sm" value={teacher.subject} onChange={(event) => updateConfig((next) => { next.teachers[index].subject = event.target.value; })}>
+                  {selectedArrangement.subjects.map((subject) => <option key={subject}>{subject}</option>)}
+                </select>
+                <input aria-label={`教师姓名 ${index + 1}`} className="input-base py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
+                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} />备课组长</label>
+                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isLeader = event.target.checked; })} />领导</label>
+                <button aria-label={`删除教师 ${teacher.name || index + 1}`} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600" onClick={() => updateConfig((next) => { next.teachers.splice(index, 1); if (next.teacherNotes) delete next.teacherNotes[teacher.id]; })}><Trash2 className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <Textarea label="批量添加" value={batchText} onChange={(event) => setBatchText(event.target.value)} placeholder={"每行：学科 姓名 [备课组长] [领导]\n例如：数学 张老师 备课组长"} className="min-h-20" />
+            <Button variant="outline" onClick={addBatchTeachers}><UsersRound className="h-4 w-4" />批量加入</Button>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-base font-semibold text-ink-900">配置二、考试时间配置</h2>
+            <p className="mt-1 text-xs text-ink-500">日期、上下午和具体时刻相同的学科会自动视为同时考试；时长用于监考统计。</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-sm">
+              <thead><tr className="border-b border-ink-100 text-left text-xs text-ink-500"><th className="px-2 py-2">学科</th><th className="px-2 py-2">日期</th><th className="px-2 py-2">时段</th><th className="px-2 py-2">时刻</th><th className="px-2 py-2">时长（分钟）</th></tr></thead>
+              <tbody>
+                {config.subjectTimes.map((item, index) => (
+                  <tr key={item.subject} className="border-b border-ink-50 last:border-0">
+                    <td className="px-2 py-2 font-medium text-ink-800">{item.subject}</td>
+                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试日期`} type="date" value={item.date} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].date = event.target.value; })} className="py-1.5" /></td>
+                    <td className="px-2 py-2"><Select aria-label={`${item.subject}考试时段`} value={item.period} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].period = event.target.value as "morning" | "afternoon"; })} options={[{ value: "morning", label: "上午" }, { value: "afternoon", label: "下午" }]} className="py-1.5" /></td>
+                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试时刻`} type="time" value={item.time} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].time = event.target.value; })} className="py-1.5" /></td>
+                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试时长`} type="number" min={1} value={item.durationMinutes} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].durationMinutes = Math.max(1, Number(event.target.value) || 1); })} className="py-1.5" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+
+
     </>
   );
 }

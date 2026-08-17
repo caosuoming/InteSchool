@@ -128,6 +128,10 @@ describe("exam arrangement service", () => {
             outsideTeacherId: "teacher-prep",
           },
         },
+        teacherNotes: {
+          "teacher-physics": "巡回另计 30 分钟",
+          missing: "不应保存",
+        },
       });
 
       expect(updated.invigilation?.teachers).toHaveLength(2);
@@ -137,6 +141,9 @@ describe("exam arrangement service", () => {
           roomTeacherIds: { "room-1": "teacher-physics" },
           outsideTeacherId: "teacher-prep",
         },
+      });
+      expect((appState.examArrangements as any[])[0].invigilation.teacherNotes).toEqual({
+        "teacher-physics": "巡回另计 30 分钟",
       });
       expect((await examArrangementService.listArrangements("school-1", "grad-2026"))[0].invigilation).toEqual(updated.invigilation);
     });

@@ -562,6 +562,8 @@ export interface ExamInvigilationConfig {
   teachers: ExamInvigilationTeacher[];
   subjectTimes: ExamSubjectExamTime[];
   overrides?: Record<string, ExamInvigilationSlotOverride>;
+  /** 监考时长统计表中的人工备注，按当前监考教师 ID 保存。 */
+  teacherNotes?: Record<string, string>;
 }
 
 export interface ExamRoomConfig {
