@@ -1,5 +1,22 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, type ComponentProps, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowLeft, Save, Send, Plus, Sparkles, FileText, BookOpen,
   Trash2, ShoppingBasket, Library, Files,
@@ -7,7 +24,7 @@ import {
   Type, ListOrdered, CheckCircle2, Edit3, Eye,
   UserCheck, Award, Clock, Presentation, FileBox,
   Lightbulb, Printer, LayoutTemplate, FileStack,
-  CheckSquare, Lock,
+  CheckSquare, GripVertical, Lock,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
@@ -56,7 +73,11 @@ import { inferScore } from "@/services/analytics";
 import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
 import { isDocumentStructureLocked } from "@/lib/document-resource";
 import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
-import { buildLectureEditorLayout } from "@/pages/lectures/lecture-editor-layout";
+import {
+  buildLectureEditorLayout,
+  findLectureEditorItem,
+  moveLectureEditorItem,
+} from "@/pages/lectures/lecture-editor-layout";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -110,6 +131,87 @@ function flattenLectureSections(sections: LectureSection[]): LectureSection[] {
 function findTreeNodesByIds(root: TreeNode, ids: Set<string>): TreeNode[] {
   const matches = root.id !== "root" && ids.has(root.id) ? [root] : [];
   return [...matches, ...root.children.flatMap((child) => findTreeNodesByIds(child, ids))];
+}
+
+const LECTURE_CONTENT_CONTAINER_PREFIX = "lecture-content-container:";
+const LECTURE_UNGROUPED_CONTAINER = "__ungrouped__";
+
+function lectureContentContainerId(chapterId: string | null): string {
+  return `${LECTURE_CONTENT_CONTAINER_PREFIX}${chapterId || LECTURE_UNGROUPED_CONTAINER}`;
+}
+
+function chapterIdFromLectureContentContainerId(id: string): string | null | undefined {
+  if (!id.startsWith(LECTURE_CONTENT_CONTAINER_PREFIX)) return undefined;
+  const value = id.slice(LECTURE_CONTENT_CONTAINER_PREFIX.length);
+  return value === LECTURE_UNGROUPED_CONTAINER ? null : value;
+}
+
+function SortableLectureSectionRow(props: ComponentProps<typeof LectureSectionEditorRow>) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.section.id, disabled: props.readOnly });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.55 : 1,
+        zIndex: isDragging ? 20 : "auto",
+        position: "relative",
+      }}
+      className={cn(isDragging && "rounded-lg shadow-lg ring-1 ring-gold-300")}
+    >
+      <LectureSectionEditorRow
+        {...props}
+        dragHandle={props.readOnly ? undefined : (
+          <button
+            ref={setActivatorNodeRef}
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0 cursor-grab rounded p-0.5 text-ink-300 transition-colors hover:bg-gold-50 hover:text-gold-600 active:cursor-grabbing"
+            title="拖拽移动内容"
+            aria-label={`拖拽移动：${props.section.title || "内容块"}`}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+      />
+    </div>
+  );
+}
+
+function LectureContentDropZone({
+  id,
+  children,
+  className,
+}: {
+  id: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "rounded-lg transition-colors",
+        isOver && "bg-gold-50/50 ring-1 ring-inset ring-gold-300",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 export default function LectureEditorPage() {
@@ -262,6 +364,14 @@ export default function LectureEditorPage() {
   const editorLayout = useMemo(
     () => buildLectureEditorLayout(sections, true),
     [sections],
+  );
+  const contentDragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
   const lectureQuestionList = useMemo(
     () => lectureQuestionIds.map((questionId) => lectureQuestions[questionId]).filter(Boolean),
@@ -1219,18 +1329,33 @@ export default function LectureEditorPage() {
     });
   };
 
-  const handleMoveChildSection = (parentId: string, idx: number, direction: "up" | "down") => {
-    setSections((prev) =>
-      prev.map((section) => {
-        if (section.id !== parentId) return section;
-        const target = direction === "up" ? idx - 1 : idx + 1;
-        if (target < 0 || target >= section.children.length) return section;
-        const children = [...section.children];
-        [children[idx], children[target]] = [children[target], children[idx]];
-        return { ...section, children };
-      }),
-    );
-  };
+  const handleMoveContent = useCallback((sectionId: string, containerId: string | null, targetIndex: number) => {
+    setSections((previous) => moveLectureEditorItem(previous, sectionId, containerId, targetIndex));
+  }, []);
+
+  const handleContentDragEnd = useCallback((event: DragEndEvent) => {
+    const overId = event.over?.id ? String(event.over.id) : null;
+    if (!overId) return;
+
+    const activeId = String(event.active.id);
+    const source = findLectureEditorItem(editorLayout, activeId);
+    if (!source) return;
+
+    const droppedContainerId = chapterIdFromLectureContentContainerId(overId);
+    if (droppedContainerId !== undefined) {
+      const targetLength = droppedContainerId === null
+        ? editorLayout.ungrouped.length
+        : editorLayout.chapters.find((group) => group.chapter.id === droppedContainerId)?.items.length;
+      if (targetLength === undefined) return;
+      handleMoveContent(activeId, droppedContainerId, targetLength);
+      return;
+    }
+
+    const target = findLectureEditorItem(editorLayout, overId);
+    if (!target) return;
+    if (source.containerId === target.containerId && source.index === target.index) return;
+    handleMoveContent(activeId, target.containerId, target.index);
+  }, [editorLayout, handleMoveContent]);
 
   const handleUpdateColumnTitle = (sectionId: string, nextTitle: string) => {
     setSections((previous) => previous.map((section) =>
@@ -2148,6 +2273,11 @@ export default function LectureEditorPage() {
                   )}
                 </div>
               ) : (
+                <DndContext
+                  sensors={contentDragSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleContentDragEnd}
+                >
                 <div className="space-y-5">
                   {editorLayout.chapters.map(({ chapter: section, rootIndex: sectionIndex, items }) => {
                     const selected = selectedChapterId === section.id;
@@ -2261,150 +2391,150 @@ export default function LectureEditorPage() {
                           </Button>
                         </div>}
 
-                        {items.length === 0 ? (
-                          <button
-                            type="button"
-                            disabled={isStructureLocked}
-                            onClick={() => {
-                              setSelectedChapterId(section.id);
-                              setAddSource("bank");
-                            }}
-                            className="w-full rounded-lg border border-dashed border-ink-200 py-8 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700 disabled:cursor-default disabled:hover:border-ink-200 disabled:hover:text-ink-400"
+                        <LectureContentDropZone id={lectureContentContainerId(section.id)}>
+                          <SortableContext
+                            items={items.map((item) => item.section.id)}
+                            strategy={verticalListSortingStrategy}
                           >
-                            {isStructureLocked ? "当前栏目暂无内容" : "当前栏目暂无内容，点击添加题目"}
-                          </button>
-                        ) : (
-                          <div className="space-y-3">
-                            {items.map((layoutItem, itemIndex) => {
-                              const child = layoutItem.section;
-                              const questionIndex = items
-                                .slice(0, itemIndex + 1)
-                                .filter((item) => item.section.type === "question").length - 1;
-                              const question = child.questionId ? lectureQuestions[child.questionId] : undefined;
-                              const isNestedChild = layoutItem.storage === "child";
-                              const rootIndex = isNestedChild ? -1 : layoutItem.rootIndex;
-                              const canMoveRootUp = !isNestedChild
-                                && rootIndex > sectionIndex + 1
-                                && sections[rootIndex - 1]?.type !== "chapter";
-                              const canMoveRootDown = !isNestedChild
-                                && rootIndex < sections.length - 1
-                                && sections[rootIndex + 1]?.type !== "chapter";
-                              return (
-                                <div key={child.id} className="space-y-1">
-                                  <LectureSectionEditorRow
-                                    section={child}
-                                    index={Math.max(0, questionIndex)}
-                                    question={question}
-                                    answered={Boolean(child.questionId && answeredQuestionIds.has(child.questionId))}
-                                    canMoveUp={isNestedChild ? layoutItem.childIndex > 0 : canMoveRootUp}
-                                    canMoveDown={isNestedChild
-                                      ? layoutItem.childIndex < section.children.length - 1
-                                      : canMoveRootDown}
-                                    onLabelChange={(label) => handleUpdateSectionLabel(
-                                      child.id,
-                                      label,
-                                      isNestedChild ? section.id : undefined,
-                                    )}
-                                    onMoveUp={() => {
-                                      if (isNestedChild) {
-                                        handleMoveChildSection(section.id, layoutItem.childIndex, "up");
-                                      } else {
-                                        handleMoveSection(layoutItem.rootIndex, "up");
-                                      }
-                                    }}
-                                    onMoveDown={() => {
-                                      if (isNestedChild) {
-                                        handleMoveChildSection(section.id, layoutItem.childIndex, "down");
-                                      } else {
-                                        handleMoveSection(layoutItem.rootIndex, "down");
-                                      }
-                                    }}
-                                    onEditSection={() => {
-                                      setEditingSection(child);
-                                      setSectionTitle(child.title);
-                                      setSectionContent(child.content);
-                                      setSectionLabel(child.customLabel || "");
-                                    }}
-                                    onReplaceQuestion={question ? () => {
-                                      setReplacingQuestion({
-                                        sectionId: child.id,
-                                        parentId: isNestedChild ? section.id : undefined,
-                                      });
-                                      setSelectedQuestionIds([]);
-                                      setAddSource("bank");
-                                    } : undefined}
-                                    onRemove={() => handleRemoveSection(
-                                      child.id,
-                                      isNestedChild ? section.id : undefined,
-                                    )}
-                                    readOnly={isStructureLocked}
-                                  />
-                                  {prepTaskId && (
-                                    <div className="flex justify-end">
-                                      <ResourceCommentButton
-                                        taskId={prepTaskId}
-                                        targetId={child.id}
-                                        targetLabel={child.title}
-                                        password={prepPassword || undefined}
-                                        comments={prepComments}
-                                        onCommentsChange={setPrepComments}
+                            {items.length === 0 ? (
+                              <button
+                                type="button"
+                                disabled={isStructureLocked}
+                                onClick={() => {
+                                  setSelectedChapterId(section.id);
+                                  setAddSource("bank");
+                                }}
+                                className="w-full rounded-lg border border-dashed border-ink-200 py-8 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700 disabled:cursor-default disabled:hover:border-ink-200 disabled:hover:text-ink-400"
+                              >
+                                {isStructureLocked ? "当前栏目暂无内容" : "当前栏目暂无内容，可拖拽内容到此处或点击添加题目"}
+                              </button>
+                            ) : (
+                              <div className="space-y-3">
+                                {items.map((layoutItem, itemIndex) => {
+                                  const child = layoutItem.section;
+                                  const questionIndex = items
+                                    .slice(0, itemIndex + 1)
+                                    .filter((item) => item.section.type === "question").length - 1;
+                                  const question = child.questionId ? lectureQuestions[child.questionId] : undefined;
+                                  const isNestedChild = layoutItem.storage === "child";
+                                  return (
+                                    <div key={child.id} className="space-y-1">
+                                      <SortableLectureSectionRow
+                                        section={child}
+                                        index={Math.max(0, questionIndex)}
+                                        question={question}
+                                        answered={Boolean(child.questionId && answeredQuestionIds.has(child.questionId))}
+                                        canMoveUp={itemIndex > 0}
+                                        canMoveDown={itemIndex < items.length - 1}
+                                        onLabelChange={(label) => handleUpdateSectionLabel(
+                                          child.id,
+                                          label,
+                                          isNestedChild ? section.id : undefined,
+                                        )}
+                                        onMoveUp={() => handleMoveContent(child.id, section.id, itemIndex - 1)}
+                                        onMoveDown={() => handleMoveContent(child.id, section.id, itemIndex + 1)}
+                                        onEditSection={() => {
+                                          setEditingSection(child);
+                                          setSectionTitle(child.title);
+                                          setSectionContent(child.content);
+                                          setSectionLabel(child.customLabel || "");
+                                        }}
+                                        onReplaceQuestion={question ? () => {
+                                          setReplacingQuestion({
+                                            sectionId: child.id,
+                                            parentId: isNestedChild ? section.id : undefined,
+                                          });
+                                          setSelectedQuestionIds([]);
+                                          setAddSource("bank");
+                                        } : undefined}
+                                        onRemove={() => handleRemoveSection(
+                                          child.id,
+                                          isNestedChild ? section.id : undefined,
+                                        )}
+                                        readOnly={isStructureLocked}
                                       />
+                                      {prepTaskId && (
+                                        <div className="flex justify-end">
+                                          <ResourceCommentButton
+                                            taskId={prepTaskId}
+                                            targetId={child.id}
+                                            targetLabel={child.title}
+                                            password={prepPassword || undefined}
+                                            comments={prepComments}
+                                            onCommentsChange={setPrepComments}
+                                          />
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </SortableContext>
+                        </LectureContentDropZone>
                       </section>
                     );
                   })}
 
-                  {editorLayout.ungrouped.length > 0 && (
+                  {(editorLayout.ungrouped.length > 0 || !isStructureLocked) && (
                     <section className="rounded-xl border border-ink-100 bg-paper p-3">
                       <div className="mb-3 flex items-center gap-2 border-b border-ink-100 pb-3">
                         <FileText className="w-4 h-4 text-ink-500" />
                         <h2 className="font-serif font-bold text-ink-900">未归入栏目内容</h2>
                       </div>
-                      <div className="space-y-3">
-                        {editorLayout.ungrouped.map((layoutItem, itemIndex) => {
-                          const section = layoutItem.section;
-                          const questionIndex = editorLayout.ungrouped
-                            .slice(0, itemIndex + 1)
-                            .filter((item) => item.section.type === "question").length - 1;
-                          const question = section.questionId ? lectureQuestions[section.questionId] : undefined;
-                          return (
-                            <LectureSectionEditorRow
-                              key={section.id}
-                              section={section}
-                              index={Math.max(0, questionIndex)}
-                              question={question}
-                              answered={Boolean(section.questionId && answeredQuestionIds.has(section.questionId))}
-                              canMoveUp={itemIndex > 0}
-                              canMoveDown={itemIndex < editorLayout.ungrouped.length - 1}
-                              onLabelChange={(label) => handleUpdateSectionLabel(section.id, label)}
-                              onMoveUp={() => handleMoveSection(layoutItem.rootIndex, "up")}
-                              onMoveDown={() => handleMoveSection(layoutItem.rootIndex, "down")}
-                              onEditSection={() => {
-                                setEditingSection(section);
-                                setSectionTitle(section.title);
-                                setSectionContent(section.content);
-                                setSectionLabel(section.customLabel || "");
-                              }}
-                              onReplaceQuestion={question ? () => {
-                                setReplacingQuestion({ sectionId: section.id });
-                                setSelectedQuestionIds([]);
-                                setAddSource("bank");
-                              } : undefined}
-                              onRemove={() => handleRemoveSection(section.id)}
-                              readOnly={isStructureLocked}
-                            />
-                          );
-                        })}
-                      </div>
+                      <LectureContentDropZone id={lectureContentContainerId(null)}>
+                        <SortableContext
+                          items={editorLayout.ungrouped.map((item) => item.section.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {editorLayout.ungrouped.length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-ink-200 py-6 text-center text-xs text-ink-400">
+                              可将栏目中的题目或知识块拖拽到这里
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {editorLayout.ungrouped.map((layoutItem, itemIndex) => {
+                                const section = layoutItem.section;
+                                const questionIndex = editorLayout.ungrouped
+                                  .slice(0, itemIndex + 1)
+                                  .filter((item) => item.section.type === "question").length - 1;
+                                const question = section.questionId ? lectureQuestions[section.questionId] : undefined;
+                                return (
+                                  <SortableLectureSectionRow
+                                    key={section.id}
+                                    section={section}
+                                    index={Math.max(0, questionIndex)}
+                                    question={question}
+                                    answered={Boolean(section.questionId && answeredQuestionIds.has(section.questionId))}
+                                    canMoveUp={itemIndex > 0}
+                                    canMoveDown={itemIndex < editorLayout.ungrouped.length - 1}
+                                    onLabelChange={(label) => handleUpdateSectionLabel(section.id, label)}
+                                    onMoveUp={() => handleMoveContent(section.id, null, itemIndex - 1)}
+                                    onMoveDown={() => handleMoveContent(section.id, null, itemIndex + 1)}
+                                    onEditSection={() => {
+                                      setEditingSection(section);
+                                      setSectionTitle(section.title);
+                                      setSectionContent(section.content);
+                                      setSectionLabel(section.customLabel || "");
+                                    }}
+                                    onReplaceQuestion={question ? () => {
+                                      setReplacingQuestion({ sectionId: section.id });
+                                      setSelectedQuestionIds([]);
+                                      setAddSource("bank");
+                                    } : undefined}
+                                    onRemove={() => handleRemoveSection(section.id)}
+                                    readOnly={isStructureLocked}
+                                  />
+                                );
+                              })}
+                            </div>
+                          )}
+                        </SortableContext>
+                      </LectureContentDropZone>
                     </section>
                   )}
                 </div>
+                </DndContext>
               )}
             </Card>
 
