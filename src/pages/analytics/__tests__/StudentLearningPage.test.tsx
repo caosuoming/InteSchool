@@ -24,6 +24,7 @@ vi.mock("@/services/settings", () => ({
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     listChapters: vi.fn(),
+    listKnowledgePoints: vi.fn(),
   },
 }));
 
@@ -67,7 +68,22 @@ describe("StudentLearningPage", () => {
       { id: "chapter-1", schoolId: "school-1", parentId: "book-1", name: "集合章节", order: 1, level: 1 },
       { id: "book-2", schoolId: "school-1", parentId: null, name: "苏教必修第二册", order: 2, level: 0 },
     ]);
+    vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([
+      { id: "point-root", schoolId: "school-1", parentId: null, name: "集合", order: 1, level: 0 },
+      { id: "point-1", schoolId: "school-1", parentId: "point-root", name: "集合的概念", order: 1, level: 1 },
+    ]);
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([
+      {
+        knowledgePointId: "point-root",
+        knowledgePointName: "集合",
+        knowledgePointPath: ["集合"],
+        totalAttempts: 0,
+        correctCount: 0,
+        partialCount: 0,
+        wrongCount: 0,
+        correctRate: 0,
+        masteryLevel: "untrained",
+      },
       {
         knowledgePointId: "point-1",
         knowledgePointName: "集合的概念",
@@ -86,7 +102,7 @@ describe("StudentLearningPage", () => {
     vi.mocked(analyticsService.getClassAverageMastery).mockResolvedValue([]);
   });
 
-  it("supports compact knowledge paths and selectable collapsible chapter ordering", async () => {
+  it("supports collapsible chapter and knowledge trees with persistent global placement", async () => {
     render(<StudentLearningPage />);
 
     expect(screen.getByRole("separator", { name: "调整左侧列表宽度" })).toBeInTheDocument();
@@ -112,11 +128,14 @@ describe("StudentLearningPage", () => {
       .toBeLessThan(chapterRows.findIndex((text) => text.includes("苏教必修第一册")));
 
     fireEvent.click(screen.getByRole("tab", { name: /知识点训练与掌握情况/ }));
-    expect(screen.queryByRole("button", { name: "显示知识点的父节点" })).not.toBeInTheDocument();
-    const compactKnowledgePoint = await screen.findByTitle("集合\\集合的概念");
-    expect(compactKnowledgePoint).toHaveTextContent("...\\集合的概念");
+    expect(await screen.findByRole("button", { name: "折叠知识点 集合" })).toBeInTheDocument();
+    expect(screen.getByTitle("集合\\集合的概念")).toHaveTextContent("集合的概念");
+    fireEvent.click(screen.getByRole("button", { name: "折叠知识点 集合" }));
+    expect(screen.queryByText("集合的概念")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开知识点 集合" }));
+    expect(screen.getByText("集合的概念")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择知识点 ...\\集合的概念" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择知识点 集合的概念" }));
     expect(screen.getByRole("toolbar", { name: "知识点排序操作" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "置顶" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "正常" })).toBeInTheDocument();
@@ -124,6 +143,8 @@ describe("StudentLearningPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "置顶" }));
     expect(screen.queryByRole("toolbar", { name: "知识点排序操作" })).not.toBeInTheDocument();
+    expect(localStorage.getItem("inteschool:student-learning:placements:school-1:teacher-1"))
+      .toContain('"point-1":"top"');
     expect(classService.listMyClasses).toHaveBeenCalledWith("school-1", "teacher-1");
   });
 });

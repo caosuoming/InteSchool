@@ -84,23 +84,18 @@ describe("buildChapterMastery", () => {
     expect(mastery.every((item) => item.masteryLevel === "untrained")).toBe(true);
   });
 
-  it("cascades parent placement to descendants while preserving collapsible tree order", () => {
+  it("moves a selected node globally while preserving its attached subtree", () => {
     const mastery = buildChapterMastery([
       ...chapters,
       { id: "chapter-second", schoolId: "school-1", parentId: null, name: "必修第二章", order: 2, level: 0 },
     ], []);
 
     const placements = applyChapterPlacement(
-      mastery,
       {},
       new Set(["chapter-root"]),
       "bottom",
     );
-    expect(placements).toMatchObject({
-      "chapter-root": "bottom",
-      "chapter-a": "bottom",
-      "chapter-b": "bottom",
-    });
+    expect(placements).toEqual({ "chapter-root": "bottom" });
     expect(orderVisibleChapterMastery(mastery, placements, new Set()).map((item) => item.chapterId)).toEqual([
       "chapter-second",
       "chapter-root",
@@ -110,6 +105,30 @@ describe("buildChapterMastery", () => {
     expect(orderVisibleChapterMastery(mastery, placements, new Set(["chapter-root"])).map((item) => item.chapterId)).toEqual([
       "chapter-second",
       "chapter-root",
+    ]);
+  });
+
+  it("returns a detached child to its parent when restored to normal", () => {
+    const mastery = buildChapterMastery([
+      ...chapters,
+      { id: "chapter-second", schoolId: "school-1", parentId: null, name: "必修第二章", order: 2, level: 0 },
+    ], []);
+
+    const bottom = applyChapterPlacement({}, new Set(["chapter-a"]), "bottom");
+    expect(orderVisibleChapterMastery(mastery, bottom, new Set()).map((item) => item.chapterId)).toEqual([
+      "chapter-root",
+      "chapter-b",
+      "chapter-second",
+      "chapter-a",
+    ]);
+
+    const restored = applyChapterPlacement(bottom, new Set(["chapter-a"]), "normal");
+    expect(restored).toEqual({});
+    expect(orderVisibleChapterMastery(mastery, restored, new Set()).map((item) => item.chapterId)).toEqual([
+      "chapter-root",
+      "chapter-a",
+      "chapter-b",
+      "chapter-second",
     ]);
   });
 });

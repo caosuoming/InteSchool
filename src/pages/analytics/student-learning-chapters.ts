@@ -1,12 +1,19 @@
 import type { StudentAnswerDetail } from "@/services/analytics";
 import type { Chapter } from "@/types";
+import {
+  applyLearningTreePlacement,
+  orderVisibleLearningTree,
+  type LearningTreePlacement,
+} from "./student-learning-tree";
 
 export interface ChapterMastery {
+  id: string;
   chapterId: string;
   chapterName: string;
   parentId: string | null;
   chapterPath: string[];
   level: number;
+  order: number;
   totalAttempts: number;
   correctCount: number;
   partialCount: number;
@@ -15,13 +22,7 @@ export interface ChapterMastery {
   masteryLevel: "mastered" | "basic" | "weak" | "untrained";
 }
 
-export type ChapterPlacement = "top" | "normal" | "bottom";
-
-const placementOrder: Record<ChapterPlacement, number> = {
-  top: 0,
-  normal: 1,
-  bottom: 2,
-};
+export type ChapterPlacement = LearningTreePlacement;
 
 interface ChapterTreeEntry {
   chapter: Chapter;
@@ -100,11 +101,13 @@ export function buildChapterMastery(
           : "weak";
 
     return {
+      id: chapter.id,
       chapterId: chapter.id,
       chapterName: chapter.name,
       parentId: chapter.parentId,
       chapterPath: path,
       level: chapter.level,
+      order: chapter.order,
       totalAttempts: total,
       correctCount: correct,
       partialCount: partial,
@@ -115,42 +118,12 @@ export function buildChapterMastery(
   });
 }
 
-export function chapterSubtreeIds(
-  mastery: ChapterMastery[],
-  chapterId: string,
-): Set<string> {
-  const childrenByParent = new Map<string, string[]>();
-  for (const item of mastery) {
-    if (!item.parentId) continue;
-    const children = childrenByParent.get(item.parentId) ?? [];
-    children.push(item.chapterId);
-    childrenByParent.set(item.parentId, children);
-  }
-
-  const subtree = new Set<string>();
-  const pending = [chapterId];
-  while (pending.length > 0) {
-    const current = pending.pop()!;
-    if (subtree.has(current)) continue;
-    subtree.add(current);
-    pending.push(...(childrenByParent.get(current) ?? []));
-  }
-  return subtree;
-}
-
 export function applyChapterPlacement(
-  mastery: ChapterMastery[],
   placements: Readonly<Record<string, ChapterPlacement>>,
   selectedChapterIds: ReadonlySet<string>,
   placement: ChapterPlacement,
 ): Record<string, ChapterPlacement> {
-  const next = { ...placements };
-  for (const chapterId of selectedChapterIds) {
-    for (const affectedId of chapterSubtreeIds(mastery, chapterId)) {
-      next[affectedId] = placement;
-    }
-  }
-  return next;
+  return applyLearningTreePlacement(placements, selectedChapterIds, placement);
 }
 
 export function orderVisibleChapterMastery(
@@ -158,53 +131,5 @@ export function orderVisibleChapterMastery(
   placements: Readonly<Record<string, ChapterPlacement>>,
   collapsedChapterIds: ReadonlySet<string>,
 ): ChapterMastery[] {
-  const itemById = new Map(mastery.map((item) => [item.chapterId, item] as const));
-  const originalIndex = new Map(mastery.map((item, index) => [item.chapterId, index] as const));
-  const childrenByParent = new Map<string | null, ChapterMastery[]>();
-
-  for (const item of mastery) {
-    const effectiveParent = item.parentId && itemById.has(item.parentId) ? item.parentId : null;
-    const siblings = childrenByParent.get(effectiveParent) ?? [];
-    siblings.push(item);
-    childrenByParent.set(effectiveParent, siblings);
-  }
-
-  const sortSiblings = (siblings: ChapterMastery[]) => siblings.sort((a, b) => {
-    const aPlacement = placements[a.chapterId] ?? "normal";
-    const bPlacement = placements[b.chapterId] ?? "normal";
-    if (aPlacement !== bPlacement) {
-      return placementOrder[aPlacement] - placementOrder[bPlacement];
-    }
-    return (originalIndex.get(a.chapterId) ?? 0) - (originalIndex.get(b.chapterId) ?? 0);
-  });
-
-  const ordered: ChapterMastery[] = [];
-  const visited = new Set<string>();
-  const reachableFromRoots = new Set<string>();
-  const markReachable = (item: ChapterMastery) => {
-    if (reachableFromRoots.has(item.chapterId)) return;
-    reachableFromRoots.add(item.chapterId);
-    for (const child of childrenByParent.get(item.chapterId) ?? []) markReachable(child);
-  };
-  const visit = (item: ChapterMastery) => {
-    if (visited.has(item.chapterId)) return;
-    visited.add(item.chapterId);
-    ordered.push(item);
-    if (collapsedChapterIds.has(item.chapterId)) return;
-    for (const child of sortSiblings([...(childrenByParent.get(item.chapterId) ?? [])])) {
-      visit(child);
-    }
-  };
-
-  const roots = sortSiblings([...(childrenByParent.get(null) ?? [])]);
-  for (const root of roots) markReachable(root);
-  for (const root of roots) visit(root);
-  // Cyclic legacy data can have no root. Keep any remaining rows visible once.
-  for (const item of mastery) {
-    if (reachableFromRoots.has(item.chapterId)) continue;
-    markReachable(item);
-    visit(item);
-  }
-
-  return ordered;
+  return orderVisibleLearningTree(mastery, placements, collapsedChapterIds);
 }
