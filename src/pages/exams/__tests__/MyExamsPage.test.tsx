@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyExamsPage from "@/pages/exams/MyExamsPage";
@@ -189,5 +190,97 @@ describe("MyExamsPage", () => {
     expect(screen.getByRole("heading", { name: "考试时间配置" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "监考表" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "监考时长" })).toBeInTheDocument();
+  });
+
+  it("assigns teachers by selecting cells and can swap two existing assignments", async () => {
+    const user = userEvent.setup();
+    const arrangement: ExamArrangement = {
+      id: "arrangement-invigilation-1",
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      cohortKey: cohort.key,
+      cohortLabel: cohort.label,
+      name: "高三期中考试",
+      examDate: "2026-10-20",
+      mode: "combination",
+      subjectSetupMode: "selection",
+      subjects: ["数学"],
+      separateSubjects: [],
+      rooms: [
+        { id: "room-1", name: "1考场", number: "1考场", location: "4107", capacity: 40 },
+        { id: "room-2", name: "2考场", number: "2考场", location: "4108", capacity: 40 },
+      ],
+      classRules: [],
+      studentSubjects: [
+        { studentId: "student-1", subjects: ["数学"] },
+        { studentId: "student-2", subjects: ["数学"] },
+      ],
+      assignments: [
+        {
+          id: "combined:student-1",
+          studentId: "student-1",
+          studentName: "学生甲",
+          studentNo: "001",
+          classId: "class-1",
+          className: "高三（1）班",
+          subjectLabel: "数学",
+          sessionKey: "combined",
+          roomId: "room-1",
+          roomName: "1考场",
+          roomNumber: "1考场",
+          roomLocation: "4107",
+          seatNo: 1,
+          admissionNo: "20261020010001",
+        },
+        {
+          id: "combined:student-2",
+          studentId: "student-2",
+          studentName: "学生乙",
+          studentNo: "002",
+          classId: "class-1",
+          className: "高三（1）班",
+          subjectLabel: "数学",
+          sessionKey: "combined",
+          roomId: "room-2",
+          roomName: "2考场",
+          roomNumber: "2考场",
+          roomLocation: "4108",
+          seatNo: 1,
+          admissionNo: "20261020020001",
+        },
+      ],
+      invigilation: {
+        teachers: [
+          { id: "invigilator-1", name: "张老师", subject: "数学" },
+          { id: "invigilator-2", name: "李老师", subject: "数学" },
+        ],
+        subjectTimes: [{ subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 }],
+        overrides: {},
+      },
+      createdAt: "2026-08-16T00:00:00.000Z",
+      updatedAt: "2026-08-16T00:00:00.000Z",
+    };
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([arrangement]);
+
+    render(
+      <MemoryRouter initialEntries={[`/my-exams/invigilation?cohort=${cohort.key}`]}>
+        <MyExamsPage section="invigilation" />
+      </MemoryRouter>,
+    );
+
+    const roomOne = await screen.findByRole("checkbox", { name: "选择 数学 1考场监考单元格" });
+    expect(screen.queryByRole("combobox", { name: "数学 1考场监考教师" })).not.toBeInTheDocument();
+
+    await user.click(roomOne);
+    await user.click(screen.getByRole("button", { name: "将 李老师 填入选中单元格" }));
+    expect(screen.getByRole("checkbox", { name: "选择 数学 1考场监考单元格" }).closest("td")).toHaveTextContent("李老师");
+    expect(screen.getByRole("checkbox", { name: "选择 数学 2考场监考单元格" }).closest("td")).toHaveTextContent("张老师");
+
+    await user.click(screen.getByRole("checkbox", { name: "选择 数学 1考场监考单元格" }));
+    await user.click(screen.getByRole("checkbox", { name: "选择 数学 2考场监考单元格" }));
+    await user.click(screen.getByRole("button", { name: "是否交换" }));
+
+    expect(screen.getByRole("checkbox", { name: "选择 数学 1考场监考单元格" }).closest("td")).toHaveTextContent("张老师");
+    expect(screen.getByRole("checkbox", { name: "选择 数学 2考场监考单元格" }).closest("td")).toHaveTextContent("李老师");
   });
 });

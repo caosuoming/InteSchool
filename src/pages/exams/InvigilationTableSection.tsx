@@ -7,7 +7,6 @@ import { toast } from "@/stores/ui";
 import type {
   ExamArrangement,
   ExamInvigilationConfig,
-  ExamInvigilationSlotOverride,
   ExamInvigilationTeacher,
   GradeCohort,
   GradeTeacherOption,
@@ -108,54 +107,35 @@ function formatMinutes(minutes: number): string {
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
 
-function cellOverrideValue(
-  override: ExamInvigilationSlotOverride | undefined,
-  kind: "room" | "outside" | "patrol",
-  roomId?: string,
-): string | null | undefined {
-  if (!override) return undefined;
-  if (kind === "room") {
-    if (!roomId || !Object.prototype.hasOwnProperty.call(override.roomTeacherIds, roomId)) return undefined;
-    return override.roomTeacherIds[roomId];
-  }
-  const key = kind === "outside" ? "outsideTeacherId" : "patrolTeacherId";
-  if (!Object.prototype.hasOwnProperty.call(override, key)) return undefined;
-  return override[key];
+type InvigilationCellKind = "room" | "outside" | "patrol";
+
+interface InvigilationCellTarget {
+  rowKey: string;
+  kind: InvigilationCellKind;
+  roomId?: string;
 }
 
-function TeacherSelect({
-  computedTeacherId,
-  overrideValue,
-  teachers,
-  disabled,
-  onChange,
-  ariaLabel,
-}: {
-  computedTeacherId: string | null;
-  overrideValue: string | null | undefined;
-  teachers: ExamInvigilationTeacher[];
-  disabled?: boolean;
-  onChange: (value: string) => void;
-  ariaLabel: string;
-}) {
-  const teacherMap = new Map(teachers.map((teacher) => [teacher.id, teacher]));
-  const autoLabel = computedTeacherId ? `自动：${teacherMap.get(computedTeacherId)?.name || "未知教师"}` : "自动：空缺";
-  const value = overrideValue === undefined ? "__auto__" : overrideValue === null ? "__blank__" : overrideValue;
-  return (
-    <select
-      aria-label={ariaLabel}
-      className="min-w-28 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-800 outline-none focus:border-gold-400"
-      value={value}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value)}
-    >
-      <option value="__auto__">{autoLabel}</option>
-      <option value="__blank__">留空</option>
-      {teachers.map((teacher) => (
-        <option key={teacher.id} value={teacher.id}>{teacher.name} · {teacher.subject}</option>
-      ))}
-    </select>
-  );
+function cellTargetKey(target: InvigilationCellTarget): string {
+  return `${target.rowKey}\u0000${target.kind}\u0000${target.roomId || ""}`;
+}
+
+function writeCellOverride(
+  config: ExamInvigilationConfig,
+  target: InvigilationCellTarget,
+  teacherId: string | null | undefined,
+) {
+  config.overrides ||= {};
+  const override = config.overrides[target.rowKey] ||= { roomTeacherIds: {} };
+  if (target.kind === "room" && target.roomId) {
+    if (teacherId === undefined) delete override.roomTeacherIds[target.roomId];
+    else override.roomTeacherIds[target.roomId] = teacherId;
+  } else if (target.kind === "outside") {
+    if (teacherId === undefined) delete override.outsideTeacherId;
+    else override.outsideTeacherId = teacherId;
+  } else if (target.kind === "patrol") {
+    if (teacherId === undefined) delete override.patrolTeacherId;
+    else override.patrolTeacherId = teacherId;
+  }
 }
 
 export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortKey, onCohortChange }: Props) {
@@ -168,6 +148,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const [downloading, setDownloading] = useState(false);
   const [batchText, setBatchText] = useState("");
   const [statsSort, setStatsSort] = useState<"minutes" | "subject" | "name">("minutes");
+  const [selectedCells, setSelectedCells] = useState<InvigilationCellTarget[]>([]);
 
   useEffect(() => {
     if (!cohortKey) {
@@ -206,9 +187,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   useEffect(() => {
     if (!selectedArrangement) {
       setConfig(null);
+      setSelectedCells([]);
       return;
     }
     setConfig(configForArrangement(selectedArrangement, teacherOptions));
+    setSelectedCells([]);
   }, [selectedArrangement, teacherOptions]);
 
   const statistics = useMemo(
@@ -238,6 +221,33 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     });
   };
 
+  const isCellSelected = (target: InvigilationCellTarget) => {
+    const key = cellTargetKey(target);
+    return selectedCells.some((item) => cellTargetKey(item) === key);
+  };
+
+  const toggleCellSelection = (target: InvigilationCellTarget) => {
+    const key = cellTargetKey(target);
+    setSelectedCells((current) => {
+      if (current.some((item) => cellTargetKey(item) === key)) {
+        return current.filter((item) => cellTargetKey(item) !== key);
+      }
+      if (current.length >= 2) return [target];
+      return [...current, target];
+    });
+  };
+
+  const getCellTeacherId = (target: InvigilationCellTarget): string | null => {
+    const row = invigilation?.rows.find((item) => item.key === target.rowKey);
+    if (!row) return null;
+    if (target.kind === "room") return target.roomId ? row.roomTeacherIds[target.roomId] || null : null;
+    if (target.kind === "outside") return row.outsideTeacherId;
+    return row.patrolTeacherId;
+  };
+
+  const selectedCellTeacherIds = selectedCells.map(getCellTeacherId);
+  const canSwapSelectedCells = selectedCells.length === 2 && selectedCellTeacherIds.every(Boolean);
+
   const saveConfig = async () => {
     if (!selectedArrangement || !config) return;
     setSaving(true);
@@ -266,14 +276,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     }
   };
 
-  const setCellTeacher = (
-    rowKey: string,
-    kind: "room" | "outside" | "patrol",
-    value: string,
-    roomId?: string,
-  ) => updateConfig((next) => {
+  const setCellTeacher = (target: InvigilationCellTarget, value: string) => updateConfig((next) => {
     next.overrides ||= {};
-    const override = next.overrides[rowKey] ||= { roomTeacherIds: {} };
+    const override = next.overrides[target.rowKey] ||= { roomTeacherIds: {} };
     const normalized = value === "__auto__" ? undefined : value === "__blank__" ? null : value;
 
     if (normalized) {
@@ -283,18 +288,31 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       if (override.outsideTeacherId === normalized) override.outsideTeacherId = null;
       if (override.patrolTeacherId === normalized) override.patrolTeacherId = null;
     }
-
-    if (kind === "room" && roomId) {
-      if (normalized === undefined) delete override.roomTeacherIds[roomId];
-      else override.roomTeacherIds[roomId] = normalized;
-    } else if (kind === "outside") {
-      if (normalized === undefined) delete override.outsideTeacherId;
-      else override.outsideTeacherId = normalized;
-    } else if (kind === "patrol") {
-      if (normalized === undefined) delete override.patrolTeacherId;
-      else override.patrolTeacherId = normalized;
-    }
+    writeCellOverride(next, target, normalized);
   });
+
+  const assignSelectedTeacher = (teacherId: string) => {
+    if (selectedCells.length !== 1) return;
+    setCellTeacher(selectedCells[0], teacherId);
+    setSelectedCells([]);
+  };
+
+  const setSelectedCellMode = (value: "__auto__" | "__blank__") => {
+    if (selectedCells.length !== 1) return;
+    setCellTeacher(selectedCells[0], value);
+    setSelectedCells([]);
+  };
+
+  const swapSelectedCells = () => {
+    if (!canSwapSelectedCells) return;
+    const [first, second] = selectedCells;
+    const [firstTeacherId, secondTeacherId] = selectedCellTeacherIds as [string, string];
+    updateConfig((next) => {
+      writeCellOverride(next, first, secondTeacherId);
+      writeCellOverride(next, second, firstTeacherId);
+    });
+    setSelectedCells([]);
+  };
 
   const addBatchTeachers = () => {
     const parsed = parseBatchTeachers(batchText);
@@ -462,9 +480,19 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">监考表</h2>
-              <p className="mt-1 text-xs text-ink-500">自动安排会随名单、时间和人工调整实时重算。下拉框可指定教师、留空或恢复自动安排。</p>
+              <p className="mt-1 text-xs text-ink-500">勾选一个单元格后，在右侧“监考时长”中点击老师姓名即可填入；勾选两个已有姓名的单元格可交换安排。</p>
             </div>
-            <Badge>{invigilation?.rows.length || 0} 个场次</Badge>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {selectedCells.length === 1 && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedCellMode("__auto__")}>恢复自动</Button>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedCellMode("__blank__")}>留空</Button>
+                </>
+              )}
+              {canSwapSelectedCells && <Button variant="gold" size="sm" onClick={swapSelectedCells}>是否交换</Button>}
+              {selectedCells.length > 0 && <Button variant="outline" size="sm" onClick={() => setSelectedCells([])}>取消选择</Button>}
+              <Badge>{invigilation?.rows.length || 0} 个场次</Badge>
+            </div>
           </div>
           {!invigilation?.rows.length ? (
             <div className="rounded-xl border border-dashed border-ink-200 py-12 text-center text-sm text-ink-400">请先为至少一门学科填写完整考试日期和时刻。</div>
@@ -489,7 +517,10 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                     <td className="border-b border-r border-ink-100" /><td className="border-b border-ink-100" />
                   </tr>
                   {invigilation.rows.map((row) => {
-                    const override = config.overrides?.[row.key];
+                    const outsideTarget: InvigilationCellTarget = { rowKey: row.key, kind: "outside" };
+                    const patrolTarget: InvigilationCellTarget = { rowKey: row.key, kind: "patrol" };
+                    const outsideSelected = isCellSelected(outsideTarget);
+                    const patrolSelected = isCellSelected(patrolTarget);
                     return (
                       <tr key={row.key}>
                         <th className="sticky left-0 z-10 border-b border-r border-ink-100 bg-paper px-3 py-2 text-left align-top">
@@ -498,28 +529,74 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                         </th>
                         {invigilation.rooms.map((room) => {
                           const count = row.roomStudentCounts[room.roomId] || 0;
+                          const target: InvigilationCellTarget = { rowKey: row.key, kind: "room", roomId: room.roomId };
+                          const selected = isCellSelected(target);
+                          const assignedTeacherId = row.roomTeacherIds[room.roomId];
                           return (
-                            <td key={room.roomId} className={cn("border-b border-r border-ink-100 px-2 py-2 text-center", !count && "bg-ink-50/60")}>
+                            <td
+                              key={room.roomId}
+                              className={cn(
+                                "border-b border-r border-ink-100 px-2 py-2 text-center transition-colors",
+                                !count && "bg-ink-50/60",
+                                count && "cursor-pointer hover:bg-gold-50/60",
+                                selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
+                              )}
+                              onClick={count ? () => toggleCellSelection(target) : undefined}
+                            >
                               {count ? (
-                                <div>
-                                  <TeacherSelect
-                                    ariaLabel={`${row.subjectLabel} ${room.roomNumber}监考教师`}
-                                    computedTeacherId={row.roomTeacherIds[room.roomId]}
-                                    overrideValue={cellOverrideValue(override, "room", room.roomId)}
-                                    teachers={config.teachers}
-                                    onChange={(value) => setCellTeacher(row.key, "room", value, room.roomId)}
+                                <div className="relative min-h-12 px-4 py-1">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`选择 ${row.subjectLabel} ${room.roomNumber}监考单元格`}
+                                    className="absolute left-0 top-0 h-3.5 w-3.5 accent-gold-500"
+                                    checked={selected}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onChange={() => toggleCellSelection(target)}
                                   />
+                                  <div className="pt-1 text-xs font-medium text-ink-800">{teacherMap.get(assignedTeacherId || "")?.name || "空缺"}</div>
                                   <div className="mt-1 text-[10px] text-ink-400">{count} 人</div>
                                 </div>
                               ) : <span className="text-xs text-ink-300">无学生</span>}
                             </td>
                           );
                         })}
-                        <td className="border-b border-r border-ink-100 px-2 py-2 text-center">
-                          <TeacherSelect ariaLabel={`${row.subjectLabel}场外监考`} computedTeacherId={row.outsideTeacherId} overrideValue={cellOverrideValue(override, "outside")} teachers={config.teachers} onChange={(value) => setCellTeacher(row.key, "outside", value)} />
+                        <td
+                          className={cn(
+                            "cursor-pointer border-b border-r border-ink-100 px-2 py-2 text-center transition-colors hover:bg-gold-50/60",
+                            outsideSelected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
+                          )}
+                          onClick={() => toggleCellSelection(outsideTarget)}
+                        >
+                          <div className="relative min-h-12 px-4 py-1">
+                            <input
+                              type="checkbox"
+                              aria-label={`选择 ${row.subjectLabel}场外监考单元格`}
+                              className="absolute left-0 top-0 h-3.5 w-3.5 accent-gold-500"
+                              checked={outsideSelected}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={() => toggleCellSelection(outsideTarget)}
+                            />
+                            <div className="pt-1 text-xs font-medium text-ink-800">{teacherMap.get(row.outsideTeacherId || "")?.name || "空缺"}</div>
+                          </div>
                         </td>
-                        <td className="border-b border-ink-100 px-2 py-2 text-center">
-                          <TeacherSelect ariaLabel={`${row.subjectLabel}巡回`} computedTeacherId={row.patrolTeacherId} overrideValue={cellOverrideValue(override, "patrol")} teachers={config.teachers} onChange={(value) => setCellTeacher(row.key, "patrol", value)} />
+                        <td
+                          className={cn(
+                            "cursor-pointer border-b border-ink-100 px-2 py-2 text-center transition-colors hover:bg-gold-50/60",
+                            patrolSelected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
+                          )}
+                          onClick={() => toggleCellSelection(patrolTarget)}
+                        >
+                          <div className="relative min-h-12 px-4 py-1">
+                            <input
+                              type="checkbox"
+                              aria-label={`选择 ${row.subjectLabel}巡回监考单元格`}
+                              className="absolute left-0 top-0 h-3.5 w-3.5 accent-gold-500"
+                              checked={patrolSelected}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={() => toggleCellSelection(patrolTarget)}
+                            />
+                            <div className="pt-1 text-xs font-medium text-ink-800">{teacherMap.get(row.patrolTeacherId || "")?.name || "空缺"}</div>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -530,15 +607,31 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           )}
         </Card>
 
-        <Card>
+        <Card className="xl:sticky xl:top-4 xl:self-start">
           <div className="mb-4 flex items-end justify-between gap-2">
-            <div><h2 className="text-base font-semibold text-ink-900">监考时长</h2><p className="mt-1 text-xs text-ink-500">实时统计全部监考、场外和巡回安排。</p></div>
+            <div><h2 className="text-base font-semibold text-ink-900">监考时长</h2><p className="mt-1 text-xs text-ink-500">实时统计全部监考、场外和巡回安排，并作为监考老师选择面板。</p></div>
             <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "按时长" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
+          </div>
+          <div className="mb-3 rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
+            {selectedCells.length === 0 && "先勾选一个监考单元格，再点击老师姓名填入。"}
+            {selectedCells.length === 1 && "已选 1 个单元格，点击下方老师姓名即可填入。"}
+            {selectedCells.length === 2 && (canSwapSelectedCells ? "已选 2 个已有安排，可点击“是否交换”。" : "已选 2 个单元格；只有两个单元格均已有老师时才能交换。")}
           </div>
           <div className="max-h-[620px] space-y-2 overflow-y-auto pr-1">
             {sortedTeacherStats.map((stat) => (
               <div key={stat.teacherId} className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 px-3 py-2">
-                <div className="min-w-0"><div className="truncate text-sm font-medium text-ink-800">{stat.name}</div><div className="text-[11px] text-ink-400">{stat.subject} · {stat.sessions} 场</div></div>
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    aria-label={`将 ${stat.name} 填入选中单元格`}
+                    className="block max-w-full truncate text-left text-sm font-medium text-ink-800 enabled:hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-400"
+                    disabled={selectedCells.length !== 1}
+                    onClick={() => assignSelectedTeacher(stat.teacherId)}
+                  >
+                    {stat.name}
+                  </button>
+                  <div className="text-[11px] text-ink-400">{stat.subject} · {stat.sessions} 场</div>
+                </div>
                 <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-ink-700">{formatMinutes(stat.minutes)}</div>
               </div>
             ))}
