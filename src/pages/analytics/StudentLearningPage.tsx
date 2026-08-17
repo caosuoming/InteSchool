@@ -16,17 +16,24 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory, Chapter } from "@/types";
+import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory, Chapter, KnowledgePoint } from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import {
   knowledgePointDisplayName,
   knowledgePointFullPath,
-  orderKnowledgeMasteryRows,
+  applyKnowledgePointPlacement,
+  buildKnowledgeMasteryTreeRows,
+  orderVisibleKnowledgeMasteryRows,
   type KnowledgePointPlacement,
 } from "./student-learning-table";
-import { buildChapterMastery } from "./student-learning-chapters";
+import { buildChapterMastery, type ChapterPlacement } from "./student-learning-chapters";
 import { ChapterMasteryCard } from "./ChapterMasteryCard";
+import {
+  loadStudentLearningPlacementPreferences,
+  saveStudentLearningPlacementPreferences,
+  studentLearningPlacementStorageKey,
+} from "./student-learning-preferences";
 
 const questionTypeLabel: Record<string, string> = {
   single: "单选",
@@ -109,6 +116,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
   const [classTypes, setClassTypes] = useState<ClassTypeCategory[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
   const [studentsByClass, setStudentsByClass] = useState<Record<string, Student[]>>({});
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -125,12 +133,32 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const [classAvgMastery, setClassAvgMastery] = useState<KnowledgeMastery[]>([]);
   const [showComparison, setShowComparison] = useState(true);
   const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<Set<string>>(new Set());
-  const [knowledgePointPlacements, setKnowledgePointPlacements] = useState<Record<string, KnowledgePointPlacement>>({});
+  const [collapsedKnowledgePointIds, setCollapsedKnowledgePointIds] = useState<Set<string>>(new Set());
+  const placementStorageKey = studentLearningPlacementStorageKey(teacher?.id || "anonymous", schoolId);
+  const [knowledgePointPlacements, setKnowledgePointPlacements] = useState<Record<string, KnowledgePointPlacement>>(
+    () => loadStudentLearningPlacementPreferences(placementStorageKey).knowledgePoints,
+  );
+  const [chapterPlacements, setChapterPlacements] = useState<Record<string, ChapterPlacement>>(
+    () => loadStudentLearningPlacementPreferences(placementStorageKey).chapters,
+  );
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("all");
   const dateRange = useMemo(() => getDateRange(timeRangeKey), [timeRangeKey]);
-  const orderedMastery = useMemo(
-    () => orderKnowledgeMasteryRows(mastery, knowledgePointPlacements),
-    [knowledgePointPlacements, mastery],
+  const knowledgeMasteryTreeRows = useMemo(
+    () => buildKnowledgeMasteryTreeRows(mastery, knowledgePoints),
+    [knowledgePoints, mastery],
+  );
+  const visibleKnowledgeMastery = useMemo(
+    () => orderVisibleKnowledgeMasteryRows(
+      mastery,
+      knowledgePoints,
+      knowledgePointPlacements,
+      collapsedKnowledgePointIds,
+    ),
+    [collapsedKnowledgePointIds, knowledgePointPlacements, knowledgePoints, mastery],
+  );
+  const parentKnowledgePointIds = useMemo(
+    () => new Set(knowledgeMasteryTreeRows.flatMap((item) => item.parentId ? [item.parentId] : [])),
+    [knowledgeMasteryTreeRows],
   );
   const chapterMastery = useMemo(
     () => buildChapterMastery(chapters, answerDetails),
@@ -139,19 +167,28 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const allKnowledgePointsSelected = mastery.length > 0
     && mastery.every((item) => selectedKnowledgePointIds.has(item.knowledgePointId));
 
+  useEffect(() => {
+    saveStudentLearningPlacementPreferences(placementStorageKey, {
+      knowledgePoints: knowledgePointPlacements,
+      chapters: chapterPlacements,
+    });
+  }, [chapterPlacements, knowledgePointPlacements, placementStorageKey]);
+
   // 加载班级列表
   useEffect(() => {
     const load = async () => {
       setLoadingList(true);
-      const [allClasses, ct, chapterList] = await Promise.all([
+      const [allClasses, ct, chapterList, knowledgePointList] = await Promise.all([
         classService.listMyClasses(schoolId, teacher?.id || ""),
         settingsService.listClassTypes(schoolId),
         knowledgeService.listChapters(schoolId),
+        knowledgeService.listKnowledgePoints(schoolId),
       ]);
       setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
       setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
       setClassTypes(ct);
       setChapters(chapterList);
+      setKnowledgePoints(knowledgePointList);
       setLoadingList(false);
     };
     load();
@@ -248,7 +285,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
 
   const selectClass = (cls: AnyClass) => {
     setSelectedKnowledgePointIds(new Set());
-    setKnowledgePointPlacements({});
     setSelection({
       type: "class",
       classId: cls.id,
@@ -261,7 +297,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
 
   const selectStudent = (cls: AnyClass, student: Student) => {
     setSelectedKnowledgePointIds(new Set());
-    setKnowledgePointPlacements({});
     setSelection({
       type: "student",
       classId: cls.id,
@@ -289,14 +324,21 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   };
 
   const placeSelectedKnowledgePoints = (placement: KnowledgePointPlacement) => {
-    setKnowledgePointPlacements((previous) => {
-      const next = { ...previous };
-      selectedKnowledgePointIds.forEach((knowledgePointId) => {
-        next[knowledgePointId] = placement;
-      });
+    setKnowledgePointPlacements((previous) => applyKnowledgePointPlacement(
+      previous,
+      selectedKnowledgePointIds,
+      placement,
+    ));
+    setSelectedKnowledgePointIds(new Set());
+  };
+
+  const toggleKnowledgePointCollapsed = (knowledgePointId: string) => {
+    setCollapsedKnowledgePointIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(knowledgePointId)) next.delete(knowledgePointId);
+      else next.add(knowledgePointId);
       return next;
     });
-    setSelectedKnowledgePointIds(new Set());
   };
 
   const renderClassItem = (cls: AnyClass, isPersonal: boolean) => {
@@ -638,6 +680,8 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                 <ChapterMasteryCard
                   key={`${selection.type}:${selection.classId}:${selection.studentId ?? ""}`}
                   mastery={chapterMastery}
+                  placements={chapterPlacements}
+                  onPlacementsChange={setChapterPlacements}
                 />
               ) : (
               <Card className="relative">
@@ -712,22 +756,37 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                         </tr>
                       </thead>
                       <tbody>
-                        {orderedMastery.map((m) => {
+                        {visibleKnowledgeMastery.map((treeRow) => {
+                            const m = treeRow.mastery;
                             const cfg = masteryConfig[m.masteryLevel];
                             const MasteryIcon = cfg.icon;
                             const selected = selectedKnowledgePointIds.has(m.knowledgePointId);
-                            const displayName = knowledgePointDisplayName(m);
+                            const displayName = knowledgePoints.length > 0
+                              ? m.knowledgePointName
+                              : knowledgePointDisplayName(m);
                             const fullPath = knowledgePointFullPath(m);
+                            const hasChildren = parentKnowledgePointIds.has(m.knowledgePointId);
+                            const collapsed = collapsedKnowledgePointIds.has(m.knowledgePointId);
+                            const placement = knowledgePointPlacements[m.knowledgePointId] ?? "normal";
                             return (
                               <tr
                                 key={m.knowledgePointId}
                                 className={cn(
                                   "border-b border-ink-50 transition-colors",
-                                  selected ? "bg-gold-50/70" : "hover:bg-mist/50",
+                                  selected
+                                    ? "bg-gold-50/70"
+                                    : placement === "top"
+                                      ? "bg-amber-50/70 hover:bg-amber-100/60"
+                                      : placement === "bottom"
+                                        ? "bg-sky-50/70 hover:bg-sky-100/60"
+                                        : "hover:bg-mist/50",
                                 )}
                               >
                                 <td className="py-2.5 px-3 text-ink-900 font-medium">
-                                  <label className="flex min-w-[180px] items-center gap-2 cursor-pointer">
+                                  <div
+                                    className="flex min-w-[180px] items-center gap-2"
+                                    style={{ paddingLeft: `${Math.max(treeRow.level, 0) * 16}px` }}
+                                  >
                                     <input
                                       type="checkbox"
                                       aria-label={`选择知识点 ${displayName}`}
@@ -735,8 +794,23 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                       onChange={() => toggleKnowledgePoint(m.knowledgePointId)}
                                       className="w-3.5 h-3.5 flex-shrink-0 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
                                     />
+                                    {hasChildren ? (
+                                      <button
+                                        type="button"
+                                        aria-label={`${collapsed ? "展开" : "折叠"}知识点 ${m.knowledgePointName}`}
+                                        aria-expanded={!collapsed}
+                                        onClick={() => toggleKnowledgePointCollapsed(m.knowledgePointId)}
+                                        className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+                                      >
+                                        {collapsed
+                                          ? <ChevronRight className="h-3.5 w-3.5" />
+                                          : <ChevronDown className="h-3.5 w-3.5" />}
+                                      </button>
+                                    ) : (
+                                      <span className="w-4 flex-shrink-0" aria-hidden="true" />
+                                    )}
                                     <span className="whitespace-nowrap" title={fullPath}>{displayName}</span>
-                                  </label>
+                                  </div>
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-mono text-ink-700">
                                   {m.totalAttempts}

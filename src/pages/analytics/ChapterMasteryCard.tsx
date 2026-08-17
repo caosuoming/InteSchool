@@ -30,10 +30,17 @@ const masteryConfig: Record<
   untrained: { label: "未训练", color: "text-ink-400", bg: "bg-mist border-ink-200", icon: Circle },
 };
 
-export function ChapterMasteryCard({ mastery }: { mastery: ChapterMastery[] }) {
+export function ChapterMasteryCard({
+  mastery,
+  placements,
+  onPlacementsChange,
+}: {
+  mastery: ChapterMastery[];
+  placements: Record<string, ChapterPlacement>;
+  onPlacementsChange: (placements: Record<string, ChapterPlacement>) => void;
+}) {
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [collapsedChapterIds, setCollapsedChapterIds] = useState<Set<string>>(new Set());
-  const [placements, setPlacements] = useState<Record<string, ChapterPlacement>>({});
 
   const trainedCount = mastery.filter((item) => item.totalAttempts > 0).length;
   const parentChapterIds = useMemo(
@@ -74,9 +81,8 @@ export function ChapterMasteryCard({ mastery }: { mastery: ChapterMastery[] }) {
   };
 
   const placeSelectedChapters = (placement: ChapterPlacement) => {
-    setPlacements((previous) => applyChapterPlacement(
-      mastery,
-      previous,
+    onPlacementsChange(applyChapterPlacement(
+      placements,
       selectedChapterIds,
       placement,
     ));
@@ -125,12 +131,19 @@ export function ChapterMasteryCard({ mastery }: { mastery: ChapterMastery[] }) {
                 const hasChildren = parentChapterIds.has(item.chapterId);
                 const collapsed = collapsedChapterIds.has(item.chapterId);
                 const fullPath = item.chapterPath.join(" \\ ");
+                const placement = placements[item.chapterId] ?? "normal";
                 return (
                   <tr
                     key={item.chapterId}
                     className={cn(
                       "border-b border-ink-50 transition-colors",
-                      selected ? "bg-gold-50/70" : "hover:bg-mist/50",
+                      selected
+                        ? "bg-gold-50/70"
+                        : placement === "top"
+                          ? "bg-amber-50/70 hover:bg-amber-100/60"
+                          : placement === "bottom"
+                            ? "bg-sky-50/70 hover:bg-sky-100/60"
+                            : "hover:bg-mist/50",
                     )}
                   >
                     <td className="py-2.5 px-3 text-ink-900 font-medium">
