@@ -114,7 +114,9 @@ describe("exam arrangement service", () => {
         teachers: [
           { id: "teacher-physics", name: "张老师", subject: "物理" },
           { id: "teacher-prep", name: "李老师", subject: "物理", isPrepLeader: true },
+          { id: "teacher-leader", name: "王老师", subject: "物理", isLeader: true },
         ],
+        patrolTeacherIds: ["teacher-leader"],
         subjectTimes: [{
           subject: "物理",
           date: "2026-10-20",
@@ -134,7 +136,8 @@ describe("exam arrangement service", () => {
         },
       });
 
-      expect(updated.invigilation?.teachers).toHaveLength(2);
+      expect(updated.invigilation?.teachers).toHaveLength(3);
+      expect(updated.invigilation?.patrolTeacherIds).toEqual(["teacher-leader"]);
       expect(updated.invigilation?.subjectTimes[0].durationMinutes).toBe(90);
       expect((appState.examArrangements as any[])[0].invigilation.overrides).toEqual({
         "2026-10-20|morning|08:00|物理": {
@@ -146,6 +149,38 @@ describe("exam arrangement service", () => {
         "teacher-physics": "巡回另计 30 分钟",
       });
       expect((await examArrangementService.listArrangements("school-1", "grad-2026"))[0].invigilation).toEqual(updated.invigilation);
+    });
+  });
+
+  it("rejects duplicate teacher assignments within one exam session", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const saved = await examArrangementService.saveArrangement("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "重复监考测试",
+        examDate: "2026-10-20",
+        mode: "subject",
+        subjects: ["物理"],
+        rooms: [
+          { id: "room-1", name: "第一考场", capacity: 1 },
+          { id: "room-2", name: "第二考场", capacity: 1 },
+        ],
+        classRules: [{ classId: "class-1", defaultSubjects: ["物理"], subjectRoomIds: { 物理: ["room-1", "room-2"] } }],
+        studentSubjects: [
+          { studentId: "student-1", subjects: ["物理"] },
+          { studentId: "student-2", subjects: ["物理"] },
+        ],
+      });
+      await expect(examArrangementService.saveInvigilationConfig("school-1", saved.id, {
+        teachers: [{ id: "teacher-physics", name: "张老师", subject: "物理" }],
+        subjectTimes: [{ subject: "物理", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 }],
+        patrolTeacherIds: [],
+        overrides: {
+          "2026-10-20|morning|08:00|物理": {
+            roomTeacherIds: { "room-1": "teacher-physics", "room-2": "teacher-physics" },
+          },
+        },
+      })).rejects.toThrow("同一场监考不能安排同一位老师：张老师");
     });
   });
 

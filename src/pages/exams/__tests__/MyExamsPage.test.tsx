@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyExamsPage from "@/pages/exams/MyExamsPage";
@@ -150,9 +150,15 @@ describe("MyExamsPage", () => {
       subjectSetupMode: "selection",
       subjects: ["语文", "数学", "英语", "物理", "化学", "生物"],
       separateSubjects: [],
-      rooms: [{ id: "room-1", name: "1考场", number: "1考场", location: "高三1班教室", capacity: 40 }],
+      rooms: [
+        { id: "room-1", name: "1考场", number: "1考场", location: "高三1班教室", capacity: 40 },
+        { id: "room-2", name: "2考场", number: "2考场", location: "高三1班教室", capacity: 40 },
+      ],
       classRules: [],
-      studentSubjects: [{ studentId: "student-1", subjects: ["语文", "数学", "英语", "物理", "化学", "生物"] }],
+      studentSubjects: [
+        { studentId: "student-1", subjects: ["语文", "数学", "英语", "物理", "化学", "生物"] },
+        { studentId: "student-2", subjects: ["语文", "数学", "英语", "物理", "化学", "生物"] },
+      ],
       assignments: [{
         id: "combined:student-1",
         studentId: "student-1",
@@ -168,7 +174,38 @@ describe("MyExamsPage", () => {
         roomLocation: "高三1班教室",
         seatNo: 1,
         admissionNo: "20261020010001",
+      }, {
+        id: "combined:student-2",
+        studentId: "student-2",
+        studentName: "学生乙",
+        studentNo: "002",
+        classId: "class-1",
+        className: "高三（1）班",
+        subjectLabel: "语文 / 数学 / 英语 / 物理 / 化学 / 生物",
+        sessionKey: "combined",
+        roomId: "room-2",
+        roomName: "2考场",
+        roomNumber: "2考场",
+        roomLocation: "高三1班教室",
+        seatNo: 1,
+        admissionNo: "20261020020001",
       }],
+      invigilation: {
+        teachers: [
+          { id: "teacher-chinese-1", name: "语文教师甲", subject: "语文" },
+          { id: "teacher-chinese-2", name: "语文教师乙", subject: "语文" },
+          { id: "teacher-leader", name: "年级领导", subject: "数学", isLeader: true },
+        ],
+        subjectTimes: [{
+          subject: "语文",
+          date: "2026-10-20",
+          period: "evening",
+          time: "18:30",
+          durationMinutes: 120,
+        }],
+        patrolTeacherIds: ["teacher-leader"],
+        overrides: {},
+      },
       createdAt: "2026-08-16T00:00:00.000Z",
       updatedAt: "2026-08-16T00:00:00.000Z",
     };
@@ -182,10 +219,19 @@ describe("MyExamsPage", () => {
 
     const tableOneHeading = await screen.findByRole("heading", { name: "表一、文印室统计表" });
     expect(screen.getByLabelText("选择文印室统计表考试")).toHaveDisplayValue("高三期中考试 · 2026-10-20");
-    expect(screen.getByText("高三1班教室")).toBeInTheDocument();
-    expect(screen.getByText("物化生")).toBeInTheDocument();
-    expect(screen.getByText("语数外")).toBeInTheDocument();
+    expect(screen.getAllByText("高三1班教室").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("物化生").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("语数外").length).toBeGreaterThan(0);
     const tableTwoHeading = screen.getByRole("heading", { name: "表二、监考表" });
+    const invigilationCard = tableTwoHeading.closest(".card-base");
+    expect(invigilationCard).not.toBeNull();
+    const invigilationTable = within(invigilationCard as HTMLElement);
+    expect(invigilationTable.getByRole("columnheader", { name: "高三1班教室" })).toHaveAttribute("colspan", "2");
+    expect(invigilationTable.getByRole("columnheader", { name: "巡回" })).toHaveAttribute("rowspan", "3");
+    expect(invigilationTable.getByRole("cell", { name: "2026-10-20 星期二" })).toBeInTheDocument();
+    expect(invigilationTable.getByRole("cell", { name: "晚上" })).toBeInTheDocument();
+    expect(invigilationTable.getByRole("cell", { name: "18:30–20:30" })).toBeInTheDocument();
+    expect(invigilationTable.getByRole("button", { name: "年级领导" })).toBeInTheDocument();
     const durationHeading = screen.getByRole("heading", { name: "监考时长" });
     const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
     const timesHeading = screen.getByRole("heading", { name: "配置二、考试时间配置" });
