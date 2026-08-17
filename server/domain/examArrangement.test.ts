@@ -94,6 +94,54 @@ describe("exam arrangement service", () => {
     });
   });
 
+  it("persists invigilation teachers, subject times, and manual overrides", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const saved = await examArrangementService.saveArrangement("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "监考测试",
+        examDate: "2026-10-20",
+        mode: "subject",
+        subjects: ["物理"],
+        rooms: [{ id: "room-1", name: "第一考场", capacity: 2 }],
+        classRules: [{ classId: "class-1", defaultSubjects: ["物理"], subjectRoomIds: { 物理: ["room-1"] } }],
+        studentSubjects: [
+          { studentId: "student-1", subjects: ["物理"] },
+          { studentId: "student-2", subjects: ["物理"] },
+        ],
+      });
+      const updated = await examArrangementService.saveInvigilationConfig("school-1", saved.id, {
+        teachers: [
+          { id: "teacher-physics", name: "张老师", subject: "物理" },
+          { id: "teacher-prep", name: "李老师", subject: "物理", isPrepLeader: true },
+        ],
+        subjectTimes: [{
+          subject: "物理",
+          date: "2026-10-20",
+          period: "morning",
+          time: "08:00",
+          durationMinutes: 90,
+        }],
+        overrides: {
+          "2026-10-20|morning|08:00|物理": {
+            roomTeacherIds: { "room-1": "teacher-physics" },
+            outsideTeacherId: "teacher-prep",
+          },
+        },
+      });
+
+      expect(updated.invigilation?.teachers).toHaveLength(2);
+      expect(updated.invigilation?.subjectTimes[0].durationMinutes).toBe(90);
+      expect((appState.examArrangements as any[])[0].invigilation.overrides).toEqual({
+        "2026-10-20|morning|08:00|物理": {
+          roomTeacherIds: { "room-1": "teacher-physics" },
+          outsideTeacherId: "teacher-prep",
+        },
+      });
+      expect((await examArrangementService.listArrangements("school-1", "grad-2026"))[0].invigilation).toEqual(updated.invigilation);
+    });
+  });
+
   it("exposes grade ranks from the latest exam in the same cohort", async () => {
     const appState = state();
     appState.gradeExams = [

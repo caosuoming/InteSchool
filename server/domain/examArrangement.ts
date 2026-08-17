@@ -2,6 +2,7 @@ import type {
   ExamArrangement,
   ExamArrangementContext,
   ExamArrangementInput,
+  ExamInvigilationConfig,
   GradeExam,
   GradeImportContext,
 } from "../../src/types/index.js";
@@ -45,6 +46,7 @@ function readArrangements(): ExamArrangement[] {
           roomLocation: assignment.roomLocation || room?.location || assignment.roomName,
         };
       }),
+      invigilation: item.invigilation ? structuredClone(item.invigilation) : undefined,
     };
   });
 }
@@ -54,6 +56,7 @@ function toArrangementContext(context: GradeImportContext): ExamArrangementConte
     cohort: context.cohort,
     classes: context.classes,
     students: context.students,
+    teachers: context.teachers,
   };
 }
 
@@ -145,6 +148,7 @@ export const examArrangementService = {
       classRules: structuredClone(preparedInput.classRules),
       studentSubjects: structuredClone(preparedInput.studentSubjects),
       assignments,
+      invigilation: existing?.invigilation ? structuredClone(existing.invigilation) : undefined,
       createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
@@ -152,6 +156,67 @@ export const examArrangementService = {
       ? items.map((item) => item.id === existing.id ? arrangement : item)
       : [...items, arrangement]);
     return arrangement;
+  },
+
+  async saveInvigilationConfig(
+    schoolId: string,
+    arrangementId: string,
+    config: ExamInvigilationConfig,
+  ): Promise<ExamArrangement> {
+    await delay(120);
+    maybeThrowError();
+    const current = readArrangements().find((item) => item.id === arrangementId);
+    if (!current) throw new Error("考场安排方案不存在");
+    if (current.schoolId !== schoolId) throw new Error("无权修改其他学校的监考表");
+
+    const subjectSet = new Set(current.subjects);
+    const teacherIds = new Set<string>();
+    const teachers = config.teachers.map((teacher) => {
+      const name = teacher.name.trim();
+      const subject = teacher.subject.trim();
+      if (!name || !subject) throw new Error("任课教师的姓名和学科不能为空");
+      if (teacherIds.has(teacher.id)) throw new Error("任课教师配置中存在重复记录");
+      teacherIds.add(teacher.id);
+      return {
+        ...teacher,
+        name,
+        subject,
+        isPrepLeader: Boolean(teacher.isPrepLeader),
+        isLeader: Boolean(teacher.isLeader),
+      };
+    });
+    const subjectTimes = config.subjectTimes.map((item) => {
+      if (!subjectSet.has(item.subject)) throw new Error(`考试方案不存在学科「${item.subject}」`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date)) throw new Error(`「${item.subject}」考试日期格式不正确`);
+      if (!/^\d{2}:\d{2}$/.test(item.time)) throw new Error(`「${item.subject}」考试时刻格式不正确`);
+      return {
+        ...item,
+        durationMinutes: Math.max(1, Math.round(item.durationMinutes || 120)),
+      };
+    });
+    const validOverrides = Object.fromEntries(Object.entries(config.overrides || {}).map(([key, override]) => [
+      key,
+      {
+        roomTeacherIds: Object.fromEntries(Object.entries(override.roomTeacherIds || {}).filter(([, teacherId]) => (
+          teacherId === null || teacherIds.has(teacherId)
+        ))),
+        ...(override.outsideTeacherId === null || (override.outsideTeacherId && teacherIds.has(override.outsideTeacherId))
+          ? { outsideTeacherId: override.outsideTeacherId }
+          : {}),
+        ...(override.patrolTeacherId === null || (override.patrolTeacherId && teacherIds.has(override.patrolTeacherId))
+          ? { patrolTeacherId: override.patrolTeacherId }
+          : {}),
+      },
+    ]));
+    const updated: ExamArrangement = {
+      ...current,
+      invigilation: { teachers, subjectTimes, overrides: validOverrides },
+      updatedAt: new Date().toISOString(),
+    };
+    db.update("examArrangements", (items: ExamArrangement[]) => items.map((item) => (
+      item.id === arrangementId ? updated : item
+    )));
+    return updated;
   },
 
   async deleteArrangement(arrangementId: string): Promise<void> {

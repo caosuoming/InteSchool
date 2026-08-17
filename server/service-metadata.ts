@@ -103,6 +103,11 @@ export const serviceParameters = {
       "teacherId",
       "input"
     ],
+    "saveInvigilationConfig": [
+      "schoolId",
+      "arrangementId",
+      "config"
+    ],
     "deleteArrangement": [
       "arrangementId"
     ]
