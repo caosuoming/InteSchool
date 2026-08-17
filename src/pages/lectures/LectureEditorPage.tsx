@@ -53,7 +53,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { TreeView } from "@/components/tree/TreeView";
 import { SearchableTree } from "@/components/tree/SearchableTree";
-import { QuestionCard } from "@/components/question/QuestionCard";
+import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
@@ -280,6 +280,8 @@ export default function LectureEditorPage() {
   const [selectedBasket, setSelectedBasket] = useState<Basket | null>(null);
   const [bankQuestions, setBankQuestions] = useState<Question[]>([]);
   const [bankKeyword, setBankKeyword] = useState("");
+  const [bankChapterIds, setBankChapterIds] = useState<string[]>([]);
+  const [bankKnowledgeIds, setBankKnowledgeIds] = useState<string[]>([]);
   const [otherLectures, setOtherLectures] = useState<Lecture[]>([]);
   const [selectedOtherLecture, setSelectedOtherLecture] = useState<Lecture | null>(null);
   const [selectedLectureSectionIds, setSelectedLectureSectionIds] = useState<string[]>([]);
@@ -569,11 +571,13 @@ export default function LectureEditorPage() {
       const qs = await questionService.listQuestions({
         schoolId: teacher.schoolId!,
         keyword: bankKeyword,
+        chapterIds: bankChapterIds,
+        knowledgePointIds: bankKnowledgeIds,
       });
       setBankQuestions(qs.slice(0, 30));
     }, 250);
     return () => clearTimeout(t);
-  }, [bankKeyword, teacher]);
+  }, [bankChapterIds, bankKeyword, bankKnowledgeIds, teacher]);
 
   useEffect(() => {
     if (teacher && addSource === "lecture") {
@@ -1156,6 +1160,8 @@ export default function LectureEditorPage() {
     setSelectedOtherLecture(null);
     setSelectedOtherPaper(null);
     setReplacingQuestion(null);
+    setBankChapterIds([]);
+    setBankKnowledgeIds([]);
   };
 
   // 添加讲义内容 / 换题
@@ -1174,7 +1180,7 @@ export default function LectureEditorPage() {
       const candidateIds = selectedBasket.questionIds.filter((questionId) => selectedQuestionIds.includes(questionId));
       questionsToAdd = await questionService.listQuestions({ schoolId: teacher!.schoolId!, ids: candidateIds });
     } else if (addSource === "bank") {
-      questionsToAdd = bankQuestions.filter((q) => selectedQuestionIds.includes(q.id));
+      questionsToAdd = await questionService.listQuestions({ schoolId: teacher!.schoolId!, ids: selectedQuestionIds });
     } else if (addSource === "examPaper" && selectedOtherPaper) {
       const candidateIds = selectedOtherPaper.questions
         .map((question) => question.questionId)
@@ -3304,6 +3310,8 @@ export default function LectureEditorPage() {
                 basket={selectedBasket}
                 selectedIds={selectedQuestionIds}
                 onSelect={setSelectedQuestionIds}
+                singleSelect={Boolean(replacingQuestion)}
+                answeredQuestionIds={answeredQuestionIds}
               />
             )}
           </div>
@@ -3316,25 +3324,49 @@ export default function LectureEditorPage() {
               value={bankKeyword}
               onChange={(e) => setBankKeyword(e.target.value)}
             />
-            <div className="grid sm:grid-cols-2 gap-2 max-h-96 overflow-y-auto">
-              {bankQuestions.map((q) => (
-                <QuestionCard
-                  key={q.id}
-                  question={q}
-                  showActions={false}
-                  selected={selectedQuestionIds.includes(q.id)}
-                  onSelect={(qq) => {
-                    if (replacingQuestion) {
-                      setSelectedQuestionIds([qq.id]);
-                      return;
-                    }
-                    setSelectedQuestionIds((prev) =>
-                      prev.includes(qq.id) ? prev.filter((id) => id !== qq.id) : [...prev, qq.id],
-                    );
-                  }}
-                />
-              ))}
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-gold-100">
+                {chapterTree ? (
+                  <SearchableTree
+                    data={chapterTree}
+                    title="章节课目录"
+                    checkable
+                    checkedIds={bankChapterIds}
+                    onCheck={(ids) => setBankChapterIds(ids.filter((id) => id !== "root"))}
+                    expandLevel={2}
+                    searchPlaceholder="搜索章节课..."
+                    treeMaxHeightClassName="max-h-40"
+                  />
+                ) : (
+                  <div className="py-8 text-center text-xs text-ink-400">章节课目录加载中...</div>
+                )}
+              </div>
+              <div className="rounded-lg border border-teal-100">
+                {knowledgeTree ? (
+                  <SearchableTree
+                    data={knowledgeTree}
+                    title="知识点目录"
+                    accent="teal"
+                    checkable
+                    checkedIds={bankKnowledgeIds}
+                    onCheck={(ids) => setBankKnowledgeIds(ids.filter((id) => id !== "root"))}
+                    expandLevel={2}
+                    searchPlaceholder="搜索知识点..."
+                    treeMaxHeightClassName="max-h-40"
+                  />
+                ) : (
+                  <div className="py-8 text-center text-xs text-ink-400">知识点目录加载中...</div>
+                )}
+              </div>
             </div>
+            <QuestionSelectionList
+              questions={bankQuestions}
+              selectedIds={selectedQuestionIds}
+              onSelect={setSelectedQuestionIds}
+              singleSelect={Boolean(replacingQuestion)}
+              answeredQuestionIds={answeredQuestionIds}
+              emptyText="没有符合当前条件的题目"
+            />
           </div>
         )}
 
@@ -4888,10 +4920,14 @@ function BasketQuestionsSelector({
   basket,
   selectedIds,
   onSelect,
+  singleSelect,
+  answeredQuestionIds,
 }: {
   basket: Basket;
   selectedIds: string[];
   onSelect: (ids: string[]) => void;
+  singleSelect?: boolean;
+  answeredQuestionIds?: Set<string>;
 }) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -4906,22 +4942,13 @@ function BasketQuestionsSelector({
   if (loading) return <Spinner size={20} />;
 
   return (
-    <div className="grid sm:grid-cols-2 gap-2 max-h-96 overflow-y-auto">
-      {questions.map((q) => (
-        <QuestionCard
-          key={q.id}
-          question={q}
-          showActions={false}
-          selected={selectedIds.includes(q.id)}
-          onSelect={(qq) => {
-            onSelect(
-              selectedIds.includes(qq.id)
-                ? selectedIds.filter((id) => id !== qq.id)
-                : [...selectedIds, qq.id],
-            );
-          }}
-        />
-      ))}
-    </div>
+    <QuestionSelectionList
+      questions={questions}
+      selectedIds={selectedIds}
+      onSelect={onSelect}
+      singleSelect={singleSelect}
+      answeredQuestionIds={answeredQuestionIds}
+      emptyText="当前资源篮暂无可选题目"
+    />
   );
 }
