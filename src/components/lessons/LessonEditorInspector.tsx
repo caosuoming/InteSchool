@@ -31,6 +31,7 @@ import {
   getLessonElementAnimationOrder,
   hasLessonElementAnimation,
 } from "@/lib/lesson-animation";
+import { renderMathHtml, serializeMathHtml } from "@/lib/math-html";
 import { cn } from "@/lib/utils";
 
 export type LessonEditorInspectorTab = "content" | "properties" | "animation" | "association";
@@ -96,6 +97,63 @@ function elementLabel(element: LessonSlideElement, index: number): string {
   if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
   if (element.href) return element.content || `链接 ${index + 1}`;
   return element.content?.trim().slice(0, 18) || `文本 ${index + 1}`;
+}
+
+function elementPreviewText(element: LessonSlideElement, index: number): string {
+  if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
+  if (element.href) return element.content || `链接 ${index + 1}`;
+  return element.content?.trim() || `文本 ${index + 1}`;
+}
+
+function MathTextPropertyEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || document.activeElement === editor) return;
+    const rendered = renderMathHtml(value);
+    if (editor.innerHTML !== rendered) editor.innerHTML = rendered;
+  }, [value]);
+
+  const readValue = () => {
+    const editor = editorRef.current;
+    if (!editor) return "";
+    return editor.innerHTML === "<br>"
+      ? ""
+      : serializeMathHtml(editor.innerHTML);
+  };
+
+  const commit = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const serialized = readValue();
+    onChange(serialized);
+    const rendered = renderMathHtml(serialized);
+    if (editor.innerHTML !== rendered) editor.innerHTML = rendered;
+  };
+
+  return (
+    <div
+      ref={editorRef}
+      role="textbox"
+      aria-label="文本内容"
+      aria-multiline="true"
+      contentEditable
+      suppressContentEditableWarning
+      className={cn(
+        "input-base min-h-[112px] resize-y overflow-auto whitespace-pre-wrap py-2 text-sm leading-6",
+        "focus:outline-none",
+      )}
+      onInput={() => onChange(readValue())}
+      onBlur={commit}
+    />
+  );
 }
 
 export function LessonEditorInspector({
@@ -332,7 +390,13 @@ export function LessonEditorInspector({
                     )}
                   >
                     {element.kind === "image" ? <ImageIcon className="h-3.5 w-3.5" /> : element.href ? <LinkIcon className="h-3.5 w-3.5" /> : <Type className="h-3.5 w-3.5" />}
-                    <span className="min-w-0 flex-1 truncate">{elementLabel(element, index)}</span>
+                    {element.kind === "text" ? (
+                      <MathHtml className="min-w-0 flex-1 truncate text-xs leading-5 [&_.katex-formula-block]:inline">
+                        {elementPreviewText(element, index)}
+                      </MathHtml>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate">{elementLabel(element, index)}</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -373,10 +437,9 @@ export function LessonEditorInspector({
               <>
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-ink-600">文本内容</label>
-                  <Textarea
+                  <MathTextPropertyEditor
                     value={selectedElement.content}
-                    onChange={(event) => onUpdateElement({ content: event.target.value })}
-                    rows={4}
+                    onChange={(content) => onUpdateElement({ content })}
                   />
                 </div>
                 {selectedElement.href !== undefined && (
