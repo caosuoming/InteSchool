@@ -400,6 +400,28 @@ function shouldContinueNumberedSummary(
 
 const nestedQuestionMarkerPattern = /^(?:[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]|[①-⑳])\s*/i;
 
+function romanNumeralValue(value: string): number | undefined {
+  const digits: Record<string, number> = {
+    i: 1,
+    v: 5,
+    x: 10,
+    l: 50,
+    c: 100,
+    d: 500,
+    m: 1000,
+  };
+  const normalized = value.toLowerCase();
+  if (!/^[ivxlcdm]+$/.test(normalized)) return undefined;
+
+  let total = 0;
+  for (let index = 0; index < normalized.length; index += 1) {
+    const current = digits[normalized[index]];
+    const next = digits[normalized[index + 1]] || 0;
+    total += current < next ? -current : current;
+  }
+  return total || undefined;
+}
+
 function leadingNestedSubQuestionIndex(text: string): number | undefined {
   const trimmed = text.trim();
   const circled = /^([①-⑳])/.exec(trimmed);
@@ -408,6 +430,8 @@ function leadingNestedSubQuestionIndex(text: string): number | undefined {
   const normalized = normalizeStructuralText(trimmed);
   const numeric = /^[（(]\s*([\d０-９]{1,3})\s*[）)]/.exec(normalized);
   if (numeric) return Number(normalizeQuestionNumber(numeric[1]));
+  const roman = /^[（(]\s*([ivxlcdm]+)\s*[）)]/i.exec(normalized);
+  if (roman) return romanNumeralValue(roman[1]);
   return undefined;
 }
 

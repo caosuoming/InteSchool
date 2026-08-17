@@ -771,6 +771,35 @@ describe("document block parser", () => {
     expect(blocks[0].analysis).toBe("分别使用方程与导数方法。");
   });
 
+  it("keeps sequential roman-numeral sub-questions in the stem until an explicit answer or analysis marker", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "19. 已知函数 f(x)，完成下列各问。",
+        "（1）若 0<a<e^3，证明：f(x)<2f'(x)。",
+        "（2）若两条曲线关于直线 y=x 对称，且方程有三个实根 x1<x2<x3。",
+        "（i）求 a 的取值范围；",
+        "（ii）证明：x1+x2+x3+3/a+3>0。",
+        "答案：（1）证明见解析；（2）（i）(-1/2,0)；（ii）证明见解析。",
+        "解析：分别利用导数与根的关系证明。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: [
+        "19. 已知函数 f(x)，完成下列各问。",
+        "（1）若 0<a<e^3，证明：f(x)<2f'(x)。",
+        "（2）若两条曲线关于直线 y=x 对称，且方程有三个实根 x1<x2<x3。",
+        "（i）求 a 的取值范围；",
+        "（ii）证明：x1+x2+x3+3/a+3>0。",
+      ].join("\n"),
+      answer: "（1）证明见解析；（2）（i）(-1/2,0)；（ii）证明见解析。",
+      analysis: "分别利用导数与根的关系证明。",
+    });
+  });
+
   it("keeps sequential proof sub-questions in the stem and numbered proof answers in the answer", () => {
     const blocks = parseDocumentBlocks(
       [
