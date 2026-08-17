@@ -1,6 +1,7 @@
 import type {
   ExamArrangement,
   ExamInvigilationConfig,
+  ExamInvigilationPeriod,
   ExamInvigilationSlotOverride,
   ExamInvigilationTeacher,
   ExamSubjectExamTime,
@@ -13,10 +14,15 @@ export interface ExamInvigilationRoomColumn {
   studentCount: number;
 }
 
+export interface ExamInvigilationRoomLocationGroup {
+  roomLocation: string;
+  roomIds: string[];
+}
+
 export interface ExamInvigilationSlotRow {
   key: string;
   date: string;
-  period: "morning" | "afternoon";
+  period: ExamInvigilationPeriod;
   time: string;
   durationMinutes: number;
   subjects: string[];
@@ -24,7 +30,7 @@ export interface ExamInvigilationSlotRow {
   roomStudentCounts: Record<string, number>;
   roomTeacherIds: Record<string, string | null>;
   outsideTeacherId: string | null;
-  patrolTeacherId: string | null;
+  duplicateTeacherIds: string[];
 }
 
 export interface ExamInvigilationTeacherStat {
@@ -37,11 +43,42 @@ export interface ExamInvigilationTeacherStat {
 
 export interface ExamInvigilationTable {
   rooms: ExamInvigilationRoomColumn[];
+  roomLocationGroups: ExamInvigilationRoomLocationGroup[];
   rows: ExamInvigilationSlotRow[];
+  patrolTeacherIds: string[];
   teacherStats: ExamInvigilationTeacherStat[];
 }
 
-const PERIOD_ORDER = { morning: 0, afternoon: 1 } as const;
+const PERIOD_ORDER: Record<ExamInvigilationPeriod, number> = { morning: 0, afternoon: 1, evening: 2 };
+const WEEKDAYS = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"] as const;
+
+export function examInvigilationPeriodLabel(period: ExamInvigilationPeriod): string {
+  if (period === "morning") return "上午";
+  if (period === "afternoon") return "下午";
+  return "晚上";
+}
+
+export function formatExamDateWithWeekday(date: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return date;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const value = new Date(Date.UTC(year, month - 1, day));
+  return `${date} ${WEEKDAYS[value.getUTCDay()]}`;
+}
+
+export function formatExamTimeRange(time: string, durationMinutes: number): string {
+  const match = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!match) return time;
+  const start = Number(match[1]) * 60 + Number(match[2]);
+  if (!Number.isFinite(start)) return time;
+  const duration = Math.max(1, Math.round(durationMinutes || 0));
+  const end = start + duration;
+  const endMinutes = end % (24 * 60);
+  const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+  return `${time}–${end >= 24 * 60 ? "次日" : ""}${endTime}`;
+}
 
 export function invigilationSlotKey(times: ExamSubjectExamTime[]): string {
   const first = times[0];
@@ -108,15 +145,52 @@ function normalizeOverride(
   teachers: Map<string, ExamInvigilationTeacher>,
 ): ExamInvigilationSlotOverride {
   const outsideTeacherId = validManualTeacherId(override?.outsideTeacherId, teachers);
-  const patrolTeacherId = validManualTeacherId(override?.patrolTeacherId, teachers);
   return {
     roomTeacherIds: Object.fromEntries(Object.entries(override?.roomTeacherIds || {}).map(([roomId, teacherId]) => [
       roomId,
       validManualTeacherId(teacherId, teachers) ?? null,
     ])),
     ...(outsideTeacherId !== undefined ? { outsideTeacherId } : {}),
-    ...(patrolTeacherId !== undefined ? { patrolTeacherId } : {}),
   };
+}
+
+function resolvePatrolTeacherIds(
+  config: ExamInvigilationConfig,
+  teachers: Map<string, ExamInvigilationTeacher>,
+): string[] {
+  const requested = config.patrolTeacherIds !== undefined
+    ? config.patrolTeacherIds
+    : [
+      ...config.teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id),
+      ...Object.values(config.overrides || {}).flatMap((override) => override.patrolTeacherId ? [override.patrolTeacherId] : []),
+    ];
+  return [...new Set(requested)].filter((teacherId) => teachers.has(teacherId));
+}
+
+function groupRoomsByLocation(rooms: ExamInvigilationRoomColumn[]): {
+  rooms: ExamInvigilationRoomColumn[];
+  groups: ExamInvigilationRoomLocationGroup[];
+} {
+  const grouped = new Map<string, ExamInvigilationRoomColumn[]>();
+  for (const room of rooms) {
+    const current = grouped.get(room.roomLocation) || [];
+    current.push(room);
+    grouped.set(room.roomLocation, current);
+  }
+  const groups = [...grouped.entries()].map(([roomLocation, items]) => ({
+    roomLocation,
+    roomIds: items.map((room) => room.roomId),
+  }));
+  return { rooms: groups.flatMap((group) => group.roomIds.map((roomId) => rooms.find((room) => room.roomId === roomId)!)), groups };
+}
+
+function duplicateTeacherIds(assignments: Array<string | null | undefined>): string[] {
+  const counts = new Map<string, number>();
+  for (const teacherId of assignments) {
+    if (!teacherId) continue;
+    counts.set(teacherId, (counts.get(teacherId) || 0) + 1);
+  }
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([teacherId]) => teacherId);
 }
 
 export function buildExamInvigilationTable(
@@ -127,6 +201,7 @@ export function buildExamInvigilationTable(
   const teacherMinutes = new Map(config.teachers.map((teacher) => [teacher.id, 0]));
   const teacherSessions = new Map(config.teachers.map((teacher) => [teacher.id, 0]));
   const groupedTimes = groupSchedules(arrangement, config);
+  const patrolTeacherIds = resolvePatrolTeacherIds(config, teachers);
   const usedRoomIds = new Set<string>();
 
   const rowInputs = groupedTimes.map((times) => {
@@ -156,7 +231,7 @@ export function buildExamInvigilationTable(
     };
   });
 
-  const rooms = arrangement.rooms
+  const rawRooms = arrangement.rooms
     .filter((room) => usedRoomIds.has(room.id))
     .map((room) => ({
       roomId: room.id,
@@ -164,6 +239,8 @@ export function buildExamInvigilationTable(
       roomLocation: room.location || room.name,
       studentCount: Math.max(0, ...rowInputs.map((row) => row.roomStudents.get(room.id)?.size || 0)),
     }));
+  const groupedRooms = groupRoomsByLocation(rawRooms);
+  const rooms = groupedRooms.rooms;
 
   const markAssignment = (teacherId: string | null | undefined, durationMinutes: number) => {
     if (!teacherId) return;
@@ -172,16 +249,14 @@ export function buildExamInvigilationTable(
   };
 
   const rows = rowInputs.map((input) => {
-    const unavailable = new Set<string>();
+    const unavailable = new Set<string>(patrolTeacherIds);
     const override = normalizeOverride(config.overrides?.[input.key], teachers);
     const roomTeacherIds: Record<string, string | null> = {};
 
-    // Reserve every explicit manual assignment before filling automatic cells.
     for (const teacherId of Object.values(override.roomTeacherIds)) {
       if (teacherId) unavailable.add(teacherId);
     }
     if (override.outsideTeacherId) unavailable.add(override.outsideTeacherId);
-    if (override.patrolTeacherId) unavailable.add(override.patrolTeacherId);
 
     const outsideOverridden = Object.prototype.hasOwnProperty.call(override, "outsideTeacherId");
     let outsideTeacherId = outsideOverridden ? override.outsideTeacherId ?? null : undefined;
@@ -192,18 +267,6 @@ export function buildExamInvigilationTable(
         teacherMinutes,
       );
       outsideTeacherId = teacher?.id || null;
-      if (teacher) unavailable.add(teacher.id);
-    }
-
-    const patrolOverridden = Object.prototype.hasOwnProperty.call(override, "patrolTeacherId");
-    let patrolTeacherId = patrolOverridden ? override.patrolTeacherId ?? null : undefined;
-    if (patrolTeacherId === undefined) {
-      const teacher = chooseTeacher(
-        config.teachers.filter((item) => item.isLeader),
-        unavailable,
-        teacherMinutes,
-      );
-      patrolTeacherId = teacher?.id || null;
       if (teacher) unavailable.add(teacher.id);
     }
 
@@ -230,7 +293,7 @@ export function buildExamInvigilationTable(
 
     Object.values(roomTeacherIds).forEach((teacherId) => markAssignment(teacherId, input.durationMinutes));
     markAssignment(outsideTeacherId, input.durationMinutes);
-    markAssignment(patrolTeacherId, input.durationMinutes);
+    patrolTeacherIds.forEach((teacherId) => markAssignment(teacherId, input.durationMinutes));
 
     const first = input.times[0];
     return {
@@ -244,7 +307,11 @@ export function buildExamInvigilationTable(
       roomStudentCounts: Object.fromEntries(rooms.map((room) => [room.roomId, input.roomStudents.get(room.roomId)?.size || 0])),
       roomTeacherIds,
       outsideTeacherId: outsideTeacherId || null,
-      patrolTeacherId: patrolTeacherId || null,
+      duplicateTeacherIds: duplicateTeacherIds([
+        ...Object.values(roomTeacherIds),
+        outsideTeacherId,
+        ...patrolTeacherIds,
+      ]),
     } satisfies ExamInvigilationSlotRow;
   });
 
@@ -256,5 +323,11 @@ export function buildExamInvigilationTable(
     sessions: teacherSessions.get(teacher.id) || 0,
   }));
 
-  return { rooms, rows, teacherStats };
+  return {
+    rooms,
+    roomLocationGroups: groupedRooms.groups,
+    rows,
+    patrolTeacherIds,
+    teacherStats,
+  };
 }

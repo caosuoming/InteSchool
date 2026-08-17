@@ -194,6 +194,11 @@ export const examArrangementService = {
         durationMinutes: Math.max(1, Math.round(item.durationMinutes || 120)),
       };
     });
+    const requestedPatrolTeacherIds = config.patrolTeacherIds ?? [
+      ...teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id),
+      ...Object.values(config.overrides || {}).flatMap((override) => override.patrolTeacherId ? [override.patrolTeacherId] : []),
+    ];
+    const patrolTeacherIds = [...new Set(requestedPatrolTeacherIds)].filter((id) => teacherIds.has(id));
     const validOverrides = Object.fromEntries(Object.entries(config.overrides || {}).map(([key, override]) => [
       key,
       {
@@ -203,14 +208,30 @@ export const examArrangementService = {
         ...(override.outsideTeacherId === null || (override.outsideTeacherId && teacherIds.has(override.outsideTeacherId))
           ? { outsideTeacherId: override.outsideTeacherId }
           : {}),
-        ...(override.patrolTeacherId === null || (override.patrolTeacherId && teacherIds.has(override.patrolTeacherId))
-          ? { patrolTeacherId: override.patrolTeacherId }
-          : {}),
       },
     ]));
+    const teacherMap = new Map(teachers.map((teacher) => [teacher.id, teacher.name]));
+    for (const override of Object.values(validOverrides)) {
+      const assignedTeacherIds = [
+        ...Object.values(override.roomTeacherIds),
+        override.outsideTeacherId,
+        ...patrolTeacherIds,
+      ].filter((id): id is string => Boolean(id));
+      const seen = new Set<string>();
+      const duplicates = new Set<string>();
+      for (const id of assignedTeacherIds) {
+        if (seen.has(id)) duplicates.add(id);
+        seen.add(id);
+      }
+      if (duplicates.size > 0) {
+        const names = [...duplicates].map((id) => teacherMap.get(id) || "未知教师").join("、");
+        throw new Error(`同一场监考不能安排同一位老师：${names}`);
+      }
+    }
+    const invigilation: ExamInvigilationConfig = { teachers, subjectTimes, patrolTeacherIds, overrides: validOverrides };
     const updated: ExamArrangement = {
       ...current,
-      invigilation: { teachers, subjectTimes, overrides: validOverrides },
+      invigilation,
       updatedAt: new Date().toISOString(),
     };
     db.update("examArrangements", (items: ExamArrangement[]) => items.map((item) => (

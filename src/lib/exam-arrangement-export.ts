@@ -1,6 +1,11 @@
 import type { ExamArrangement, ExamSeatAssignment } from "@/types";
 import { buildExamPrintRoomStatistics } from "./exam-print-room-statistics";
-import { buildExamInvigilationTable } from "./exam-invigilation";
+import {
+  buildExamInvigilationTable,
+  examInvigilationPeriodLabel,
+  formatExamDateWithWeekday,
+  formatExamTimeRange,
+} from "./exam-invigilation";
 
 export interface ExamDeskLabelGroup {
   key: string;
@@ -251,25 +256,58 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
     const invigilation = buildExamInvigilationTable(arrangement, arrangement.invigilation);
     if (invigilation.rows.length > 0) {
       const teacherMap = new Map(arrangement.invigilation.teachers.map((teacher) => [teacher.id, teacher.name]));
+      const invigilationHeader = (value: string) => ({ ...header(value), backgroundColor: "#DCECEF" });
+      const invigilationInfoCell = (value: string | number) => ({ ...centeredCell(value), backgroundColor: "#E5F0F2" });
+      const roomLocationHeaderCells = invigilation.roomLocationGroups.flatMap((group) => [
+        { ...invigilationHeader(group.roomLocation), columnSpan: group.roomIds.length },
+        ...group.roomIds.slice(1).map(() => null),
+      ]);
+      const patrolNames = invigilation.patrolTeacherIds.map((id) => teacherMap.get(id)).filter(Boolean).join("、");
+      const invigilationRows = invigilation.rows.map((row, index) => [
+        invigilationInfoCell(formatExamDateWithWeekday(row.date)),
+        invigilationInfoCell(examInvigilationPeriodLabel(row.period)),
+        invigilationInfoCell(formatExamTimeRange(row.time, row.durationMinutes)),
+        invigilationInfoCell(row.subjectLabel),
+        ...invigilation.rooms.map((room) => centeredCell(teacherMap.get(row.roomTeacherIds[room.roomId] || "") || "")),
+        centeredCell(teacherMap.get(row.outsideTeacherId || "") || ""),
+        index === 0 ? { ...invigilationInfoCell(patrolNames), rowSpan: invigilation.rows.length } : null,
+      ]);
+
       sheets.push({
         sheet: "监考表",
         data: [
-          [header("考试地址"), ...invigilation.rooms.map((room) => centeredCell(room.roomLocation)), header("场外监考"), header("巡回")],
-          [header("考场号"), ...invigilation.rooms.map((room) => centeredCell(room.roomNumber)), centeredCell(""), centeredCell("")],
-          [header("试场人数"), ...invigilation.rooms.map((room) => centeredCell(room.studentCount)), centeredCell(""), centeredCell("")],
-          ...invigilation.rows.map((row) => [
-            header(`${row.date} ${row.period === "morning" ? "上午" : "下午"} ${row.time}\n${row.subjectLabel}`),
-            ...invigilation.rooms.map((room) => centeredCell(teacherMap.get(row.roomTeacherIds[room.roomId] || "") || "")),
-            centeredCell(teacherMap.get(row.outsideTeacherId || "") || ""),
-            centeredCell(teacherMap.get(row.patrolTeacherId || "") || ""),
-          ]),
+          [
+            { ...invigilationHeader("考试安排"), columnSpan: 4 }, null, null, null,
+            ...roomLocationHeaderCells,
+            { ...invigilationHeader("场外监考"), rowSpan: 3 },
+            { ...invigilationHeader("巡回"), rowSpan: 3 },
+          ],
+          [
+            invigilationHeader("时间"),
+            invigilationHeader("时段"),
+            invigilationHeader("考试时间"),
+            invigilationHeader("学科"),
+            ...invigilation.rooms.map((room) => invigilationHeader(room.roomNumber)),
+            null,
+            null,
+          ],
+          [
+            { ...invigilationHeader("试场人数"), columnSpan: 4 }, null, null, null,
+            ...invigilation.rooms.map((room) => invigilationInfoCell(room.studentCount)),
+            null,
+            null,
+          ],
+          ...invigilationRows,
         ],
         stickyRowsCount: 3,
         columns: [
           { width: 24 },
+          { width: 10 },
+          { width: 18 },
+          { width: 16 },
           ...invigilation.rooms.map(() => ({ width: 16 })),
           { width: 16 },
-          { width: 16 },
+          { width: 22 },
         ],
       });
     }

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ExamArrangement, ExamInvigilationConfig } from "@/types";
-import { buildExamInvigilationTable, invigilationSlotKey } from "./exam-invigilation";
+import {
+  buildExamInvigilationTable,
+  examInvigilationPeriodLabel,
+  formatExamDateWithWeekday,
+  formatExamTimeRange,
+  invigilationSlotKey,
+} from "./exam-invigilation";
 
 function arrangement(): ExamArrangement {
   return {
@@ -105,8 +111,8 @@ describe("exam invigilation table", () => {
       roomStudentCounts: { "room-1": 1, "room-2": 1 },
       roomTeacherIds: { "room-1": "physics", "room-2": "history" },
       outsideTeacherId: "prep",
-      patrolTeacherId: "leader",
     });
+    expect(table.patrolTeacherIds).toEqual(["leader"]);
     expect(table.rows[1].subjectLabel).toBe("数学");
     expect(table.rows[1].roomTeacherIds["room-1"]).toBeNull();
     expect(table.rows[1].roomTeacherIds["room-2"]).toBeNull();
@@ -138,13 +144,47 @@ describe("exam invigilation table", () => {
       [key]: {
         roomTeacherIds: { "room-1": null },
         outsideTeacherId: null,
-        patrolTeacherId: null,
       },
     };
+    settings.patrolTeacherIds = [];
 
     const table = buildExamInvigilationTable(input, settings);
     expect(table.rows[0].roomTeacherIds["room-1"]).toBeNull();
     expect(table.rows[0].outsideTeacherId).toBeNull();
-    expect(table.rows[0].patrolTeacherId).toBeNull();
+    expect(table.patrolTeacherIds).toEqual([]);
+  });
+
+  it("groups rooms that share one physical address into one header group", () => {
+    const input = arrangement();
+    input.rooms[1].location = input.rooms[0].location;
+
+    const table = buildExamInvigilationTable(input, config());
+
+    expect(table.roomLocationGroups).toEqual([{
+      roomLocation: "教学楼101",
+      roomIds: ["room-1", "room-2"],
+    }]);
+  });
+
+  it("reports duplicate teachers instead of silently clearing another assignment", () => {
+    const settings = config();
+    const key = invigilationSlotKey(settings.subjectTimes.slice(0, 2));
+    settings.overrides = {
+      [key]: {
+        roomTeacherIds: { "room-1": "physics", "room-2": "physics" },
+      },
+    };
+
+    const table = buildExamInvigilationTable(arrangement(), settings);
+
+    expect(table.rows[0].roomTeacherIds).toMatchObject({ "room-1": "physics", "room-2": "physics" });
+    expect(table.rows[0].duplicateTeacherIds).toEqual(["physics"]);
+  });
+
+  it("formats weekday, evening period, and end time for the four exam-info columns", () => {
+    expect(formatExamDateWithWeekday("2026-10-20")).toBe("2026-10-20 星期二");
+    expect(examInvigilationPeriodLabel("evening")).toBe("晚上");
+    expect(formatExamTimeRange("18:30", 120)).toBe("18:30–20:30");
+    expect(formatExamTimeRange("23:30", 120)).toBe("23:30–次日01:30");
   });
 });
