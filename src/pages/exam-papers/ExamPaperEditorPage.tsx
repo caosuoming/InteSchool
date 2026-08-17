@@ -1963,7 +1963,15 @@ export default function ExamPaperEditorPage() {
                         ? "题目"
                         : "文档信息";
                   return (
-                    <section key={block.id} className="rounded-md border border-ink-100 bg-paper p-3">
+                    <section
+                      key={block.id}
+                      className={cn(
+                        "rounded-md border border-ink-100 bg-paper p-3",
+                        block.type === "question" && paperQuestion
+                          && "lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-4",
+                      )}
+                    >
+                      <div className="min-w-0">
                       <div className="mb-2 flex items-center gap-2">
                         {isQuestionGroup && (
                           <button
@@ -1995,24 +2003,6 @@ export default function ExamPaperEditorPage() {
                             comments={prepComments}
                             onCommentsChange={setPrepComments}
                           />
-                        )}
-                        {block.type === "question" && paperQuestion && (
-                          <>
-                            <Badge variant="default">{typeLabel[paperQuestion.type]}</Badge>
-                            <QuestionProgressBadge
-                              progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
-                            />
-                            <div className="ml-auto flex items-center gap-1">
-                              <Input
-                                aria-label="题目分值"
-                                type="number"
-                                value={String(paperQuestion.score)}
-                                onChange={(event) => handleUpdateScore(paperQuestion.id, Number(event.target.value))}
-                                className="w-16 text-xs"
-                              />
-                              <span className="text-xs text-ink-500">分</span>
-                            </div>
-                          </>
                         )}
                         {isQuestionGroup && headingQuestionCount > 0 && (
                           <div className="ml-auto flex items-center gap-1.5">
@@ -2069,14 +2059,6 @@ export default function ExamPaperEditorPage() {
                           >
                             <ChevronDown className="h-4 w-4" />
                           </button>
-                          {block.type === "question" && paperQuestionIndex >= 0 && (
-                            <button
-                              onClick={() => handleReplaceQuestion(paperQuestionIndex)}
-                              className="px-2 py-1 text-xs text-teal-600 hover:text-teal-700"
-                            >
-                              换题
-                            </button>
-                          )}
                           <button
                             onClick={() => removeContentBlock(block.id)}
                             className="p-1 text-ink-400 hover:text-red-600"
@@ -2128,6 +2110,28 @@ export default function ExamPaperEditorPage() {
                           disabled={isStructureLocked}
                           rows={4}
                         />
+                      )}
+                      </div>
+                      {block.type === "question" && paperQuestion && (
+                        <aside className="min-w-0">
+                          <EditQuestionCatalogPanel
+                            pq={paperQuestion}
+                            index={paperQuestionIndex}
+                            question={linkedQuestion}
+                            schoolId={schoolId}
+                            chapterTree={chapterTree}
+                            knowledgeTree={knowledgeTree}
+                            chapterNameMap={chapterNameMap}
+                            knowledgeNameMap={knowledgeNameMap}
+                            onUpdateCatalogs={handleUpdateQuestionCatalogs}
+                            onReplace={(replacement) => replacePaperQuestionAt(paperQuestionIndex, replacement)}
+                            onOpenReplace={() => handleReplaceQuestion(paperQuestionIndex)}
+                            onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
+                            progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
+                            excludedQuestionIds={paperQuestionIds}
+                            structureLocked={isStructureLocked}
+                          />
+                        </aside>
                       )}
                     </section>
                   );
@@ -2235,15 +2239,11 @@ export default function ExamPaperEditorPage() {
                               pq={item.pq}
                               index={item.index}
                               total={paperQuestions.length}
-                              question={item.question}
-                              progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
                               canMoveUp={itemIndex > 0}
                               canMoveDown={itemIndex < group.questions.length - 1}
                               onMoveUp={() => handleMoveWithinGroup(item.index, "up")}
                               onMoveDown={() => handleMoveWithinGroup(item.index, "down")}
                               onRemove={() => handleRemoveQuestion(item.pq.id)}
-                              onReplace={() => handleReplaceQuestion(item.index)}
-                              onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
                               structureLocked={isStructureLocked}
                               sidebar={(
                                 <EditQuestionCatalogPanel
@@ -2257,6 +2257,9 @@ export default function ExamPaperEditorPage() {
                                   knowledgeNameMap={knowledgeNameMap}
                                   onUpdateCatalogs={handleUpdateQuestionCatalogs}
                                   onReplace={(replacement) => replacePaperQuestionAt(item.index, replacement)}
+                                  onOpenReplace={() => handleReplaceQuestion(item.index)}
+                                  onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
+                                  progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
                                   excludedQuestionIds={paperQuestionIds}
                                   structureLocked={isStructureLocked}
                                 />
@@ -2289,13 +2292,9 @@ export default function ExamPaperEditorPage() {
                       pq={paperQuestion}
                       index={index}
                       total={paperQuestions.length}
-                      question={paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined}
-                      progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
                       onMoveUp={() => handleMove(index, "up")}
                       onMoveDown={() => handleMove(index, "down")}
                       onRemove={() => handleRemoveQuestion(paperQuestion.id)}
-                      onReplace={() => handleReplaceQuestion(index)}
-                      onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
                       structureLocked={isStructureLocked}
                       sidebar={(
                         <EditQuestionCatalogPanel
@@ -2309,6 +2308,9 @@ export default function ExamPaperEditorPage() {
                           knowledgeNameMap={knowledgeNameMap}
                           onUpdateCatalogs={handleUpdateQuestionCatalogs}
                           onReplace={(replacement) => replacePaperQuestionAt(index, replacement)}
+                          onOpenReplace={() => handleReplaceQuestion(index)}
+                          onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
+                          progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
                           excludedQuestionIds={paperQuestionIds}
                           structureLocked={isStructureLocked}
                         />
@@ -2960,6 +2962,9 @@ function EditQuestionCatalogPanel({
   knowledgeNameMap,
   onUpdateCatalogs,
   onReplace,
+  onOpenReplace,
+  onUpdateScore,
+  progress,
   excludedQuestionIds,
   structureLocked,
 }: {
@@ -2973,6 +2978,9 @@ function EditQuestionCatalogPanel({
   knowledgeNameMap: Map<string, string>;
   onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[]) => Promise<void>;
   onReplace: (question: Question) => void;
+  onOpenReplace: () => void;
+  onUpdateScore: (score: number) => void;
+  progress?: QuestionProgress;
   excludedQuestionIds: Set<string>;
   structureLocked: boolean;
 }) {
@@ -2990,6 +2998,7 @@ function EditQuestionCatalogPanel({
   const knowledgeNames = (question?.knowledgePointIds || [])
     .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
     .filter(Boolean) as string[];
+  const difficulty = question?.difficulty || 3;
 
   const openCatalogEditor = () => {
     if (!question) return;
@@ -3058,24 +3067,52 @@ function EditQuestionCatalogPanel({
         className="rounded-lg border border-ink-100 bg-paper p-3 shadow-sm"
         data-testid={`exam-editor-question-details-${index + 1}`}
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题目录</div>
-            <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题属性</div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
+              <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
+                {difficultyLabel[difficulty]}
+              </Badge>
+              <QuestionProgressBadge progress={progress} />
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={openCatalogEditor}
-            disabled={!question}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
-            aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
-          >
-            <Edit3 className="h-3 w-3" />
-            编辑
-          </button>
+          {!structureLocked && (
+            <Button variant="outline" size="sm" onClick={onOpenReplace} aria-label="换题">
+              换题
+            </Button>
+          )}
+        </div>
+
+        <div className="mb-3 flex items-center gap-2 border-b border-ink-100 pb-3">
+          <span className="text-xs text-ink-400">分值</span>
+          <Input
+            aria-label="题目分值"
+            type="number"
+            min="0"
+            step="0.5"
+            value={String(pq.score)}
+            onChange={(event) => onUpdateScore(Number(event.target.value))}
+            className="h-8 w-20 text-xs"
+          />
+          <span className="text-xs text-ink-500">分</span>
         </div>
 
         <div className="space-y-1 text-xs leading-5 text-ink-600">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-medium text-ink-600">章节课与知识点</span>
+            <button
+              type="button"
+              onClick={openCatalogEditor}
+              disabled={!question}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
+              aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
+            >
+              <Edit3 className="h-3 w-3" />
+              编辑
+            </button>
+          </div>
           <div>
             <span className="text-ink-400">章节课目录：</span>
             {chapterNames.length > 0 ? chapterNames.join("、") : "暂无关联章节课"}
@@ -3591,27 +3628,23 @@ function QuestionProgressBadge({ progress }: { progress?: QuestionProgress }) {
 
 // ===== 编辑模式的题目行 =====
 function EditQuestionRow({
-  pq, index, total, question, progress, canMoveUp, canMoveDown,
-  onMoveUp, onMoveDown, onRemove, onReplace, onUpdateScore, structureLocked = false, sidebar,
+  pq, index, total, canMoveUp, canMoveDown,
+  onMoveUp, onMoveDown, onRemove, structureLocked = false, sidebar,
 }: {
   pq: ExamPaperQuestion;
   index: number;
   total: number;
-  question: Question | null | undefined;
-  progress?: QuestionProgress;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemove: () => void;
-  onReplace: () => void;
-  onUpdateScore: (score: number) => void;
   structureLocked?: boolean;
   sidebar?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className={cn(sidebar && "grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start")}>
+    <div className={cn(sidebar && "grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start")}>
     <div className="border border-ink-100 rounded-md p-3 hover:border-ink-200 transition-colors">
       <div className="flex items-start gap-2">
         {/* 上下移动 */}
@@ -3635,25 +3668,8 @@ function EditQuestionRow({
         </div>}
 
         <div className="flex-1 min-w-0">
-          {/* 标签行 */}
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+          <div className="mb-1.5">
             <span className="font-mono text-sm font-bold text-ink-400">{index + 1}.</span>
-            <Badge variant="ink">{typeLabel[pq.type]}</Badge>
-            {question && (
-              <Badge variant={difficultyVariant[question.difficulty] as any}>
-                {difficultyLabel[question.difficulty]}
-              </Badge>
-            )}
-            <QuestionProgressBadge progress={progress} />
-            <div className="flex items-center gap-1">
-              <Input
-                type="number"
-                value={String(pq.score)}
-                onChange={(e) => onUpdateScore(Number(e.target.value))}
-                className="w-16 text-xs"
-              />
-              <span className="text-xs text-ink-500">分</span>
-            </div>
           </div>
           {/* 题干 */}
           <div
@@ -3698,13 +3714,6 @@ function EditQuestionRow({
 
         {/* 操作按钮 */}
         {!structureLocked && <div className="flex-shrink-0 flex items-center gap-1">
-          <button
-            onClick={onReplace}
-            className="px-2 py-1 rounded text-xs text-teal-600 hover:bg-teal-50 transition-colors"
-            title="换题"
-          >
-            换题
-          </button>
           <button
             onClick={onRemove}
             className="p-1.5 rounded text-ink-400 hover:bg-red-50 hover:text-red-600 transition-colors"

@@ -747,9 +747,15 @@ describe("ExamPaperEditorPage preview", () => {
     expect(firstOptionRow).not.toHaveClass("border");
 
     const details = screen.getByTestId("exam-editor-question-details-1");
+    expect(details).toHaveTextContent("第 1 题属性");
+    expect(details).toHaveTextContent("单选");
+    expect(details).toHaveTextContent("较易");
     expect(details).toHaveTextContent("章节课目录");
     expect(details).toHaveTextContent("知识点目录");
     expect(details).toHaveTextContent("函数定义域");
+    expect(within(details).getByLabelText<HTMLInputElement>("题目分值")).toHaveValue(7);
+    expect(details.parentElement?.parentElement).toHaveClass("lg:grid-cols-[minmax(0,1fr)_320px]");
+    expect(within(details).getByRole("button", { name: "换题" })).toBeInTheDocument();
     expect(within(details).getByRole("button", { name: "编辑第 1 题章节课和知识点" })).toBeInTheDocument();
 
     fireEvent.click(within(details).getByRole("button", { name: "相关题" }));
@@ -842,5 +848,11 @@ describe("ExamPaperEditorPage structured editor", () => {
     const scoreInputs = screen.getAllByLabelText<HTMLInputElement>("题目分值");
     expect(scoreInputs).toHaveLength(2);
     expect(scoreInputs.every((input) => !input.disabled)).toBe(true);
+
+    const firstDetails = screen.getByTestId("exam-editor-question-details-1");
+    expect(firstDetails).toHaveTextContent("第 1 题属性");
+    expect(firstDetails.parentElement?.parentElement).toHaveClass("lg:grid-cols-[minmax(0,1fr)_320px]");
+    expect(within(firstDetails).getByLabelText("题目分值")).toBe(scoreInputs[0]);
+    expect(within(firstDetails).queryByRole("button", { name: "换题" })).not.toBeInTheDocument();
   });
 });
