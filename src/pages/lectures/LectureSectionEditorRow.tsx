@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -30,6 +30,7 @@ interface LectureSectionEditorRowProps {
   onReplaceQuestion?: () => void;
   onRemove: () => void;
   readOnly?: boolean;
+  dragHandle?: ReactNode;
 }
 
 const sectionLabels: Record<LectureSection["type"], string> = {
@@ -53,6 +54,7 @@ export function LectureSectionEditorRow({
   onReplaceQuestion,
   onRemove,
   readOnly = false,
+  dragHandle,
 }: LectureSectionEditorRowProps) {
   const [showAnswer, setShowAnswer] = useState(false);
   const Icon = section.type === "question"
@@ -64,7 +66,7 @@ export function LectureSectionEditorRow({
   return (
     <article className="overflow-hidden rounded-lg border border-ink-100 bg-paper transition-colors hover:border-ink-200">
       <div className="flex flex-wrap items-center gap-2 border-b border-ink-100 bg-ink-50/60 px-3 py-2">
-        {!readOnly && <GripVertical className="h-4 w-4 flex-shrink-0 text-ink-300" aria-hidden="true" />}
+        {!readOnly && (dragHandle || <GripVertical className="h-4 w-4 flex-shrink-0 text-ink-300" aria-hidden="true" />)}
         <Badge variant={section.type === "question" ? "teal" : section.type === "knowledge" ? "gold" : "ink"}>
           {sectionLabels[section.type]}
         </Badge>
