@@ -186,6 +186,8 @@ describe("MyExamsPage", () => {
     expect(screen.getByText("物化生")).toBeInTheDocument();
     expect(screen.getByText("语数外")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任课教师名单" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "考试时间配置" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "监考表" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "监考时长" })).toBeInTheDocument();
