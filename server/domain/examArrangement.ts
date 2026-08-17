@@ -228,7 +228,18 @@ export const examArrangementService = {
         throw new Error(`同一场监考不能安排同一位老师：${names}`);
       }
     }
-    const invigilation: ExamInvigilationConfig = { teachers, subjectTimes, patrolTeacherIds, overrides: validOverrides };
+    const teacherNotes = Object.fromEntries(Object.entries(config.teacherNotes || {}).flatMap(([teacherId, note]) => {
+      if (!teacherIds.has(teacherId)) return [];
+      const value = note.trim();
+      return value ? [[teacherId, value]] : [];
+    }));
+    const invigilation: ExamInvigilationConfig = {
+      teachers,
+      subjectTimes,
+      patrolTeacherIds,
+      overrides: validOverrides,
+      ...(Object.keys(teacherNotes).length ? { teacherNotes } : {}),
+    };
     const updated: ExamArrangement = {
       ...current,
       invigilation,

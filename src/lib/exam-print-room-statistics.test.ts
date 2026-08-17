@@ -174,7 +174,7 @@ describe("exam print-room statistics", () => {
 
     expect(toFile).toHaveBeenCalledWith("高三期中考试_文印室统计表.xlsx");
     const workbook = writeXlsxFile.mock.calls[0]?.[0];
-    expect(workbook[0].sheet).toBe("文印室统计表");
+    expect(workbook[0].sheet).toBe("表一、文印室统计表");
     expect(workbook[0].data.slice(0, 3).map((row: Array<{ value: unknown }>) => row[0].value)).toEqual([
       "考场号",
       "考试地点",

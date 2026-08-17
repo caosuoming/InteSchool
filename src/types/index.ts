@@ -565,6 +565,8 @@ export interface ExamInvigilationConfig {
   /** 全部场次共用的巡回教师；缺省时由领导教师自动补全。 */
   patrolTeacherIds?: string[];
   overrides?: Record<string, ExamInvigilationSlotOverride>;
+  /** 监考时长统计表中的人工备注，按当前监考教师 ID 保存。 */
+  teacherNotes?: Record<string, string>;
 }
 
 export interface ExamRoomConfig {

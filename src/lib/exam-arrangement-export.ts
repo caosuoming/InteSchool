@@ -233,7 +233,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
   });
 
   const sheets = [{
-    sheet: "文印室统计表",
+    sheet: "表一、文印室统计表",
     data: [
       [header("考场号"), ...statistics.rooms.map((room) => header(room.roomNumber)), header("合计")],
       [header("考试地点"), ...statistics.rooms.map((room) => centeredCell(room.roomLocation)), centeredCell("")],
@@ -274,7 +274,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
       ]);
 
       sheets.push({
-        sheet: "监考表",
+        sheet: "表二、监考表",
         data: [
           [
             { ...invigilationHeader("考试安排"), columnSpan: 4 }, null, null, null,
