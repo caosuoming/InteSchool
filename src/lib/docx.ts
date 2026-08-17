@@ -4,6 +4,7 @@ import {
   BorderStyle, convertInchesToTwip, ImportedXmlComponent, ImageRun,
   type ParagraphChild,
 } from "docx";
+import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import katex from "katex";
 import { mml2omml } from "mathml2omml";
@@ -869,9 +870,92 @@ async function createRichLabeledParagraph(
   });
 }
 
+function safeFileStem(title: string, fallback: string): string {
+  return title.trim().replace(/[\\/:*?"<>|]/g, "_") || fallback;
+}
+
 function safeDocxFileName(title: string, fallback = "试卷"): string {
-  const normalized = title.trim().replace(/[\\/:*?"<>|]/g, "_");
-  return `${normalized || fallback}.docx`;
+  return `${safeFileStem(title, fallback)}.docx`;
+}
+
+export type DocumentDownloadMode = "student" | "teacher" | "normal" | "answers";
+
+const documentDownloadModeLabel: Record<DocumentDownloadMode, string> = {
+  student: "学生用卷",
+  teacher: "教师用卷",
+  normal: "普通用卷",
+  answers: "纯答案版",
+};
+
+interface DocumentBuildOptions {
+  mode?: DocumentDownloadMode;
+}
+
+interface NumberedSolution {
+  number: number;
+  answer: string;
+  analysis: string;
+}
+
+async function appendNumberedSolution(
+  children: Paragraph[],
+  solution: NumberedSolution,
+  includeAnalysis: boolean,
+): Promise<void> {
+  children.push(new Paragraph({
+    children: [
+      textRun(`${solution.number}. `, { bold: true, size: 22 }),
+      textRun("答案：", { bold: true, color: "059669", size: 22 }),
+      ...await documentRichChildren(solution.answer, { color: "059669", size: 22 }),
+    ],
+    alignment: AlignmentType.LEFT,
+    spacing: { before: 160, line: 360 },
+  }));
+  if (includeAnalysis) {
+    children.push(new Paragraph({
+      children: [
+        textRun("解析：", { bold: true, color: "D4A24C", size: 22 }),
+        ...await documentRichChildren(solution.analysis, { size: 22 }),
+      ],
+      alignment: AlignmentType.LEFT,
+      spacing: { line: 360 },
+    }));
+  }
+}
+
+async function appendSolutionSection(
+  children: Paragraph[],
+  solutions: NumberedSolution[],
+  mode: "normal" | "answers",
+): Promise<void> {
+  if (solutions.length === 0) return;
+  children.push(createHeading(mode === "answers" ? "答案" : "答案解析", HeadingLevel.HEADING_2));
+  for (const solution of solutions) {
+    await appendNumberedSolution(children, solution, mode === "normal");
+  }
+}
+
+async function downloadDocumentVariants(
+  title: string,
+  fallback: string,
+  modes: DocumentDownloadMode[],
+  build: (mode: DocumentDownloadMode) => Promise<Blob>,
+): Promise<void> {
+  const uniqueModes = Array.from(new Set(modes));
+  if (uniqueModes.length === 0) throw new Error("请至少选择一种下载模式");
+
+  const stem = safeFileStem(title, fallback);
+  if (uniqueModes.length === 1) {
+    const mode = uniqueModes[0];
+    saveAs(await build(mode), `${stem}_${documentDownloadModeLabel[mode]}.docx`);
+    return;
+  }
+
+  const zip = new JSZip();
+  for (const mode of uniqueModes) {
+    zip.file(`${stem}_${documentDownloadModeLabel[mode]}.docx`, await build(mode));
+  }
+  saveAs(await zip.generateAsync({ type: "blob" }), `${stem}_下载版本.zip`);
 }
 
 async function appendExamQuestion(
@@ -879,6 +963,8 @@ async function appendExamQuestion(
   question: ExamPaperQuestion,
   linkedQuestion: Question | undefined,
   number: number,
+  mode: DocumentDownloadMode,
+  markMultiple: boolean,
   stemOverride?: string,
 ): Promise<void> {
   const stem = stemOverride || question.stem || linkedQuestion?.stem || "";
@@ -890,6 +976,9 @@ async function appendExamQuestion(
     new Paragraph({
       children: [
         textRun(`${number}. `, { bold: true, size: 24 }),
+        ...(markMultiple && (question.type === "multiple" || linkedQuestion?.type === "multiple")
+          ? [textRun("（多选）", { bold: true, size: 24 })]
+          : []),
         ...await documentRichChildren(stem, { size: 24 }),
       ],
       alignment: AlignmentType.LEFT,
@@ -901,22 +990,40 @@ async function appendExamQuestion(
     children.push(...await createOptionParagraphs(options));
   }
 
-  children.push(await createRichLabeledParagraph("答案", answer, "059669"));
-  children.push(await createRichLabeledParagraph("解析", analysis, "D4A24C"));
+  if (mode === "teacher") {
+    children.push(await createRichLabeledParagraph("答案", answer, "059669"));
+    children.push(await createRichLabeledParagraph("解析", analysis, "D4A24C"));
+  }
 }
 
 export async function buildExamPaperDocxBlob(
   paper: ExamPaper,
   questionsById: Record<string, Question> = {},
+  options: DocumentBuildOptions = {},
 ): Promise<Blob> {
   const children: Paragraph[] = [];
   const contentBlocks = paper.contentBlocks || [];
+  const mode = options.mode || "teacher";
+  const solutions: NumberedSolution[] = [];
+  const markMultiple = paper.layoutMode === "flat";
 
   if (contentBlocks.length > 0) {
+    if (mode === "answers") {
+      const title = plainDocumentText(
+        contentBlocks.find((block) => block.type === "documentTitle")?.content || paper.title,
+      );
+      children.push(new Paragraph({
+        children: documentTextChildren(title),
+        heading: HeadingLevel.TITLE,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 360 },
+      }));
+    }
     let questionNumber = 0;
     for (const block of contentBlocks) {
       const content = plainDocumentText(block.content);
       if (block.type === "documentTitle") {
+        if (mode === "answers") continue;
         children.push(
           new Paragraph({
             children: documentTextChildren(content),
@@ -928,10 +1035,12 @@ export async function buildExamPaperDocxBlob(
         continue;
       }
       if (block.type === "groupTitle" || block.type === "heading") {
+        if (mode === "answers") continue;
         children.push(createHeading(content));
         continue;
       }
       if (block.type === "knowledge") {
+        if (mode === "answers") continue;
         if (block.title) children.push(createHeading(plainDocumentText(block.title), HeadingLevel.HEADING_3));
         if (block.content.trim()) children.push(await createRichParagraph(block.content, { spacing: { line: 360 } }));
         continue;
@@ -940,20 +1049,31 @@ export async function buildExamPaperDocxBlob(
         const question = paper.questions.find((item) => item.id === block.examPaperQuestionId)
           || paper.questions.find((item) => item.questionId && item.questionId === block.questionId);
         if (!question) {
-          if (block.content.trim()) children.push(await createRichParagraph(block.content, { spacing: { line: 360 } }));
+          if (mode !== "answers" && block.content.trim()) {
+            children.push(await createRichParagraph(block.content, { spacing: { line: 360 } }));
+          }
           continue;
         }
         questionNumber += 1;
         const linkedQuestionId = question.questionId || block.questionId;
-        await appendExamQuestion(
-          children,
-          question,
-          linkedQuestionId ? questionsById[linkedQuestionId] : undefined,
-          questionNumber,
-          block.content,
-        );
+        const linkedQuestion = linkedQuestionId ? questionsById[linkedQuestionId] : undefined;
+        const answer = question.answer || linkedQuestion?.answer || "暂无答案";
+        const analysis = question.analysis || linkedQuestion?.analysis || "暂无解析";
+        solutions.push({ number: questionNumber, answer, analysis });
+        if (mode !== "answers") {
+          await appendExamQuestion(
+            children,
+            question,
+            linkedQuestion,
+            questionNumber,
+            mode,
+            markMultiple,
+            block.content,
+          );
+        }
         continue;
       }
+      if (mode === "answers") continue;
       if (block.content.trim()) children.push(await createRichParagraph(block.content, { spacing: { line: 360 } }));
     }
   } else {
@@ -965,30 +1085,46 @@ export async function buildExamPaperDocxBlob(
         spacing: { after: 180 },
       }),
     );
-    if (paper.description) {
+    if (mode !== "answers" && paper.description) {
       children.push(await createRichParagraph(paper.description, {
         color: "6B7280",
         alignment: AlignmentType.CENTER,
         spacing: { after: 120 },
       }));
     }
-    children.push(createParagraph(
-      `${paper.grade} · ${paper.schoolYear} · ${paper.semester || "上学期"} · ${paper.duration} 分钟 · 满分 ${paper.totalScore} 分`,
-      {
-        color: "6B7280",
-        size: 20,
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 360 },
-      },
-    ));
-    for (const [index, question] of paper.questions.entries()) {
-      await appendExamQuestion(
-        children,
-        question,
-        question.questionId ? questionsById[question.questionId] : undefined,
-        index + 1,
-      );
+    if (mode !== "answers") {
+      children.push(createParagraph(
+        `${paper.grade} · ${paper.schoolYear} · ${paper.semester || "上学期"} · ${paper.duration} 分钟 · 满分 ${paper.totalScore} 分`,
+        {
+          color: "6B7280",
+          size: 20,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 360 },
+        },
+      ));
     }
+    for (const [index, question] of paper.questions.entries()) {
+      const linkedQuestion = question.questionId ? questionsById[question.questionId] : undefined;
+      solutions.push({
+        number: index + 1,
+        answer: question.answer || linkedQuestion?.answer || "暂无答案",
+        analysis: question.analysis || linkedQuestion?.analysis || "暂无解析",
+      });
+      if (mode !== "answers") {
+        await appendExamQuestion(
+          children,
+          question,
+          linkedQuestion,
+          index + 1,
+          mode,
+          markMultiple,
+        );
+      }
+    }
+  }
+
+  if (mode === "normal" || mode === "answers") {
+    await appendSolutionSection(children, solutions, mode);
   }
 
   if (children.length === 0) {
@@ -1019,10 +1155,24 @@ export async function buildExamPaperDocxBlob(
 export async function generateExamPaperDocx(
   paper: ExamPaper,
   questionsById: Record<string, Question> = {},
+  options: DocumentBuildOptions = {},
 ): Promise<void> {
   const fileName = safeDocxFileName(paper.title);
-  const blob = await buildExamPaperDocxBlob(paper, questionsById);
+  const blob = await buildExamPaperDocxBlob(paper, questionsById, options);
   saveAs(blob, fileName);
+}
+
+export async function downloadExamPaperDocxVariants(
+  paper: ExamPaper,
+  questionsById: Record<string, Question>,
+  modes: DocumentDownloadMode[],
+): Promise<void> {
+  await downloadDocumentVariants(
+    paper.title,
+    "试卷",
+    modes,
+    (mode) => buildExamPaperDocxBlob(paper, questionsById, { mode }),
+  );
 }
 
 async function appendLectureQuestion(
@@ -1030,19 +1180,21 @@ async function appendLectureQuestion(
   section: LectureSection,
   question: Question | undefined,
   number: number,
+  mode: DocumentDownloadMode,
 ): Promise<void> {
   const label = section.customLabel || `${number}.`;
   const stem = question?.stem || section.content || section.title;
   children.push(new Paragraph({
     children: [
       textRun(`${label} `, { bold: true, size: 24 }),
+      ...(question?.type === "multiple" ? [textRun("（多选）", { bold: true, size: 24 })] : []),
       ...await documentRichChildren(stem, { size: 24 }),
     ],
     alignment: AlignmentType.LEFT,
     spacing: { before: 240, after: 120, line: 360 },
   }));
   if (question?.options?.length) children.push(...await createOptionParagraphs(question.options));
-  if (question) {
+  if (question && mode === "teacher") {
     children.push(await createRichLabeledParagraph("答案", question.answer || "暂无答案", "059669"));
     children.push(await createRichLabeledParagraph("解析", question.analysis || "暂无解析", "D4A24C"));
   }
@@ -1053,6 +1205,8 @@ async function appendLectureSections(
   sections: LectureSection[],
   questionsById: Record<string, Question>,
   questionCounter: { value: number },
+  mode: DocumentDownloadMode,
+  solutions: NumberedSolution[],
   depth = 0,
   documentTitleSectionId: string | null = null,
 ): Promise<void> {
@@ -1060,29 +1214,46 @@ async function appendLectureSections(
     if (section.id === documentTitleSectionId) continue;
     if (section.type === "question") {
       questionCounter.value += 1;
-      await appendLectureQuestion(
-        children,
-        section,
-        section.questionId ? questionsById[section.questionId] : undefined,
-        questionCounter.value,
-      );
-    } else if (section.type === "chapter") {
-      const heading = section.customLabel ? `${section.customLabel} ${section.title}` : section.title;
-      children.push(createHeading(
-        plainDocumentText(heading),
-        depth > 0 ? HeadingLevel.HEADING_3 : HeadingLevel.HEADING_2,
-      ));
-      if (section.content) children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
-    } else if (section.type === "knowledge") {
-      if (section.content) children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
-    } else if (section.content || !["空白行", "[空白行]"].includes(section.title)) {
-      if (section.title && !["正文", "文档正文"].includes(section.title)) {
-        const heading = section.customLabel ? `${section.customLabel} ${section.title}` : section.title;
-        children.push(createHeading(plainDocumentText(heading), HeadingLevel.HEADING_3));
+      const question = section.questionId ? questionsById[section.questionId] : undefined;
+      if (question) {
+        solutions.push({
+          number: questionCounter.value,
+          answer: question.answer || "暂无答案",
+          analysis: question.analysis || "暂无解析",
+        });
       }
-      if (section.content) children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
-      else children.push(createParagraph(" ", { spacing: { after: 240 } }));
-    } else {
+      if (mode !== "answers") {
+        await appendLectureQuestion(
+          children,
+          section,
+          question,
+          questionCounter.value,
+          mode,
+        );
+      }
+    } else if (section.type === "chapter") {
+      if (mode !== "answers") {
+        const heading = section.customLabel ? `${section.customLabel} ${section.title}` : section.title;
+        children.push(createHeading(
+          plainDocumentText(heading),
+          depth > 0 ? HeadingLevel.HEADING_3 : HeadingLevel.HEADING_2,
+        ));
+        if (section.content) children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
+      }
+    } else if (section.type === "knowledge") {
+      if (mode !== "answers" && section.content) {
+        children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
+      }
+    } else if (section.content || !["空白行", "[空白行]"].includes(section.title)) {
+      if (mode !== "answers") {
+        if (section.title && !["正文", "文档正文"].includes(section.title)) {
+          const heading = section.customLabel ? `${section.customLabel} ${section.title}` : section.title;
+          children.push(createHeading(plainDocumentText(heading), HeadingLevel.HEADING_3));
+        }
+        if (section.content) children.push(await createRichParagraph(section.content, { spacing: { line: 360 } }));
+        else children.push(createParagraph(" ", { spacing: { after: 240 } }));
+      }
+    } else if (mode !== "answers") {
       children.push(createParagraph(" ", { spacing: { after: 240 } }));
     }
     if (section.children?.length) {
@@ -1091,6 +1262,8 @@ async function appendLectureSections(
         section.children,
         questionsById,
         questionCounter,
+        mode,
+        solutions,
         depth + 1,
         documentTitleSectionId,
       );
@@ -1101,8 +1274,11 @@ async function appendLectureSections(
 export async function buildLectureDocxBlob(
   lecture: Lecture,
   questionsById: Record<string, Question> = {},
+  options: DocumentBuildOptions = {},
 ): Promise<Blob> {
   const children: Paragraph[] = [];
+  const mode = options.mode || "teacher";
+  const solutions: NumberedSolution[] = [];
   const documentTitle = lecture.contentBlocks
     ?.find((block) => block.type === "documentTitle")
     ?.content.trim() || lecture.title;
@@ -1116,7 +1292,7 @@ export async function buildLectureDocxBlob(
     alignment: AlignmentType.CENTER,
     spacing: { after: 360 },
   }));
-  if (lecture.description) {
+  if (mode !== "answers" && lecture.description) {
     children.push(await createRichParagraph(lecture.description, {
       color: "6B7280",
       alignment: AlignmentType.CENTER,
@@ -1128,9 +1304,14 @@ export async function buildLectureDocxBlob(
     lecture.sections,
     questionsById,
     { value: 0 },
+    mode,
+    solutions,
     0,
     documentTitleSectionId,
   );
+  if (mode === "normal" || mode === "answers") {
+    await appendSolutionSection(children, solutions, mode);
+  }
   if (children.length === 1 && !lecture.description) {
     children.push(createParagraph("该讲义暂无可下载内容。"));
   }
@@ -1156,10 +1337,24 @@ export async function buildLectureDocxBlob(
 export async function generateLectureDocx(
   lecture: Lecture,
   questionsById: Record<string, Question> = {},
+  options: DocumentBuildOptions = {},
 ): Promise<void> {
   const fileName = safeDocxFileName(lecture.title, "讲义");
-  const blob = await buildLectureDocxBlob(lecture, questionsById);
+  const blob = await buildLectureDocxBlob(lecture, questionsById, options);
   saveAs(blob, fileName);
+}
+
+export async function downloadLectureDocxVariants(
+  lecture: Lecture,
+  questionsById: Record<string, Question>,
+  modes: DocumentDownloadMode[],
+): Promise<void> {
+  await downloadDocumentVariants(
+    lecture.title,
+    "讲义",
+    modes,
+    (mode) => buildLectureDocxBlob(lecture, questionsById, { mode }),
+  );
 }
 
 export async function generateQuestionDocx(

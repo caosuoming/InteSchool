@@ -43,6 +43,7 @@ import {
 } from "@/components/editor/PreviewSidebarControls";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
 import { ResourceCommentButton } from "@/components/prep/ResourceCommentButton";
+import { DocumentDownloadModeModal } from "@/components/resource/DocumentDownloadModeModal";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
 import {
   commonScoreUnderHeading,
@@ -85,7 +86,10 @@ import type {
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { buildResourceTypeOptions } from "@/lib/resource-type-hierarchy";
-import { generateExamPaperDocx } from "@/lib/docx";
+import {
+  downloadExamPaperDocxVariants,
+  type DocumentDownloadMode,
+} from "@/lib/docx";
 import { treeNameMap } from "@/lib/basket-audience";
 import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
 import { isDocumentStructureLocked } from "@/lib/document-resource";
@@ -214,6 +218,8 @@ export default function ExamPaperEditorPage() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloadModes, setDownloadModes] = useState<DocumentDownloadMode[]>(["teacher"]);
   const [duplicating, setDuplicating] = useState(false);
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
   const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
@@ -1200,7 +1206,7 @@ export default function ExamPaperEditorPage() {
     if (!paper) return;
     setDownloading(true);
     try {
-      await generateExamPaperDocx({
+      await downloadExamPaperDocxVariants({
         ...paper,
         title,
         description,
@@ -1211,8 +1217,13 @@ export default function ExamPaperEditorPage() {
         totalScore,
         questions: paperQuestions,
         contentBlocks,
-      }, questions);
-      toast.success("试卷已下载", "数学公式已优先转换为 MathType 格式");
+        layoutMode,
+      }, questions, downloadModes);
+      setDownloadModalOpen(false);
+      toast.success(
+        downloadModes.length > 1 ? `已下载 ${downloadModes.length} 个试卷版本` : "试卷已下载",
+        "数学公式已优先转换为 MathType 格式",
+      );
     } catch (error) {
       toast.error("下载失败", error instanceof Error ? error.message : "无法生成试卷文档");
     } finally {
@@ -1486,7 +1497,7 @@ export default function ExamPaperEditorPage() {
               创建副本
             </Button>
           )}
-          <Button variant="outline" onClick={handleDownload} loading={downloading}>
+          <Button variant="outline" onClick={() => setDownloadModalOpen(true)}>
             <Download className="w-4 h-4" />
             下载
           </Button>
@@ -1734,6 +1745,15 @@ export default function ExamPaperEditorPage() {
           onUnlockAtChange={setPublishUnlockAt}
           onPublish={handlePublish}
           publishing={publishing}
+        />
+        <DocumentDownloadModeModal
+          open={downloadModalOpen}
+          onClose={() => setDownloadModalOpen(false)}
+          selectedModes={downloadModes}
+          onSelectedModesChange={setDownloadModes}
+          onDownload={() => void handleDownload()}
+          loading={downloading}
+          resourceLabel="试卷"
         />
         {audienceModal}
       </div>
