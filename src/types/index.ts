@@ -529,7 +529,7 @@ export type ExamArrangementMode = "combination" | "subject";
 export type ExamSubjectSetupMode = "all" | "selection" | "academicNonSelection";
 export type ExamSeatOrder = "random" | "previousRank";
 export type ExamStudentSeatPreference = "first" | "last";
-export type ExamInvigilationPeriod = "morning" | "afternoon";
+export type ExamInvigilationPeriod = "morning" | "afternoon" | "evening";
 
 export interface ExamInvigilationTeacher {
   id: string;
@@ -555,13 +555,18 @@ export interface ExamInvigilationSlotOverride {
   /** null 表示显式留空；缺少键表示继续使用自动排表结果。 */
   roomTeacherIds: Record<string, string | null>;
   outsideTeacherId?: string | null;
+  /** @deprecated 旧版逐场巡回配置；新版使用 ExamInvigilationConfig.patrolTeacherIds。 */
   patrolTeacherId?: string | null;
 }
 
 export interface ExamInvigilationConfig {
   teachers: ExamInvigilationTeacher[];
   subjectTimes: ExamSubjectExamTime[];
+  /** 全部场次共用的巡回教师；缺省时由领导教师自动补全。 */
+  patrolTeacherIds?: string[];
   overrides?: Record<string, ExamInvigilationSlotOverride>;
+  /** 监考时长统计表中的人工备注，按当前监考教师 ID 保存。 */
+  teacherNotes?: Record<string, string>;
 }
 
 export interface ExamRoomConfig {
