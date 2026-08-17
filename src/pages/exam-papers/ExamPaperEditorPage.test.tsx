@@ -793,7 +793,7 @@ describe("ExamPaperEditorPage preview", () => {
     renderEditorPage();
 
     const secondDetails = await screen.findByTestId("exam-editor-question-details-2");
-    expect(secondDetails).toHaveTextContent("第 2 题目录");
+    expect(secondDetails).toHaveTextContent("第 2 题属性");
     expect(secondDetails).toHaveTextContent("单选");
     expect(screen.getByTestId("exam-editor-question-details-3")).toHaveTextContent("解答");
 
