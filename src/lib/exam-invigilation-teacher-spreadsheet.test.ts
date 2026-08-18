@@ -44,24 +44,21 @@ describe("exam invigilation teacher spreadsheet", () => {
     ]);
   });
 
-  it("rejects rows for another grade or a subject outside the current exam", () => {
+  it("rejects rows for another grade", () => {
     expect(() => parseInvigilationTeacherTable([
       ["年级", "学科", "姓名", "备课组长", "领导"],
       ["2027届高二", "语文", "张老师", "否", "否"],
     ], "2026届高三", ["语文"])).toThrow("与当前年级");
-
-    expect(() => parseInvigilationTeacherTable([
-      ["年级", "学科", "姓名", "备课组长", "领导"],
-      ["2026届高三", "历史", "张老师", "否", "否"],
-    ], "2026届高三", ["语文"])).toThrow("不属于当前考试");
   });
 
-  it("allows leaders from subjects outside the current exam", () => {
+  it("allows teachers from subjects outside the current exam", () => {
     expect(parseInvigilationTeacherTable([
       ["年级", "学科", "姓名", "备课组长", "领导"],
-      ["2026届高三", "历史", "王校长", "否", "是"],
+      ["2026届高三", "历史", "张老师", "是", "否"],
+      ["2026届高三", "地理", "王校长", "否", "是"],
     ], "2026届高三", ["语文"])).toEqual([
-      { cohortLabel: "2026届高三", subject: "历史", name: "王校长", isPrepLeader: false, isLeader: true },
+      { cohortLabel: "2026届高三", subject: "历史", name: "张老师", isPrepLeader: true, isLeader: false },
+      { cohortLabel: "2026届高三", subject: "地理", name: "王校长", isPrepLeader: false, isLeader: true },
     ]);
   });
 

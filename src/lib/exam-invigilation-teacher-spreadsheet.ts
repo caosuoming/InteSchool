@@ -99,9 +99,6 @@ export function parseInvigilationTeacherTable(
     const isPrepLeader = parseBooleanMarker(prepLeaderText, "备课组长", rowNumber);
     const isLeader = parseBooleanMarker(leaderText, "领导", rowNumber);
     const subject = subjectsByName.get(normalizeValue(subjectText)) || subjectText;
-    if (!subjectsByName.has(normalizeValue(subjectText)) && !isLeader) {
-      throw new Error(`第 ${rowNumber} 行学科“${subjectText}”不属于当前考试`);
-    }
 
     const imported = {
       cohortLabel: expectedCohortLabel,
