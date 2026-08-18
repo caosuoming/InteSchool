@@ -230,7 +230,7 @@ function wordRunIsItalic(element: Element): boolean {
 }
 
 function mathVariableMarkup(content: string): string {
-  return /^[A-Za-z]$/.test(content)
+  return /^[A-Za-z]+$/.test(content)
     ? `<i class="math-variable">${content}</i>`
     : content;
 }
