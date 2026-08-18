@@ -51,6 +51,11 @@ export interface ExamInvigilationTable {
   teacherStats: ExamInvigilationTeacherStat[];
 }
 
+export interface BuildExamInvigilationTableOptions {
+  /** 往期累计时长，用作自动排表的公平性基线，不计入本次 teacherStats。 */
+  baselineTeacherMinutes?: Record<string, number>;
+}
+
 const PERIOD_ORDER: Record<ExamInvigilationPeriod, number> = { morning: 0, afternoon: 1, evening: 2 };
 const WEEKDAYS = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"] as const;
 
@@ -129,9 +134,10 @@ function chooseTeacher(
   candidates: ExamInvigilationTeacher[],
   unavailable: Set<string>,
   minutes: Map<string, number>,
+  allowed: (teacher: ExamInvigilationTeacher) => boolean = () => true,
 ): ExamInvigilationTeacher | null {
   return candidates
-    .filter((teacher) => !unavailable.has(teacher.id))
+    .filter((teacher) => !unavailable.has(teacher.id) && allowed(teacher))
     .sort((left, right) => (
       (minutes.get(left.id) || 0) - (minutes.get(right.id) || 0)
       || left.name.localeCompare(right.name, "zh-CN")
@@ -205,10 +211,16 @@ function duplicateTeacherIds(assignments: Array<string | null | undefined>): str
 export function buildExamInvigilationTable(
   arrangement: ExamArrangement,
   config: ExamInvigilationConfig,
+  options: BuildExamInvigilationTableOptions = {},
 ): ExamInvigilationTable {
   const teachers = new Map(config.teachers.map((teacher) => [teacher.id, teacher]));
   const teacherMinutes = new Map(config.teachers.map((teacher) => [teacher.id, 0]));
+  const teacherPriorityMinutes = new Map(config.teachers.map((teacher) => [
+    teacher.id,
+    Math.max(0, options.baselineTeacherMinutes?.[teacher.id] || 0),
+  ]));
   const teacherSessions = new Map(config.teachers.map((teacher) => [teacher.id, 0]));
+  const teacherDates = new Map(config.teachers.map((teacher) => [teacher.id, new Set<string>()]));
   const groupedTimes = groupSchedules(arrangement, config);
   const patrolTeacherIds = resolvePatrolTeacherIds(config, teachers);
   const usedRoomIds = new Set<string>();
@@ -251,10 +263,20 @@ export function buildExamInvigilationTable(
   const groupedRooms = groupRoomsByLocation(rawRooms);
   const rooms = groupedRooms.rooms;
 
-  const markAssignment = (teacherId: string | null | undefined, durationMinutes: number) => {
+  const markAssignment = (teacherId: string | null | undefined, durationMinutes: number, date: string) => {
     if (!teacherId) return;
     teacherMinutes.set(teacherId, (teacherMinutes.get(teacherId) || 0) + durationMinutes);
+    teacherPriorityMinutes.set(teacherId, (teacherPriorityMinutes.get(teacherId) || 0) + durationMinutes);
     teacherSessions.set(teacherId, (teacherSessions.get(teacherId) || 0) + 1);
+    teacherDates.get(teacherId)?.add(date);
+  };
+
+  const matchesDateRequirement = (teacher: ExamInvigilationTeacher, date: string) => {
+    const requirement = config.teacherRequirements?.[teacher.id]?.sameDay || "any";
+    const dates = teacherDates.get(teacher.id) || new Set<string>();
+    if (requirement === "no") return !dates.has(date);
+    if (requirement === "yes") return dates.size === 0 || dates.has(date);
+    return true;
   };
 
   const rows = rowInputs.map((input) => {
@@ -285,7 +307,8 @@ export function buildExamInvigilationTable(
       const teacher = chooseTeacher(
         config.teachers.filter((item) => item.isPrepLeader && input.subjectSet.has(item.subject)),
         unavailable,
-        teacherMinutes,
+        teacherPriorityMinutes,
+        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
       );
       outsideTeacherId = teacher?.id || null;
       if (teacher) unavailable.add(teacher.id);
@@ -308,15 +331,37 @@ export function buildExamInvigilationTable(
         roomSubjectSet.has(item.subject) && !item.isLeader && !item.isPrepLeader
       ));
       const fallbackSameSubject = config.teachers.filter((item) => roomSubjectSet.has(item.subject) && !item.isLeader);
-      const teacher = chooseTeacher(sameSubject, unavailable, teacherMinutes)
-        || chooseTeacher(fallbackSameSubject, unavailable, teacherMinutes);
+      const otherTeachers = config.teachers.filter((item) => !item.isLeader && !item.isPrepLeader);
+      const fallbackOtherTeachers = config.teachers.filter((item) => !item.isLeader);
+      const teacher = chooseTeacher(
+        sameSubject,
+        unavailable,
+        teacherPriorityMinutes,
+        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
+      ) || chooseTeacher(
+        fallbackSameSubject,
+        unavailable,
+        teacherPriorityMinutes,
+        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
+      ) || chooseTeacher(
+        otherTeachers,
+        unavailable,
+        teacherPriorityMinutes,
+        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
+      ) || chooseTeacher(
+        fallbackOtherTeachers,
+        unavailable,
+        teacherPriorityMinutes,
+        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
+      );
       roomTeacherIds[item.canonicalRoomId] = teacher?.id || null;
       if (teacher) unavailable.add(teacher.id);
     }
 
-    Object.values(roomTeacherIds).forEach((teacherId) => markAssignment(teacherId, input.durationMinutes));
-    markAssignment(outsideTeacherId, input.durationMinutes);
-    patrolTeacherIds.forEach((teacherId) => markAssignment(teacherId, input.durationMinutes));
+    const date = input.times[0].date;
+    Object.values(roomTeacherIds).forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
+    markAssignment(outsideTeacherId, input.durationMinutes, date);
+    patrolTeacherIds.forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
 
     const first = input.times[0];
     return {

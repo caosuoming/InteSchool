@@ -115,8 +115,46 @@ describe("exam invigilation table", () => {
     });
     expect(table.patrolTeacherIds).toEqual(["leader"]);
     expect(table.rows[1].subjectLabel).toBe("数学");
-    expect(table.rows[1].roomTeacherIds["room-1"]).toBeNull();
+    expect(table.rows[1].roomTeacherIds["room-1"]).toBeTruthy();
     expect(table.rows[1].roomTeacherIds["room-2"]).toBeNull();
+  });
+
+  it("uses cumulative duration as the automatic assignment baseline", () => {
+    const input = arrangement();
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "teacher-a", name: "甲老师", subject: "物理" },
+        { id: "teacher-b", name: "乙老师", subject: "历史" },
+      ],
+      subjectTimes: [{ subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 }],
+      patrolTeacherIds: [],
+      overrides: {},
+    };
+
+    const table = buildExamInvigilationTable(input, settings, {
+      baselineTeacherMinutes: { "teacher-a": 240, "teacher-b": 0 },
+    });
+
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBe("teacher-b");
+  });
+
+  it("honors same-day yes/no requirements before manual fine tuning", () => {
+    const input = arrangement();
+    const settings = config();
+    settings.patrolTeacherIds = [];
+    settings.teacherRequirements = {
+      physics: { sameDay: "no" },
+      history: { sameDay: "yes" },
+    };
+
+    const sameDay = buildExamInvigilationTable(input, settings);
+    expect(sameDay.rows[1].roomTeacherIds["room-1"]).toBe("history");
+
+    settings.subjectTimes = settings.subjectTimes.map((time) => (
+      time.subject === "数学" ? { ...time, date: "2026-10-21" } : time
+    ));
+    const nextDay = buildExamInvigilationTable(input, settings);
+    expect(nextDay.rows[1].roomTeacherIds["room-1"]).toBe("physics");
   });
 
   it("honors manual overrides and recomputes automatic assignments around them", () => {
