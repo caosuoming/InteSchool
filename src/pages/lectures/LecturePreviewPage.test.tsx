@@ -235,6 +235,7 @@ function renderPage() {
     <MemoryRouter initialEntries={["/lectures/lecture-1/preview"]}>
       <Routes>
         <Route path="/lectures/:id/preview" element={<LecturePreviewPage />} />
+        <Route path="/lectures/:id/answer-sheet" element={<div>讲义答题卡页</div>} />
         <Route path="/lectures/:id/edit" element={<LectureEditorRouteProbe />} />
         <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
       </Routes>
@@ -273,6 +274,7 @@ describe("LecturePreviewPage", () => {
 
     expect(await screen.findByText("预览：函数专题讲义_2026（拆解版）")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑讲义" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
     expect(screen.getByText("讲义属性")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "栏目" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /整份讲义/ })).not.toBeInTheDocument();

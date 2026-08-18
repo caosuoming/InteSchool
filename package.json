@@ -51,6 +51,7 @@
     "mathjax-full": "^3.2.2",
     "mathml2omml": "^0.5.0",
     "pdf-parse": "^2.4.5",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-markdown": "^9.0.1",

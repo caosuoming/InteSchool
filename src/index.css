@@ -329,6 +329,16 @@
     width: 100% !important;
     min-height: auto !important;
   }
+  .answer-sheet-print-shell {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  .answer-sheet-paper {
+    box-shadow: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    min-height: auto !important;
+  }
   .exam-paper-preview-grid {
     display: block;
     min-width: 0;
