@@ -771,6 +771,85 @@ describe("document block parser", () => {
     expect(blocks[0].analysis).toBe("分别使用方程与导数方法。");
   });
 
+  it("splits independent numbered sub-questions with their own choices and answers", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "训练1 （1）如果甲是乙的必要条件，丙是乙的充分条件，但不是乙的必要条件，那么（　） A. 丙是甲的充分不必要条件 B. 丙是甲的必要不充分条件 C. 丙是甲的充要条件 D. 丙是甲的既不充分又不必要条件 （2）设集合 A={x|x²+x-6=0}，B={x|mx-2=0}，则 B 是 A 的真子集的一个充分不必要条件是（　） A. m∈{0,2/3} B. m∈{0,-2/3} C. m∈{0,-2/3,1} D. m∈{0,2/3,1}",
+        "答案：（1）A （2）B",
+        "解析：（1）由条件关系可得 A。 （2）由集合包含关系可得 B。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "训练1 （1）如果甲是乙的必要条件，丙是乙的充分条件，但不是乙的必要条件，那么（　）",
+      options: [
+        "丙是甲的充分不必要条件",
+        "丙是甲的必要不充分条件",
+        "丙是甲的充要条件",
+        "丙是甲的既不充分又不必要条件",
+      ],
+      answer: "A",
+      analysis: "由条件关系可得 A。",
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "（2）设集合 A={x|x²+x-6=0}，B={x|mx-2=0}，则 B 是 A 的真子集的一个充分不必要条件是（　）",
+      options: [
+        "m∈{0,2/3}",
+        "m∈{0,-2/3}",
+        "m∈{0,-2/3,1}",
+        "m∈{0,2/3,1}",
+      ],
+      answer: "B",
+      analysis: "由集合包含关系可得 B。",
+    });
+  });
+
+  it("keeps sub-questions together when a shared stem precedes them", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "19. 已知函数 f(x)=x²-2ax，完成下列各问。",
+        "（1）当 a=1 时，求 f(x) 的最小值；",
+        "（2）若 f(x)≥0 恒成立，求 a 的范围。",
+        "答案：（1）-1；（2）a=0。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: [
+        "19. 已知函数 f(x)=x²-2ax，完成下列各问。",
+        "（1）当 a=1 时，求 f(x) 的最小值；",
+        "（2）若 f(x)≥0 恒成立，求 a 的范围。",
+      ].join("\n"),
+      answer: "（1）-1；（2）a=0。",
+    });
+  });
+
+  it("splits a trailing combined answer section across independent sub-questions", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "训练11 （1）第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "（2）第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+        "参考答案",
+        "11. （1）A （2）B",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks.map((block) => block.answer)).toEqual(["A", "B"]);
+    expect(blocks.map((block) => block.options)).toEqual([
+      ["甲", "乙", "丙", "丁"],
+      ["戊", "己", "庚", "辛"],
+    ]);
+  });
+
   it("keeps sequential roman-numeral sub-questions in the stem until an explicit answer or analysis marker", () => {
     const blocks = parseDocumentBlocks(
       [

@@ -435,6 +435,205 @@ function leadingNestedSubQuestionIndex(text: string): number | undefined {
   return undefined;
 }
 
+interface NestedSubQuestionMarker {
+  start: number;
+  end: number;
+  index: number;
+}
+
+function scanNestedSubQuestionMarkers(text: string): NestedSubQuestionMarker[] {
+  const pattern = /[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]|[①-⑳]/gi;
+  const inlineMathRanges = scanInlineMathRanges(text);
+  const markers: NestedSubQuestionMarker[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    if (inlineMathRanges.some((range) => match.index > range.start && match.index < range.end)) {
+      continue;
+    }
+    const index = leadingNestedSubQuestionIndex(match[0]);
+    if (!index) continue;
+    markers.push({ start: match.index, end: pattern.lastIndex, index });
+  }
+  return markers;
+}
+
+function topLevelQuestionRemainder(
+  text: string,
+  config: DocumentParseConfig,
+): { start: number; text: string } | null {
+  const directPatterns = [
+    /^第\s*[\d０-９]{1,4}\s*题(?:\s*[、.．:：)）])?\s*/,
+    /^[\d０-９]{1,4}\s*(?:[、.．:：)）]|题[、.．:：)）]?)\s*/,
+  ];
+  for (const pattern of directPatterns) {
+    const match = pattern.exec(text);
+    if (match) return { start: match[0].length, text: text.slice(match[0].length) };
+  }
+
+  const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
+  if (!prefixes.length) return null;
+  const index = "[\\d０-９零〇一二三四五六七八九十百两]+";
+  const pattern = new RegExp(
+    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:第\\s*)?[（(]?\\s*${index}\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?(?:\\s*[、.．:：)）])?\\s*`,
+  );
+  const match = pattern.exec(text);
+  return match ? { start: match[0].length, text: text.slice(match[0].length) } : null;
+}
+
+function startsIndependentSubQuestionGroup(text: string, config: DocumentParseConfig): boolean {
+  const remainder = topLevelQuestionRemainder(text, config);
+  return Boolean(remainder && leadingNestedSubQuestionIndex(remainder.text) === 1);
+}
+
+function splitSequentialNestedSubQuestions(
+  text: string,
+  expectedIndex: number,
+  searchStart = 0,
+): { parts: string[]; nextExpectedIndex: number; matched: boolean } {
+  const selected: NestedSubQuestionMarker[] = [];
+  let expected = expectedIndex;
+  for (const marker of scanNestedSubQuestionMarkers(text)) {
+    if (marker.start < searchStart || marker.index !== expected) continue;
+    selected.push(marker);
+    expected += 1;
+  }
+  if (selected.length === 0) {
+    return { parts: [text], nextExpectedIndex: expectedIndex, matched: false };
+  }
+
+  const parts: string[] = [];
+  let start = 0;
+  for (const marker of selected) {
+    const before = text.slice(start, marker.start).trim();
+    if (before) parts.push(before);
+    start = marker.start;
+  }
+  const tail = text.slice(start).trim();
+  if (tail) parts.push(tail);
+  return { parts, nextExpectedIndex: expected, matched: true };
+}
+
+function expandIndependentSubQuestionLines(content: string, config: DocumentParseConfig): string[] {
+  const source = content.replace(/\r\n?/g, "\n").split("\n");
+  const lines: string[] = [];
+  let expectedIndex: number | undefined;
+
+  for (const originalLine of source) {
+    const line = originalLine.trim();
+    if (!line) {
+      lines.push(originalLine);
+      continue;
+    }
+
+    if (isHeading(line, config) || isProjectHeading(line, config)) {
+      expectedIndex = undefined;
+      lines.push(originalLine);
+      continue;
+    }
+
+    if (isQuestionStart(line, config)) {
+      expectedIndex = undefined;
+      const remainder = topLevelQuestionRemainder(line, config);
+      if (!remainder || leadingNestedSubQuestionIndex(remainder.text) !== 1) {
+        lines.push(originalLine);
+        continue;
+      }
+
+      const firstMarker = scanNestedSubQuestionMarkers(line)
+        .find((marker) => marker.start >= remainder.start && marker.index === 1);
+      const split = splitSequentialNestedSubQuestions(
+        line,
+        2,
+        firstMarker?.end ?? remainder.start,
+      );
+      lines.push(...split.parts);
+      expectedIndex = split.nextExpectedIndex;
+      continue;
+    }
+
+    if (expectedIndex !== undefined) {
+      const split = splitSequentialNestedSubQuestions(line, expectedIndex);
+      if (split.matched) {
+        lines.push(...split.parts);
+        expectedIndex = split.nextExpectedIndex;
+        continue;
+      }
+    }
+
+    lines.push(originalLine);
+  }
+  return lines;
+}
+
+function splitIndependentSubQuestionField(value: string, count: number): string[] | null {
+  if (count < 2) return null;
+  const markers = scanNestedSubQuestionMarkers(value);
+  const first = markers.find((marker) => marker.index === 1 && !value.slice(0, marker.start).trim());
+  if (!first) return null;
+
+  const selected = [first];
+  let expected = 2;
+  for (const marker of markers) {
+    if (marker.start <= first.start || marker.index !== expected) continue;
+    selected.push(marker);
+    expected += 1;
+    if (selected.length === count) break;
+  }
+  if (selected.length !== count) return null;
+
+  return selected.map((marker, index) => value
+    .slice(marker.end, selected[index + 1]?.start ?? value.length)
+    .trim()
+    .replace(/^[,，;；、:：]\s*/, "")
+    .replace(/\s*[,，;；]$/, "")
+    .trim());
+}
+
+function independentSubQuestionRun(
+  questions: DocumentBlock[],
+  startIndex: number,
+  config: DocumentParseConfig,
+): DocumentBlock[] {
+  const first = questions[startIndex];
+  if (!first || !startsIndependentSubQuestionGroup(first.content, config)) return [];
+
+  const run = [first];
+  let expected = 2;
+  for (let index = startIndex + 1; index < questions.length; index += 1) {
+    const question = questions[index];
+    if (leadingNestedSubQuestionIndex(question.content) !== expected) break;
+    run.push(question);
+    expected += 1;
+  }
+  return run.length > 1 ? run : [];
+}
+
+function distributeIndependentSubQuestionFields(
+  blocks: DocumentBlock[],
+  config: DocumentParseConfig,
+): void {
+  const questions = blocks.filter((block) => block.type === "question");
+  for (let index = 0; index < questions.length; index += 1) {
+    const run = independentSubQuestionRun(questions, index, config);
+    if (run.length === 0) continue;
+
+    for (const field of ["answer", "analysis", "summary"] as const) {
+      for (const source of run) {
+        const value = source[field]?.trim();
+        if (!value) continue;
+        const parts = splitIndependentSubQuestionField(value, run.length);
+        if (!parts) continue;
+        run.forEach((question, partIndex) => {
+          question[field] = parts[partIndex];
+          question.questionType = inferQuestionType(question, question.questionType, config);
+        });
+        break;
+      }
+    }
+    index += run.length - 1;
+  }
+}
+
 function shouldContinueSequentialSubQuestion(
   line: string,
   block: Partial<DocumentBlock>,
@@ -818,6 +1017,33 @@ function mergeTrailingSolutions(
     }
     if (!target) continue;
 
+    const targetIndex = questions.indexOf(target);
+    const independentRun = targetIndex >= 0
+      ? independentSubQuestionRun(questions, targetIndex, config)
+      : [];
+    if (independentRun.length > 1) {
+      const splitAnswer = solution.answer
+        ? splitIndependentSubQuestionField(solution.answer, independentRun.length)
+        : null;
+      const splitAnalysis = solution.analysis
+        ? splitIndependentSubQuestionField(solution.analysis, independentRun.length)
+        : null;
+      const splitSummary = solution.summary
+        ? splitIndependentSubQuestionField(solution.summary, independentRun.length)
+        : null;
+      if (splitAnswer || splitAnalysis || splitSummary) {
+        independentRun.forEach((question, index) => {
+          appendQuestionField(question, "answer", splitAnswer?.[index] || "");
+          appendQuestionField(question, "analysis", splitAnalysis?.[index] || "");
+          appendQuestionField(question, "summary", splitSummary?.[index] || "");
+          question.questionType = inferQuestionType(question, question.questionType, config);
+          used.add(question);
+        });
+        merged += independentRun.length;
+        continue;
+      }
+    }
+
     appendQuestionField(target, "answer", solution.answer || "");
     appendQuestionField(target, "analysis", solution.analysis || "");
     appendQuestionField(target, "summary", solution.summary || "");
@@ -899,6 +1125,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   let currentBlock: Partial<DocumentBlock> = {};
   let currentQuestionField: QuestionField = "content";
   let sectionQuestionType: QuestionType | undefined;
+  let independentSubQuestionNextIndex: number | undefined;
   let order = 0;
 
   const submitCurrent = () => {
@@ -927,7 +1154,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     currentQuestionField = "content";
   };
 
-  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const lines = expandIndependentSubQuestionLines(content, config);
   const structuredFieldAhead = new Array<boolean>(lines.length).fill(false);
   let hasSeenStructuredField = false;
   for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -951,6 +1178,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
 
     if (isHeading(line, config) || isProjectHeading(line, config)) {
       submitCurrent();
+      independentSubQuestionNextIndex = undefined;
       sectionQuestionType = detectSectionQuestionType(line);
       blocks.push({
         id: createBlockId(),
@@ -973,6 +1201,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
 
     if (isQuestionStart(line, config)) {
       submitCurrent();
+      independentSubQuestionNextIndex = startsIndependentSubQuestionGroup(line, config) ? 2 : undefined;
       const inline = splitQuestionAndInlineOptions(line);
       currentBlock = {
         type: "question",
@@ -982,6 +1211,26 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
         difficulty: 3,
       };
       currentQuestionField = "content";
+      continue;
+    }
+
+    if (
+      currentBlock.type === "question"
+      && currentQuestionField === "content"
+      && independentSubQuestionNextIndex !== undefined
+      && leadingNestedSubQuestionIndex(line) === independentSubQuestionNextIndex
+    ) {
+      submitCurrent();
+      const inline = splitQuestionAndInlineOptions(line);
+      currentBlock = {
+        type: "question",
+        content: inline?.stem || line,
+        options: inline?.options || [],
+        questionType: detectSectionQuestionType(line),
+        difficulty: 3,
+      };
+      currentQuestionField = "content";
+      independentSubQuestionNextIndex += 1;
       continue;
     }
 
@@ -1095,6 +1344,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   }
 
   submitCurrent();
+  distributeIndependentSubQuestionFields(blocks, config);
   const firstStructuredIndex = blocks.findIndex((block) =>
     block.type === "groupTitle" || block.type === "question");
   if (firstStructuredIndex > 0 && blocks[0]?.type === "knowledge") {
