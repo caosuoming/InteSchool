@@ -15,6 +15,7 @@ import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
 import { sanitizeLecturePatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
+import { moveLectureToExamPaper } from "./document-library-move.js";
 
 function collectQuestionIds(sections: LectureSection[]): string[] {
   const ids: string[] = [];
@@ -529,84 +530,10 @@ export const lectureService = {
     ) || null;
   },
 
-  /**
-   * 将讲义转换为试卷
-   * 将讲义中的题目section提取出来，转换为试卷的题目列表
-   */
+  /** 将讲义连同其文档状态一起移动到试卷库。 */
   async convertToExamPaper(lectureId: string): Promise<{ paperId: string }> {
     await delay(500);
     maybeThrowError();
-    const lecture = db.read("lectures").find((l) => l.id === lectureId);
-    if (!lecture) throw new Error("讲义不存在");
-    assertResourceCapacity(lecture.teacherId, "examPaper");
-
-    const now = new Date().toISOString();
-
-    // 递归收集所有题目类型的section
-    const collectQuestions = (secs: LectureSection[]): import("../../src/types/index.js").ExamPaperQuestion[] => {
-      const result: import("../../src/types/index.js").ExamPaperQuestion[] = [];
-      for (const sec of secs) {
-        if (sec.type === "question") {
-          // 尝试从题库获取题目信息
-          let questionData: Partial<import("../../src/types/index.js").ExamPaperQuestion> = {};
-          if (sec.questionId) {
-            const q = db.read("questions").find((q) => q.id === sec.questionId);
-            if (q) {
-              questionData = {
-                stem: q.stem,
-                options: q.options,
-                answer: q.answer,
-                analysis: q.analysis,
-                type: q.type,
-                questionId: q.id,
-              };
-            }
-          }
-          result.push({
-            id: genId("epq"),
-            stem: sec.content || sec.title,
-            options: questionData.options,
-            answer: questionData.answer || "",
-            analysis: questionData.analysis || "",
-            score: 5,
-            type: (questionData.type as import("../../src/types/index.js").QuestionType) || "short",
-            questionId: questionData.questionId,
-          });
-        }
-        if (sec.children && sec.children.length > 0) {
-          result.push(...collectQuestions(sec.children));
-        }
-      }
-      return result;
-    };
-
-    const questions = collectQuestions(lecture.sections);
-    const totalScore = questions.reduce((sum, q) => sum + q.score, 0);
-
-    const paper: import("../../src/types/index.js").ExamPaper = {
-      id: genId("exam"),
-      teacherId: lecture.teacherId,
-      schoolId: lecture.schoolId,
-      title: `${lecture.title}（转试卷）`,
-      description: lecture.description,
-      chapterIds: lecture.chapterIds,
-      knowledgePointIds: lecture.knowledgePointIds,
-      grade: lecture.grade,
-      schoolYear: lecture.schoolYear,
-      semester: lecture.semester || "上学期",
-      duration: 60,
-      totalScore,
-      questions,
-      typeId: undefined,
-      questionSourceType: lecture.questionSourceType,
-      questionCategory: lecture.questionCategory,
-      status: "draft",
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    db.update("examPapers", (list) => [paper, ...list]);
-
-    return { paperId: paper.id };
+    return moveLectureToExamPaper(lectureId);
   },
 };
