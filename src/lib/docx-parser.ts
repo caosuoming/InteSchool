@@ -736,7 +736,7 @@ export function renderInlineMath(text: string): string {
           output: "html",
           strict: false,
         });
-        parts.push(`<span class="formula-inline" style="display: inline-flex; margin: 0 2px; vertical-align: 0.1em;">${formulaHtml}</span>`);
+        parts.push(`<span class="formula-inline" style="display: inline-flex; margin: 0 2px; vertical-align: 0;">${formulaHtml}</span>`);
       } catch (error) {
         parts.push(`<span style="display: inline-flex; margin: 0 2px; vertical-align: 0.1em; font-family: monospace; color: #475569; background-color: #f8fafc; padding: 0 4px; border-radius: 4px;">${escapeHtml(latex)}</span>`);
       }
@@ -777,7 +777,7 @@ export function renderDocxItems(items: DocxItem[]): string {
           if (isDisplayMode) {
             html += `<div class="my-3 text-center overflow-x-auto formula-display">${formulaHtml}</div>`;
           } else {
-            html += `<span class="formula-inline" style="display: inline-flex; margin: 0 2px; vertical-align: 0.1em;">${formulaHtml}</span>`;
+            html += `<span class="formula-inline" style="display: inline-flex; margin: 0 2px; vertical-align: 0;">${formulaHtml}</span>`;
           }
         } catch {
           html += `<div class="my-2 px-3 py-2 bg-ink-50 rounded text-ink-700 text-sm font-mono">${escapeHtml(latex)}</div>`;

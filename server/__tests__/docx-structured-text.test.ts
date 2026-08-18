@@ -46,6 +46,36 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves vector-angle formulas with CJK angle delimiters", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>设 </w:t></w:r>
+        <m:oMath>
+          <m:d>
+            <m:dPr><m:begChr m:val="〈"/><m:endChr m:val="〉"/></m:dPr>
+            <m:e>
+              <m:acc>
+                <m:accPr><m:chr m:val="⃗"/></m:accPr>
+                <m:e><m:r><m:t>AB</m:t></m:r></m:e>
+              </m:acc>
+              <m:r><m:t>,</m:t></m:r>
+              <m:acc>
+                <m:accPr><m:chr m:val="⃗"/></m:accPr>
+                <m:e><m:r><m:t>AC</m:t></m:r></m:e>
+              </m:acc>
+            </m:e>
+          </m:d>
+          <m:r><m:t>=θ</m:t></m:r>
+        </m:oMath>
+        <w:r><w:t>。</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      String.raw`设 $\left\langle\overrightarrow{AB},\overrightarrow{AC}\right\rangle=\theta$。`,
+    );
+  });
+
   it("preserves Word run superscript and subscript formatting", async () => {
     const data = await makeDocx(`
       <w:p>

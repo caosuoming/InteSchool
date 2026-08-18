@@ -50,7 +50,7 @@ function renderFormula(latex: string): string {
       output: "htmlAndMathml",
       strict: false,
     });
-    return `<span class="formula-inline" style="display: inline-flex; margin: 0 2px; vertical-align: 0.1em;">${formulaHtml}</span>`;
+    return `<span class="formula-inline" style="display: inline-flex; margin: 0 2px; vertical-align: 0;">${formulaHtml}</span>`;
   } catch {
     return `<span class="font-mono text-ink-600">${escapeHtml(normalized)}</span>`;
   }
