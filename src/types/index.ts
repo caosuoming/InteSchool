@@ -530,6 +530,7 @@ export type ExamSubjectSetupMode = "all" | "selection" | "academicNonSelection";
 export type ExamSeatOrder = "random" | "previousRank";
 export type ExamStudentSeatPreference = "first" | "last";
 export type ExamInvigilationPeriod = "morning" | "afternoon" | "evening";
+export type ExamInvigilationSameDayRequirement = "yes" | "no" | "any";
 
 export interface ExamInvigilationTeacher {
   id: string;
@@ -539,6 +540,11 @@ export interface ExamInvigilationTeacher {
   isPrepLeader?: boolean;
   /** 年级/学校领导优先安排巡回。 */
   isLeader?: boolean;
+}
+
+export interface ExamInvigilationTeacherRequirement {
+  /** 是否希望该教师的多场监考集中在同一天。 */
+  sameDay?: ExamInvigilationSameDayRequirement;
 }
 
 export interface ExamSubjectExamTime {
@@ -567,6 +573,8 @@ export interface ExamInvigilationConfig {
   overrides?: Record<string, ExamInvigilationSlotOverride>;
   /** 监考时长统计表中的人工备注，按当前监考教师 ID 保存。 */
   teacherNotes?: Record<string, string>;
+  /** 自动排表时使用的教师级基本要求；人工调整始终优先。 */
+  teacherRequirements?: Record<string, ExamInvigilationTeacherRequirement>;
 }
 
 export interface ExamRoomConfig {

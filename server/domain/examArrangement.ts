@@ -233,12 +233,19 @@ export const examArrangementService = {
       const value = note.trim();
       return value ? [[teacherId, value]] : [];
     }));
+    const teacherRequirements = Object.fromEntries(Object.entries(config.teacherRequirements || {}).flatMap(([teacherId, requirement]) => {
+      if (!teacherIds.has(teacherId)) return [];
+      const sameDay = requirement.sameDay;
+      if (sameDay !== "yes" && sameDay !== "no") return [];
+      return [[teacherId, { sameDay }]];
+    }));
     const invigilation: ExamInvigilationConfig = {
       teachers,
       subjectTimes,
       patrolTeacherIds,
       overrides: validOverrides,
       ...(Object.keys(teacherNotes).length ? { teacherNotes } : {}),
+      ...(Object.keys(teacherRequirements).length ? { teacherRequirements } : {}),
     };
     const updated: ExamArrangement = {
       ...current,

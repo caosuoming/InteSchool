@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import MyExamsPage from "@/pages/exams/MyExamsPage";
 import { examArrangementService } from "@/services/examArrangement";
 import { gradeService } from "@/services/grade";
@@ -63,6 +63,10 @@ const cohort: GradeCohort = {
 };
 
 describe("MyExamsPage", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({
@@ -139,6 +143,32 @@ describe("MyExamsPage", () => {
   });
 
   it("builds a print-room statistics table from a saved room arrangement", async () => {
+    const observers: Array<{ callback: IntersectionObserverCallback; targets: Element[] }> = [];
+    class MockPointerEvent extends MouseEvent {
+      readonly pointerId: number;
+      constructor(type: string, init: MouseEventInit & { pointerId?: number } = {}) {
+        super(type, init);
+        this.pointerId = init.pointerId ?? 0;
+      }
+    }
+    class MockIntersectionObserver {
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0.08];
+      readonly callback: IntersectionObserverCallback;
+      readonly targets: Element[] = [];
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback;
+        observers.push(this);
+      }
+      disconnect() {}
+      observe(target: Element) { this.targets.push(target); }
+      takeRecords(): IntersectionObserverEntry[] { return []; }
+      unobserve() {}
+    }
+    vi.stubGlobal("PointerEvent", MockPointerEvent);
+    vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+
     const savedArrangement: ExamArrangement = {
       id: "arrangement-1",
       schoolId: "school-1",
@@ -247,9 +277,36 @@ describe("MyExamsPage", () => {
     expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();
     expect(tableOneHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(tableTwoHeading.compareDocumentPosition(durationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(durationHeading.compareDocumentPosition(teachersHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tableOneHeading.compareDocumentPosition(teachersHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(teachersHeading.compareDocumentPosition(timesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(timesHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tableTwoHeading.compareDocumentPosition(durationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText("语文教师甲是否在同一天")).toHaveValue("any");
+
+    const tableObserver = observers.find((observer) => observer.targets.some((target) => target.contains(tableTwoHeading)));
+    const tableObserverTarget = tableObserver?.targets.find((target) => target.contains(tableTwoHeading));
+    expect(tableObserver).toBeDefined();
+    expect(tableObserverTarget).toBeDefined();
+    act(() => {
+      tableObserver?.callback([
+        { isIntersecting: true, target: tableObserverTarget } as IntersectionObserverEntry,
+      ], tableObserver as unknown as IntersectionObserver);
+    });
+    const dragHandle = await screen.findByRole("button", { name: "拖动监考时长面板" });
+    const floatingPanel = durationHeading.closest(".fixed") as HTMLElement | null;
+    expect(floatingPanel).not.toBeNull();
+    expect(floatingPanel).toHaveClass("z-50");
+
+    Object.defineProperties(dragHandle, {
+      setPointerCapture: { value: vi.fn(), configurable: true },
+      hasPointerCapture: { value: vi.fn(() => true), configurable: true },
+      releasePointerCapture: { value: vi.fn(), configurable: true },
+    });
+    const originalLeft = floatingPanel?.style.left;
+    fireEvent.pointerDown(dragHandle, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(dragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
+    expect(floatingPanel?.style.left).not.toBe(originalLeft);
+    fireEvent.pointerUp(dragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
   });
 
   it("accumulates selected previous invigilation durations", async () => {
