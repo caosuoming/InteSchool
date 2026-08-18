@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, History, Search, Send, SlidersHorizontal, Undo2 } from "lucide-react";
+import { Copy, Download, History, Search, Send, SlidersHorizontal, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Select } from "@/components/ui/Input";
@@ -15,6 +15,8 @@ import type {
 interface GradeExamAdjustmentPanelProps {
   exam: GradeExam;
   onExamUpdated: (exam: GradeExam) => void;
+  onDownloadTablesOneToFive?: () => Promise<void>;
+  onDownloadClassStatistics?: () => Promise<void>;
 }
 
 function scoreText(value: number | null | undefined): string {
@@ -127,7 +129,12 @@ function visibleSubjectsForRecord(exam: GradeExam, record: GradeScoreRecord): st
   return exam.subjects.filter((subject) => classSetting?.examSubjects.includes(subject));
 }
 
-export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjustmentPanelProps) {
+export function GradeExamAdjustmentPanel({
+  exam,
+  onExamUpdated,
+  onDownloadTablesOneToFive,
+  onDownloadClassStatistics,
+}: GradeExamAdjustmentPanelProps) {
   const [examName, setExamName] = useState(exam.name);
   const [examDate, setExamDate] = useState(exam.examDate || "");
   const [metadataSaving, setMetadataSaving] = useState(false);
@@ -135,6 +142,7 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
   const [studentSearch, setStudentSearch] = useState("");
   const [savingScore, setSavingScore] = useState<string | null>(null);
   const [publicationSaving, setPublicationSaving] = useState(false);
+  const [downloading, setDownloading] = useState<"summary" | "classes" | null>(null);
   const [publishToParents, setPublishToParents] = useState(Boolean(exam.publication?.publishToParents));
   const published = Boolean(exam.publication);
   const shareUrl = exam.publication
@@ -240,6 +248,20 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
     }
   };
 
+  const download = async (kind: "summary" | "classes") => {
+    const action = kind === "summary" ? onDownloadTablesOneToFive : onDownloadClassStatistics;
+    if (!action) return;
+    setDownloading(kind);
+    try {
+      await action();
+      toast.success(kind === "summary" ? "表一至表五已下载" : "各班成绩统计已下载");
+    } catch (error) {
+      toast.error("下载失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   const saveScore = async (
     subject: string,
     kind: GradeScoreAdjustmentKind,
@@ -297,14 +319,36 @@ export function GradeExamAdjustmentPanel({ exam, onExamUpdated }: GradeExamAdjus
               发布后，任课教师仅查看任教学科和学生，班主任可查看本班全科；公开链接只展示四张聚合统计表。
             </div>
           </div>
-          <Button
-            variant={published ? "outline" : "gold"}
-            onClick={() => void (published ? unpublishResults() : publishResults())}
-            loading={publicationSaving}
-          >
-            {published ? <Undo2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            {published ? "撤回发布" : "发布"}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            {onDownloadTablesOneToFive && (
+              <Button
+                variant="outline"
+                onClick={() => void download("summary")}
+                loading={downloading === "summary"}
+                disabled={downloading !== null}
+              >
+                <Download className="h-4 w-4" />一键下载表一-表五
+              </Button>
+            )}
+            {onDownloadClassStatistics && (
+              <Button
+                variant="outline"
+                onClick={() => void download("classes")}
+                loading={downloading === "classes"}
+                disabled={downloading !== null}
+              >
+                <Download className="h-4 w-4" />下载表六、各班成绩统计
+              </Button>
+            )}
+            <Button
+              variant={published ? "outline" : "gold"}
+              onClick={() => void (published ? unpublishResults() : publishResults())}
+              loading={publicationSaving}
+            >
+              {published ? <Undo2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+              {published ? "撤回发布" : "发布"}
+            </Button>
+          </div>
         </div>
         {!published && (
           <label className="mt-3 inline-flex items-center gap-2 text-sm text-ink-700">

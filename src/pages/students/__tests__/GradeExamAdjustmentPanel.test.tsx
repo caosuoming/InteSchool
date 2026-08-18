@@ -229,6 +229,26 @@ describe("GradeExamAdjustmentPanel", () => {
     expect(screen.getByRole("textbox", { name: "考试名称" })).toBeEnabled();
   });
 
+  it("offers the combined report and class-statistics downloads in the publication area", async () => {
+    const user = userEvent.setup();
+    const downloadSummary = vi.fn().mockResolvedValue(undefined);
+    const downloadClasses = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <GradeExamAdjustmentPanel
+        exam={buildExam()}
+        onExamUpdated={vi.fn()}
+        onDownloadTablesOneToFive={downloadSummary}
+        onDownloadClassStatistics={downloadClasses}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "一键下载表一-表五" }));
+    await waitFor(() => expect(downloadSummary).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "下载表六、各班成绩统计" }));
+    await waitFor(() => expect(downloadClasses).toHaveBeenCalledTimes(1));
+  });
+
   it("searches students, saves a subject score adjustment, and shows modifier history", async () => {
     const user = userEvent.setup();
     const initial = buildExam();
