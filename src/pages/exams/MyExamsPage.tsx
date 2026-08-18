@@ -46,14 +46,30 @@ import { GradeTotalScoreSegmentTable } from "@/pages/students/GradeTotalScoreSeg
 import { GradeSubjectScoreSegmentTable } from "@/pages/students/GradeSubjectScoreSegmentTable";
 import { GradeElectiveScoreSegmentTable } from "@/pages/students/GradeElectiveScoreSegmentTable";
 import { GradeTotalScoreRankingTable } from "@/pages/students/GradeTotalScoreRankingTable";
+import { GradeClassStatisticsTable } from "@/pages/students/GradeClassStatisticsTable";
 import { GradeExamAdjustmentPanel } from "@/pages/students/GradeExamAdjustmentPanel";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { InvigilationTableSection } from "@/pages/exams/InvigilationTableSection";
-import { GRADE_SUBJECT_OPTIONS } from "@/lib/grade-spreadsheet";
+import {
+  exportGradeClassStatisticsReport,
+  exportGradeTablesOneToFive,
+  GRADE_SUBJECT_OPTIONS,
+} from "@/lib/grade-spreadsheet";
+import {
+  buildGradeClassStatisticsReport,
+  DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+  type GradeClassStatisticsOptions,
+} from "@/lib/grade-class-statistics";
 
 export type MyExamsSection = "rooms" | "invigilation" | "grades";
 
 const DEFAULT_COHORT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+
+function gradeExamTimestamp(exam: GradeExam): number {
+  const value = exam.examDate ? `${exam.examDate}T00:00:00` : exam.createdAt;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
 
 function ExamSectionTabs({
   section,
@@ -175,6 +191,10 @@ function GradePreprocessing({
   const [saving, setSaving] = useState(false);
   const [copying, setCopying] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [classStatisticsOptions, setClassStatisticsOptions] = useState<GradeClassStatisticsOptions>({
+    ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+    comparisonExamIds: [],
+  });
   const autoSaveQueue = useRef<Promise<void>>(Promise.resolve());
 
   const load = useCallback(async () => {
@@ -244,6 +264,13 @@ function GradePreprocessing({
     () => exams.find((item) => item.id === selectedExamId) || exams[0] || null,
     [exams, selectedExamId],
   );
+  const previousExams = useMemo(() => {
+    if (!selectedExam) return [];
+    const selectedTimestamp = gradeExamTimestamp(selectedExam);
+    return exams
+      .filter((item) => item.id !== selectedExam.id && gradeExamTimestamp(item) < selectedTimestamp)
+      .sort((left, right) => gradeExamTimestamp(right) - gradeExamTimestamp(left));
+  }, [exams, selectedExam]);
   const classAverageTemplate = useMemo(
     () => draft?.templates.find((item) => item.kind === "classAverage") || null,
     [draft?.templates],
@@ -252,6 +279,16 @@ function GradePreprocessing({
     () => draft?.templates.find((item) => item.kind === "totalScoreSegment") || null,
     [draft?.templates],
   );
+
+  useEffect(() => {
+    const allowedIds = new Set(previousExams.map((item) => item.id));
+    setClassStatisticsOptions((current) => {
+      const comparisonExamIds = current.comparisonExamIds.filter((id) => allowedIds.has(id));
+      return comparisonExamIds.length === current.comparisonExamIds.length
+        ? current
+        : { ...current, comparisonExamIds };
+    });
+  }, [previousExams]);
 
   const handleImported = (exam: GradeExam) => {
     setImportOpen(false);
@@ -360,6 +397,31 @@ function GradePreprocessing({
     });
     return autoSaveQueue.current;
   }, [cohortKey, schoolId, subjects, teacherId]);
+
+  const downloadTablesOneToFive = useCallback(async () => {
+    if (!selectedExam || !classAverageTemplate || !totalScoreSegmentTemplate) {
+      throw new Error("当前考试缺少表一至表五所需的统计模板");
+    }
+    await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
+    await exportGradeTablesOneToFive({
+      exam: selectedExam,
+      settings: draft,
+      context,
+      classAverageTemplate,
+      totalScoreSegmentTemplate,
+    });
+  }, [classAverageTemplate, context, draft, selectedExam, teacherId, totalScoreSegmentTemplate]);
+
+  const downloadClassStatistics = useCallback(async () => {
+    if (!selectedExam) throw new Error("请选择需要导出的考试");
+    const report = buildGradeClassStatisticsReport(
+      selectedExam,
+      previousExams,
+      classStatisticsOptions,
+    );
+    await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
+    await exportGradeClassStatisticsReport(report);
+  }, [classStatisticsOptions, previousExams, selectedExam, teacherId]);
 
   const copy = async () => {
     if (!copySource || !cohortKey) return;
@@ -502,7 +564,12 @@ function GradePreprocessing({
             </div>
           </Card>
           {selectedExam && (
-            <GradeExamAdjustmentPanel exam={selectedExam} onExamUpdated={handleExamUpdated} />
+            <GradeExamAdjustmentPanel
+              exam={selectedExam}
+              onExamUpdated={handleExamUpdated}
+              onDownloadTablesOneToFive={downloadTablesOneToFive}
+              onDownloadClassStatistics={downloadClassStatistics}
+            />
           )}
           {selectedExam && classAverageTemplate && (
             <GradeClassAverageTable
@@ -552,6 +619,14 @@ function GradePreprocessing({
                 onAutoSave={autoSaveSegmentSettings}
               />
             </>
+          )}
+          {selectedExam && (
+            <GradeClassStatisticsTable
+              exam={selectedExam}
+              comparisonExams={previousExams}
+              options={classStatisticsOptions}
+              onOptionsChange={setClassStatisticsOptions}
+            />
           )}
         </>
       )}
