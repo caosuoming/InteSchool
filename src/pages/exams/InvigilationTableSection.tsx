@@ -897,6 +897,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
             {config.teachers.map((teacher, index) => (
               <div key={teacher.id} className="grid grid-cols-[minmax(90px,0.8fr)_minmax(100px,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-ink-100 p-2">
                 <select className="input-base py-1.5 text-sm" value={teacher.subject} onChange={(event) => updateConfig((next) => { next.teachers[index].subject = event.target.value; })}>
+                  {!selectedArrangement.subjects.includes(teacher.subject) && <option>{teacher.subject}</option>}
                   {selectedArrangement.subjects.map((subject) => <option key={subject}>{subject}</option>)}
                 </select>
                 <input aria-label={`教师姓名 ${index + 1}`} className="input-base py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
