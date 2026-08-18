@@ -75,6 +75,25 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves multi-letter italic Word math labels", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>三棱锥</w:t></w:r>
+        <w:r><w:rPr><w:i/></w:rPr><w:t>O</w:t></w:r>
+        <w:r><w:t>－</w:t></w:r>
+        <w:r><w:rPr><w:i/></w:rPr><w:t>ABC</w:t></w:r>
+        <w:r><w:t>中，</w:t></w:r>
+        <w:r><w:rPr><w:i/></w:rPr><w:t>OA</w:t></w:r>
+        <w:r><w:t>＝1</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      '三棱锥<i class="math-variable">O</i>－<i class="math-variable">ABC</i>中，'
+        + '<i class="math-variable">OA</i>＝1',
+    );
+  });
+
   it("honors an explicit false Word italic property", async () => {
     const data = await makeDocx(`
       <w:p>

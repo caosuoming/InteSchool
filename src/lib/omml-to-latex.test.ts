@@ -142,6 +142,29 @@ function finiteSum(): string {
   `;
 }
 
+function intervalWithFragmentedEntries(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:d>
+        <m:dPr>
+          <m:begChr m:val="["/>
+          <m:sepChr m:val=""/>
+          <m:endChr m:val="]"/>
+        </m:dPr>
+        <m:e><m:r><m:t>−</m:t></m:r></m:e>
+        <m:e><m:r><m:t>1</m:t></m:r></m:e>
+        <m:e><m:r><m:t>,</m:t></m:r></m:e>
+        <m:e>
+          <m:f>
+            <m:num><m:r><m:t>5</m:t></m:r></m:num>
+            <m:den><m:r><m:t>4</m:t></m:r></m:den>
+          </m:f>
+        </m:e>
+      </m:d>
+    </m:oMath>
+  `;
+}
+
 describe("ommlToLatex", () => {
   it("keeps ordinary Latin set-name letters as ordinary variables", () => {
     expect(ommlToLatex(mathRun("C+Q+N+R+Z"))).toBe("C+Q+N+R+Z");
@@ -169,6 +192,12 @@ describe("ommlToLatex", () => {
 
     expect(latex).toContain("\\right.");
     expect(latex).not.toContain("\\right)");
+  });
+
+  it("preserves every expression inside a fragmented delimiter", () => {
+    expect(ommlToLatex(intervalWithFragmentedEntries())).toBe(
+      String.raw`\left[−1,\frac{5}{4}\right]`,
+    );
   });
 
   it("stretches a literal one-sided brace across a following matrix", () => {

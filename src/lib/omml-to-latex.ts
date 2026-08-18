@@ -378,7 +378,12 @@ function convertDelimiter(el: Element): string {
     endChr = delimiterCharacter(endChrEl, ")");
   }
 
-  const e = getMathChild(el, "e");
+  const expressions = directMathChildren(el, "e").map((entry) => convertChildren(entry));
+  const separatorElement = dPr?.getElementsByTagNameNS(MATH_NS, "sepChr")[0];
+  const separator = separatorElement
+    ? delimiterCharacter(separatorElement, "")
+    : "";
+  const e = expressions.join(separator ? escapeLatex(separator) : "");
 
   const leftDelim = mapDelimiter(beginChr);
   const rightDelim = mapDelimiter(endChr);
