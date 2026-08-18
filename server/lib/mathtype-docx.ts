@@ -350,14 +350,16 @@ require "mathtype_to_mathml_plus"
 require "nokogiri"
 require "uri"
 
-# mathtype_to_mathml_plus 0.0.16 ships a high-priority matrix template that
-# flattens every matrix cell (and even formatting nodes) into its own 1-column
-# row. The parsed MTEF tree still contains the correct row/column metadata, so
-# override only that template while keeping the rest of the gem's transform.
+# mathtype_to_mathml_plus 0.0.16 has two conversion defects that can be repaired
+# from the parsed MTEF tree without replacing the rest of the gem's transform:
+# - its high-priority matrix template flattens cells into 1-column rows;
+# - tmSUMOP templates test each variation independently, so an operator carrying
+#   both tvBO_LOWER and tvBO_UPPER can match the lower-only template and lose its
+#   upper bound.
 gem_spec = Gem::Specification.find_by_name("mathtype_to_mathml_plus", "0.0.16")
 base_transform = File.join(gem_spec.full_gem_path, "lib", "transform.xsl")
 base_transform_uri = URI::Generic.build(scheme: "file", path: base_transform).to_s
-matrix_transform = Nokogiri::XSLT(<<~XSL)
+compatibility_transform = Nokogiri::XSLT(<<~XSL)
   <?xml version="1.0" encoding="UTF-8"?>
   <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">
     <xsl:import href="#{base_transform_uri}"/>
@@ -381,6 +383,13 @@ matrix_transform = Nokogiri::XSLT(<<~XSL)
         <xsl:otherwise><xsl:apply-imports/></xsl:otherwise>
       </xsl:choose>
     </xsl:template>
+    <xsl:template match="tmpl[selector='tmSUMOP' and variation='tvBO_LOWER' and variation='tvBO_UPPER']" priority="20">
+      <munderover>
+        <mstyle mathsize="140%" displaystyle="true"><xsl:apply-templates select="slot[4] | pile[4]"/></mstyle>
+        <xsl:apply-templates select="slot[2] | pile[2]"/>
+        <xsl:apply-templates select="slot[3] | pile[3]"/>
+      </munderover>
+    </xsl:template>
   </xsl:stylesheet>
 XSL
 
@@ -389,7 +398,7 @@ ARGV.each do |path|
   key = File.basename(path, File.extname(path))
   begin
     converter = MathTypeToMathMLPlus::Converter.new(path)
-    converter.instance_variable_set(:@xslt, matrix_transform)
+    converter.instance_variable_set(:@xslt, compatibility_transform)
     result[key] = { "mathml" => converter.convert }
   rescue => error
     result[key] = { "error" => "#{error.class}: #{error.message}" }
