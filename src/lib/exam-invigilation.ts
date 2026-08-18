@@ -17,6 +17,8 @@ export interface ExamInvigilationRoomColumn {
 export interface ExamInvigilationRoomLocationGroup {
   roomLocation: string;
   roomIds: string[];
+  roomNumbers: string[];
+  studentCount: number;
 }
 
 export interface ExamInvigilationSlotRow {
@@ -59,13 +61,18 @@ export function examInvigilationPeriodLabel(period: ExamInvigilationPeriod): str
 }
 
 export function formatExamDateWithWeekday(date: string): string {
+  const weekday = formatExamWeekday(date);
+  return weekday ? `${date} ${weekday}` : date;
+}
+
+export function formatExamWeekday(date: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!match) return date;
+  if (!match) return "";
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
   const value = new Date(Date.UTC(year, month - 1, day));
-  return `${date} ${WEEKDAYS[value.getUTCDay()]}`;
+  return WEEKDAYS[value.getUTCDay()];
 }
 
 export function formatExamTimeRange(time: string, durationMinutes: number): string {
@@ -180,6 +187,8 @@ function groupRoomsByLocation(rooms: ExamInvigilationRoomColumn[]): {
   const groups = [...grouped.entries()].map(([roomLocation, items]) => ({
     roomLocation,
     roomIds: items.map((room) => room.roomId),
+    roomNumbers: items.map((room) => room.roomNumber),
+    studentCount: items.reduce((sum, room) => sum + room.studentCount, 0),
   }));
   return { rooms: groups.flatMap((group) => group.roomIds.map((roomId) => rooms.find((room) => room.roomId === roomId)!)), groups };
 }
@@ -253,8 +262,20 @@ export function buildExamInvigilationTable(
     const override = normalizeOverride(config.overrides?.[input.key], teachers);
     const roomTeacherIds: Record<string, string | null> = {};
 
-    for (const teacherId of Object.values(override.roomTeacherIds)) {
-      if (teacherId) unavailable.add(teacherId);
+    const roomGroups = groupedRooms.groups.map((group) => {
+      const activeRoomIds = group.roomIds.filter((roomId) => (input.roomStudents.get(roomId)?.size || 0) > 0);
+      const overriddenRoomId = activeRoomIds.find((roomId) => Object.prototype.hasOwnProperty.call(override.roomTeacherIds, roomId));
+      const overriddenTeacherId = overriddenRoomId === undefined ? undefined : override.roomTeacherIds[overriddenRoomId];
+      return {
+        group,
+        activeRoomIds,
+        canonicalRoomId: activeRoomIds[0],
+        overriddenTeacherId,
+      };
+    });
+
+    for (const item of roomGroups) {
+      if (item.overriddenTeacherId) unavailable.add(item.overriddenTeacherId);
     }
     if (override.outsideTeacherId) unavailable.add(override.outsideTeacherId);
 
@@ -270,24 +291,26 @@ export function buildExamInvigilationTable(
       if (teacher) unavailable.add(teacher.id);
     }
 
-    for (const room of rooms) {
-      const count = input.roomStudents.get(room.roomId)?.size || 0;
-      if (count === 0) {
-        roomTeacherIds[room.roomId] = null;
+    for (const item of roomGroups) {
+      item.group.roomIds.forEach((roomId) => { roomTeacherIds[roomId] = null; });
+      if (!item.canonicalRoomId) continue;
+      if (item.overriddenTeacherId !== undefined) {
+        roomTeacherIds[item.canonicalRoomId] = item.overriddenTeacherId || null;
         continue;
       }
-      if (Object.prototype.hasOwnProperty.call(override.roomTeacherIds, room.roomId)) {
-        roomTeacherIds[room.roomId] = override.roomTeacherIds[room.roomId] || null;
-        continue;
-      }
-      const roomSubjectSet = input.roomSubjects.get(room.roomId) || input.subjectSet;
+      const roomSubjectSet = new Set<string>();
+      item.activeRoomIds.forEach((roomId) => {
+        const subjects = input.roomSubjects.get(roomId);
+        subjects?.forEach((subject) => roomSubjectSet.add(subject));
+      });
+      if (roomSubjectSet.size === 0) input.subjectSet.forEach((subject) => roomSubjectSet.add(subject));
       const sameSubject = config.teachers.filter((item) => (
         roomSubjectSet.has(item.subject) && !item.isLeader && !item.isPrepLeader
       ));
       const fallbackSameSubject = config.teachers.filter((item) => roomSubjectSet.has(item.subject) && !item.isLeader);
       const teacher = chooseTeacher(sameSubject, unavailable, teacherMinutes)
         || chooseTeacher(fallbackSameSubject, unavailable, teacherMinutes);
-      roomTeacherIds[room.roomId] = teacher?.id || null;
+      roomTeacherIds[item.canonicalRoomId] = teacher?.id || null;
       if (teacher) unavailable.add(teacher.id);
     }
 

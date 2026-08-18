@@ -17,6 +17,7 @@ import {
   buildExamInvigilationTable,
   examInvigilationPeriodLabel,
   formatExamDateWithWeekday,
+  formatExamWeekday,
   formatExamTimeRange,
 } from "@/lib/exam-invigilation";
 import { downloadExamPrintRoomStatistics } from "@/lib/exam-arrangement-export";
@@ -136,6 +137,7 @@ interface InvigilationCellTarget {
   rowKey: string;
   kind: InvigilationCellKind;
   roomId?: string;
+  roomIds?: string[];
 }
 
 function cellTargetKey(target: InvigilationCellTarget): string {
@@ -150,12 +152,21 @@ function writeCellOverride(
   config.overrides ||= {};
   const override = config.overrides[target.rowKey] ||= { roomTeacherIds: {} };
   if (target.kind === "room" && target.roomId) {
+    (target.roomIds || [target.roomId]).forEach((roomId) => { delete override.roomTeacherIds[roomId]; });
     if (teacherId === undefined) delete override.roomTeacherIds[target.roomId];
     else override.roomTeacherIds[target.roomId] = teacherId;
     return;
   }
   if (teacherId === undefined) delete override.outsideTeacherId;
   else override.outsideTeacherId = teacherId;
+}
+
+function consecutiveRowSpan<T>(items: T[], index: number, keyFor: (item: T) => string): number {
+  const key = keyFor(items[index]);
+  if (index > 0 && keyFor(items[index - 1]) === key) return 0;
+  let span = 1;
+  while (index + span < items.length && keyFor(items[index + span]) === key) span += 1;
+  return span;
 }
 
 export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortKey, onCohortChange }: Props) {
@@ -312,6 +323,22 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
 
   const selectedCellTeacherIds = selectedCells.map(getCellTeacherId);
   const canSwapSelectedCells = selectedCells.length === 2 && selectedCellTeacherIds.every(Boolean);
+  const selectedCellUnavailableTeacherIds = useMemo(() => {
+    if (!invigilation || selectedCells.length !== 1) return new Set<string>();
+    const target = selectedCells[0];
+    const row = invigilation.rows.find((item) => item.key === target.rowKey);
+    if (!row) return new Set<string>();
+    const currentTeacherId = target.kind === "room"
+      ? (target.roomId ? row.roomTeacherIds[target.roomId] || null : null)
+      : row.outsideTeacherId;
+    const unavailable = new Set<string>([
+      ...Object.values(row.roomTeacherIds),
+      row.outsideTeacherId,
+      ...invigilation.patrolTeacherIds,
+    ].filter((id): id is string => Boolean(id)));
+    if (currentTeacherId) unavailable.delete(currentTeacherId);
+    return unavailable;
+  }, [invigilation, selectedCells]);
 
   const saveConfig = async () => {
     if (!selectedArrangement || !config) return;
@@ -606,69 +633,93 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
             <div className="rounded-xl border border-dashed border-ink-200 py-12 text-center text-sm text-ink-400">请先为至少一门学科填写完整考试日期和时刻。</div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-ink-100">
-              <table className="min-w-max border-collapse text-sm">
+              <table className="min-w-max table-auto border-collapse text-xs">
                 <tbody>
                   <tr className="bg-[#dcecef] text-xs font-medium text-ink-800">
-                    <th colSpan={4} className="border-b border-r border-[#b6c7cf] px-3 py-2 text-center">考试安排</th>
+                    <th colSpan={4} className="border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">考试安排</th>
                     {invigilation.roomLocationGroups.map((group) => (
-                      <th key={group.roomLocation} colSpan={group.roomIds.length} className="min-w-36 border-b border-r border-[#b6c7cf] px-3 py-2 text-center">
+                      <th key={group.roomLocation} className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">
                         {group.roomLocation}
                       </th>
                     ))}
-                    <th rowSpan={3} className="min-w-36 border-b border-r border-[#b6c7cf] px-3 py-2 text-center align-middle">场外监考</th>
-                    <th rowSpan={3} className="min-w-44 border-b border-[#b6c7cf] px-3 py-2 text-center align-middle">巡回</th>
+                    <th rowSpan={3} className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center align-middle">场外监考</th>
+                    <th rowSpan={3} className="whitespace-nowrap border-b border-[#b6c7cf] px-2 py-1.5 text-center align-middle">巡回</th>
                   </tr>
                   <tr className="bg-[#e5f0f2] text-xs text-ink-700">
-                    <th className="min-w-36 border-b border-r border-[#b6c7cf] px-3 py-2 text-center">时间</th>
-                    <th className="min-w-20 border-b border-r border-[#b6c7cf] px-3 py-2 text-center">时段</th>
-                    <th className="min-w-32 border-b border-r border-[#b6c7cf] px-3 py-2 text-center">考试时间</th>
-                    <th className="min-w-28 border-b border-r border-[#b6c7cf] px-3 py-2 text-center">学科</th>
-                    {invigilation.rooms.map((room) => <th key={room.roomId} className="min-w-36 border-b border-r border-[#b6c7cf] px-3 py-2 text-center font-medium">{room.roomNumber}</th>)}
+                    <th className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">时间</th>
+                    <th className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">时段</th>
+                    <th className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">考试时间</th>
+                    <th className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">学科</th>
+                    {invigilation.roomLocationGroups.map((group) => (
+                      <th key={group.roomLocation} className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center font-medium">
+                        {group.roomNumbers.join("、")}
+                      </th>
+                    ))}
                   </tr>
                   <tr className="bg-[#eef4f4] text-xs text-ink-700">
-                    <th colSpan={4} className="border-b border-r border-[#b6c7cf] px-3 py-2 text-center">试场人数</th>
-                    {invigilation.rooms.map((room) => <td key={room.roomId} className="border-b border-r border-[#b6c7cf] px-3 py-2 text-center">{room.studentCount}</td>)}
+                    <th colSpan={4} className="border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">试场人数</th>
+                    {invigilation.roomLocationGroups.map((group) => (
+                      <td key={group.roomLocation} className="border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">{group.studentCount}</td>
+                    ))}
                   </tr>
                   {invigilation.rows.map((row, rowIndex) => {
+                    const dateRowSpan = consecutiveRowSpan(invigilation.rows, rowIndex, (item) => item.date);
+                    const periodRowSpan = consecutiveRowSpan(invigilation.rows, rowIndex, (item) => `${item.date}\u0000${item.period}`);
                     return (
                       <tr key={row.key}>
-                        <td className="border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-3 py-2 text-center text-xs font-medium text-ink-800">{formatExamDateWithWeekday(row.date)}</td>
-                        <td className="border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-3 py-2 text-center text-xs text-ink-800">{examInvigilationPeriodLabel(row.period)}</td>
-                        <td className="border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-3 py-2 text-center text-xs tabular-nums text-ink-800">{formatExamTimeRange(row.time, row.durationMinutes)}</td>
-                        <td className="border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-3 py-2 text-center font-medium text-ink-900">{row.subjectLabel}</td>
-                        {invigilation.rooms.map((room) => {
-                          const count = row.roomStudentCounts[room.roomId] || 0;
-                          const assignedTeacherId = row.roomTeacherIds[room.roomId];
-                          const target: InvigilationCellTarget = { rowKey: row.key, kind: "room", roomId: room.roomId };
-                          const selected = isCellSelected(target);
+                        {dateRowSpan > 0 && (
+                          <td rowSpan={dateRowSpan} className="whitespace-nowrap border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-2 py-1.5 text-center font-medium leading-tight text-ink-800">
+                            <div>{row.date}</div>
+                            {formatExamWeekday(row.date) && <div className="mt-0.5 font-normal text-ink-600">{formatExamWeekday(row.date)}</div>}
+                          </td>
+                        )}
+                        {periodRowSpan > 0 && (
+                          <td rowSpan={periodRowSpan} className="whitespace-nowrap border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-2 py-1.5 text-center text-ink-800">
+                            {examInvigilationPeriodLabel(row.period)}
+                          </td>
+                        )}
+                        <td className="whitespace-nowrap border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-2 py-1.5 text-center tabular-nums text-ink-800">{formatExamTimeRange(row.time, row.durationMinutes)}</td>
+                        <td className="whitespace-nowrap border-b border-r border-[#b6c7cf] bg-[#e5f0f2] px-2 py-1.5 text-center font-medium text-ink-900">{row.subjectLabel}</td>
+                        {invigilation.roomLocationGroups.map((group) => {
+                          const activeRoomIds = group.roomIds.filter((roomId) => (row.roomStudentCounts[roomId] || 0) > 0);
+                          const count = activeRoomIds.reduce((sum, roomId) => sum + (row.roomStudentCounts[roomId] || 0), 0);
+                          const roomId = activeRoomIds[0];
+                          const assignedTeacherId = roomId ? row.roomTeacherIds[roomId] : null;
+                          const target: InvigilationCellTarget | null = roomId ? {
+                            rowKey: row.key,
+                            kind: "room",
+                            roomId,
+                            roomIds: group.roomIds,
+                          } : null;
+                          const selected = target ? isCellSelected(target) : false;
                           const highlighted = Boolean(selectedTeacherId && assignedTeacherId === selectedTeacherId);
                           const duplicate = Boolean(assignedTeacherId && row.duplicateTeacherIds.includes(assignedTeacherId));
                           return (
                             <td
-                              key={room.roomId}
+                              key={group.roomLocation}
                               className={cn(
-                                "border-b border-r border-[#b6c7cf] px-2 py-2 text-center transition-colors",
+                                "border-b border-r border-[#b6c7cf] px-1.5 py-1 text-center transition-colors",
                                 !count && "bg-ink-50/60",
                                 count && "cursor-pointer hover:bg-gold-50/60",
                                 highlighted && "bg-[#fff86b]",
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
                                 duplicate && "ring-2 ring-inset ring-red-400",
                               )}
-                              onClick={count ? () => toggleCellSelection(target) : undefined}
+                              onClick={target ? () => toggleCellSelection(target) : undefined}
                             >
-                              {count ? (
-                                <div className="relative min-h-12 px-4 py-1">
+                              {target ? (
+                                <div className="relative min-h-8 px-3 py-0.5">
                                   <input
                                     type="checkbox"
-                                    aria-label={`选择 ${row.subjectLabel} ${room.roomNumber}监考单元格`}
-                                    className="absolute left-0 top-0 h-3.5 w-3.5 accent-gold-500"
+                                    aria-label={`选择 ${row.subjectLabel} ${group.roomLocation}监考单元格`}
+                                    className="absolute left-0 top-0 h-3 w-3 accent-gold-500"
                                     checked={selected}
                                     onClick={(event) => event.stopPropagation()}
                                     onChange={() => toggleCellSelection(target)}
                                   />
                                   <button
                                     type="button"
-                                    className="pt-1 text-xs font-medium text-ink-800 hover:text-gold-700"
+                                    className="pt-0.5 text-xs font-medium text-ink-800 hover:text-gold-700"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       if (assignedTeacherId) setSelectedTeacherId(assignedTeacherId);
@@ -676,7 +727,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                                   >
                                     {teacherMap.get(assignedTeacherId || "")?.name || "空缺"}
                                   </button>
-                                  <div className="mt-1 text-[10px] text-ink-400">{count} 人</div>
+                                  <div className="mt-0.5 text-[10px] text-ink-400">{count} 人</div>
                                 </div>
                               ) : <span className="text-xs text-ink-300">无学生</span>}
                             </td>
@@ -688,25 +739,25 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                           return (
                             <td
                               className={cn(
-                                "cursor-pointer border-b border-r border-[#b6c7cf] px-2 py-2 text-center transition-colors hover:bg-gold-50/60",
+                                "cursor-pointer border-b border-r border-[#b6c7cf] px-1.5 py-1 text-center transition-colors hover:bg-gold-50/60",
                                 selectedTeacherId === row.outsideTeacherId && "bg-[#fff86b]",
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
                                 row.outsideTeacherId && row.duplicateTeacherIds.includes(row.outsideTeacherId) && "ring-2 ring-inset ring-red-400",
                               )}
                               onClick={() => toggleCellSelection(target)}
                             >
-                              <div className="relative min-h-12 px-4 py-1">
+                              <div className="relative min-h-8 px-3 py-0.5">
                                 <input
                                   type="checkbox"
                                   aria-label={`选择 ${row.subjectLabel}场外监考单元格`}
-                                  className="absolute left-0 top-0 h-3.5 w-3.5 accent-gold-500"
+                                  className="absolute left-0 top-0 h-3 w-3 accent-gold-500"
                                   checked={selected}
                                   onClick={(event) => event.stopPropagation()}
                                   onChange={() => toggleCellSelection(target)}
                                 />
                                 <button
                                   type="button"
-                                  className="pt-1 text-xs font-medium text-ink-800 hover:text-gold-700"
+                                  className="pt-0.5 text-xs font-medium text-ink-800 hover:text-gold-700"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     if (row.outsideTeacherId) setSelectedTeacherId(row.outsideTeacherId);
@@ -722,11 +773,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                           <td
                             rowSpan={invigilation.rows.length}
                             className={cn(
-                              "border-b border-[#b6c7cf] bg-[#eef4f4] px-3 py-3 align-middle transition-colors",
+                              "border-b border-[#b6c7cf] bg-[#eef4f4] px-2 py-2 align-middle transition-colors",
                               selectedTeacherId && invigilation.patrolTeacherIds.includes(selectedTeacherId) && "bg-[#fff86b]",
                             )}
                           >
-                            <div className="flex min-w-36 flex-col gap-2">
+                            <div className="flex flex-col gap-1.5">
                               <div className="flex flex-wrap justify-center gap-1.5">
                                 {invigilation.patrolTeacherIds.map((id) => {
                                   const teacher = teacherMap.get(id);
@@ -828,7 +879,8 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                         type="button"
                         aria-label={`将 ${stat.name} 填入选中单元格`}
                         className="text-left font-medium text-ink-800 enabled:hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-400"
-                        disabled={selectedCells.length !== 1}
+                        disabled={selectedCells.length !== 1 || selectedCellUnavailableTeacherIds.has(stat.teacherId)}
+                        title={selectedCellUnavailableTeacherIds.has(stat.teacherId) ? "该老师已在本场考试中承担其他监考任务" : undefined}
                         onClick={() => assignSelectedTeacher(stat.teacherId)}
                       >
                         {stat.name}
