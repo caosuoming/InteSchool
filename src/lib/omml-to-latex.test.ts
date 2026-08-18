@@ -124,6 +124,31 @@ function vectorEquationSystem(): string {
   `;
 }
 
+function vectorAngleWithCjkDelimiters(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:d>
+        <m:dPr>
+          <m:begChr m:val="〈"/>
+          <m:endChr m:val="〉"/>
+        </m:dPr>
+        <m:e>
+          <m:acc>
+            <m:accPr><m:chr m:val="⃗"/></m:accPr>
+            <m:e><m:r><m:t>AB</m:t></m:r></m:e>
+          </m:acc>
+          <m:r><m:t>,</m:t></m:r>
+          <m:acc>
+            <m:accPr><m:chr m:val="⃗"/></m:accPr>
+            <m:e><m:r><m:t>AC</m:t></m:r></m:e>
+          </m:acc>
+        </m:e>
+      </m:d>
+      <m:r><m:t>=θ</m:t></m:r>
+    </m:oMath>
+  `;
+}
+
 function finiteSum(): string {
   return `
     <m:oMath xmlns:m="${MATH_NS}">
@@ -215,6 +240,12 @@ describe("ommlToLatex", () => {
   it("does not turn nested vector operands into extra equation rows", () => {
     expect(ommlToLatex(vectorEquationSystem())).toBe(
       "\\begin{cases}\n\\vec{a}=\\vec{b} \\\\\n\\vec{c}=0\n\\end{cases}",
+    );
+  });
+
+  it("normalizes CJK angle delimiters and stretches arrows across point-pair vectors", () => {
+    expect(ommlToLatex(vectorAngleWithCjkDelimiters())).toBe(
+      String.raw`\left\langle\overrightarrow{AB},\overrightarrow{AC}\right\rangle=\theta`,
     );
   });
 

@@ -26,6 +26,14 @@ describe("extract text renderer", () => {
     expect(html).not.toContain("$x");
   });
 
+  it("keeps inline formulas on the surrounding text baseline", () => {
+    const html = renderExtractText("如图，$P-ABCD$ 中", [], false);
+    const formula = asElement(html).querySelector<HTMLElement>(".formula-inline");
+
+    expect(formula).not.toBeNull();
+    expect(formula?.style.verticalAlign).toBe("0");
+  });
+
   it("preserves extracted superscript and subscript markup", () => {
     const html = renderExtractText("a<sub>n</sub><sup>2</sup>+1", [], false);
     const container = asElement(html);

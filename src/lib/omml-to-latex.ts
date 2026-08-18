@@ -415,6 +415,10 @@ function mapDelimiter(chr: string): string {
     "⌋": "\\rfloor",
     "⟨": "\\langle",
     "⟩": "\\rangle",
+    "〈": "\\langle",
+    "〉": "\\rangle",
+    "〈": "\\langle",
+    "〉": "\\rangle",
     "": ".",
   };
   return map[chr] || chr;
@@ -587,6 +591,15 @@ function convertAcc(el: Element): string {
   const chr = chrEl?.getAttribute("m:val") || chrEl?.getAttribute("val") || "⃗";
 
   const e = getMathChild(el, "e");
+  if (chr === "⃗" || chr === "⃖") {
+    const direction = chr === "⃖" ? "left" : "right";
+    const accent = /^[A-Za-z0-9]$/.test(e)
+      ? "\\vec"
+      : direction === "left"
+        ? "\\overleftarrow"
+        : "\\overrightarrow";
+    return `${accent}{${e}}`;
+  }
   const accent = mapAccent(chr);
 
   return `${accent}{${e}}`;
@@ -594,8 +607,6 @@ function convertAcc(el: Element): string {
 
 function mapAccent(chr: string): string {
   const map: Record<string, string> = {
-    "⃗": "\\vec",
-    "⃖": "\\vec",
     "^": "\\hat",
     "̂": "\\hat",
     "̃": "\\tilde",
