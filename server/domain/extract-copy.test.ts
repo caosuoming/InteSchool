@@ -371,3 +371,123 @@ describe("document extract copies", () => {
     });
   });
 });
+
+describe("paper and lecture library moves", () => {
+  it("moves an unextracted exam-paper upload to the lecture library without changing its document state", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const result = await examPaperService.convertToLecture("paper-source");
+
+      expect(result).toEqual({ lectureId: "paper-source" });
+      expect((appState.examPapers as ExamPaper[]).some((paper) => paper.id === "paper-source")).toBe(false);
+      const moved = (appState.lectures as Lecture[]).find((lecture) => lecture.id === "paper-source");
+      expect(moved).toMatchObject({
+        id: "paper-source",
+        title: "上传试卷",
+        originalFileUrl: "/uploads/paper.docx",
+        originalFileName: "paper.docx",
+        originalFileType: "word",
+        originalFileSize: 1024,
+        extractStatus: "pending",
+        isExtractCopy: undefined,
+      });
+      expect(moved?.title).not.toContain("转讲义");
+    });
+  });
+
+  it("moves an unextracted lecture upload to the exam-paper library without changing its document state", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const result = await lectureService.convertToExamPaper("lecture-source");
+
+      expect(result).toEqual({ paperId: "lecture-source" });
+      expect((appState.lectures as Lecture[]).some((lecture) => lecture.id === "lecture-source")).toBe(false);
+      const moved = (appState.examPapers as ExamPaper[]).find((paper) => paper.id === "lecture-source");
+      expect(moved).toMatchObject({
+        id: "lecture-source",
+        title: "上传讲义",
+        originalFileUrl: "/uploads/lecture.docx",
+        originalFileName: "lecture.docx",
+        originalFileType: "word",
+        originalFileSize: 2048,
+        extractStatus: "pending",
+        isExtractCopy: undefined,
+      });
+      expect(moved?.title).not.toContain("转试卷");
+    });
+  });
+
+  it("moves an extracted exam-paper family together and preserves the source/copy relationship", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const extracted = await examPaperService.createExtractCopy("paper-source", blocks());
+      const result = await examPaperService.convertToLecture(extracted.id);
+
+      expect(result).toEqual({ lectureId: extracted.id });
+      expect((appState.examPapers as ExamPaper[]).some((paper) => (
+        paper.id === "paper-source" || paper.id === extracted.id
+      ))).toBe(false);
+
+      const movedRoot = (appState.lectures as Lecture[]).find((lecture) => lecture.id === "paper-source");
+      const movedExtract = (appState.lectures as Lecture[]).find((lecture) => lecture.id === extracted.id);
+      expect(movedRoot).toMatchObject({
+        originalFileUrl: "/uploads/paper.docx",
+        extractStatus: "done",
+      });
+      expect(movedExtract).toMatchObject({
+        isExtractCopy: true,
+        sourceResourceId: "paper-source",
+        versionType: "extract",
+        hasOrigin: true,
+        originalFileUrl: undefined,
+      });
+      expect(movedExtract?.contentBlocks?.map((block) => block.type)).toEqual(
+        blocks().map((block) => block.type),
+      );
+      expect(movedExtract?.sections.map((section) => section.type)).toEqual([
+        "chapter",
+        "text",
+        "chapter",
+        "question",
+        "knowledge",
+        "question",
+      ]);
+    });
+  });
+
+  it("moves an extracted lecture family together and preserves the source/copy relationship", async () => {
+    const appState = state();
+
+    await runWithState(appState, async () => {
+      const extracted = await lectureService.createExtractCopy("lecture-source", blocks());
+      const result = await lectureService.convertToExamPaper(extracted.id);
+
+      expect(result).toEqual({ paperId: extracted.id });
+      expect((appState.lectures as Lecture[]).some((lecture) => (
+        lecture.id === "lecture-source" || lecture.id === extracted.id
+      ))).toBe(false);
+
+      const movedRoot = (appState.examPapers as ExamPaper[]).find((paper) => paper.id === "lecture-source");
+      const movedExtract = (appState.examPapers as ExamPaper[]).find((paper) => paper.id === extracted.id);
+      expect(movedRoot).toMatchObject({
+        originalFileUrl: "/uploads/lecture.docx",
+        extractStatus: "done",
+      });
+      expect(movedExtract).toMatchObject({
+        isExtractCopy: true,
+        sourceResourceId: "lecture-source",
+        originalFileUrl: undefined,
+      });
+      expect(movedExtract?.contentBlocks?.map((block) => block.type)).toEqual(
+        blocks().map((block) => block.type),
+      );
+      expect(movedExtract?.questions.map((question) => question.questionId)).toEqual([
+        "bank-question-1",
+        "bank-question-2",
+      ]);
+    });
+  });
+});

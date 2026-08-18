@@ -1637,6 +1637,28 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
+  const handleMoveLectureToExamPaper = async (lectureId: string) => {
+    if (!teacher) return;
+    try {
+      await lectureService.convertToExamPaper(lectureId);
+      toast.success("已移至试卷库");
+      navigate("/my-resources/exam-papers");
+    } catch (error) {
+      toast.error("移动失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const handleMoveExamPaperToLecture = async (paperId: string) => {
+    if (!teacher) return;
+    try {
+      await examPaperService.convertToLecture(paperId);
+      toast.success("已移至讲义库");
+      navigate("/my-resources/lectures");
+    } catch (error) {
+      toast.error("移动失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
   const handleOpenShare = (resourceType: ShareableResourceType, resourceId: string, resourceTitle: string) => {
     setShareScope("school");
     setShareMessage("");
@@ -3130,16 +3152,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       compactActions
                       configurableActions
                       detailsPresentation="titleTooltip"
-                      onConvertToExamPaper={async () => {
-                        if (!teacher) return;
-                        try {
-                          const result = await lectureService.convertToExamPaper(mainLecture.id);
-                          toast.success("已转换为试卷", "正在跳转到试卷编辑器...");
-                          navigate(`/exam-papers/${result.paperId}/edit`);
-                        } catch (err) {
-                          toast.error("转换失败", err instanceof Error ? err.message : undefined);
-                        }
-                      }}
+                      onConvertToExamPaper={() => handleMoveLectureToExamPaper(mainLecture.id)}
                       showAddToLesson
                       titleBadge={hasExtractCopy
                         ? { text: "拆解稿", variant: "gold" }
@@ -3235,7 +3248,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         onRename={(title) => handleRenameResource("examPaper", copy.id, title)}
                         onViewReflections={() => setViewingReflections({ title: copy.title, list: reflectionsMap[copy.id] || [] })}
                         onDuplicate={() => openDuplicate("examPaper", copy.id, copy.title)}
-                        additionalActions={folderActionsFor("examPaper", item.id, copy.title)}
+                        additionalActions={[
+                          ...folderActionsFor("examPaper", item.id, copy.title),
+                          {
+                            key: "convertToLecture",
+                            label: "转讲义",
+                            icon: <FileText />,
+                            onClick: () => handleMoveExamPaperToLecture(copy.id),
+                            tone: "gold",
+                          },
+                        ]}
                         showAddToLesson
                         alwaysShowActions
                         compactActions
@@ -3336,16 +3358,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                               key: "convertToLecture",
                               label: "转讲义",
                               icon: <FileText />,
-                              onClick: async () => {
-                                if (!teacher) return;
-                                try {
-                                  const result = await examPaperService.convertToLecture(item.id);
-                                  toast.success("已转换为讲义", "正在跳转到讲义编辑器...");
-                                  navigate(`/lectures/${result.lectureId}/edit`);
-                                } catch (err) {
-                                  toast.error("转换失败", err instanceof Error ? err.message : undefined);
-                                }
-                              },
+                              onClick: () => handleMoveExamPaperToLecture(item.id),
                               tone: "gold",
                             },
                           ]}

@@ -11,6 +11,7 @@ import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { sanitizeExamPaperPatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
+import { moveExamPaperToLecture } from "./document-library-move.js";
 
 function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
   if (filter.keyword) {
@@ -327,54 +328,10 @@ export const examPaperService = {
     ) || null;
   },
 
-  /**
-   * 将试卷转换为讲义
-   * 将试卷的题目转换为讲义的题目类型section
-   */
+  /** 将试卷连同其文档状态一起移动到讲义库。 */
   async convertToLecture(paperId: string): Promise<{ lectureId: string }> {
     await delay(500);
     maybeThrowError();
-    const paper = db.read("examPapers").find((p) => p.id === paperId);
-    if (!paper) throw new Error("试卷不存在");
-    assertResourceCapacity(paper.teacherId, "lecture");
-
-    const now = new Date().toISOString();
-
-    // 将试卷题目转换为讲义sections
-    const sections: import("../../src/types/index.js").LectureSection[] = paper.questions.map((q, idx) => ({
-      id: genId("sec"),
-      title: `第${idx + 1}题`,
-      type: "question",
-      content: q.stem,
-      questionId: q.questionId,
-      children: [],
-    }));
-
-    const lecture: import("../../src/types/index.js").Lecture = {
-      id: genId("lec"),
-      teacherId: paper.teacherId,
-      schoolId: paper.schoolId,
-      title: `${paper.title}（转讲义）`,
-      description: paper.description,
-      chapterIds: paper.chapterIds,
-      knowledgePointIds: paper.knowledgePointIds,
-      grade: paper.grade,
-      schoolYear: paper.schoolYear,
-      semester: paper.semester || "上学期",
-      classIds: paper.classIds || [],
-      studentIds: [],
-      sections,
-      typeId: undefined,
-      questionSourceType: paper.questionSourceType,
-      questionCategory: paper.questionCategory,
-      version: 1,
-      status: "draft",
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    db.update("lectures", (list) => [lecture, ...list]);
-
-    return { lectureId: lecture.id };
+    return moveExamPaperToLecture(paperId);
   },
 };
