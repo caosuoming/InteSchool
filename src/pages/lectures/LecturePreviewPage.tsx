@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   BookOpen, CheckSquare, Edit3, Eye, FileText, GraduationCap,
-  Copy, Download, Printer, Type, UserCheck, Users,
+  Copy, Download, Layout, Printer, Type, UserCheck, Users,
 } from "lucide-react";
 import { lectureService } from "@/services/lecture";
 import { questionService } from "@/services/question";
@@ -456,6 +456,10 @@ export default function LecturePreviewPage() {
                 创建副本
               </Button>
             )}
+            <Button variant="outline" onClick={() => navigate(`/lectures/${lecture.id}/answer-sheet`)}>
+              <Layout className="w-4 h-4" />
+              制作答题卡
+            </Button>
             <Button variant="outline" onClick={() => setDownloadModalOpen(true)}>
               <Download className="w-4 h-4" />
               下载

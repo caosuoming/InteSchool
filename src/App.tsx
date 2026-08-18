@@ -16,6 +16,7 @@ const SchoolAuthPage = lazy(() => import("@/pages/auth/SchoolAuthPage"));
 const DashboardPage = lazy(() => import("@/pages/dashboard/DashboardPage"));
 const LectureEditorPage = lazy(() => import("@/pages/lectures/LectureEditorPage"));
 const LecturePreviewPage = lazy(() => import("@/pages/lectures/LecturePreviewPage"));
+const LectureAnswerSheetPage = lazy(() => import("@/pages/lectures/LectureAnswerSheetPage"));
 const ExamPaperEditorPage = lazy(() => import("@/pages/exam-papers/ExamPaperEditorPage"));
 const ExamPaperAnswerSheetPage = lazy(() => import("@/pages/exam-papers/ExamPaperAnswerSheetPage"));
 const MyResourcesPage = lazy(() => import("@/pages/resources/MyResourcesPage"));
@@ -133,6 +134,7 @@ export default function App() {
             <Route path="/lectures/new" element={<LectureEditorPage />} />
             <Route path="/lectures/:id/edit" element={<LectureEditorPage />} />
             <Route path="/lectures/:id/preview" element={<LecturePreviewPage />} />
+            <Route path="/lectures/:id/answer-sheet" element={<LectureAnswerSheetPage />} />
             <Route path="/exam-papers/:id" element={<ExamPaperEditorPage />} />
             <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
             <Route path="/exam-papers/:id/answer-sheet" element={<ExamPaperAnswerSheetPage />} />
