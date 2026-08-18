@@ -203,6 +203,12 @@ describe("MyExamsPage", () => {
           period: "evening",
           time: "18:30",
           durationMinutes: 120,
+        }, {
+          subject: "数学",
+          date: "2026-10-20",
+          period: "evening",
+          time: "20:40",
+          durationMinutes: 60,
         }],
         patrolTeacherIds: ["teacher-leader"],
         overrides: {},
@@ -227,11 +233,13 @@ describe("MyExamsPage", () => {
     const invigilationCard = tableTwoHeading.closest(".card-base");
     expect(invigilationCard).not.toBeNull();
     const invigilationTable = within(invigilationCard as HTMLElement);
-    expect(invigilationTable.getByRole("columnheader", { name: "高三1班教室" })).toHaveAttribute("colspan", "2");
+    expect(invigilationTable.getByRole("columnheader", { name: "高三1班教室" })).not.toHaveAttribute("colspan");
+    expect(invigilationTable.getByRole("columnheader", { name: "1考场、2考场" })).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "巡回" })).toHaveAttribute("rowspan", "3");
-    expect(invigilationTable.getByRole("cell", { name: "2026-10-20 星期二" })).toBeInTheDocument();
-    expect(invigilationTable.getByRole("cell", { name: "晚上" })).toBeInTheDocument();
+    expect(invigilationTable.getByRole("cell", { name: "2026-10-20 星期二" })).toHaveAttribute("rowspan", "2");
+    expect(invigilationTable.getByRole("cell", { name: "晚上" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "18:30–20:30" })).toBeInTheDocument();
+    expect(invigilationTable.getAllByRole("checkbox", { name: /高三1班教室监考单元格/ })).toHaveLength(2);
     expect(invigilationTable.getByRole("button", { name: "年级领导" })).toBeInTheDocument();
     const durationHeading = screen.getByRole("heading", { name: "监考时长" });
     const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
@@ -386,19 +394,21 @@ describe("MyExamsPage", () => {
       </MemoryRouter>,
     );
 
-    const roomOne = await screen.findByRole("checkbox", { name: "选择 数学 1考场监考单元格" });
+    const roomOne = await screen.findByRole("checkbox", { name: "选择 数学 4107监考单元格" });
     expect(screen.queryByRole("combobox", { name: "数学 1考场监考教师" })).not.toBeInTheDocument();
 
     await user.click(roomOne);
+    expect(screen.getByRole("button", { name: "将 张老师 填入选中单元格" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "将 李老师 填入选中单元格" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "将 李老师 填入选中单元格" }));
-    expect(screen.getByRole("checkbox", { name: "选择 数学 1考场监考单元格" }).closest("td")).toHaveTextContent("李老师");
-    expect(screen.getByRole("checkbox", { name: "选择 数学 2考场监考单元格" }).closest("td")).toHaveTextContent("张老师");
+    expect(screen.getByRole("checkbox", { name: "选择 数学 4107监考单元格" }).closest("td")).toHaveTextContent("李老师");
+    expect(screen.getByRole("checkbox", { name: "选择 数学 4108监考单元格" }).closest("td")).toHaveTextContent("张老师");
 
-    await user.click(screen.getByRole("checkbox", { name: "选择 数学 1考场监考单元格" }));
-    await user.click(screen.getByRole("checkbox", { name: "选择 数学 2考场监考单元格" }));
+    await user.click(screen.getByRole("checkbox", { name: "选择 数学 4107监考单元格" }));
+    await user.click(screen.getByRole("checkbox", { name: "选择 数学 4108监考单元格" }));
     await user.click(screen.getByRole("button", { name: "是否交换" }));
 
-    expect(screen.getByRole("checkbox", { name: "选择 数学 1考场监考单元格" }).closest("td")).toHaveTextContent("张老师");
-    expect(screen.getByRole("checkbox", { name: "选择 数学 2考场监考单元格" }).closest("td")).toHaveTextContent("李老师");
+    expect(screen.getByRole("checkbox", { name: "选择 数学 4107监考单元格" }).closest("td")).toHaveTextContent("张老师");
+    expect(screen.getByRole("checkbox", { name: "选择 数学 4108监考单元格" }).closest("td")).toHaveTextContent("李老师");
   });
 });

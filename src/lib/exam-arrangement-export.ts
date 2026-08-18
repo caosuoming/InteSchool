@@ -1,4 +1,5 @@
 import type { ExamArrangement, ExamSeatAssignment } from "@/types";
+import type { SheetData } from "write-excel-file/browser";
 import { buildExamPrintRoomStatistics } from "./exam-print-room-statistics";
 import {
   buildExamInvigilationTable,
@@ -52,6 +53,14 @@ const PDF_PAPER_SIZES: Record<ExamPdfPaperSize, { width: number; height: number 
 
 function safeFileName(value: string): string {
   return value.replace(/[\\/:*?"<>|]/g, "_").trim() || "考场安排";
+}
+
+function consecutiveRowSpan<T>(items: T[], index: number, keyFor: (item: T) => string): number {
+  const key = keyFor(items[index]);
+  if (index > 0 && keyFor(items[index - 1]) === key) return 0;
+  let span = 1;
+  while (index + span < items.length && keyFor(items[index + span]) === key) span += 1;
+  return span;
 }
 
 export async function downloadExamPreviewPdf(
@@ -232,7 +241,12 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
     backgroundColor: "#F1F4F8",
   });
 
-  const sheets = [{
+  const sheets: Array<{
+    sheet: string;
+    data: SheetData;
+    stickyRowsCount: number;
+    columns: Array<{ width: number }>;
+  }> = [{
     sheet: "表一、文印室统计表",
     data: [
       [header("考场号"), ...statistics.rooms.map((room) => header(room.roomNumber)), header("合计")],
@@ -258,27 +272,31 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
       const teacherMap = new Map(arrangement.invigilation.teachers.map((teacher) => [teacher.id, teacher.name]));
       const invigilationHeader = (value: string) => ({ ...header(value), backgroundColor: "#DCECEF" });
       const invigilationInfoCell = (value: string | number) => ({ ...centeredCell(value), backgroundColor: "#E5F0F2" });
-      const roomLocationHeaderCells = invigilation.roomLocationGroups.flatMap((group) => [
-        { ...invigilationHeader(group.roomLocation), columnSpan: group.roomIds.length },
-        ...group.roomIds.slice(1).map(() => null),
-      ]);
       const patrolNames = invigilation.patrolTeacherIds.map((id) => teacherMap.get(id)).filter(Boolean).join("、");
-      const invigilationRows = invigilation.rows.map((row, index) => [
-        invigilationInfoCell(formatExamDateWithWeekday(row.date)),
-        invigilationInfoCell(examInvigilationPeriodLabel(row.period)),
-        invigilationInfoCell(formatExamTimeRange(row.time, row.durationMinutes)),
-        invigilationInfoCell(row.subjectLabel),
-        ...invigilation.rooms.map((room) => centeredCell(teacherMap.get(row.roomTeacherIds[room.roomId] || "") || "")),
-        centeredCell(teacherMap.get(row.outsideTeacherId || "") || ""),
-        index === 0 ? { ...invigilationInfoCell(patrolNames), rowSpan: invigilation.rows.length } : null,
-      ]);
+      const invigilationRows = invigilation.rows.map((row, index) => {
+        const dateRowSpan = consecutiveRowSpan(invigilation.rows, index, (item) => item.date);
+        const periodRowSpan = consecutiveRowSpan(invigilation.rows, index, (item) => `${item.date}\u0000${item.period}`);
+        const locationTeacherCells = invigilation.roomLocationGroups.map((group) => {
+          const roomId = group.roomIds.find((id) => (row.roomStudentCounts[id] || 0) > 0);
+          return centeredCell(roomId ? teacherMap.get(row.roomTeacherIds[roomId] || "") || "" : "");
+        });
+        return [
+          dateRowSpan > 0 ? { ...invigilationInfoCell(formatExamDateWithWeekday(row.date).replace(" ", "\n")), rowSpan: dateRowSpan } : null,
+          periodRowSpan > 0 ? { ...invigilationInfoCell(examInvigilationPeriodLabel(row.period)), rowSpan: periodRowSpan } : null,
+          invigilationInfoCell(formatExamTimeRange(row.time, row.durationMinutes)),
+          invigilationInfoCell(row.subjectLabel),
+          ...locationTeacherCells,
+          centeredCell(teacherMap.get(row.outsideTeacherId || "") || ""),
+          index === 0 ? { ...invigilationInfoCell(patrolNames), rowSpan: invigilation.rows.length } : null,
+        ];
+      });
 
       sheets.push({
         sheet: "表二、监考表",
         data: [
           [
             { ...invigilationHeader("考试安排"), columnSpan: 4 }, null, null, null,
-            ...roomLocationHeaderCells,
+            ...invigilation.roomLocationGroups.map((group) => invigilationHeader(group.roomLocation)),
             { ...invigilationHeader("场外监考"), rowSpan: 3 },
             { ...invigilationHeader("巡回"), rowSpan: 3 },
           ],
@@ -287,13 +305,13 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
             invigilationHeader("时段"),
             invigilationHeader("考试时间"),
             invigilationHeader("学科"),
-            ...invigilation.rooms.map((room) => invigilationHeader(room.roomNumber)),
+            ...invigilation.roomLocationGroups.map((group) => invigilationHeader(group.roomNumbers.join("、"))),
             null,
             null,
           ],
           [
             { ...invigilationHeader("试场人数"), columnSpan: 4 }, null, null, null,
-            ...invigilation.rooms.map((room) => invigilationInfoCell(room.studentCount)),
+            ...invigilation.roomLocationGroups.map((group) => invigilationInfoCell(group.studentCount)),
             null,
             null,
           ],
@@ -305,7 +323,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
           { width: 10 },
           { width: 18 },
           { width: 16 },
-          ...invigilation.rooms.map(() => ({ width: 16 })),
+          ...invigilation.roomLocationGroups.map(() => ({ width: 14 })),
           { width: 16 },
           { width: 22 },
         ],

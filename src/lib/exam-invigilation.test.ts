@@ -4,6 +4,7 @@ import {
   buildExamInvigilationTable,
   examInvigilationPeriodLabel,
   formatExamDateWithWeekday,
+  formatExamWeekday,
   formatExamTimeRange,
   invigilationSlotKey,
 } from "./exam-invigilation";
@@ -154,7 +155,7 @@ describe("exam invigilation table", () => {
     expect(table.patrolTeacherIds).toEqual([]);
   });
 
-  it("groups rooms that share one physical address into one header group", () => {
+  it("groups rooms that share one physical address into one invigilation assignment", () => {
     const input = arrangement();
     input.rooms[1].location = input.rooms[0].location;
 
@@ -163,7 +164,28 @@ describe("exam invigilation table", () => {
     expect(table.roomLocationGroups).toEqual([{
       roomLocation: "教学楼101",
       roomIds: ["room-1", "room-2"],
+      roomNumbers: ["1", "2"],
+      studentCount: 2,
     }]);
+    expect(Object.values(table.rows[0].roomTeacherIds).filter(Boolean)).toHaveLength(1);
+    expect(table.rows[0].roomTeacherIds["room-2"]).toBeNull();
+  });
+
+  it("collapses a legacy per-room override onto the shared location cell", () => {
+    const input = arrangement();
+    input.rooms[1].location = input.rooms[0].location;
+    const settings = config();
+    const key = invigilationSlotKey(settings.subjectTimes.slice(0, 2));
+    settings.overrides = {
+      [key]: {
+        roomTeacherIds: { "room-2": "history" },
+      },
+    };
+
+    const table = buildExamInvigilationTable(input, settings);
+
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBe("history");
+    expect(table.rows[0].roomTeacherIds["room-2"]).toBeNull();
   });
 
   it("reports duplicate teachers instead of silently clearing another assignment", () => {
@@ -183,6 +205,7 @@ describe("exam invigilation table", () => {
 
   it("formats weekday, evening period, and end time for the four exam-info columns", () => {
     expect(formatExamDateWithWeekday("2026-10-20")).toBe("2026-10-20 星期二");
+    expect(formatExamWeekday("2026-10-20")).toBe("星期二");
     expect(examInvigilationPeriodLabel("evening")).toBe("晚上");
     expect(formatExamTimeRange("18:30", 120)).toBe("18:30–20:30");
     expect(formatExamTimeRange("23:30", 120)).toBe("23:30–次日01:30");
