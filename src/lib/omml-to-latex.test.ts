@@ -38,6 +38,34 @@ function piecewiseFunction(endCharacter = "."): string {
   `;
 }
 
+function piecewiseFunctionWithLiteralBrace(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:r><m:t>sgn(x)=</m:t></m:r>
+      <m:r><m:t>{</m:t></m:r>
+      <m:m>
+        <m:mPr>
+          <m:mcs>
+            <m:mc/><m:mc/>
+          </m:mcs>
+        </m:mPr>
+        <m:mr>
+          <m:e><m:r><m:t>1,</m:t></m:r></m:e>
+          <m:e><m:r><m:t>x&gt;0</m:t></m:r></m:e>
+        </m:mr>
+        <m:mr>
+          <m:e><m:r><m:t>0,</m:t></m:r></m:e>
+          <m:e><m:r><m:t>x=0</m:t></m:r></m:e>
+        </m:mr>
+        <m:mr>
+          <m:e><m:r><m:t>-1,</m:t></m:r></m:e>
+          <m:e><m:r><m:t>x&lt;0</m:t></m:r></m:e>
+        </m:mr>
+      </m:m>
+    </m:oMath>
+  `;
+}
+
 function determinantWithSubscripts(): string {
   return `
     <m:oMath xmlns:m="${MATH_NS}">
@@ -129,6 +157,7 @@ describe("ommlToLatex", () => {
     const latex = ommlToLatex(piecewiseFunction());
 
     expect(latex).toContain("\\left\\{");
+    expect(latex).not.toContain("\\left\\left\\{");
     expect(latex).toContain("\\begin{matrix}");
     expect(latex).toContain("\\right.");
     expect(latex).not.toContain("pmatrix");
@@ -140,6 +169,12 @@ describe("ommlToLatex", () => {
 
     expect(latex).toContain("\\right.");
     expect(latex).not.toContain("\\right)");
+  });
+
+  it("stretches a literal one-sided brace across a following matrix", () => {
+    expect(ommlToLatex(piecewiseFunctionWithLiteralBrace())).toBe(
+      String.raw`sgn(x)=\left\{\begin{matrix} 1, & x>0 \\ 0, & x=0 \\ -1, & x<0 \end{matrix}\right.`,
+    );
   });
 
   it("keeps nested subscript expressions inside their matrix cells", () => {

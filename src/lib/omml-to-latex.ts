@@ -49,6 +49,22 @@ export function ommlToLatex(mathEl: Element | string): string {
 function stretchMatrixDelimiters(latex: string): string {
   return latex
     .replace(
+      /\\\{(\s*\\begin\{matrix\}[\s\S]*?\\end\{matrix\})(\\\})?/g,
+      (
+        match: string,
+        matrix: string,
+        closingBrace: string | undefined,
+        offset: number,
+        source: string,
+      ) => {
+        // Some Word/MathType equations store a piecewise brace as a literal
+        // math run immediately before the matrix instead of as m:d metadata.
+        // Leave already-correct \left\{...\right. output untouched.
+        if (source.slice(Math.max(0, offset - 5), offset) === "\\left") return match;
+        return `\\left\\{${matrix}\\right${closingBrace ? "\\}" : "."}`;
+      },
+    )
+    .replace(
       /\|\\begin\{matrix\}([\s\S]*?)\\end\{matrix\}\|/g,
       String.raw`\left|\begin{matrix}$1\end{matrix}\right|`,
     )
