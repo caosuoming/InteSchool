@@ -3,6 +3,7 @@ import { DOMParser } from "@xmldom/xmldom";
 import { extname, posix } from "node:path";
 import { ommlToLatex } from "../../src/lib/omml-to-latex.js";
 import {
+  renderDocumentTableStructuredCell,
   serializeDocumentTable,
   type DocumentTable,
   type DocumentTableCell,
@@ -493,7 +494,9 @@ function extractTable(table: Element, imageUrl?: ImageUrlFactory): string {
     if (row.length > 0) extracted.push(row);
   }
 
-  return extracted.length > 0 ? serializeDocumentTable(extracted) : "";
+  return extracted.length > 0
+    ? serializeDocumentTable(extracted, renderDocumentTableStructuredCell)
+    : "";
 }
 
 function extractBlocks(parent: Element, imageUrl?: ImageUrlFactory): string[] {
