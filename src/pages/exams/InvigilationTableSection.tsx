@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ArrowRight, ClipboardCheck, Download, Move, Plus, Save, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Download, Move, Plus, Save, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -190,6 +190,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const durationDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [historyArrangementIds, setHistoryArrangementIds] = useState<string[]>([]);
   const [tableTwoVisible, setTableTwoVisible] = useState(false);
+  const [durationListCollapsed, setDurationListCollapsed] = useState(false);
   const [floatingDurationPosition, setFloatingDurationPosition] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -701,6 +702,30 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
               </Button>
             </div>
           </div>
+          <div className="mb-4 rounded-xl border border-ink-100 bg-ink-50/50 p-3">
+            <div className="mb-2 text-xs font-medium text-ink-700">累计范围（勾选往期监考表）</div>
+            {historicalArrangements.length ? (
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                {historicalArrangements.map((arrangement) => (
+                  <label key={arrangement.id} className="flex items-center gap-2 text-xs text-ink-600">
+                    <input
+                      type="checkbox"
+                      aria-label={`累计 ${arrangement.name}`}
+                      checked={historyArrangementIds.includes(arrangement.id)}
+                      onChange={(event) => setHistoryArrangementIds((current) => (
+                        event.target.checked
+                          ? [...current, arrangement.id]
+                          : current.filter((id) => id !== arrangement.id)
+                      ))}
+                    />
+                    <span>{arrangement.name}{arrangement.examDate ? ` · ${arrangement.examDate}` : ""}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-ink-400">暂无更早且已保存监考配置的考试。</div>
+            )}
+          </div>
           <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
             {config.teachers.map((teacher, index) => (
               <div key={teacher.id} className="grid grid-cols-[minmax(90px,0.8fr)_minmax(100px,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-ink-100 p-2">
@@ -708,7 +733,12 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                   {!selectedArrangement.subjects.includes(teacher.subject) && <option>{teacher.subject}</option>}
                   {selectedArrangement.subjects.map((subject) => <option key={subject}>{subject}</option>)}
                 </select>
-                <input aria-label={`教师姓名 ${index + 1}`} className="input-base py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
+                <div className="min-w-0">
+                  <input aria-label={`教师姓名 ${index + 1}`} className="input-base py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
+                  <div className="mt-1 text-[11px] text-ink-500">
+                    往期累计：<span className="font-medium tabular-nums text-ink-700">{formatMinutes(historicalTeacherMinutes[teacher.id] || 0)}</span>
+                  </div>
+                </div>
                 <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} />场外</label>
                 <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => setTeacherLeader(index, event.target.checked)} />巡考</label>
                 <button aria-label={`删除教师 ${teacher.name || index + 1}`} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600" onClick={() => updateConfig((next) => {
@@ -1006,43 +1036,32 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                   <Move className="h-3.5 w-3.5" />拖动
                 </button>
               )}
-              <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "累计最短" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
+              {!durationListCollapsed && (
+                <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "累计最短" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                aria-expanded={!durationListCollapsed}
+                aria-controls="invigilation-duration-list"
+                onClick={() => setDurationListCollapsed((collapsed) => !collapsed)}
+              >
+                {durationListCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                {durationListCollapsed ? "展开名单" : "收起名单"}
+              </Button>
             </div>
           </div>
 
-          <div className="mb-3 rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
-            {selectedCells.length === 0 && "先勾选一个考场或场外监考单元格，再点击下方老师姓名填入。"}
-            {selectedCells.length === 1 && "已选 1 个单元格，点击下方老师姓名即可填入。"}
-            {selectedCells.length === 2 && (canSwapSelectedCells ? "已选 2 个已有安排，可点击“是否交换”。" : "已选 2 个单元格；只有两个单元格均已有老师时才能交换。")}
-          </div>
-
-          <div className="mb-4 rounded-xl border border-ink-100 bg-ink-50/50 p-3">
-            <div className="mb-2 text-xs font-medium text-ink-700">累计范围（勾选往期监考表）</div>
-            {historicalArrangements.length ? (
-              <div className="flex flex-wrap gap-x-5 gap-y-2">
-                {historicalArrangements.map((arrangement) => (
-                  <label key={arrangement.id} className="flex items-center gap-2 text-xs text-ink-600">
-                    <input
-                      type="checkbox"
-                      aria-label={`累计 ${arrangement.name}`}
-                      checked={historyArrangementIds.includes(arrangement.id)}
-                      onChange={(event) => setHistoryArrangementIds((current) => (
-                        event.target.checked
-                          ? [...current, arrangement.id]
-                          : current.filter((id) => id !== arrangement.id)
-                      ))}
-                    />
-                    <span>{arrangement.name}{arrangement.examDate ? ` · ${arrangement.examDate}` : ""}</span>
-                  </label>
-                ))}
+          {!durationListCollapsed && (
+            <div id="invigilation-duration-list">
+              <div className="mb-3 rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
+                {selectedCells.length === 0 && "先勾选一个考场或场外监考单元格，再点击下方老师姓名填入。"}
+                {selectedCells.length === 1 && "已选 1 个单元格，点击下方老师姓名即可填入。"}
+                {selectedCells.length === 2 && (canSwapSelectedCells ? "已选 2 个已有安排，可点击“是否交换”。" : "已选 2 个单元格；只有两个单元格均已有老师时才能交换。")}
               </div>
-            ) : (
-              <div className="text-xs text-ink-400">暂无更早且已保存监考配置的考试。</div>
-            )}
-          </div>
 
-          <div className="overflow-x-auto rounded-xl border border-ink-100">
-            <table className="w-full min-w-[860px] text-sm">
+              <div className="overflow-x-auto rounded-xl border border-ink-100">
+                <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="border-b border-ink-100 bg-ink-50 text-left text-xs text-ink-500">
                   <th className="px-3 py-2.5">姓名</th>
@@ -1111,8 +1130,10 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                   <tr><td colSpan={7} className="py-10 text-center text-xs text-ink-400">暂无教师</td></tr>
                 )}
               </tbody>
-            </table>
-          </div>
+                </table>
+              </div>
+            </div>
+          )}
         </Card>
         </div>
       </div>
