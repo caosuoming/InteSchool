@@ -283,6 +283,8 @@ describe("MyExamsPage", () => {
     const timesHeading = screen.getByRole("heading", { name: "配置二、考试时间配置" });
     expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("批量添加")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批量加入" })).not.toBeInTheDocument();
     expect(tableOneHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tableOneHeading.compareDocumentPosition(teachersHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(teachersHeading.compareDocumentPosition(timesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ArrowRight, ClipboardCheck, Download, Move, Plus, Save, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { ArrowRight, ClipboardCheck, Download, Move, Plus, Save, Trash2, Upload, X } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -10,7 +10,6 @@ import type {
   ExamInvigilationConfig,
   ExamInvigilationPeriod,
   ExamInvigilationSameDayRequirement,
-  ExamInvigilationTeacher,
   GradeCohort,
   GradeTeacherOption,
 } from "@/types";
@@ -33,7 +32,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Input, Select, Textarea } from "@/components/ui/Input";
+import { Input, Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 
 interface Props {
@@ -104,23 +103,6 @@ function newTeacherId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function parseBatchTeachers(value: string): ExamInvigilationTeacher[] {
-  return value.split(/\r?\n/).flatMap((line, index) => {
-    const text = line.trim();
-    if (!text) return [];
-    const parts = text.split(/[，,\t ]+/).map((item) => item.trim()).filter(Boolean);
-    if (parts.length < 2) return [];
-    const markers = parts.slice(2).join(" ");
-    return [{
-      id: newTeacherId(`batch-${index}`),
-      subject: parts[0],
-      name: parts[1],
-      isPrepLeader: markers.includes("场外") || markers.includes("备课组长"),
-      isLeader: markers.includes("巡考") || markers.includes("领导"),
-    }];
-  });
-}
-
 function formatMinutes(minutes: number): string {
   if (minutes <= 0) return "0 分钟";
   const hours = Math.floor(minutes / 60);
@@ -180,7 +162,6 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [importingTeachers, setImportingTeachers] = useState(false);
-  const [batchText, setBatchText] = useState("");
   const [statsSort, setStatsSort] = useState<"minutes" | "subject" | "name">("minutes");
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [selectedCells, setSelectedCells] = useState<InvigilationCellTarget[]>([]);
@@ -529,22 +510,6 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     setSelectedCells([]);
   };
 
-  const addBatchTeachers = () => {
-    const parsed = parseBatchTeachers(batchText);
-    if (!parsed.length) {
-      toast.error("未识别到教师", "每行请填写：学科 姓名，可选添加“场外”或“巡考”标记");
-      return;
-    }
-    updateConfig((next) => {
-      next.teachers.push(...parsed);
-      next.patrolTeacherIds = [...new Set([
-        ...(next.patrolTeacherIds || []),
-        ...parsed.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id),
-      ])];
-    });
-    setBatchText("");
-  };
-
   const downloadTeacherTemplate = async () => {
     if (!selectedArrangement || !config || !cohortLabel) return;
     try {
@@ -675,7 +640,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">配置一、监考老师名单</h2>
-              <p className="mt-1 text-xs text-ink-500">可批量添加，也可逐条修改；“场外”用于场外监考，“巡考”用于巡回。</p>
+              <p className="mt-1 text-xs text-ink-500">可逐条添加和修改，也可通过 Excel 导入；“场外”用于场外监考，“巡考”用于巡回。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => void downloadTeacherTemplate()}>
@@ -725,10 +690,6 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                 })}><Trash2 className="h-4 w-4" /></button>
               </div>
             ))}
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-            <Textarea label="批量添加" value={batchText} onChange={(event) => setBatchText(event.target.value)} placeholder={"每行：学科 姓名 [场外] [巡考]\n例如：数学 张老师 场外"} className="min-h-20" />
-            <Button variant="outline" onClick={addBatchTeachers}><UsersRound className="h-4 w-4" />批量加入</Button>
           </div>
         </Card>
 
