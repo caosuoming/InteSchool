@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Download, Move, Save, Upload, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Copy, Download, Move, Save, Upload, X } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -9,7 +9,6 @@ import type {
   ExamArrangement,
   ExamInvigilationConfig,
   ExamInvigilationPeriod,
-  ExamInvigilationProfile,
   ExamInvigilationSameDayRequirement,
   GradeCohort,
   GradeTeacherOption,
@@ -35,6 +34,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, Select } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 
 interface Props {
@@ -81,7 +81,6 @@ function defaultConfig(arrangement: ExamArrangement, teacherOptions: GradeTeache
 function configForArrangement(
   arrangement: ExamArrangement,
   teacherOptions: GradeTeacherOption[],
-  profile: ExamInvigilationProfile | null,
 ): ExamInvigilationConfig {
   const defaults = defaultConfig(arrangement, teacherOptions);
   const current = arrangement.invigilation ? cloneConfig(arrangement.invigilation) : defaults;
@@ -98,28 +97,22 @@ function configForArrangement(
   }
   Object.values(current.overrides).forEach((override) => { delete override.patrolTeacherId; });
 
-  if (profile) {
-    current.teachers = structuredClone(profile.teachers);
-    const teacherIds = new Set(current.teachers.map((teacher) => teacher.id));
-    current.patrolTeacherIds = (profile.patrolTeacherIds ?? current.teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id))
-      .filter((id) => teacherIds.has(id));
-    if (profile.teacherNotes && Object.keys(profile.teacherNotes).length) current.teacherNotes = structuredClone(profile.teacherNotes);
-    else delete current.teacherNotes;
-    if (profile.teacherRequirements && Object.keys(profile.teacherRequirements).length) current.teacherRequirements = structuredClone(profile.teacherRequirements);
-    else delete current.teacherRequirements;
-    if (profile.footerNote) current.footerNote = profile.footerNote;
-    else delete current.footerNote;
-    current.overrides = Object.fromEntries(Object.entries(current.overrides || {}).map(([key, override]) => [
-      key,
-      {
-        roomTeacherIds: Object.fromEntries(Object.entries(override.roomTeacherIds || {}).filter(([, id]) => id === null || teacherIds.has(id))),
-        ...(override.outsideTeacherId === null || (override.outsideTeacherId && teacherIds.has(override.outsideTeacherId))
-          ? { outsideTeacherId: override.outsideTeacherId }
-          : {}),
-      },
-    ]));
-  }
   return current;
+}
+
+const PERIOD_ORDER: Record<ExamInvigilationPeriod, number> = {
+  morning: 0,
+  afternoon: 1,
+  evening: 2,
+};
+
+function sortSubjectTimes(config: ExamInvigilationConfig) {
+  config.subjectTimes.sort((left, right) => (
+    left.date.localeCompare(right.date)
+    || left.time.localeCompare(right.time)
+    || PERIOD_ORDER[left.period] - PERIOD_ORDER[right.period]
+    || left.subject.localeCompare(right.subject, "zh-CN")
+  ));
 }
 
 function newTeacherId(prefix: string): string {
@@ -213,7 +206,6 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const [arrangements, setArrangements] = useState<ExamArrangement[]>([]);
   const [selectedArrangementId, setSelectedArrangementId] = useState("");
   const [teacherOptions, setTeacherOptions] = useState<GradeTeacherOption[]>([]);
-  const [invigilationProfile, setInvigilationProfile] = useState<ExamInvigilationProfile | null>(null);
   const [config, setConfig] = useState<ExamInvigilationConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -227,6 +219,8 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const floatingDurationRef = useRef<HTMLDivElement>(null);
   const durationDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [historyArrangementIds, setHistoryArrangementIds] = useState<string[]>([]);
+  const [reuseTeacherOpen, setReuseTeacherOpen] = useState(false);
+  const [reuseTimeOpen, setReuseTimeOpen] = useState(false);
   const [tableTwoVisible, setTableTwoVisible] = useState(false);
   const [durationListCollapsed, setDurationListCollapsed] = useState(false);
   const [floatingDurationPosition, setFloatingDurationPosition] = useState<{ x: number; y: number } | null>(null);
@@ -235,7 +229,6 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     if (!cohortKey) {
       setArrangements([]);
       setTeacherOptions([]);
-      setInvigilationProfile(null);
       setSelectedArrangementId("");
       return;
     }
@@ -244,18 +237,15 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     Promise.all([
       examArrangementService.listArrangements(schoolId, cohortKey),
       examArrangementService.getContext(schoolId, cohortKey),
-      examArrangementService.getInvigilationProfile(schoolId, cohortKey),
-    ]).then(([items, context, profile]) => {
+    ]).then(([items, context]) => {
       if (!active) return;
       setArrangements(items);
       setTeacherOptions(context.teachers || []);
-      setInvigilationProfile(profile);
       setSelectedArrangementId((current) => items.some((item) => item.id === current) ? current : items[0]?.id || "");
     }).catch((error) => {
       if (!active) return;
       setArrangements([]);
       setTeacherOptions([]);
-      setInvigilationProfile(null);
       setSelectedArrangementId("");
       toast.error("加载考试方案失败", error instanceof Error ? error.message : undefined);
     }).finally(() => {
@@ -275,9 +265,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       setSelectedCells([]);
       return;
     }
-    setConfig(configForArrangement(selectedArrangement, teacherOptions, invigilationProfile));
+    setConfig(configForArrangement(selectedArrangement, teacherOptions));
     setSelectedCells([]);
-  }, [invigilationProfile, selectedArrangement, teacherOptions]);
+  }, [selectedArrangement, teacherOptions]);
 
   useEffect(() => {
     setHistoryArrangementIds([]);
@@ -303,6 +293,22 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       ))
       .sort((left, right) => arrangementDateKey(right).localeCompare(arrangementDateKey(left)));
   }, [arrangements, selectedArrangement]);
+  const reusableArrangements = useMemo(() => {
+    if (!selectedArrangement) return [];
+    return arrangements
+      .filter((item) => item.id !== selectedArrangement.id && Boolean(item.invigilation))
+      .sort((left, right) => arrangementDateKey(right).localeCompare(arrangementDateKey(left)));
+  }, [arrangements, selectedArrangement]);
+
+  const teacherSummary = useMemo(() => {
+    if (!config) return { total: 0, subjects: [] as Array<[string, number]> };
+    const counts = new Map<string, number>();
+    config.teachers.forEach((teacher) => counts.set(teacher.subject, (counts.get(teacher.subject) || 0) + 1));
+    return {
+      total: config.teachers.length,
+      subjects: [...counts.entries()].sort(([left], [right]) => left.localeCompare(right, "zh-CN")),
+    };
+  }, [config]);
 
   const historicalTeacherMinutes = useMemo(() => {
     if (!config) return {} as Record<string, number>;
@@ -465,11 +471,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     setSaving(true);
     try {
       const saved = await examArrangementService.saveInvigilationConfig(schoolId, selectedArrangement.id, config);
-      const profile = await examArrangementService.getInvigilationProfile(schoolId, cohortKey);
       setArrangements((current) => current.map((item) => item.id === saved.id ? saved : item));
-      setInvigilationProfile(profile);
       setConfig(saved.invigilation ? cloneConfig(saved.invigilation) : config);
-      toast.success("监考配置已保存", "配置一名单和说明已同步到当前年级。");
+      toast.success("监考配置已保存", "当前考试的监考名单、时间和排表已保存。");
     } catch (error) {
       toast.error("保存监考配置失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -624,12 +628,69 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
         result.addedCount ? `新增 ${result.addedCount} 位` : "",
         result.removedCount ? `移除旧名单 ${result.removedCount} 位` : "",
       ].filter(Boolean).join("，");
-      toast.success("监考教师名单已完全替换", `${details}；保存监考配置后同步到当前年级。`);
+      toast.success("监考教师名单已完全替换", `${details}；保存监考配置后仅应用于当前考试。`);
     } catch (error) {
       toast.error("导入监考教师失败", error instanceof Error ? error.message : undefined);
     } finally {
       setImportingTeachers(false);
     }
+  };
+
+  const reuseTeachersFrom = (source: ExamArrangement) => {
+    if (!source.invigilation) return;
+    const sourceConfig = source.invigilation;
+    updateConfig((next) => {
+      next.teachers = structuredClone(sourceConfig.teachers);
+      next.patrolTeacherIds = [...(sourceConfig.patrolTeacherIds ?? sourceConfig.teachers
+        .filter((teacher) => teacher.isLeader)
+        .map((teacher) => teacher.id))];
+      if (sourceConfig.teacherNotes && Object.keys(sourceConfig.teacherNotes).length) {
+        next.teacherNotes = structuredClone(sourceConfig.teacherNotes);
+      } else {
+        delete next.teacherNotes;
+      }
+      if (sourceConfig.teacherRequirements && Object.keys(sourceConfig.teacherRequirements).length) {
+        next.teacherRequirements = structuredClone(sourceConfig.teacherRequirements);
+      } else {
+        delete next.teacherRequirements;
+      }
+      next.overrides = {};
+    });
+    setSelectedCells([]);
+    setSelectedTeacherId(null);
+    setReuseTeacherOpen(false);
+    toast.success("已复用监考老师名单", `已从「${source.name}」复制配置一；原人工排表已清空，请确认后保存。`);
+  };
+
+  const reuseTimesFrom = (source: ExamArrangement) => {
+    if (!source.invigilation) return;
+    const sourceTimes = new Map(source.invigilation.subjectTimes.map((item) => [item.subject, item]));
+    updateConfig((next) => {
+      next.subjectTimes = next.subjectTimes.map((item) => {
+        const reused = sourceTimes.get(item.subject);
+        return reused ? structuredClone(reused) : item;
+      });
+      sortSubjectTimes(next);
+      next.overrides = {};
+    });
+    setSelectedCells([]);
+    setSelectedTeacherId(null);
+    setReuseTimeOpen(false);
+    toast.success("已复用考试时间配置", `已从「${source.name}」复制匹配学科的时间；原人工排表已清空，请确认后保存。`);
+  };
+
+  const updateSubjectTime = (
+    subject: string,
+    mutate: (item: ExamInvigilationConfig["subjectTimes"][number]) => void,
+  ) => {
+    updateConfig((next) => {
+      const item = next.subjectTimes.find((candidate) => candidate.subject === subject);
+      if (!item) return;
+      mutate(item);
+      sortSubjectTimes(next);
+      next.overrides = {};
+    });
+    setSelectedCells([]);
   };
 
   const controls = (
@@ -734,7 +795,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">配置一、监考老师名单</h2>
-              <p className="mt-1 text-xs text-ink-500">名单按年级固定；学科和姓名由 Excel 整表覆盖，“场外”可同一学科勾选多人，“巡考”用于巡回。</p>
+              <p className="mt-1 text-xs text-ink-500">当前考试单独保存名单；可上传 Excel 或复用其他监考安排，“场外”可同一学科勾选多人，“巡考”用于巡回。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => void downloadTeacherTemplate()}>
@@ -742,6 +803,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
               </Button>
               <Button variant="outline" size="sm" disabled={importingTeachers} onClick={() => teacherFileInputRef.current?.click()}>
                 {importingTeachers ? <Spinner size={16} /> : <Upload className="h-4 w-4" />}上传 Excel
+              </Button>
+              <Button variant="outline" size="sm" disabled={!reusableArrangements.length} onClick={() => setReuseTeacherOpen(true)}>
+                <Copy className="h-4 w-4" />复用名单
               </Button>
               <input
                 ref={teacherFileInputRef}
@@ -756,6 +820,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                 }}
               />
             </div>
+          </div>
+
+          <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-600" aria-label="监考老师人数统计">
+            <span className="font-medium text-ink-800">共有老师 {teacherSummary.total} 名</span>
+            {teacherSummary.subjects.map(([subject, count]) => <span key={subject}>{subject} {count} 人</span>)}
           </div>
 
           <div className="mb-4 rounded-xl border border-ink-100 bg-ink-50/50 p-3">
@@ -784,26 +853,26 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           </div>
 
           <div className="max-h-96 overflow-auto rounded-xl border border-ink-100">
-            <table className="w-full min-w-[1040px] text-sm">
+            <table className="w-max text-xs">
               <thead className="sticky top-0 z-10 bg-ink-50">
                 <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
-                  <th className="px-2 py-2">学科</th>
-                  <th className="px-2 py-2">姓名</th>
-                  <th className="px-2 py-2">往期累计</th>
-                  <th className="px-2 py-2">是否在同一天</th>
-                  <th className="px-2 py-2 text-center">是否请假</th>
-                  <th className="min-w-52 px-2 py-2">备注</th>
-                  <th className="px-2 py-2 text-center">场外</th>
-                  <th className="px-2 py-2 text-center">巡考</th>
+                  <th className="whitespace-nowrap px-1.5 py-1.5">学科</th>
+                  <th className="whitespace-nowrap px-1.5 py-1.5">姓名</th>
+                  <th className="whitespace-nowrap px-1.5 py-1.5">往期累计</th>
+                  <th className="whitespace-nowrap px-1.5 py-1.5">是否在同一天</th>
+                  <th className="whitespace-nowrap px-1.5 py-1.5 text-center">是否请假</th>
+                  <th className="whitespace-nowrap px-1.5 py-1.5">备注</th>
+                  <th className="whitespace-nowrap px-1.5 py-1.5 text-center">场外</th>
+                  <th className="whitespace-nowrap px-1.5 py-1.5 text-center">巡考</th>
                 </tr>
               </thead>
               <tbody>
                 {config.teachers.map((teacher, index) => (
                   <tr key={teacher.id} className="border-b border-ink-50 last:border-0">
-                    <td className="px-2 py-2 font-medium text-ink-700">{teacher.subject}</td>
-                    <td className="px-2 py-2 font-medium text-ink-900">{teacher.name}</td>
-                    <td className="whitespace-nowrap px-2 py-2 text-xs tabular-nums text-ink-600">{formatMinutes(historicalTeacherMinutes[teacher.id] || 0)}</td>
-                    <td className="px-2 py-1.5">
+                    <td className="whitespace-nowrap px-1.5 py-1.5 font-medium text-ink-700">{teacher.subject}</td>
+                    <td className="whitespace-nowrap px-1.5 py-1.5 font-medium text-ink-900">{teacher.name}</td>
+                    <td className="whitespace-nowrap px-1.5 py-1.5 tabular-nums text-ink-600">{formatMinutes(historicalTeacherMinutes[teacher.id] || 0)}</td>
+                    <td className="px-1.5 py-1">
                       <Select
                         aria-label={`${teacher.name || `教师 ${index + 1}`}是否在同一天`}
                         value={config.teacherRequirements?.[teacher.id]?.sameDay || "any"}
@@ -817,10 +886,10 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                           { value: "no", label: "否" },
                           { value: "any", label: "随意" },
                         ]}
-                        className="min-w-24 py-1.5 text-xs"
+                        className="w-20 py-1 text-xs"
                       />
                     </td>
-                    <td className="px-2 py-1.5 text-center">
+                    <td className="px-1.5 py-1 text-center">
                       <input
                         type="checkbox"
                         aria-label={`${teacher.name || `教师 ${index + 1}`}是否请假`}
@@ -831,7 +900,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                         }))}
                       />
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-1.5 py-1">
                       <Input
                         aria-label={`${teacher.name || `教师 ${index + 1}`}监考备注`}
                         value={config.teacherNotes?.[teacher.id] || ""}
@@ -842,11 +911,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                           if (Object.keys(next.teacherNotes).length === 0) delete next.teacherNotes;
                         })}
                         placeholder="备注"
-                        className="min-w-48 py-1.5 text-xs"
+                        className="w-36 py-1 text-xs"
                       />
                     </td>
-                    <td className="px-2 py-1.5 text-center"><input aria-label={`${teacher.name || `教师 ${index + 1}`}场外`} type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} /></td>
-                    <td className="px-2 py-1.5 text-center"><input aria-label={`${teacher.name || `教师 ${index + 1}`}巡考`} type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => setTeacherLeader(index, event.target.checked)} /></td>
+                    <td className="px-1.5 py-1 text-center"><input aria-label={`${teacher.name || `教师 ${index + 1}`}场外`} type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} /></td>
+                    <td className="px-1.5 py-1 text-center"><input aria-label={`${teacher.name || `教师 ${index + 1}`}巡考`} type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => setTeacherLeader(index, event.target.checked)} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -856,21 +925,26 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
         </Card>
 
         <Card>
-          <div className="mb-4">
-            <h2 className="text-base font-semibold text-ink-900">配置二、考试时间配置</h2>
-            <p className="mt-1 text-xs text-ink-500">日期、时段和具体时刻相同的学科会自动视为同时考试；支持上午、下午和晚上，时长用于监考统计。</p>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-ink-900">配置二、考试时间配置</h2>
+              <p className="mt-1 text-xs text-ink-500">可复用其他监考安排的时间；修改后按日期和时刻自动排序，时长用于监考统计。</p>
+            </div>
+            <Button variant="outline" size="sm" disabled={!reusableArrangements.length} onClick={() => setReuseTimeOpen(true)}>
+              <Copy className="h-4 w-4" />复用时间配置
+            </Button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-sm">
-              <thead><tr className="border-b border-ink-100 text-left text-xs text-ink-500"><th className="px-2 py-2">学科</th><th className="px-2 py-2">日期</th><th className="px-2 py-2">时段</th><th className="px-2 py-2">时刻</th><th className="px-2 py-2">时长（分钟）</th></tr></thead>
+            <table className="w-max text-xs">
+              <thead><tr className="border-b border-ink-100 text-left text-xs text-ink-500"><th className="whitespace-nowrap px-1.5 py-1.5">学科</th><th className="whitespace-nowrap px-1.5 py-1.5">日期</th><th className="whitespace-nowrap px-1.5 py-1.5">时段</th><th className="whitespace-nowrap px-1.5 py-1.5">时刻</th><th className="whitespace-nowrap px-1.5 py-1.5">时长（分钟）</th></tr></thead>
               <tbody>
-                {config.subjectTimes.map((item, index) => (
+                {config.subjectTimes.map((item) => (
                   <tr key={item.subject} className="border-b border-ink-50 last:border-0">
-                    <td className="px-2 py-2 font-medium text-ink-800">{item.subject}</td>
-                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试日期`} type="date" value={item.date} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].date = event.target.value; })} className="py-1.5" /></td>
-                    <td className="px-2 py-2"><Select aria-label={`${item.subject}考试时段`} value={item.period} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].period = event.target.value as ExamInvigilationPeriod; })} options={[{ value: "morning", label: "上午" }, { value: "afternoon", label: "下午" }, { value: "evening", label: "晚上" }]} className="py-1.5" /></td>
-                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试时刻`} type="time" value={item.time} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].time = event.target.value; })} className="py-1.5" /></td>
-                    <td className="px-2 py-2"><Input aria-label={`${item.subject}考试时长`} type="number" min={1} value={item.durationMinutes} onChange={(event) => updateConfig((next) => { next.subjectTimes[index].durationMinutes = Math.max(1, Number(event.target.value) || 1); })} className="py-1.5" /></td>
+                    <td className="whitespace-nowrap px-1.5 py-1.5 font-medium text-ink-800">{item.subject}</td>
+                    <td className="px-1.5 py-1"><Input aria-label={`${item.subject}考试日期`} type="date" value={item.date} onChange={(event) => updateSubjectTime(item.subject, (time) => { time.date = event.target.value; })} className="w-[9.25rem] py-1 text-xs" /></td>
+                    <td className="px-1.5 py-1"><Select aria-label={`${item.subject}考试时段`} value={item.period} onChange={(event) => updateSubjectTime(item.subject, (time) => { time.period = event.target.value as ExamInvigilationPeriod; })} options={[{ value: "morning", label: "上午" }, { value: "afternoon", label: "下午" }, { value: "evening", label: "晚上" }]} className="w-20 py-1 text-xs" /></td>
+                    <td className="px-1.5 py-1"><Input aria-label={`${item.subject}考试时刻`} type="time" value={item.time} onChange={(event) => updateSubjectTime(item.subject, (time) => { time.time = event.target.value; })} className="w-[7.25rem] py-1 text-xs" /></td>
+                    <td className="px-1.5 py-1"><Input aria-label={`${item.subject}考试时长`} type="number" min={1} value={item.durationMinutes} onChange={(event) => updateSubjectTime(item.subject, (time) => { time.durationMinutes = Math.max(1, Number(event.target.value) || 1); })} className="w-20 py-1 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -1257,6 +1331,50 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
         </Card>
         </div>
       </div>
+
+      <Modal
+        open={reuseTeacherOpen}
+        onClose={() => setReuseTeacherOpen(false)}
+        title="复用监考老师名单"
+        description="选择一个已保存监考配置的考试，复制其配置一名单和教师要求到当前考试。"
+        size="sm"
+      >
+        <div className="space-y-2">
+          {reusableArrangements.map((arrangement) => (
+            <button
+              key={arrangement.id}
+              type="button"
+              className="flex w-full items-center justify-between gap-3 rounded-lg border border-ink-100 px-3 py-2 text-left text-sm hover:border-gold-300 hover:bg-gold-50/40"
+              onClick={() => reuseTeachersFrom(arrangement)}
+            >
+              <span className="font-medium text-ink-800">{arrangement.name}</span>
+              <span className="whitespace-nowrap text-xs text-ink-500">{arrangement.examDate || "未设置日期"}</span>
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal
+        open={reuseTimeOpen}
+        onClose={() => setReuseTimeOpen(false)}
+        title="复用考试时间配置"
+        description="选择一个已保存监考配置的考试；只复制当前考试中同名学科的日期、时段、时刻和时长。"
+        size="sm"
+      >
+        <div className="space-y-2">
+          {reusableArrangements.map((arrangement) => (
+            <button
+              key={arrangement.id}
+              type="button"
+              className="flex w-full items-center justify-between gap-3 rounded-lg border border-ink-100 px-3 py-2 text-left text-sm hover:border-gold-300 hover:bg-gold-50/40"
+              onClick={() => reuseTimesFrom(arrangement)}
+            >
+              <span className="font-medium text-ink-800">{arrangement.name}</span>
+              <span className="whitespace-nowrap text-xs text-ink-500">{arrangement.examDate || "未设置日期"}</span>
+            </button>
+          ))}
+        </div>
+      </Modal>
 
 
 

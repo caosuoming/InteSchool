@@ -292,6 +292,16 @@ describe("MyExamsPage", () => {
     expect(durationTable.queryByText("累计范围（勾选往期监考表）")).not.toBeInTheDocument();
 
     const timesHeading = screen.getByRole("heading", { name: "配置二、考试时间配置" });
+    const timesCard = timesHeading.closest(".card-base");
+    expect(timesCard).not.toBeNull();
+    const timesConfig = within(timesCard as HTMLElement);
+    const chineseSubjectBefore = timesConfig.getByText("语文");
+    const mathSubjectBefore = timesConfig.getByText("数学");
+    expect(chineseSubjectBefore.compareDocumentPosition(mathSubjectBefore) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.change(timesConfig.getByLabelText("数学考试时刻"), { target: { value: "17:00" } });
+    const chineseSubjectAfter = timesConfig.getByText("语文");
+    const mathSubjectAfter = timesConfig.getByText("数学");
+    expect(mathSubjectAfter.compareDocumentPosition(chineseSubjectAfter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();
     expect(screen.queryByLabelText("批量添加")).not.toBeInTheDocument();
@@ -405,7 +415,10 @@ describe("MyExamsPage", () => {
       name: "九月月考",
       examDate: "2026-09-20",
       invigilation: {
-        teachers: [{ id: "teacher-math", name: "张老师", subject: "数学" }],
+        teachers: [
+          { id: "teacher-math", name: "张老师", subject: "数学" },
+          { id: "teacher-math-2", name: "李老师", subject: "数学" },
+        ],
         subjectTimes: [{ subject: "数学", date: "2026-09-20", period: "morning", time: "08:00", durationMinutes: 120 }],
         overrides: {},
       },
@@ -426,12 +439,30 @@ describe("MyExamsPage", () => {
     const durationCard = durationHeading.closest(".card-base");
     expect(teachersCard).not.toBeNull();
     expect(durationCard).not.toBeNull();
+    expect(examArrangementService.getInvigilationProfile).not.toHaveBeenCalled();
+    expect(within(teachersCard as HTMLElement).getByLabelText("监考老师人数统计")).toHaveTextContent("共有老师 1 名");
+    expect(within(teachersCard as HTMLElement).queryByText("李老师")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "复用名单" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "复用时间配置" })).toBeEnabled();
     expect(within(teachersCard as HTMLElement).getByLabelText("累计 九月月考")).toBeInTheDocument();
     expect(within(durationCard as HTMLElement).queryByLabelText("累计 九月月考")).not.toBeInTheDocument();
     expect(await screen.findAllByText("1 小时 30 分钟")).toHaveLength(2);
     fireEvent.click(screen.getByLabelText("累计 九月月考"));
     expect(await within(teachersCard as HTMLElement).findByText("2 小时")).toBeInTheDocument();
     expect(await screen.findByText("3 小时 30 分钟")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "复用名单" }));
+    expect(screen.getByRole("heading", { name: "复用监考老师名单" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /九月月考/ }));
+    expect(within(teachersCard as HTMLElement).getByLabelText("监考老师人数统计")).toHaveTextContent("共有老师 2 名");
+    expect(within(teachersCard as HTMLElement).getByText("李老师")).toBeInTheDocument();
+
+    expect(screen.getByLabelText("数学考试日期")).toHaveValue("2026-10-20");
+    fireEvent.click(screen.getByRole("button", { name: "复用时间配置" }));
+    expect(screen.getByRole("heading", { name: "复用考试时间配置" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /九月月考/ }));
+    expect(screen.getByLabelText("数学考试日期")).toHaveValue("2026-09-20");
+    expect(screen.getByLabelText("数学考试时长")).toHaveClass("[appearance:textfield]");
   });
 
   it("assigns teachers by selecting cells and can swap two existing assignments", async () => {
