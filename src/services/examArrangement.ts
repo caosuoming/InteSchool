@@ -4,6 +4,7 @@ import type {
   ExamArrangementContext,
   ExamArrangementInput,
   ExamInvigilationConfig,
+  ExamInvigilationProfile,
   GradeCohort,
 } from "@/types";
 
@@ -14,6 +15,10 @@ export const examArrangementService = {
 
   async getContext(schoolId: string, cohortKey: string): Promise<ExamArrangementContext> {
     return rpcCall("examArrangement", "getContext", [schoolId, cohortKey]) as Promise<ExamArrangementContext>;
+  },
+
+  async getInvigilationProfile(schoolId: string, cohortKey: string): Promise<ExamInvigilationProfile | null> {
+    return rpcCall("examArrangement", "getInvigilationProfile", [schoolId, cohortKey]) as Promise<ExamInvigilationProfile | null>;
   },
 
   async listArrangements(schoolId: string, cohortKey?: string): Promise<ExamArrangement[]> {

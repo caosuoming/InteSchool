@@ -94,6 +94,10 @@ export const serviceParameters = {
       "schoolId",
       "cohortKey"
     ],
+    "getInvigilationProfile": [
+      "schoolId",
+      "cohortKey"
+    ],
     "listArrangements": [
       "schoolId",
       "cohortKey"
