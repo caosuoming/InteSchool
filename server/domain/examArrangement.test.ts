@@ -135,9 +135,9 @@ describe("exam arrangement service", () => {
           missing: "不应保存",
         },
         teacherRequirements: {
-          "teacher-physics": { sameDay: "yes" },
-          "teacher-prep": { sameDay: "any" },
-          missing: { sameDay: "no" },
+          "teacher-physics": { sameDay: "yes", isOnLeave: false },
+          "teacher-prep": { sameDay: "any", isOnLeave: true },
+          missing: { sameDay: "no", isOnLeave: true },
         },
       });
 
@@ -155,6 +155,7 @@ describe("exam arrangement service", () => {
       });
       expect((appState.examArrangements as any[])[0].invigilation.teacherRequirements).toEqual({
         "teacher-physics": { sameDay: "yes" },
+        "teacher-prep": { isOnLeave: true },
       });
       expect((await examArrangementService.listArrangements("school-1", "grad-2026"))[0].invigilation).toEqual(updated.invigilation);
     });
