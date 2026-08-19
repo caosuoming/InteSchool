@@ -3,6 +3,7 @@ import type {
   ExamArrangementContext,
   ExamArrangementInput,
   ExamInvigilationConfig,
+  ExamInvigilationProfile,
   GradeExam,
   GradeImportContext,
 } from "../../src/types/index.js";
@@ -51,6 +52,40 @@ function readArrangements(): ExamArrangement[] {
   });
 }
 
+function readInvigilationProfiles(): ExamInvigilationProfile[] {
+  const value = db.read("examInvigilationProfiles");
+  return Array.isArray(value) ? value as ExamInvigilationProfile[] : [];
+}
+
+function invigilationProfileFor(schoolId: string, cohortKey: string): ExamInvigilationProfile | null {
+  return readInvigilationProfiles()
+    .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey) || null;
+}
+
+function effectiveInvigilationProfileFor(schoolId: string, cohortKey: string): ExamInvigilationProfile | null {
+  const stored = invigilationProfileFor(schoolId, cohortKey);
+  if (stored) return stored;
+  const legacy = readArrangements()
+    .filter((item) => item.schoolId === schoolId && item.cohortKey === cohortKey && item.invigilation)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  if (!legacy?.invigilation) return null;
+  const config = legacy.invigilation;
+  return {
+    id: `legacy-${legacy.id}`,
+    schoolId,
+    cohortKey,
+    cohortLabel: legacy.cohortLabel,
+    teachers: structuredClone(config.teachers),
+    patrolTeacherIds: [...(config.patrolTeacherIds ?? config.teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id))],
+    ...(config.teacherNotes ? { teacherNotes: structuredClone(config.teacherNotes) } : {}),
+    ...(config.teacherRequirements ? { teacherRequirements: structuredClone(config.teacherRequirements) } : {}),
+    ...(config.footerNote ? { footerNote: config.footerNote } : {}),
+    updatedBy: legacy.teacherId,
+    createdAt: legacy.createdAt,
+    updatedAt: legacy.updatedAt,
+  };
+}
+
 function toArrangementContext(context: GradeImportContext): ExamArrangementContext {
   return {
     cohort: context.cohort,
@@ -81,6 +116,13 @@ export const examArrangementService = {
         ? Object.fromEntries(latestExam.records.map((record) => [record.studentId, record.gradeRank]))
         : undefined,
     };
+  },
+
+  async getInvigilationProfile(schoolId: string, cohortKey: string): Promise<ExamInvigilationProfile | null> {
+    await delay(80);
+    await gradeService.getImportContext(schoolId, cohortKey);
+    const profile = effectiveInvigilationProfileFor(schoolId, cohortKey);
+    return profile ? structuredClone(profile) : null;
   },
 
   async listArrangements(schoolId: string, cohortKey?: string): Promise<ExamArrangement[]> {
@@ -240,6 +282,7 @@ export const examArrangementService = {
       if (requirement.isOnLeave === true) normalized.isOnLeave = true;
       return Object.keys(normalized).length ? [[teacherId, normalized]] : [];
     }));
+    const footerNote = config.footerNote?.trim() || "";
     const invigilation: ExamInvigilationConfig = {
       teachers,
       subjectTimes,
@@ -247,11 +290,35 @@ export const examArrangementService = {
       overrides: validOverrides,
       ...(Object.keys(teacherNotes).length ? { teacherNotes } : {}),
       ...(Object.keys(teacherRequirements).length ? { teacherRequirements } : {}),
+      ...(footerNote ? { footerNote } : {}),
     };
+
+    const currentProfile = invigilationProfileFor(schoolId, current.cohortKey);
+    const now = new Date().toISOString();
+    const profile: ExamInvigilationProfile = {
+      id: currentProfile?.id || genId("exam-invigilation-profile"),
+      schoolId,
+      cohortKey: current.cohortKey,
+      cohortLabel: current.cohortLabel,
+      teachers: structuredClone(teachers),
+      patrolTeacherIds: [...patrolTeacherIds],
+      ...(Object.keys(teacherNotes).length ? { teacherNotes: structuredClone(teacherNotes) } : {}),
+      ...(Object.keys(teacherRequirements).length ? { teacherRequirements: structuredClone(teacherRequirements) } : {}),
+      ...(footerNote ? { footerNote } : {}),
+      updatedBy: current.teacherId,
+      createdAt: currentProfile?.createdAt || now,
+      updatedAt: now,
+    };
+    db.update("examInvigilationProfiles", (value: ExamInvigilationProfile[] | undefined) => {
+      const profiles = Array.isArray(value) ? value : [];
+      return currentProfile
+        ? profiles.map((item) => item.id === currentProfile.id ? profile : item)
+        : [...profiles, profile];
+    });
     const updated: ExamArrangement = {
       ...current,
       invigilation,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     };
     db.update("examArrangements", (items: ExamArrangement[]) => items.map((item) => (
       item.id === arrangementId ? updated : item

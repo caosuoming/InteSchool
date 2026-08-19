@@ -139,6 +139,7 @@ describe("exam arrangement service", () => {
           "teacher-prep": { sameDay: "any", isOnLeave: true },
           missing: { sameDay: "no", isOnLeave: true },
         },
+        footerNote: "第一行说明\n第二行说明",
       });
 
       expect(updated.invigilation?.teachers).toHaveLength(3);
@@ -157,6 +158,17 @@ describe("exam arrangement service", () => {
         "teacher-physics": { sameDay: "yes" },
         "teacher-prep": { isOnLeave: true },
       });
+      expect(updated.invigilation?.footerNote).toBe("第一行说明\n第二行说明");
+      const profile = await examArrangementService.getInvigilationProfile("school-1", "grad-2026");
+      expect(profile).toMatchObject({
+        schoolId: "school-1",
+        cohortKey: "grad-2026",
+        cohortLabel: "2026届高三",
+        footerNote: "第一行说明\n第二行说明",
+        patrolTeacherIds: ["teacher-leader"],
+      });
+      expect(profile?.teachers).toEqual(updated.invigilation?.teachers);
+      expect((appState.examInvigilationProfiles as any[])).toHaveLength(1);
       expect((await examArrangementService.listArrangements("school-1", "grad-2026"))[0].invigilation).toEqual(updated.invigilation);
     });
   });

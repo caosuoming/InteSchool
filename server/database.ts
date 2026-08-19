@@ -30,7 +30,7 @@ export const COLLECTIONS = [
   "classroomHomeworks", "classroomNotices",
   "studentInteractions", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
-  "gradeExams", "gradePublications", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements",
+  "gradeExams", "gradePublications", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements", "examInvigilationProfiles",
   "notifications", "parentAuthorizations", "parentAccounts",
   "helpTopics", "helpReplies", "helpCategories",
 ] as const;

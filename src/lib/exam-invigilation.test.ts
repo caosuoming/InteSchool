@@ -7,6 +7,7 @@ import {
   formatExamWeekday,
   formatExamTimeRange,
   invigilationSlotKey,
+  wrapInvigilationHeaderLabel,
 } from "./exam-invigilation";
 
 function arrangement(): ExamArrangement {
@@ -127,7 +128,7 @@ describe("exam invigilation table", () => {
     const input = arrangement();
     const settings: ExamInvigilationConfig = {
       teachers: [
-        { id: "teacher-a", name: "甲老师", subject: "物理" },
+        { id: "teacher-a", name: "甲老师", subject: "数学" },
         { id: "teacher-b", name: "乙老师", subject: "历史" },
       ],
       subjectTimes: [{ subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 }],
@@ -159,6 +160,27 @@ describe("exam invigilation table", () => {
     expect(table.teacherStats.find((item) => item.teacherId === "physics")?.minutes).toBe(0);
     expect(table.teacherStats.find((item) => item.teacherId === "prep")?.minutes).toBe(0);
     expect(table.teacherStats.find((item) => item.teacherId === "leader")?.minutes).toBe(0);
+  });
+
+  it("assigns every designated outside teacher for the subject and counts each duration", () => {
+    const input = arrangement();
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "room", name: "任课教师", subject: "物理" },
+        { id: "outside-a", name: "场外甲", subject: "物理", isPrepLeader: true },
+        { id: "outside-b", name: "场外乙", subject: "物理", isPrepLeader: true },
+      ],
+      subjectTimes: [{ subject: "物理", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 }],
+      patrolTeacherIds: [],
+      overrides: {},
+    };
+
+    const table = buildExamInvigilationTable(input, settings);
+    expect(table.rows[0].outsideTeacherIds).toEqual(["outside-a", "outside-b"]);
+    expect(table.rows[0].outsideTeacherId).toBe("outside-a");
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBe("room");
+    expect(table.teacherStats.find((item) => item.teacherId === "outside-a")?.minutes).toBe(90);
+    expect(table.teacherStats.find((item) => item.teacherId === "outside-b")?.minutes).toBe(90);
   });
 
   it("falls back to an eligible teacher for outside duty and counts its duration", () => {
@@ -291,6 +313,7 @@ describe("exam invigilation table", () => {
     expect(formatExamWeekday("2026-10-20")).toBe("星期二");
     expect(examInvigilationPeriodLabel("evening")).toBe("晚上");
     expect(formatExamTimeRange("18:30", 120)).toBe("18:30–20:30");
+    expect(wrapInvigilationHeaderLabel("高三1班教室")).toEqual(["高三1班", "教室"]);
     expect(formatExamTimeRange("23:30", 120)).toBe("23:30–次日01:30");
   });
 });

@@ -562,6 +562,7 @@ export interface ExamSubjectExamTime {
 export interface ExamInvigilationSlotOverride {
   /** null 表示显式留空；缺少键表示继续使用自动排表结果。 */
   roomTeacherIds: Record<string, string | null>;
+  /** 人工微调场外监考；设置后会覆盖该场次按“场外”标记自动生成的多人安排。 */
   outsideTeacherId?: string | null;
   /** @deprecated 旧版逐场巡回配置；新版使用 ExamInvigilationConfig.patrolTeacherIds。 */
   patrolTeacherId?: string | null;
@@ -577,6 +578,24 @@ export interface ExamInvigilationConfig {
   teacherNotes?: Record<string, string>;
   /** 自动排表时使用的教师级基本要求；人工调整始终优先。 */
   teacherRequirements?: Record<string, ExamInvigilationTeacherRequirement>;
+  /** 表二底部的年级共用说明，可换行。 */
+  footerNote?: string;
+}
+
+/** 同一年级复用的监考老师名单和配置一字段。 */
+export interface ExamInvigilationProfile {
+  id: string;
+  schoolId: string;
+  cohortKey: string;
+  cohortLabel: string;
+  teachers: ExamInvigilationTeacher[];
+  patrolTeacherIds?: string[];
+  teacherNotes?: Record<string, string>;
+  teacherRequirements?: Record<string, ExamInvigilationTeacherRequirement>;
+  footerNote?: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ExamRoomConfig {

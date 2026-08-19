@@ -32,6 +32,8 @@ export interface ExamInvigilationSlotRow {
   roomStudentCounts: Record<string, number>;
   roomSubjectStudentCounts: Record<string, Record<string, number>>;
   roomTeacherIds: Record<string, string | null>;
+  /** 自动排表可同时安排多位场外监考；outsideTeacherId 保留首位以兼容旧调用。 */
+  outsideTeacherIds: string[];
   outsideTeacherId: string | null;
   duplicateTeacherIds: string[];
 }
@@ -79,6 +81,18 @@ export function formatExamWeekday(date: string): string {
   const day = Number(match[3]);
   const value = new Date(Date.UTC(year, month - 1, day));
   return WEEKDAYS[value.getUTCDay()];
+}
+
+export function wrapInvigilationHeaderLabel(value: string): string[] {
+  const chars = Array.from(value.trim());
+  if (chars.length === 0) return [""];
+  const classIndex = chars.indexOf("班");
+  if (classIndex >= 1 && classIndex < chars.length - 1) {
+    return [chars.slice(0, classIndex + 1).join(""), chars.slice(classIndex + 1).join("")];
+  }
+  if (chars.length <= 8) return [chars.join("")];
+  const split = Math.ceil(chars.length / 2);
+  return [chars.slice(0, split).join(""), chars.slice(split).join("")];
 }
 
 export function formatExamTimeRange(time: string, durationMinutes: number): string {
@@ -141,6 +155,23 @@ function chooseTeacher(
     .filter((teacher) => !unavailable.has(teacher.id) && allowed(teacher))
     .sort((left, right) => (
       (minutes.get(left.id) || 0) - (minutes.get(right.id) || 0)
+      || left.name.localeCompare(right.name, "zh-CN")
+    ))[0] || null;
+}
+
+function chooseBalancedRoomTeacher(
+  candidates: ExamInvigilationTeacher[],
+  unavailable: Set<string>,
+  minutes: Map<string, number>,
+  preferredSubjects: Set<string>,
+  allowed: (teacher: ExamInvigilationTeacher) => boolean,
+): ExamInvigilationTeacher | null {
+  return candidates
+    .filter((teacher) => !teacher.isLeader && !unavailable.has(teacher.id) && allowed(teacher))
+    .sort((left, right) => (
+      (minutes.get(left.id) || 0) - (minutes.get(right.id) || 0)
+      || Number(!preferredSubjects.has(left.subject)) - Number(!preferredSubjects.has(right.subject))
+      || Number(Boolean(left.isPrepLeader)) - Number(Boolean(right.isPrepLeader))
       || left.name.localeCompare(right.name, "zh-CN")
     ))[0] || null;
 }
@@ -315,20 +346,29 @@ export function buildExamInvigilationTable(
     }
     if (override.outsideTeacherId) unavailable.add(override.outsideTeacherId);
 
+    const date = input.times[0].date;
+    const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate, date);
     const outsideOverridden = Object.prototype.hasOwnProperty.call(override, "outsideTeacherId");
-    let outsideTeacherId = outsideOverridden ? override.outsideTeacherId ?? null : undefined;
-    if (outsideTeacherId === undefined) {
-      const date = input.times[0].date;
-      const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate, date);
-      const matchingPrepLeaders = config.teachers.filter((item) => item.isPrepLeader && input.subjectSet.has(item.subject));
-      const prepLeaders = config.teachers.filter((item) => item.isPrepLeader);
-      const teacher = chooseTeacher(matchingPrepLeaders, unavailable, teacherPriorityMinutes, requirement)
-        || chooseTeacher(prepLeaders, unavailable, teacherPriorityMinutes, requirement);
-      if (teacher) {
-        outsideTeacherId = teacher.id;
-        unavailable.add(teacher.id);
-      }
+    let outsideTeacherIds: string[] = outsideOverridden
+      ? (override.outsideTeacherId ? [override.outsideTeacherId] : [])
+      : config.teachers
+        .filter((teacher) => teacher.isPrepLeader && input.subjectSet.has(teacher.subject) && !unavailable.has(teacher.id) && requirement(teacher))
+        .sort((left, right) => (
+          (teacherPriorityMinutes.get(left.id) || 0) - (teacherPriorityMinutes.get(right.id) || 0)
+          || left.name.localeCompare(right.name, "zh-CN")
+        ))
+        .map((teacher) => teacher.id);
+
+    if (!outsideOverridden && outsideTeacherIds.length === 0) {
+      const fallbackOutside = chooseTeacher(
+        config.teachers.filter((teacher) => teacher.isPrepLeader),
+        unavailable,
+        teacherPriorityMinutes,
+        requirement,
+      );
+      if (fallbackOutside) outsideTeacherIds = [fallbackOutside.id];
     }
+    outsideTeacherIds.forEach((teacherId) => unavailable.add(teacherId));
 
     for (const item of roomGroups) {
       item.group.roomIds.forEach((roomId) => { roomTeacherIds[roomId] = null; });
@@ -343,51 +383,34 @@ export function buildExamInvigilationTable(
         subjects?.forEach((subject) => roomSubjectSet.add(subject));
       });
       if (roomSubjectSet.size === 0) input.subjectSet.forEach((subject) => roomSubjectSet.add(subject));
-      const sameSubject = config.teachers.filter((item) => (
-        roomSubjectSet.has(item.subject) && !item.isLeader && !item.isPrepLeader
-      ));
-      const fallbackSameSubject = config.teachers.filter((item) => roomSubjectSet.has(item.subject) && !item.isLeader);
-      const otherTeachers = config.teachers.filter((item) => !item.isLeader && !item.isPrepLeader);
-      const fallbackOtherTeachers = config.teachers.filter((item) => !item.isLeader);
-      const teacher = chooseTeacher(
-        sameSubject,
+      const teacher = chooseBalancedRoomTeacher(
+        config.teachers,
         unavailable,
         teacherPriorityMinutes,
-        (candidate) => matchesTeacherRequirements(candidate, input.times[0].date),
-      ) || chooseTeacher(
-        fallbackSameSubject,
-        unavailable,
-        teacherPriorityMinutes,
-        (candidate) => matchesTeacherRequirements(candidate, input.times[0].date),
-      ) || chooseTeacher(
-        otherTeachers,
-        unavailable,
-        teacherPriorityMinutes,
-        (candidate) => matchesTeacherRequirements(candidate, input.times[0].date),
-      ) || chooseTeacher(
-        fallbackOtherTeachers,
-        unavailable,
-        teacherPriorityMinutes,
-        (candidate) => matchesTeacherRequirements(candidate, input.times[0].date),
+        roomSubjectSet,
+        requirement,
       );
       roomTeacherIds[item.canonicalRoomId] = teacher?.id || null;
       if (teacher) unavailable.add(teacher.id);
     }
 
-    if (outsideTeacherId === undefined) {
-      const date = input.times[0].date;
-      const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate, date);
-      const matchingTeachers = config.teachers.filter((item) => input.subjectSet.has(item.subject) && !item.isLeader);
-      const availableTeachers = config.teachers.filter((item) => !item.isLeader);
-      const teacher = chooseTeacher(matchingTeachers, unavailable, teacherPriorityMinutes, requirement)
-        || chooseTeacher(availableTeachers, unavailable, teacherPriorityMinutes, requirement);
-      outsideTeacherId = teacher?.id || null;
-      if (teacher) unavailable.add(teacher.id);
+    if (!outsideOverridden && outsideTeacherIds.length === 0) {
+      const fallbackOutside = chooseTeacher(
+        config.teachers.filter((teacher) => !teacher.isLeader),
+        unavailable,
+        teacherPriorityMinutes,
+        requirement,
+      );
+      if (fallbackOutside) {
+        outsideTeacherIds = [fallbackOutside.id];
+        unavailable.add(fallbackOutside.id);
+      }
     }
 
-    const date = input.times[0].date;
+    const outsideTeacherId = outsideTeacherIds[0] || null;
+
     Object.values(roomTeacherIds).forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
-    markAssignment(outsideTeacherId, input.durationMinutes, date);
+    outsideTeacherIds.forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
     patrolTeacherIds.forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
 
     const first = input.times[0];
@@ -408,10 +431,11 @@ export function buildExamInvigilationTable(
         })),
       ])),
       roomTeacherIds,
-      outsideTeacherId: outsideTeacherId || null,
+      outsideTeacherIds,
+      outsideTeacherId,
       duplicateTeacherIds: duplicateTeacherIds([
         ...Object.values(roomTeacherIds),
-        outsideTeacherId,
+        ...outsideTeacherIds,
         ...patrolTeacherIds,
       ]),
     } satisfies ExamInvigilationSlotRow;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Download, Move, Plus, Save, Trash2, Upload, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Download, Move, Save, Upload, X } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -9,6 +9,7 @@ import type {
   ExamArrangement,
   ExamInvigilationConfig,
   ExamInvigilationPeriod,
+  ExamInvigilationProfile,
   ExamInvigilationSameDayRequirement,
   GradeCohort,
   GradeTeacherOption,
@@ -20,12 +21,13 @@ import {
   formatExamDateWithWeekday,
   formatExamWeekday,
   formatExamTimeRange,
+  wrapInvigilationHeaderLabel,
 } from "@/lib/exam-invigilation";
 import { downloadExamPrintRoomStatistics } from "@/lib/exam-arrangement-export";
 import {
   downloadInvigilationTeacherTemplate,
-  mergeInvigilationTeachers,
   readInvigilationTeacherFile,
+  replaceInvigilationTeachers,
 } from "@/lib/exam-invigilation-teacher-spreadsheet";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
@@ -79,11 +81,10 @@ function defaultConfig(arrangement: ExamArrangement, teacherOptions: GradeTeache
 function configForArrangement(
   arrangement: ExamArrangement,
   teacherOptions: GradeTeacherOption[],
+  profile: ExamInvigilationProfile | null,
 ): ExamInvigilationConfig {
   const defaults = defaultConfig(arrangement, teacherOptions);
-  if (!arrangement.invigilation) return defaults;
-
-  const current = cloneConfig(arrangement.invigilation);
+  const current = arrangement.invigilation ? cloneConfig(arrangement.invigilation) : defaults;
   const timesBySubject = new Map(current.subjectTimes.map((item) => [item.subject, item]));
   current.subjectTimes = defaults.subjectTimes.map((fallback) => (
     timesBySubject.get(fallback.subject) || fallback
@@ -96,6 +97,28 @@ function configForArrangement(
     ])];
   }
   Object.values(current.overrides).forEach((override) => { delete override.patrolTeacherId; });
+
+  if (profile) {
+    current.teachers = structuredClone(profile.teachers);
+    const teacherIds = new Set(current.teachers.map((teacher) => teacher.id));
+    current.patrolTeacherIds = (profile.patrolTeacherIds ?? current.teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id))
+      .filter((id) => teacherIds.has(id));
+    if (profile.teacherNotes && Object.keys(profile.teacherNotes).length) current.teacherNotes = structuredClone(profile.teacherNotes);
+    else delete current.teacherNotes;
+    if (profile.teacherRequirements && Object.keys(profile.teacherRequirements).length) current.teacherRequirements = structuredClone(profile.teacherRequirements);
+    else delete current.teacherRequirements;
+    if (profile.footerNote) current.footerNote = profile.footerNote;
+    else delete current.footerNote;
+    current.overrides = Object.fromEntries(Object.entries(current.overrides || {}).map(([key, override]) => [
+      key,
+      {
+        roomTeacherIds: Object.fromEntries(Object.entries(override.roomTeacherIds || {}).filter(([, id]) => id === null || teacherIds.has(id))),
+        ...(override.outsideTeacherId === null || (override.outsideTeacherId && teacherIds.has(override.outsideTeacherId))
+          ? { outsideTeacherId: override.outsideTeacherId }
+          : {}),
+      },
+    ]));
+  }
   return current;
 }
 
@@ -190,6 +213,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const [arrangements, setArrangements] = useState<ExamArrangement[]>([]);
   const [selectedArrangementId, setSelectedArrangementId] = useState("");
   const [teacherOptions, setTeacherOptions] = useState<GradeTeacherOption[]>([]);
+  const [invigilationProfile, setInvigilationProfile] = useState<ExamInvigilationProfile | null>(null);
   const [config, setConfig] = useState<ExamInvigilationConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -211,6 +235,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     if (!cohortKey) {
       setArrangements([]);
       setTeacherOptions([]);
+      setInvigilationProfile(null);
       setSelectedArrangementId("");
       return;
     }
@@ -219,15 +244,18 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     Promise.all([
       examArrangementService.listArrangements(schoolId, cohortKey),
       examArrangementService.getContext(schoolId, cohortKey),
-    ]).then(([items, context]) => {
+      examArrangementService.getInvigilationProfile(schoolId, cohortKey),
+    ]).then(([items, context, profile]) => {
       if (!active) return;
       setArrangements(items);
       setTeacherOptions(context.teachers || []);
+      setInvigilationProfile(profile);
       setSelectedArrangementId((current) => items.some((item) => item.id === current) ? current : items[0]?.id || "");
     }).catch((error) => {
       if (!active) return;
       setArrangements([]);
       setTeacherOptions([]);
+      setInvigilationProfile(null);
       setSelectedArrangementId("");
       toast.error("加载考试方案失败", error instanceof Error ? error.message : undefined);
     }).finally(() => {
@@ -247,9 +275,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       setSelectedCells([]);
       return;
     }
-    setConfig(configForArrangement(selectedArrangement, teacherOptions));
+    setConfig(configForArrangement(selectedArrangement, teacherOptions, invigilationProfile));
     setSelectedCells([]);
-  }, [selectedArrangement, teacherOptions]);
+  }, [invigilationProfile, selectedArrangement, teacherOptions]);
 
   useEffect(() => {
     setHistoryArrangementIds([]);
@@ -418,10 +446,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       : row.outsideTeacherId;
     const unavailable = new Set<string>([
       ...Object.values(row.roomTeacherIds),
-      row.outsideTeacherId,
+      ...row.outsideTeacherIds,
       ...invigilation.patrolTeacherIds,
     ].filter((id): id is string => Boolean(id)));
-    if (currentTeacherId) unavailable.delete(currentTeacherId);
+    if (target.kind === "outside") row.outsideTeacherIds.forEach((id) => unavailable.delete(id));
+    else if (currentTeacherId) unavailable.delete(currentTeacherId);
     return unavailable;
   }, [invigilation, selectedCells]);
 
@@ -436,9 +465,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     setSaving(true);
     try {
       const saved = await examArrangementService.saveInvigilationConfig(schoolId, selectedArrangement.id, config);
+      const profile = await examArrangementService.getInvigilationProfile(schoolId, cohortKey);
       setArrangements((current) => current.map((item) => item.id === saved.id ? saved : item));
+      setInvigilationProfile(profile);
       setConfig(saved.invigilation ? cloneConfig(saved.invigilation) : config);
-      toast.success("监考配置已保存");
+      toast.success("监考配置已保存", "配置一名单和说明已同步到当前年级。");
     } catch (error) {
       toast.error("保存监考配置失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -532,7 +563,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const autoArrangeInvigilation = () => {
     updateConfig((next) => { next.overrides = {}; });
     setSelectedCells([]);
-    toast.success("已重新排监考", "已按老师配置、学科优先和累计时长重新计算；请确认后保存。");
+    toast.success("已重新排监考", "已按老师配置优先均衡累计时长，并在时长相同时优先同学科；请确认后保存。");
   };
 
   const setSelectedCellMode = (value: "__auto__" | "__blank__") => {
@@ -565,13 +596,35 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     setImportingTeachers(true);
     try {
       const rows = await readInvigilationTeacherFile(file, cohortLabel, selectedArrangement.subjects);
-      const result = mergeInvigilationTeachers(config.teachers, rows, () => newTeacherId("excel"));
-      updateConfig((next) => { next.teachers = result.teachers; });
+      const result = replaceInvigilationTeachers(config.teachers, rows, () => newTeacherId("excel"));
+      const teacherIds = new Set(result.teachers.map((teacher) => teacher.id));
+      updateConfig((next) => {
+        next.teachers = result.teachers;
+        next.patrolTeacherIds = result.teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id);
+        if (next.teacherNotes) {
+          next.teacherNotes = Object.fromEntries(Object.entries(next.teacherNotes).filter(([id]) => teacherIds.has(id)));
+          if (Object.keys(next.teacherNotes).length === 0) delete next.teacherNotes;
+        }
+        if (next.teacherRequirements) {
+          next.teacherRequirements = Object.fromEntries(Object.entries(next.teacherRequirements).filter(([id]) => teacherIds.has(id)));
+          if (Object.keys(next.teacherRequirements).length === 0) delete next.teacherRequirements;
+        }
+        next.overrides = Object.fromEntries(Object.entries(next.overrides || {}).map(([key, override]) => [
+          key,
+          {
+            roomTeacherIds: Object.fromEntries(Object.entries(override.roomTeacherIds || {}).filter(([, id]) => id === null || teacherIds.has(id))),
+            ...(override.outsideTeacherId === null || (override.outsideTeacherId && teacherIds.has(override.outsideTeacherId))
+              ? { outsideTeacherId: override.outsideTeacherId }
+              : {}),
+          },
+        ]));
+      });
       const details = [
+        `当前名单 ${result.teachers.length} 位`,
         result.addedCount ? `新增 ${result.addedCount} 位` : "",
-        result.mergedCount ? `更新 ${result.mergedCount} 位角色标记` : "",
+        result.removedCount ? `移除旧名单 ${result.removedCount} 位` : "",
       ].filter(Boolean).join("，");
-      toast.success("监考教师导入完成", details || "未发现需要新增或更新的教师");
+      toast.success("监考教师名单已完全替换", `${details}；保存监考配置后同步到当前年级。`);
     } catch (error) {
       toast.error("导入监考教师失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -681,7 +734,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">配置一、监考老师名单</h2>
-              <p className="mt-1 text-xs text-ink-500">可逐条添加和修改，也可通过 Excel 导入；“场外”用于场外监考，“巡考”用于巡回。</p>
+              <p className="mt-1 text-xs text-ink-500">名单按年级固定；学科和姓名由 Excel 整表覆盖，“场外”可同一学科勾选多人，“巡考”用于巡回。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => void downloadTeacherTemplate()}>
@@ -702,9 +755,6 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                   if (file) void importTeacherFile(file);
                 }}
               />
-              <Button variant="outline" size="sm" onClick={() => updateConfig((next) => next.teachers.push({ id: newTeacherId("teacher"), name: "", subject: selectedArrangement.subjects[0] || "" }))}>
-                <Plus className="h-4 w-4" />添加教师
-              </Button>
             </div>
           </div>
 
@@ -734,34 +784,25 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           </div>
 
           <div className="max-h-96 overflow-auto rounded-xl border border-ink-100">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[1040px] text-sm">
               <thead className="sticky top-0 z-10 bg-ink-50">
                 <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
                   <th className="px-2 py-2">学科</th>
                   <th className="px-2 py-2">姓名</th>
+                  <th className="px-2 py-2">往期累计</th>
                   <th className="px-2 py-2">是否在同一天</th>
                   <th className="px-2 py-2 text-center">是否请假</th>
                   <th className="min-w-52 px-2 py-2">备注</th>
                   <th className="px-2 py-2 text-center">场外</th>
                   <th className="px-2 py-2 text-center">巡考</th>
-                  <th className="w-10 px-2 py-2" />
                 </tr>
               </thead>
               <tbody>
                 {config.teachers.map((teacher, index) => (
                   <tr key={teacher.id} className="border-b border-ink-50 last:border-0">
-                    <td className="px-2 py-1.5">
-                      <select className="input-base min-w-24 py-1.5 text-sm" value={teacher.subject} onChange={(event) => updateConfig((next) => { next.teachers[index].subject = event.target.value; })}>
-                        {!selectedArrangement.subjects.includes(teacher.subject) && <option>{teacher.subject}</option>}
-                        {selectedArrangement.subjects.map((subject) => <option key={subject}>{subject}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input aria-label={`教师姓名 ${index + 1}`} className="input-base min-w-28 py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
-                      <div className="mt-1 text-[11px] text-ink-500">
-                        往期累计：<span className="font-medium tabular-nums text-ink-700">{formatMinutes(historicalTeacherMinutes[teacher.id] || 0)}</span>
-                      </div>
-                    </td>
+                    <td className="px-2 py-2 font-medium text-ink-700">{teacher.subject}</td>
+                    <td className="px-2 py-2 font-medium text-ink-900">{teacher.name}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-xs tabular-nums text-ink-600">{formatMinutes(historicalTeacherMinutes[teacher.id] || 0)}</td>
                     <td className="px-2 py-1.5">
                       <Select
                         aria-label={`${teacher.name || `教师 ${index + 1}`}是否在同一天`}
@@ -806,20 +847,6 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                     </td>
                     <td className="px-2 py-1.5 text-center"><input aria-label={`${teacher.name || `教师 ${index + 1}`}场外`} type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} /></td>
                     <td className="px-2 py-1.5 text-center"><input aria-label={`${teacher.name || `教师 ${index + 1}`}巡考`} type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => setTeacherLeader(index, event.target.checked)} /></td>
-                    <td className="px-2 py-1.5 text-center">
-                      <button aria-label={`删除教师 ${teacher.name || index + 1}`} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600" onClick={() => updateConfig((next) => {
-                        next.teachers.splice(index, 1);
-                        next.patrolTeacherIds = (next.patrolTeacherIds || []).filter((id) => id !== teacher.id);
-                        Object.values(next.overrides || {}).forEach((override) => {
-                          for (const [roomId, assignedId] of Object.entries(override.roomTeacherIds)) {
-                            if (assignedId === teacher.id) delete override.roomTeacherIds[roomId];
-                          }
-                          if (override.outsideTeacherId === teacher.id) delete override.outsideTeacherId;
-                        });
-                        if (next.teacherNotes) delete next.teacherNotes[teacher.id];
-                        if (next.teacherRequirements) delete next.teacherRequirements[teacher.id];
-                      })}><Trash2 className="h-4 w-4" /></button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -892,8 +919,12 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                   <tr className="bg-[#dcecef] text-xs font-medium text-ink-800">
                     <th colSpan={4} className="border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">考试安排</th>
                     {invigilation.roomLocationGroups.map((group) => (
-                      <th key={group.roomLocation} className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">
-                        {group.roomLocation}
+                      <th
+                        key={group.roomLocation}
+                        aria-label={group.roomLocation}
+                        className="max-w-28 border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center leading-tight"
+                      >
+                        {wrapInvigilationHeaderLabel(group.roomLocation).map((line, index) => <div key={`${line}-${index}`}>{line}</div>)}
                       </th>
                     ))}
                     <th rowSpan={3} className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center align-middle">场外监考</th>
@@ -1010,13 +1041,15 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                         {(() => {
                           const target: InvigilationCellTarget = { rowKey: row.key, kind: "outside" };
                           const selected = isCellSelected(target);
+                          const highlighted = Boolean(selectedTeacherId && row.outsideTeacherIds.includes(selectedTeacherId));
+                          const duplicate = row.outsideTeacherIds.some((id) => row.duplicateTeacherIds.includes(id));
                           return (
                             <td
                               className={cn(
                                 "cursor-pointer border-b border-r border-[#b6c7cf] px-1 py-0.5 text-center transition-colors hover:bg-gold-50/60",
-                                selectedTeacherId === row.outsideTeacherId && "bg-[#fff86b]",
+                                highlighted && "bg-[#fff86b]",
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
-                                row.outsideTeacherId && row.duplicateTeacherIds.includes(row.outsideTeacherId) && "ring-2 ring-inset ring-red-400",
+                                duplicate && "ring-2 ring-inset ring-red-400",
                               )}
                               onClick={() => toggleCellSelection(target)}
                             >
@@ -1029,16 +1062,21 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                                   onClick={(event) => event.stopPropagation()}
                                   onChange={() => toggleCellSelection(target)}
                                 />
-                                <button
-                                  type="button"
-                                  className="whitespace-nowrap pt-0.5 text-xs font-medium text-ink-800 hover:text-gold-700"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    if (row.outsideTeacherId) setSelectedTeacherId(row.outsideTeacherId);
-                                  }}
-                                >
-                                  {teacherMap.get(row.outsideTeacherId || "")?.name || "空缺"}
-                                </button>
+                                <div className="flex min-h-7 flex-col items-center justify-center gap-0.5">
+                                  {row.outsideTeacherIds.length ? row.outsideTeacherIds.map((teacherId) => (
+                                    <button
+                                      key={teacherId}
+                                      type="button"
+                                      className="whitespace-nowrap text-xs font-medium text-ink-800 hover:text-gold-700"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setSelectedTeacherId(teacherId);
+                                      }}
+                                    >
+                                      {teacherMap.get(teacherId)?.name || "未知教师"}
+                                    </button>
+                                  )) : <span className="text-xs font-medium text-ink-800">空缺</span>}
+                                </div>
                               </div>
                             </td>
                           );
@@ -1087,6 +1125,21 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                       </tr>
                     );
                   })}
+                  <tr>
+                    <td colSpan={invigilation.roomLocationGroups.length + 6} className="border-t border-[#b6c7cf] bg-[#f8fbfb] p-2">
+                      <textarea
+                        aria-label="监考表年级说明"
+                        value={config.footerNote || ""}
+                        onChange={(event) => updateConfig((next) => {
+                          if (event.target.value) next.footerNote = event.target.value;
+                          else delete next.footerNote;
+                        })}
+                        rows={2}
+                        placeholder="填写同一年级所有监考表共用的说明，可换行"
+                        className="w-full resize-y rounded-md border border-[#b6c7cf] bg-paper px-3 py-2 text-xs leading-relaxed text-ink-800 outline-none focus:border-gold-400"
+                      />
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
