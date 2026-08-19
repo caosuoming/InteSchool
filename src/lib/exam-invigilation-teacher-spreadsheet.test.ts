@@ -20,7 +20,7 @@ describe("exam invigilation teacher spreadsheet", () => {
 
   it("parses the documented columns and ignores blank subject placeholders", () => {
     const rows = parseInvigilationTeacherTable([
-      ["年级", "学科", "姓名", "备课组长", "领导"],
+      ["年级", "学科", "姓名", "场外", "巡考"],
       ["2026届高三", "语文", "张老师", "是", "否"],
       ["2026届高三", "数学", "李老师", "", "✓"],
       ["2026届高三", "英语", "", "", ""],
@@ -34,7 +34,7 @@ describe("exam invigilation teacher spreadsheet", () => {
 
   it("merges duplicate rows and preserves role markers", () => {
     const rows = parseInvigilationTeacherTable([
-      ["年级", "学科", "姓名", "备课组长", "领导"],
+      ["年级", "学科", "姓名", "场外", "巡考"],
       ["2026届高三", "语文", "张老师", "是", "否"],
       ["2026届高三", "语文", "张老师", "否", "是"],
     ], "2026届高三", ["语文"]);
@@ -46,14 +46,14 @@ describe("exam invigilation teacher spreadsheet", () => {
 
   it("rejects rows for another grade", () => {
     expect(() => parseInvigilationTeacherTable([
-      ["年级", "学科", "姓名", "备课组长", "领导"],
+      ["年级", "学科", "姓名", "场外", "巡考"],
       ["2027届高二", "语文", "张老师", "否", "否"],
     ], "2026届高三", ["语文"])).toThrow("与当前年级");
   });
 
   it("allows teachers from subjects outside the current exam", () => {
     expect(parseInvigilationTeacherTable([
-      ["年级", "学科", "姓名", "备课组长", "领导"],
+      ["年级", "学科", "姓名", "场外", "巡考"],
       ["2026届高三", "历史", "张老师", "是", "否"],
       ["2026届高三", "地理", "王校长", "否", "是"],
     ], "2026届高三", ["语文"])).toEqual([
@@ -62,9 +62,18 @@ describe("exam invigilation teacher spreadsheet", () => {
     ]);
   });
 
+  it("accepts legacy role column names for existing import files", () => {
+    expect(parseInvigilationTeacherTable([
+      ["年级", "学科", "姓名", "备课组长", "领导"],
+      ["2026届高三", "语文", "张老师", "备课组长", "领导"],
+    ], "2026届高三", ["语文"])).toEqual([
+      { cohortLabel: "2026届高三", subject: "语文", name: "张老师", isPrepLeader: true, isLeader: true },
+    ]);
+  });
+
   it("requires the full import schema", () => {
     expect(() => parseInvigilationTeacherTable([
-      ["年级", "姓名", "备课组长", "领导"],
+      ["年级", "姓名", "场外", "巡考"],
       ["2026届高三", "张老师", "否", "否"],
     ], "2026届高三", ["语文"])).toThrow("模板缺少“学科”列");
   });
@@ -80,6 +89,7 @@ describe("exam invigilation teacher spreadsheet", () => {
 
     const writeXlsxFile = (await import("write-excel-file/browser")).default;
     const workbook = vi.mocked(writeXlsxFile).mock.calls[0][0] as Array<{ data: Array<Array<{ value: string }>> }>;
+    expect(INVIGILATION_TEACHER_TEMPLATE_HEADERS).toEqual(["年级", "学科", "姓名", "场外", "巡考"]);
     expect(workbook[0].data[0].map((cell) => cell.value)).toEqual([...INVIGILATION_TEACHER_TEMPLATE_HEADERS]);
     expect(workbook[0].data[1].map((cell) => cell.value)).toEqual(["2026届高三", "语文", "张老师", "是", "否"]);
     expect(workbook[0].data[2].map((cell) => cell.value)).toEqual(["2026届高三", "数学", "", "", ""]);

@@ -273,6 +273,13 @@ describe("MyExamsPage", () => {
     expect(invigilationTable.getByRole("button", { name: "年级领导" })).toBeInTheDocument();
     const durationHeading = screen.getByRole("heading", { name: "监考时长" });
     const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
+    const teachersCard = teachersHeading.closest(".card-base");
+    expect(teachersCard).not.toBeNull();
+    const teachersConfig = within(teachersCard as HTMLElement);
+    expect(teachersConfig.getAllByRole("checkbox", { name: "场外" })).toHaveLength(3);
+    expect(teachersConfig.getAllByRole("checkbox", { name: "巡考" })).toHaveLength(3);
+    expect(teachersConfig.queryByText("备课组长")).not.toBeInTheDocument();
+    expect(teachersConfig.queryByText("领导", { exact: true })).not.toBeInTheDocument();
     const timesHeading = screen.getByRole("heading", { name: "配置二、考试时间配置" });
     expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();

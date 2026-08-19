@@ -20,16 +20,16 @@ export const INVIGILATION_TEACHER_TEMPLATE_HEADERS = [
   "年级",
   "学科",
   "姓名",
-  "备课组长",
-  "领导",
+  "场外",
+  "巡考",
 ] as const;
 
 const HEADER_ALIASES = {
   cohortLabel: ["年级", "年级名称"],
   subject: ["学科", "科目", "任教学科"],
   name: ["姓名", "教师姓名", "老师姓名"],
-  isPrepLeader: ["备课组长", "是否备课组长"],
-  isLeader: ["领导", "是否领导", "年级领导", "学校领导"],
+  isPrepLeader: ["场外", "是否场外", "备课组长", "是否备课组长"],
+  isLeader: ["巡考", "是否巡考", "领导", "是否领导", "年级领导", "学校领导"],
 } as const;
 
 function text(value: CellValue): string {
@@ -56,7 +56,7 @@ function findColumn(headers: string[], aliases: readonly string[]): number {
 function parseBooleanMarker(value: string, columnName: string, rowNumber: number): boolean {
   const normalized = normalizeValue(value);
   if (!normalized || ["否", "false", "0", "no", "n", "×", "✕"].includes(normalized)) return false;
-  if (["是", "true", "1", "yes", "y", "√", "✓", "备课组长", "领导"].includes(normalized)) return true;
+  if (["是", "true", "1", "yes", "y", "√", "✓", "场外", "巡考", "备课组长", "领导"].includes(normalized)) return true;
   throw new Error(`第 ${rowNumber} 行“${columnName}”请填写“是”或“否”`);
 }
 
@@ -96,8 +96,8 @@ export function parseInvigilationTeacherTable(
     if (normalizeValue(cohortLabel) !== expectedCohort) {
       throw new Error(`第 ${rowNumber} 行年级“${cohortLabel}”与当前年级“${expectedCohortLabel}”不一致`);
     }
-    const isPrepLeader = parseBooleanMarker(prepLeaderText, "备课组长", rowNumber);
-    const isLeader = parseBooleanMarker(leaderText, "领导", rowNumber);
+    const isPrepLeader = parseBooleanMarker(prepLeaderText, "场外", rowNumber);
+    const isLeader = parseBooleanMarker(leaderText, "巡考", rowNumber);
     const subject = subjectsByName.get(normalizeValue(subjectText)) || subjectText;
 
     const imported = {

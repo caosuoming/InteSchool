@@ -115,8 +115,8 @@ function parseBatchTeachers(value: string): ExamInvigilationTeacher[] {
       id: newTeacherId(`batch-${index}`),
       subject: parts[0],
       name: parts[1],
-      isPrepLeader: markers.includes("备课组长"),
-      isLeader: markers.includes("领导"),
+      isPrepLeader: markers.includes("场外") || markers.includes("备课组长"),
+      isLeader: markers.includes("巡考") || markers.includes("领导"),
     }];
   });
 }
@@ -532,7 +532,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const addBatchTeachers = () => {
     const parsed = parseBatchTeachers(batchText);
     if (!parsed.length) {
-      toast.error("未识别到教师", "每行请填写：学科 姓名，可选添加“备课组长”或“领导”标记");
+      toast.error("未识别到教师", "每行请填写：学科 姓名，可选添加“场外”或“巡考”标记");
       return;
     }
     updateConfig((next) => {
@@ -675,7 +675,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">配置一、监考老师名单</h2>
-              <p className="mt-1 text-xs text-ink-500">可批量添加，也可逐条修改；备课组长用于场外监考，领导用于巡回。</p>
+              <p className="mt-1 text-xs text-ink-500">可批量添加，也可逐条修改；“场外”用于场外监考，“巡考”用于巡回。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => void downloadTeacherTemplate()}>
@@ -709,8 +709,8 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                   {selectedArrangement.subjects.map((subject) => <option key={subject}>{subject}</option>)}
                 </select>
                 <input aria-label={`教师姓名 ${index + 1}`} className="input-base py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
-                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} />备课组长</label>
-                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => setTeacherLeader(index, event.target.checked)} />领导</label>
+                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} />场外</label>
+                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => setTeacherLeader(index, event.target.checked)} />巡考</label>
                 <button aria-label={`删除教师 ${teacher.name || index + 1}`} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600" onClick={() => updateConfig((next) => {
                   next.teachers.splice(index, 1);
                   next.patrolTeacherIds = (next.patrolTeacherIds || []).filter((id) => id !== teacher.id);
@@ -727,7 +727,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
             ))}
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-            <Textarea label="批量添加" value={batchText} onChange={(event) => setBatchText(event.target.value)} placeholder={"每行：学科 姓名 [备课组长] [领导]\n例如：数学 张老师 备课组长"} className="min-h-20" />
+            <Textarea label="批量添加" value={batchText} onChange={(event) => setBatchText(event.target.value)} placeholder={"每行：学科 姓名 [场外] [巡考]\n例如：数学 张老师 场外"} className="min-h-20" />
             <Button variant="outline" onClick={addBatchTeachers}><UsersRound className="h-4 w-4" />批量加入</Button>
           </div>
         </Card>
