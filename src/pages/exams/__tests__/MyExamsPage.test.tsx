@@ -283,6 +283,8 @@ describe("MyExamsPage", () => {
     expect(teacherConfig.getAllByRole("checkbox", { name: /巡考$/ })).toHaveLength(3);
     expect(teacherConfig.queryByText("备课组长")).not.toBeInTheDocument();
     expect(teacherConfig.queryByText("领导", { exact: true })).not.toBeInTheDocument();
+    expect(teacherConfig.getByText("累计范围（勾选往期监考表）")).toBeInTheDocument();
+    expect(durationTable.queryByText("累计范围（勾选往期监考表）")).not.toBeInTheDocument();
 
     const timesHeading = screen.getByRole("heading", { name: "配置二、考试时间配置" });
     expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
@@ -334,6 +336,15 @@ describe("MyExamsPage", () => {
     fireEvent.pointerMove(leftDragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
     expect(floatingPanel?.style.left).not.toBe(originalLeft);
     fireEvent.pointerUp(leftDragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
+
+    const collapseButton = within(durationCard as HTMLElement).getByRole("button", { name: "收起名单" });
+    expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(collapseButton);
+    expect(within(durationCard as HTMLElement).queryByRole("columnheader", { name: "姓名" })).not.toBeInTheDocument();
+    const expandButton = within(durationCard as HTMLElement).getByRole("button", { name: "展开名单" });
+    expect(expandButton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(expandButton);
+    expect(within(durationCard as HTMLElement).getByRole("columnheader", { name: "姓名" })).toBeInTheDocument();
   });
 
   it("accumulates selected previous invigilation durations", async () => {
@@ -397,8 +408,17 @@ describe("MyExamsPage", () => {
       </MemoryRouter>,
     );
 
+    const teachersHeading = await screen.findByRole("heading", { name: "配置一、监考老师名单" });
+    const durationHeading = screen.getByRole("heading", { name: "监考时长" });
+    const teachersCard = teachersHeading.closest(".card-base");
+    const durationCard = durationHeading.closest(".card-base");
+    expect(teachersCard).not.toBeNull();
+    expect(durationCard).not.toBeNull();
+    expect(within(teachersCard as HTMLElement).getByLabelText("累计 九月月考")).toBeInTheDocument();
+    expect(within(durationCard as HTMLElement).queryByLabelText("累计 九月月考")).not.toBeInTheDocument();
     expect(await screen.findAllByText("1 小时 30 分钟")).toHaveLength(2);
     fireEvent.click(screen.getByLabelText("累计 九月月考"));
+    expect(await within(teachersCard as HTMLElement).findByText("2 小时")).toBeInTheDocument();
     expect(await screen.findByText("3 小时 30 分钟")).toBeInTheDocument();
   });
 

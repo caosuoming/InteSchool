@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ArrowRight, ClipboardCheck, Download, Move, Plus, Save, Trash2, Upload, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Download, Move, Plus, Save, Trash2, Upload, X } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -204,6 +204,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const durationDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [historyArrangementIds, setHistoryArrangementIds] = useState<string[]>([]);
   const [tableTwoVisible, setTableTwoVisible] = useState(false);
+  const [durationListCollapsed, setDurationListCollapsed] = useState(false);
   const [floatingDurationPosition, setFloatingDurationPosition] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -707,6 +708,31 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
             </div>
           </div>
 
+          <div className="mb-4 rounded-xl border border-ink-100 bg-ink-50/50 p-3">
+            <div className="mb-2 text-xs font-medium text-ink-700">累计范围（勾选往期监考表）</div>
+            {historicalArrangements.length ? (
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                {historicalArrangements.map((arrangement) => (
+                  <label key={arrangement.id} className="flex items-center gap-2 text-xs text-ink-600">
+                    <input
+                      type="checkbox"
+                      aria-label={`累计 ${arrangement.name}`}
+                      checked={historyArrangementIds.includes(arrangement.id)}
+                      onChange={(event) => setHistoryArrangementIds((current) => (
+                        event.target.checked
+                          ? [...current, arrangement.id]
+                          : current.filter((id) => id !== arrangement.id)
+                      ))}
+                    />
+                    <span>{arrangement.name}{arrangement.examDate ? ` · ${arrangement.examDate}` : ""}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-ink-400">暂无更早且已保存监考配置的考试。</div>
+            )}
+          </div>
+
           <div className="max-h-96 overflow-auto rounded-xl border border-ink-100">
             <table className="w-full min-w-[980px] text-sm">
               <thead className="sticky top-0 z-10 bg-ink-50">
@@ -732,6 +758,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                     </td>
                     <td className="px-2 py-1.5">
                       <input aria-label={`教师姓名 ${index + 1}`} className="input-base min-w-28 py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
+                      <div className="mt-1 text-[11px] text-ink-500">
+                        往期累计：<span className="font-medium tabular-nums text-ink-700">{formatMinutes(historicalTeacherMinutes[teacher.id] || 0)}</span>
+                      </div>
                     </td>
                     <td className="px-2 py-1.5">
                       <Select
@@ -1107,42 +1136,30 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
               <p className="mt-1 text-xs text-ink-500">自动排表先应用基本要求，再通过表二勾选或交换微调；默认按累计时长最短优先。</p>
             </div>
             <div className="flex items-center gap-2">
-              <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "累计最短" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
+              {!durationListCollapsed && (
+                <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "累计最短" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                aria-expanded={!durationListCollapsed}
+                aria-controls="invigilation-duration-list"
+                onClick={() => setDurationListCollapsed((collapsed) => !collapsed)}
+              >
+                {durationListCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                {durationListCollapsed ? "展开名单" : "收起名单"}
+              </Button>
             </div>
           </div>
 
-          <div className="mb-3 rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
+          <div hidden={durationListCollapsed} className="mb-3 rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
             {selectedCells.length === 0 && "点击老师姓名可高亮表二中的全部安排；勾选一个单元格后再点击姓名可直接填入。"}
             {selectedCells.length === 1 && "已选 1 个单元格，点击下方老师姓名即可填入。"}
             {selectedCells.length === 2 && (canSwapSelectedCells ? "已选 2 个已有安排，可点击“是否交换”。" : "已选 2 个单元格；只有两个单元格均已有老师时才能交换。")}
           </div>
 
-          <div className="mb-4 rounded-xl border border-ink-100 bg-ink-50/50 p-3">
-            <div className="mb-2 text-xs font-medium text-ink-700">累计范围（勾选往期监考表）</div>
-            {historicalArrangements.length ? (
-              <div className="flex flex-wrap gap-x-5 gap-y-2">
-                {historicalArrangements.map((arrangement) => (
-                  <label key={arrangement.id} className="flex items-center gap-2 text-xs text-ink-600">
-                    <input
-                      type="checkbox"
-                      aria-label={`累计 ${arrangement.name}`}
-                      checked={historyArrangementIds.includes(arrangement.id)}
-                      onChange={(event) => setHistoryArrangementIds((current) => (
-                        event.target.checked
-                          ? [...current, arrangement.id]
-                          : current.filter((id) => id !== arrangement.id)
-                      ))}
-                    />
-                    <span>{arrangement.name}{arrangement.examDate ? ` · ${arrangement.examDate}` : ""}</span>
-                  </label>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-ink-400">暂无更早且已保存监考配置的考试。</div>
-            )}
-          </div>
 
-          <div className="overflow-x-auto rounded-xl border border-ink-100">
+          <div id="invigilation-duration-list" hidden={durationListCollapsed} className="overflow-x-auto rounded-xl border border-ink-100">
             <table className="w-full min-w-[680px] text-sm">
               <thead>
                 <tr className="border-b border-ink-100 bg-ink-50 text-left text-xs text-ink-500">
