@@ -182,4 +182,37 @@ describe("exam print-room statistics", () => {
     ]);
     expect(workbook[0].data[3].map((cell: { value: unknown }) => cell.value)).toEqual(["语数外", 1, 1, 2]);
   });
+  it("exports wrapped room headers, multiple outside teachers, and the shared footer note", async () => {
+    const source = arrangement({
+      invigilation: {
+        teachers: [
+          { id: "room-a", name: "监考甲", subject: "语文" },
+          { id: "room-b", name: "监考乙", subject: "语文" },
+          { id: "outside-a", name: "场外甲", subject: "语文", isPrepLeader: true },
+          { id: "outside-b", name: "场外乙", subject: "语文", isPrepLeader: true },
+        ],
+        subjectTimes: [{ subject: "语文", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 }],
+        patrolTeacherIds: [],
+        overrides: {},
+        footerNote: "第一行说明\n第二行说明",
+      },
+    });
+
+    await downloadExamPrintRoomStatistics(source);
+
+    const workbook = writeXlsxFile.mock.calls[0]?.[0] as Array<{
+      sheet: string;
+      data: Array<Array<{ value?: unknown; columnSpan?: number; wrap?: boolean } | null>>;
+    }>;
+    const sheet = workbook.find((item) => item.sheet === "表二、监考表");
+    expect(sheet).toBeDefined();
+    expect(sheet?.data[0][4]).toMatchObject({ value: "高三1班\n教室", wrap: true });
+    expect(sheet?.data[3][6]).toMatchObject({ value: "场外甲\n场外乙" });
+    expect(sheet?.data.at(-1)?.[0]).toMatchObject({
+      value: "第一行说明\n第二行说明",
+      columnSpan: 8,
+      wrap: true,
+    });
+  });
+
 });

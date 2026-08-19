@@ -6,6 +6,7 @@ import {
   examInvigilationPeriodLabel,
   formatExamDateWithWeekday,
   formatExamTimeRange,
+  wrapInvigilationHeaderLabel,
 } from "./exam-invigilation";
 
 export interface ExamDeskLabelGroup {
@@ -270,7 +271,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
     const invigilation = buildExamInvigilationTable(arrangement, arrangement.invigilation);
     if (invigilation.rows.length > 0) {
       const teacherMap = new Map(arrangement.invigilation.teachers.map((teacher) => [teacher.id, teacher.name]));
-      const invigilationHeader = (value: string) => ({ ...header(value), backgroundColor: "#DCECEF" });
+      const invigilationHeader = (value: string) => ({ ...header(value), backgroundColor: "#DCECEF", wrap: true, height: 36 });
       const invigilationInfoCell = (value: string | number) => ({ ...centeredCell(value), backgroundColor: "#E5F0F2" });
       const patrolNames = invigilation.patrolTeacherIds.map((id) => teacherMap.get(id)).filter(Boolean).join("、");
       const invigilationRows = invigilation.rows.map((row, index) => {
@@ -286,7 +287,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
           invigilationInfoCell(formatExamTimeRange(row.time, row.durationMinutes)),
           invigilationInfoCell(row.subjectLabel),
           ...locationTeacherCells,
-          centeredCell(teacherMap.get(row.outsideTeacherId || "") || ""),
+          centeredCell(row.outsideTeacherIds.map((id) => teacherMap.get(id)).filter(Boolean).join("\n")),
           index === 0 ? { ...invigilationInfoCell(patrolNames), rowSpan: invigilation.rows.length } : null,
         ];
       });
@@ -296,7 +297,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
         data: [
           [
             { ...invigilationHeader("考试安排"), columnSpan: 4 }, null, null, null,
-            ...invigilation.roomLocationGroups.map((group) => invigilationHeader(group.roomLocation)),
+            ...invigilation.roomLocationGroups.map((group) => invigilationHeader(wrapInvigilationHeaderLabel(group.roomLocation).join("\n"))),
             { ...invigilationHeader("场外监考"), rowSpan: 3 },
             { ...invigilationHeader("巡回"), rowSpan: 3 },
           ],
@@ -316,6 +317,17 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
             null,
           ],
           ...invigilationRows,
+          [
+            {
+              ...cell(arrangement.invigilation.footerNote || ""),
+              columnSpan: invigilation.roomLocationGroups.length + 6,
+              height: 48,
+              align: "left" as const,
+              alignVertical: "top" as const,
+              wrap: true,
+            },
+            ...Array(invigilation.roomLocationGroups.length + 5).fill(null),
+          ],
         ],
         stickyRowsCount: 3,
         columns: [

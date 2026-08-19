@@ -13,6 +13,7 @@ vi.mock("@/services/examArrangement", () => ({
   examArrangementService: {
     listArrangements: vi.fn(),
     getContext: vi.fn(),
+    getInvigilationProfile: vi.fn(),
     saveInvigilationConfig: vi.fn(),
   },
 }));
@@ -92,6 +93,7 @@ describe("MyExamsPage", () => {
     vi.mocked(gradeService.getCohortSettings).mockResolvedValue(null);
     vi.mocked(gradeService.listExams).mockResolvedValue([]);
     vi.mocked(examArrangementService.listArrangements).mockResolvedValue([]);
+    vi.mocked(examArrangementService.getInvigilationProfile).mockResolvedValue(null);
     vi.mocked(examArrangementService.getContext).mockResolvedValue({
       cohort,
       classes: [],
@@ -263,7 +265,10 @@ describe("MyExamsPage", () => {
     const invigilationCard = tableTwoHeading.closest(".card-base");
     expect(invigilationCard).not.toBeNull();
     const invigilationTable = within(invigilationCard as HTMLElement);
-    expect(invigilationTable.getByRole("columnheader", { name: "高三1班教室" })).not.toHaveAttribute("colspan");
+    const wrappedLocationHeader = invigilationTable.getByRole("columnheader", { name: "高三1班教室" });
+    expect(wrappedLocationHeader).not.toHaveAttribute("colspan");
+    expect(within(wrappedLocationHeader).getByText("高三1班")).toBeInTheDocument();
+    expect(within(wrappedLocationHeader).getByText("教室")).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "1考场、2考场" })).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "巡回" })).toHaveAttribute("rowspan", "3");
     expect(invigilationTable.getByRole("cell", { name: "2026-10-20 星期二" })).toHaveAttribute("rowspan", "2");
@@ -297,12 +302,19 @@ describe("MyExamsPage", () => {
     expect(teachersHeading.compareDocumentPosition(timesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(timesHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tableTwoHeading.compareDocumentPosition(durationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(teacherConfig.getByRole("columnheader", { name: "往期累计" })).toBeInTheDocument();
+    expect(teacherConfig.queryByLabelText("教师姓名 1")).not.toBeInTheDocument();
+    expect(teacherConfig.queryByRole("button", { name: "添加教师" })).not.toBeInTheDocument();
+    expect(teacherConfig.getByText("语文教师甲")).toBeInTheDocument();
     expect(teacherConfig.getByRole("columnheader", { name: "是否在同一天" })).toBeInTheDocument();
     expect(teacherConfig.getByRole("columnheader", { name: "是否请假" })).toBeInTheDocument();
     expect(teacherConfig.getByRole("columnheader", { name: "备注" })).toBeInTheDocument();
     expect(teacherConfig.getByLabelText("语文教师甲是否在同一天")).toHaveValue("any");
     expect(teacherConfig.getByLabelText("语文教师甲是否请假")).not.toBeChecked();
     expect(durationTable.queryByLabelText("语文教师甲是否在同一天")).not.toBeInTheDocument();
+    const footerNote = invigilationTable.getByLabelText("监考表年级说明");
+    fireEvent.change(footerNote, { target: { value: "第一行\n第二行" } });
+    expect(footerNote).toHaveValue("第一行\n第二行");
     fireEvent.change(teacherConfig.getByLabelText("语文教师甲监考备注"), { target: { value: "第一场后换教室" } });
     expect(durationTable.getByText("第一场后换教室")).toBeInTheDocument();
     const chineseRoomCell = invigilationTable.getByRole("checkbox", { name: "选择 语文 高三1班教室监考单元格" }).closest("td");
