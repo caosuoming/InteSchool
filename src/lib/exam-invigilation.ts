@@ -30,6 +30,7 @@ export interface ExamInvigilationSlotRow {
   subjects: string[];
   subjectLabel: string;
   roomStudentCounts: Record<string, number>;
+  roomSubjectStudentCounts: Record<string, Record<string, number>>;
   roomTeacherIds: Record<string, string | null>;
   outsideTeacherId: string | null;
   duplicateTeacherIds: string[];
@@ -177,7 +178,9 @@ function resolvePatrolTeacherIds(
       ...config.teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id),
       ...Object.values(config.overrides || {}).flatMap((override) => override.patrolTeacherId ? [override.patrolTeacherId] : []),
     ];
-  return [...new Set(requested)].filter((teacherId) => teachers.has(teacherId));
+  return [...new Set(requested)].filter((teacherId) => (
+    teachers.has(teacherId) && !config.teacherRequirements?.[teacherId]?.isOnLeave
+  ));
 }
 
 function groupRoomsByLocation(rooms: ExamInvigilationRoomColumn[]): {
@@ -230,6 +233,7 @@ export function buildExamInvigilationTable(
     const subjectSet = new Set(subjects);
     const roomStudents = new Map<string, Set<string>>();
     const roomSubjects = new Map<string, Set<string>>();
+    const roomSubjectStudents = new Map<string, Map<string, Set<string>>>();
     for (const assignment of arrangement.assignments) {
       const matchingSubjects = assignmentSubjects(assignment.subjectLabel).filter((subject) => subjectSet.has(subject));
       if (matchingSubjects.length === 0) continue;
@@ -237,8 +241,15 @@ export function buildExamInvigilationTable(
       current.add(assignment.studentId);
       roomStudents.set(assignment.roomId, current);
       const currentSubjects = roomSubjects.get(assignment.roomId) || new Set<string>();
-      matchingSubjects.forEach((subject) => currentSubjects.add(subject));
+      const subjectStudents = roomSubjectStudents.get(assignment.roomId) || new Map<string, Set<string>>();
+      matchingSubjects.forEach((subject) => {
+        currentSubjects.add(subject);
+        const students = subjectStudents.get(subject) || new Set<string>();
+        students.add(assignment.studentId);
+        subjectStudents.set(subject, students);
+      });
       roomSubjects.set(assignment.roomId, currentSubjects);
+      roomSubjectStudents.set(assignment.roomId, subjectStudents);
       usedRoomIds.add(assignment.roomId);
     }
     return {
@@ -248,6 +259,7 @@ export function buildExamInvigilationTable(
       subjectSet,
       roomStudents,
       roomSubjects,
+      roomSubjectStudents,
       durationMinutes: Math.max(...times.map((item) => item.durationMinutes || 120)),
     };
   });
@@ -271,11 +283,13 @@ export function buildExamInvigilationTable(
     teacherDates.get(teacherId)?.add(date);
   };
 
-  const matchesDateRequirement = (teacher: ExamInvigilationTeacher, date: string) => {
-    const requirement = config.teacherRequirements?.[teacher.id]?.sameDay || "any";
+  const matchesTeacherRequirements = (teacher: ExamInvigilationTeacher, date: string) => {
+    const requirement = config.teacherRequirements?.[teacher.id];
+    if (requirement?.isOnLeave) return false;
+    const sameDay = requirement?.sameDay || "any";
     const dates = teacherDates.get(teacher.id) || new Set<string>();
-    if (requirement === "no") return !dates.has(date);
-    if (requirement === "yes") return dates.size === 0 || dates.has(date);
+    if (sameDay === "no") return !dates.has(date);
+    if (sameDay === "yes") return dates.size === 0 || dates.has(date);
     return true;
   };
 
@@ -304,14 +318,16 @@ export function buildExamInvigilationTable(
     const outsideOverridden = Object.prototype.hasOwnProperty.call(override, "outsideTeacherId");
     let outsideTeacherId = outsideOverridden ? override.outsideTeacherId ?? null : undefined;
     if (outsideTeacherId === undefined) {
-      const teacher = chooseTeacher(
-        config.teachers.filter((item) => item.isPrepLeader && input.subjectSet.has(item.subject)),
-        unavailable,
-        teacherPriorityMinutes,
-        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
-      );
-      outsideTeacherId = teacher?.id || null;
-      if (teacher) unavailable.add(teacher.id);
+      const date = input.times[0].date;
+      const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate, date);
+      const matchingPrepLeaders = config.teachers.filter((item) => item.isPrepLeader && input.subjectSet.has(item.subject));
+      const prepLeaders = config.teachers.filter((item) => item.isPrepLeader);
+      const teacher = chooseTeacher(matchingPrepLeaders, unavailable, teacherPriorityMinutes, requirement)
+        || chooseTeacher(prepLeaders, unavailable, teacherPriorityMinutes, requirement);
+      if (teacher) {
+        outsideTeacherId = teacher.id;
+        unavailable.add(teacher.id);
+      }
     }
 
     for (const item of roomGroups) {
@@ -337,24 +353,35 @@ export function buildExamInvigilationTable(
         sameSubject,
         unavailable,
         teacherPriorityMinutes,
-        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
+        (candidate) => matchesTeacherRequirements(candidate, input.times[0].date),
       ) || chooseTeacher(
         fallbackSameSubject,
         unavailable,
         teacherPriorityMinutes,
-        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
+        (candidate) => matchesTeacherRequirements(candidate, input.times[0].date),
       ) || chooseTeacher(
         otherTeachers,
         unavailable,
         teacherPriorityMinutes,
-        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
+        (candidate) => matchesTeacherRequirements(candidate, input.times[0].date),
       ) || chooseTeacher(
         fallbackOtherTeachers,
         unavailable,
         teacherPriorityMinutes,
-        (candidate) => matchesDateRequirement(candidate, input.times[0].date),
+        (candidate) => matchesTeacherRequirements(candidate, input.times[0].date),
       );
       roomTeacherIds[item.canonicalRoomId] = teacher?.id || null;
+      if (teacher) unavailable.add(teacher.id);
+    }
+
+    if (outsideTeacherId === undefined) {
+      const date = input.times[0].date;
+      const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate, date);
+      const matchingTeachers = config.teachers.filter((item) => input.subjectSet.has(item.subject) && !item.isLeader);
+      const availableTeachers = config.teachers.filter((item) => !item.isLeader);
+      const teacher = chooseTeacher(matchingTeachers, unavailable, teacherPriorityMinutes, requirement)
+        || chooseTeacher(availableTeachers, unavailable, teacherPriorityMinutes, requirement);
+      outsideTeacherId = teacher?.id || null;
       if (teacher) unavailable.add(teacher.id);
     }
 
@@ -373,6 +400,13 @@ export function buildExamInvigilationTable(
       subjects: input.subjects,
       subjectLabel: input.subjects.join(" / "),
       roomStudentCounts: Object.fromEntries(rooms.map((room) => [room.roomId, input.roomStudents.get(room.roomId)?.size || 0])),
+      roomSubjectStudentCounts: Object.fromEntries(rooms.map((room) => [
+        room.roomId,
+        Object.fromEntries(input.subjects.flatMap((subject) => {
+          const count = input.roomSubjectStudents.get(room.roomId)?.get(subject)?.size || 0;
+          return count ? [[subject, count]] : [];
+        })),
+      ])),
       roomTeacherIds,
       outsideTeacherId: outsideTeacherId || null,
       duplicateTeacherIds: duplicateTeacherIds([

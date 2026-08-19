@@ -235,9 +235,10 @@ export const examArrangementService = {
     }));
     const teacherRequirements = Object.fromEntries(Object.entries(config.teacherRequirements || {}).flatMap(([teacherId, requirement]) => {
       if (!teacherIds.has(teacherId)) return [];
-      const sameDay = requirement.sameDay;
-      if (sameDay !== "yes" && sameDay !== "no") return [];
-      return [[teacherId, { sameDay }]];
+      const normalized: NonNullable<ExamInvigilationConfig["teacherRequirements"]>[string] = {};
+      if (requirement.sameDay === "yes" || requirement.sameDay === "no") normalized.sameDay = requirement.sameDay;
+      if (requirement.isOnLeave === true) normalized.isOnLeave = true;
+      return Object.keys(normalized).length ? [[teacherId, normalized]] : [];
     }));
     const invigilation: ExamInvigilationConfig = {
       teachers,

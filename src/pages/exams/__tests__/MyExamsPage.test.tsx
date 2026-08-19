@@ -273,24 +273,39 @@ describe("MyExamsPage", () => {
     expect(invigilationTable.getByRole("button", { name: "年级领导" })).toBeInTheDocument();
     const durationHeading = screen.getByRole("heading", { name: "监考时长" });
     const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
-    const teachersCard = teachersHeading.closest(".card-base");
-    expect(teachersCard).not.toBeNull();
-    const teachersConfig = within(teachersCard as HTMLElement);
-    expect(teachersConfig.getAllByRole("checkbox", { name: "场外" })).toHaveLength(3);
-    expect(teachersConfig.getAllByRole("checkbox", { name: "巡考" })).toHaveLength(3);
-    expect(teachersConfig.queryByText("备课组长")).not.toBeInTheDocument();
-    expect(teachersConfig.queryByText("领导", { exact: true })).not.toBeInTheDocument();
+    const teacherConfigCard = teachersHeading.closest(".card-base");
+    const durationCard = durationHeading.closest(".card-base");
+    expect(teacherConfigCard).not.toBeNull();
+    expect(durationCard).not.toBeNull();
+    const teacherConfig = within(teacherConfigCard as HTMLElement);
+    const durationTable = within(durationCard as HTMLElement);
+    expect(teacherConfig.getAllByRole("checkbox", { name: /场外$/ })).toHaveLength(3);
+    expect(teacherConfig.getAllByRole("checkbox", { name: /巡考$/ })).toHaveLength(3);
+    expect(teacherConfig.queryByText("备课组长")).not.toBeInTheDocument();
+    expect(teacherConfig.queryByText("领导", { exact: true })).not.toBeInTheDocument();
+
     const timesHeading = screen.getByRole("heading", { name: "配置二、考试时间配置" });
     expect(screen.getByRole("button", { name: "下载导入模板" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();
     expect(screen.queryByLabelText("批量添加")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批量加入" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "排监考" })).toBeInTheDocument();
     expect(tableOneHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tableOneHeading.compareDocumentPosition(teachersHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(teachersHeading.compareDocumentPosition(timesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(timesHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tableTwoHeading.compareDocumentPosition(durationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByLabelText("语文教师甲是否在同一天")).toHaveValue("any");
+    expect(teacherConfig.getByRole("columnheader", { name: "是否在同一天" })).toBeInTheDocument();
+    expect(teacherConfig.getByRole("columnheader", { name: "是否请假" })).toBeInTheDocument();
+    expect(teacherConfig.getByRole("columnheader", { name: "备注" })).toBeInTheDocument();
+    expect(teacherConfig.getByLabelText("语文教师甲是否在同一天")).toHaveValue("any");
+    expect(teacherConfig.getByLabelText("语文教师甲是否请假")).not.toBeChecked();
+    expect(durationTable.queryByLabelText("语文教师甲是否在同一天")).not.toBeInTheDocument();
+    fireEvent.change(teacherConfig.getByLabelText("语文教师甲监考备注"), { target: { value: "第一场后换教室" } });
+    expect(durationTable.getByText("第一场后换教室")).toBeInTheDocument();
+    const chineseRoomCell = invigilationTable.getByRole("checkbox", { name: "选择 语文 高三1班教室监考单元格" }).closest("td");
+    expect(chineseRoomCell).toHaveTextContent("1考场：语1人");
+    expect(chineseRoomCell).toHaveTextContent("2考场：语1人");
 
     const tableObserver = observers.find((observer) => observer.targets.some((target) => target.contains(tableTwoHeading)));
     const tableObserverTarget = tableObserver?.targets.find((target) => target.contains(tableTwoHeading));
@@ -301,21 +316,24 @@ describe("MyExamsPage", () => {
         { isIntersecting: true, target: tableObserverTarget } as IntersectionObserverEntry,
       ], tableObserver as unknown as IntersectionObserver);
     });
-    const dragHandle = await screen.findByRole("button", { name: "拖动监考时长面板" });
+    const leftDragHandle = await screen.findByRole("button", { name: "从左上角拖动监考时长面板" });
+    const rightDragHandle = screen.getByRole("button", { name: "从右上角拖动监考时长面板" });
     const floatingPanel = durationHeading.closest(".fixed") as HTMLElement | null;
     expect(floatingPanel).not.toBeNull();
     expect(floatingPanel).toHaveClass("z-50");
+    expect(leftDragHandle.parentElement).toBe(floatingPanel);
+    expect(rightDragHandle.parentElement).toBe(floatingPanel);
 
-    Object.defineProperties(dragHandle, {
+    Object.defineProperties(leftDragHandle, {
       setPointerCapture: { value: vi.fn(), configurable: true },
       hasPointerCapture: { value: vi.fn(() => true), configurable: true },
       releasePointerCapture: { value: vi.fn(), configurable: true },
     });
     const originalLeft = floatingPanel?.style.left;
-    fireEvent.pointerDown(dragHandle, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(dragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
+    fireEvent.pointerDown(leftDragHandle, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(leftDragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
     expect(floatingPanel?.style.left).not.toBe(originalLeft);
-    fireEvent.pointerUp(dragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
+    fireEvent.pointerUp(leftDragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
   });
 
   it("accumulates selected previous invigilation durations", async () => {
@@ -447,7 +465,12 @@ describe("MyExamsPage", () => {
           { id: "invigilator-2", name: "李老师", subject: "数学" },
         ],
         subjectTimes: [{ subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 }],
-        overrides: {},
+        overrides: {
+          "2026-10-20|morning|08:00|数学": {
+            roomTeacherIds: { "room-1": null },
+            outsideTeacherId: null,
+          },
+        },
       },
       createdAt: "2026-08-16T00:00:00.000Z",
       updatedAt: "2026-08-16T00:00:00.000Z",
@@ -461,20 +484,28 @@ describe("MyExamsPage", () => {
     );
 
     const roomOne = await screen.findByRole("checkbox", { name: "选择 数学 4107监考单元格" });
+    const roomTwo = screen.getByRole("checkbox", { name: "选择 数学 4108监考单元格" });
     expect(screen.queryByRole("combobox", { name: "数学 1考场监考教师" })).not.toBeInTheDocument();
 
-    await user.click(roomOne);
-    expect(screen.getByRole("button", { name: "将 张老师 填入选中单元格" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "将 李老师 填入选中单元格" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "将 李老师 填入选中单元格" }));
-    expect(screen.getByRole("checkbox", { name: "选择 数学 4107监考单元格" }).closest("td")).toHaveTextContent("李老师");
-    expect(screen.getByRole("checkbox", { name: "选择 数学 4108监考单元格" }).closest("td")).toHaveTextContent("张老师");
+    expect(roomOne.closest("td")).toHaveTextContent("空缺");
+    expect(roomTwo.closest("td")).toHaveTextContent("李老师");
+    await user.click(screen.getByRole("button", { name: "选择监考教师 李老师" }));
+    expect(roomTwo.closest("td")).toHaveClass("bg-[#fff86b]");
 
-    await user.click(screen.getByRole("checkbox", { name: "选择 数学 4107监考单元格" }));
-    await user.click(screen.getByRole("checkbox", { name: "选择 数学 4108监考单元格" }));
+    await user.click(roomOne);
+    await user.click(screen.getByRole("button", { name: "选择监考教师 张老师" }));
+    expect(roomOne.closest("td")).toHaveTextContent("张老师");
+    expect(roomTwo.closest("td")).toHaveTextContent("李老师");
+
+    await user.click(screen.getByRole("button", { name: "排监考" }));
+    expect(roomOne.closest("td")).toHaveTextContent("李老师");
+    expect(roomTwo.closest("td")).toHaveTextContent("张老师");
+
+    await user.click(roomOne);
+    await user.click(roomTwo);
     await user.click(screen.getByRole("button", { name: "是否交换" }));
 
-    expect(screen.getByRole("checkbox", { name: "选择 数学 4107监考单元格" }).closest("td")).toHaveTextContent("张老师");
-    expect(screen.getByRole("checkbox", { name: "选择 数学 4108监考单元格" }).closest("td")).toHaveTextContent("李老师");
+    expect(roomOne.closest("td")).toHaveTextContent("张老师");
+    expect(roomTwo.closest("td")).toHaveTextContent("李老师");
   });
 });
