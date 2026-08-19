@@ -555,6 +555,51 @@ describe("document block parser", () => {
     });
   });
 
+  it("separates a textbook section heading from its learning-objective knowledge block", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1.4.2 充要条件",
+        "学习目标 通过对典型数学命题的梳理，理解充要条件的意义。",
+        "理解数学定义与充要条件的关系。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "groupTitle",
+      content: "1.4.2 充要条件",
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "knowledge",
+      content: [
+        "学习目标 通过对典型数学命题的梳理，理解充要条件的意义。",
+        "理解数学定义与充要条件的关系。",
+      ].join("\n"),
+    });
+  });
+
+  it.each([
+    "教学目标 理解充分条件与必要条件。",
+    "教 学 目 标 理解充分条件与必要条件。",
+    "【教学目标】理解充分条件与必要条件。",
+    "学习目标 理解充分条件与必要条件。",
+    "学 习 目 标 理解充分条件与必要条件。",
+    "【学习目标】理解充分条件与必要条件。",
+  ])("starts a knowledge block at objective label %s", (objectiveLine) => {
+    const blocks = parseDocumentBlocks(
+      ["1. 已知命题 p，判断其真假。", objectiveLine].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: "question" });
+    expect(blocks[1]).toMatchObject({
+      type: "knowledge",
+      content: objectiveLine,
+    });
+  });
+
   it("separates document title and information before structured content", () => {
     const blocks = parseDocumentBlocks(
       [
