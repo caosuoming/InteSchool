@@ -293,28 +293,7 @@ export const examArrangementService = {
       ...(footerNote ? { footerNote } : {}),
     };
 
-    const currentProfile = invigilationProfileFor(schoolId, current.cohortKey);
     const now = new Date().toISOString();
-    const profile: ExamInvigilationProfile = {
-      id: currentProfile?.id || genId("exam-invigilation-profile"),
-      schoolId,
-      cohortKey: current.cohortKey,
-      cohortLabel: current.cohortLabel,
-      teachers: structuredClone(teachers),
-      patrolTeacherIds: [...patrolTeacherIds],
-      ...(Object.keys(teacherNotes).length ? { teacherNotes: structuredClone(teacherNotes) } : {}),
-      ...(Object.keys(teacherRequirements).length ? { teacherRequirements: structuredClone(teacherRequirements) } : {}),
-      ...(footerNote ? { footerNote } : {}),
-      updatedBy: current.teacherId,
-      createdAt: currentProfile?.createdAt || now,
-      updatedAt: now,
-    };
-    db.update("examInvigilationProfiles", (value: ExamInvigilationProfile[] | undefined) => {
-      const profiles = Array.isArray(value) ? value : [];
-      return currentProfile
-        ? profiles.map((item) => item.id === currentProfile.id ? profile : item)
-        : [...profiles, profile];
-    });
     const updated: ExamArrangement = {
       ...current,
       invigilation,
