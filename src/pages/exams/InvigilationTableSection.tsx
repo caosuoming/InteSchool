@@ -111,6 +111,39 @@ function formatMinutes(minutes: number): string {
   return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`;
 }
 
+const SUBJECT_SHORT_NAMES: Record<string, string> = {
+  语文: "语",
+  数学: "数",
+  英语: "英",
+  物理: "物",
+  化学: "化",
+  生物: "生",
+  政治: "政",
+  思想政治: "政",
+  历史: "历",
+  地理: "地",
+  信息技术: "信",
+  通用技术: "通",
+  技术: "技",
+};
+
+function subjectShortName(subject: string): string {
+  return SUBJECT_SHORT_NAMES[subject] || Array.from(subject.trim())[0] || subject;
+}
+
+function mutateTeacherRequirement(
+  config: ExamInvigilationConfig,
+  teacherId: string,
+  mutate: (requirement: NonNullable<ExamInvigilationConfig["teacherRequirements"]>[string]) => void,
+) {
+  const requirement = { ...(config.teacherRequirements?.[teacherId] || {}) };
+  mutate(requirement);
+  config.teacherRequirements ||= {};
+  if (Object.keys(requirement).length) config.teacherRequirements[teacherId] = requirement;
+  else delete config.teacherRequirements[teacherId];
+  if (Object.keys(config.teacherRequirements).length === 0) delete config.teacherRequirements;
+}
+
 function arrangementDateKey(arrangement: ExamArrangement): string {
   return arrangement.examDate || arrangement.createdAt;
 }
@@ -490,8 +523,15 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   };
 
   const assignSelectedTeacher = (teacherId: string) => {
+    setSelectedTeacherId(teacherId);
     if (selectedCells.length !== 1) return;
     if (setCellTeacher(selectedCells[0], teacherId)) setSelectedCells([]);
+  };
+
+  const autoArrangeInvigilation = () => {
+    updateConfig((next) => { next.overrides = {}; });
+    setSelectedCells([]);
+    toast.success("已重新排监考", "已按老师配置、学科优先和累计时长重新计算；请确认后保存。");
   };
 
   const setSelectedCellMode = (value: "__auto__" | "__blank__") => {
@@ -666,30 +706,96 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
               </Button>
             </div>
           </div>
-          <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-            {config.teachers.map((teacher, index) => (
-              <div key={teacher.id} className="grid grid-cols-[minmax(90px,0.8fr)_minmax(100px,1fr)_auto_auto_auto] items-center gap-2 rounded-lg border border-ink-100 p-2">
-                <select className="input-base py-1.5 text-sm" value={teacher.subject} onChange={(event) => updateConfig((next) => { next.teachers[index].subject = event.target.value; })}>
-                  {!selectedArrangement.subjects.includes(teacher.subject) && <option>{teacher.subject}</option>}
-                  {selectedArrangement.subjects.map((subject) => <option key={subject}>{subject}</option>)}
-                </select>
-                <input aria-label={`教师姓名 ${index + 1}`} className="input-base py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
-                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} />场外</label>
-                <label className="flex items-center gap-1 text-xs text-ink-600"><input type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => setTeacherLeader(index, event.target.checked)} />巡考</label>
-                <button aria-label={`删除教师 ${teacher.name || index + 1}`} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600" onClick={() => updateConfig((next) => {
-                  next.teachers.splice(index, 1);
-                  next.patrolTeacherIds = (next.patrolTeacherIds || []).filter((id) => id !== teacher.id);
-                  Object.values(next.overrides || {}).forEach((override) => {
-                    for (const [roomId, assignedId] of Object.entries(override.roomTeacherIds)) {
-                      if (assignedId === teacher.id) delete override.roomTeacherIds[roomId];
-                    }
-                    if (override.outsideTeacherId === teacher.id) delete override.outsideTeacherId;
-                  });
-                  if (next.teacherNotes) delete next.teacherNotes[teacher.id];
-                  if (next.teacherRequirements) delete next.teacherRequirements[teacher.id];
-                })}><Trash2 className="h-4 w-4" /></button>
-              </div>
-            ))}
+
+          <div className="max-h-96 overflow-auto rounded-xl border border-ink-100">
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="sticky top-0 z-10 bg-ink-50">
+                <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
+                  <th className="px-2 py-2">学科</th>
+                  <th className="px-2 py-2">姓名</th>
+                  <th className="px-2 py-2">是否在同一天</th>
+                  <th className="px-2 py-2 text-center">是否请假</th>
+                  <th className="min-w-52 px-2 py-2">备注</th>
+                  <th className="px-2 py-2 text-center">场外</th>
+                  <th className="px-2 py-2 text-center">巡考</th>
+                  <th className="w-10 px-2 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {config.teachers.map((teacher, index) => (
+                  <tr key={teacher.id} className="border-b border-ink-50 last:border-0">
+                    <td className="px-2 py-1.5">
+                      <select className="input-base min-w-24 py-1.5 text-sm" value={teacher.subject} onChange={(event) => updateConfig((next) => { next.teachers[index].subject = event.target.value; })}>
+                        {!selectedArrangement.subjects.includes(teacher.subject) && <option>{teacher.subject}</option>}
+                        {selectedArrangement.subjects.map((subject) => <option key={subject}>{subject}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input aria-label={`教师姓名 ${index + 1}`} className="input-base min-w-28 py-1.5 text-sm" value={teacher.name} onChange={(event) => updateConfig((next) => { next.teachers[index].name = event.target.value; })} placeholder="姓名" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Select
+                        aria-label={`${teacher.name || `教师 ${index + 1}`}是否在同一天`}
+                        value={config.teacherRequirements?.[teacher.id]?.sameDay || "any"}
+                        onChange={(event) => updateConfig((next) => mutateTeacherRequirement(next, teacher.id, (requirement) => {
+                          const value = event.target.value as ExamInvigilationSameDayRequirement;
+                          if (value === "any") delete requirement.sameDay;
+                          else requirement.sameDay = value;
+                        }))}
+                        options={[
+                          { value: "yes", label: "是" },
+                          { value: "no", label: "否" },
+                          { value: "any", label: "随意" },
+                        ]}
+                        className="min-w-24 py-1.5 text-xs"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`${teacher.name || `教师 ${index + 1}`}是否请假`}
+                        checked={Boolean(config.teacherRequirements?.[teacher.id]?.isOnLeave)}
+                        onChange={(event) => updateConfig((next) => mutateTeacherRequirement(next, teacher.id, (requirement) => {
+                          if (event.target.checked) requirement.isOnLeave = true;
+                          else delete requirement.isOnLeave;
+                        }))}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Input
+                        aria-label={`${teacher.name || `教师 ${index + 1}`}监考备注`}
+                        value={config.teacherNotes?.[teacher.id] || ""}
+                        onChange={(event) => updateConfig((next) => {
+                          next.teacherNotes ||= {};
+                          if (event.target.value) next.teacherNotes[teacher.id] = event.target.value;
+                          else delete next.teacherNotes[teacher.id];
+                          if (Object.keys(next.teacherNotes).length === 0) delete next.teacherNotes;
+                        })}
+                        placeholder="备注"
+                        className="min-w-48 py-1.5 text-xs"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5 text-center"><input aria-label={`${teacher.name || `教师 ${index + 1}`}场外`} type="checkbox" checked={Boolean(teacher.isPrepLeader)} onChange={(event) => updateConfig((next) => { next.teachers[index].isPrepLeader = event.target.checked; })} /></td>
+                    <td className="px-2 py-1.5 text-center"><input aria-label={`${teacher.name || `教师 ${index + 1}`}巡考`} type="checkbox" checked={Boolean(teacher.isLeader)} onChange={(event) => setTeacherLeader(index, event.target.checked)} /></td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button aria-label={`删除教师 ${teacher.name || index + 1}`} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600" onClick={() => updateConfig((next) => {
+                        next.teachers.splice(index, 1);
+                        next.patrolTeacherIds = (next.patrolTeacherIds || []).filter((id) => id !== teacher.id);
+                        Object.values(next.overrides || {}).forEach((override) => {
+                          for (const [roomId, assignedId] of Object.entries(override.roomTeacherIds)) {
+                            if (assignedId === teacher.id) delete override.roomTeacherIds[roomId];
+                          }
+                          if (override.outsideTeacherId === teacher.id) delete override.outsideTeacherId;
+                        });
+                        if (next.teacherNotes) delete next.teacherNotes[teacher.id];
+                        if (next.teacherRequirements) delete next.teacherRequirements[teacher.id];
+                      })}><Trash2 className="h-4 w-4" /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
           </div>
         </Card>
 
@@ -726,6 +832,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
               <p className="mt-1 text-xs text-ink-500">勾选一个考场或场外监考单元格后，可在“监考时长”中点击老师姓名填入；勾选两个已有安排的单元格可交换。</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button variant="gold" size="sm" onClick={autoArrangeInvigilation}>排监考</Button>
               {selectedCells.length === 1 && (
                 <>
                   <Button variant="outline" size="sm" onClick={() => setSelectedCellMode("__auto__")}>恢复自动</Button>
@@ -769,8 +876,12 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                     <th className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">考试时间</th>
                     <th className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">学科</th>
                     {invigilation.roomLocationGroups.map((group) => (
-                      <th key={group.roomLocation} className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center font-medium">
-                        {group.roomNumbers.join("、")}
+                      <th
+                        key={group.roomLocation}
+                        aria-label={group.roomNumbers.join("、")}
+                        className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-1 py-1 text-center font-medium"
+                      >
+                        {group.roomNumbers.map((roomNumber) => <div key={roomNumber}>{roomNumber}</div>)}
                       </th>
                     ))}
                   </tr>
@@ -801,6 +912,15 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                         {invigilation.roomLocationGroups.map((group) => {
                           const activeRoomIds = group.roomIds.filter((roomId) => (row.roomStudentCounts[roomId] || 0) > 0);
                           const count = activeRoomIds.reduce((sum, roomId) => sum + (row.roomStudentCounts[roomId] || 0), 0);
+                          const roomDetails = activeRoomIds.map((activeRoomId) => {
+                            const room = invigilation.rooms.find((item) => item.roomId === activeRoomId);
+                            const subjectCounts = row.roomSubjectStudentCounts[activeRoomId] || {};
+                            const countLabel = Object.entries(subjectCounts)
+                              .filter(([, subjectCount]) => subjectCount > 0)
+                              .map(([subject, subjectCount]) => `${subjectShortName(subject)}${subjectCount}人`)
+                              .join(" / ") || `${row.roomStudentCounts[activeRoomId] || 0}人`;
+                            return { roomId: activeRoomId, roomNumber: room?.roomNumber || activeRoomId, countLabel };
+                          });
                           const roomId = activeRoomIds[0];
                           const assignedTeacherId = roomId ? row.roomTeacherIds[roomId] : null;
                           const target: InvigilationCellTarget | null = roomId ? {
@@ -816,7 +936,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                             <td
                               key={group.roomLocation}
                               className={cn(
-                                "border-b border-r border-[#b6c7cf] px-1.5 py-1 text-center transition-colors",
+                                "border-b border-r border-[#b6c7cf] px-1 py-0.5 text-center transition-colors",
                                 !count && "bg-ink-50/60",
                                 count && "cursor-pointer hover:bg-gold-50/60",
                                 highlighted && "bg-[#fff86b]",
@@ -826,7 +946,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                               onClick={target ? () => toggleCellSelection(target) : undefined}
                             >
                               {target ? (
-                                <div className="relative min-h-8 px-3 py-0.5">
+                                <div className="relative min-h-8 px-2.5 py-0.5">
                                   <input
                                     type="checkbox"
                                     aria-label={`选择 ${row.subjectLabel} ${group.roomLocation}监考单元格`}
@@ -837,7 +957,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                                   />
                                   <button
                                     type="button"
-                                    className="pt-0.5 text-xs font-medium text-ink-800 hover:text-gold-700"
+                                    className="whitespace-nowrap pt-0.5 text-xs font-medium text-ink-800 hover:text-gold-700"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       if (assignedTeacherId) setSelectedTeacherId(assignedTeacherId);
@@ -845,7 +965,14 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                                   >
                                     {teacherMap.get(assignedTeacherId || "")?.name || "空缺"}
                                   </button>
-                                  <div className="mt-0.5 text-[10px] text-ink-400">{count} 人</div>
+                                  <div className="mt-0.5 space-y-0.5 text-[10px] leading-tight text-ink-400">
+                                    {roomDetails.map((detail) => (
+                                      <div key={detail.roomId} className="whitespace-nowrap">
+                                        {roomDetails.length > 1 && <span>{detail.roomNumber}：</span>}
+                                        {detail.countLabel}
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               ) : <span className="text-xs text-ink-300">无学生</span>}
                             </td>
@@ -857,7 +984,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                           return (
                             <td
                               className={cn(
-                                "cursor-pointer border-b border-r border-[#b6c7cf] px-1.5 py-1 text-center transition-colors hover:bg-gold-50/60",
+                                "cursor-pointer border-b border-r border-[#b6c7cf] px-1 py-0.5 text-center transition-colors hover:bg-gold-50/60",
                                 selectedTeacherId === row.outsideTeacherId && "bg-[#fff86b]",
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
                                 row.outsideTeacherId && row.duplicateTeacherIds.includes(row.outsideTeacherId) && "ring-2 ring-inset ring-red-400",
@@ -875,7 +1002,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                                 />
                                 <button
                                   type="button"
-                                  className="pt-0.5 text-xs font-medium text-ink-800 hover:text-gold-700"
+                                  className="whitespace-nowrap pt-0.5 text-xs font-medium text-ink-800 hover:text-gold-700"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     if (row.outsideTeacherId) setSelectedTeacherId(row.outsideTeacherId);
@@ -940,39 +1067,52 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
 
         <div
           ref={floatingDurationRef}
-          className={cn(tableTwoVisible && "fixed z-50 w-[min(36rem,calc(100vw-2rem))]")}
+          className={cn("relative", tableTwoVisible && "fixed z-50 w-[min(36rem,calc(100vw-2rem))]")}
           style={tableTwoVisible ? {
             ...(floatingDurationPosition
               ? { left: floatingDurationPosition.x, top: floatingDurationPosition.y }
               : { right: 16, top: 88 }),
           } : undefined}
         >
-        <Card className={cn(tableTwoVisible && "max-h-[calc(100vh-2rem)] overflow-y-auto shadow-2xl ring-1 ring-ink-200")}>
+        {tableTwoVisible && (
+          <>
+            <button
+              type="button"
+              aria-label="从左上角拖动监考时长面板"
+              className="absolute left-2 top-2 z-20 inline-flex touch-none cursor-move items-center rounded-md border border-ink-200 bg-paper/95 p-1.5 text-ink-500 shadow-sm hover:bg-ink-50"
+              onPointerDown={startDurationDrag}
+              onPointerMove={moveDurationDrag}
+              onPointerUp={endDurationDrag}
+              onPointerCancel={endDurationDrag}
+            >
+              <Move className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="从右上角拖动监考时长面板"
+              className="absolute right-2 top-2 z-20 inline-flex touch-none cursor-move items-center rounded-md border border-ink-200 bg-paper/95 p-1.5 text-ink-500 shadow-sm hover:bg-ink-50"
+              onPointerDown={startDurationDrag}
+              onPointerMove={moveDurationDrag}
+              onPointerUp={endDurationDrag}
+              onPointerCancel={endDurationDrag}
+            >
+              <Move className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
+        <Card className={cn(tableTwoVisible && "max-h-[calc(100vh-2rem)] overflow-y-auto pt-10 shadow-2xl ring-1 ring-ink-200")}>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">监考时长</h2>
               <p className="mt-1 text-xs text-ink-500">自动排表先应用基本要求，再通过表二勾选或交换微调；默认按累计时长最短优先。</p>
             </div>
             <div className="flex items-center gap-2">
-              {tableTwoVisible && (
-                <button
-                  type="button"
-                  aria-label="拖动监考时长面板"
-                  className="inline-flex touch-none cursor-move items-center gap-1 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-500 hover:bg-ink-50"
-                  onPointerDown={startDurationDrag}
-                  onPointerMove={moveDurationDrag}
-                  onPointerUp={endDurationDrag}
-                  onPointerCancel={endDurationDrag}
-                >
-                  <Move className="h-3.5 w-3.5" />拖动
-                </button>
-              )}
               <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "累计最短" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
             </div>
           </div>
 
           <div className="mb-3 rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
-            {selectedCells.length === 0 && "先勾选一个考场或场外监考单元格，再点击下方老师姓名填入。"}
+            {selectedCells.length === 0 && "点击老师姓名可高亮表二中的全部安排；勾选一个单元格后再点击姓名可直接填入。"}
             {selectedCells.length === 1 && "已选 1 个单元格，点击下方老师姓名即可填入。"}
             {selectedCells.length === 2 && (canSwapSelectedCells ? "已选 2 个已有安排，可点击“是否交换”。" : "已选 2 个单元格；只有两个单元格均已有老师时才能交换。")}
           </div>
@@ -1003,7 +1143,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-ink-100">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[680px] text-sm">
               <thead>
                 <tr className="border-b border-ink-100 bg-ink-50 text-left text-xs text-ink-500">
                   <th className="px-3 py-2.5">姓名</th>
@@ -1011,8 +1151,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                   <th className="px-3 py-2.5 text-center">本次场次</th>
                   <th className="px-3 py-2.5 text-right">本次时长</th>
                   <th className="px-3 py-2.5 text-right">累计时长</th>
-                  <th className="min-w-32 px-3 py-2.5">是否在同一天</th>
-                  <th className="min-w-56 px-3 py-2.5">备注</th>
+                  <th className="min-w-48 px-3 py-2.5">备注</th>
                 </tr>
               </thead>
               <tbody>
@@ -1021,10 +1160,12 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                     <td className="px-3 py-2.5 font-medium text-ink-800">
                       <button
                         type="button"
-                        aria-label={`将 ${stat.name} 填入选中单元格`}
-                        className="text-left font-medium text-ink-800 enabled:hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-400"
-                        disabled={selectedCells.length !== 1 || selectedCellUnavailableTeacherIds.has(stat.teacherId)}
-                        title={selectedCellUnavailableTeacherIds.has(stat.teacherId) ? "该老师已在本场考试中承担其他监考任务" : undefined}
+                        aria-label={`选择监考教师 ${stat.name}`}
+                        className={cn(
+                          "text-left font-medium text-ink-800 hover:text-gold-700",
+                          selectedTeacherId === stat.teacherId && "rounded bg-[#fff86b] px-1",
+                        )}
+                        title={selectedCells.length === 1 && selectedCellUnavailableTeacherIds.has(stat.teacherId) ? "该老师已在本场考试中承担其他监考任务" : undefined}
                         onClick={() => assignSelectedTeacher(stat.teacherId)}
                       >
                         {stat.name}
@@ -1034,42 +1175,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                     <td className="px-3 py-2.5 text-center tabular-nums text-ink-600">{stat.sessions}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{formatMinutes(stat.minutes)}</td>
                     <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-ink-900">{formatMinutes(stat.cumulativeMinutes)}</td>
-                    <td className="px-3 py-2">
-                      <Select
-                        aria-label={`${stat.name}是否在同一天`}
-                        value={config.teacherRequirements?.[stat.teacherId]?.sameDay || "any"}
-                        onChange={(event) => updateConfig((next) => {
-                          const value = event.target.value as ExamInvigilationSameDayRequirement;
-                          next.teacherRequirements ||= {};
-                          if (value === "any") delete next.teacherRequirements[stat.teacherId];
-                          else next.teacherRequirements[stat.teacherId] = { sameDay: value };
-                          if (Object.keys(next.teacherRequirements).length === 0) delete next.teacherRequirements;
-                        })}
-                        options={[
-                          { value: "yes", label: "是" },
-                          { value: "no", label: "否" },
-                          { value: "any", label: "随意" },
-                        ]}
-                        className="py-1.5 text-xs"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <Input
-                        aria-label={`${stat.name}监考备注`}
-                        value={config.teacherNotes?.[stat.teacherId] || ""}
-                        onChange={(event) => updateConfig((next) => {
-                          next.teacherNotes ||= {};
-                          if (event.target.value) next.teacherNotes[stat.teacherId] = event.target.value;
-                          else delete next.teacherNotes[stat.teacherId];
-                        })}
-                        placeholder="可手动填写"
-                        className="py-1.5 text-xs"
-                      />
-                    </td>
+                    <td className="px-3 py-2.5 text-xs text-ink-600">{config.teacherNotes?.[stat.teacherId] || "—"}</td>
                   </tr>
                 ))}
                 {!sortedTeacherStats.length && (
-                  <tr><td colSpan={7} className="py-10 text-center text-xs text-ink-400">暂无教师</td></tr>
+                  <tr><td colSpan={6} className="py-10 text-center text-xs text-ink-400">暂无教师</td></tr>
                 )}
               </tbody>
             </table>
