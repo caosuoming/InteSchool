@@ -5,6 +5,7 @@ import {
   INVIGILATION_TEACHER_TEMPLATE_HEADERS,
   mergeInvigilationTeachers,
   parseInvigilationTeacherTable,
+  replaceInvigilationTeachers,
 } from "@/lib/exam-invigilation-teacher-spreadsheet";
 
 const toFile = vi.fn();
@@ -117,4 +118,21 @@ describe("exam invigilation teacher spreadsheet", () => {
     ]);
     expect(existing[0].isPrepLeader).toBe(false);
   });
+  it("replaces the previous roster while preserving ids for unchanged teachers", () => {
+    const existing: ExamInvigilationTeacher[] = [
+      { id: "keep", subject: "语文", name: "张老师", isPrepLeader: false, isLeader: false },
+      { id: "remove", subject: "英语", name: "王老师", isPrepLeader: true, isLeader: false },
+    ];
+    const result = replaceInvigilationTeachers(existing, [
+      { cohortLabel: "2026届高三", subject: "语文", name: "张老师", isPrepLeader: true, isLeader: false },
+      { cohortLabel: "2026届高三", subject: "数学", name: "李老师", isPrepLeader: false, isLeader: true },
+    ], () => "new");
+
+    expect(result).toMatchObject({ addedCount: 1, reusedCount: 1, removedCount: 1 });
+    expect(result.teachers).toEqual([
+      { id: "keep", subject: "语文", name: "张老师", isPrepLeader: true, isLeader: false },
+      { id: "new", subject: "数学", name: "李老师", isPrepLeader: false, isLeader: true },
+    ]);
+  });
+
 });

@@ -16,6 +16,13 @@ export interface ExamInvigilationTeacherMergeResult {
   mergedCount: number;
 }
 
+export interface ExamInvigilationTeacherReplaceResult {
+  teachers: ExamInvigilationTeacher[];
+  addedCount: number;
+  reusedCount: number;
+  removedCount: number;
+}
+
 export const INVIGILATION_TEACHER_TEMPLATE_HEADERS = [
   "年级",
   "学科",
@@ -231,4 +238,49 @@ export function mergeInvigilationTeachers(
   });
 
   return { teachers, addedCount, mergedCount };
+}
+
+
+export function replaceInvigilationTeachers(
+  existingTeachers: ExamInvigilationTeacher[],
+  importedRows: ExamInvigilationTeacherImportRow[],
+  createId: () => string,
+): ExamInvigilationTeacherReplaceResult {
+  const existingByKey = new Map(existingTeachers.map((teacher) => [
+    `${normalizeValue(teacher.subject)}\u0000${normalizeValue(teacher.name)}`,
+    teacher,
+  ]));
+  let addedCount = 0;
+  let reusedCount = 0;
+  const reusedIds = new Set<string>();
+  const teachers = importedRows.map((row) => {
+    const key = `${normalizeValue(row.subject)}\u0000${normalizeValue(row.name)}`;
+    const existing = existingByKey.get(key);
+    if (existing) {
+      reusedCount += 1;
+      reusedIds.add(existing.id);
+      return {
+        id: existing.id,
+        subject: row.subject,
+        name: row.name,
+        isPrepLeader: row.isPrepLeader,
+        isLeader: row.isLeader,
+      };
+    }
+    addedCount += 1;
+    return {
+      id: createId(),
+      subject: row.subject,
+      name: row.name,
+      isPrepLeader: row.isPrepLeader,
+      isLeader: row.isLeader,
+    };
+  });
+
+  return {
+    teachers,
+    addedCount,
+    reusedCount,
+    removedCount: existingTeachers.filter((teacher) => !reusedIds.has(teacher.id)).length,
+  };
 }
