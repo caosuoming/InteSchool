@@ -107,6 +107,18 @@ const builtInQuestionSectionPattern = new RegExp(
     .join("|")})(?:\\s|[(:]|$)`,
 );
 
+const dottedSectionHeadingPattern = /^\d{1,3}(?:\s*\.\s*\d{1,3}){2,4}\s+\S/;
+
+const knowledgeBlockLabels = ["教学目标", "学习目标"];
+const knowledgeBlockLabelSource = `(?:${knowledgeBlockLabels.map(flexibleLiteralSource).join("|")})`;
+const knowledgeBlockStartPattern = new RegExp(
+  `^(?:(?:[【［[]\\s*)${knowledgeBlockLabelSource}\\s*[】］\\]]|${knowledgeBlockLabelSource}(?=\\s|[:：、]|$))`,
+);
+
+function isKnowledgeBlockStart(text: string): boolean {
+  return knowledgeBlockStartPattern.test(normalizeStructuralText(text).trim());
+}
+
 const numberedSubQuestionAnalysisMarkerSource = String.raw`(?:(?:【|［|\[|\(|（)\s*)?小问\s*(?:第\s*)?(?:（|\()?\s*(?:[\d０-９]{1,3}|[零〇一二三四五六七八九十百两]+)\s*(?:）|\))?\s*详解(?:\s*(?:】|］|\]|\)|）))?`;
 
 function keywordPattern(
@@ -249,6 +261,7 @@ function isHeading(text: string, config: DocumentParseConfig): boolean {
     : null;
   return Boolean(
     builtInQuestionSectionPattern.test(normalized)
+    || dottedSectionHeadingPattern.test(normalized)
     || configuredPattern?.test(normalized)
     || /^第\s*[一二三四五六七八九十百0-9]+\s*[章节部分单元]\s*/.test(normalized)
     || /^#{1,6}\s+/.test(normalized),
@@ -525,7 +538,7 @@ function expandIndependentSubQuestionLines(content: string, config: DocumentPars
       continue;
     }
 
-    if (isHeading(line, config) || isProjectHeading(line, config)) {
+    if (isKnowledgeBlockStart(line) || isHeading(line, config) || isProjectHeading(line, config)) {
       expectedIndex = undefined;
       lines.push(originalLine);
       continue;
@@ -1175,6 +1188,18 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     const originalLine = lines[lineIndex];
     const line = originalLine.trim();
     if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
+
+    if (isKnowledgeBlockStart(line)) {
+      submitCurrent();
+      independentSubQuestionNextIndex = undefined;
+      sectionQuestionType = undefined;
+      currentBlock = {
+        type: "knowledge",
+        content: originalLine,
+        knowledgeTitle: line.length > 20 ? `${line.slice(0, 20)}...` : line,
+      };
+      continue;
+    }
 
     if (isHeading(line, config) || isProjectHeading(line, config)) {
       submitCurrent();
