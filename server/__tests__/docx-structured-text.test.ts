@@ -212,6 +212,29 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves structured math markup inside table cells without allowing arbitrary HTML", async () => {
+    const data = await makeDocx(`
+      <w:tbl>
+        <w:tr>
+          <w:tc>
+            <w:p>
+              <w:r><w:t>月份序号</w:t></w:r>
+              <w:r><w:rPr><w:i/></w:rPr><w:t>x</w:t></w:r>
+            </w:p>
+          </w:tc>
+          <w:tc><w:p><w:r><w:t>&lt;script&gt;alert(1)&lt;/script&gt;</w:t></w:r></w:p></w:tc>
+        </w:tr>
+      </w:tbl>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      '<table class="document-table"><tbody><tr>'
+        + '<td>月份序号<i class="math-variable">x</i></td>'
+        + '<td>&lt;script&gt;alert(1)&lt;/script&gt;</td>'
+        + '</tr></tbody></table>',
+    );
+  });
+
   it("preserves horizontal and vertical merged table cells", async () => {
     const data = await makeDocx(`
       <w:tbl>

@@ -24,6 +24,41 @@ describe("renderMathHtml", () => {
     );
   });
 
+  it("renders comparison formulas beside structured math-variable markup", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '若$0<a<{e}^{3}$，关于<i class="math-variable">x</i>的方程$g(x)=\\frac{a}{x}$恰有三个不等实根${x}_{1}$，${x}_{2}$，${x}_{3}$，其中${x}_{1}<{x}_{2}<{x}_{3}$。',
+    );
+
+    expect(container.querySelector("i.math-variable")).toHaveTextContent("x");
+    expect(
+      Array.from(container.querySelectorAll<HTMLElement>(".katex-formula")).map(
+        (formula) => formula.dataset.latex,
+      ),
+    ).toEqual([
+      "0<a<{e}^{3}",
+      "g(x)=\\frac{a}{x}",
+      "{x}_{1}",
+      "{x}_{2}",
+      "{x}_{3}",
+      "{x}_{1}<{x}_{2}<{x}_{3}",
+    ]);
+    expect(container.textContent).not.toContain("\\frac");
+    expect(container.textContent).not.toContain("$");
+  });
+
+  it("restores trusted math-variable markup escaped inside document tables", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '<table class="document-table"><tbody><tr><td>月份序号&lt;i class=&quot;math-variable&quot;&gt;x&lt;/i&gt;</td><td>1</td></tr></tbody></table>',
+    );
+
+    const firstCell = container.querySelector("td");
+    expect(firstCell).toHaveTextContent("月份序号x");
+    expect(firstCell?.querySelector("i.math-variable")).toHaveTextContent("x");
+    expect(firstCell?.textContent).not.toContain("<i");
+  });
+
   it("does not render formulas that are already KaTeX markup", () => {
     const existing = '<span class="katex-formula" data-latex="x"><span class="katex">$x$</span></span>';
     const container = document.createElement("div");

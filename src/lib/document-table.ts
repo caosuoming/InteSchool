@@ -8,6 +8,8 @@ export interface DocumentTableCell {
 export type DocumentTable = DocumentTableCell[][];
 
 const TABLE_FRAGMENT_PATTERN = /<table\b[^>]*\bclass=(?:"[^"]*\bdocument-table\b[^"]*"|'[^']*\bdocument-table\b[^']*')[^>]*>[\s\S]*?<\/table>/gi;
+const STRUCTURED_MATH_TAG_PATTERN = /<i\s+class=["']math-variable["']>|<\/i>|<\/?(?:sub|sup)>/gi;
+const STRUCTURED_MATH_PLACEHOLDER_PATTERN = /\uE200(\d+)\uE201/g;
 
 function escapeHtml(value: string): string {
   return value
@@ -16,6 +18,18 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+export function renderDocumentTableStructuredCell(content: string): string {
+  const tags: string[] = [];
+  const protectedContent = content.replace(
+    STRUCTURED_MATH_TAG_PATTERN,
+    (tag) => `\uE200${tags.push(tag) - 1}\uE201`,
+  );
+
+  return escapeHtml(protectedContent)
+    .replace(/\n/g, "<br>")
+    .replace(STRUCTURED_MATH_PLACEHOLDER_PATTERN, (_match, index: string) => tags[Number(index)] || "");
 }
 
 function decodeHtml(value: string): string {

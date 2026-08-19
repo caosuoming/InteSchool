@@ -10,6 +10,8 @@ const ESCAPED_DOLLAR = "\uE000INTESCHOOL_DOLLAR\uE001";
 const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea";
 const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const LATEX_STRUCTURE_PATTERN = /\\[A-Za-z]+|[_^{}=<>]/;
+const ESCAPED_MATH_VARIABLE_PATTERN = /&lt;i\s+class=(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)math-variable(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)&gt;([\s\S]*?)&lt;\/i&gt;/gi;
+const ESCAPED_VERTICAL_SCRIPT_PATTERN = /&lt;(sub|sup)&gt;([\s\S]*?)&lt;\/\1&gt;/gi;
 
 const SAFE_RICH_TEXT_TAGS = sanitizeHtml.defaults.allowedTags.concat([
   "img",
@@ -60,8 +62,10 @@ export function renderMathHtml(content: string): string {
 
   const template = document.createElement("template");
   const normalizedContent = content.normalize("NFC");
-  if (containsHtmlTag(normalizedContent)) {
-    template.innerHTML = sanitizeRichText(normalizedContent);
+  const restoredContent = restoreEscapedStructuredMathMarkup(normalizedContent);
+  const htmlSafeContent = protectMathAnglesForHtmlParsing(restoredContent);
+  if (containsHtmlTag(htmlSafeContent)) {
+    template.innerHTML = sanitizeRichText(htmlSafeContent);
   } else {
     template.content.append(document.createTextNode(normalizedContent));
   }
@@ -304,6 +308,39 @@ function isLikelyUnclosedLatex(value: string): boolean {
 
 function restoreEscapedDollars(content: string): string {
   return content.split(ESCAPED_DOLLAR).join("$");
+}
+
+function restoreEscapedStructuredMathMarkup(content: string): string {
+  let restored = content.replace(
+    ESCAPED_MATH_VARIABLE_PATTERN,
+    (_match, value: string) => `<i class="math-variable">${value}</i>`,
+  );
+
+  // Script markers may wrap an escaped math-variable marker, so restore them
+  // after the inner variable element and allow one extra pass for nesting.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const next = restored.replace(
+      ESCAPED_VERTICAL_SCRIPT_PATTERN,
+      (_match, tag: string, value: string) => `<${tag}>${value}</${tag}>`,
+    );
+    if (next === restored) break;
+    restored = next;
+  }
+
+  return restored;
+}
+
+function protectMathAnglesForHtmlParsing(content: string): string {
+  return content.replace(
+    /\$\$([\s\S]+?)\$\$|\$([^$]+?)\$/g,
+    (_match, blockLatex: string | undefined, inlineLatex: string | undefined) => {
+      const latex = blockLatex ?? inlineLatex ?? "";
+      const protectedLatex = latex.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return blockLatex !== undefined
+        ? `$$${protectedLatex}$$`
+        : `$${protectedLatex}$`;
+    },
+  );
 }
 
 function containsHtmlTag(content: string): boolean {
