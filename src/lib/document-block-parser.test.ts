@@ -79,6 +79,59 @@ describe("document block parser", () => {
     });
   });
 
+  it("recognizes bare option labels followed by whitespace", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、单项选择题",
+        "2. 设 a,b,c∈R，且 a>b，则下列不等式一定成立的是（ ）",
+        "A a²>b²",
+        "B ac²>bc²",
+        "C a+c>b+c",
+        "D. 1/a<1/b",
+        "答案：C",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      questionType: "single",
+      options: ["a²>b²", "ac²>bc²", "a+c>b+c", "1/a<1/b"],
+      answer: "C",
+    });
+  });
+
+  it("recognizes mixed bare and punctuated inline option labels", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、单项选择题",
+        "3. 请选择正确结论 A. 甲 B 乙 C、丙 D 丁",
+        "答案：B",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "3. 请选择正确结论",
+      options: ["甲", "乙", "丙", "丁"],
+      answer: "B",
+    });
+  });
+
+  it("does not treat bare variable names as options outside a choice section", () => {
+    const blocks = parseDocumentBlocks(
+      "1. 已知集合 A 是集合 B 的子集，且 B 是集合 C 的子集，证明 A 是集合 C 的子集。",
+      config,
+    );
+
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "1. 已知集合 A 是集合 B 的子集，且 B 是集合 C 的子集，证明 A 是集合 C 的子集。",
+      options: [],
+    });
+  });
+
   it.each([
     "一、选择题",
     "一、单选题",

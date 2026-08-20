@@ -165,13 +165,14 @@ function scanInlineMathRanges(text: string): TextRange[] {
   return ranges;
 }
 
-function scanOptionMarkers(text: string): OptionMarker[] {
-  const pattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）])\s*/g;
+function scanOptionMarkers(text: string, allowBare = false): OptionMarker[] {
+  const pattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）]|([A-Ha-h])(?=[ \t\u3000]))[ \t\u3000]*/g;
   const inlineMathRanges = scanInlineMathRanges(text);
   const markers: OptionMarker[] = [];
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    const label = match[2] || match[3];
+    if (match[4] && !allowBare) continue;
+    const label = match[2] || match[3] || match[4];
     if (!label) continue;
     const leading = match[1] || "";
     const start = match.index + leading.length;
@@ -183,6 +184,20 @@ function scanOptionMarkers(text: string): OptionMarker[] {
     });
   }
   return markers;
+}
+
+function sequentialOptionMarkers(markers: OptionMarker[], expectedStart: number): OptionMarker[] {
+  const first = markers.findIndex((marker) => marker.index === expectedStart);
+  if (first < 0) return [];
+
+  const selected = [markers[first]];
+  let expected = expectedStart + 1;
+  for (let index = first + 1; index < markers.length; index += 1) {
+    if (markers[index].index !== expected) continue;
+    selected.push(markers[index]);
+    expected += 1;
+  }
+  return selected;
 }
 
 function optionsFromRange(text: string, markers: OptionMarker[], expectedStart: number): string[] | null {
@@ -199,19 +214,50 @@ function optionsFromRange(text: string, markers: OptionMarker[], expectedStart: 
   return options;
 }
 
-function extractOptionLine(text: string, expectedStart: number): string[] | null {
+function extractOptionLine(text: string, expectedStart: number, allowBare: boolean): string[] | null {
   const markers = scanOptionMarkers(text);
-  if (markers.length === 0 || text.slice(0, markers[0].start).trim()) return null;
-  return optionsFromRange(text, markers, expectedStart);
+  if (markers.length > 0 && !text.slice(0, markers[0].start).trim()) {
+    const options = optionsFromRange(text, markers, expectedStart);
+    if (options) return options;
+  }
+  if (!allowBare) return null;
+
+  const flexibleMarkers = scanOptionMarkers(text, true);
+  if (
+    flexibleMarkers.length === 0
+    || flexibleMarkers[0].index !== expectedStart
+    || text.slice(0, flexibleMarkers[0].start).trim()
+  ) return null;
+
+  const selected = sequentialOptionMarkers(flexibleMarkers, expectedStart);
+  if (selected.length === 0) return null;
+  if (selected.length === 1) {
+    const content = text.slice(selected[0].contentStart).trim();
+    return content ? [content] : null;
+  }
+  return optionsFromRange(text, selected, expectedStart);
 }
 
-function splitQuestionAndInlineOptions(text: string): { stem: string; options: string[] } | null {
+function splitQuestionAndInlineOptions(text: string, allowBare: boolean): { stem: string; options: string[] } | null {
   const markers = scanOptionMarkers(text);
   const firstA = markers.findIndex((marker) => marker.index === 0 && marker.start > 0);
-  if (firstA < 0) return null;
-  const optionMarkers = markers.slice(firstA);
+  if (firstA >= 0) {
+    const optionMarkers = markers.slice(firstA);
+    const options = optionsFromRange(text, optionMarkers, 0);
+    if (options && options.length >= 2) {
+      const stem = text.slice(0, optionMarkers[0].start).trim();
+      if (stem) return { stem, options };
+    }
+  }
+
+  if (!allowBare) return null;
+  const flexibleMarkers = scanOptionMarkers(text, true);
+  const flexibleFirstA = flexibleMarkers.findIndex((marker) => marker.index === 0 && marker.start > 0);
+  if (flexibleFirstA < 0) return null;
+  const optionMarkers = sequentialOptionMarkers(flexibleMarkers.slice(flexibleFirstA), 0);
+  if (optionMarkers.length < 3) return null;
   const options = optionsFromRange(text, optionMarkers, 0);
-  if (!options || options.length < 2) return null;
+  if (!options) return null;
   const stem = text.slice(0, optionMarkers[0].start).trim();
   return stem ? { stem, options } : null;
 }
@@ -1232,7 +1278,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     if (isQuestionStart(line, config)) {
       submitCurrent();
       independentSubQuestionNextIndex = startsIndependentSubQuestionGroup(line, config) ? 2 : undefined;
-      const inline = splitQuestionAndInlineOptions(line);
+      const inline = splitQuestionAndInlineOptions(
+        line,
+        sectionQuestionType === "single" || sectionQuestionType === "multiple",
+      );
       currentBlock = {
         type: "question",
         content: inline?.stem || line,
@@ -1251,7 +1300,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       && leadingNestedSubQuestionIndex(line) === independentSubQuestionNextIndex
     ) {
       submitCurrent();
-      const inline = splitQuestionAndInlineOptions(line);
+      const inline = splitQuestionAndInlineOptions(
+        line,
+        sectionQuestionType === "single" || sectionQuestionType === "multiple",
+      );
       currentBlock = {
         type: "question",
         content: inline?.stem || line,
@@ -1330,13 +1382,23 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
         continue;
       }
       if (currentQuestionField === "content") {
-        const inline = splitQuestionAndInlineOptions(line);
+        const inline = splitQuestionAndInlineOptions(
+          line,
+          sectionQuestionType === "single" || sectionQuestionType === "multiple",
+        );
         if (inline) {
           appendQuestionField(currentBlock, "content", inline.stem);
           currentBlock.options = inline.options;
           continue;
         }
-        const options = extractOptionLine(line, currentBlock.options?.length || 0);
+        const options = extractOptionLine(
+          line,
+          currentBlock.options?.length || 0,
+          sectionQuestionType === "single"
+            || sectionQuestionType === "multiple"
+            || currentBlock.questionType === "single"
+            || currentBlock.questionType === "multiple",
+        );
         if (options) {
           currentBlock.options = [...(currentBlock.options || []), ...options];
           continue;
