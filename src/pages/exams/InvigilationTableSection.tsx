@@ -89,6 +89,7 @@ function configForArrangement(
     timesBySubject.get(fallback.subject) || fallback
   ));
   current.overrides ||= {};
+  current.autoArrangePriority ||= "duration";
   if (current.patrolTeacherIds === undefined) {
     current.patrolTeacherIds = [...new Set([
       ...current.teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id),
@@ -564,10 +565,18 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     if (setCellTeacher(selectedCells[0], teacherId)) setSelectedCells([]);
   };
 
-  const autoArrangeInvigilation = () => {
-    updateConfig((next) => { next.overrides = {}; });
+  const autoArrangeInvigilation = (priority: "subject" | "duration") => {
+    updateConfig((next) => {
+      next.autoArrangePriority = priority;
+      next.overrides = {};
+    });
     setSelectedCells([]);
-    toast.success("已重新排监考", "已按老师配置优先均衡累计时长，并在时长相同时优先同学科；请确认后保存。");
+    toast.success(
+      "已重新排监考",
+      priority === "subject"
+        ? "已优先安排老师监考本学科场次，再均衡累计时长；请确认后保存。"
+        : "已优先均衡老师累计时长，再优先安排本学科场次；请确认后保存。",
+    );
   };
 
   const setSelectedCellMode = (value: "__auto__" | "__blank__") => {
@@ -962,7 +971,8 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
               <p className="mt-1 text-xs text-ink-500">勾选一个考场或场外监考单元格后，可在“监考时长”中点击老师姓名填入；勾选两个已有安排的单元格可交换。</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button variant="gold" size="sm" onClick={autoArrangeInvigilation}>排监考</Button>
+              <Button variant="gold" size="sm" onClick={() => autoArrangeInvigilation("subject")}>本学科优先</Button>
+              <Button variant="gold" size="sm" onClick={() => autoArrangeInvigilation("duration")}>时长优先</Button>
               {selectedCells.length === 1 && (
                 <>
                   <Button variant="outline" size="sm" onClick={() => setSelectedCellMode("__auto__")}>恢复自动</Button>

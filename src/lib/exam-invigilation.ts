@@ -164,16 +164,20 @@ function chooseBalancedRoomTeacher(
   unavailable: Set<string>,
   minutes: Map<string, number>,
   preferredSubjects: Set<string>,
+  priority: "subject" | "duration",
   allowed: (teacher: ExamInvigilationTeacher) => boolean,
 ): ExamInvigilationTeacher | null {
   return candidates
     .filter((teacher) => !teacher.isLeader && !unavailable.has(teacher.id) && allowed(teacher))
-    .sort((left, right) => (
-      (minutes.get(left.id) || 0) - (minutes.get(right.id) || 0)
-      || Number(!preferredSubjects.has(left.subject)) - Number(!preferredSubjects.has(right.subject))
-      || Number(Boolean(left.isPrepLeader)) - Number(Boolean(right.isPrepLeader))
-      || left.name.localeCompare(right.name, "zh-CN")
-    ))[0] || null;
+    .sort((left, right) => {
+      const subjectDifference = Number(!preferredSubjects.has(left.subject)) - Number(!preferredSubjects.has(right.subject));
+      const durationDifference = (minutes.get(left.id) || 0) - (minutes.get(right.id) || 0);
+      return (
+        (priority === "subject" ? subjectDifference || durationDifference : durationDifference || subjectDifference)
+        || Number(Boolean(left.isPrepLeader)) - Number(Boolean(right.isPrepLeader))
+        || left.name.localeCompare(right.name, "zh-CN")
+      );
+    })[0] || null;
 }
 
 function validManualTeacherId(
@@ -388,6 +392,7 @@ export function buildExamInvigilationTable(
         unavailable,
         teacherPriorityMinutes,
         roomSubjectSet,
+        config.autoArrangePriority || "duration",
         requirement,
       );
       roomTeacherIds[item.canonicalRoomId] = teacher?.id || null;

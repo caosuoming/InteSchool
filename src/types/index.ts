@@ -531,6 +531,7 @@ export type ExamSeatOrder = "random" | "previousRank";
 export type ExamStudentSeatPreference = "first" | "last";
 export type ExamInvigilationPeriod = "morning" | "afternoon" | "evening";
 export type ExamInvigilationSameDayRequirement = "yes" | "no" | "any";
+export type ExamInvigilationAutoArrangePriority = "subject" | "duration";
 
 export interface ExamInvigilationTeacher {
   id: string;
@@ -571,6 +572,8 @@ export interface ExamInvigilationSlotOverride {
 export interface ExamInvigilationConfig {
   teachers: ExamInvigilationTeacher[];
   subjectTimes: ExamSubjectExamTime[];
+  /** 自动排监考的首要目标；旧数据缺省为累计时长优先。 */
+  autoArrangePriority?: ExamInvigilationAutoArrangePriority;
   /** 全部场次共用的巡回教师；缺省时由领导教师自动补全。 */
   patrolTeacherIds?: string[];
   overrides?: Record<string, ExamInvigilationSlotOverride>;

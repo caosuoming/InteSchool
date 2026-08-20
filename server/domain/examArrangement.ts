@@ -286,6 +286,9 @@ export const examArrangementService = {
     const invigilation: ExamInvigilationConfig = {
       teachers,
       subjectTimes,
+      ...(config.autoArrangePriority === "subject" || config.autoArrangePriority === "duration"
+        ? { autoArrangePriority: config.autoArrangePriority }
+        : {}),
       patrolTeacherIds,
       overrides: validOverrides,
       ...(Object.keys(teacherNotes).length ? { teacherNotes } : {}),
