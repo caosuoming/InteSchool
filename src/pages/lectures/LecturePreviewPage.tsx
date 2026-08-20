@@ -21,6 +21,7 @@ import { Modal } from "@/components/ui/Modal";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
+import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -359,6 +360,10 @@ export default function LecturePreviewPage() {
     }
   };
 
+  const updateQuestionState = (updated: Question) => {
+    setQuestions((current) => ({ ...current, [updated.id]: updated }));
+  };
+
   const openQuestionMetadataEditor = (question: Question) => {
     setMetadataQuestion(question);
     setMetadataChapterIds([...question.chapterIds]);
@@ -632,6 +637,7 @@ export default function LecturePreviewPage() {
                       students={students}
                       answerRecords={answerRecords}
                       onUpdateStudentAnswer={updateStudentAnswer}
+                      onQuestionUpdated={updateQuestionState}
                       onEditMetadata={lecture.teacherId === teacher?.id && !lecture.isExtractCopy
                         ? openQuestionMetadataEditor
                         : undefined}
@@ -904,6 +910,7 @@ function LectureQuestionDetails({
   students,
   answerRecords,
   onUpdateStudentAnswer,
+  onQuestionUpdated,
   onEditMetadata,
   visibility,
 }: {
@@ -912,6 +919,7 @@ function LectureQuestionDetails({
   students: Student[];
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
+  onQuestionUpdated: (question: Question) => void;
   onEditMetadata?: (question: Question) => void;
   visibility: PreviewSidebarVisibility;
 }) {
@@ -979,16 +987,19 @@ function LectureQuestionDetails({
         </div>
       )}
       {visibility.answerStatus && (
-        <StudentAnswerStatusControl
-          className={cn(
-            "mt-3",
-            visibility.properties && "border-t border-ink-100 pt-3",
-          )}
-          students={students}
-          answerRecords={answerRecords}
-          questionId={question.id}
-          onChange={onUpdateStudentAnswer}
-        />
+        <div className={cn("mt-3", visibility.properties && "border-t border-ink-100 pt-3")}>
+          <StudentAnswerStatusControl
+            students={students}
+            answerRecords={answerRecords}
+            questionId={question.id}
+            onChange={onUpdateStudentAnswer}
+          />
+          <QuestionRemarkControl
+            className="mt-3 border-t border-ink-100 pt-3"
+            question={question}
+            onUpdated={onQuestionUpdated}
+          />
+        </div>
       )}
       {visibility.basket && (
         <div

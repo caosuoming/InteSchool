@@ -38,6 +38,7 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
+import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -821,6 +822,10 @@ export default function ExamPaperEditorPage() {
     if (!teacher) return;
     setBaskets(await basketService.listBaskets(teacher.id));
   }, [teacher]);
+
+  const handlePreviewQuestionUpdated = useCallback((updated: Question) => {
+    setQuestions((previous) => ({ ...previous, [updated.id]: updated }));
+  }, []);
 
   const handleUpdateQuestionCatalogs = useCallback(async (
     questionId: string,
@@ -1670,6 +1675,7 @@ export default function ExamPaperEditorPage() {
                           students={audienceStudents}
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                          onQuestionUpdated={handlePreviewQuestionUpdated}
                           visibility={previewSidebarVisibility}
                           canEditScore={paper?.teacherId === teacher?.id}
                           onUpdateScore={handlePreviewUpdateScore}
@@ -1732,6 +1738,7 @@ export default function ExamPaperEditorPage() {
                           students={audienceStudents}
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                          onQuestionUpdated={handlePreviewQuestionUpdated}
                           visibility={previewSidebarVisibility}
                           canEditScore={paper?.teacherId === teacher?.id}
                           onUpdateScore={handlePreviewUpdateScore}
@@ -1764,6 +1771,7 @@ export default function ExamPaperEditorPage() {
                         students={audienceStudents}
                         answerRecords={answerRecords}
                         onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                        onQuestionUpdated={handlePreviewQuestionUpdated}
                         visibility={previewSidebarVisibility}
                         canEditScore={paper?.teacherId === teacher?.id}
                         onUpdateScore={handlePreviewUpdateScore}
@@ -3334,6 +3342,7 @@ function PreviewQuestionDetails({
   students,
   answerRecords,
   onUpdateStudentAnswer,
+  onQuestionUpdated,
   visibility,
   canEditScore,
   onUpdateScore,
@@ -3352,6 +3361,7 @@ function PreviewQuestionDetails({
   students: Student[];
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
+  onQuestionUpdated: (question: Question) => void;
   visibility: PreviewSidebarVisibility;
   canEditScore: boolean;
   onUpdateScore: (pqId: string, score: number) => Promise<void>;
@@ -3516,6 +3526,13 @@ function PreviewQuestionDetails({
                 questionId={completionQuestionId}
                 onChange={onUpdateStudentAnswer}
               />
+              {question && (
+                <QuestionRemarkControl
+                  className="mt-3 border-t border-ink-100 pt-3"
+                  question={question}
+                  onUpdated={onQuestionUpdated}
+                />
+              )}
             </div>
           )}
 

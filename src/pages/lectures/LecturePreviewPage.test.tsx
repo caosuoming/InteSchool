@@ -45,7 +45,7 @@ vi.mock("@/services/class", () => ({
   },
 }));
 vi.mock("@/services/question", () => ({
-  questionService: { getQuestion: vi.fn(), updateQuestion: vi.fn() },
+  questionService: { getQuestion: vi.fn(), updateQuestion: vi.fn(), addRemark: vi.fn() },
 }));
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
@@ -254,6 +254,12 @@ describe("LecturePreviewPage", () => {
     vi.mocked(classService.getStudent).mockResolvedValue(explicitStudent);
     vi.mocked(questionService.getQuestion).mockResolvedValue(question);
     vi.mocked(questionService.updateQuestion).mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
+    vi.mocked(questionService.addRemark).mockResolvedValue({
+      id: "remark-added",
+      content: "新备注",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([]);
@@ -445,6 +451,47 @@ describe("LecturePreviewPage", () => {
         classIds: [],
         studentIds: [],
       });
+    });
+  });
+
+  it("shows and adds question remarks in the answer-status section", async () => {
+    const legacyQuestion = { ...question, remark: "讲义已有备注" } as Question;
+    const addedRemark = {
+      id: "remark-added",
+      content: "讲义新备注",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
+    vi.mocked(questionService.getQuestion)
+      .mockResolvedValueOnce(legacyQuestion)
+      .mockResolvedValue({
+        ...legacyQuestion,
+        remark: addedRemark.content,
+        remarks: [
+          {
+            id: "remark-legacy",
+            content: legacyQuestion.remark,
+            createdAt: legacyQuestion.updatedAt,
+            updatedAt: legacyQuestion.updatedAt,
+          },
+          addedRemark,
+        ],
+      });
+    vi.mocked(questionService.addRemark).mockResolvedValue(addedRemark);
+
+    renderPage();
+    const questionDetails = await screen.findByTestId("lecture-question-details-1");
+    expect(within(questionDetails).getAllByText("讲义已有备注").length).toBeGreaterThan(0);
+
+    fireEvent.click(within(questionDetails).getByRole("button", { name: "添加备注" }));
+    fireEvent.change(within(questionDetails).getByLabelText("新增题目备注"), {
+      target: { value: "讲义新备注" },
+    });
+    fireEvent.click(within(questionDetails).getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(questionService.addRemark).toHaveBeenCalledWith(question.id, "讲义新备注");
+      expect(within(questionDetails).getAllByText("讲义新备注").length).toBeGreaterThan(0);
     });
   });
 
