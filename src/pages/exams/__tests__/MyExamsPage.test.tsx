@@ -578,4 +578,74 @@ describe("MyExamsPage", () => {
     expect(roomOne.closest("td")).toHaveTextContent("张老师");
     expect(roomTwo.closest("td")).toHaveTextContent("李老师");
   });
+
+  it("keeps other invigilation cells unchanged when replacing one teacher", async () => {
+    const user = userEvent.setup();
+    const arrangement: ExamArrangement = {
+      id: "arrangement-invigilation-stable-replace",
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      cohortKey: cohort.key,
+      cohortLabel: cohort.label,
+      name: "高三期中考试",
+      examDate: "2026-10-20",
+      mode: "combination",
+      subjectSetupMode: "selection",
+      subjects: ["数学", "物理"],
+      separateSubjects: [],
+      rooms: [{ id: "room-1", name: "1考场", number: "1考场", location: "4107", capacity: 40 }],
+      classRules: [],
+      studentSubjects: [{ studentId: "student-1", subjects: ["数学", "物理"] }],
+      assignments: [{
+        id: "combined:student-1",
+        studentId: "student-1",
+        studentName: "学生甲",
+        studentNo: "001",
+        classId: "class-1",
+        className: "高三（1）班",
+        subjectLabel: "数学 / 物理",
+        sessionKey: "combined",
+        roomId: "room-1",
+        roomName: "1考场",
+        roomNumber: "1考场",
+        roomLocation: "4107",
+        seatNo: 1,
+        admissionNo: "20261020010001",
+      }],
+      invigilation: {
+        teachers: [
+          { id: "invigilator-a", name: "A老师", subject: "数学" },
+          { id: "invigilator-b", name: "B老师", subject: "物理" },
+        ],
+        subjectTimes: [
+          { subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 },
+          { subject: "物理", date: "2026-10-20", period: "afternoon", time: "14:00", durationMinutes: 120 },
+        ],
+        overrides: {
+          "2026-10-20|morning|08:00|数学": { roomTeacherIds: {}, outsideTeacherId: null },
+          "2026-10-20|afternoon|14:00|物理": { roomTeacherIds: {}, outsideTeacherId: null },
+        },
+      },
+      createdAt: "2026-08-16T00:00:00.000Z",
+      updatedAt: "2026-08-16T00:00:00.000Z",
+    };
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([arrangement]);
+
+    render(
+      <MemoryRouter initialEntries={[`/my-exams/invigilation?cohort=${cohort.key}`]}>
+        <MyExamsPage section="invigilation" />
+      </MemoryRouter>,
+    );
+
+    const mathRoomCell = await screen.findByRole("checkbox", { name: "选择 数学 4107监考单元格" });
+    const physicsRoomCell = screen.getByRole("checkbox", { name: "选择 物理 4107监考单元格" });
+    expect(mathRoomCell.closest("td")).toHaveTextContent("A老师");
+    expect(physicsRoomCell.closest("td")).toHaveTextContent("B老师");
+
+    await user.click(mathRoomCell);
+    await user.click(screen.getByRole("button", { name: "选择监考教师 B老师" }));
+
+    expect(mathRoomCell.closest("td")).toHaveTextContent("B老师");
+    expect(physicsRoomCell.closest("td")).toHaveTextContent("B老师");
+  });
 });
