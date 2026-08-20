@@ -378,6 +378,62 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).not.toContain("$f(x)");
   });
 
+  it("exports summation limits above and below with the summand attached", async () => {
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: "计算 $\\sum_{i=1}^{n}a_i$。",
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: "计算 $\\sum_{i=1}^{n}a_i$。",
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const xml = new DOMParser().parseFromString(documentXml, "application/xml");
+    const nary = xml.getElementsByTagName("m:nary")[0];
+    const expression = Array.from(nary.children).find((child) => child.tagName === "m:e");
+
+    expect(nary).toBeDefined();
+    expect(nary.getElementsByTagName("m:limLoc")[0]?.getAttribute("m:val")).toBe("undOvr");
+    expect(expression?.getElementsByTagName("m:sSub")).toHaveLength(1);
+    expect(expression?.textContent).toContain("a");
+    expect(expression?.textContent).toContain("i");
+  });
+
+  it("exports piecewise functions with a brace that grows around every row", async () => {
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: "设 $f(x)=\\begin{cases}x^2,&x>0\\\\-x,&x\\le 0\\end{cases}$。",
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: "设 $f(x)=\\begin{cases}x^2,&x>0\\\\-x,&x\\le 0\\end{cases}$。",
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const xml = new DOMParser().parseFromString(documentXml, "application/xml");
+    const delimiter = Array.from(xml.getElementsByTagName("m:d")).find((item) =>
+      item.getElementsByTagName("m:begChr")[0]?.getAttribute("m:val") === "{");
+
+    expect(delimiter).toBeDefined();
+    expect(delimiter!.getElementsByTagName("m:endChr")[0]?.getAttribute("m:val")).toBe("");
+    expect(delimiter!.getElementsByTagName("m:grow")[0]?.getAttribute("m:val")).toBe("1");
+    expect(delimiter!.getElementsByTagName("m:mr")).toHaveLength(2);
+    expect(Array.from(xml.getElementsByTagName("m:r")).some((run) =>
+      run.getElementsByTagName("m:t")[0]?.textContent === "{"),
+    ).toBe(false);
+  });
+
   it("restores imported rich-text scripts as editable Office math", async () => {
     const formulaPaper: ExamPaper = {
       ...structuredPaper,
