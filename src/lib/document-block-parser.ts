@@ -321,7 +321,7 @@ function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
   if (!prefixes.length) return false;
   const index = "[\\d０-９零〇一二三四五六七八九十百两]+";
   return new RegExp(
-    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:第\\s*)?[（(]?\\s*${index}\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?`,
+    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:题\\s*)?(?:第\\s*)?[（(]?\\s*${index}\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?`,
   ).test(text);
 }
 
@@ -490,7 +490,7 @@ function topLevelQuestionRemainder(
   if (!prefixes.length) return null;
   const index = "[\\d０-９零〇一二三四五六七八九十百两]+";
   const pattern = new RegExp(
-    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:第\\s*)?[（(]?\\s*${index}\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?(?:\\s*[、.．:：)）])?\\s*`,
+    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:题\\s*)?(?:第\\s*)?[（(]?\\s*${index}\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?(?:\\s*[、.．:：)）])?\\s*`,
   );
   const match = pattern.exec(text);
   return match ? { start: match[0].length, text: text.slice(match[0].length) } : null;
@@ -693,7 +693,7 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
   const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
   if (!prefixes.length) return undefined;
   const match = new RegExp(
-    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:第\\s*)?[（(]?\\s*([\\d０-９]{1,4})\\s*[）)]?`,
+    `^(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:题\\s*)?(?:第\\s*)?[（(]?\\s*([\\d０-９]{1,4})\\s*[）)]?`,
   ).exec(text);
   return match ? normalizeQuestionNumber(match[1]) : undefined;
 }
