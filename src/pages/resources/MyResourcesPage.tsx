@@ -57,6 +57,7 @@ import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
+import { DocumentFormatIcon } from "@/components/resource/DocumentFormatIcon";
 import { MaterialImageThumbnail, MaterialPreviewModal } from "@/components/resource/MaterialPreviewModal";
 import {
   ConfigurableResourceActions,
@@ -96,6 +97,7 @@ import { openCoursewareInWps } from "@/lib/wps";
 import {
   documentCategory,
   documentCategoryOptions,
+  isPdfDocumentResource,
   type DocumentCategory,
 } from "@/lib/document-resource";
 
@@ -265,6 +267,7 @@ async function fallbackLessonBlocks(
 interface OriginalFileRowProps {
   fileUrl: string;
   fileName?: string;
+  fileType?: "word" | "pdf";
   icon: typeof FileText;
   onView: () => void;
 }
@@ -272,6 +275,7 @@ interface OriginalFileRowProps {
 export function OriginalFileRow({
   fileUrl,
   fileName,
+  fileType,
   icon: FileIcon,
   onView,
 }: OriginalFileRowProps) {
@@ -279,7 +283,8 @@ export function OriginalFileRow({
 
   return (
     <div className="ml-4 flex min-w-0 items-center gap-3 rounded-lg bg-ink-50/60 px-3 py-2 text-sm">
-      <FileIcon className="h-4 w-4 flex-shrink-0 text-ink-400" />
+      <DocumentFormatIcon fileType={fileType} fileName={fileName} />
+      {!fileType && !fileName && <FileIcon className="h-4 w-4 flex-shrink-0 text-ink-400" />}
       <span className="min-w-0 flex-1 truncate text-ink-600">
         <span className="font-medium text-ink-500">原稿：</span>
         <span title={displayName}>{displayName}</span>
@@ -627,6 +632,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const startExtractTask = useExtractTasksStore((state) => state.startTask);
 
   const handleOpenExtract = (resource: ExamPaper | Lecture, type: "examPaper" | "lecture") => {
+    if (isPdfDocumentResource(resource)) {
+      toast.warning("PDF 文档不支持拆解", "可直接打开浏览 PDF 原稿");
+      return;
+    }
     startExtractTask({
       resourceId: resource.id,
       resourceType: type,
@@ -3089,6 +3098,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 const isExtracted = item.extractStatus === "done";
                 const isExtracting = item.extractStatus === "extracting"
                   || isExtractTaskRunning(extractTasks, item.id, "lecture");
+                const isPdfOriginal = isPdfDocumentResource(item);
                 const mainLecture = hasExtractCopy ? extractCopies[0] : item;
                 const lectureWasTaught = hasCompletedLesson("lecture", mainLecture.id)
                   || hasCompletedLesson("lecture", item.id);
@@ -3098,6 +3108,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       key={mainLecture.id}
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
+                      titleIcon={item.originalFileUrl ? (
+                        <DocumentFormatIcon
+                          fileType={item.originalFileType}
+                          fileName={item.originalFileName}
+                        />
+                      ) : undefined}
                       titleActions={lectureWasTaught
                         || (item.originalFileUrl && !isExtracted && !hasExtractCopy) ? (
                         <>
@@ -3110,15 +3126,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 className="text-xs font-normal text-gold-600 hover:text-gold-700"
                                 iconClassName="w-3.5 h-3.5"
                               />
-                              <Button
-                                variant="gold"
-                                size="sm"
-                                onClick={() => handleOpenExtract(item, "lecture")}
-                                loading={isExtracting}
-                              >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                {isExtracting ? "拆解中..." : "文档拆解"}
-                              </Button>
+                              {!isPdfOriginal && (
+                                <Button
+                                  variant="gold"
+                                  size="sm"
+                                  onClick={() => handleOpenExtract(item, "lecture")}
+                                  loading={isExtracting}
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  {isExtracting ? "拆解中..." : "文档拆解"}
+                                </Button>
+                              )}
                             </>
                           )}
                         </>
@@ -3184,7 +3202,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     {item.originalFileUrl && !hasExtractCopy && isExtracted && (
                       <div className="flex items-center gap-3 text-xs flex-wrap pl-4">
                         <div className="flex items-center gap-2">
-                          <FileText className="w-3.5 h-3.5 text-ink-400" />
+                          <DocumentFormatIcon
+                            fileType={item.originalFileType}
+                            fileName={item.originalFileName}
+                          />
                           <span className="text-ink-500">原稿：{item.originalFileName}</span>
                           <DocumentDownloadButton
                             fileUrl={item.originalFileUrl}
@@ -3200,6 +3221,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       <OriginalFileRow
                         fileUrl={item.originalFileUrl}
                         fileName={item.originalFileName}
+                        fileType={item.originalFileType}
                         icon={FileText}
                         onView={() => openPage(`/resources/preview/${item.id}?type=lecture`)}
                       />
@@ -3217,6 +3239,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 const isExtracted = item.extractStatus === "done";
                 const isExtracting = item.extractStatus === "extracting"
                   || isExtractTaskRunning(extractTasks, item.id, "examPaper");
+                const isPdfOriginal = isPdfDocumentResource(item);
                 return renderFolderedResource("examPaper", item.id, (
                   <DocumentResourceGroup key={item.id}>
                     {hasExtractCopy && extractCopies.map((copy) => (
@@ -3289,6 +3312,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                           {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
+                          titleIcon={item.originalFileUrl ? (
+                            <DocumentFormatIcon
+                              fileType={item.originalFileType}
+                              fileName={item.originalFileName}
+                            />
+                          ) : undefined}
                           titleActions={hasCompletedLesson("examPaper", item.id)
                             || (item.originalFileUrl && !isExtracted) ? (
                             <>
@@ -3301,15 +3330,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                     className="text-xs font-normal text-gold-600 hover:text-gold-700"
                                     iconClassName="w-3.5 h-3.5"
                                   />
-                                  <Button
-                                    variant="gold"
-                                    size="sm"
-                                    onClick={() => handleOpenExtract(item, "examPaper")}
-                                    loading={isExtracting}
-                                  >
-                                    <Sparkles className="w-3.5 h-3.5" />
-                                    {isExtracting ? "拆解中..." : "文档拆解"}
-                                  </Button>
+                                  {!isPdfOriginal && (
+                                    <Button
+                                      variant="gold"
+                                      size="sm"
+                                      onClick={() => handleOpenExtract(item, "examPaper")}
+                                      loading={isExtracting}
+                                    >
+                                      <Sparkles className="w-3.5 h-3.5" />
+                                      {isExtracting ? "拆解中..." : "文档拆解"}
+                                    </Button>
+                                  )}
                                 </>
                               )}
                             </>
@@ -3386,7 +3417,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         {item.originalFileUrl && isExtracted && (
                           <div className="flex items-center gap-3 text-xs flex-wrap pl-1">
                             <div className="flex items-center gap-2">
-                              <FileSpreadsheet className="w-3.5 h-3.5 text-ink-400" />
+                              <DocumentFormatIcon
+                                fileType={item.originalFileType}
+                                fileName={item.originalFileName}
+                              />
                               <span className="text-ink-500">原稿：{item.originalFileName}</span>
                               <DocumentDownloadButton
                                 fileUrl={item.originalFileUrl}
@@ -3408,6 +3442,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       <OriginalFileRow
                         fileUrl={item.originalFileUrl}
                         fileName={item.originalFileName}
+                        fileType={item.originalFileType}
                         icon={FileSpreadsheet}
                         onView={() => openPage(`/resources/preview/${item.id}?type=examPaper`)}
                       />
@@ -4328,6 +4363,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
 // ============ 资源卡片组件 ============
 interface ResourceCardProps {
   title: string;
+  titleIcon?: React.ReactNode;
   titleActions?: React.ReactNode;
   primaryActions?: React.ReactNode;
   description?: string;
@@ -4365,7 +4401,7 @@ interface ResourceCardProps {
   additionalActions?: ConfigurableResourceAction[];
 }
 
-export function ResourceCard({ title, titleActions, primaryActions, description, meta, content, updatedAt, onClick, onRename, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
+export function ResourceCard({ title, titleIcon, titleActions, primaryActions, description, meta, content, updatedAt, onClick, onRename, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -4580,6 +4616,7 @@ export function ResourceCard({ title, titleActions, primaryActions, description,
                   onClick={primaryClick}
                   title={detailsPresentation === "titleTooltip" ? titleDetails : undefined}
                 >
+                  {titleIcon}
                   <span className="truncate">{title}</span>
                   {titleBadge && <Badge variant={titleBadge.variant}>{titleBadge.text}</Badge>}
                 </div>
