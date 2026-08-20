@@ -121,6 +121,7 @@ describe("renderMathHtml", () => {
     );
     expect(container.querySelector("img")).toHaveAttribute("alt", "函数图像");
     expect(container.querySelector("img")).toHaveAttribute("loading", "lazy");
+    expect(container.querySelector("img")).toHaveStyle({ border: "0px" });
   });
 
   it("renders document-extraction markdown images", () => {
