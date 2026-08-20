@@ -111,13 +111,14 @@ describe("LoginPage", () => {
     expect(await screen.findByText(/注册申请已提交/)).toBeInTheDocument();
   });
 
-  it("opens the dedicated collective-preparation login entry", async () => {
+  it("opens the dedicated collective-preparation login entry in a new tab", async () => {
     const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     renderLogin();
 
     await user.click(screen.getByRole("button", { name: "集体研讨" }));
 
-    expect(await screen.findByText("集体研讨登录页")).toBeInTheDocument();
+    expect(openSpy).toHaveBeenCalledWith("/prep-login", "_blank", "noopener,noreferrer");
   });
 
   it("labels the collective discussion entry and returns to personal login", async () => {
@@ -130,7 +131,8 @@ describe("LoginPage", () => {
     expect(screen.queryByText("立即注册")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "我要上课" })).not.toBeInTheDocument();
 
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     await user.click(screen.getByRole("button", { name: "返回个人登录" }));
-    expect(await screen.findByText("标准个人登录页")).toBeInTheDocument();
+    expect(openSpy).toHaveBeenCalledWith("/login", "_blank", "noopener,noreferrer");
   });
 });

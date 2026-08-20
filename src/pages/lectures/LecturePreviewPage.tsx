@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
@@ -456,7 +457,7 @@ export default function LecturePreviewPage() {
                 创建副本
               </Button>
             )}
-            <Button variant="outline" onClick={() => navigate(`/lectures/${lecture.id}/answer-sheet`)}>
+            <Button variant="outline" onClick={() => openPage(`/lectures/${lecture.id}/answer-sheet`)}>
               <Layout className="w-4 h-4" />
               制作答题卡
             </Button>
@@ -465,7 +466,7 @@ export default function LecturePreviewPage() {
               下载
             </Button>
             {!lecture.isExtractCopy && (
-              <Button variant="outline" onClick={() => navigate(`/lectures/${id}/edit`)}>
+              <Button variant="outline" onClick={() => openPage(`/lectures/${id}/edit`)}>
                 <Edit3 className="w-4 h-4" />
                 编辑讲义
               </Button>

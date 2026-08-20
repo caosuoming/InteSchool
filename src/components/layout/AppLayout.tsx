@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { type ReactNode, useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate, Navigate } from "react-router";
 import {
@@ -299,7 +300,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                       <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-gold-400 rounded-r" />
                     )}
                     <button
-                      onClick={() => navigate(item.path)}
+                      onClick={() => openPage(item.path)}
                       className="flex items-center gap-3 flex-1 min-w-0 text-left"
                     >
                       <Icon className={cn("w-4 h-4 flex-shrink-0", active && "text-gold-400")} />

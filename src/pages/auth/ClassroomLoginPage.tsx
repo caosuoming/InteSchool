@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, BookOpen, Lock, Mail, School } from "lucide-react";
@@ -66,7 +67,7 @@ export default function ClassroomLoginPage() {
         <div className="bg-ink-900 text-paper px-7 py-6">
           <button
             type="button"
-            onClick={() => navigate("/login")}
+            onClick={() => openPage("/login")}
             className="inline-flex items-center gap-1 text-xs text-ink-300 hover:text-paper mb-5"
           >
             <ArrowLeft className="w-3.5 h-3.5" />返回个人登录

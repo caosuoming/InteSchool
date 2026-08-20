@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
@@ -156,7 +157,7 @@ export default function ResourcePreviewPage() {
         icon={resourceType === "lecture" ? <FileText className="w-5 h-5" /> : <FileSpreadsheet className="w-5 h-5" />}
         action={
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => navigate("/resources")}>
+            <Button variant="ghost" onClick={() => openPage("/resources")}>
               <ArrowLeft className="w-4 h-4" />
               返回
             </Button>

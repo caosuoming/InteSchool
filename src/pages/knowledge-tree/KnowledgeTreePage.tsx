@@ -476,7 +476,7 @@ export default function KnowledgeTreePage() {
                       <div className="text-xs text-ink-500 mt-1">{selectedNode.description}</div>
                     )}
                   </div>
-                  <Link to={`/question-bank?${kind === "chapter" ? "chapter" : "point"}=${selectedNode.id}`}>
+                  <Link to={`/question-bank?${kind === "chapter" ? "chapter" : "point"}=${selectedNode.id}`} target="_blank" rel="noreferrer">
                     <Button variant="ghost" size="sm">
                       在题库中查看
                       <ArrowRight className="w-3.5 h-3.5" />

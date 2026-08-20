@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -1135,7 +1136,7 @@ export default function QuestionBankPage({
                   onRemoveFromDefault={defaultBasket ? handleRemoveFromDefaultBasket : undefined}
                   isInDefaultBasket={defaultBasket?.questionIds?.includes(q.id) || false}
                   onShowUsageDetail={(question) => setUsageDetailModal({ open: true, question })}
-                  onNavigateToLecture={(lectureId) => navigate(`/lectures/${lectureId}/preview`)}
+                  onNavigateToLecture={(lectureId) => openPage(`/lectures/${lectureId}/preview`)}
                   onQuickEdit={setQuickEditQuestion}
                   onShare={setShareQuestion}
                   onAdapt={setAdaptingQuestion}
@@ -1668,7 +1669,7 @@ export default function QuestionBankPage({
                       <button
                         onClick={() => {
                           setUsageDetailModal(null);
-                          navigate(
+                          openPage(
                             type === "lecture"
                               ? `/lectures/${resource.id}/preview`
                               : `/exam-papers/${resource.id}/preview`,

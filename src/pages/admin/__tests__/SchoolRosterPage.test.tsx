@@ -489,11 +489,12 @@ describe("SchoolRosterPage", () => {
     });
   });
 
-  it("opens the personal teaching-class manager", async () => {
+  it("opens the personal teaching-class manager in a new tab", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "个人教学班" }));
 
-    expect(await screen.findByText("个人教学班页面")).toBeInTheDocument();
+    expect(openSpy).toHaveBeenCalledWith("/classes", "_blank", "noopener,noreferrer");
   });
 });

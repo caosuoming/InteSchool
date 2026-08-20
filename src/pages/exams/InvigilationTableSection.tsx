@@ -784,7 +784,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
             icon={<ClipboardCheck className="h-8 w-8" />}
             title="暂无监考表"
             description="请先完成考场布置并生成考场方案，再配置监考老师和考试时间。"
-            action={<Link to="/my-exams/rooms"><Button variant="outline">前往考场布置<ArrowRight className="h-4 w-4" /></Button></Link>}
+            action={<Link to="/my-exams/rooms" target="_blank" rel="noreferrer"><Button variant="outline">前往考场布置<ArrowRight className="h-4 w-4" /></Button></Link>}
           />
         </Card>
       </>

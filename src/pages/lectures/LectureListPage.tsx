@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router";
 import {
@@ -132,7 +133,7 @@ export default function LectureListPage() {
         description="管理您的教学讲义，支持按章节、知识点筛选与排序"
         icon={<FileText className="w-5 h-5" />}
         action={
-          <Button variant="gold" onClick={() => navigate("/lectures/new")}>
+          <Button variant="gold" onClick={() => openPage("/lectures/new")}>
             <Plus className="w-4 h-4" />
             新建讲义
           </Button>
@@ -287,7 +288,7 @@ export default function LectureListPage() {
                 }
                 action={
                   !hasFilter ? (
-                    <Button variant="gold" onClick={() => navigate("/lectures/new")}>
+                    <Button variant="gold" onClick={() => openPage("/lectures/new")}>
                       <Plus className="w-4 h-4" />
                       新建讲义
                     </Button>
@@ -355,13 +356,13 @@ export default function LectureListPage() {
                   </div>
 
                   <div className="flex items-center gap-2 pt-3 border-t border-ink-100">
-                    <Link to={`/lectures/${lec.id}/edit`} className="flex-1">
+                    <Link to={`/lectures/${lec.id}/edit`} className="flex-1" target="_blank" rel="noreferrer">
                       <Button variant="outline" size="sm" className="w-full">
                         <Edit3 className="w-3.5 h-3.5" />
                         编辑
                       </Button>
                     </Link>
-                    <Link to={`/lectures/${lec.id}/edit?preview=1`}>
+                    <Link to={`/lectures/${lec.id}/edit?preview=1`} target="_blank" rel="noreferrer">
                       <Button variant="ghost" size="sm">
                         <Eye className="w-3.5 h-3.5" />
                       </Button>

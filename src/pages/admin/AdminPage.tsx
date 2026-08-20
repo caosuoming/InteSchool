@@ -197,7 +197,7 @@ export function AdminPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {adminItems.map((item) => (
-            <Link key={item.title} to={item.href}>
+            <Link key={item.title} to={item.href} target="_blank" rel="noreferrer">
               <Card
                 hoverable
                 className="group flex flex-col p-6 bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer"

@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, BookOpen, GraduationCap, Lock, Mail, School, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
@@ -183,7 +184,7 @@ export default function LoginPage({
             {collectiveEntry && (
               <button
                 type="button"
-                onClick={() => navigate("/login")}
+                onClick={() => openPage("/login")}
                 className="mb-5 inline-flex items-center gap-1 text-xs text-ink-500 transition-colors hover:text-ink-900"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
@@ -355,13 +356,13 @@ export default function LoginPage({
               )}
               {!loginOnly && (
                 <div className="mt-4 grid grid-cols-2 gap-3" aria-label="快捷登录入口">
-                  <Button type="button" variant="outline" onClick={() => navigate("/classroom-login")}>
+                  <Button type="button" variant="outline" onClick={() => openPage("/classroom-login")}>
                     <BookOpen className="w-4 h-4" />我要上课
                   </Button>
                   <Button
                     type="button"
                     variant={collectiveEntry ? "gold" : "outline"}
-                    onClick={() => navigate("/prep-login")}
+                    onClick={() => openPage("/prep-login")}
                   >
                     <Users className="w-4 h-4" />集体研讨
                   </Button>
@@ -379,7 +380,7 @@ export default function LoginPage({
               {mode === "login" && (
                 <div>
                   学校已登记家长手机号？
-                  <button type="button" onClick={() => navigate("/parent-register")} className="ml-1 text-gold-600 font-medium">家长注册</button>
+                  <button type="button" onClick={() => openPage("/parent-register")} className="ml-1 text-gold-600 font-medium">家长注册</button>
                 </div>
               )}
             </div>

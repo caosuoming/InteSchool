@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import {
   useCallback,
   useState,
@@ -661,7 +662,7 @@ export function LessonEditorPage() {
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* 顶部工具栏 */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-ink-200 bg-paper">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/my-lessons")}>
+        <Button variant="ghost" size="sm" onClick={() => openPage("/my-lessons")}>
           <ChevronLeft className="w-4 h-4" />
           返回
         </Button>

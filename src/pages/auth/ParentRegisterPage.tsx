@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useState } from "react";
 import { ArrowLeft, School, Smartphone, UserRound } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -53,7 +54,7 @@ export default function ParentRegisterPage() {
       <div className="mx-auto max-w-xl py-8">
         <button
           type="button"
-          onClick={() => navigate("/login")}
+          onClick={() => openPage("/login")}
           className="mb-5 inline-flex items-center gap-1 text-sm text-ink-500 hover:text-ink-900"
         >
           <ArrowLeft className="h-4 w-4" />返回登录

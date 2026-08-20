@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, ExternalLink, Link2, MonitorPlay, Pencil, PlayCircle, Presentation, Save } from "lucide-react";
@@ -145,7 +146,7 @@ export default function CoursewarePreviewPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3 flex-wrap">
-        <Button variant="ghost" onClick={() => navigate("/my-resources/coursewares")}>
+        <Button variant="ghost" onClick={() => openPage("/my-resources/coursewares")}>
           <ArrowLeft className="w-4 h-4" />返回课件库
         </Button>
         <div className="min-w-0 flex-1">

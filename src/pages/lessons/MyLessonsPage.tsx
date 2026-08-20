@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -1079,7 +1080,7 @@ export function MyLessonsPage() {
             className="w-32"
           />
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="gold" onClick={() => navigate("/my-resources/coursewares")}>
+            <Button variant="gold" onClick={() => openPage("/my-resources/coursewares")}>
               <Plus className="w-4 h-4" />
               从课件库添加
             </Button>
@@ -1100,7 +1101,7 @@ export function MyLessonsPage() {
           <div className="text-xs text-ink-400 mb-4">
             在课件库、试卷库或讲义库中点击「添加到上课」即可创建上课课件
           </div>
-          <Button variant="outline" onClick={() => navigate("/my-resources/exam-papers")}>
+          <Button variant="outline" onClick={() => openPage("/my-resources/exam-papers")}>
             去试卷库看看
           </Button>
         </Card>
@@ -1115,7 +1116,7 @@ export function MyLessonsPage() {
               : null;
             const handleOpen = () => directPptSlide
               ? void openCoursewareInWps(directPptSlide)
-              : navigate(`/my-lessons/${cw.id}/edit`);
+              : openPage(`/my-lessons/${cw.id}/edit`);
             return (
               <Card key={cw.id} className="p-4 hover:shadow-cardHover transition-all group">
                 <div className="flex items-start gap-3 mb-3">
@@ -1179,7 +1180,7 @@ export function MyLessonsPage() {
                       size="sm"
                       onClick={() => cw.classIds.length > 0
                         ? handlePublish(cw)
-                        : navigate(`/my-lessons/${cw.id}/edit`)}
+                        : openPage(`/my-lessons/${cw.id}/edit`)}
                     >
                       <Send className="w-3.5 h-3.5" />
                       发布

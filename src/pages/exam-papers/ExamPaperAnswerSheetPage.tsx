@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnswerSheetComposer } from "@/components/answer-sheet/AnswerSheetComposer";
@@ -59,7 +60,7 @@ export default function ExamPaperAnswerSheetPage() {
       resourceLabel="试卷"
       questions={paper.questions}
       totalScore={paper.totalScore}
-      onBack={() => navigate(`/exam-papers/${paper.id}/preview`)}
+      onBack={() => openPage(`/exam-papers/${paper.id}/preview`)}
     />
   );
 }
