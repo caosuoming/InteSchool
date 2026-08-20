@@ -281,6 +281,8 @@ const builtInSummaryKeywords = [
   "【感悟】",
 ];
 
+const builtInProjectHeadingLabels = ["课前引入", "知识梳理"];
+
 function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
   const structuredFieldPattern = keywordPattern([
@@ -296,6 +298,7 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
 
   const normalized = normalizeStructuralText(text).trim();
   if (/^[【［[][^】］\]\n]{1,40}[】］\]](?:\s*[:：]?\s*)$/.test(normalized)) return true;
+  if (builtInProjectHeadingLabels.includes(normalized)) return true;
   return /^(?:热点|考向|题型|类型)\s*(?:第\s*)?(?:[\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})(?:\s|[、.．:：)）]|$)/.test(normalized);
 }
 
