@@ -45,7 +45,7 @@ vi.mock("@/services/class", () => ({
   },
 }));
 vi.mock("@/services/question", () => ({
-  questionService: { getQuestion: vi.fn(), updateQuestion: vi.fn() },
+  questionService: { getQuestion: vi.fn(), updateQuestion: vi.fn(), addRemark: vi.fn() },
 }));
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
@@ -54,6 +54,7 @@ vi.mock("@/services/knowledge", () => ({
   },
 }));
 vi.mock("@/services/analytics", () => ({
+  inferScore: (record: { score?: string; isCorrect: boolean }) => record.score || (record.isCorrect ? "correct" : "wrong"),
   analyticsService: {
     listAnswerRecordsByLecture: vi.fn(),
     saveAnswerRecord: vi.fn(),
@@ -254,6 +255,12 @@ describe("LecturePreviewPage", () => {
     vi.mocked(classService.getStudent).mockResolvedValue(explicitStudent);
     vi.mocked(questionService.getQuestion).mockResolvedValue(question);
     vi.mocked(questionService.updateQuestion).mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
+    vi.mocked(questionService.addRemark).mockResolvedValue({
+      id: "remark-added",
+      content: "新备注",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([]);
@@ -280,9 +287,8 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByRole("button", { name: /整份讲义/ })).not.toBeInTheDocument();
     expect(screen.getByText("使用对象")).toBeInTheDocument();
     expect(screen.getByText("高一（1）班")).toBeInTheDocument();
-    expect(screen.getByLabelText("选择学生")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /张同学/ })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /李同学/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("选择学生")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("学生")).toHaveTextContent("张同学 · 20260001");
     expect(screen.getByLabelText("纸张大小")).toHaveValue("A4");
 
     const paper = screen.getByTestId("lecture-paper");
@@ -341,7 +347,7 @@ describe("LecturePreviewPage", () => {
     expect(await screen.findByText("讲义编辑页")).toBeInTheDocument();
   });
 
-  it("keeps extracted lecture copies preview-only", async () => {
+  it("keeps extracted lecture structure preview-only while allowing question property edits", async () => {
     vi.mocked(lectureService.getLecture).mockResolvedValue({
       ...lecture,
       isExtractCopy: true,
@@ -352,7 +358,27 @@ describe("LecturePreviewPage", () => {
 
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
     expect(screen.queryByRole("button", { name: "编辑讲义" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "编辑第 1 题章节与知识点" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑第 1 题属性" })).toBeInTheDocument();
+  });
+
+  it("keeps the source question label in an extracted lecture preview", async () => {
+    vi.mocked(lectureService.getLecture).mockResolvedValue({
+      ...lecture,
+      isExtractCopy: true,
+      sourceResourceId: "lecture-source-1",
+      sections: lecture.sections.map((section) => ({
+        ...section,
+        children: section.children.map((child) => (
+          child.type === "question" ? { ...child, customLabel: "例1" } : child
+        )),
+      })),
+    });
+
+    renderPage();
+
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+    expect(screen.getByText("例1")).toBeInTheDocument();
+    expect(screen.queryByText("1.")).not.toBeInTheDocument();
   });
 
   it("toggles answer and analysis by clicking the question stem", async () => {
@@ -366,11 +392,16 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByText("展开答案与解析")).not.toBeInTheDocument();
     expect(screen.queryByText("答案：")).not.toBeInTheDocument();
 
+    const correctOption = screen.getByText("B.").parentElement!;
+    expect(correctOption).toHaveClass("border");
+
     fireEvent.click(questionStem);
 
     expect(screen.getByText("答案：")).toBeInTheDocument();
     expect(screen.getByText("解析：")).toBeInTheDocument();
     expect(questionStem).toHaveAttribute("aria-expanded", "true");
+    expect(correctOption).not.toHaveClass("border");
+    expect(correctOption).toHaveClass("bg-emerald-50/40");
 
     fireEvent.click(questionStem);
     await waitFor(() => {
@@ -378,14 +409,19 @@ describe("LecturePreviewPage", () => {
     });
   });
 
-  it("edits a question's chapter and knowledge-point directories from preview", async () => {
+  it("edits a question's properties from preview", async () => {
     renderPage();
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题章节与知识点" }));
-    expect(screen.getByRole("heading", { name: "编辑题目目录" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题属性" }));
+    expect(screen.getByRole("heading", { name: "编辑题目属性" })).toBeInTheDocument();
     expect(screen.getByText("章节目录")).toBeInTheDocument();
     expect(screen.getByText("知识点目录")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("题型"), { target: { value: "essay" } });
+    fireEvent.change(screen.getByLabelText("难度"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("推荐程度"), { target: { value: "5" } });
+    fireEvent.change(screen.getByLabelText("学期"), { target: { value: "下学期" } });
 
     const chapterRow = screen.getByText("函数章节").parentElement;
     const knowledgeRow = screen.getByText("函数单调性").parentElement;
@@ -393,15 +429,27 @@ describe("LecturePreviewPage", () => {
     expect(knowledgeRow).not.toBeNull();
     fireEvent.click(chapterRow!.querySelector("button")!);
     fireEvent.click(knowledgeRow!.querySelector("button")!);
-    fireEvent.click(screen.getByRole("button", { name: "保存目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存属性" }));
 
     await waitFor(() => {
       expect(questionService.updateQuestion).toHaveBeenCalledWith(question.id, {
+        type: "essay",
+        difficulty: 4,
+        recommendation: 5,
+        grade: "高一",
+        schoolYear: "2026-2027",
+        semester: "下学期",
+        category: "",
+        sourceType: "",
         chapterIds: ["chapter-1"],
         knowledgePointIds: ["knowledge-point-1"],
       });
     });
-    expect(screen.getByTestId("lecture-question-details-1")).toHaveTextContent("1 项");
+    const details = screen.getByTestId("lecture-question-details-1");
+    expect(details).toHaveTextContent("解答");
+    expect(details).toHaveTextContent("较难");
+    expect(details).toHaveTextContent("5 / 5");
+    expect(details).toHaveTextContent("1 项");
   });
 
   it("edits document usage by class only", async () => {
@@ -423,11 +471,64 @@ describe("LecturePreviewPage", () => {
     });
   });
 
-  it("updates one selected student's answer state per question", async () => {
+  it("shows and adds question remarks in the answer-status section", async () => {
+    const legacyQuestion = { ...question, remark: "讲义已有备注" } as Question;
+    const addedRemark = {
+      id: "remark-added",
+      content: "讲义新备注",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
+    vi.mocked(questionService.getQuestion)
+      .mockResolvedValueOnce(legacyQuestion)
+      .mockResolvedValue({
+        ...legacyQuestion,
+        remark: addedRemark.content,
+        remarks: [
+          {
+            id: "remark-legacy",
+            content: legacyQuestion.remark,
+            createdAt: legacyQuestion.updatedAt,
+            updatedAt: legacyQuestion.updatedAt,
+          },
+          addedRemark,
+        ],
+      });
+    vi.mocked(questionService.addRemark).mockResolvedValue(addedRemark);
+
+    renderPage();
+    const questionDetails = await screen.findByTestId("lecture-question-details-1");
+    expect(within(questionDetails).getAllByText("讲义已有备注").length).toBeGreaterThan(0);
+
+    fireEvent.click(within(questionDetails).getByRole("button", { name: "添加备注" }));
+    fireEvent.change(within(questionDetails).getByLabelText("新增题目备注"), {
+      target: { value: "讲义新备注" },
+    });
+    fireEvent.click(within(questionDetails).getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(questionService.addRemark).toHaveBeenCalledWith(question.id, "讲义新备注");
+      expect(within(questionDetails).getAllByText("讲义新备注").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("shows and updates the only student's existing answer without selecting the student", async () => {
+    vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([{
+      id: "answer-1",
+      studentId: classStudent.id,
+      questionId: question.id,
+      lectureId: lecture.id,
+      isCorrect: false,
+      score: "wrong",
+      source: "manual",
+      answeredAt: "2026-08-20T02:00:00.000Z",
+    }]);
+
     renderPage();
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
 
-    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: classStudent.id } });
+    expect(screen.queryByLabelText("选择学生")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("答题情况")).toHaveValue("wrong"));
     fireEvent.change(screen.getByLabelText("答题情况"), { target: { value: "correct" } });
 
     await waitFor(() => {
@@ -441,15 +542,46 @@ describe("LecturePreviewPage", () => {
     });
   });
 
+  it("shows existing answers in a toggleable roster when multiple students use the lecture", async () => {
+    vi.mocked(classService.listStudentsByClass).mockResolvedValue([classStudent, explicitStudent]);
+    vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([{
+      id: "answer-1",
+      studentId: classStudent.id,
+      questionId: question.id,
+      lectureId: lecture.id,
+      isCorrect: false,
+      score: "partial",
+      source: "manual",
+      answeredAt: "2026-08-20T02:00:00.000Z",
+    }]);
+
+    renderPage();
+
+    const answeredList = await screen.findByTestId("answered-student-list");
+    expect(screen.getByLabelText("选择学生")).toBeInTheDocument();
+    expect(answeredList).toHaveTextContent("张同学 · 20260001");
+    expect(answeredList).toHaveTextContent("半对");
+    expect(answeredList).not.toHaveTextContent("李同学");
+
+    fireEvent.click(within(answeredList).getByRole("button", { name: "查看张同学答题情况" }));
+    expect(screen.getByLabelText("选择学生")).toHaveValue(classStudent.id);
+    expect(screen.getByLabelText("答题情况")).toHaveValue("partial");
+
+    fireEvent.click(screen.getByRole("button", { name: "显示已答题名单" }));
+    expect(screen.queryByTestId("answered-student-list")).not.toBeInTheDocument();
+  });
+
   it("controls which per-question sidebar sections are visible", async () => {
     renderPage();
     await screen.findByTestId("lecture-question-details-1");
 
     const propertiesToggle = screen.getByRole("button", { name: "题目属性" });
     const answerToggle = screen.getByRole("button", { name: "答题情况" });
+    const answeredListToggle = screen.getByRole("button", { name: "显示已答题名单" });
     const basketToggle = screen.getByRole("button", { name: "添加资源篮" });
     expect(propertiesToggle).toHaveAttribute("aria-pressed", "true");
     expect(answerToggle).toHaveAttribute("aria-pressed", "true");
+    expect(answeredListToggle).toHaveAttribute("aria-pressed", "true");
     expect(basketToggle).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(answerToggle);

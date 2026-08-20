@@ -476,6 +476,7 @@ export const lectureService = {
           content: block.content,
           questionId: block.questionId,
           children: [],
+          customLabel: block.customLabel,
           displayMode: "stem-only",
         };
       }

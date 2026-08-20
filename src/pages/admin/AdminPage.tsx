@@ -10,7 +10,6 @@ import {
   ArrowRight,
   SlidersHorizontal,
   User,
-  Type,
   UserPlus,
   ShieldCheck,
   UsersRound,
@@ -18,8 +17,6 @@ import {
   KeyRound,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
-import { useSettingsStore, uiScaleConfig, type UiScale } from "@/stores/settings";
-import { cn } from "@/lib/utils";
 import { canManageSchoolRoster } from "@/lib/roster-permissions";
 import { canManageTeachingProfiles } from "@/lib/teaching-profile-permissions";
 
@@ -124,7 +121,6 @@ export function AdminPage() {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const currentAffiliation = getCurrentAffiliation();
   const isPersonal = !currentAffiliation?.schoolId;
-  const { uiScale, setUiScale } = useSettingsStore();
   const activeRole = currentAffiliation?.role;
   const isAdmin = ["school_admin", "platform_admin"].includes(String(activeRole));
   const isPlatformAdmin = activeRole === "platform_admin";
@@ -152,48 +148,6 @@ export function AdminPage() {
           }
           icon={isPersonal ? <User className="w-5 h-5" /> : <Settings className="w-5 h-5" />}
         />
-
-        {/* 字体版本切换 */}
-        <Card className="mb-6 p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Type className="w-4 h-4 text-gold-600" />
-            <h3 className="font-serif text-base font-semibold text-ink-900">显示版本</h3>
-            <span className="text-xs text-ink-500">切换全局字体大小，适应不同阅读习惯</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {(Object.keys(uiScaleConfig) as UiScale[]).map((key) => {
-              const config = uiScaleConfig[key];
-              const active = uiScale === key;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setUiScale(key)}
-                  className={cn(
-                    "text-left p-4 rounded-lg border-2 transition-all",
-                    active
-                      ? "border-gold-400 bg-gold-50 shadow-sm"
-                      : "border-ink-200 bg-white hover:border-ink-300",
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span
-                      className="font-serif font-semibold text-ink-900"
-                      style={{ fontSize: key === "youth" ? "14px" : key === "senior" ? "18px" : "16px" }}
-                    >
-                      {config.label}
-                    </span>
-                    {active && (
-                      <span className="text-[11px] px-1.5 py-0.5 bg-gold-400 text-ink-900 rounded font-medium">
-                        当前
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-ink-500">{config.description}</p>
-                </button>
-              );
-            })}
-          </div>
-        </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {adminItems.map((item) => (

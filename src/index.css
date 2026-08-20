@@ -759,3 +759,80 @@
     animation: none;
   }
 }
+
+/* ===== Personal display modes ===== */
+html[data-appearance="dark"],
+html[data-appearance="dark"] body,
+html[data-appearance="dark"] #root {
+  background-color: #0f1720;
+  color: #d9e2ec;
+}
+
+html[data-appearance="dark"] .bg-mist { background-color: #0f1720 !important; }
+html[data-appearance="dark"] .bg-paper,
+html[data-appearance="dark"] .bg-white { background-color: #17212b !important; }
+html[data-appearance="dark"] .bg-haze { background-color: #253444 !important; }
+html[data-appearance="dark"] .bg-ink-50 { background-color: #1d2a36 !important; }
+html[data-appearance="dark"] .bg-ink-100 { background-color: #263545 !important; }
+html[data-appearance="dark"] .bg-ink-200 { background-color: #33465a !important; }
+html[data-appearance="dark"] .bg-gold-50 { background-color: #382b18 !important; }
+
+html[data-appearance="dark"] .text-ink-950,
+html[data-appearance="dark"] .text-ink-900 { color: #f0f4f8 !important; }
+html[data-appearance="dark"] .text-ink-800 { color: #e4ebf2 !important; }
+html[data-appearance="dark"] .text-ink-700 { color: #d3dde7 !important; }
+html[data-appearance="dark"] .text-ink-600 { color: #bdcad6 !important; }
+html[data-appearance="dark"] .text-ink-500 { color: #9fb0c0 !important; }
+html[data-appearance="dark"] .text-ink-400 { color: #8295a8 !important; }
+html[data-appearance="dark"] .text-ink-300 { color: #6d8195 !important; }
+html[data-appearance="dark"] .text-gold-700,
+html[data-appearance="dark"] .text-gold-600 { color: #e8bd66 !important; }
+
+html[data-appearance="dark"] .border-ink-50 { border-color: #263545 !important; }
+html[data-appearance="dark"] .border-ink-100 { border-color: #314254 !important; }
+html[data-appearance="dark"] .border-ink-200 { border-color: #42566b !important; }
+html[data-appearance="dark"] .border-ink-300 { border-color: #52687e !important; }
+html[data-appearance="dark"] .border-gold-200 { border-color: #6f4c1b !important; }
+html[data-appearance="dark"] .divide-ink-100 > :not([hidden]) ~ :not([hidden]) { border-color: #314254 !important; }
+html[data-appearance="dark"] .divide-ink-200 > :not([hidden]) ~ :not([hidden]) { border-color: #42566b !important; }
+
+html[data-appearance="dark"] .hover\:bg-mist:hover { background-color: #253444 !important; }
+html[data-appearance="dark"] .hover\:bg-ink-50:hover { background-color: #263545 !important; }
+html[data-appearance="dark"] .hover\:bg-ink-100:hover { background-color: #314254 !important; }
+html[data-appearance="dark"] .hover\:bg-white:hover { background-color: #253444 !important; }
+html[data-appearance="dark"] .hover\:bg-gold-50:hover { background-color: #46371f !important; }
+html[data-appearance="dark"] .placeholder\:text-ink-400::placeholder { color: #8295a8 !important; }
+
+/* Keep printable/document surfaces paper-like even while surrounding chrome is dark. */
+html[data-appearance="dark"] .paper-sheet,
+html[data-appearance="dark"] .exam-paper-preview-left,
+html[data-appearance="dark"] .answer-sheet-paper,
+html[data-appearance="dark"] .document-preview-content {
+  color-scheme: light;
+  background-color: #fff !important;
+  color: #102a43 !important;
+}
+html[data-appearance="dark"] :is(.paper-sheet, .exam-paper-preview-left, .answer-sheet-paper, .document-preview-content) .text-ink-950,
+html[data-appearance="dark"] :is(.paper-sheet, .exam-paper-preview-left, .answer-sheet-paper, .document-preview-content) .text-ink-900 { color: #0b2545 !important; }
+html[data-appearance="dark"] :is(.paper-sheet, .exam-paper-preview-left, .answer-sheet-paper, .document-preview-content) .text-ink-800 { color: #102a43 !important; }
+html[data-appearance="dark"] :is(.paper-sheet, .exam-paper-preview-left, .answer-sheet-paper, .document-preview-content) .text-ink-700 { color: #243b53 !important; }
+html[data-appearance="dark"] :is(.paper-sheet, .exam-paper-preview-left, .answer-sheet-paper, .document-preview-content) .text-ink-600 { color: #334e68 !important; }
+html[data-appearance="dark"] :is(.paper-sheet, .exam-paper-preview-left, .answer-sheet-paper, .document-preview-content) .text-ink-500 { color: #486581 !important; }
+
+html[data-appearance="eye-care"],
+html[data-appearance="eye-care"] body,
+html[data-appearance="eye-care"] #root {
+  background-color: #edf1e2;
+  color: #17324a;
+}
+html[data-appearance="eye-care"] .bg-mist { background-color: #edf1e2 !important; }
+html[data-appearance="eye-care"] .bg-paper,
+html[data-appearance="eye-care"] .bg-white { background-color: #fbfcf5 !important; }
+html[data-appearance="eye-care"] .bg-haze { background-color: #e3e8d7 !important; }
+html[data-appearance="eye-care"] .bg-ink-50 { background-color: #f0f3e7 !important; }
+html[data-appearance="eye-care"] .bg-ink-100 { background-color: #e3e8d8 !important; }
+html[data-appearance="eye-care"] .border-ink-50 { border-color: #e3e8d8 !important; }
+html[data-appearance="eye-care"] .border-ink-100 { border-color: #d8decb !important; }
+html[data-appearance="eye-care"] .border-ink-200 { border-color: #c8d0ba !important; }
+html[data-appearance="eye-care"] .hover\:bg-mist:hover { background-color: #e3e8d7 !important; }
+html[data-appearance="eye-care"] .hover\:bg-ink-50:hover { background-color: #e8ecdd !important; }

@@ -196,9 +196,14 @@ describe("document extract copies", () => {
 
   it("builds an editable lecture manuscript in the original block order", async () => {
     const appState = state();
+    const lectureBlocks = blocks().map((block) => (
+      block.id === "question-1"
+        ? { ...block, content: "例1 第一道题题干", customLabel: "例1" }
+        : block
+    ));
 
     await runWithState(appState, async () => {
-      const copy = await lectureService.createExtractCopy("lecture-source", blocks());
+      const copy = await lectureService.createExtractCopy("lecture-source", lectureBlocks);
 
       expect(copy.sections.map((section) => section.type)).toEqual([
         "chapter",
@@ -212,7 +217,8 @@ describe("document extract copies", () => {
       expect(copy.sections[1]).toMatchObject({ content: "考试时间：90 分钟" });
       expect(copy.sections[2]).toMatchObject({ title: "一、选择题", content: "" });
       expect(copy.sections[3]).toMatchObject({
-        content: "第一道题题干",
+        content: "例1 第一道题题干",
+        customLabel: "例1",
         questionId: "bank-question-1",
         displayMode: "stem-only",
       });

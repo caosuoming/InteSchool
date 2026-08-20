@@ -1,9 +1,10 @@
-import { ClipboardCheck, ListChecks, ShoppingBasket } from "lucide-react";
+import { ClipboardCheck, ListChecks, ShoppingBasket, UserCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface PreviewSidebarVisibility {
   properties: boolean;
   answerStatus: boolean;
+  answeredList: boolean;
   basket: boolean;
 }
 
@@ -15,6 +16,7 @@ interface PreviewSidebarControlsProps {
 const items = [
   { key: "properties" as const, label: "题目属性", icon: ListChecks },
   { key: "answerStatus" as const, label: "答题情况", icon: ClipboardCheck },
+  { key: "answeredList" as const, label: "显示已答题名单", icon: UserCheck },
   { key: "basket" as const, label: "添加资源篮", icon: ShoppingBasket },
 ];
 

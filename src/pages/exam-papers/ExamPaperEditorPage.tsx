@@ -39,6 +39,7 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
+import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -267,7 +268,7 @@ export default function ExamPaperEditorPage() {
   const [layoutMode, setLayoutMode] = useState<"grouped" | "flat">("grouped");
   const [markingAllDone, setMarkingAllDone] = useState(false);
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
-    { properties: true, answerStatus: true, basket: true },
+    { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
@@ -496,7 +497,6 @@ export default function ExamPaperEditorPage() {
     if (teacher) {
       basketService.listBaskets(teacher.id).then(setBaskets);
       classSvc.listAllClasses(schoolId, teacher.id).then(setClasses);
-      classSvc.listStudentsBySchool(schoolId).then(setStudents);
       // 加载试卷类型
       settingsService.listExamPaperTypes(schoolId).then(setExamPaperTypes);
       knowledgeService.getChapterTree(schoolId).then(setChapterTree);
@@ -577,6 +577,25 @@ export default function ExamPaperEditorPage() {
     }, 250);
     return () => clearTimeout(t);
   }, [bankChapterIds, bankKeyword, bankKnowledgeIds, schoolId, teacher]);
+
+  useEffect(() => {
+    if (selectedClassIds.length === 0) {
+      setStudents([]);
+      return;
+    }
+
+    let cancelled = false;
+    Promise.all(selectedClassIds.map((classId) => classSvc.listStudentsByClass(classId)))
+      .then((studentGroups) => {
+        if (cancelled) return;
+        const studentMap = new Map<string, Student>();
+        studentGroups.flat().forEach((student) => studentMap.set(student.id, student));
+        setStudents(Array.from(studentMap.values()));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClassIds]);
 
   useEffect(() => {
     if (teacher && addSource === "examPaper") {
@@ -804,6 +823,10 @@ export default function ExamPaperEditorPage() {
     if (!teacher) return;
     setBaskets(await basketService.listBaskets(teacher.id));
   }, [teacher]);
+
+  const handlePreviewQuestionUpdated = useCallback((updated: Question) => {
+    setQuestions((previous) => ({ ...previous, [updated.id]: updated }));
+  }, []);
 
   const handleUpdateQuestionCatalogs = useCallback(async (
     questionId: string,
@@ -1653,6 +1676,7 @@ export default function ExamPaperEditorPage() {
                           students={audienceStudents}
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                          onQuestionUpdated={handlePreviewQuestionUpdated}
                           visibility={previewSidebarVisibility}
                           canEditScore={paper?.teacherId === teacher?.id}
                           onUpdateScore={handlePreviewUpdateScore}
@@ -1715,6 +1739,7 @@ export default function ExamPaperEditorPage() {
                           students={audienceStudents}
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                          onQuestionUpdated={handlePreviewQuestionUpdated}
                           visibility={previewSidebarVisibility}
                           canEditScore={paper?.teacherId === teacher?.id}
                           onUpdateScore={handlePreviewUpdateScore}
@@ -1747,6 +1772,7 @@ export default function ExamPaperEditorPage() {
                         students={audienceStudents}
                         answerRecords={answerRecords}
                         onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                        onQuestionUpdated={handlePreviewQuestionUpdated}
                         visibility={previewSidebarVisibility}
                         canEditScore={paper?.teacherId === teacher?.id}
                         onUpdateScore={handlePreviewUpdateScore}
@@ -3317,6 +3343,7 @@ function PreviewQuestionDetails({
   students,
   answerRecords,
   onUpdateStudentAnswer,
+  onQuestionUpdated,
   visibility,
   canEditScore,
   onUpdateScore,
@@ -3335,6 +3362,7 @@ function PreviewQuestionDetails({
   students: Student[];
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
+  onQuestionUpdated: (question: Question) => void;
   visibility: PreviewSidebarVisibility;
   canEditScore: boolean;
   onUpdateScore: (pqId: string, score: number) => Promise<void>;
@@ -3498,7 +3526,15 @@ function PreviewQuestionDetails({
                 answerRecords={answerRecords}
                 questionId={completionQuestionId}
                 onChange={onUpdateStudentAnswer}
+                showAnsweredList={visibility.answeredList}
               />
+              {question && (
+                <QuestionRemarkControl
+                  className="mt-3 border-t border-ink-100 pt-3"
+                  question={question}
+                  onUpdated={onQuestionUpdated}
+                />
+              )}
             </div>
           )}
 
