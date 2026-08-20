@@ -496,7 +496,6 @@ export default function ExamPaperEditorPage() {
     if (teacher) {
       basketService.listBaskets(teacher.id).then(setBaskets);
       classSvc.listAllClasses(schoolId, teacher.id).then(setClasses);
-      classSvc.listStudentsBySchool(schoolId).then(setStudents);
       // 加载试卷类型
       settingsService.listExamPaperTypes(schoolId).then(setExamPaperTypes);
       knowledgeService.getChapterTree(schoolId).then(setChapterTree);
@@ -577,6 +576,25 @@ export default function ExamPaperEditorPage() {
     }, 250);
     return () => clearTimeout(t);
   }, [bankChapterIds, bankKeyword, bankKnowledgeIds, schoolId, teacher]);
+
+  useEffect(() => {
+    if (selectedClassIds.length === 0) {
+      setStudents([]);
+      return;
+    }
+
+    let cancelled = false;
+    Promise.all(selectedClassIds.map((classId) => classSvc.listStudentsByClass(classId)))
+      .then((studentGroups) => {
+        if (cancelled) return;
+        const studentMap = new Map<string, Student>();
+        studentGroups.flat().forEach((student) => studentMap.set(student.id, student));
+        setStudents(Array.from(studentMap.values()));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClassIds]);
 
   useEffect(() => {
     if (teacher && addSource === "examPaper") {

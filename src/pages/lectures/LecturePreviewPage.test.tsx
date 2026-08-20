@@ -361,6 +361,26 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByRole("button", { name: "编辑第 1 题章节与知识点" })).not.toBeInTheDocument();
   });
 
+  it("keeps the source question label in an extracted lecture preview", async () => {
+    vi.mocked(lectureService.getLecture).mockResolvedValue({
+      ...lecture,
+      isExtractCopy: true,
+      sourceResourceId: "lecture-source-1",
+      sections: lecture.sections.map((section) => ({
+        ...section,
+        children: section.children.map((child) => (
+          child.type === "question" ? { ...child, customLabel: "例1" } : child
+        )),
+      })),
+    });
+
+    renderPage();
+
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+    expect(screen.getByText("例1")).toBeInTheDocument();
+    expect(screen.queryByText("1.")).not.toBeInTheDocument();
+  });
+
   it("toggles answer and analysis by clicking the question stem", async () => {
     renderPage();
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
@@ -372,11 +392,16 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByText("展开答案与解析")).not.toBeInTheDocument();
     expect(screen.queryByText("答案：")).not.toBeInTheDocument();
 
+    const correctOption = screen.getByText("B.").parentElement!;
+    expect(correctOption).toHaveClass("border");
+
     fireEvent.click(questionStem);
 
     expect(screen.getByText("答案：")).toBeInTheDocument();
     expect(screen.getByText("解析：")).toBeInTheDocument();
     expect(questionStem).toHaveAttribute("aria-expanded", "true");
+    expect(correctOption).not.toHaveClass("border");
+    expect(correctOption).toHaveClass("bg-emerald-50/40");
 
     fireEvent.click(questionStem);
     await waitFor(() => {

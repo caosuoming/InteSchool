@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router";
 import { useAuthStore } from "@/stores/auth";
-import { useSettingsStore, applyUiScale } from "@/stores/settings";
+import { useSettingsStore, applyAppearanceMode, applyUiScale } from "@/stores/settings";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { RequireExamManager } from "@/components/auth/RequireExamManager";
 import { RequireSchoolRosterManager } from "@/components/auth/RequireSchoolRosterManager";
@@ -65,6 +65,7 @@ function RouteLoading() {
 export default function App() {
   const { init, teacher, loading } = useAuthStore();
   const uiScale = useSettingsStore((s) => s.uiScale);
+  const appearanceMode = useSettingsStore((s) => s.appearanceMode);
 
   useEffect(() => {
     void init();
@@ -74,6 +75,10 @@ export default function App() {
   useEffect(() => {
     applyUiScale(uiScale);
   }, [uiScale]);
+
+  useEffect(() => {
+    applyAppearanceMode(appearanceMode);
+  }, [appearanceMode]);
 
   if (loading) return <RouteLoading />;
 

@@ -299,7 +299,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
             { ...invigilationHeader("考试安排"), columnSpan: 4 }, null, null, null,
             ...invigilation.roomLocationGroups.map((group) => invigilationHeader(wrapInvigilationHeaderLabel(group.roomLocation).join("\n"))),
             { ...invigilationHeader("场外监考"), rowSpan: 3 },
-            { ...invigilationHeader("巡回"), rowSpan: 3 },
+            { ...invigilationHeader("巡考"), rowSpan: 3 },
           ],
           [
             invigilationHeader("时间"),
