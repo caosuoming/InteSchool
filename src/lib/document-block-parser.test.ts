@@ -37,6 +37,48 @@ describe("document block parser", () => {
     });
   });
 
+  it.each(["4.", "４．"])("recognizes standalone question number %s after a summary", (number) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "3. 已知函数 f(x)，求其最小值。",
+        "总结：注意定义域。",
+        number,
+        "已知集合 A={1,2}，写出其所有子集。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "3. 已知函数 f(x)，求其最小值。",
+      summary: "注意定义域。",
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: `${number}\n已知集合 A={1,2}，写出其所有子集。`,
+    });
+  });
+
+  it("keeps an established numbered list inside a summary", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 计算 1+1。",
+        "总结：",
+        "1. 先确定运算顺序。",
+        "2.",
+        "再进行计算。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      summary: "1. 先确定运算顺序。\n2.\n再进行计算。",
+    });
+  });
+
   it.each([
     "一、选择题",
     "一、单选题",
