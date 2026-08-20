@@ -116,7 +116,7 @@ export function GradeTotalScoreRankingTable({
           <div>
             <div className="font-medium text-ink-900">表五、总分前{report.topN}名（{report.scoreModeLabel}）</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              文理科均存在且所有学生都能识别科类时分别排名，否则按全年级统一排名；总分类型与表二保持一致。
+              文理科均存在且所有学生都能识别科类时分别排名，否则按全年级统一排名；总分和各科成绩类型与表二保持一致。
             </div>
           </div>
         </div>
@@ -162,6 +162,9 @@ export function GradeTotalScoreRankingTable({
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">学号</th>
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">姓名</th>
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">班级</th>
+                    {report.subjects.map((subject) => (
+                      <th key={subject} className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{subject}</th>
+                    ))}
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">总分（{report.scoreModeLabel}）</th>
                   </tr>
                 </thead>
@@ -172,6 +175,11 @@ export function GradeTotalScoreRankingTable({
                       <td className="border border-ink-300 px-3 py-1.5 text-center tabular-nums">{row.studentNo || "—"}</td>
                       <td className="border border-ink-300 px-3 py-1.5 text-center font-medium text-ink-800">{row.studentName}</td>
                       <td className="border border-ink-300 px-3 py-1.5 text-center">{row.classLabel}</td>
+                      {report.subjects.map((subject) => (
+                        <td key={subject} className="border border-ink-300 px-3 py-1.5 text-center tabular-nums">
+                          {row.subjectScores[subject] ?? ""}
+                        </td>
+                      ))}
                       <td className="border border-ink-300 px-3 py-1.5 text-center font-semibold tabular-nums">{row.score}</td>
                     </tr>
                   ))}

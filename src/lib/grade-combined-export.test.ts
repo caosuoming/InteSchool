@@ -3,9 +3,11 @@ import type { GradeExam, GradeImportContext } from "@/types";
 import { buildDefaultGradeSettings } from "./grade-statistics";
 import {
   exportGradeClassStatisticsReport,
+  exportGradeTotalScoreRankingReport,
   exportGradeTablesOneToFive,
 } from "./grade-spreadsheet";
 import { buildGradeClassStatisticsReport } from "./grade-class-statistics";
+import { buildGradeTotalScoreRankingReport } from "./grade-total-score-ranking";
 
 const { writeXlsxFile, toFile } = vi.hoisted(() => ({
   writeXlsxFile: vi.fn(),
@@ -123,12 +125,30 @@ describe("combined grade exports", () => {
     });
 
     expect(writeXlsxFile).toHaveBeenCalledTimes(1);
-    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string }>;
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
+      sheet: string;
+      data: Array<Array<{ value?: string | number }>>;
+    }>;
     expect(sheets.some((sheet) => sheet.sheet.startsWith("表一"))).toBe(true);
     expect(sheets.some((sheet) => sheet.sheet.startsWith("表二"))).toBe(true);
     expect(sheets.some((sheet) => sheet.sheet.startsWith("表三"))).toBe(true);
     expect(sheets.some((sheet) => sheet.sheet.startsWith("表四"))).toBe(true);
     expect(sheets.some((sheet) => sheet.sheet.startsWith("表五"))).toBe(true);
+
+    const tableTwo = sheets.find((sheet) => sheet.sheet.startsWith("表二"))!;
+    expect(tableTwo.data[2].slice(1).every((cell) => cell.value === undefined)).toBe(true);
+
+    const tableFive = sheets.find((sheet) => sheet.sheet.startsWith("表五"))!;
+    expect(tableFive.data[1].map((cell) => cell.value)).toEqual([
+      "名次",
+      "学号",
+      "姓名",
+      "班级",
+      "语文",
+      "化学",
+      "总分（赋分）",
+    ]);
+    expect(tableFive.data[2].map((cell) => cell.value)).toEqual([1, "001", "张三", "1班", 120, 90, 210]);
     expect(toFile).toHaveBeenCalledWith("2027届高三期末考试_表一至表五.xlsx");
   });
 
@@ -147,5 +167,31 @@ describe("combined grade exports", () => {
     const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string }>;
     expect(sheets.map((sheet) => sheet.sheet)).toEqual(["高三（1）班", "高三（2）班"]);
     expect(toFile).toHaveBeenCalledWith("2027届高三期末考试各班成绩统计.xlsx");
+  });
+
+  it("includes every subject score in the standalone table-five export", async () => {
+    const report = buildGradeTotalScoreRankingReport(
+      exam,
+      totalScoreSegmentTemplate,
+      context,
+      classAverageTemplate,
+    );
+
+    await exportGradeTotalScoreRankingReport(report);
+
+    expect(writeXlsxFile).toHaveBeenCalledTimes(1);
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
+      data: Array<Array<{ value?: string | number }>>;
+    }>;
+    expect(sheets[0].data[1].map((cell) => cell.value)).toEqual([
+      "名次",
+      "学号",
+      "姓名",
+      "班级",
+      "语文",
+      "化学",
+      "总分（赋分）",
+    ]);
+    expect(sheets[0].data[2].map((cell) => cell.value)).toEqual([1, "001", "张三", "1班", 120, 90, 210]);
   });
 });

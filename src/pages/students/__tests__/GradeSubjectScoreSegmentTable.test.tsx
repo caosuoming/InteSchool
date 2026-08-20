@@ -95,6 +95,8 @@ describe("GradeSubjectScoreSegmentTable", () => {
     expect(within(chineseTable!).getByRole("columnheader", { name: "语文" })).toBeInTheDocument();
     expect(within(chineseTable!).getByText("周虹")).toBeInTheDocument();
     expect(within(chineseTable!).getByRole("columnheader", { name: "140分以上" })).toBeInTheDocument();
+    const chineseDataCells = chineseTable!.querySelector("tbody tr")!.querySelectorAll("td");
+    expect(chineseDataCells[2]).toBeEmptyDOMElement();
     expect(screen.getByText("2027届高二四校联合考试物理成绩情况统计表")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "调整分数段" }));

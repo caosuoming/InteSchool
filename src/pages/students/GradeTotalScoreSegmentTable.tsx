@@ -325,7 +325,7 @@ export function GradeTotalScoreSegmentTable({
                       key={column.key}
                       className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900 ${column.kind === "class" ? "" : "bg-emerald-50/50"}`}
                     >
-                      {row.counts[column.key] || 0}
+                      {row.counts[column.key] || ""}
                     </td>
                   ))}
                 </tr>
@@ -383,7 +383,7 @@ export function GradeTotalScoreSegmentTable({
                         key={column.key}
                         className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900 ${column.kind === "class" ? "" : "bg-emerald-50/50"}`}
                       >
-                        {value ?? "—"}
+                        {row.kind === "count" && value === 0 ? "" : value ?? "—"}
                       </td>
                     );
                   })}
