@@ -97,6 +97,7 @@ vi.mock("@/services/settings", () => ({
   },
 }));
 vi.mock("@/services/analytics", () => ({
+  inferScore: (record: { score?: string; isCorrect: boolean }) => record.score || (record.isCorrect ? "correct" : "wrong"),
   analyticsService: {
     getAnsweredQuestionIds: vi.fn().mockResolvedValue(new Set()),
     listAnswerRecordsByStudents: mocks.listAnswerRecordsByStudents,
@@ -474,9 +475,11 @@ describe("ExamPaperEditorPage preview", () => {
 
     const propertiesToggle = screen.getByRole("button", { name: "题目属性" });
     const answerToggle = screen.getByRole("button", { name: "答题情况" });
+    const answeredListToggle = screen.getByRole("button", { name: "显示已答题名单" });
     const basketToggle = screen.getByRole("button", { name: "添加资源篮" });
     expect(propertiesToggle).toHaveAttribute("aria-pressed", "true");
     expect(answerToggle).toHaveAttribute("aria-pressed", "true");
+    expect(answeredListToggle).toHaveAttribute("aria-pressed", "true");
     expect(basketToggle).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(answerToggle);
@@ -714,7 +717,7 @@ describe("ExamPaperEditorPage preview", () => {
     await waitFor(() => expect(container.querySelectorAll(".katex").length).toBeGreaterThan(0));
   });
 
-  it("edits one class student's answer state from the preview", async () => {
+  it("edits the only class student's answer state from the preview without selecting the student", async () => {
     mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["class-1"] });
     mocks.listStudentsBySchool.mockResolvedValue([{
       id: "student-1",
@@ -729,7 +732,7 @@ describe("ExamPaperEditorPage preview", () => {
     renderPage();
     await screen.findByTestId("exam-paper-preview");
 
-    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: "student-1" } });
+    expect(screen.queryByLabelText("选择学生")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("答题情况"), { target: { value: "partial" } });
 
     await waitFor(() => {
@@ -741,6 +744,53 @@ describe("ExamPaperEditorPage preview", () => {
         source: "manual",
       });
     });
+  });
+
+  it("shows existing answers in a toggleable roster when multiple students use the paper", async () => {
+    const firstStudent = {
+      id: "student-1",
+      name: "张同学",
+      studentNo: "20260001",
+      classId: "class-1",
+      schoolId: teacher.schoolId,
+      grade: "高一",
+      status: "active",
+    };
+    const secondStudent = {
+      ...firstStudent,
+      id: "student-2",
+      name: "李同学",
+      studentNo: "20260002",
+    };
+    mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["class-1"] });
+    mocks.listStudentsBySchool.mockResolvedValue([firstStudent, secondStudent]);
+    mocks.listAnswerRecordsByStudents.mockResolvedValue([{
+      id: "answer-1",
+      studentId: firstStudent.id,
+      questionId: question.id,
+      lectureId: paper.id,
+      isCorrect: true,
+      score: "correct",
+      source: "manual",
+      answeredAt: "2026-08-20T02:00:00.000Z",
+    }]);
+
+    renderPage();
+
+    const answeredList = await screen.findByTestId("answered-student-list");
+    expect(screen.getByLabelText("选择学生")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(answeredList).toHaveTextContent("张同学 · 20260001");
+      expect(answeredList).toHaveTextContent("全对");
+    });
+    expect(answeredList).not.toHaveTextContent("李同学");
+
+    fireEvent.click(within(answeredList).getByRole("button", { name: "查看张同学答题情况" }));
+    expect(screen.getByLabelText("选择学生")).toHaveValue(firstStudent.id);
+    expect(screen.getByLabelText("答题情况")).toHaveValue("correct");
+
+    fireEvent.click(screen.getByRole("button", { name: "显示已答题名单" }));
+    expect(screen.queryByTestId("answered-student-list")).not.toBeInTheDocument();
   });
 
   it("places secondary editor actions below the title and removes the subtitle", async () => {

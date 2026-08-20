@@ -54,6 +54,7 @@ vi.mock("@/services/knowledge", () => ({
   },
 }));
 vi.mock("@/services/analytics", () => ({
+  inferScore: (record: { score?: string; isCorrect: boolean }) => record.score || (record.isCorrect ? "correct" : "wrong"),
   analyticsService: {
     listAnswerRecordsByLecture: vi.fn(),
     saveAnswerRecord: vi.fn(),
@@ -280,9 +281,8 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByRole("button", { name: /整份讲义/ })).not.toBeInTheDocument();
     expect(screen.getByText("使用对象")).toBeInTheDocument();
     expect(screen.getByText("高一（1）班")).toBeInTheDocument();
-    expect(screen.getByLabelText("选择学生")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /张同学/ })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /李同学/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("选择学生")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("学生")).toHaveTextContent("张同学 · 20260001");
     expect(screen.getByLabelText("纸张大小")).toHaveValue("A4");
 
     const paper = screen.getByTestId("lecture-paper");
@@ -423,11 +423,23 @@ describe("LecturePreviewPage", () => {
     });
   });
 
-  it("updates one selected student's answer state per question", async () => {
+  it("shows and updates the only student's existing answer without selecting the student", async () => {
+    vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([{
+      id: "answer-1",
+      studentId: classStudent.id,
+      questionId: question.id,
+      lectureId: lecture.id,
+      isCorrect: false,
+      score: "wrong",
+      source: "manual",
+      answeredAt: "2026-08-20T02:00:00.000Z",
+    }]);
+
     renderPage();
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
 
-    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: classStudent.id } });
+    expect(screen.queryByLabelText("选择学生")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("答题情况")).toHaveValue("wrong"));
     fireEvent.change(screen.getByLabelText("答题情况"), { target: { value: "correct" } });
 
     await waitFor(() => {
@@ -441,15 +453,46 @@ describe("LecturePreviewPage", () => {
     });
   });
 
+  it("shows existing answers in a toggleable roster when multiple students use the lecture", async () => {
+    vi.mocked(classService.listStudentsByClass).mockResolvedValue([classStudent, explicitStudent]);
+    vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([{
+      id: "answer-1",
+      studentId: classStudent.id,
+      questionId: question.id,
+      lectureId: lecture.id,
+      isCorrect: false,
+      score: "partial",
+      source: "manual",
+      answeredAt: "2026-08-20T02:00:00.000Z",
+    }]);
+
+    renderPage();
+
+    const answeredList = await screen.findByTestId("answered-student-list");
+    expect(screen.getByLabelText("选择学生")).toBeInTheDocument();
+    expect(answeredList).toHaveTextContent("张同学 · 20260001");
+    expect(answeredList).toHaveTextContent("半对");
+    expect(answeredList).not.toHaveTextContent("李同学");
+
+    fireEvent.click(within(answeredList).getByRole("button", { name: "查看张同学答题情况" }));
+    expect(screen.getByLabelText("选择学生")).toHaveValue(classStudent.id);
+    expect(screen.getByLabelText("答题情况")).toHaveValue("partial");
+
+    fireEvent.click(screen.getByRole("button", { name: "显示已答题名单" }));
+    expect(screen.queryByTestId("answered-student-list")).not.toBeInTheDocument();
+  });
+
   it("controls which per-question sidebar sections are visible", async () => {
     renderPage();
     await screen.findByTestId("lecture-question-details-1");
 
     const propertiesToggle = screen.getByRole("button", { name: "题目属性" });
     const answerToggle = screen.getByRole("button", { name: "答题情况" });
+    const answeredListToggle = screen.getByRole("button", { name: "显示已答题名单" });
     const basketToggle = screen.getByRole("button", { name: "添加资源篮" });
     expect(propertiesToggle).toHaveAttribute("aria-pressed", "true");
     expect(answerToggle).toHaveAttribute("aria-pressed", "true");
+    expect(answeredListToggle).toHaveAttribute("aria-pressed", "true");
     expect(basketToggle).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(answerToggle);

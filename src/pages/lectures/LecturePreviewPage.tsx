@@ -109,7 +109,7 @@ export default function LecturePreviewPage() {
   const [metadataKnowledgePointIds, setMetadataKnowledgePointIds] = useState<string[]>([]);
   const [savingQuestionMetadata, setSavingQuestionMetadata] = useState(false);
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
-    { properties: true, answerStatus: true, basket: true },
+    { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
 
   useEffect(() => {
@@ -988,6 +988,7 @@ function LectureQuestionDetails({
           answerRecords={answerRecords}
           questionId={question.id}
           onChange={onUpdateStudentAnswer}
+          showAnsweredList={visibility.answeredList}
         />
       )}
       {visibility.basket && (

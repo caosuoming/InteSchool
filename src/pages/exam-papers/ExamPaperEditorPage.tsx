@@ -266,7 +266,7 @@ export default function ExamPaperEditorPage() {
   const [layoutMode, setLayoutMode] = useState<"grouped" | "flat">("grouped");
   const [markingAllDone, setMarkingAllDone] = useState(false);
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
-    { properties: true, answerStatus: true, basket: true },
+    { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
@@ -3497,6 +3497,7 @@ function PreviewQuestionDetails({
                 answerRecords={answerRecords}
                 questionId={completionQuestionId}
                 onChange={onUpdateStudentAnswer}
+                showAnsweredList={visibility.answeredList}
               />
             </div>
           )}
