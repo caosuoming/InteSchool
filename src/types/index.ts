@@ -1256,6 +1256,8 @@ export interface ExtractedDocumentBlock {
     | "text";
   content: string;
   title?: string;
+  /** 原稿中的题目前缀（如“例1”“练习1”“拓展题1”），用于拆解稿沿袭原结构。 */
+  customLabel?: string;
   questionType?: QuestionType;
   questionId?: string;
   materialId?: string;

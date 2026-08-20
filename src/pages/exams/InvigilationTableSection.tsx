@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Copy, Download, Move, Save, Upload, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Copy, Download, Move, Plus, Save, Upload, X } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -222,6 +222,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   const [historyArrangementIds, setHistoryArrangementIds] = useState<string[]>([]);
   const [reuseTeacherOpen, setReuseTeacherOpen] = useState(false);
   const [reuseTimeOpen, setReuseTimeOpen] = useState(false);
+  const [addTeacherOpen, setAddTeacherOpen] = useState(false);
+  const [manualTeacherName, setManualTeacherName] = useState("");
+  const [manualTeacherSubject, setManualTeacherSubject] = useState("");
   const [tableTwoVisible, setTableTwoVisible] = useState(false);
   const [durationListCollapsed, setDurationListCollapsed] = useState(false);
   const [floatingDurationPosition, setFloatingDurationPosition] = useState<{ x: number; y: number } | null>(null);
@@ -524,7 +527,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     next.patrolTeacherIds = [...(next.patrolTeacherIds || []), teacherId];
     const conflict = buildExamInvigilationTable(selectedArrangement, next).rows.find((row) => row.duplicateTeacherIds.includes(teacherId));
     if (conflict) {
-      toast.error("无法加入巡回", `${teacherMap.get(teacherId)?.name || "该教师"} 已在至少一场考试中被人工指定为监考教师。`);
+      toast.error("无法加入巡考", `${teacherMap.get(teacherId)?.name || "该教师"} 已在至少一场考试中被人工指定为监考教师。`);
       return;
     }
     setConfig(next);
@@ -552,7 +555,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     if (checked) {
       const conflict = buildExamInvigilationTable(selectedArrangement, next).rows.find((row) => row.duplicateTeacherIds.includes(teacher.id));
       if (conflict) {
-        toast.error("无法加入巡回", `${teacher.name || "该教师"} 已在至少一场考试中被人工指定为监考教师。`);
+        toast.error("无法加入巡考", `${teacher.name || "该教师"} 已在至少一场考试中被人工指定为监考教师。`);
         return;
       }
     }
@@ -669,6 +672,36 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     setSelectedTeacherId(null);
     setReuseTeacherOpen(false);
     toast.success("已复用监考老师名单", `已从「${source.name}」复制配置一；原人工排表已清空，请确认后保存。`);
+  };
+
+  const openAddTeacher = () => {
+    setManualTeacherName("");
+    setManualTeacherSubject(selectedArrangement?.subjects[0] || "");
+    setAddTeacherOpen(true);
+  };
+
+  const addManualTeacher = () => {
+    if (!config) return;
+    const name = manualTeacherName.trim();
+    const subject = manualTeacherSubject.trim();
+    if (!name || !subject) {
+      toast.error("请填写老师姓名和任教学科");
+      return;
+    }
+    const duplicate = config.teachers.some((teacher) => (
+      teacher.name.trim().localeCompare(name, "zh-CN", { sensitivity: "base" }) === 0
+      && teacher.subject.trim().localeCompare(subject, "zh-CN", { sensitivity: "base" }) === 0
+    ));
+    if (duplicate) {
+      toast.error("老师已在名单中", `${name} · ${subject}`);
+      return;
+    }
+    updateConfig((next) => {
+      next.teachers.push({ id: newTeacherId("manual"), name, subject });
+    });
+    setAddTeacherOpen(false);
+    setManualTeacherName("");
+    setManualTeacherSubject("");
   };
 
   const reuseTimesFrom = (source: ExamArrangement) => {
@@ -804,7 +837,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-ink-900">配置一、监考老师名单</h2>
-              <p className="mt-1 text-xs text-ink-500">当前考试单独保存名单；可上传 Excel 或复用其他监考安排，“场外”可同一学科勾选多人，“巡考”用于巡回。</p>
+              <p className="mt-1 text-xs text-ink-500">当前考试单独保存名单；可上传 Excel 或复用其他监考安排，“场外”可同一学科勾选多人，“巡考”用于巡考安排。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => void downloadTeacherTemplate()}>
@@ -815,6 +848,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
               </Button>
               <Button variant="outline" size="sm" disabled={!reusableArrangements.length} onClick={() => setReuseTeacherOpen(true)}>
                 <Copy className="h-4 w-4" />复用名单
+              </Button>
+              <Button variant="outline" size="sm" onClick={openAddTeacher}>
+                <Plus className="h-4 w-4" />增加老师
               </Button>
               <input
                 ref={teacherFileInputRef}
@@ -1012,7 +1048,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                       </th>
                     ))}
                     <th rowSpan={3} className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center align-middle">场外监考</th>
-                    <th rowSpan={3} className="whitespace-nowrap border-b border-[#b6c7cf] px-2 py-1.5 text-center align-middle">巡回</th>
+                    <th rowSpan={3} className="whitespace-nowrap border-b border-[#b6c7cf] px-2 py-1.5 text-center align-middle">巡考</th>
                   </tr>
                   <tr className="bg-[#e5f0f2] text-xs text-ink-700">
                     <th className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">时间</th>
@@ -1184,21 +1220,21 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
                                       selectedTeacherId === id && "border-yellow-500 bg-[#fff86b]",
                                     )}>
                                       <button type="button" className="px-2 py-1" onClick={() => setSelectedTeacherId(id)}>{teacher.name}</button>
-                                      <button type="button" aria-label={`移除巡回教师 ${teacher.name}`} className="border-l border-[#d5dfe2] px-1.5 py-1 text-ink-400 hover:text-red-600" onClick={() => removePatrolTeacher(id)}>
+                                      <button type="button" aria-label={`移除巡考教师 ${teacher.name}`} className="border-l border-[#d5dfe2] px-1.5 py-1 text-ink-400 hover:text-red-600" onClick={() => removePatrolTeacher(id)}>
                                         <X className="h-3 w-3" />
                                       </button>
                                     </span>
                                   );
                                 })}
-                                {!invigilation.patrolTeacherIds.length && <span className="text-xs text-ink-400">暂无巡回教师</span>}
+                                {!invigilation.patrolTeacherIds.length && <span className="text-xs text-ink-400">暂无巡考教师</span>}
                               </div>
                               <select
-                                aria-label="添加巡回教师"
+                                aria-label="添加巡考教师"
                                 className="rounded-md border border-[#b6c7cf] bg-paper px-2 py-1.5 text-xs text-ink-700 outline-none focus:border-gold-400"
                                 value=""
                                 onChange={(event) => addPatrolTeacher(event.target.value)}
                               >
-                                <option value="">+ 添加巡回教师</option>
+                                <option value="">+ 添加巡考教师</option>
                                 {config.teachers.filter((teacher) => !invigilation.patrolTeacherIds.includes(teacher.id)).map((teacher) => (
                                   <option key={teacher.id} value={teacher.id}>{teacher.name} · {teacher.subject}</option>
                                 ))}
@@ -1341,6 +1377,35 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
         </Card>
         </div>
       </div>
+
+      <Modal
+        open={addTeacherOpen}
+        onClose={() => setAddTeacherOpen(false)}
+        title="增加老师"
+        description="手动增加一位监考老师；任教学科用于自动排表时优先匹配考试学科。"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <Input
+            label="老师姓名"
+            aria-label="老师姓名"
+            value={manualTeacherName}
+            onChange={(event) => setManualTeacherName(event.target.value)}
+            placeholder="请输入姓名"
+          />
+          <Input
+            label="任教学科"
+            aria-label="任教学科"
+            value={manualTeacherSubject}
+            onChange={(event) => setManualTeacherSubject(event.target.value)}
+            placeholder="例如：数学"
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setAddTeacherOpen(false)}>取消</Button>
+            <Button onClick={addManualTeacher}>确认增加</Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={reuseTeacherOpen}

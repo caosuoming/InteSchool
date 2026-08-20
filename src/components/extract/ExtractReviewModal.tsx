@@ -219,7 +219,7 @@ function removeKeywords(text: string, keywords: string[]): string {
     if (keywords.length > 0) {
       const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
       const lineStartKeywordPattern = new RegExp(
-        `^[\\s]*(${escapedKeywords.join("|")})([\\s]*[\\d一二三四五六七八九十]+[、．.．）)]?)?[\\s]*[:：、.．-]?[\\s]*`,
+        `^[\\s]*(${escapedKeywords.join("|")})(?:[\\s]*题)?([\\s]*[\\d一二三四五六七八九十]+[、．.．）)]?)?[\\s]*[:：、.．-]?[\\s]*`,
         "g"
       );
       processedLine = processedLine.replace(lineStartKeywordPattern, "");
@@ -233,6 +233,14 @@ function removeKeywords(text: string, keywords: string[]): string {
   
   // 合并处理后的行并去除首尾空白
   return processedLines.join("").trim();
+}
+
+function originalQuestionLabel(source: string, cleanedStem: string): string | undefined {
+  const sourceFirstLine = source.trim().split(/\r?\n/, 1)[0]?.trim() || "";
+  const stemFirstLine = cleanedStem.trim().split(/\r?\n/, 1)[0]?.trim() || "";
+  if (!sourceFirstLine || !stemFirstLine || sourceFirstLine === stemFirstLine) return undefined;
+  if (!sourceFirstLine.endsWith(stemFirstLine)) return undefined;
+  return sourceFirstLine.slice(0, -stemFirstLine.length).trim() || undefined;
 }
 
 function normalizeQuestionField(text: string, missingMarkers: string[] = []): string {
@@ -777,10 +785,12 @@ export function ExtractReviewModal({
       const extractCopyBlocks: ExtractedDocumentBlock[] = blocks.map((block) => {
         if (block.type === "question") {
           const item = extractedQuestionById.get(block.id);
+          const customLabel = item ? originalQuestionLabel(block.content, item.stem) : undefined;
           return {
             id: block.id,
             type: "question",
-            content: item?.stem || block.content,
+            content: block.content,
+            ...(customLabel ? { customLabel } : {}),
             questionType: item?.type || block.questionType || defaultQuestionType,
             questionId: questionIdByItemId[block.id],
           };

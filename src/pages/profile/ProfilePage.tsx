@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { BookOpen, Building2, FolderOpen, HardDrive, KeyRound, Mail, RefreshCw, School, ShieldCheck } from "lucide-react";
+import { BookOpen, Building2, FolderOpen, HardDrive, KeyRound, Leaf, Mail, Moon, Palette, RefreshCw, School, ShieldCheck, Sun, Type } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
 import { authService } from "@/services/auth";
 import {
@@ -17,14 +17,37 @@ import {
   type LocalBackupSnapshot,
 } from "@/services/localResourceBackup";
 import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
+import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
+import {
+  appearanceModeConfig,
+  uiScaleConfig,
+  useSettingsStore,
+  type AppearanceMode,
+  type UiScale,
+} from "@/stores/settings";
 import { toast } from "@/stores/ui";
 import type { SchoolAdminApplication } from "@/types";
+
+const appearanceModeIcon: Record<AppearanceMode, typeof Sun> = {
+  light: Sun,
+  dark: Moon,
+  "eye-care": Leaf,
+};
+
+function CurrentBadge() {
+  return (
+    <span className="text-[11px] px-1.5 py-0.5 bg-gold-400 text-ink-900 rounded font-medium">
+      当前
+    </span>
+  );
+}
 
 export default function ProfilePage() {
   const teacher = useAuthStore((state) => state.teacher);
   const updateProfile = useAuthStore((state) => state.updateProfile);
   const refresh = useAuthStore((state) => state.refresh);
+  const { uiScale, appearanceMode, setUiScale, setAppearanceMode } = useSettingsStore();
   const affiliation = teacher?.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
     || teacher?.affiliations?.find((item) => item.isCurrent);
   const [nickname, setNickname] = useState(teacher?.nickname || "");
@@ -214,6 +237,92 @@ export default function ProfilePage() {
           <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><Mail className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">邮箱</div><div className="font-medium">{teacher.email || "未绑定"}</div></div></div>
           <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><School className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">当前单位</div><div className="font-medium">{affiliation?.schoolName || "个人身份"}</div></div></div>
           <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><ShieldCheck className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">权限</div><div className="font-medium">{activeRole}</div></div></div>
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <Palette className="w-5 h-5 text-gold-600" />
+          <h2 className="font-serif text-lg font-semibold">显示设置</h2>
+        </div>
+
+        <div className="space-y-6">
+          <section aria-labelledby="ui-scale-heading">
+            <div className="flex items-center gap-2 mb-3">
+              <Type className="w-4 h-4 text-gold-600" />
+              <h3 id="ui-scale-heading" className="font-medium text-ink-900">显示版本</h3>
+              <span className="text-xs text-ink-500">调整全局字体大小</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {(Object.keys(uiScaleConfig) as UiScale[]).map((key) => {
+                const config = uiScaleConfig[key];
+                const active = uiScale === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setUiScale(key)}
+                    className={cn(
+                      "text-left p-4 rounded-lg border-2 transition-all",
+                      active
+                        ? "border-gold-400 bg-gold-50 shadow-sm"
+                        : "border-ink-200 bg-white hover:border-ink-300",
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span
+                        className="font-serif font-semibold text-ink-900"
+                        style={{ fontSize: key === "youth" ? "14px" : key === "senior" ? "18px" : "16px" }}
+                      >
+                        {config.label}
+                      </span>
+                      {active && <CurrentBadge />}
+                    </div>
+                    <p className="text-xs text-ink-500">{config.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section aria-labelledby="appearance-heading">
+            <div className="flex items-center gap-2 mb-3">
+              <Palette className="w-4 h-4 text-gold-600" />
+              <h3 id="appearance-heading" className="font-medium text-ink-900">显示模式</h3>
+              <span className="text-xs text-ink-500">选择适合当前环境的界面色调</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {(Object.keys(appearanceModeConfig) as AppearanceMode[]).map((mode) => {
+                const config = appearanceModeConfig[mode];
+                const active = appearanceMode === mode;
+                const Icon = appearanceModeIcon[mode];
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setAppearanceMode(mode)}
+                    className={cn(
+                      "text-left p-4 rounded-lg border-2 transition-all",
+                      active
+                        ? "border-gold-400 bg-gold-50 shadow-sm"
+                        : "border-ink-200 bg-white hover:border-ink-300",
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 text-ink-900">
+                        <Icon className="w-4 h-4" />
+                        <span className="font-medium">{config.label}</span>
+                      </div>
+                      {active && <CurrentBadge />}
+                    </div>
+                    <p className="text-xs text-ink-500">{config.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
         </div>
       </Card>
 

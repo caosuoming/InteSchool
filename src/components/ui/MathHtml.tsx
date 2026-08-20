@@ -15,7 +15,7 @@ export function MathHtml({ children, className }: MathHtmlProps) {
   return (
     <div
       className={cn(
-        "question-rich-content break-words [&_img]:my-2 [&_img]:rounded-md [&_img]:border [&_img]:border-ink-100",
+        "question-rich-content break-words [&_img]:my-2 [&_img]:rounded-md [&_img]:border-0",
         className,
       )}
       dangerouslySetInnerHTML={{ __html: html }}

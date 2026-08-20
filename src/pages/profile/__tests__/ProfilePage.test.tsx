@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProfilePage from "@/pages/profile/ProfilePage";
 import { authService } from "@/services/auth";
 import { useAuthStore } from "@/stores/auth";
+import { useSettingsStore } from "@/stores/settings";
 import type { Teacher, TeacherAffiliation } from "@/types";
 
 vi.mock("@/services/auth", () => ({
@@ -81,6 +82,27 @@ describe("ProfilePage", () => {
       refresh: vi.fn(),
     });
     vi.mocked(authService.getMySchoolAdminApplications).mockResolvedValue([]);
+    useSettingsStore.setState({ uiScale: "middle", appearanceMode: "light" });
+  });
+
+  it("moves display preferences into the personal center", async () => {
+    render(
+      <MemoryRouter>
+        <ProfilePage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("显示设置")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "显示版本" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "显示模式" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /中年版/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /浅色/ })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /暗黑/ }));
+    expect(useSettingsStore.getState().appearanceMode).toBe("dark");
+
+    fireEvent.click(screen.getByRole("button", { name: /老年版/ }));
+    expect(useSettingsStore.getState().uiScale).toBe("senior");
   });
 
   it("does not expose teaching or homeroom class assignments in personal information", async () => {

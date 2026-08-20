@@ -270,7 +270,7 @@ describe("MyExamsPage", () => {
     expect(within(wrappedLocationHeader).getByText("高三1班")).toBeInTheDocument();
     expect(within(wrappedLocationHeader).getByText("教室")).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "1考场、2考场" })).toBeInTheDocument();
-    expect(invigilationTable.getByRole("columnheader", { name: "巡回" })).toHaveAttribute("rowspan", "3");
+    expect(invigilationTable.getByRole("columnheader", { name: "巡考" })).toHaveAttribute("rowspan", "3");
     expect(invigilationTable.getByRole("cell", { name: "2026-10-20 星期二" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "晚上" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "18:30–20:30" })).toBeInTheDocument();
@@ -315,7 +315,13 @@ describe("MyExamsPage", () => {
     expect(tableTwoHeading.compareDocumentPosition(durationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(teacherConfig.getByRole("columnheader", { name: "往期累计" })).toBeInTheDocument();
     expect(teacherConfig.queryByLabelText("教师姓名 1")).not.toBeInTheDocument();
-    expect(teacherConfig.queryByRole("button", { name: "添加教师" })).not.toBeInTheDocument();
+    fireEvent.click(teacherConfig.getByRole("button", { name: "增加老师" }));
+    expect(screen.getByRole("heading", { name: "增加老师" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("老师姓名"), { target: { value: "地理老师乙" } });
+    fireEvent.change(screen.getByLabelText("任教学科"), { target: { value: "地理" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认增加" }));
+    expect(teacherConfig.getByLabelText("监考老师人数统计")).toHaveTextContent("共有老师 4 名");
+    expect(teacherConfig.getByText("地理老师乙")).toBeInTheDocument();
     expect(teacherConfig.getByText("语文教师甲")).toBeInTheDocument();
     expect(teacherConfig.getByRole("columnheader", { name: "是否在同一天" })).toBeInTheDocument();
     expect(teacherConfig.getByRole("columnheader", { name: "是否请假" })).toBeInTheDocument();

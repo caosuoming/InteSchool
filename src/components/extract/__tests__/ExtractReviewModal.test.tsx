@@ -96,6 +96,7 @@ vi.mock("@/lib/document-block-parser", () => ({
 describe("ExtractReviewModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.extractConfig.questionKeywords = ["题目"];
     mocks.getLecture.mockResolvedValue({
       id: "lecture-1",
       originalFileUrl: "/uploads/lecture.docx",
@@ -470,6 +471,7 @@ describe("ExtractReviewModal", () => {
   });
 
   it("creates the lecture manuscript from all reviewed blocks in their original order", async () => {
+    mocks.extractConfig.questionKeywords = ["例", "练习", "拓展"];
     mocks.parseDocumentBlocks.mockReturnValue([
       {
         id: "block-title",
@@ -495,7 +497,7 @@ describe("ExtractReviewModal", () => {
       {
         id: "block-question",
         type: "question",
-        content: "题目：示例题目",
+        content: "拓展题1 示例题目",
         order: 3,
         status: "new",
         questionType: "single",
@@ -552,7 +554,8 @@ describe("ExtractReviewModal", () => {
       {
         id: "block-question",
         type: "question",
-        content: "示例题目",
+        content: "拓展题1 示例题目",
+        customLabel: "拓展题1",
         questionType: "single",
         questionId: "question-created",
       },

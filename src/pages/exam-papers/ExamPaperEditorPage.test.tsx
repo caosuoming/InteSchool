@@ -8,14 +8,16 @@ const mocks = vi.hoisted(() => ({
   updatePaper: vi.fn(),
   duplicatePaper: vi.fn(),
   listQuestions: vi.fn(),
+  getQuestion: vi.fn(),
   updateQuestion: vi.fn(),
+  addRemark: vi.fn(),
   listBaskets: vi.fn(),
   addQuestion: vi.fn(),
   removeQuestion: vi.fn(),
   listAllClasses: vi.fn(),
   listSchoolClasses: vi.fn(),
   listPersonalClasses: vi.fn(),
-  listStudentsBySchool: vi.fn(),
+  listStudentsByClass: vi.fn(),
   listPublications: vi.fn(),
   publishExam: vi.fn(),
   listExamPaperTypes: vi.fn(),
@@ -50,7 +52,9 @@ vi.mock("@/services/examPaper", () => ({
 vi.mock("@/services/question", () => ({
   questionService: {
     listQuestions: mocks.listQuestions,
+    getQuestion: mocks.getQuestion,
     updateQuestion: mocks.updateQuestion,
+    addRemark: mocks.addRemark,
   },
 }));
 vi.mock("@/services/basket", () => ({
@@ -74,7 +78,7 @@ vi.mock("@/services/class", () => ({
     listAllClasses: mocks.listAllClasses,
     listSchoolClasses: mocks.listSchoolClasses,
     listPersonalClasses: mocks.listPersonalClasses,
-    listStudentsBySchool: mocks.listStudentsBySchool,
+    listStudentsByClass: mocks.listStudentsByClass,
   },
 }));
 vi.mock("@/services/examPublish", () => ({
@@ -279,7 +283,14 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...paper, ...patch }));
     mocks.duplicatePaper.mockResolvedValue({ ...paper, id: "paper-copy", isExtractCopy: false });
     mocks.listQuestions.mockResolvedValue([question]);
+    mocks.getQuestion.mockResolvedValue(question);
     mocks.updateQuestion.mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
+    mocks.addRemark.mockResolvedValue({
+      id: "remark-added",
+      content: "新备注",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
     mocks.listBaskets.mockResolvedValue([]);
     mocks.addQuestion.mockResolvedValue(undefined);
     mocks.removeQuestion.mockResolvedValue(undefined);
@@ -295,7 +306,7 @@ describe("ExamPaperEditorPage preview", () => {
     }]);
     mocks.listSchoolClasses.mockResolvedValue([]);
     mocks.listPersonalClasses.mockResolvedValue([]);
-    mocks.listStudentsBySchool.mockResolvedValue([]);
+    mocks.listStudentsByClass.mockResolvedValue([]);
     mocks.listPublications.mockResolvedValue([publication]);
     mocks.listExamPaperTypes.mockResolvedValue([]);
     mocks.listSettings.mockResolvedValue([]);
@@ -714,9 +725,93 @@ describe("ExamPaperEditorPage preview", () => {
     await waitFor(() => expect(container.querySelectorAll(".katex").length).toBeGreaterThan(0));
   });
 
+  it("shows and adds question remarks from the preview answer-status section", async () => {
+    const legacyQuestion = { ...question, remark: "已有备注" } as Question;
+    const addedRemark = {
+      id: "remark-added",
+      content: "新备注",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    mocks.listQuestions.mockResolvedValue([legacyQuestion]);
+    mocks.addRemark.mockResolvedValue(addedRemark);
+    mocks.getQuestion.mockResolvedValue({
+      ...legacyQuestion,
+      remark: addedRemark.content,
+      remarks: [
+        {
+          id: "remark-legacy",
+          content: legacyQuestion.remark,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        addedRemark,
+      ],
+    });
+
+    renderPage();
+    const answerStatus = await screen.findByTestId("exam-question-answer-status-1");
+    expect(within(answerStatus).getByText("已有备注")).toBeInTheDocument();
+
+    fireEvent.click(within(answerStatus).getByRole("button", { name: "添加备注" }));
+    fireEvent.change(within(answerStatus).getByLabelText("新增题目备注"), {
+      target: { value: "新备注" },
+    });
+    fireEvent.click(within(answerStatus).getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(mocks.addRemark).toHaveBeenCalledWith(question.id, "新备注");
+      expect(within(answerStatus).getByText("新备注")).toBeInTheDocument();
+    });
+  });
+
+  it("loads external students from a selected personal class in preview", async () => {
+    const personalClass = {
+      id: "personal-class-1",
+      type: "personal" as const,
+      teacherId: teacher.id,
+      name: "测试教师的个别辅导班",
+      description: "",
+      studentIds: ["external-student-1"],
+      createdAt: timestamp,
+    };
+    const externalStudent = {
+      id: "external-student-1",
+      name: "校外学生",
+      studentNo: "EXT-001",
+      classId: "",
+      schoolId: "",
+      grade: "高一",
+      isExternal: true,
+      externalSchool: "外校",
+      status: "active" as const,
+    };
+    mocks.listAllClasses.mockResolvedValue([personalClass]);
+    mocks.listStudentsByClass.mockResolvedValue([externalStudent]);
+
+    renderPage();
+    await screen.findByTestId("exam-paper-preview");
+
+    fireEvent.click(screen.getByRole("button", { name: "添加使用对象" }));
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    await waitFor(() => {
+      expect(mocks.listStudentsByClass).toHaveBeenCalledWith(personalClass.id);
+    });
+    expect(await screen.findByRole("option", { name: "校外学生 · EXT-001" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /确定（1 个班级）/ }));
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, {
+        classIds: [personalClass.id],
+        studentIds: [],
+      });
+    });
+  });
+
   it("edits one class student's answer state from the preview", async () => {
     mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["class-1"] });
-    mocks.listStudentsBySchool.mockResolvedValue([{
+    mocks.listStudentsByClass.mockResolvedValue([{
       id: "student-1",
       name: "张同学",
       studentNo: "20260001",
@@ -729,7 +824,7 @@ describe("ExamPaperEditorPage preview", () => {
     renderPage();
     await screen.findByTestId("exam-paper-preview");
 
-    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: "student-1" } });
+    fireEvent.change(await screen.findByLabelText("选择学生"), { target: { value: "student-1" } });
     fireEvent.change(screen.getByLabelText("答题情况"), { target: { value: "partial" } });
 
     await waitFor(() => {
@@ -872,7 +967,7 @@ describe("ExamPaperEditorPage structured editor", () => {
     mocks.listAllClasses.mockResolvedValue([]);
     mocks.listSchoolClasses.mockResolvedValue([]);
     mocks.listPersonalClasses.mockResolvedValue([]);
-    mocks.listStudentsBySchool.mockResolvedValue([]);
+    mocks.listStudentsByClass.mockResolvedValue([]);
     mocks.listPublications.mockResolvedValue([]);
     mocks.listExamPaperTypes.mockResolvedValue([]);
     mocks.listSettings.mockResolvedValue([]);

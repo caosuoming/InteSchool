@@ -45,7 +45,7 @@ vi.mock("@/services/class", () => ({
   },
 }));
 vi.mock("@/services/question", () => ({
-  questionService: { getQuestion: vi.fn(), updateQuestion: vi.fn() },
+  questionService: { getQuestion: vi.fn(), updateQuestion: vi.fn(), addRemark: vi.fn() },
 }));
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
@@ -254,6 +254,12 @@ describe("LecturePreviewPage", () => {
     vi.mocked(classService.getStudent).mockResolvedValue(explicitStudent);
     vi.mocked(questionService.getQuestion).mockResolvedValue(question);
     vi.mocked(questionService.updateQuestion).mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
+    vi.mocked(questionService.addRemark).mockResolvedValue({
+      id: "remark-added",
+      content: "新备注",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([]);
@@ -355,6 +361,26 @@ describe("LecturePreviewPage", () => {
     expect(screen.getByRole("button", { name: "编辑第 1 题属性" })).toBeInTheDocument();
   });
 
+  it("keeps the source question label in an extracted lecture preview", async () => {
+    vi.mocked(lectureService.getLecture).mockResolvedValue({
+      ...lecture,
+      isExtractCopy: true,
+      sourceResourceId: "lecture-source-1",
+      sections: lecture.sections.map((section) => ({
+        ...section,
+        children: section.children.map((child) => (
+          child.type === "question" ? { ...child, customLabel: "例1" } : child
+        )),
+      })),
+    });
+
+    renderPage();
+
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+    expect(screen.getByText("例1")).toBeInTheDocument();
+    expect(screen.queryByText("1.")).not.toBeInTheDocument();
+  });
+
   it("toggles answer and analysis by clicking the question stem", async () => {
     renderPage();
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
@@ -366,11 +392,16 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByText("展开答案与解析")).not.toBeInTheDocument();
     expect(screen.queryByText("答案：")).not.toBeInTheDocument();
 
+    const correctOption = screen.getByText("B.").parentElement!;
+    expect(correctOption).toHaveClass("border");
+
     fireEvent.click(questionStem);
 
     expect(screen.getByText("答案：")).toBeInTheDocument();
     expect(screen.getByText("解析：")).toBeInTheDocument();
     expect(questionStem).toHaveAttribute("aria-expanded", "true");
+    expect(correctOption).not.toHaveClass("border");
+    expect(correctOption).toHaveClass("bg-emerald-50/40");
 
     fireEvent.click(questionStem);
     await waitFor(() => {
@@ -437,6 +468,47 @@ describe("LecturePreviewPage", () => {
         classIds: [],
         studentIds: [],
       });
+    });
+  });
+
+  it("shows and adds question remarks in the answer-status section", async () => {
+    const legacyQuestion = { ...question, remark: "讲义已有备注" } as Question;
+    const addedRemark = {
+      id: "remark-added",
+      content: "讲义新备注",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
+    vi.mocked(questionService.getQuestion)
+      .mockResolvedValueOnce(legacyQuestion)
+      .mockResolvedValue({
+        ...legacyQuestion,
+        remark: addedRemark.content,
+        remarks: [
+          {
+            id: "remark-legacy",
+            content: legacyQuestion.remark,
+            createdAt: legacyQuestion.updatedAt,
+            updatedAt: legacyQuestion.updatedAt,
+          },
+          addedRemark,
+        ],
+      });
+    vi.mocked(questionService.addRemark).mockResolvedValue(addedRemark);
+
+    renderPage();
+    const questionDetails = await screen.findByTestId("lecture-question-details-1");
+    expect(within(questionDetails).getAllByText("讲义已有备注").length).toBeGreaterThan(0);
+
+    fireEvent.click(within(questionDetails).getByRole("button", { name: "添加备注" }));
+    fireEvent.change(within(questionDetails).getByLabelText("新增题目备注"), {
+      target: { value: "讲义新备注" },
+    });
+    fireEvent.click(within(questionDetails).getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(questionService.addRemark).toHaveBeenCalledWith(question.id, "讲义新备注");
+      expect(within(questionDetails).getAllByText("讲义新备注").length).toBeGreaterThan(0);
     });
   });
 

@@ -22,6 +22,7 @@ import { Select } from "@/components/ui/Input";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
+import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -398,6 +399,10 @@ export default function LecturePreviewPage() {
     }
   };
 
+  const updateQuestionState = (updated: Question) => {
+    setQuestions((current) => ({ ...current, [updated.id]: updated }));
+  };
+
   const openQuestionMetadataEditor = (question: Question) => {
     setMetadataQuestion(question);
     setMetadataDraft({
@@ -693,6 +698,7 @@ export default function LecturePreviewPage() {
                       students={students}
                       answerRecords={answerRecords}
                       onUpdateStudentAnswer={updateStudentAnswer}
+                      onQuestionUpdated={updateQuestionState}
                       onEditMetadata={lecture.teacherId === teacher?.id
                         ? openQuestionMetadataEditor
                         : undefined}
@@ -1011,10 +1017,10 @@ function QuestionPreviewContent({
               <div
                 key={index}
                 className={cn(
-                  "p-2 rounded-md border text-sm flex items-start gap-1.5 min-w-0",
+                  "p-2 rounded-md text-sm flex items-start gap-1.5 min-w-0",
                   expanded && question.answer.includes(String.fromCharCode(65 + index))
-                    ? "border-emerald-200 bg-emerald-50/40"
-                    : "border-ink-100",
+                    ? "bg-emerald-50/40"
+                    : "border border-ink-100",
                 )}
               >
                 <span className="font-mono font-semibold text-ink-700 flex-shrink-0">
@@ -1048,6 +1054,7 @@ function LectureQuestionDetails({
   students,
   answerRecords,
   onUpdateStudentAnswer,
+  onQuestionUpdated,
   onEditMetadata,
   visibility,
 }: {
@@ -1056,6 +1063,7 @@ function LectureQuestionDetails({
   students: Student[];
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
+  onQuestionUpdated: (question: Question) => void;
   onEditMetadata?: (question: Question) => void;
   visibility: PreviewSidebarVisibility;
 }) {
@@ -1123,16 +1131,19 @@ function LectureQuestionDetails({
         </div>
       )}
       {visibility.answerStatus && (
-        <StudentAnswerStatusControl
-          className={cn(
-            "mt-3",
-            visibility.properties && "border-t border-ink-100 pt-3",
-          )}
-          students={students}
-          answerRecords={answerRecords}
-          questionId={question.id}
-          onChange={onUpdateStudentAnswer}
-        />
+        <div className={cn("mt-3", visibility.properties && "border-t border-ink-100 pt-3")}>
+          <StudentAnswerStatusControl
+            students={students}
+            answerRecords={answerRecords}
+            questionId={question.id}
+            onChange={onUpdateStudentAnswer}
+          />
+          <QuestionRemarkControl
+            className="mt-3 border-t border-ink-100 pt-3"
+            question={question}
+            onUpdated={onQuestionUpdated}
+          />
+        </div>
       )}
       {visibility.basket && (
         <div
