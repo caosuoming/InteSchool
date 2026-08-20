@@ -2,13 +2,15 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './index.css'
-import { applyUiScale, useSettingsStore } from './stores/settings'
+import { applyAppearanceMode, applyUiScale, useSettingsStore } from './stores/settings'
 import { recoverFromPreloadError } from './lib/preload-recovery'
 
 window.addEventListener('vite:preloadError', recoverFromPreloadError)
 
-// 启动时立即应用字体版本，避免刷新闪烁
-applyUiScale(useSettingsStore.getState().uiScale)
+// 启动时立即应用显示设置，避免刷新闪烁
+const initialSettings = useSettingsStore.getState()
+applyUiScale(initialSettings.uiScale)
+applyAppearanceMode(initialSettings.appearanceMode)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
