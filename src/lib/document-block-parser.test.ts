@@ -1152,6 +1152,29 @@ describe("document block parser", () => {
     expect(blocks[0].analysis).toBe("由单调性可得。");
   });
 
+  it("classifies lecture intro and knowledge review labels as project group titles", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "高一升高二讲义 第13讲",
+        "课前引入",
+        "立体几何初步是本讲的核心内容。",
+        "知识梳理",
+        "考向一 空间角的计算",
+        "例1 求异面直线所成角。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["documentTitle", "高一升高二讲义 第13讲"],
+      ["groupTitle", "课前引入"],
+      ["knowledge", "立体几何初步是本讲的核心内容。"],
+      ["groupTitle", "知识梳理"],
+      ["groupTitle", "考向一 空间角的计算"],
+      ["question", "例1 求异面直线所成角。"],
+    ]);
+  });
+
   it.each([
     "考向1 $a_{n+1}=pa_n+q^n$",
     "考向２：递推数列的构造",
