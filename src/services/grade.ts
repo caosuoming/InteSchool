@@ -135,4 +135,12 @@ export const gradeService = {
   async deleteExam(examId: string): Promise<void> {
     return rpcCall("grade", "deleteExam", [examId]) as Promise<void>;
   },
+
+  async listExamRecycleBin(schoolId: string): Promise<GradeExam[]> {
+    return rpcCall("grade", "listExamRecycleBin", [schoolId]) as Promise<GradeExam[]>;
+  },
+
+  async restoreExam(examId: string): Promise<GradeExam> {
+    return rpcCall("grade", "restoreExam", [examId]) as Promise<GradeExam>;
+  },
 };

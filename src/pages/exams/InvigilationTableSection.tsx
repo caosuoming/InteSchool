@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Copy, Download, Move, Plus, Save, Upload, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Copy, Download, Move, Plus, RotateCcw, Save, Trash2, Upload, X } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -43,6 +43,7 @@ interface Props {
   cohorts: GradeCohort[];
   cohortKey: string;
   onCohortChange: (value: string) => void;
+  isSchoolAdmin?: boolean;
 }
 
 const LEADER_ROLES = new Set(["gradeLeader", "dean", "vicePrincipal", "principal"]);
@@ -219,8 +220,16 @@ function consecutiveRowSpan<T>(items: T[], index: number, keyFor: (item: T) => s
   return span;
 }
 
-export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortKey, onCohortChange }: Props) {
+export function InvigilationTableSection({
+  schoolId,
+  teacherId,
+  cohorts,
+  cohortKey,
+  onCohortChange,
+  isSchoolAdmin = false,
+}: Props) {
   const [arrangements, setArrangements] = useState<ExamArrangement[]>([]);
+  const [recycleBin, setRecycleBin] = useState<ExamArrangement[]>([]);
   const [selectedArrangementId, setSelectedArrangementId] = useState("");
   const [teacherOptions, setTeacherOptions] = useState<GradeTeacherOption[]>([]);
   const [config, setConfig] = useState<ExamInvigilationConfig | null>(null);
@@ -248,6 +257,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   useEffect(() => {
     if (!cohortKey) {
       setArrangements([]);
+      setRecycleBin([]);
       setTeacherOptions([]);
       setSelectedArrangementId("");
       return;
@@ -257,11 +267,14 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     Promise.all([
       examArrangementService.listArrangements(schoolId, cohortKey),
       examArrangementService.getContext(schoolId, cohortKey),
-    ]).then(([items, context]) => {
+      isSchoolAdmin ? examArrangementService.listInvigilationRecycleBin(schoolId) : Promise.resolve([]),
+    ]).then(([items, context, deletedItems]) => {
       if (!active) return;
-      setArrangements(items);
+      const activeItems = items.filter((item) => !item.invigilationDeletedAt);
+      setArrangements(activeItems);
+      setRecycleBin(deletedItems.filter((item) => item.cohortKey === cohortKey));
       setTeacherOptions(context.teachers || []);
-      setSelectedArrangementId((current) => items.some((item) => item.id === current) ? current : items[0]?.id || "");
+      setSelectedArrangementId((current) => activeItems.some((item) => item.id === current) ? current : activeItems[0]?.id || "");
     }).catch((error) => {
       if (!active) return;
       setArrangements([]);
@@ -272,12 +285,16 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [cohortKey, schoolId]);
+  }, [cohortKey, isSchoolAdmin, schoolId]);
 
   const selectedArrangement = useMemo(
     () => arrangements.find((item) => item.id === selectedArrangementId) || arrangements[0] || null,
     [arrangements, selectedArrangementId],
   );
+  const canEditSelected = Boolean(
+    selectedArrangement && (selectedArrangement.teacherId === teacherId || isSchoolAdmin),
+  );
+  const readOnly = Boolean(selectedArrangement && !canEditSelected);
 
   useEffect(() => {
     if (!selectedArrangement) {
@@ -482,6 +499,10 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
 
   const saveConfig = async () => {
     if (!selectedArrangement || !config) return;
+    if (!canEditSelected) {
+      toast.error("当前监考表为只读", "仅创建者或学校管理员可以修改。");
+      return;
+    }
     const invalidRow = buildExamInvigilationTable(selectedArrangement, config).rows.find((row) => row.duplicateTeacherIds.length > 0);
     if (invalidRow) {
       const names = invalidRow.duplicateTeacherIds.map((id) => teacherMap.get(id)?.name || "未知教师").join("、");
@@ -498,6 +519,38 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       toast.error("保存监考配置失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const deleteConfig = async () => {
+    if (!selectedArrangement?.invigilation || !canEditSelected) return;
+    if (!window.confirm(`确定将「${selectedArrangement.name}」的监考表移入回收站吗？`)) return;
+    try {
+      await examArrangementService.deleteInvigilationConfig(selectedArrangement.id);
+      toast.success("监考表已移入回收站");
+      const items = await examArrangementService.listArrangements(schoolId, cohortKey);
+      const activeItems = items.filter((item) => !item.invigilationDeletedAt);
+      setArrangements(activeItems);
+      setSelectedArrangementId(activeItems[0]?.id || "");
+      if (isSchoolAdmin) {
+        const deleted = await examArrangementService.listInvigilationRecycleBin(schoolId);
+        setRecycleBin(deleted.filter((item) => item.cohortKey === cohortKey));
+      }
+    } catch (error) {
+      toast.error("删除失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const restoreConfig = async (arrangementId: string) => {
+    if (!isSchoolAdmin) return;
+    try {
+      const restored = await examArrangementService.restoreInvigilationConfig(arrangementId);
+      toast.success("监考表已恢复");
+      setRecycleBin((current) => current.filter((item) => item.id !== arrangementId));
+      setArrangements((current) => [restored, ...current.filter((item) => item.id !== restored.id)]);
+      setSelectedArrangementId(restored.id);
+    } catch (error) {
+      toast.error("恢复失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -777,9 +830,14 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
           />
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void saveConfig()} disabled={!config || saving}>
+          <Button variant="outline" onClick={() => void saveConfig()} disabled={!config || saving || readOnly}>
             {saving ? <Spinner size={16} /> : <Save className="h-4 w-4" />}保存监考配置
           </Button>
+          {selectedArrangement?.invigilation && canEditSelected && (
+            <Button variant="ghost" onClick={() => void deleteConfig()}>
+              <Trash2 className="h-4 w-4 text-red-500" />移入回收站
+            </Button>
+          )}
           <Button variant="gold" onClick={() => void download()} disabled={!selectedArrangement || downloading || !statistics?.rooms.length}>
             {downloading ? <Spinner size={16} /> : <Download className="h-4 w-4" />}下载 Excel
           </Button>
@@ -787,6 +845,33 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
       </div>
     </Card>
   );
+
+  const recycleBinCard = isSchoolAdmin ? (
+    <Card className="mb-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-medium text-ink-900">监考表回收站</div>
+          <div className="mt-1 text-xs text-ink-500">仅学校管理员可查看和恢复当前年级已删除的监考表。</div>
+        </div>
+        <Badge variant="ink">{recycleBin.length} 个</Badge>
+      </div>
+      {recycleBin.length > 0 && (
+        <div className="mt-4 divide-y divide-ink-100 rounded-lg border border-ink-100">
+          {recycleBin.map((item) => (
+            <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div>
+                <div className="text-sm font-medium text-ink-800">{item.name}</div>
+                <div className="mt-0.5 text-xs text-ink-400">{item.examDate || "日期待定"} · 删除于 {item.invigilationDeletedAt ? new Date(item.invigilationDeletedAt).toLocaleString("zh-CN") : "—"}</div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => void restoreConfig(item.id)}>
+                <RotateCcw className="h-3.5 w-3.5" />恢复
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  ) : null;
 
   if (loading && arrangements.length === 0) {
     return <>{controls}<Card><div className="flex justify-center py-20"><Spinner size={28} /></div></Card></>;
@@ -804,6 +889,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
             action={<Link to="/my-exams/rooms" target="_blank" rel="noreferrer"><Button variant="outline">前往考场布置<ArrowRight className="h-4 w-4" /></Button></Link>}
           />
         </Card>
+        {recycleBinCard}
       </>
     );
   }
@@ -811,6 +897,11 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
   return (
     <>
       {controls}
+      {readOnly && (
+        <Card className="mb-4 border-amber-200 bg-amber-50/60 p-4 text-sm text-amber-800">
+          当前监考表为只读；仅创建者或学校管理员可以修改或删除。
+        </Card>
+      )}
       <Card className="mb-4">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -849,6 +940,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
         </div>
       </Card>
 
+      <div className={cn(readOnly && "pointer-events-none opacity-75")} aria-disabled={readOnly}>
       <div className="mb-4 grid gap-4 xl:grid-cols-2">
         <Card>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1394,6 +1486,9 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
         </Card>
         </div>
       </div>
+      </div>
+
+      {recycleBinCard}
 
       <Modal
         open={addTeacherOpen}

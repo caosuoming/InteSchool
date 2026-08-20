@@ -685,6 +685,10 @@ export interface ExamArrangement extends Omit<ExamArrangementInput, "id"> {
   assignments: ExamSeatAssignment[];
   /** 当前考试对应的监考名单、考试时间和人工调整。 */
   invigilation?: ExamInvigilationConfig;
+  /** 监考表独立软删除时间；考场布置仍保持可用。 */
+  invigilationDeletedAt?: string;
+  /** 考场安排软删除时间；存在时仅学校管理员可在回收站中恢复。 */
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -963,6 +967,8 @@ export interface GradeExam {
   /** 当前有效的成绩发布；撤回后清空，重新发布会生成新链接。 */
   publication?: GradeExamPublication;
   settings: GradeExamSettings;
+  /** 软删除时间；存在时仅学校管理员可在回收站中恢复。 */
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
