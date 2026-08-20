@@ -148,10 +148,11 @@ function applyDocumentImageLayouts(root: DocumentFragment): void {
   for (const image of images) {
     image.setAttribute("loading", "lazy");
     const source = image.getAttribute("src");
-    if (!source) continue;
-    const displaySize = parseDocumentImageDisplaySize(source);
-    if (!displaySize) continue;
-    image.style.cssText = documentImageInlineStyle(displaySize);
+    if (source) {
+      const displaySize = parseDocumentImageDisplaySize(source);
+      if (displaySize) image.style.cssText = documentImageInlineStyle(displaySize);
+    }
+    image.style.border = "0";
   }
 }
 

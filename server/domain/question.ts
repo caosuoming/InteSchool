@@ -377,7 +377,17 @@ export const questionService = {
     db.update("questions", (list) =>
       list.map((q) => {
         if (q.id === questionId) {
-          const remarks = [...(q.remarks || []), remark];
+          const existingRemarks = q.remarks?.length
+            ? q.remarks
+            : q.remark.trim()
+              ? [{
+                  id: genId("rm"),
+                  content: q.remark,
+                  createdAt: q.updatedAt || q.createdAt || now,
+                  updatedAt: q.updatedAt || q.createdAt || now,
+                }]
+              : [];
+          const remarks = [...existingRemarks, remark];
           added = remark;
           return { ...q, remarks, remark: content, updatedAt: now };
         }
