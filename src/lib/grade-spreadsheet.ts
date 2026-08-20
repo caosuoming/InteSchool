@@ -550,7 +550,7 @@ export async function exportGradeTotalScoreSegmentReport(
   report.rows.forEach((row) => {
     rows.push([
       cell(`${row.threshold}分以上`, { fontWeight: "bold" }),
-      ...report.columns.map((column) => cell(row.counts[column.key] || 0)),
+      ...report.columns.map((column) => cell(row.counts[column.key] || null)),
     ]);
   });
   const standardSummary = (["science", "arts"] as const).map((track) => {
@@ -572,7 +572,10 @@ export async function exportGradeTotalScoreSegmentReport(
   report.summaryRows.forEach((row) => {
     rows.push([
       cell(row.label, { fontWeight: "bold" }),
-      ...report.columns.map((column) => cell(row.values[column.key])),
+      ...report.columns.map((column) => {
+        const value = row.values[column.key];
+        return cell(row.kind === "count" && value === 0 ? null : value);
+      }),
     ]);
   });
 
@@ -601,40 +604,37 @@ export async function exportGradeTotalScoreRankingReport(
     ...border,
     ...options,
   });
-  const sheets = report.tables.map((table) => ({
-    sheet: table.key === "science" ? "理科" : table.key === "arts" ? "文科" : "总分排名",
-    data: [
-      [
-        cell(table.title, { fontWeight: "bold", fontSize: 16, align: "left" }),
-        cell(null),
-        cell(null),
-        cell(null),
-        cell(report.reportDate.replace(/-/g, "."), { fontWeight: "bold" }),
+  const sheets = report.tables.map((table) => {
+    const headers = ["名次", "学号", "姓名", "班级", ...report.subjects, `总分（${report.scoreModeLabel}）`];
+    return {
+      sheet: table.key === "science" ? "理科" : table.key === "arts" ? "文科" : "总分排名",
+      data: [
+        [
+          cell(table.title, { fontWeight: "bold", fontSize: 16, align: "left" }),
+          ...Array.from({ length: Math.max(0, headers.length - 2) }, () => cell(null)),
+          cell(report.reportDate.replace(/-/g, "."), { fontWeight: "bold" }),
+        ],
+        headers.map((header) => cell(header, { fontWeight: "bold", backgroundColor: "#F3F4F6" })),
+        ...table.rows.map((row) => [
+          cell(row.rank),
+          cell(row.studentNo),
+          cell(row.studentName),
+          cell(row.classLabel),
+          ...report.subjects.map((subject) => cell(row.subjectScores[subject])),
+          cell(row.score),
+        ]),
       ],
-      [
-        cell("名次", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
-        cell("学号", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
-        cell("姓名", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
-        cell("班级", { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
-        cell(`总分（${report.scoreModeLabel}）`, { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+      stickyRowsCount: 2,
+      columns: [
+        { width: 10 },
+        { width: 16 },
+        { width: 14 },
+        { width: 14 },
+        ...report.subjects.map(() => ({ width: 12 })),
+        { width: 14 },
       ],
-      ...table.rows.map((row) => [
-        cell(row.rank),
-        cell(row.studentNo),
-        cell(row.studentName),
-        cell(row.classLabel),
-        cell(row.score),
-      ]),
-    ],
-    stickyRowsCount: 2,
-    columns: [
-      { width: 10 },
-      { width: 16 },
-      { width: 14 },
-      { width: 14 },
-      { width: 14 },
-    ],
-  }));
+    };
+  });
   const safeName = `${report.tables[0].title}${report.tables.length > 1 ? "等" : ""}`
     .replace(/[\\/:*?"<>|]/g, "_");
   await writeXlsxFile(sheets).toFile(`${safeName}.xlsx`);
@@ -674,20 +674,23 @@ export async function exportGradeSubjectScoreSegmentReport(
       ...subjectReport.rows.map((row) => [
         cell(row.classLabel),
         cell(row.teacherNames.join("、") || null),
-        cell(row.candidateCount),
-        ...subjectReport.thresholds.map((threshold) => cell(row.counts[threshold] || 0)),
+        cell(row.candidateCount || null),
+        ...subjectReport.thresholds.map((threshold) => cell(row.counts[threshold] || null)),
       ]),
       [
         cell("累计", { fontWeight: "bold" }),
         cell(null),
-        cell(subjectReport.totalCandidateCount, { fontWeight: "bold" }),
-        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalCounts[threshold] || 0, { fontWeight: "bold" })),
+        cell(subjectReport.totalCandidateCount || null, { fontWeight: "bold" }),
+        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalCounts[threshold] || null, { fontWeight: "bold" })),
       ],
       [
         cell("所占比例", { fontWeight: "bold" }),
         cell(null),
         cell(null),
-        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalRates[threshold], { fontWeight: "bold" })),
+        ...subjectReport.thresholds.map((threshold) => cell(
+          subjectReport.totalCandidateCount > 0 ? subjectReport.totalRates[threshold] : null,
+          { fontWeight: "bold" },
+        )),
       ],
     ];
     return {
@@ -747,23 +750,29 @@ export async function exportGradeElectiveScoreSegmentReport(
       ...subjectReport.rows.map((row) => [
         cell(row.classLabel),
         cell(row.teacherNames.join("、") || null),
-        cell(row.candidateCount),
-        ...subjectReport.gradeLabels.map((label) => cell(row.gradeCounts[label] || 0)),
-        ...subjectReport.thresholds.map((threshold) => cell(row.scoreCounts[threshold] || 0)),
+        cell(row.candidateCount || null),
+        ...subjectReport.gradeLabels.map((label) => cell(row.gradeCounts[label] || null)),
+        ...subjectReport.thresholds.map((threshold) => cell(row.scoreCounts[threshold] || null)),
       ]),
       [
         cell("累计", { fontWeight: "bold" }),
         cell(null),
-        cell(subjectReport.totalCandidateCount, { fontWeight: "bold" }),
-        ...subjectReport.gradeLabels.map((label) => cell(subjectReport.totalGradeCounts[label] || 0, { fontWeight: "bold" })),
-        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalScoreCounts[threshold] || 0, { fontWeight: "bold" })),
+        cell(subjectReport.totalCandidateCount || null, { fontWeight: "bold" }),
+        ...subjectReport.gradeLabels.map((label) => cell(subjectReport.totalGradeCounts[label] || null, { fontWeight: "bold" })),
+        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalScoreCounts[threshold] || null, { fontWeight: "bold" })),
       ],
       [
         cell("所占比例", { fontWeight: "bold" }),
         cell(null),
         cell(null),
-        ...subjectReport.gradeLabels.map((label) => cell(subjectReport.totalGradeRates[label], { fontWeight: "bold" })),
-        ...subjectReport.thresholds.map((threshold) => cell(subjectReport.totalScoreRates[threshold], { fontWeight: "bold" })),
+        ...subjectReport.gradeLabels.map((label) => cell(
+          subjectReport.totalCandidateCount > 0 ? subjectReport.totalGradeRates[label] : null,
+          { fontWeight: "bold" },
+        )),
+        ...subjectReport.thresholds.map((threshold) => cell(
+          subjectReport.totalCandidateCount > 0 ? subjectReport.totalScoreRates[threshold] : null,
+          { fontWeight: "bold" },
+        )),
       ],
     ];
     return {
@@ -946,7 +955,7 @@ function totalScoreSegmentWorkbookSheet(
   report.rows.forEach((row) => {
     rows.push([
       combinedWorkbookCell(`${row.threshold}分以上`, { fontWeight: "bold" }),
-      ...report.columns.map((column) => combinedWorkbookCell(row.counts[column.key] || 0)),
+      ...report.columns.map((column) => combinedWorkbookCell(row.counts[column.key] || null)),
     ]);
   });
   const standardSummary = (["science", "arts"] as const).map((track) => {
@@ -968,7 +977,10 @@ function totalScoreSegmentWorkbookSheet(
   report.summaryRows.forEach((row) => {
     rows.push([
       combinedWorkbookCell(row.label, { fontWeight: "bold" }),
-      ...report.columns.map((column) => combinedWorkbookCell(row.values[column.key])),
+      ...report.columns.map((column) => {
+        const value = row.values[column.key];
+        return combinedWorkbookCell(row.kind === "count" && value === 0 ? null : value);
+      }),
     ]);
   });
   return {
@@ -991,20 +1003,23 @@ function subjectScoreSegmentWorkbookSheets(
       ...subjectReport.rows.map((row) => [
         combinedWorkbookCell(row.classLabel),
         combinedWorkbookCell(row.teacherNames.join("、")),
-        combinedWorkbookCell(row.candidateCount),
-        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(row.counts[threshold] || 0)),
+        combinedWorkbookCell(row.candidateCount || null),
+        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(row.counts[threshold] || null)),
       ]),
       [
         combinedWorkbookCell("累计", { fontWeight: "bold" }),
         combinedWorkbookCell(null),
-        combinedWorkbookCell(subjectReport.totalCandidateCount, { fontWeight: "bold" }),
-        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(subjectReport.totalCounts[threshold] || 0, { fontWeight: "bold" })),
+        combinedWorkbookCell(subjectReport.totalCandidateCount || null, { fontWeight: "bold" }),
+        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(subjectReport.totalCounts[threshold] || null, { fontWeight: "bold" })),
       ],
       [
         combinedWorkbookCell("所占比例", { fontWeight: "bold" }),
         combinedWorkbookCell(null),
         combinedWorkbookCell(null),
-        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(subjectReport.totalRates[threshold], { fontWeight: "bold" })),
+        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(
+          subjectReport.totalCandidateCount > 0 ? subjectReport.totalRates[threshold] : null,
+          { fontWeight: "bold" },
+        )),
       ],
     ];
     return {
@@ -1034,23 +1049,29 @@ function electiveScoreSegmentWorkbookSheets(
       ...subjectReport.rows.map((row) => [
         combinedWorkbookCell(row.classLabel),
         combinedWorkbookCell(row.teacherNames.join("、")),
-        combinedWorkbookCell(row.candidateCount),
-        ...subjectReport.gradeLabels.map((label) => combinedWorkbookCell(row.gradeCounts[label] || 0)),
-        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(row.scoreCounts[threshold] || 0)),
+        combinedWorkbookCell(row.candidateCount || null),
+        ...subjectReport.gradeLabels.map((label) => combinedWorkbookCell(row.gradeCounts[label] || null)),
+        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(row.scoreCounts[threshold] || null)),
       ]),
       [
         combinedWorkbookCell("累计", { fontWeight: "bold" }),
         combinedWorkbookCell(null),
-        combinedWorkbookCell(subjectReport.totalCandidateCount, { fontWeight: "bold" }),
-        ...subjectReport.gradeLabels.map((label) => combinedWorkbookCell(subjectReport.totalGradeCounts[label] || 0, { fontWeight: "bold" })),
-        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(subjectReport.totalScoreCounts[threshold] || 0, { fontWeight: "bold" })),
+        combinedWorkbookCell(subjectReport.totalCandidateCount || null, { fontWeight: "bold" }),
+        ...subjectReport.gradeLabels.map((label) => combinedWorkbookCell(subjectReport.totalGradeCounts[label] || null, { fontWeight: "bold" })),
+        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(subjectReport.totalScoreCounts[threshold] || null, { fontWeight: "bold" })),
       ],
       [
         combinedWorkbookCell("所占比例", { fontWeight: "bold" }),
         combinedWorkbookCell(null),
         combinedWorkbookCell(null),
-        ...subjectReport.gradeLabels.map((label) => combinedWorkbookCell(subjectReport.totalGradeRates[label], { fontWeight: "bold" })),
-        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(subjectReport.totalScoreRates[threshold], { fontWeight: "bold" })),
+        ...subjectReport.gradeLabels.map((label) => combinedWorkbookCell(
+          subjectReport.totalCandidateCount > 0 ? subjectReport.totalGradeRates[label] : null,
+          { fontWeight: "bold" },
+        )),
+        ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(
+          subjectReport.totalCandidateCount > 0 ? subjectReport.totalScoreRates[threshold] : null,
+          { fontWeight: "bold" },
+        )),
       ],
     ];
     return {
@@ -1073,7 +1094,7 @@ function totalScoreRankingWorkbookSheets(
   usedNames: Set<string>,
 ): CombinedWorkbookSheet[] {
   return report.tables.map((table) => {
-    const headers = ["名次", "学号", "姓名", "班级", `总分（${report.scoreModeLabel}）`];
+    const headers = ["名次", "学号", "姓名", "班级", ...report.subjects, `总分（${report.scoreModeLabel}）`];
     return {
       sheet: uniqueWorkbookSheetName(
         `表五-${table.key === "science" ? "理科" : table.key === "arts" ? "文科" : "总分排名"}`,
@@ -1087,11 +1108,19 @@ function totalScoreRankingWorkbookSheets(
           combinedWorkbookCell(row.studentNo),
           combinedWorkbookCell(row.studentName),
           combinedWorkbookCell(row.classLabel),
+          ...report.subjects.map((subject) => combinedWorkbookCell(row.subjectScores[subject])),
           combinedWorkbookCell(row.score),
         ]),
       ],
       stickyRowsCount: 2,
-      columns: [{ width: 10 }, { width: 16 }, { width: 14 }, { width: 14 }, { width: 14 }],
+      columns: [
+        { width: 10 },
+        { width: 16 },
+        { width: 14 },
+        { width: 14 },
+        ...report.subjects.map(() => ({ width: 12 })),
+        { width: 14 },
+      ],
     };
   });
 }

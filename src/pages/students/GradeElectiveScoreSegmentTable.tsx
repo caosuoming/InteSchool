@@ -204,36 +204,40 @@ export function GradeElectiveScoreSegmentTable({
                     <tr key={row.classId} className="bg-paper">
                       <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold text-ink-800">{row.classLabel}</th>
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-700">{row.teacherNames.join("、") || "—"}</td>
-                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">{row.candidateCount}</td>
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">{row.candidateCount || ""}</td>
                       {subjectReport.gradeLabels.map((label) => (
                         <td key={label} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
-                          {row.gradeCounts[label] || 0}
+                          {row.gradeCounts[label] || ""}
                         </td>
                       ))}
                       {subjectReport.thresholds.map((threshold) => (
                         <td key={threshold} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
-                          {row.scoreCounts[threshold] || 0}
+                          {row.scoreCounts[threshold] || ""}
                         </td>
                       ))}
                     </tr>
                   ))}
                   <tr className="bg-ink-50/70 font-semibold">
                     <th colSpan={2} className="border border-ink-300 px-2 py-1.5 text-center">累计</th>
-                    <td className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalCandidateCount}</td>
+                    <td className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalCandidateCount || ""}</td>
                     {subjectReport.gradeLabels.map((label) => (
-                      <td key={label} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalGradeCounts[label] || 0}</td>
+                      <td key={label} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalGradeCounts[label] || ""}</td>
                     ))}
                     {subjectReport.thresholds.map((threshold) => (
-                      <td key={threshold} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalScoreCounts[threshold] || 0}</td>
+                      <td key={threshold} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalScoreCounts[threshold] || ""}</td>
                     ))}
                   </tr>
                   <tr className="bg-ink-50/70 font-semibold">
                     <th colSpan={3} className="border border-ink-300 px-2 py-1.5 text-center">所占比例</th>
                     {subjectReport.gradeLabels.map((label) => (
-                      <td key={label} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalGradeRates[label]}</td>
+                      <td key={label} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">
+                        {subjectReport.totalCandidateCount > 0 ? subjectReport.totalGradeRates[label] : ""}
+                      </td>
                     ))}
                     {subjectReport.thresholds.map((threshold) => (
-                      <td key={threshold} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalScoreRates[threshold]}</td>
+                      <td key={threshold} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">
+                        {subjectReport.totalCandidateCount > 0 ? subjectReport.totalScoreRates[threshold] : ""}
+                      </td>
                     ))}
                   </tr>
                 </tbody>

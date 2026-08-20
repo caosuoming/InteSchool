@@ -23,6 +23,7 @@ export interface GradeTotalScoreRankingRow {
   studentName: string;
   classId: string;
   classLabel: string;
+  subjectScores: Record<string, number | null>;
   score: number;
 }
 
@@ -36,6 +37,7 @@ export interface GradeTotalScoreRankingReport {
   reportDate: string;
   scoreMode: GradeScoreMode;
   scoreModeLabel: "原始分" | "赋分";
+  subjects: string[];
   topN: number;
   tables: GradeTotalScoreRankingTable[];
 }
@@ -48,6 +50,7 @@ function normalizeTopN(value: number | undefined): number {
 function rankedRows(
   records: GradeScoreRecord[],
   template: GradeStatisticsTemplate,
+  subjects: string[],
   classLabels: Record<string, string>,
   topN: number,
 ): GradeTotalScoreRankingRow[] {
@@ -73,6 +76,10 @@ function rankedRows(
         studentName: record.studentName,
         classId: record.classId,
         classLabel: classLabels[record.classId] || record.className,
+        subjectScores: Object.fromEntries(subjects.map((subject) => [
+          subject,
+          template.scoreMode === "raw" ? record.scores[subject] : record.assignedScores[subject],
+        ])),
         score,
       } satisfies GradeTotalScoreRankingRow;
     })
@@ -97,6 +104,7 @@ export function buildGradeTotalScoreRankingReport(
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const classLabels = classOptions.classLabels || {};
   const records = exam.records.filter((record) => !hiddenClassIds.has(record.classId));
+  const subjects = [...exam.subjects];
   const topN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreTopN);
   const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";
 
@@ -131,7 +139,7 @@ export function buildGradeTotalScoreRankingReport(
   ): GradeTotalScoreRankingTable => ({
     key,
     title: `${exam.cohortLabel}${exam.name}${label}（${scoreModeLabel}）`,
-    rows: rankedRows(source, effectiveTemplate, classLabels, topN),
+    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, topN),
   });
 
   const tables = splitByTrack
@@ -145,6 +153,7 @@ export function buildGradeTotalScoreRankingReport(
     reportDate: exam.examDate || exam.createdAt.slice(0, 10),
     scoreMode: effectiveTemplate.scoreMode,
     scoreModeLabel,
+    subjects,
     topN,
     tables,
   };

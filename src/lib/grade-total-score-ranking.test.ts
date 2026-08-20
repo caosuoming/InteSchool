@@ -117,7 +117,9 @@ describe("buildGradeTotalScoreRankingReport", () => {
       "2027届高三期末考试理科总分前1名（原始分）",
       "2027届高三期末考试文科总分前1名（原始分）",
     ]);
+    expect(rawReport.subjects).toEqual(["数学"]);
     expect(rawReport.tables[0].rows.map((row) => row.studentName)).toEqual(["甲"]);
+    expect(rawReport.tables[0].rows[0].subjectScores).toEqual({ 数学: 100 });
     expect(rawReport.tables[1].rows.map((row) => row.studentName)).toEqual(["丙"]);
 
     const assignedReport = buildGradeTotalScoreRankingReport(
@@ -128,6 +130,7 @@ describe("buildGradeTotalScoreRankingReport", () => {
     );
     expect(assignedReport.scoreModeLabel).toBe("赋分");
     expect(assignedReport.tables[0].rows.map((row) => row.studentName)).toEqual(["乙"]);
+    expect(assignedReport.tables[0].rows[0].subjectScores).toEqual({ 数学: 95 });
     expect(assignedReport.tables[1].rows.map((row) => row.studentName)).toEqual(["丙"]);
   });
 

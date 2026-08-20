@@ -100,6 +100,8 @@ describe("GradeElectiveScoreSegmentTable", () => {
     }
     expect(within(chemistryTable!).getByRole("columnheader", { name: "90分以上" })).toBeInTheDocument();
     expect(within(chemistryTable!).getByText("陈老师")).toBeInTheDocument();
+    const chemistryDataCells = chemistryTable!.querySelector("tbody tr")!.querySelectorAll("td");
+    expect(chemistryDataCells[3]).toBeEmptyDOMElement();
 
     await user.click(screen.getByRole("button", { name: "调整表四分数段" }));
     const chemistryThresholds = screen.getByLabelText("化学分数段");

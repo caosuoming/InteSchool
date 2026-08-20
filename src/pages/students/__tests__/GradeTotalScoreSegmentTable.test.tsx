@@ -135,7 +135,9 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(screen.getByRole("columnheader", { name: "1班" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "理科小计" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "总计" })).toBeInTheDocument();
-    expect(within(screen.getByRole("row", { name: /100分以上/ })).getAllByRole("cell", { name: "0" })).toHaveLength(3);
+    const emptyCountCells = within(screen.getByRole("row", { name: /100分以上/ })).getAllByRole("cell");
+    expect(emptyCountCells).toHaveLength(3);
+    emptyCountCells.forEach((cell) => expect(cell).toBeEmptyDOMElement());
     expect(within(screen.getByRole("row", { name: /90分以上/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /考生人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /高分1达线数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);

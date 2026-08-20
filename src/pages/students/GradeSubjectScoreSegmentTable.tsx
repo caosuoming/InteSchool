@@ -198,25 +198,27 @@ export function GradeSubjectScoreSegmentTable({
                     <tr key={row.classId} className="bg-paper">
                       <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold text-ink-800">{row.classLabel}</th>
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-700">{row.teacherNames.join("、") || "—"}</td>
-                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">{row.candidateCount}</td>
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">{row.candidateCount || ""}</td>
                       {subjectReport.thresholds.map((threshold) => (
                         <td key={threshold} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
-                          {row.counts[threshold] || 0}
+                          {row.counts[threshold] || ""}
                         </td>
                       ))}
                     </tr>
                   ))}
                   <tr className="bg-ink-50/70 font-semibold">
                     <th colSpan={2} className="border border-ink-300 px-2 py-1.5 text-center">累计</th>
-                    <td className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalCandidateCount}</td>
+                    <td className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalCandidateCount || ""}</td>
                     {subjectReport.thresholds.map((threshold) => (
-                      <td key={threshold} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalCounts[threshold] || 0}</td>
+                      <td key={threshold} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalCounts[threshold] || ""}</td>
                     ))}
                   </tr>
                   <tr className="bg-ink-50/70 font-semibold">
                     <th colSpan={3} className="border border-ink-300 px-2 py-1.5 text-center">所占比例</th>
                     {subjectReport.thresholds.map((threshold) => (
-                      <td key={threshold} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">{subjectReport.totalRates[threshold]}</td>
+                      <td key={threshold} className="border border-ink-300 px-2 py-1.5 text-center tabular-nums">
+                        {subjectReport.totalCandidateCount > 0 ? subjectReport.totalRates[threshold] : ""}
+                      </td>
                     ))}
                   </tr>
                 </tbody>

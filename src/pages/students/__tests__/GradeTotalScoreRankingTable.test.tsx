@@ -80,8 +80,10 @@ describe("GradeTotalScoreRankingTable", () => {
 
     expect(screen.getByText("表五、总分前1名（赋分）")).toBeInTheDocument();
     expect(screen.getByText("2027届高三期末考试总分前1名（赋分）")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "数学" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "总分（赋分）" })).toBeInTheDocument();
     expect(screen.getByText("甲")).toBeInTheDocument();
+    expect(screen.getAllByText("95")).toHaveLength(2);
     expect(screen.queryByText("乙")).not.toBeInTheDocument();
 
     const topN = screen.getByRole("spinbutton", { name: "表五前多少名" });
