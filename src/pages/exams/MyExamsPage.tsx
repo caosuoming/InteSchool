@@ -7,8 +7,10 @@ import {
   Copy,
   FileSpreadsheet,
   MapPinned,
+  RotateCcw,
   Save,
   Settings2,
+  Trash2,
   TableProperties,
   Upload,
   UsersRound,
@@ -33,6 +35,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
+import { isSchoolExamAdmin } from "@/lib/exam-permissions";
 import {
   ASSIGNMENT_GRADE_SUBJECTS,
   buildDefaultGradeSettings,
@@ -173,16 +176,19 @@ function GradePreprocessing({
   cohorts,
   cohortKey,
   onCohortChange,
+  isSchoolAdmin = false,
 }: {
   schoolId: string;
   teacherId: string;
   cohorts: GradeCohort[];
   cohortKey: string;
   onCohortChange: (value: string) => void;
+  isSchoolAdmin?: boolean;
 }) {
   const [context, setContext] = useState<GradeImportContext | null>(null);
   const [record, setRecord] = useState<GradeCohortSettings | null>(null);
   const [exams, setExams] = useState<GradeExam[]>([]);
+  const [recycleBin, setRecycleBin] = useState<GradeExam[]>([]);
   const [selectedExamId, setSelectedExamId] = useState("");
   const [subjects, setSubjects] = useState<string[]>([]);
   const [draft, setDraft] = useState<GradeExamSettings | null>(null);
@@ -202,6 +208,7 @@ function GradePreprocessing({
       setContext(null);
       setRecord(null);
       setExams([]);
+      setRecycleBin([]);
       setSelectedExamId("");
       setSubjects([]);
       setDraft(null);
@@ -209,10 +216,11 @@ function GradePreprocessing({
     }
     setLoading(true);
     try {
-      const [nextContext, nextRecord, nextExams] = await Promise.all([
+      const [nextContext, nextRecord, nextExams, deletedExams] = await Promise.all([
         gradeService.getImportContext(schoolId, cohortKey),
         gradeService.getCohortSettings(schoolId, cohortKey),
         gradeService.listExams(schoolId, cohortKey),
+        isSchoolAdmin ? gradeService.listExamRecycleBin(schoolId) : Promise.resolve([]),
       ]);
       const nextSubjects = nextRecord?.subjects?.length
         ? nextRecord.subjects
@@ -239,6 +247,7 @@ function GradePreprocessing({
       setContext(nextContext);
       setRecord(nextRecord);
       setExams(nextExams);
+      setRecycleBin(deletedExams.filter((item) => item.cohortKey === cohortKey));
       setSelectedExamId((current) => (
         nextExams.some((item) => item.id === current) ? current : nextExams[0]?.id || ""
       ));
@@ -250,7 +259,7 @@ function GradePreprocessing({
     } finally {
       setLoading(false);
     }
-  }, [cohortKey, schoolId]);
+  }, [cohortKey, isSchoolAdmin, schoolId]);
 
   useEffect(() => {
     void load();
@@ -264,6 +273,10 @@ function GradePreprocessing({
     () => exams.find((item) => item.id === selectedExamId) || exams[0] || null,
     [exams, selectedExamId],
   );
+  const canEditSelected = Boolean(
+    selectedExam && (selectedExam.teacherId === teacherId || isSchoolAdmin),
+  );
+  const readOnly = Boolean(selectedExam && !canEditSelected);
   const previousExams = useMemo(() => {
     if (!selectedExam) return [];
     const selectedTimestamp = gradeExamTimestamp(selectedExam);
@@ -309,7 +322,7 @@ function GradePreprocessing({
   }, []);
 
   const toggleSubject = (subject: string) => {
-    if (!context || !draft) return;
+    if (!context || !draft || readOnly) return;
     const selected = subjects.includes(subject);
     const nextSubjects = selected
       ? subjects.filter((item) => item !== subject)
@@ -329,7 +342,7 @@ function GradePreprocessing({
   };
 
   const save = async () => {
-    if (!draft || !cohortKey) return;
+    if (!draft || !cohortKey || readOnly) return;
     setSaving(true);
     try {
       const saved = await gradeService.saveCohortSettings(
@@ -356,7 +369,7 @@ function GradePreprocessing({
   };
 
   const saveTeacherImport = useCallback(async (nextDraft: GradeExamSettings): Promise<GradeExamSettings> => {
-    if (!cohortKey) return nextDraft;
+    if (!cohortKey || readOnly) return draft ? structuredClone(draft) : nextDraft;
     setSaving(true);
     try {
       const saved = await gradeService.saveCohortSettings(
@@ -377,10 +390,10 @@ function GradePreprocessing({
     } finally {
       setSaving(false);
     }
-  }, [cohortKey, schoolId, subjects, teacherId]);
+  }, [cohortKey, draft, readOnly, schoolId, subjects, teacherId]);
 
   const autoSaveSegmentSettings = useCallback((nextDraft: GradeExamSettings) => {
-    if (!cohortKey) return Promise.resolve();
+    if (!cohortKey || readOnly) return Promise.resolve();
     autoSaveQueue.current = autoSaveQueue.current.then(async () => {
       try {
         const saved = await gradeService.saveCohortSettings(
@@ -396,7 +409,7 @@ function GradePreprocessing({
       }
     });
     return autoSaveQueue.current;
-  }, [cohortKey, schoolId, subjects, teacherId]);
+  }, [cohortKey, readOnly, schoolId, subjects, teacherId]);
 
   const downloadTablesOneToFive = useCallback(async () => {
     if (!selectedExam || !classAverageTemplate || !totalScoreSegmentTemplate) {
@@ -424,7 +437,7 @@ function GradePreprocessing({
   }, [classStatisticsOptions, previousExams, selectedExam, teacherId]);
 
   const copy = async () => {
-    if (!copySource || !cohortKey) return;
+    if (!copySource || !cohortKey || readOnly) return;
     setCopying(true);
     try {
       const copied = await gradeService.copyCohortSettings(
@@ -442,6 +455,30 @@ function GradePreprocessing({
       toast.error("复制失败", error instanceof Error ? error.message : undefined);
     } finally {
       setCopying(false);
+    }
+  };
+
+  const deleteExam = async () => {
+    if (!selectedExam || !canEditSelected) return;
+    if (!window.confirm(`确定将「${selectedExam.name}」的成绩统计移入回收站吗？`)) return;
+    try {
+      await gradeService.deleteExam(selectedExam.id);
+      toast.success("成绩统计已移入回收站");
+      await load();
+    } catch (error) {
+      toast.error("删除失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const restoreExam = async (examId: string) => {
+    if (!isSchoolAdmin) return;
+    try {
+      const restored = await gradeService.restoreExam(examId);
+      toast.success("成绩统计已恢复");
+      await load();
+      setSelectedExamId(restored.id);
+    } catch (error) {
+      toast.error("恢复失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -473,7 +510,7 @@ function GradePreprocessing({
               placeholder="选择已有配置的年级"
               options={otherCohorts.map((item) => ({ value: item.key, label: item.label }))}
             />
-            <Button variant="outline" onClick={copy} disabled={!copySource} loading={copying}>
+            <Button variant="outline" onClick={copy} disabled={!copySource || readOnly} loading={copying}>
               <Copy className="h-4 w-4" />复制并适配
             </Button>
           </div>
@@ -481,7 +518,7 @@ function GradePreprocessing({
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4" />导入成绩
             </Button>
-            <Button variant="gold" onClick={save} loading={saving}>
+            <Button variant="gold" onClick={save} loading={saving} disabled={readOnly}>
               <Save className="h-4 w-4" />保存年级配置
             </Button>
           </div>
@@ -511,6 +548,7 @@ function GradePreprocessing({
               <button
                 key={subject}
                 type="button"
+                disabled={readOnly}
                 onClick={() => toggleSubject(subject)}
                 className={cn(
                   "rounded-md border px-3 py-1.5 text-xs transition-colors",
@@ -558,8 +596,16 @@ function GradePreprocessing({
                   label: `${exam.name}${exam.examDate ? `（${exam.examDate}）` : ""}`,
                 }))}
               />
-              <div className="text-xs text-ink-500 md:pb-2">
-                已上传 {exams.length} 次考试；切换考试只更换统计数据，表格布局和教师配置仍按当前年级配置复用。
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500 md:pb-2">
+                <span>已上传 {exams.length} 次考试；切换考试只更换统计数据，表格布局和教师配置仍按当前年级配置复用。</span>
+                <span className="flex items-center gap-2">
+                  {readOnly && <Badge variant="amber">只读</Badge>}
+                  {selectedExam && canEditSelected && (
+                    <Button variant="ghost" size="sm" onClick={() => void deleteExam()}>
+                      <Trash2 className="h-3.5 w-3.5 text-red-500" />移入回收站
+                    </Button>
+                  )}
+                </span>
               </div>
             </div>
           </Card>
@@ -569,6 +615,7 @@ function GradePreprocessing({
               onExamUpdated={handleExamUpdated}
               onDownloadTablesOneToFive={downloadTablesOneToFive}
               onDownloadClassStatistics={downloadClassStatistics}
+              readOnly={readOnly}
             />
           )}
           {selectedExam && classAverageTemplate && (
@@ -577,7 +624,7 @@ function GradePreprocessing({
               settings={draft}
               template={classAverageTemplate}
               context={context}
-              onChange={setDraft}
+              onChange={readOnly ? () => {} : setDraft}
             />
           )}
           {selectedExam && totalScoreSegmentTemplate && (
@@ -588,7 +635,7 @@ function GradePreprocessing({
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
                 context={context}
-                onChange={setDraft}
+                onChange={readOnly ? () => {} : setDraft}
                 onAutoSave={autoSaveSegmentSettings}
               />
               <GradeSubjectScoreSegmentTable
@@ -597,7 +644,7 @@ function GradePreprocessing({
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
                 context={context}
-                onChange={setDraft}
+                onChange={readOnly ? () => {} : setDraft}
                 onAutoSave={autoSaveSegmentSettings}
               />
               <GradeElectiveScoreSegmentTable
@@ -606,7 +653,7 @@ function GradePreprocessing({
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
                 context={context}
-                onChange={setDraft}
+                onChange={readOnly ? () => {} : setDraft}
                 onAutoSave={autoSaveSegmentSettings}
               />
               <GradeTotalScoreRankingTable
@@ -615,7 +662,7 @@ function GradePreprocessing({
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
                 context={context}
-                onChange={setDraft}
+                onChange={readOnly ? () => {} : setDraft}
                 onAutoSave={autoSaveSegmentSettings}
               />
             </>
@@ -631,11 +678,38 @@ function GradePreprocessing({
         </>
       )}
 
+      {isSchoolAdmin && (
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="font-medium text-ink-900">成绩统计回收站</div>
+              <div className="mt-1 text-xs text-ink-500">仅学校管理员可查看和恢复当前年级已删除的成绩统计。</div>
+            </div>
+            <Badge variant="ink">{recycleBin.length} 个</Badge>
+          </div>
+          {recycleBin.length > 0 && (
+            <div className="mt-4 divide-y divide-ink-100 rounded-lg border border-ink-100">
+              {recycleBin.map((item) => (
+                <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div>
+                    <div className="text-sm font-medium text-ink-800">{item.name}</div>
+                    <div className="mt-0.5 text-xs text-ink-400">{item.examDate || "日期待定"} · 删除于 {item.deletedAt ? new Date(item.deletedAt).toLocaleString("zh-CN") : "—"}</div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => void restoreExam(item.id)}>
+                    <RotateCcw className="h-3.5 w-3.5" />恢复
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
       <GradeSettingsEditor
         settings={draft}
         subjects={subjects}
         context={context}
-        onChange={setDraft}
+        onChange={readOnly ? () => {} : setDraft}
         onTeacherImport={saveTeacherImport}
         section="settings"
         records={selectedExam?.records || []}
@@ -657,6 +731,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const affiliation = getCurrentAffiliation();
   const schoolId = affiliation?.schoolId || null;
+  const isAdmin = Boolean(teacher && isSchoolExamAdmin(teacher, affiliation));
   const [searchParams, setSearchParams] = useSearchParams();
   const [cohorts, setCohorts] = useState<GradeCohort[]>([]);
   const [loading, setLoading] = useState(true);
@@ -738,6 +813,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
           cohorts={cohorts}
           cohortKey={cohortKey}
           onCohortChange={changeCohort}
+          isSchoolAdmin={isAdmin}
         />
       ) : (
         <GradePreprocessing
@@ -746,6 +822,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
           cohorts={cohorts}
           cohortKey={cohortKey}
           onCohortChange={changeCohort}
+          isSchoolAdmin={isAdmin}
         />
       )}
     </div>

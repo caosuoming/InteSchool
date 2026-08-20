@@ -6,11 +6,13 @@ import type {
   ExamInvigilationProfile,
   GradeExam,
   GradeImportContext,
+  Teacher,
 } from "../../src/types/index.js";
 import { generateExamAssignments } from "../../src/lib/exam-arrangement.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { gradeService } from "./grade.js";
+import { canModifyExamRecord, isExamRecordAdmin } from "../exam-record-permissions.js";
 
 function readArrangements(): ExamArrangement[] {
   const value = db.read("examArrangements");
@@ -66,7 +68,7 @@ function effectiveInvigilationProfileFor(schoolId: string, cohortKey: string): E
   const stored = invigilationProfileFor(schoolId, cohortKey);
   if (stored) return stored;
   const legacy = readArrangements()
-    .filter((item) => item.schoolId === schoolId && item.cohortKey === cohortKey && item.invigilation)
+    .filter((item) => item.schoolId === schoolId && item.cohortKey === cohortKey && !item.deletedAt && !item.invigilationDeletedAt && item.invigilation)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
   if (!legacy?.invigilation) return null;
   const config = legacy.invigilation;
@@ -104,7 +106,7 @@ export const examArrangementService = {
     const context = await gradeService.getImportContext(schoolId, cohortKey);
     const exams = db.read("gradeExams");
     const latestExam = (Array.isArray(exams) ? exams as GradeExam[] : [])
-      .filter((exam) => exam.schoolId === schoolId && exam.cohortKey === cohortKey)
+      .filter((exam) => exam.schoolId === schoolId && exam.cohortKey === cohortKey && !exam.deletedAt)
       .sort((left, right) => {
         const leftTime = left.examDate || left.updatedAt || left.createdAt;
         const rightTime = right.examDate || right.updatedAt || right.createdAt;
@@ -128,7 +130,7 @@ export const examArrangementService = {
   async listArrangements(schoolId: string, cohortKey?: string): Promise<ExamArrangement[]> {
     await delay(120);
     return readArrangements()
-      .filter((item) => item.schoolId === schoolId && (!cohortKey || item.cohortKey === cohortKey))
+      .filter((item) => item.schoolId === schoolId && !item.deletedAt && (!cohortKey || item.cohortKey === cohortKey))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   },
 
@@ -136,6 +138,7 @@ export const examArrangementService = {
     schoolId: string,
     teacherId: string,
     input: ExamArrangementInput,
+    actor?: Teacher,
   ): Promise<ExamArrangement> {
     await delay(180);
     maybeThrowError();
@@ -165,7 +168,9 @@ export const examArrangementService = {
       ? readArrangements().find((item) => item.id === input.id)
       : undefined;
     if (input.id && !existing) throw new Error("考场安排方案不存在");
-    if (existing && (existing.schoolId !== schoolId || existing.teacherId !== teacherId)) {
+    if (existing?.deletedAt) throw new Error("考场安排方案已在回收站，请先恢复");
+    if (existing && existing.schoolId !== schoolId) throw new Error("无权修改其他学校的考场安排方案");
+    if (existing && existing.teacherId !== teacherId && (!actor || !canModifyExamRecord(existing.teacherId, existing.schoolId, actor))) {
       throw new Error("无权修改其他教师的考场安排方案");
     }
 
@@ -173,7 +178,7 @@ export const examArrangementService = {
     const arrangement: ExamArrangement = {
       id: existing?.id || genId("exam-arrangement"),
       schoolId,
-      teacherId,
+      teacherId: existing?.teacherId || teacherId,
       cohortKey: context.cohort.key,
       cohortLabel: context.cohort.label,
       name: preparedInput.name.trim(),
@@ -204,12 +209,15 @@ export const examArrangementService = {
     schoolId: string,
     arrangementId: string,
     config: ExamInvigilationConfig,
+    actor?: Teacher,
   ): Promise<ExamArrangement> {
     await delay(120);
     maybeThrowError();
     const current = readArrangements().find((item) => item.id === arrangementId);
-    if (!current) throw new Error("考场安排方案不存在");
+    if (!current || current.deletedAt) throw new Error("考场安排方案不存在");
+    if (current.invigilationDeletedAt) throw new Error("监考表已在回收站，请先由学校管理员恢复");
     if (current.schoolId !== schoolId) throw new Error("无权修改其他学校的监考表");
+    if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权修改其他教师的监考表");
 
     const subjectSet = new Set(current.subjects);
     const teacherIds = new Set<string>();
@@ -308,13 +316,76 @@ export const examArrangementService = {
     return updated;
   },
 
-  async deleteArrangement(arrangementId: string): Promise<void> {
+  async deleteInvigilationConfig(arrangementId: string, actor?: Teacher): Promise<void> {
     await delay(120);
     maybeThrowError();
-    const exists = readArrangements().some((item) => item.id === arrangementId);
-    if (!exists) throw new Error("考场安排方案不存在");
-    db.update("examArrangements", (items: ExamArrangement[]) =>
-      items.filter((item) => item.id !== arrangementId),
-    );
+    const current = readArrangements().find((item) => item.id === arrangementId);
+    if (!current || current.deletedAt || !current.invigilation || current.invigilationDeletedAt) {
+      throw new Error("监考表不存在");
+    }
+    if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权删除其他教师的监考表");
+    const invigilationDeletedAt = new Date().toISOString();
+    db.update("examArrangements", (items: ExamArrangement[]) => items.map((item) => (
+      item.id === arrangementId ? { ...item, invigilationDeletedAt, updatedAt: invigilationDeletedAt } : item
+    )));
+  },
+
+  async listInvigilationRecycleBin(schoolId: string, actor: Teacher): Promise<ExamArrangement[]> {
+    await delay(80);
+    if (!isExamRecordAdmin(actor, schoolId)) throw new Error("仅学校管理员可查看监考表回收站");
+    return readArrangements()
+      .filter((item) => item.schoolId === schoolId && !item.deletedAt && Boolean(item.invigilationDeletedAt) && Boolean(item.invigilation))
+      .sort((left, right) => String(right.invigilationDeletedAt).localeCompare(String(left.invigilationDeletedAt)));
+  },
+
+  async restoreInvigilationConfig(arrangementId: string, actor: Teacher): Promise<ExamArrangement> {
+    await delay(120);
+    maybeThrowError();
+    const current = readArrangements().find((item) => item.id === arrangementId);
+    if (!isExamRecordAdmin(actor, current?.schoolId)) throw new Error("仅学校管理员可恢复监考表");
+    if (!current?.invigilation || !current.invigilationDeletedAt || current.deletedAt) {
+      throw new Error("回收站中不存在该监考表");
+    }
+    const { invigilationDeletedAt: _deletedAt, ...rest } = current;
+    const restored: ExamArrangement = { ...rest, updatedAt: new Date().toISOString() };
+    db.update("examArrangements", (items: ExamArrangement[]) => items.map((item) => (
+      item.id === arrangementId ? restored : item
+    )));
+    return restored;
+  },
+
+  async deleteArrangement(arrangementId: string, actor?: Teacher): Promise<void> {
+    await delay(120);
+    maybeThrowError();
+    const current = readArrangements().find((item) => item.id === arrangementId);
+    if (!current || current.deletedAt) throw new Error("考场安排方案不存在");
+    if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权删除其他教师的考场安排方案");
+    const deletedAt = new Date().toISOString();
+    db.update("examArrangements", (items: ExamArrangement[]) => items.map((item) => (
+      item.id === arrangementId ? { ...item, deletedAt, updatedAt: deletedAt } : item
+    )));
+  },
+
+  async listArrangementRecycleBin(schoolId: string, actor: Teacher): Promise<ExamArrangement[]> {
+    await delay(80);
+    if (!isExamRecordAdmin(actor, schoolId)) throw new Error("仅学校管理员可查看考试安排回收站");
+    return readArrangements()
+      .filter((item) => item.schoolId === schoolId && Boolean(item.deletedAt))
+      .sort((left, right) => String(right.deletedAt).localeCompare(String(left.deletedAt)));
+  },
+
+  async restoreArrangement(arrangementId: string, actor: Teacher): Promise<ExamArrangement> {
+    await delay(120);
+    maybeThrowError();
+    const current = readArrangements().find((item) => item.id === arrangementId);
+    if (!isExamRecordAdmin(actor, current?.schoolId)) throw new Error("仅学校管理员可恢复考试安排");
+    if (!current?.deletedAt) throw new Error("回收站中不存在该考场安排方案");
+    const updatedAt = new Date().toISOString();
+    const { deletedAt: _deletedAt, ...rest } = current;
+    const restored: ExamArrangement = { ...rest, updatedAt };
+    db.update("examArrangements", (items: ExamArrangement[]) => items.map((item) => (
+      item.id === arrangementId ? restored : item
+    )));
+    return restored;
   },
 };

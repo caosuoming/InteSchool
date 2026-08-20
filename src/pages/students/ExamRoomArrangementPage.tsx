@@ -37,6 +37,7 @@ import { Input, Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
+import { canModifyExamRecord, isSchoolExamAdmin } from "@/lib/exam-permissions";
 import {
   downloadClassArrangements,
   downloadDeskLabels,
@@ -683,11 +684,14 @@ function PreviewSwitchTabs({
 
 export default function ExamRoomArrangementPage({ embedded = false }: { embedded?: boolean }) {
   const { teacher, getCurrentAffiliation } = useAuthStore();
-  const schoolId = getCurrentAffiliation()?.schoolId || null;
+  const affiliation = getCurrentAffiliation();
+  const schoolId = affiliation?.schoolId || null;
+  const isAdmin = Boolean(teacher && isSchoolExamAdmin(teacher, affiliation));
   const [cohorts, setCohorts] = useState<GradeCohort[]>([]);
   const [cohortKey, setCohortKey] = useState("");
   const [context, setContext] = useState<ExamArrangementContext | null>(null);
   const [arrangements, setArrangements] = useState<ExamArrangement[]>([]);
+  const [recycleBin, setRecycleBin] = useState<ExamArrangement[]>([]);
   const [selectedArrangementId, setSelectedArrangementId] = useState("");
   const [draft, setDraft] = useState<ExamArrangementInput | null>(null);
   const [view, setView] = useState<ViewMode>("settings");
@@ -712,6 +716,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [deskRowMeasurement, setDeskRowMeasurement] = useState<{ signature: string; heights: number[] } | null>(null);
 
   const selectedArrangement = arrangements.find((item) => item.id === selectedArrangementId) || null;
+  const canEditSelected = Boolean(
+    !selectedArrangement || (teacher && canModifyExamRecord(teacher, selectedArrangement.teacherId, affiliation)),
+  );
   const assignments = useMemo(() => (
     selectedArrangement && selectedArrangement.id === draft?.id
       ? selectedArrangement.assignments
@@ -825,7 +832,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [schoolId]);
+  }, [isAdmin, schoolId]);
 
   const loadCohort = useCallback(async (key: string, preferredId?: string) => {
     if (!schoolId || !key) return;
@@ -837,6 +844,12 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
       ]);
       setContext(nextContext);
       setArrangements(nextArrangements);
+      if (isAdmin) {
+        const deleted = await examArrangementService.listArrangementRecycleBin(schoolId);
+        setRecycleBin(deleted.filter((item) => item.cohortKey === key));
+      } else {
+        setRecycleBin([]);
+      }
       const selected = preferredId ? nextArrangements.find((item) => item.id === preferredId) || null : null;
       if (selected) {
         setSelectedArrangementId(selected.id);
@@ -852,7 +865,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     } finally {
       setLoading(false);
     }
-  }, [schoolId]);
+  }, [isAdmin, schoolId]);
 
   useEffect(() => {
     void loadCohort(cohortKey);
@@ -904,6 +917,10 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
   const handleSave = async () => {
     if (!draft || !context || !schoolId || !teacher) return;
+    if (selectedArrangement && !canEditSelected) {
+      toast.error("当前考场安排为只读", "仅创建者或学校管理员可以修改。");
+      return;
+    }
     const preparedDraft = normalizeDraft({
       ...draft,
       mode: draft.separateSubjects?.length === draft.subjects.length ? "subject" : "combination",
@@ -924,13 +941,24 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   };
 
   const handleDelete = async () => {
-    if (!selectedArrangement || !window.confirm(`确定删除「${selectedArrangement.name}」吗？`)) return;
+    if (!selectedArrangement || !canEditSelected || !window.confirm(`确定将「${selectedArrangement.name}」移入回收站吗？`)) return;
     try {
       await examArrangementService.deleteArrangement(selectedArrangement.id);
-      toast.success("考场安排已删除");
+      toast.success("考场安排已移入回收站");
       await loadCohort(cohortKey);
     } catch (error) {
       toast.error("删除失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const handleRestore = async (arrangementId: string) => {
+    if (!isAdmin) return;
+    try {
+      const restored = await examArrangementService.restoreArrangement(arrangementId);
+      toast.success("考场安排已恢复");
+      await loadCohort(restored.cohortKey, restored.id);
+    } catch (error) {
+      toast.error("恢复失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -1359,6 +1387,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     <div className="font-medium text-ink-900">{selectedArrangement.name}</div>
                     <Badge>{selectedArrangement.examDate || "日期待定"}</Badge>
                     <Badge>{selectedArrangement.seatOrder === "previousRank" ? "按上次名次排" : "随机排"}</Badge>
+                    {!canEditSelected && <Badge variant="amber">只读</Badge>}
                   </div>
                   <div className="mt-2 text-sm text-ink-600">学生考试科目：{selectedArrangement.subjects.join("、")}</div>
                   <div className="mt-1 text-xs text-ink-500">
@@ -1736,7 +1765,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     </Button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => setView("settings")}><RotateCcw className="h-4 w-4" />重新排考场</Button>
+                    {canEditSelected && (
+                      <Button variant="outline" onClick={() => setView("settings")}><RotateCcw className="h-4 w-4" />重新排考场</Button>
+                    )}
                     {previewMode === "class" ? (
                       <>
                         <Button variant="outline" disabled={selectedClassIds.size === 0} onClick={() => window.print()}>
@@ -1940,7 +1971,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 </Card>
               ) : null}
 
-              {selectedArrangement && <Button variant="ghost" onClick={handleDelete}><Trash2 className="h-4 w-4 text-red-500" />删除当前方案</Button>}
+              {selectedArrangement && canEditSelected && (
+                <Button variant="ghost" onClick={handleDelete}><Trash2 className="h-4 w-4 text-red-500" />移入回收站</Button>
+              )}
             </div>
           )}
 
@@ -2072,6 +2105,33 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 ))}
               </div>
             </>
+          )}
+
+          {isAdmin && (
+            <Card className="no-print mt-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium text-ink-900">考场布置回收站</div>
+                  <div className="mt-1 text-xs text-ink-500">仅学校管理员可查看和恢复当前年级已删除的考场安排。</div>
+                </div>
+                <Badge variant="ink">{recycleBin.length} 个</Badge>
+              </div>
+              {recycleBin.length > 0 && (
+                <div className="mt-4 divide-y divide-ink-100 rounded-lg border border-ink-100">
+                  {recycleBin.map((item) => (
+                    <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                      <div>
+                        <div className="text-sm font-medium text-ink-800">{item.name}</div>
+                        <div className="mt-0.5 text-xs text-ink-400">{item.examDate || "日期待定"} · 删除于 {item.deletedAt ? new Date(item.deletedAt).toLocaleString("zh-CN") : "—"}</div>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => void handleRestore(item.id)}>
+                        <RotateCcw className="h-3.5 w-3.5" />恢复
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
           )}
         </>
       )}

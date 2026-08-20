@@ -68,7 +68,9 @@ describe("exam arrangement service", () => {
       expect(appState.examArrangements).toHaveLength(1);
 
       await examArrangementService.deleteArrangement(saved.id);
-      expect(appState.examArrangements).toEqual([]);
+      expect(await examArrangementService.listArrangements("school-1", "grad-2026")).toEqual([]);
+      expect(appState.examArrangements).toHaveLength(1);
+      expect((appState.examArrangements as any[])[0].deletedAt).toEqual(expect.any(String));
     });
   });
 

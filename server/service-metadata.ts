@@ -105,15 +105,38 @@ export const serviceParameters = {
     "saveArrangement": [
       "schoolId",
       "teacherId",
-      "input"
+      "input",
+      "teacher"
     ],
     "saveInvigilationConfig": [
       "schoolId",
       "arrangementId",
-      "config"
+      "config",
+      "teacher"
+    ],
+    "deleteInvigilationConfig": [
+      "arrangementId",
+      "teacher"
+    ],
+    "listInvigilationRecycleBin": [
+      "schoolId",
+      "teacher"
+    ],
+    "restoreInvigilationConfig": [
+      "arrangementId",
+      "teacher"
     ],
     "deleteArrangement": [
-      "arrangementId"
+      "arrangementId",
+      "teacher"
+    ],
+    "listArrangementRecycleBin": [
+      "schoolId",
+      "teacher"
+    ],
+    "restoreArrangement": [
+      "arrangementId",
+      "teacher"
     ]
   },
   "donation": {
@@ -565,7 +588,8 @@ export const serviceParameters = {
       "cohortKey",
       "teacherId",
       "subjectsInput",
-      "templates"
+      "templates",
+      "teacher"
     ],
     "getCohortSettings": [
       "schoolId",
@@ -576,13 +600,15 @@ export const serviceParameters = {
       "teacherId",
       "cohortKey",
       "subjects",
-      "settings"
+      "settings",
+      "teacher"
     ],
     "copyCohortSettings": [
       "schoolId",
       "teacherId",
       "sourceCohortKey",
-      "targetCohortKey"
+      "targetCohortKey",
+      "teacher"
     ],
     "listExams": [
       "schoolId",
@@ -598,11 +624,13 @@ export const serviceParameters = {
     ],
     "updateExamSettings": [
       "examId",
-      "settings"
+      "settings",
+      "teacher"
     ],
     "updateExamMetadata": [
       "examId",
-      "patch"
+      "patch",
+      "teacher"
     ],
     "adjustExamScore": [
       "examId",
@@ -618,13 +646,23 @@ export const serviceParameters = {
       "teacher"
     ],
     "unpublishExamResults": [
-      "examId"
+      "examId",
+      "teacher"
     ],
     "getPublishedReportByToken": [
       "token"
     ],
     "deleteExam": [
-      "examId"
+      "examId",
+      "teacher"
+    ],
+    "listExamRecycleBin": [
+      "schoolId",
+      "teacher"
+    ],
+    "restoreExam": [
+      "examId",
+      "teacher"
     ]
   },
   "courseware": {

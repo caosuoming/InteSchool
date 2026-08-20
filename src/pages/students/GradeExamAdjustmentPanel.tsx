@@ -17,6 +17,7 @@ interface GradeExamAdjustmentPanelProps {
   onExamUpdated: (exam: GradeExam) => void;
   onDownloadTablesOneToFive?: () => Promise<void>;
   onDownloadClassStatistics?: () => Promise<void>;
+  readOnly?: boolean;
 }
 
 function scoreText(value: number | null | undefined): string {
@@ -134,6 +135,7 @@ export function GradeExamAdjustmentPanel({
   onExamUpdated,
   onDownloadTablesOneToFive,
   onDownloadClassStatistics,
+  readOnly = false,
 }: GradeExamAdjustmentPanelProps) {
   const [examName, setExamName] = useState(exam.name);
   const [examDate, setExamDate] = useState(exam.examDate || "");
@@ -188,6 +190,7 @@ export function GradeExamAdjustmentPanel({
   );
 
   const saveMetadata = async () => {
+    if (readOnly) return;
     if (!examName.trim()) {
       toast.error("请填写考试名称");
       return;
@@ -208,6 +211,7 @@ export function GradeExamAdjustmentPanel({
   };
 
   const publishResults = async () => {
+    if (readOnly) return;
     setPublicationSaving(true);
     try {
       const updated = publishToParents
@@ -226,6 +230,7 @@ export function GradeExamAdjustmentPanel({
   };
 
   const unpublishResults = async () => {
+    if (readOnly) return;
     setPublicationSaving(true);
     try {
       const updated = await gradeService.unpublishExamResults(exam.id);
@@ -267,7 +272,7 @@ export function GradeExamAdjustmentPanel({
     kind: GradeScoreAdjustmentKind,
     value: number | null,
   ) => {
-    if (!selectedRecord) return;
+    if (!selectedRecord || readOnly) return;
     const key = `${selectedRecord.studentId}:${subject}:${kind}`;
     setSavingScore(key);
     try {
@@ -298,7 +303,9 @@ export function GradeExamAdjustmentPanel({
           <div>
             <div className="font-medium text-ink-900">考试信息与学生成绩微调</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              考试名称和时间会同步到后续统计表；成绩修改后自动重算赋分、总分与排名。
+              {readOnly
+                ? "当前成绩统计为只读；仅创建者或学校管理员可以修改。"
+                : "考试名称和时间会同步到后续统计表；成绩修改后自动重算赋分、总分与排名。"}
             </div>
           </div>
         </div>
@@ -344,6 +351,7 @@ export function GradeExamAdjustmentPanel({
               variant={published ? "outline" : "gold"}
               onClick={() => void (published ? unpublishResults() : publishResults())}
               loading={publicationSaving}
+              disabled={readOnly}
             >
               {published ? <Undo2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
               {published ? "撤回发布" : "发布"}
@@ -355,6 +363,7 @@ export function GradeExamAdjustmentPanel({
             <input
               type="checkbox"
               checked={publishToParents}
+              disabled={readOnly}
               onChange={(event) => setPublishToParents(event.target.checked)}
             />
             同步发布给家长
@@ -377,7 +386,7 @@ export function GradeExamAdjustmentPanel({
         <Input
           label="考试名称"
           value={examName}
-          disabled={published}
+          disabled={published || readOnly}
           onChange={(event) => setExamName(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") void saveMetadata();
@@ -387,10 +396,10 @@ export function GradeExamAdjustmentPanel({
           label="考试时间"
           type="date"
           value={examDate}
-          disabled={published}
+          disabled={published || readOnly}
           onChange={(event) => setExamDate(event.target.value)}
         />
-        <Button variant="outline" onClick={() => void saveMetadata()} loading={metadataSaving} disabled={published}>
+        <Button variant="outline" onClick={() => void saveMetadata()} loading={metadataSaving} disabled={published || readOnly}>
           保存考试信息
         </Button>
       </div>
@@ -399,9 +408,11 @@ export function GradeExamAdjustmentPanel({
         <div>
           <div className="font-medium text-ink-900">学生成绩微调</div>
           <div className="mt-0.5 text-xs text-ink-500">
-            {published
-              ? "当前成绩已发布；请先撤回发布，再继续修改学生成绩。"
-              : "可下拉选择或搜索学生。修改分数后失焦即保存；系统按规则计算的赋分不显示，只能修改原始分；导入表中已有的赋分可直接调整。"}
+            {readOnly
+              ? "当前成绩统计为只读；可查看学生成绩和修改记录。"
+              : published
+                ? "当前成绩已发布；请先撤回发布，再继续修改学生成绩。"
+                : "可下拉选择或搜索学生。修改分数后失焦即保存；系统按规则计算的赋分不显示，只能修改原始分；导入表中已有的赋分可直接调整。"}
           </div>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
@@ -469,14 +480,14 @@ export function GradeExamAdjustmentPanel({
                     <ScoreEditor
                       label={usesAssignedScore ? "原始分" : "成绩"}
                       value={selectedRecord.scores[subject]}
-                      disabled={published || savingScore !== null}
+                      disabled={published || readOnly || savingScore !== null}
                       onCommit={(value) => saveScore(subject, "raw", value)}
                     />
                     {hasImportedAssignedScore && (
                       <ScoreEditor
                         label="赋分"
                         value={selectedRecord.assignedScores[subject]}
-                        disabled={published || savingScore !== null}
+                        disabled={published || readOnly || savingScore !== null}
                         hint="导入赋分"
                         onCommit={(value) => saveScore(subject, "assigned", value)}
                       />

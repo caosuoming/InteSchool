@@ -36,6 +36,7 @@ import {
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { consumeExamUsageInternal } from "./quota.js";
+import { canModifyExamRecord, isExamRecordAdmin } from "../exam-record-permissions.js";
 
 function readList<T>(key: string): T[] {
   const value = db.read(key);
@@ -314,11 +315,17 @@ function recalculateCohortExams(
   cohortKey: string,
   settings: GradeExamSettings,
   context: GradeImportContext,
+  teacherId: string,
+  actor?: Teacher,
 ): void {
   db.update("gradeExams", (value: GradeExam[] | undefined) => {
     const exams = Array.isArray(value) ? value : [];
     return exams.map((exam) => {
-      if (exam.schoolId !== schoolId || exam.cohortKey !== cohortKey) return exam;
+      if (exam.schoolId !== schoolId || exam.cohortKey !== cohortKey || exam.deletedAt) return exam;
+      const canModify = actor
+        ? canModifyExamRecord(exam.teacherId, exam.schoolId, actor)
+        : exam.teacherId === teacherId;
+      if (!canModify) return exam;
       const normalized = normalizeGradeSettings(
         settings,
         exam.subjects,
@@ -341,9 +348,13 @@ function persistCohortSettings(
   cohortKey: string,
   subjects: string[],
   settings: GradeExamSettings,
+  actor?: Teacher,
 ): GradeCohortSettings {
   const publishedExam = readList<GradeExam>("gradeExams")
-    .find((exam) => exam.schoolId === schoolId && exam.cohortKey === cohortKey && exam.publication);
+    .find((exam) => {
+      if (exam.schoolId !== schoolId || exam.cohortKey !== cohortKey || exam.deletedAt || !exam.publication) return false;
+      return actor ? canModifyExamRecord(exam.teacherId, exam.schoolId, actor) : exam.teacherId === teacherId;
+    });
   if (publishedExam) {
     throw new Error(`请先撤回「${publishedExam.name}」的成绩发布后再修改年级成绩配置`);
   }
@@ -376,7 +387,7 @@ function persistCohortSettings(
       : [...records, record];
   });
   upsertTemplateProfile(schoolId, cohortKey, teacherId, normalizedSettings.templates);
-  recalculateCohortExams(schoolId, cohortKey, normalizedSettings, context);
+  recalculateCohortExams(schoolId, cohortKey, normalizedSettings, context, teacherId, actor);
   return record;
 }
 
@@ -616,6 +627,7 @@ export const gradeService = {
     teacherId: string,
     subjectsInput: string[],
     templates: GradeStatisticsTemplate[],
+    actor?: Teacher,
   ): Promise<GradeTemplateProfile> {
     await delay(180);
     maybeThrowError();
@@ -642,6 +654,7 @@ export const gradeService = {
         cohortKey,
         effectiveSubjects,
         { ...cohortSettings.settings, templates: normalizedTemplates },
+        actor,
       );
       return templateProfileFor(schoolId, cohortKey)!;
     }
@@ -663,10 +676,11 @@ export const gradeService = {
     cohortKey: string,
     subjects: string[],
     settings: GradeExamSettings,
+    actor?: Teacher,
   ): Promise<GradeCohortSettings> {
     await delay(200);
     maybeThrowError();
-    return persistCohortSettings(schoolId, teacherId, cohortKey, subjects, settings);
+    return persistCohortSettings(schoolId, teacherId, cohortKey, subjects, settings, actor);
   },
 
   async copyCohortSettings(
@@ -674,6 +688,7 @@ export const gradeService = {
     teacherId: string,
     sourceCohortKey: string,
     targetCohortKey: string,
+    actor?: Teacher,
   ): Promise<GradeCohortSettings> {
     await delay(200);
     maybeThrowError();
@@ -731,19 +746,20 @@ export const gradeService = {
       targetCohortKey,
       source.subjects,
       copied,
+      actor,
     );
   },
 
   async listExams(schoolId: string, cohortKey?: string): Promise<GradeExam[]> {
     await delay(150);
     return readList<GradeExam>("gradeExams")
-      .filter((item) => item.schoolId === schoolId && (!cohortKey || item.cohortKey === cohortKey))
+      .filter((item) => item.schoolId === schoolId && !item.deletedAt && (!cohortKey || item.cohortKey === cohortKey))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   },
 
   async getExam(examId: string): Promise<GradeExam | null> {
     await delay(100);
-    return readList<GradeExam>("gradeExams").find((item) => item.id === examId) || null;
+    return readList<GradeExam>("gradeExams").find((item) => item.id === examId && !item.deletedAt) || null;
   },
 
   async importExam(
@@ -895,26 +911,29 @@ export const gradeService = {
     return exam;
   },
 
-  async updateExamSettings(examId: string, settings: GradeExamSettings): Promise<GradeExam> {
+  async updateExamSettings(examId: string, settings: GradeExamSettings, actor?: Teacher): Promise<GradeExam> {
     await delay(200);
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
-    if (!current) throw new Error("成绩考试不存在");
+    if (!current || current.deletedAt) throw new Error("成绩考试不存在");
+    if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权修改其他教师的成绩统计");
     persistCohortSettings(
       current.schoolId,
       current.teacherId,
       current.cohortKey,
       current.subjects,
       settings,
+      actor,
     );
     return readList<GradeExam>("gradeExams").find((item) => item.id === examId)!;
   },
 
-  async updateExamMetadata(examId: string, patch: GradeExamMetadataPatch): Promise<GradeExam> {
+  async updateExamMetadata(examId: string, patch: GradeExamMetadataPatch, actor?: Teacher): Promise<GradeExam> {
     await delay(150);
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
-    if (!current) throw new Error("成绩考试不存在");
+    if (!current || current.deletedAt) throw new Error("成绩考试不存在");
+    if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权修改其他教师的成绩统计");
     if (current.publication) throw new Error("请先撤回成绩发布后再修改考试信息");
     const name = patch?.name?.trim();
     if (!name) throw new Error("请填写考试名称");
@@ -940,7 +959,8 @@ export const gradeService = {
     await delay(150);
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
-    if (!current) throw new Error("成绩考试不存在");
+    if (!current || current.deletedAt) throw new Error("成绩考试不存在");
+    if (!canModifyExamRecord(current.teacherId, current.schoolId, teacher)) throw new Error("无权修改其他教师的成绩统计");
     if (current.publication) throw new Error("请先撤回成绩发布后再修改学生成绩");
     if (!current.subjects.includes(subject)) throw new Error("该考试不存在所选科目");
     if (kind !== "raw" && kind !== "assigned") throw new Error("成绩修改口径不正确");
@@ -1008,7 +1028,8 @@ export const gradeService = {
     await delay(150);
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
-    if (!current) throw new Error("成绩考试不存在");
+    if (!current || current.deletedAt) throw new Error("成绩考试不存在");
+    if (!canModifyExamRecord(current.teacherId, current.schoolId, teacher)) throw new Error("无权修改其他教师的成绩统计");
     if (current.publication) return current;
 
     const publishedAt = new Date().toISOString();
@@ -1050,11 +1071,12 @@ export const gradeService = {
     return updated;
   },
 
-  async unpublishExamResults(examId: string): Promise<GradeExam> {
+  async unpublishExamResults(examId: string, actor?: Teacher): Promise<GradeExam> {
     await delay(150);
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
-    if (!current) throw new Error("成绩考试不存在");
+    if (!current || current.deletedAt) throw new Error("成绩考试不存在");
+    if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权修改其他教师的成绩统计");
     if (!current.publication) return current;
 
     db.update("gradePublications", (items: GradePublicationRecord[] | undefined) => (
@@ -1077,20 +1099,44 @@ export const gradeService = {
       .find((item) => item.shareToken === normalized);
     if (!publication) throw new Error("成绩发布已撤回或分享链接无效");
     const exam = readList<GradeExam>("gradeExams").find((item) => item.id === publication.examId);
-    if (!exam?.publication || exam.publication.shareToken !== normalized) {
+    if (!exam?.publication || exam.deletedAt || exam.publication.shareToken !== normalized) {
       throw new Error("成绩发布已撤回或分享链接无效");
     }
     return structuredClone(publication.report);
   },
 
-  async deleteExam(examId: string): Promise<void> {
+  async deleteExam(examId: string, actor?: Teacher): Promise<void> {
     await delay(150);
     maybeThrowError();
-    const exists = readList<GradeExam>("gradeExams").some((item) => item.id === examId);
-    if (!exists) throw new Error("成绩考试不存在");
-    db.update("gradeExams", (items: GradeExam[]) => items.filter((item) => item.id !== examId));
+    const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
+    if (!current || current.deletedAt) throw new Error("成绩考试不存在");
+    if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权删除其他教师的成绩统计");
+    const deletedAt = new Date().toISOString();
+    const { publication: _publication, ...rest } = current;
+    const deleted: GradeExam = { ...rest, deletedAt, updatedAt: deletedAt };
+    db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? deleted : item));
     db.update("gradePublications", (items: GradePublicationRecord[] | undefined) => (
       Array.isArray(items) ? items.filter((item) => item.examId !== examId) : []
     ));
+  },
+
+  async listExamRecycleBin(schoolId: string, actor: Teacher): Promise<GradeExam[]> {
+    await delay(80);
+    if (!isExamRecordAdmin(actor, schoolId)) throw new Error("仅学校管理员可查看成绩统计回收站");
+    return readList<GradeExam>("gradeExams")
+      .filter((item) => item.schoolId === schoolId && Boolean(item.deletedAt))
+      .sort((left, right) => String(right.deletedAt).localeCompare(String(left.deletedAt)));
+  },
+
+  async restoreExam(examId: string, actor: Teacher): Promise<GradeExam> {
+    await delay(120);
+    maybeThrowError();
+    const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
+    if (!isExamRecordAdmin(actor, current?.schoolId)) throw new Error("仅学校管理员可恢复成绩统计");
+    if (!current?.deletedAt) throw new Error("回收站中不存在该成绩考试");
+    const { deletedAt: _deletedAt, ...rest } = current;
+    const restored: GradeExam = { ...rest, updatedAt: new Date().toISOString() };
+    db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? restored : item));
+    return restored;
   },
 };

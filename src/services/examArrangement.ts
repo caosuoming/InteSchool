@@ -41,7 +41,27 @@ export const examArrangementService = {
     return rpcCall("examArrangement", "saveInvigilationConfig", [schoolId, arrangementId, config]) as Promise<ExamArrangement>;
   },
 
+  async deleteInvigilationConfig(arrangementId: string): Promise<void> {
+    return rpcCall("examArrangement", "deleteInvigilationConfig", [arrangementId]) as Promise<void>;
+  },
+
+  async listInvigilationRecycleBin(schoolId: string): Promise<ExamArrangement[]> {
+    return rpcCall("examArrangement", "listInvigilationRecycleBin", [schoolId]) as Promise<ExamArrangement[]>;
+  },
+
+  async restoreInvigilationConfig(arrangementId: string): Promise<ExamArrangement> {
+    return rpcCall("examArrangement", "restoreInvigilationConfig", [arrangementId]) as Promise<ExamArrangement>;
+  },
+
   async deleteArrangement(arrangementId: string): Promise<void> {
     return rpcCall("examArrangement", "deleteArrangement", [arrangementId]) as Promise<void>;
+  },
+
+  async listArrangementRecycleBin(schoolId: string): Promise<ExamArrangement[]> {
+    return rpcCall("examArrangement", "listArrangementRecycleBin", [schoolId]) as Promise<ExamArrangement[]>;
+  },
+
+  async restoreArrangement(arrangementId: string): Promise<ExamArrangement> {
+    return rpcCall("examArrangement", "restoreArrangement", [arrangementId]) as Promise<ExamArrangement>;
   },
 };
