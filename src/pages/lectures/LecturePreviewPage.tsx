@@ -1,5 +1,5 @@
 import { openPage } from "@/lib/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   BookOpen, CheckSquare, Edit3, Eye, FileText, GraduationCap,
@@ -49,7 +49,7 @@ import type {
   Student,
   TreeNode,
 } from "@/types";
-import { cn, getOptionsGridCols } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   downloadLectureDocxVariants,
   type DocumentDownloadMode,
@@ -981,7 +981,57 @@ function QuestionPreviewContent({
   className?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [optionColumns, setOptionColumns] = useState<1 | 2 | 4>(4);
+  const optionsRef = useRef<HTMLDivElement>(null);
+  const optionSignature = question?.options?.join("\u0000") || "";
   const toggleExpanded = () => setExpanded((value) => !value);
+
+  useLayoutEffect(() => {
+    setOptionColumns(4);
+  }, [optionSignature]);
+
+  useLayoutEffect(() => {
+    const container = optionsRef.current;
+    if (!container || optionColumns === 1) return;
+
+    const optionContents = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-lecture-preview-option-content]"),
+    );
+    if (optionContents.length === 0) return;
+
+    // Image choices should keep enough horizontal space to remain legible, but
+    // their intrinsic height is not evidence that text has wrapped.
+    if (optionContents.some((element) => element.querySelector("img"))) {
+      if (optionColumns === 4) setOptionColumns(2);
+      return;
+    }
+
+    const hasWrappedOption = optionContents.some((element) => {
+      const lineHeight = Number.parseFloat(window.getComputedStyle(element).lineHeight);
+      return Number.isFinite(lineHeight) && element.scrollHeight > lineHeight * 1.5;
+    });
+
+    if (hasWrappedOption) {
+      setOptionColumns(optionColumns === 4 ? 2 : 1);
+    }
+  }, [optionColumns, optionSignature]);
+
+  useEffect(() => {
+    const container = optionsRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+
+    let previousWidth = container.getBoundingClientRect().width;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? previousWidth;
+      if (Math.abs(width - previousWidth) > 1) {
+        previousWidth = width;
+        setOptionColumns(4);
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [optionSignature]);
 
   if (!question) {
     return (
@@ -1013,7 +1063,18 @@ function QuestionPreviewContent({
           <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{question.stem}</MathHtml>
         </div>
         {question.options && question.options.length > 0 && (
-          <div className={cn("gap-2 grid", getOptionsGridCols(question.options.length))}>
+          <div
+            ref={optionsRef}
+            data-testid="lecture-question-options"
+            className={cn(
+              "grid gap-2",
+              optionColumns === 4
+                ? "grid-cols-4"
+                : optionColumns === 2
+                  ? "grid-cols-2"
+                  : "grid-cols-1",
+            )}
+          >
             {question.options.map((option, index) => (
               <div
                 key={index}
@@ -1021,13 +1082,15 @@ function QuestionPreviewContent({
                   "p-2 rounded-md text-sm flex items-start gap-1.5 min-w-0",
                   expanded && question.answer.includes(String.fromCharCode(65 + index))
                     ? "bg-emerald-50/40"
-                    : "border border-ink-100",
+                    : undefined,
                 )}
               >
                 <span className="font-mono font-semibold text-ink-700 flex-shrink-0">
                   {String.fromCharCode(65 + index)}.
                 </span>
-                <MathHtml className="min-w-0 text-ink-900 break-all">{option}</MathHtml>
+                <div data-lecture-preview-option-content className="min-w-0 flex-1">
+                  <MathHtml className="min-w-0 text-ink-900 break-all">{option}</MathHtml>
+                </div>
               </div>
             ))}
           </div>
