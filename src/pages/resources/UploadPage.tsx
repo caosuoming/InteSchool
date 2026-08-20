@@ -21,6 +21,11 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import {
+  FileDuplicateReviewModal,
+  type UploadDuplicateDecision,
+  type UploadFileDuplicateConflict,
+} from "@/components/resource/FileDuplicateReviewModal";
 import { Input, Textarea, Select } from "@/components/ui/Input";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
@@ -35,6 +40,7 @@ import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { inferMaterialTypeFromFile } from "@/lib/material-media";
 import { countPptxSlides } from "@/lib/pptx";
+import { findFileNameDuplicates, type FileNameCandidate } from "@/lib/file-name-duplicate";
 
 type TabKey = "upload" | "share" | "ai";
 
@@ -184,6 +190,8 @@ export function UploadPage() {
   const [questionSourceType, setQuestionSourceType] = useState("");
   const [questionCategory, setQuestionCategory] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [duplicateConflicts, setDuplicateConflicts] = useState<UploadFileDuplicateConflict[]>([]);
   const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
 
   // AI生成相关状态
@@ -322,33 +330,75 @@ export function UploadPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleBatchSubmit = async () => {
-    if (!teacher || !teacher.schoolId) {
-      toast.error("请先登录", "未获取到教师信息");
-      return;
+  const loadDuplicateCandidates = async (resourceType: ResourceType): Promise<FileNameCandidate[]> => {
+    if (!teacher?.schoolId) return [];
+    const filter = { teacherId: teacher.id, schoolId: teacher.schoolId };
+
+    if (resourceType === "examPaper") {
+      const resources = await examPaperService.listPapers(filter);
+      return resources
+        .filter((resource) => Boolean(resource.originalFileUrl))
+        .map((resource) => ({
+          id: resource.id,
+          title: resource.title,
+          fileName: resource.originalFileName || resource.title,
+          description: resource.description,
+          fileSize: resource.originalFileSize,
+          fileUrl: resource.originalFileUrl,
+          updatedAt: resource.updatedAt,
+        }));
     }
-    if (!selectedType) {
-      toast.error("请选择资源类型");
-      return;
+    if (resourceType === "lecture") {
+      const resources = await lectureService.listLectures(filter);
+      return resources
+        .filter((resource) => Boolean(resource.originalFileUrl))
+        .map((resource) => ({
+          id: resource.id,
+          title: resource.title,
+          fileName: resource.originalFileName || resource.title,
+          description: resource.description,
+          fileSize: resource.originalFileSize,
+          fileUrl: resource.originalFileUrl,
+          updatedAt: resource.updatedAt,
+        }));
     }
-    const pendingItems = batchFiles.filter((f) => f.status !== "done");
-    if (pendingItems.length === 0) {
-      toast.info("没有需要上传的文件");
-      return;
+    if (resourceType === "courseware") {
+      const resources = await coursewareService.listCoursewares(filter);
+      return resources
+        .filter((resource) => Boolean(resource.fileUrl))
+        .map((resource) => ({
+          id: resource.id,
+          title: resource.title,
+          fileName: resource.fileName || resource.title,
+          description: resource.description,
+          fileSize: resource.fileSize,
+          fileUrl: resource.fileUrl,
+          updatedAt: resource.updatedAt,
+        }));
     }
-    for (const item of pendingItems) {
-      if (!item.title.trim()) {
-        toast.error("请填写标题", `文件 ${item.file.name} 缺少标题`);
-        return;
-      }
-    }
+
+    const resources = await materialService.listMaterials(filter);
+    return resources
+      .filter((resource) => Boolean(resource.fileUrl))
+      .map((resource) => ({
+        id: resource.id,
+        title: resource.title,
+        fileName: resource.fileName || resource.title,
+        description: resource.description,
+        fileSize: resource.fileSize,
+        fileUrl: resource.fileUrl,
+        updatedAt: resource.updatedAt,
+      }));
+  };
+
+  const uploadBatchItems = async (items: BatchFileItem[], currentType: ResourceType) => {
+    if (!teacher?.schoolId || items.length === 0) return;
 
     setSubmitting(true);
     let successCount = 0;
     let failCount = 0;
-    const currentType = selectedType;
 
-    for (const item of pendingItems) {
+    for (const item of items) {
       updateBatchItem(item.id, { status: "uploading", error: undefined });
       try {
         const finalGrade = item.grade || grade;
@@ -437,6 +487,7 @@ export function UploadPage() {
               type: (item.materialType || materialType) as MaterialType,
               content: item.description.trim() || item.file.name,
               fileUrl: uploaded.url,
+              fileName: item.file.name,
               fileSize: item.file.size,
               tags: [],
             },
@@ -467,6 +518,74 @@ export function UploadPage() {
         `成功 ${successCount} 个，失败 ${failCount} 个`,
       );
     }
+  };
+
+  const handleBatchSubmit = async () => {
+    if (!teacher || !teacher.schoolId) {
+      toast.error("请先登录", "未获取到教师信息");
+      return;
+    }
+    if (!selectedType) {
+      toast.error("请选择资源类型");
+      return;
+    }
+    const pendingItems = batchFiles.filter((f) => f.status !== "done");
+    if (pendingItems.length === 0) {
+      toast.info("没有需要上传的文件");
+      return;
+    }
+    for (const item of pendingItems) {
+      if (!item.title.trim()) {
+        toast.error("请填写标题", `文件 ${item.file.name} 缺少标题`);
+        return;
+      }
+    }
+
+    setCheckingDuplicates(true);
+    try {
+      const candidates = await loadDuplicateCandidates(selectedType);
+      const conflicts = pendingItems
+        .map((item) => ({
+          id: item.id,
+          file: item.file,
+          title: item.title,
+          matches: findFileNameDuplicates(item.file.name, candidates),
+        }))
+        .filter((conflict) => conflict.matches.length > 0);
+
+      if (conflicts.length > 0) {
+        setDuplicateConflicts(conflicts);
+        return;
+      }
+    } catch (error) {
+      toast.error("文件查重失败", error instanceof Error ? error.message : undefined);
+      return;
+    } finally {
+      setCheckingDuplicates(false);
+    }
+
+    await uploadBatchItems(pendingItems, selectedType);
+  };
+
+  const handleDuplicateConfirm = async (decisions: Record<string, UploadDuplicateDecision>) => {
+    const skippedIds = new Set(
+      Object.entries(decisions)
+        .filter(([, decision]) => decision === "skip")
+        .map(([id]) => id),
+    );
+    const itemsToUpload = batchFiles.filter((item) => item.status !== "done" && !skippedIds.has(item.id));
+
+    if (skippedIds.size > 0) {
+      setBatchFiles((current) => current.filter((item) => !skippedIds.has(item.id)));
+      setExpandedFileIds((current) => new Set([...current].filter((id) => !skippedIds.has(id))));
+    }
+    setDuplicateConflicts([]);
+
+    if (itemsToUpload.length === 0) {
+      toast.info("已放弃重复文件", `共放弃 ${skippedIds.size} 个文件`);
+      return;
+    }
+    await uploadBatchItems(itemsToUpload, selectedType);
   };
 
   const handleAIGenerate = async () => {
@@ -1064,8 +1183,8 @@ export function UploadPage() {
                       <Button
                         variant="gold"
                         onClick={handleBatchSubmit}
-                        loading={submitting}
-                        disabled={submitting || batchFiles.every((f) => f.status === "done")}
+                        loading={submitting || checkingDuplicates}
+                        disabled={submitting || checkingDuplicates || batchFiles.every((f) => f.status === "done")}
                       >
                         <Upload className="w-4 h-4" />
                         上传 {batchFiles.length} 个文件
@@ -1385,6 +1504,14 @@ export function UploadPage() {
             )}
           </div>
         </div>
+      )}
+
+      {duplicateConflicts.length > 0 && (
+        <FileDuplicateReviewModal
+          conflicts={duplicateConflicts}
+          onClose={() => setDuplicateConflicts([])}
+          onConfirm={(decisions) => void handleDuplicateConfirm(decisions)}
+        />
       )}
     </div>
   );

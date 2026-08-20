@@ -19,6 +19,7 @@ export interface MaterialInput {
   type: MaterialType;
   content: string;
   fileUrl?: string;
+  fileName?: string;
   fileSize?: number;
   explanationVideo?: QuestionVideoReference | null;
   tags: string[];
