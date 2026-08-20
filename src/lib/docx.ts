@@ -109,6 +109,70 @@ function applyOmmlRunStyle(root: Element, style: DocumentTextStyle): void {
   }
 }
 
+function directMathChild(parent: Element, localName: string): Element | null {
+  return Array.from(parent.children).find((child) =>
+    child.namespaceURI === MATH_NS && child.localName === localName) || null;
+}
+
+function createMathElement(document: XMLDocument, localName: string): Element {
+  return document.createElementNS(MATH_NS, `m:${localName}`);
+}
+
+function setMathValue(element: Element, value: string): void {
+  element.setAttributeNS(MATH_NS, "m:val", value);
+}
+
+function normalizeExportOmml(root: Element): void {
+  const document = root.ownerDocument;
+  if (!document) return;
+
+  for (const nary of Array.from(root.getElementsByTagNameNS(MATH_NS, "nary"))) {
+    const properties = directMathChild(nary, "naryPr");
+    const character = properties && directMathChild(properties, "chr");
+    if (!properties || !character || character.getAttributeNS(MATH_NS, "val") !== "∑") continue;
+
+    const limitLocation = directMathChild(properties, "limLoc");
+    if (limitLocation) setMathValue(limitLocation, "undOvr");
+
+    const expression = directMathChild(nary, "e");
+    const next = nary.nextElementSibling;
+    if (
+      expression
+      && expression.childElementCount === 0
+      && !(expression.textContent || "").trim()
+      && next?.namespaceURI === MATH_NS
+    ) {
+      expression.appendChild(next);
+    }
+  }
+
+  for (const matrix of Array.from(root.getElementsByTagNameNS(MATH_NS, "m"))) {
+    const braceRun = matrix.previousElementSibling;
+    if (!braceRun || braceRun.namespaceURI !== MATH_NS || braceRun.localName !== "r") continue;
+    const braceText = directMathChild(braceRun, "t");
+    if ((braceText?.textContent || "") !== "{") continue;
+
+    const parent = braceRun.parentNode;
+    if (!parent) continue;
+
+    const delimiter = createMathElement(document, "d");
+    const delimiterProperties = createMathElement(document, "dPr");
+    const beginCharacter = createMathElement(document, "begChr");
+    const endCharacter = createMathElement(document, "endChr");
+    const grow = createMathElement(document, "grow");
+    setMathValue(beginCharacter, "{");
+    setMathValue(endCharacter, "");
+    setMathValue(grow, "1");
+    delimiterProperties.append(beginCharacter, endCharacter, grow);
+
+    const expression = createMathElement(document, "e");
+    expression.appendChild(matrix);
+    delimiter.append(delimiterProperties, expression);
+    parent.insertBefore(delimiter, braceRun);
+    parent.removeChild(braceRun);
+  }
+}
+
 function escapeOmmlTextContent(omml: string): string {
   return omml.replace(
     /(<m:t\b[^>]*>)([\s\S]*?)(<\/m:t>)/g,
@@ -129,6 +193,7 @@ function latexToOmml(latex: string, style: DocumentTextStyle = {}): ParagraphChi
     const omml = escapeOmmlTextContent(mml2omml(mathml));
     const xml = new DOMParser().parseFromString(omml, "application/xml");
     if (xml.getElementsByTagName("parsererror").length > 0) return null;
+    normalizeExportOmml(xml.documentElement);
     applyOmmlRunStyle(xml.documentElement, style);
     return importedXmlElement(xml.documentElement) as unknown as ParagraphChild;
   } catch {

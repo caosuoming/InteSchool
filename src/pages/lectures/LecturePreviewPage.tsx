@@ -867,10 +867,10 @@ function QuestionPreviewContent({
               <div
                 key={index}
                 className={cn(
-                  "p-2 rounded-md border text-sm flex items-start gap-1.5 min-w-0",
+                  "p-2 rounded-md text-sm flex items-start gap-1.5 min-w-0",
                   expanded && question.answer.includes(String.fromCharCode(65 + index))
-                    ? "border-emerald-200 bg-emerald-50/40"
-                    : "border-ink-100",
+                    ? "bg-emerald-50/40"
+                    : "border border-ink-100",
                 )}
               >
                 <span className="font-mono font-semibold text-ink-700 flex-shrink-0">

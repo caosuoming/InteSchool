@@ -116,6 +116,7 @@ describe("exam arrangement service", () => {
           { id: "teacher-prep", name: "李老师", subject: "物理", isPrepLeader: true },
           { id: "teacher-leader", name: "王老师", subject: "物理", isLeader: true },
         ],
+        autoArrangePriority: "subject",
         patrolTeacherIds: ["teacher-leader"],
         subjectTimes: [{
           subject: "物理",
@@ -143,6 +144,7 @@ describe("exam arrangement service", () => {
       });
 
       expect(updated.invigilation?.teachers).toHaveLength(3);
+      expect(updated.invigilation?.autoArrangePriority).toBe("subject");
       expect(updated.invigilation?.patrolTeacherIds).toEqual(["teacher-leader"]);
       expect(updated.invigilation?.subjectTimes[0].durationMinutes).toBe(90);
       expect((appState.examArrangements as any[])[0].invigilation.overrides).toEqual({
