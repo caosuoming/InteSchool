@@ -315,7 +315,7 @@ function questionKeywordPrefixes(config: DocumentParseConfig): string[] {
 
 function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
   if (/^第\s*[\d０-９]+\s*题(?:\s|[、.．:：)）]|$)/.test(text)) return true;
-  if (/^[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)\s*\S/.test(text)) return true;
+  if (/^[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)(?:\s*\S|\s*$)/.test(text)) return true;
 
   const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
   if (!prefixes.length) return false;
@@ -361,7 +361,7 @@ function appendQuestionField(
 }
 
 function normalizeQuestionNumber(value: string): string {
-  return value.replace(/[０-９]/g, (digit) => String(digit.charCodeAt(0) - 0xfee0));
+  return value.replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0));
 }
 
 function extractLeadingQuestionNumber(text: string): { number: string; rest: string } | null {
@@ -391,26 +391,28 @@ function shouldContinueNumberedSummary(
   const candidateNumber = Number(candidate.number);
   if (!Number.isInteger(candidateNumber)) return false;
 
-  // Once an explicit summary/analysis marker has selected the summary field,
-  // numbered lines are more likely to be list items than fresh questions. The
-  // exception is the expected next top-level question when its text itself
-  // looks like a question prompt.
-  const currentQuestionNumber = extractQuestionNumber(block.content || "", config);
-  if (
-    currentQuestionNumber
-    && candidateNumber === Number(currentQuestionNumber) + 1
-    && looksLikeImplicitQuestion({ content: candidate.rest }, undefined, config)
-  ) {
-    return false;
-  }
-
   const summary = block.summary?.trim() || "";
-
   const previous = summary
     .split("\n")
     .map((entry) => extractLeadingQuestionNumber(entry.trim()))
     .filter((entry): entry is { number: string; rest: string } => Boolean(entry))
     .at(-1);
+
+  // Once an explicit summary/analysis marker has selected the summary field,
+  // numbered lines are more likely to be list items than fresh questions. The
+  // exception is the expected next top-level question. Word/PDF extraction can
+  // put its number (for example, "4.") on a line by itself.
+  const currentQuestionNumber = extractQuestionNumber(block.content || "", config);
+  if (
+    currentQuestionNumber
+    && candidateNumber === Number(currentQuestionNumber) + 1
+    && (
+      looksLikeImplicitQuestion({ content: candidate.rest }, undefined, config)
+      || (!candidate.rest && !previous)
+    )
+  ) {
+    return false;
+  }
   return previous ? candidateNumber === Number(previous.number) + 1 : true;
 }
 
