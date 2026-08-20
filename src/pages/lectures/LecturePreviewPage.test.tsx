@@ -341,7 +341,7 @@ describe("LecturePreviewPage", () => {
     expect(await screen.findByText("讲义编辑页")).toBeInTheDocument();
   });
 
-  it("keeps extracted lecture copies preview-only", async () => {
+  it("keeps extracted lecture structure preview-only while allowing question property edits", async () => {
     vi.mocked(lectureService.getLecture).mockResolvedValue({
       ...lecture,
       isExtractCopy: true,
@@ -352,7 +352,7 @@ describe("LecturePreviewPage", () => {
 
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
     expect(screen.queryByRole("button", { name: "编辑讲义" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "编辑第 1 题章节与知识点" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑第 1 题属性" })).toBeInTheDocument();
   });
 
   it("toggles answer and analysis by clicking the question stem", async () => {
@@ -378,14 +378,19 @@ describe("LecturePreviewPage", () => {
     });
   });
 
-  it("edits a question's chapter and knowledge-point directories from preview", async () => {
+  it("edits a question's properties from preview", async () => {
     renderPage();
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题章节与知识点" }));
-    expect(screen.getByRole("heading", { name: "编辑题目目录" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题属性" }));
+    expect(screen.getByRole("heading", { name: "编辑题目属性" })).toBeInTheDocument();
     expect(screen.getByText("章节目录")).toBeInTheDocument();
     expect(screen.getByText("知识点目录")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("题型"), { target: { value: "essay" } });
+    fireEvent.change(screen.getByLabelText("难度"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("推荐程度"), { target: { value: "5" } });
+    fireEvent.change(screen.getByLabelText("学期"), { target: { value: "下学期" } });
 
     const chapterRow = screen.getByText("函数章节").parentElement;
     const knowledgeRow = screen.getByText("函数单调性").parentElement;
@@ -393,15 +398,27 @@ describe("LecturePreviewPage", () => {
     expect(knowledgeRow).not.toBeNull();
     fireEvent.click(chapterRow!.querySelector("button")!);
     fireEvent.click(knowledgeRow!.querySelector("button")!);
-    fireEvent.click(screen.getByRole("button", { name: "保存目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存属性" }));
 
     await waitFor(() => {
       expect(questionService.updateQuestion).toHaveBeenCalledWith(question.id, {
+        type: "essay",
+        difficulty: 4,
+        recommendation: 5,
+        grade: "高一",
+        schoolYear: "2026-2027",
+        semester: "下学期",
+        category: "",
+        sourceType: "",
         chapterIds: ["chapter-1"],
         knowledgePointIds: ["knowledge-point-1"],
       });
     });
-    expect(screen.getByTestId("lecture-question-details-1")).toHaveTextContent("1 项");
+    const details = screen.getByTestId("lecture-question-details-1");
+    expect(details).toHaveTextContent("解答");
+    expect(details).toHaveTextContent("较难");
+    expect(details).toHaveTextContent("5 / 5");
+    expect(details).toHaveTextContent("1 项");
   });
 
   it("edits document usage by class only", async () => {

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Input";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
@@ -28,7 +29,24 @@ import {
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadModeModal } from "@/components/resource/DocumentDownloadModeModal";
 import { SearchableTree } from "@/components/tree/SearchableTree";
-import type { AnswerRecord, AnswerScore, AnyClass, Lecture, LectureSection, LessonCourseware, Question, Student, TreeNode } from "@/types";
+import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
+import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import {
+  includeCurrentMetadataOption,
+  useQuestionMetadataOptions,
+} from "@/hooks/useQuestionMetadataOptions";
+import type {
+  AnswerRecord,
+  AnswerScore,
+  AnyClass,
+  Lecture,
+  LectureSection,
+  LessonCourseware,
+  Question,
+  ResourceSemester,
+  Student,
+  TreeNode,
+} from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import {
   downloadLectureDocxVariants,
@@ -41,6 +59,19 @@ interface LecturePreviewRow {
   section: LectureSection;
   depth: number;
   questionNumber?: number;
+}
+
+interface QuestionMetadataDraft {
+  type: Question["type"];
+  difficulty: Question["difficulty"];
+  recommendation: Question["recommendation"];
+  grade: string;
+  schoolYear: string;
+  semester: ResourceSemester;
+  category: string;
+  sourceType: string;
+  chapterIds: string[];
+  knowledgePointIds: string[];
 }
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
@@ -105,12 +136,20 @@ export default function LecturePreviewPage() {
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [metadataQuestion, setMetadataQuestion] = useState<Question | null>(null);
-  const [metadataChapterIds, setMetadataChapterIds] = useState<string[]>([]);
-  const [metadataKnowledgePointIds, setMetadataKnowledgePointIds] = useState<string[]>([]);
+  const [metadataDraft, setMetadataDraft] = useState<QuestionMetadataDraft | null>(null);
   const [savingQuestionMetadata, setSavingQuestionMetadata] = useState(false);
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
     { properties: true, answerStatus: true, basket: true },
   );
+  const schoolId = lecture?.schoolId || teacher?.schoolId;
+  const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
+  const { options: questionTypeOptions } = useQuestionTypeOptions(schoolId);
+  const {
+    sourceOptions,
+    categoryOptions,
+    getSourceLabel,
+    getCategoryLabel,
+  } = useQuestionMetadataOptions(schoolId);
 
   useEffect(() => {
     let cancelled = false;
@@ -361,27 +400,49 @@ export default function LecturePreviewPage() {
 
   const openQuestionMetadataEditor = (question: Question) => {
     setMetadataQuestion(question);
-    setMetadataChapterIds([...question.chapterIds]);
-    setMetadataKnowledgePointIds([...question.knowledgePointIds]);
+    setMetadataDraft({
+      type: question.type,
+      difficulty: question.difficulty,
+      recommendation: question.recommendation,
+      grade: question.grade || "",
+      schoolYear: question.schoolYear || "",
+      semester: question.semester || "上学期",
+      category: question.category || "",
+      sourceType: question.sourceType || "",
+      chapterIds: [...question.chapterIds],
+      knowledgePointIds: [...question.knowledgePointIds],
+    });
   };
 
   const closeQuestionMetadataEditor = () => {
-    if (!savingQuestionMetadata) setMetadataQuestion(null);
+    if (!savingQuestionMetadata) {
+      setMetadataQuestion(null);
+      setMetadataDraft(null);
+    }
   };
 
   const saveQuestionMetadata = async () => {
-    if (!metadataQuestion) return;
+    if (!metadataQuestion || !metadataDraft) return;
     setSavingQuestionMetadata(true);
     try {
       const updated = await questionService.updateQuestion(metadataQuestion.id, {
-        chapterIds: metadataChapterIds,
-        knowledgePointIds: metadataKnowledgePointIds,
+        type: metadataDraft.type,
+        difficulty: metadataDraft.difficulty,
+        recommendation: metadataDraft.recommendation,
+        grade: metadataDraft.grade,
+        schoolYear: metadataDraft.schoolYear,
+        semester: metadataDraft.semester,
+        category: metadataDraft.category,
+        sourceType: metadataDraft.sourceType,
+        chapterIds: metadataDraft.chapterIds,
+        knowledgePointIds: metadataDraft.knowledgePointIds,
       });
       setQuestions((current) => ({ ...current, [updated.id]: updated }));
       setMetadataQuestion(null);
-      toast.success("题目目录已更新");
+      setMetadataDraft(null);
+      toast.success("题目属性已更新");
     } catch (error) {
-      toast.error("更新题目目录失败", error instanceof Error ? error.message : undefined);
+      toast.error("更新题目属性失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSavingQuestionMetadata(false);
     }
@@ -632,7 +693,7 @@ export default function LecturePreviewPage() {
                       students={students}
                       answerRecords={answerRecords}
                       onUpdateStudentAnswer={updateStudentAnswer}
-                      onEditMetadata={lecture.teacherId === teacher?.id && !lecture.isExtractCopy
+                      onEditMetadata={lecture.teacherId === teacher?.id
                         ? openQuestionMetadataEditor
                         : undefined}
                       visibility={previewSidebarVisibility}
@@ -675,53 +736,136 @@ export default function LecturePreviewPage() {
         open={Boolean(metadataQuestion)}
         onClose={closeQuestionMetadataEditor}
         size="xl"
-        title="编辑题目目录"
-        description="调整当前题目关联的章节与知识点。"
+        title="编辑题目属性"
+        description="调整当前题目的基础属性、章节与知识点。"
         footer={(
           <div className="flex w-full justify-end gap-2">
             <Button variant="outline" size="sm" onClick={closeQuestionMetadataEditor} disabled={savingQuestionMetadata}>
               取消
             </Button>
             <Button variant="gold" size="sm" onClick={saveQuestionMetadata} loading={savingQuestionMetadata}>
-              保存目录
+              保存属性
             </Button>
           </div>
         )}
       >
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="overflow-hidden rounded-lg border border-ink-150">
-            {chapterTree ? (
-              <SearchableTree
-                data={chapterTree}
-                title="章节目录"
-                accent="gold"
-                checkable
-                checkedIds={metadataChapterIds}
-                onCheck={setMetadataChapterIds}
-                searchPlaceholder="搜索章节..."
-                treeMaxHeightClassName="max-h-[420px]"
+        {metadataQuestion && metadataDraft && (
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Select
+                label="题型"
+                value={metadataDraft.type}
+                options={includeCurrentQuestionType(questionTypeOptions, metadataDraft.type)}
+                onChange={(event) => setMetadataDraft((current) => current && ({
+                  ...current,
+                  type: event.target.value as Question["type"],
+                }))}
               />
-            ) : (
-              <div className="p-6 text-center text-xs text-ink-400">章节目录加载失败</div>
-            )}
-          </div>
-          <div className="overflow-hidden rounded-lg border border-ink-150">
-            {knowledgeTree ? (
-              <SearchableTree
-                data={knowledgeTree}
-                title="知识点目录"
-                accent="teal"
-                checkable
-                checkedIds={metadataKnowledgePointIds}
-                onCheck={setMetadataKnowledgePointIds}
-                searchPlaceholder="搜索知识点..."
-                treeMaxHeightClassName="max-h-[420px]"
+              <Select
+                label="难度"
+                value={String(metadataDraft.difficulty)}
+                options={difficultyLabel.slice(1).map((label, index) => ({
+                  value: String(index + 1),
+                  label: `${index + 1} - ${label}`,
+                }))}
+                onChange={(event) => setMetadataDraft((current) => current && ({
+                  ...current,
+                  difficulty: Number(event.target.value) as Question["difficulty"],
+                }))}
               />
-            ) : (
-              <div className="p-6 text-center text-xs text-ink-400">知识点目录加载失败</div>
-            )}
+              <Select
+                label="推荐程度"
+                value={String(metadataDraft.recommendation)}
+                options={[1, 2, 3, 4, 5].map((value) => ({ value: String(value), label: `${value} / 5` }))}
+                onChange={(event) => setMetadataDraft((current) => current && ({
+                  ...current,
+                  recommendation: Number(event.target.value) as Question["recommendation"],
+                }))}
+              />
+              <Select
+                label="年级"
+                value={metadataDraft.grade}
+                options={[{ value: "", label: "未设置" }, ...includeCurrentOption(gradeOptions, metadataDraft.grade)]}
+                onChange={(event) => setMetadataDraft((current) => current && ({ ...current, grade: event.target.value }))}
+              />
+              <Select
+                label="学年"
+                value={metadataDraft.schoolYear}
+                options={[{ value: "", label: "未设置" }, ...includeCurrentOption(schoolYearOptions, metadataDraft.schoolYear)]}
+                onChange={(event) => setMetadataDraft((current) => current && ({ ...current, schoolYear: event.target.value }))}
+              />
+              <Select
+                label="学期"
+                value={metadataDraft.semester}
+                options={semesterOptions}
+                onChange={(event) => setMetadataDraft((current) => current && ({
+                  ...current,
+                  semester: event.target.value as ResourceSemester,
+                }))}
+              />
+              <Select
+                label="题类"
+                value={metadataDraft.category}
+                options={[
+                  { value: "", label: "未设置" },
+                  ...includeCurrentMetadataOption(
+                    categoryOptions,
+                    metadataDraft.category,
+                    getCategoryLabel(metadataDraft.category),
+                  ),
+                ]}
+                onChange={(event) => setMetadataDraft((current) => current && ({ ...current, category: event.target.value }))}
+              />
+              <Select
+                label="来源"
+                value={metadataDraft.sourceType}
+                options={[
+                  { value: "", label: "未设置" },
+                  ...includeCurrentMetadataOption(
+                    sourceOptions,
+                    metadataDraft.sourceType,
+                    getSourceLabel(metadataDraft.sourceType),
+                  ),
+                ]}
+                onChange={(event) => setMetadataDraft((current) => current && ({ ...current, sourceType: event.target.value }))}
+              />
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="overflow-hidden rounded-lg border border-ink-150">
+                {chapterTree ? (
+                  <SearchableTree
+                    data={chapterTree}
+                    title="章节目录"
+                    accent="gold"
+                    checkable
+                    checkedIds={metadataDraft.chapterIds}
+                    onCheck={(chapterIds) => setMetadataDraft((current) => current && ({ ...current, chapterIds }))}
+                    searchPlaceholder="搜索章节..."
+                    treeMaxHeightClassName="max-h-[320px]"
+                  />
+                ) : (
+                  <div className="p-6 text-center text-xs text-ink-400">章节目录加载失败</div>
+                )}
+              </div>
+              <div className="overflow-hidden rounded-lg border border-ink-150">
+                {knowledgeTree ? (
+                  <SearchableTree
+                    data={knowledgeTree}
+                    title="知识点目录"
+                    accent="teal"
+                    checkable
+                    checkedIds={metadataDraft.knowledgePointIds}
+                    onCheck={(knowledgePointIds) => setMetadataDraft((current) => current && ({ ...current, knowledgePointIds }))}
+                    searchPlaceholder="搜索知识点..."
+                    treeMaxHeightClassName="max-h-[320px]"
+                  />
+                ) : (
+                  <div className="p-6 text-center text-xs text-ink-400">知识点目录加载失败</div>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </Modal>
     </div>
   );
@@ -943,10 +1087,10 @@ function LectureQuestionDetails({
                 type="button"
                 onClick={() => onEditMetadata(question)}
                 className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-800"
-                aria-label={`编辑第 ${questionNumber} 题章节与知识点`}
+                aria-label={`编辑第 ${questionNumber} 题属性`}
               >
                 <Edit3 className="h-3 w-3" />
-                编辑目录
+                编辑属性
               </button>
             )}
           </div>
