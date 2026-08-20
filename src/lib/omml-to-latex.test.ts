@@ -124,6 +124,25 @@ function vectorEquationSystem(): string {
   `;
 }
 
+function delimitedEquationSystem(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:d>
+        <m:dPr>
+          <m:begChr m:val="{"/>
+          <m:endChr m:val=""/>
+        </m:dPr>
+        <m:e>
+          <m:eqArr>
+            <m:e><m:r><m:t>x=1</m:t></m:r></m:e>
+            <m:e><m:r><m:t>y=2</m:t></m:r></m:e>
+          </m:eqArr>
+        </m:e>
+      </m:d>
+    </m:oMath>
+  `;
+}
+
 function vectorAngleWithCjkDelimiters(): string {
   return `
     <m:oMath xmlns:m="${MATH_NS}">
@@ -240,6 +259,12 @@ describe("ommlToLatex", () => {
   it("does not turn nested vector operands into extra equation rows", () => {
     expect(ommlToLatex(vectorEquationSystem())).toBe(
       "\\begin{cases}\n\\vec{a}=\\vec{b} \\\\\n\\vec{c}=0\n\\end{cases}",
+    );
+  });
+
+  it("does not duplicate a brace around a delimited equation array", () => {
+    expect(ommlToLatex(delimitedEquationSystem())).toBe(
+      String.raw`\left\{\begin{aligned} x=1 \\ y=2 \end{aligned}\right.`,
     );
   });
 

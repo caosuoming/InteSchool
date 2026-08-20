@@ -530,6 +530,13 @@ function convertEqArr(el: Element): string {
     const rowContent = convertChildren(rowEls[i]);
     rows.push(rowContent);
   }
+
+  // Word commonly wraps an equation array in m:d when the system has a
+  // visible brace. The delimiter already renders that brace, so using cases
+  // here would add a second one.
+  if (hasMathAncestor(el, "d")) {
+    return `\\begin{aligned} ${rows.join(" \\\\ ")} \\end{aligned}`;
+  }
   
   // 检查是否是分段函数（通常有多个行）
   if (rows.length >= 2) {
@@ -579,6 +586,17 @@ function directMathChildren(parent: Element, localName: string): Element[] {
     && (node as Element).namespaceURI === MATH_NS
     && (node as Element).localName === localName
   );
+}
+
+function hasMathAncestor(element: Element, localName: string): boolean {
+  let parent = element.parentElement;
+  while (parent) {
+    if (parent.namespaceURI === MATH_NS && parent.localName === localName) {
+      return true;
+    }
+    parent = parent.parentElement;
+  }
+  return false;
 }
 
 /**
