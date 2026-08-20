@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
   updatePaper: vi.fn(),
   duplicatePaper: vi.fn(),
   listQuestions: vi.fn(),
+  getQuestion: vi.fn(),
   updateQuestion: vi.fn(),
+  addRemark: vi.fn(),
   listBaskets: vi.fn(),
   addQuestion: vi.fn(),
   removeQuestion: vi.fn(),
@@ -50,7 +52,9 @@ vi.mock("@/services/examPaper", () => ({
 vi.mock("@/services/question", () => ({
   questionService: {
     listQuestions: mocks.listQuestions,
+    getQuestion: mocks.getQuestion,
     updateQuestion: mocks.updateQuestion,
+    addRemark: mocks.addRemark,
   },
 }));
 vi.mock("@/services/basket", () => ({
@@ -279,7 +283,14 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...paper, ...patch }));
     mocks.duplicatePaper.mockResolvedValue({ ...paper, id: "paper-copy", isExtractCopy: false });
     mocks.listQuestions.mockResolvedValue([question]);
+    mocks.getQuestion.mockResolvedValue(question);
     mocks.updateQuestion.mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
+    mocks.addRemark.mockResolvedValue({
+      id: "remark-added",
+      content: "新备注",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
     mocks.listBaskets.mockResolvedValue([]);
     mocks.addQuestion.mockResolvedValue(undefined);
     mocks.removeQuestion.mockResolvedValue(undefined);
@@ -712,6 +723,46 @@ describe("ExamPaperEditorPage preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
     await screen.findByTestId("exam-paper-preview");
     await waitFor(() => expect(container.querySelectorAll(".katex").length).toBeGreaterThan(0));
+  });
+
+  it("shows and adds question remarks from the preview answer-status section", async () => {
+    const legacyQuestion = { ...question, remark: "已有备注" } as Question;
+    const addedRemark = {
+      id: "remark-added",
+      content: "新备注",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    mocks.listQuestions.mockResolvedValue([legacyQuestion]);
+    mocks.addRemark.mockResolvedValue(addedRemark);
+    mocks.getQuestion.mockResolvedValue({
+      ...legacyQuestion,
+      remark: addedRemark.content,
+      remarks: [
+        {
+          id: "remark-legacy",
+          content: legacyQuestion.remark,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        addedRemark,
+      ],
+    });
+
+    renderPage();
+    const answerStatus = await screen.findByTestId("exam-question-answer-status-1");
+    expect(within(answerStatus).getByText("已有备注")).toBeInTheDocument();
+
+    fireEvent.click(within(answerStatus).getByRole("button", { name: "添加备注" }));
+    fireEvent.change(within(answerStatus).getByLabelText("新增题目备注"), {
+      target: { value: "新备注" },
+    });
+    fireEvent.click(within(answerStatus).getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(mocks.addRemark).toHaveBeenCalledWith(question.id, "新备注");
+      expect(within(answerStatus).getByText("新备注")).toBeInTheDocument();
+    });
   });
 
   it("edits one class student's answer state from the preview", async () => {
