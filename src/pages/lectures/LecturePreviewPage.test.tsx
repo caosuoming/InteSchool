@@ -366,11 +366,16 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByText("展开答案与解析")).not.toBeInTheDocument();
     expect(screen.queryByText("答案：")).not.toBeInTheDocument();
 
+    const correctOption = screen.getByText("B.").parentElement!;
+    expect(correctOption).toHaveClass("border");
+
     fireEvent.click(questionStem);
 
     expect(screen.getByText("答案：")).toBeInTheDocument();
     expect(screen.getByText("解析：")).toBeInTheDocument();
     expect(questionStem).toHaveAttribute("aria-expanded", "true");
+    expect(correctOption).not.toHaveClass("border");
+    expect(correctOption).toHaveClass("bg-emerald-50/40");
 
     fireEvent.click(questionStem);
     await waitFor(() => {
