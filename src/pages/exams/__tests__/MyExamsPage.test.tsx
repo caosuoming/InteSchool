@@ -270,7 +270,7 @@ describe("MyExamsPage", () => {
     expect(within(wrappedLocationHeader).getByText("高三1班")).toBeInTheDocument();
     expect(within(wrappedLocationHeader).getByText("教室")).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "1考场、2考场" })).toBeInTheDocument();
-    expect(invigilationTable.getByRole("columnheader", { name: "巡回" })).toHaveAttribute("rowspan", "3");
+    expect(invigilationTable.getByRole("columnheader", { name: "巡考" })).toHaveAttribute("rowspan", "3");
     expect(invigilationTable.getByRole("cell", { name: "2026-10-20 星期二" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "晚上" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "18:30–20:30" })).toBeInTheDocument();
