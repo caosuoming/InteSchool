@@ -120,11 +120,14 @@ function documentPreviewWarnings(
 
 function renderMathAwareHtml(text: string): string {
   const renderLine = (line: string): string => {
-    const verticalRuns: string[] = [];
+    const structuredRuns: string[] = [];
     const protectedLine = line.replace(
-      /<(sup|sub)>(.*?)<\/\1>/gi,
-      (_match, tag: string, content: string) => {
-        const index = verticalRuns.push(`<${tag.toLowerCase()}>${renderLine(content)}</${tag.toLowerCase()}>`) - 1;
+      /<(sup|sub)>(.*?)<\/\1>|<i\s+class=["']math-variable["']>(.*?)<\/i>/gi,
+      (_match, tag: string | undefined, scriptContent: string | undefined, variableContent: string | undefined) => {
+        const markup = tag
+          ? `<${tag.toLowerCase()}>${renderLine(scriptContent || "")}</${tag.toLowerCase()}>`
+          : `<i class="math-variable">${renderLine(variableContent || "")}</i>`;
+        const index = structuredRuns.push(markup) - 1;
         return `\uE100${index}\uE101`;
       },
     );
@@ -157,7 +160,7 @@ function renderMathAwareHtml(text: string): string {
     }
     parts.push(escapeHtml(protectedLine.slice(cursor)));
     return parts.join("").replace(/\uE100(\d+)\uE101/g, (_match, index: string) =>
-      verticalRuns[Number(index)] || ""
+      structuredRuns[Number(index)] || ""
     );
   };
 
@@ -220,7 +223,7 @@ export async function extractDocument(
       extractDocxStructuredText(convertedData, options.docxImageUrl),
     ]);
     const text = (structuredText || raw.value.trim()).normalize("NFC");
-    const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)|<(?:sup|sub)>|<table\b[^>]*\bdocument-table\b/i.test(text);
+    const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)|<(?:sup|sub)>|<i\s+class=["']math-variable["']>|<table\b[^>]*\bdocument-table\b/i.test(text);
     const mammothWarnings = documentPreviewWarnings(
       [...raw.messages, ...rendered.messages],
       hasRichContent,

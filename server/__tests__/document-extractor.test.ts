@@ -190,6 +190,24 @@ describe("document extractor", () => {
     expect(result.html).toContain("a<sub>n</sub><sup>2</sup>+1");
   });
 
+  it("renders structured italic math variables instead of escaping their markup", async () => {
+    const filePath = join(workDir, "italic-variables.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({ value: "f(x)=sin²x", messages: [] });
+    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>f(x)=sin²x</p>", messages: [] });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      '已知函数<i class="math-variable">f</i>(<i class="math-variable">x</i>)=sin<sup>2</sup><i class="math-variable">x</i>+$\\frac{1}{2}$。',
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.html).toContain('<i class="math-variable">f</i>');
+    expect(result.html).toContain('<i class="math-variable">x</i>');
+    expect(result.html).toContain("sin<sup>2</sup>");
+    expect(result.html).toContain('class="katex"');
+    expect(result.html).not.toContain("&lt;i class=&quot;math-variable&quot;&gt;");
+  });
+
   it("renders preserved DOCX tables with formulas in their cells", async () => {
     const filePath = join(workDir, "table.docx");
     await writeFile(filePath, "fake docx");
