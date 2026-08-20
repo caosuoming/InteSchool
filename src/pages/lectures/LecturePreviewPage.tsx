@@ -140,7 +140,7 @@ export default function LecturePreviewPage() {
   const [metadataDraft, setMetadataDraft] = useState<QuestionMetadataDraft | null>(null);
   const [savingQuestionMetadata, setSavingQuestionMetadata] = useState(false);
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
-    { properties: true, answerStatus: true, basket: true },
+    { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
   const schoolId = lecture?.schoolId || teacher?.schoolId;
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
@@ -1137,6 +1137,7 @@ function LectureQuestionDetails({
             answerRecords={answerRecords}
             questionId={question.id}
             onChange={onUpdateStudentAnswer}
+            showAnsweredList={visibility.answeredList}
           />
           <QuestionRemarkControl
             className="mt-3 border-t border-ink-100 pt-3"
