@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   documentCategory,
+  isPdfDocumentResource,
   isDocumentStructureLocked,
+  originalDocumentFileType,
 } from "./document-resource";
 
 describe("document resources", () => {
@@ -39,5 +41,14 @@ describe("document resources", () => {
 
     expect(documentCategory(authored, [authored])).toBe("authored");
     expect(isDocumentStructureLocked(authored)).toBe(false);
+  });
+
+  it("detects Word and PDF originals from metadata or legacy file names", () => {
+    expect(originalDocumentFileType({ originalFileType: "word" })).toBe("word");
+    expect(originalDocumentFileType({ originalFileName: "期末试卷.DOCX" })).toBe("word");
+    expect(originalDocumentFileType({ originalFileName: "函数讲义.PDF" })).toBe("pdf");
+    expect(isPdfDocumentResource({ originalFileType: "pdf" })).toBe(true);
+    expect(isPdfDocumentResource({ originalFileName: "函数讲义.pdf" })).toBe(true);
+    expect(isPdfDocumentResource({ originalFileName: "函数讲义.docx" })).toBe(false);
   });
 });

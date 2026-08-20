@@ -10,6 +10,7 @@ import {
 import { useExtractConfigStore } from "@/stores/extractConfig";
 import { toast } from "@/stores/ui";
 import type { ResourceSemester } from "@/types";
+import { isPdfDocumentResource } from "@/lib/document-resource";
 
 export const MAX_CONCURRENT_EXTRACT_TASKS = 2;
 
@@ -99,7 +100,10 @@ export const useExtractTasksStore = create<ExtractTaskState>((set, get) => {
 
       if (!resource?.originalFileUrl) throw new Error("文档文件不存在");
       const fileName = resource.originalFileName || "";
-      if (!/\.(docx|pdf|txt|md)$/i.test(fileName)) {
+      if (isPdfDocumentResource(resource)) {
+        throw new Error("PDF 文档不支持拆解，请直接打开预览");
+      }
+      if (!/\.(docx|txt|md)$/i.test(fileName)) {
         throw new Error("暂不支持该格式文档的文档拆解");
       }
 

@@ -154,4 +154,24 @@ describe("extract task store", () => {
     expect(useExtractTasksStore.getState().startTask(taskInput(1))).toBe(false);
     expect(useExtractTasksStore.getState().tasks).toHaveLength(1);
   });
+
+  it("rejects PDF documents before calling the extraction API", async () => {
+    mocks.getPaper.mockResolvedValue({
+      originalFileUrl: "/api/files/paper-1",
+      originalFileName: "paper.pdf",
+      originalFileType: "pdf",
+    });
+
+    expect(useExtractTasksStore.getState().startTask(taskInput(1, "examPaper"))).toBe(true);
+
+    await waitFor(() => {
+      expect(useExtractTasksStore.getState().tasks[0]?.status).toBe("failed");
+    });
+
+    expect(mocks.extractStoredFile).not.toHaveBeenCalled();
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      "文档拆解失败",
+      expect.stringContaining("PDF 文档不支持拆解"),
+    );
+  });
 });

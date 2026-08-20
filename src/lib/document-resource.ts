@@ -11,10 +11,29 @@ export const documentCategoryOptions: Array<{ value: DocumentCategory; label: st
 type DocumentResource = {
   id: ExamPaper["id"] | Lecture["id"];
   originalFileUrl?: ExamPaper["originalFileUrl"] | Lecture["originalFileUrl"];
+  originalFileName?: ExamPaper["originalFileName"] | Lecture["originalFileName"];
+  originalFileType?: ExamPaper["originalFileType"] | Lecture["originalFileType"];
   isExtractCopy?: ExamPaper["isExtractCopy"] | Lecture["isExtractCopy"];
   sourceResourceId?: ExamPaper["sourceResourceId"] | Lecture["sourceResourceId"];
   extractStatus?: ExamPaper["extractStatus"] | Lecture["extractStatus"];
 };
+
+export type OriginalDocumentFileType = "word" | "pdf";
+
+export function originalDocumentFileType(
+  resource: Pick<DocumentResource, "originalFileName" | "originalFileType">,
+): OriginalDocumentFileType | undefined {
+  if (resource.originalFileType) return resource.originalFileType;
+  if (/\.pdf$/i.test(resource.originalFileName || "")) return "pdf";
+  if (/\.docx?$/i.test(resource.originalFileName || "")) return "word";
+  return undefined;
+}
+
+export function isPdfDocumentResource(
+  resource: Pick<DocumentResource, "originalFileName" | "originalFileType">,
+): boolean {
+  return originalDocumentFileType(resource) === "pdf";
+}
 
 export function isDocumentStructureLocked(resource: DocumentResource | null | undefined): boolean {
   return Boolean(resource && (resource.originalFileUrl || resource.isExtractCopy));

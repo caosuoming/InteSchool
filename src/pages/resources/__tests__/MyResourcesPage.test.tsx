@@ -206,6 +206,22 @@ describe("ResourceCard", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it("renders a document format marker before the resource title", () => {
+    render(
+      <ResourceCard
+        title="函数讲义"
+        titleIcon={<span aria-label="PDF 文档">PDF</span>}
+        meta={[]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+      />,
+    );
+
+    const title = screen.getByTestId("resource-card-title");
+    const format = screen.getByLabelText("PDF 文档");
+    expect(title.firstElementChild).toBe(format);
+    expect(title).toHaveTextContent("PDF函数讲义");
+  });
+
   it("shows compact lecture actions directly and keeps conversion in the action area", () => {
     const onConvertToExamPaper = vi.fn();
 

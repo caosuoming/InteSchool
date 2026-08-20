@@ -15,6 +15,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
+import { DocumentFormatIcon } from "@/components/resource/DocumentFormatIcon";
 import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
 import { extractStoredFile } from "@/services/api";
 import "katex/dist/katex.min.css";
@@ -23,6 +24,7 @@ import {
   isExtractTaskRunning,
   useExtractTasksStore,
 } from "@/stores/extractTasks";
+import { isPdfDocumentResource, originalDocumentFileType } from "@/lib/document-resource";
 
 
 
@@ -77,7 +79,7 @@ export default function ResourcePreviewPage() {
 
   const loadDocxPreview = useCallback(async () => {
     if (!resource?.originalFileUrl || !resource.originalFileName) return;
-    const supported = /\.(docx|pdf|txt|md)$/i.test(resource.originalFileName);
+    const supported = /\.docx$/i.test(resource.originalFileName);
     if (!supported) return;
     setDocPreview({ loading: true, html: "", error: "" });
     try {
@@ -125,9 +127,15 @@ export default function ResourcePreviewPage() {
   const isExtracting = resource.extractStatus === "extracting"
     || (resourceType ? isExtractTaskRunning(extractTasks, resource.id, resourceType) : false);
   const hasOriginalFile = !!resource.originalFileUrl;
+  const isPdfOriginal = isPdfDocumentResource(resource);
+  const isWordOriginal = originalDocumentFileType(resource) === "word";
 
   const handleOpenExtract = () => {
     if (!resourceType) return;
+    if (isPdfOriginal) {
+      toast.warning("PDF 文档不支持拆解", "可直接在当前页面浏览 PDF 原稿");
+      return;
+    }
     startExtractTask({
       resourceId: resource.id,
       resourceType,
@@ -138,15 +146,6 @@ export default function ResourcePreviewPage() {
       schoolYear: resource.schoolYear,
       semester: resource.semester || "上学期",
     });
-  };
-
-  const getDocUrl = () => {
-    if (!resource.originalFileUrl) return "";
-    const fileName = resource.originalFileName || "";
-    if (fileName.endsWith(".pdf")) {
-      return resource.originalFileUrl;
-    }
-    return "";
   };
 
   return (
@@ -177,19 +176,23 @@ export default function ResourcePreviewPage() {
         <Card className="mb-4">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
-              <Badge variant={isExtracted ? "teal" : "amber"}>
-                {isExtracted ? "已拆解" : "待拆解"}
+              <Badge variant={isPdfOriginal ? "ink" : (isExtracted ? "teal" : "amber")}>
+                {isPdfOriginal ? "PDF 文档" : (isExtracted ? "已拆解" : "待拆解")}
               </Badge>
               <span className="text-sm text-ink-500">
                 {resourceType === "lecture" ? "讲义" : "试卷"}原稿
               </span>
               {resource.originalFileName && (
-                <span className="text-xs text-ink-400">
+                <span className="inline-flex items-center gap-1.5 text-xs text-ink-400">
+                  <DocumentFormatIcon
+                    fileType={resource.originalFileType}
+                    fileName={resource.originalFileName}
+                  />
                   文件：{resource.originalFileName}
                 </span>
               )}
             </div>
-            {!isExtracted && (
+            {!isExtracted && !isPdfOriginal && (
               <Button
                 variant="gold"
                 onClick={handleOpenExtract}
@@ -212,7 +215,7 @@ export default function ResourcePreviewPage() {
 
           {hasOriginalFile ? (
             <div className="h-[70vh] bg-white overflow-y-auto">
-              {resource.originalFileName.endsWith(".docx") || resource.originalFileName.endsWith(".doc") ? (
+              {isWordOriginal ? (
                 <div className="p-8 docx-preview">
                   <style>{`
                     .docx-preview .katex {
@@ -252,7 +255,7 @@ export default function ResourcePreviewPage() {
                     </div>
                   )}
                 </div>
-              ) : resource.originalFileName.endsWith(".pdf") ? (
+              ) : isPdfOriginal ? (
                 <iframe
                   src={resource.originalFileUrl}
                   title={resource.title}
@@ -276,7 +279,7 @@ export default function ResourcePreviewPage() {
           )}
         </Card>
 
-        {!isExtracted && hasOriginalFile && (
+        {!isExtracted && hasOriginalFile && !isPdfOriginal && (
           <Card className="mt-4 bg-amber-50/50 border-amber-200">
             <div className="flex items-start gap-3 p-4">
               <Sparkles className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
