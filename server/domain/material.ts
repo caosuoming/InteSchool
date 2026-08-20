@@ -51,6 +51,7 @@ export interface MaterialInput {
   type: MaterialType;
   content: string;
   fileUrl?: string;
+  fileName?: string;
   fileSize?: number;
   explanationVideo?: QuestionVideoReference | null;
   tags: string[];
@@ -93,6 +94,7 @@ export const materialService = {
       type: input.type,
       content: input.content,
       fileUrl: input.fileUrl,
+      fileName: input.fileName,
       fileSize: input.fileSize,
       explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
       tags: input.tags,

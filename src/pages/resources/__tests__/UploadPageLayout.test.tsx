@@ -1,8 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UploadPage } from "@/pages/resources/UploadPage";
 import { useAuthStore } from "@/stores/auth";
+import { uploadFile } from "@/services/api";
+import { lectureService } from "@/services/lecture";
 import type { Teacher, TreeNode } from "@/types";
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
@@ -65,6 +68,17 @@ vi.mock("@/services/share", () => ({
   },
 }));
 
+vi.mock("@/services/api", () => ({
+  uploadFile: vi.fn(),
+}));
+
+vi.mock("@/services/lecture", () => ({
+  lectureService: {
+    listLectures: vi.fn(async () => []),
+    createLecture: vi.fn(),
+  },
+}));
+
 vi.mock("@/stores/ui", () => ({
   toast: {
     success: vi.fn(),
@@ -84,6 +98,9 @@ function renderPage(type: string) {
 
 describe("UploadPage public attributes layout", () => {
   beforeEach(() => {
+    vi.mocked(uploadFile).mockReset();
+    vi.mocked(lectureService.listLectures).mockReset().mockResolvedValue([]);
+    vi.mocked(lectureService.createLecture).mockReset();
     useAuthStore.setState({
       teacher: {
         id: "teacher-1",
@@ -117,5 +134,49 @@ describe("UploadPage public attributes layout", () => {
     for (const label of ["年级", "学年", "学期", "课件类型（默认）"]) {
       expect(within(grid).getByLabelText(label)).toBeInTheDocument();
     }
+  });
+
+  it("reviews a similar existing file before uploading and can discard the incoming file", async () => {
+    const user = userEvent.setup();
+    vi.mocked(lectureService.listLectures).mockResolvedValue([{
+      id: "lecture-existing",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      title: "函数专题讲义",
+      description: "资源库中的版本",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期",
+      classIds: [],
+      studentIds: [],
+      sections: [],
+      status: "draft",
+      version: 1,
+      originalFileUrl: "/api/files/existing",
+      originalFileName: "函数专题讲义.docx",
+      originalFileType: "word",
+      originalFileSize: 1024,
+      createdAt: "2026-08-20T00:00:00.000Z",
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    }]);
+
+    const { container } = renderPage("lecture");
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await user.upload(input!, new File(["incoming"], "函数专题讲义.pdf", { type: "application/pdf" }));
+    await user.click(screen.getByRole("button", { name: "上传 1 个文件" }));
+
+    expect(await screen.findByText("发现同名或相似文件")).toBeInTheDocument();
+    expect(screen.getByText("资源库中的版本")).toBeInTheDocument();
+    expect(lectureService.listLectures).toHaveBeenCalledWith({ teacherId: "teacher-1", schoolId: "school-1" });
+    expect(uploadFile).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "放弃该文件" }));
+    await user.click(screen.getByRole("button", { name: "继续处理上传" }));
+
+    expect(uploadFile).not.toHaveBeenCalled();
+    expect(screen.queryByText("发现同名或相似文件")).not.toBeInTheDocument();
   });
 });

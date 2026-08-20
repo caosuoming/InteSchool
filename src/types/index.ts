@@ -1374,6 +1374,7 @@ export interface Material {
   type: MaterialType;
   content: string; // 素材内容
   fileUrl?: string;
+  fileName?: string;
   fileSize?: number;
   /** 知识块可关联素材库中的讲解视频。 */
   explanationVideo?: QuestionVideoReference | null;
