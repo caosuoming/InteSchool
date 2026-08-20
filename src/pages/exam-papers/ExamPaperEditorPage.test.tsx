@@ -773,7 +773,7 @@ describe("ExamPaperEditorPage preview", () => {
     renderPage();
     await screen.findByTestId("exam-paper-preview");
 
-    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: "student-1" } });
+    fireEvent.change(await screen.findByLabelText("选择学生"), { target: { value: "student-1" } });
     fireEvent.change(screen.getByLabelText("答题情况"), { target: { value: "partial" } });
 
     await waitFor(() => {
