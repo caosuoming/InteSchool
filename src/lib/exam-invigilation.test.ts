@@ -143,6 +143,26 @@ describe("exam invigilation table", () => {
     expect(table.rows[0].roomTeacherIds["room-1"]).toBe("teacher-b");
   });
 
+  it("can prioritize matching subjects before cumulative duration", () => {
+    const input = arrangement();
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "teacher-a", name: "甲老师", subject: "数学" },
+        { id: "teacher-b", name: "乙老师", subject: "历史" },
+      ],
+      subjectTimes: [{ subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 }],
+      autoArrangePriority: "subject",
+      patrolTeacherIds: [],
+      overrides: {},
+    };
+
+    const table = buildExamInvigilationTable(input, settings, {
+      baselineTeacherMinutes: { "teacher-a": 240, "teacher-b": 0 },
+    });
+
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBe("teacher-a");
+  });
+
   it("excludes teachers on leave from automatic room, outside and patrol duties", () => {
     const input = arrangement();
     const settings = config();

@@ -306,7 +306,8 @@ describe("MyExamsPage", () => {
     expect(screen.getByRole("button", { name: "上传 Excel" })).toBeInTheDocument();
     expect(screen.queryByLabelText("批量添加")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批量加入" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "排监考" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "本学科优先" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "时长优先" })).toBeInTheDocument();
     expect(tableOneHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tableOneHeading.compareDocumentPosition(teachersHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(teachersHeading.compareDocumentPosition(timesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -560,7 +561,7 @@ describe("MyExamsPage", () => {
     expect(roomOne.closest("td")).toHaveTextContent("张老师");
     expect(roomTwo.closest("td")).toHaveTextContent("李老师");
 
-    await user.click(screen.getByRole("button", { name: "排监考" }));
+    await user.click(screen.getByRole("button", { name: "时长优先" }));
     expect(roomOne.closest("td")).toHaveTextContent("李老师");
     expect(roomTwo.closest("td")).toHaveTextContent("张老师");
 
