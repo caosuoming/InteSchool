@@ -244,6 +244,33 @@ function renderPage() {
   );
 }
 
+function mockOptionWrapping(wrappedColumns: ReadonlySet<number>) {
+  const nativeGetComputedStyle = window.getComputedStyle.bind(window);
+  const computedStyleSpy = vi.spyOn(window, "getComputedStyle").mockImplementation((element) => {
+    if ((element as HTMLElement).hasAttribute("data-lecture-preview-option-content")) {
+      return { lineHeight: "20px" } as CSSStyleDeclaration;
+    }
+    return nativeGetComputedStyle(element);
+  });
+  const scrollHeightSpy = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function () {
+    const element = this as HTMLElement;
+    if (!element.hasAttribute("data-lecture-preview-option-content")) return 0;
+
+    const grid = element.closest('[data-testid="lecture-question-options"]');
+    const columns = grid?.classList.contains("grid-cols-4")
+      ? 4
+      : grid?.classList.contains("grid-cols-2")
+        ? 2
+        : 1;
+    return wrappedColumns.has(columns) ? 40 : 20;
+  });
+
+  return () => {
+    computedStyleSpy.mockRestore();
+    scrollHeightSpy.mockRestore();
+  };
+}
+
 describe("LecturePreviewPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -321,6 +348,39 @@ describe("LecturePreviewPage", () => {
     });
   });
 
+  it("reduces choice options to two columns when four columns wrap and removes option borders", async () => {
+    const restoreMeasurements = mockOptionWrapping(new Set([4]));
+    try {
+      const { container } = renderPage();
+
+      await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+      const optionGrid = screen.getByTestId("lecture-question-options");
+      await waitFor(() => expect(optionGrid).toHaveClass("grid-cols-2"));
+      expect(optionGrid).not.toHaveClass("grid-cols-4");
+      expect(Array.from(optionGrid.children)).toHaveLength(4);
+      for (const option of Array.from(optionGrid.children)) {
+        expect(option).not.toHaveClass("border", "border-ink-100");
+      }
+      expect(container.querySelectorAll('[data-lecture-preview-option-content]')).toHaveLength(4);
+    } finally {
+      restoreMeasurements();
+    }
+  });
+
+  it("reduces choice options to one column when they still wrap in two columns", async () => {
+    const restoreMeasurements = mockOptionWrapping(new Set([4, 2]));
+    try {
+      renderPage();
+
+      await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+      const optionGrid = screen.getByTestId("lecture-question-options");
+      await waitFor(() => expect(optionGrid).toHaveClass("grid-cols-1"));
+      expect(optionGrid).not.toHaveClass("grid-cols-2", "grid-cols-4");
+    } finally {
+      restoreMeasurements();
+    }
+  });
+
   it("downloads the preview and creates an editable lecture copy", async () => {
     renderPage();
 
@@ -393,7 +453,7 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByText("答案：")).not.toBeInTheDocument();
 
     const correctOption = screen.getByText("B.").parentElement!;
-    expect(correctOption).toHaveClass("border");
+    expect(correctOption).not.toHaveClass("border");
 
     fireEvent.click(questionStem);
 
