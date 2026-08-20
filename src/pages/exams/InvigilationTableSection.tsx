@@ -195,6 +195,22 @@ function writeCellOverride(
   else override.outsideTeacherId = teacherId;
 }
 
+function freezeRenderedAssignments(
+  config: ExamInvigilationConfig,
+  table: ReturnType<typeof buildExamInvigilationTable>,
+) {
+  config.overrides ||= {};
+  table.rows.forEach((row) => {
+    const override = config.overrides![row.key] ||= { roomTeacherIds: {} };
+    table.roomLocationGroups.forEach((group) => {
+      const roomId = group.roomIds.find((candidate) => (row.roomStudentCounts[candidate] || 0) > 0);
+      if (!roomId) return;
+      override.roomTeacherIds[roomId] = row.roomTeacherIds[roomId] || null;
+    });
+    if (row.outsideTeacherIds.length <= 1) override.outsideTeacherId = row.outsideTeacherId;
+  });
+}
+
 function consecutiveRowSpan<T>(items: T[], index: number, keyFor: (item: T) => string): number {
   const key = keyFor(items[index]);
   if (index > 0 && keyFor(items[index - 1]) === key) return 0;
@@ -508,6 +524,7 @@ export function InvigilationTableSection({ schoolId, teacherId, cohorts, cohortK
     if (!selectedArrangement || !config) return false;
     const next = cloneConfig(config);
     const normalized = value === "__auto__" ? undefined : value === "__blank__" ? null : value;
+    if (typeof normalized === "string" && invigilation) freezeRenderedAssignments(next, invigilation);
     writeCellOverride(next, target, normalized);
 
     if (typeof normalized === "string") {
