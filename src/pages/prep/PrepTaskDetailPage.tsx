@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
@@ -291,7 +292,7 @@ export default function PrepTaskDetailPage() {
         size="sm"
         footer={(
           <>
-            <Button variant="outline" onClick={() => navigate("/prep")}>返回</Button>
+            <Button variant="outline" onClick={() => openPage("/prep")}>返回</Button>
             <Button variant="gold" onClick={handleTaskPasswordSubmit}>验证</Button>
           </>
         )}
@@ -343,7 +344,7 @@ export default function PrepTaskDetailPage() {
         action={
           <div className="flex items-center gap-2">
             {linkedEditorPath && (
-              <Button variant="gold" onClick={() => navigate(linkedEditorPath)}>
+              <Button variant="gold" onClick={() => openPage(linkedEditorPath)}>
                 <Edit3 className="w-4 h-4" />
                 编辑协作文档
               </Button>

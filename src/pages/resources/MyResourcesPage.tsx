@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -2921,7 +2922,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     <Plus className="w-3.5 h-3.5" />
                     出试卷
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=examPaper")}>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=examPaper")}>
                     <Upload className="w-3.5 h-3.5" />
                     上传试卷
                   </Button>
@@ -2933,7 +2934,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     <Plus className="w-3.5 h-3.5" />
                     编讲义
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=lecture")}>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=lecture")}>
                     <Upload className="w-3.5 h-3.5" />
                     上传讲义
                   </Button>
@@ -2945,14 +2946,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     <Plus className="w-3.5 h-3.5" />
                     做课件
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=courseware")}>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=courseware")}>
                     <Upload className="w-3.5 h-3.5" />
                     上传课件
                   </Button>
                 </>
               )}
               {activeTab === "material" && (
-                <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=material")}>
+                <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=material")}>
                   <Upload className="w-3.5 h-3.5" />
                   上传素材
                 </Button>
@@ -3132,9 +3133,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       reflections={reflectionsMap[mainLecture.id]}
                       onClick={() => {
                         if (item.originalFileUrl && !isExtracted && !hasExtractCopy) {
-                          navigate(`/resources/preview/${item.id}?type=lecture`);
+                          openPage(`/resources/preview/${item.id}?type=lecture`);
                         } else {
-                          navigate(`/lectures/${mainLecture.id}/preview`);
+                          openPage(`/lectures/${mainLecture.id}/preview`);
                         }
                       }}
                       onShare={() => handleOpenShare("lecture", mainLecture.id, mainLecture.title)}
@@ -3200,7 +3201,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         fileUrl={item.originalFileUrl}
                         fileName={item.originalFileName}
                         icon={FileText}
-                        onView={() => navigate(`/resources/preview/${item.id}?type=lecture`)}
+                        onView={() => openPage(`/resources/preview/${item.id}?type=lecture`)}
                       />
                     )}
                   </DocumentResourceGroup>
@@ -3237,7 +3238,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         ]}
                         updatedAt={copy.updatedAt}
                         reflections={reflectionsMap[copy.id]}
-                        onClick={() => navigate(`/exam-papers/${copy.id}/preview`)}
+                        onClick={() => openPage(`/exam-papers/${copy.id}/preview`)}
                         onShare={() => handleOpenShare("examPaper", copy.id, copy.title)}
                         onAddToPrep={() => setPrepTarget({
                           resourceType: "examPaper",
@@ -3325,9 +3326,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           reflections={reflectionsMap[item.id]}
                           onClick={() => {
                             if (item.originalFileUrl && !isExtracted) {
-                              navigate(`/resources/preview/${item.id}?type=examPaper`);
+                              openPage(`/resources/preview/${item.id}?type=examPaper`);
                             } else {
-                              navigate(`/exam-papers/${item.id}/preview`);
+                              openPage(`/exam-papers/${item.id}/preview`);
                             }
                           }}
                           onShare={() => handleOpenShare("examPaper", item.id, item.title)}
@@ -3351,7 +3352,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                               key: "answerSheet",
                               label: "制作答题卡",
                               icon: <Layout />,
-                              onClick: () => navigate(`/exam-papers/${item.id}/answer-sheet`),
+                              onClick: () => openPage(`/exam-papers/${item.id}/answer-sheet`),
                               tone: "gold",
                             },
                             {
@@ -3408,7 +3409,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         fileUrl={item.originalFileUrl}
                         fileName={item.originalFileName}
                         icon={FileSpreadsheet}
-                        onView={() => navigate(`/resources/preview/${item.id}?type=examPaper`)}
+                        onView={() => openPage(`/resources/preview/${item.id}?type=examPaper`)}
                       />
                     )}
                   </DocumentResourceGroup>
@@ -3440,7 +3441,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     ? openLinkedCourseware(item)
                     : item.type === "ppt"
                       ? void openCoursewareInWps(item)
-                      : navigate(`/coursewares/${item.id}`)}
+                      : openPage(`/coursewares/${item.id}`)}
                   primaryActions={item.lessonCoursewareId ? (
                     <Button
                       variant="gold"
@@ -3502,7 +3503,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       label="原稿"
                       title={item.sourceResourceTitle || "源文档"}
                       icon={item.sourceResourceType === "examPaper" ? FileSpreadsheet : FileText}
-                      onView={() => navigate(item.sourceResourceType === "examPaper"
+                      onView={() => openPage(item.sourceResourceType === "examPaper"
                         ? `/exam-papers/${item.sourceResourceId}/preview`
                         : `/lectures/${item.sourceResourceId}/preview`)}
                     />

@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -411,7 +412,7 @@ export default function ResourceLibraryPage() {
                     <Plus className="w-3.5 h-3.5" />
                     新建试卷
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=examPaper")}>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=examPaper")}>
                     <Upload className="w-3.5 h-3.5" />
                     上传试卷
                   </Button>
@@ -423,7 +424,7 @@ export default function ResourceLibraryPage() {
                     <Plus className="w-3.5 h-3.5" />
                     新建讲义
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=lecture")}>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=lecture")}>
                     <Upload className="w-3.5 h-3.5" />
                     上传讲义
                   </Button>
@@ -435,14 +436,14 @@ export default function ResourceLibraryPage() {
                     <Plus className="w-3.5 h-3.5" />
                     做课件
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=courseware")}>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=courseware")}>
                     <Upload className="w-3.5 h-3.5" />
                     上传课件
                   </Button>
                 </>
               )}
               {activeTab === "material" && (
-                <Button variant="outline" size="sm" onClick={() => navigate("/upload?type=material")}>
+                <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=material")}>
                   <Upload className="w-3.5 h-3.5" />
                   上传素材
                 </Button>
@@ -493,7 +494,7 @@ export default function ResourceLibraryPage() {
                     { label: "状态", value: item.status === "published" ? "已发布" : "草稿" },
                   ]}
                   updatedAt={item.updatedAt}
-                  onClick={() => navigate(`/lectures/${item.id}/edit`)}
+                  onClick={() => openPage(`/lectures/${item.id}/edit`)}
                   onExtract={item.sections.some((s) => s.type === "question") ? () => setExtractTarget({ id: item.id, type: "lecture" }) : undefined}
                   onDelete={() => handleDelete(item.id)}
                 />

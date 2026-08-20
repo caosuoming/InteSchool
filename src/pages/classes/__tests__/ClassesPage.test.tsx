@@ -127,7 +127,8 @@ describe("ClassesPage", () => {
     expect(screen.queryByRole("button", { name: "添加" })).not.toBeInTheDocument();
   });
 
-  it("returns from the personal classes page to the school roster", async () => {
+  it("opens the school roster in a new tab", () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     render(
       <MemoryRouter initialEntries={["/classes"]}>
         <Routes>
@@ -139,7 +140,7 @@ describe("ClassesPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "返回班级与学生" }));
 
-    expect(await screen.findByText("班级与学生页面")).toBeInTheDocument();
+    expect(openSpy).toHaveBeenCalledWith("/admin/classes", "_blank", "noopener,noreferrer");
   });
 
   it("renames a selected personal class", async () => {

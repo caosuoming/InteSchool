@@ -231,7 +231,7 @@ export default function DashboardPage() {
         description={`${teacher.subject}学科 · ${schoolName} · 工号 ${teacher.employeeNo || "未填写"}`}
         icon={<BookOpen className="w-5 h-5" />}
         action={
-          <Link to="/import">
+          <Link to="/import" target="_blank" rel="noreferrer">
             <Button variant="gold">
               <FileUp className="w-4 h-4" />
               导入文档
@@ -356,7 +356,7 @@ export default function DashboardPage() {
                 <CardHeader
                   title="最近讲义"
                   action={
-                    <Link to="/lectures">
+                    <Link to="/lectures" target="_blank" rel="noreferrer">
                       <Button variant="ghost" size="sm">
                         查看全部
                         <ArrowRight className="w-3.5 h-3.5" />
@@ -450,7 +450,7 @@ export default function DashboardPage() {
                                 {taskStatusLabels[task.status]}
                               </span>
                             </div>
-                            <Link to={`/prep/tasks/${task.id}`}>
+                            <Link to={`/prep/tasks/${task.id}`} target="_blank" rel="noreferrer">
                               <Button variant="ghost" size="sm">
                                 查看详情
                               </Button>

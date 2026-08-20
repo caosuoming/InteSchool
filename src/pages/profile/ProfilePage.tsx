@@ -420,7 +420,7 @@ export default function ProfilePage() {
       </Card>
 
       <Card className="p-6">
-        <div className="flex items-center justify-between gap-3 mb-4"><div className="flex items-center gap-2"><School className="w-5 h-5 text-gold-600" /><h2 className="font-serif text-lg font-semibold">所属学校</h2></div><Link to="/school-auth?add=1"><Button variant="outline">新增学校</Button></Link></div>
+        <div className="flex items-center justify-between gap-3 mb-4"><div className="flex items-center gap-2"><School className="w-5 h-5 text-gold-600" /><h2 className="font-serif text-lg font-semibold">所属学校</h2></div><Link to="/school-auth?add=1" target="_blank" rel="noreferrer"><Button variant="outline">新增学校</Button></Link></div>
         <div className="space-y-2">{teacher.affiliations.filter((item) => item.schoolId).map((item) => <div key={item.id} className="rounded-lg border border-ink-100 p-3 flex justify-between"><div><div className="font-medium">{item.schoolName}</div><div className="text-xs text-ink-500">{item.subject} · {item.status}</div></div>{item.isCurrent && <span className="text-xs text-emerald-700">当前身份</span>}</div>)}</div>
       </Card>
 

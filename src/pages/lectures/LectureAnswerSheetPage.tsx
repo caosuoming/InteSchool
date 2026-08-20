@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnswerSheetComposer } from "@/components/answer-sheet/AnswerSheetComposer";
@@ -88,7 +89,7 @@ export default function LectureAnswerSheetPage() {
       resourceId={lecture.id}
       resourceLabel="讲义"
       questions={questions}
-      onBack={() => navigate(`/lectures/${lecture.id}/preview`)}
+      onBack={() => openPage(`/lectures/${lecture.id}/preview`)}
     />
   );
 }

@@ -42,7 +42,8 @@ describe("NotificationBell", () => {
     expect(screen.getByText("1")).toBeInTheDocument();
   });
 
-  it("opens the inbox and marks a clicked message as read", async () => {
+  it("opens the notification target in a new tab and marks it as read", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     render(
       <MemoryRouter>
         <NotificationBell teacherId="teacher-1" />
@@ -53,6 +54,7 @@ describe("NotificationBell", () => {
     expect(await screen.findByText("学校认证已通过")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /学校认证已通过/ }));
 
+    expect(openSpy).toHaveBeenCalledWith("/dashboard", "_blank", "noopener,noreferrer");
     await waitFor(() => {
       expect(notificationService.markRead).toHaveBeenCalledWith("notification-1", "teacher-1");
     });

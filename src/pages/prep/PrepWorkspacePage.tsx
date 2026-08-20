@@ -551,7 +551,7 @@ export default function PrepWorkspacePage() {
                             {assignmentStatusLabels[assignment.status]}
                           </Badge>
                           <div className="flex items-center gap-1">
-                            <Link to={`/prep/tasks/${board.id}`}>
+                            <Link to={`/prep/tasks/${board.id}`} target="_blank" rel="noreferrer">
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -561,7 +561,7 @@ export default function PrepWorkspacePage() {
                               </Button>
                             </Link>
                             {linkedEditorPath && (
-                              <Link to={linkedEditorPath}>
+                              <Link to={linkedEditorPath} target="_blank" rel="noreferrer">
                                 <Button variant="gold" size="sm">
                                   共同编辑
                                 </Button>

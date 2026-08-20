@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
@@ -1428,7 +1429,7 @@ export default function ExamPaperEditorPage() {
       size="sm"
       footer={(
         <>
-          <Button variant="outline" onClick={() => navigate("/prep")}>返回集体备课</Button>
+          <Button variant="outline" onClick={() => openPage("/prep")}>返回集体备课</Button>
           <Button variant="gold" onClick={handlePrepPasswordSubmit}>验证并打开</Button>
         </>
       )}
@@ -1529,7 +1530,7 @@ export default function ExamPaperEditorPage() {
             </Button>
           )}
           {!prepTaskId && (
-            <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
+            <Button variant="outline" onClick={() => openPage(`/exam-papers/${id}/answer-sheet`)}>
               <Layout className="w-4 h-4" />
               制作答题卡
             </Button>
@@ -1823,7 +1824,7 @@ export default function ExamPaperEditorPage() {
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
-              onClick={() => navigate(prepTaskId ? `/prep/tasks/${prepTaskId}` : "/my-resources/exam-papers")}
+              onClick={() => openPage(prepTaskId ? `/prep/tasks/${prepTaskId}` : "/my-resources/exam-papers")}
             >
               <ArrowLeft className="w-4 h-4" />
               返回
@@ -1875,7 +1876,7 @@ export default function ExamPaperEditorPage() {
               {linkedCourseware ? "课件" : "发送到我的课件"}
             </Button>
           )}
-          <Button variant="outline" onClick={() => navigate(`/exam-papers/${id}/answer-sheet`)}>
+          <Button variant="outline" onClick={() => openPage(`/exam-papers/${id}/answer-sheet`)}>
             <Layout className="w-4 h-4" />
             制作答题卡
           </Button>

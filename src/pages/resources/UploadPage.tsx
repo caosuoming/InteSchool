@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
@@ -1085,7 +1086,7 @@ export function UploadPage() {
                     <div className="text-sm text-ink-500 mb-4">
                       共成功上传 {doneCount} 个文件
                     </div>
-                    <Button variant="gold" onClick={() => navigate("/resources")}>
+                    <Button variant="gold" onClick={() => openPage("/resources")}>
                       查看资源库
                     </Button>
                   </div>

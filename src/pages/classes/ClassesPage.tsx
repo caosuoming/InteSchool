@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -468,7 +469,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
             {personalOnly && (
               <Button
                 variant="outline"
-                onClick={() => navigate("/admin/classes")}
+                onClick={() => openPage("/admin/classes")}
                 aria-label="返回班级与学生"
               >
                 <ArrowLeft className="w-4 h-4" />

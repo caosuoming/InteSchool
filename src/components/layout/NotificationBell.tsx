@@ -1,6 +1,6 @@
+import { openPage } from "@/lib/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AtSign, Bell, CheckCheck, CircleCheck, Gift, Megaphone, ShieldCheck } from "lucide-react";
-import { useNavigate } from "react-router";
 import { notificationService } from "@/services/notification";
 import type { AppNotification } from "@/types";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,6 @@ interface NotificationBellProps {
 }
 
 export function NotificationBell({ teacherId, collapsed = false }: NotificationBellProps) {
-  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -71,6 +70,7 @@ export function NotificationBell({ teacherId, collapsed = false }: NotificationB
   };
 
   const handleNotification = async (notification: AppNotification) => {
+    if (notification.actionUrl) openPage(notification.actionUrl);
     if (!notification.readAt) {
       try {
         const updated = await notificationService.markRead(notification.id, teacherId);
@@ -80,7 +80,6 @@ export function NotificationBell({ teacherId, collapsed = false }: NotificationB
       }
     }
     setOpen(false);
-    if (notification.actionUrl) navigate(notification.actionUrl);
   };
 
   const handleMarkAll = async () => {

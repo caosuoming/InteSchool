@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useCallback, useMemo, type ComponentProps, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
@@ -1651,7 +1652,7 @@ export default function LectureEditorPage() {
       size="sm"
       footer={(
         <>
-          <Button variant="outline" onClick={() => navigate("/prep")}>返回集体备课</Button>
+          <Button variant="outline" onClick={() => openPage("/prep")}>返回集体备课</Button>
           <Button variant="gold" onClick={handlePrepPasswordSubmit}>验证并打开</Button>
         </>
       )}
@@ -1756,7 +1757,7 @@ export default function LectureEditorPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => navigate(`/lectures/${id}/edit${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+                onClick={() => openPage(`/lectures/${id}/edit${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
               >
                 <Edit3 className="w-4 h-4" />
                 返回编辑
@@ -2005,7 +2006,7 @@ export default function LectureEditorPage() {
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
                 variant="ghost"
-                onClick={() => navigate(prepTaskId ? `/prep/tasks/${prepTaskId}` : "/my-resources/lectures")}
+                onClick={() => openPage(prepTaskId ? `/prep/tasks/${prepTaskId}` : "/my-resources/lectures")}
               >
                 <ArrowLeft className="w-4 h-4" />
                 返回
@@ -2013,7 +2014,7 @@ export default function LectureEditorPage() {
               {lecture && (
                 <Button
                   variant="outline"
-                  onClick={() => navigate(`/lectures/${lecture.id}/preview`)}
+                  onClick={() => openPage(`/lectures/${lecture.id}/preview`)}
                 >
                   <Eye className="w-4 h-4" />
                   预览

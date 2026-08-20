@@ -1,3 +1,4 @@
+import { openPage } from "@/lib/navigation";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -720,7 +721,7 @@ export default function SchoolRosterPage() {
         icon={<GraduationCap className="h-5 w-5" />}
         action={
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => navigate("/classes")}>
+            <Button variant="outline" onClick={() => openPage("/classes")}>
               <Layers className="h-4 w-4" />
               个人教学班
             </Button>
