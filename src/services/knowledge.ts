@@ -1,6 +1,15 @@
 import { rpcCall } from "./api";
 
-import type { Chapter, KnowledgePoint, TreeNode } from "@/types";
+import type {
+  Chapter,
+  DirectoryCatalogSummary,
+  DirectoryDonation,
+  DirectoryDonationAcceptMode,
+  DirectoryDonationUpsertResult,
+  KnowledgePoint,
+  TreeNode,
+  TreeNodeType,
+} from "@/types";
 
 export const knowledgeService = {
   async listChapters(schoolId: string): Promise<Chapter[]> {
@@ -21,6 +30,30 @@ export const knowledgeService = {
 
   async getKnowledgeTree(schoolId: string): Promise<TreeNode> {
     return rpcCall("knowledge", "getKnowledgeTree", [schoolId]) as any;
+  },
+
+  async listDirectoryCatalogs(teacherId: string, type: TreeNodeType): Promise<DirectoryCatalogSummary[]> {
+    return rpcCall("knowledge", "listDirectoryCatalogs", [teacherId, type]) as any;
+  },
+
+  async listDirectoryDonations(teacherId: string, type: TreeNodeType): Promise<DirectoryDonation[]> {
+    return rpcCall("knowledge", "listDirectoryDonations", [teacherId, type]) as any;
+  },
+
+  async donateDirectory(teacherId: string, type: TreeNodeType): Promise<DirectoryDonationUpsertResult> {
+    return rpcCall("knowledge", "donateDirectory", [teacherId, type]) as any;
+  },
+
+  async acceptDirectoryDonation(
+    teacherId: string,
+    donationId: string,
+    mode: DirectoryDonationAcceptMode,
+  ): Promise<DirectoryCatalogSummary> {
+    return rpcCall("knowledge", "acceptDirectoryDonation", [teacherId, donationId, mode]) as any;
+  },
+
+  async activateDirectoryCatalog(teacherId: string, catalogId: string): Promise<DirectoryCatalogSummary> {
+    return rpcCall("knowledge", "activateDirectoryCatalog", [teacherId, catalogId]) as any;
   },
 
   async addChapter(schoolId: string, parentId: string | null, name: string): Promise<Chapter> {

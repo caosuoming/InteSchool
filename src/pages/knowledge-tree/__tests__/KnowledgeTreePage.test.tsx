@@ -12,6 +12,11 @@ vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
+    listDirectoryCatalogs: vi.fn(),
+    listDirectoryDonations: vi.fn(),
+    donateDirectory: vi.fn(),
+    acceptDirectoryDonation: vi.fn(),
+    activateDirectoryCatalog: vi.fn(),
     getAliasIds: vi.fn(),
     listChapters: vi.fn(),
     listKnowledgePoints: vi.fn(),
@@ -87,6 +92,51 @@ describe("KnowledgeTreePage", () => {
 
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
+    vi.mocked(knowledgeService.listDirectoryCatalogs).mockImplementation(async (_teacherId, type) => [{
+      id: `current-school-1-${type}`,
+      schoolId: "school-1",
+      type,
+      name: type === "chapter" ? "默认章节课目录" : "默认知识点目录",
+      nodeCount: type === "chapter" ? 2 : 0,
+      isActive: true,
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+    }]);
+    vi.mocked(knowledgeService.listDirectoryDonations).mockResolvedValue([]);
+    vi.mocked(knowledgeService.donateDirectory).mockResolvedValue({
+      donation: {
+        id: "donation-current",
+        donorTeacherId: "teacher-1",
+        donorSchoolId: "school-1",
+        donorNickname: "本人",
+        subject: "数学",
+        type: "chapter",
+        nodes: [],
+        createdAt: "2026-08-21T00:00:00.000Z",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+      },
+      replaced: false,
+    });
+    vi.mocked(knowledgeService.activateDirectoryCatalog).mockImplementation(async (_teacherId, catalogId) => ({
+      id: catalogId,
+      schoolId: "school-1",
+      type: "chapter",
+      name: "目录",
+      nodeCount: 0,
+      isActive: true,
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+    }));
+    vi.mocked(knowledgeService.acceptDirectoryDonation).mockResolvedValue({
+      id: "catalog-accepted",
+      schoolId: "school-1",
+      type: "chapter",
+      name: "甲老师的章节课目录",
+      nodeCount: 2,
+      isActive: true,
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+    });
     vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([]);
     vi.mocked(knowledgeService.addKnowledgePoint).mockResolvedValue({
       id: "point-new",
@@ -164,5 +214,56 @@ describe("KnowledgeTreePage", () => {
     expect(window.confirm).toHaveBeenCalledWith(
       "确定将「章节课」合并到「目标章节」吗？目标节点将保留，子节点和资源关联会一并迁移。",
     );
+  });
+
+  it("previews a same-subject donated directory before accepting it as a new catalog", async () => {
+    vi.mocked(knowledgeService.listDirectoryDonations).mockResolvedValue([{
+      id: "directory-donation-1",
+      donorTeacherId: "teacher-2",
+      donorSchoolId: "school-2",
+      donorNickname: "甲老师",
+      subject: "数学",
+      type: "chapter",
+      nodes: [
+        {
+          id: "donated-parent",
+          parentId: null,
+          name: "必修一",
+          order: 1,
+          level: 0,
+        },
+        {
+          id: "donated-child",
+          parentId: "donated-parent",
+          name: "集合",
+          order: 1,
+          level: 1,
+        },
+      ],
+      createdAt: "2026-08-20T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+    }]);
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /浏览同学科捐赠/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /甲老师/ }));
+
+    expect(screen.getByText("甲老师捐赠的章节课目录")).toBeInTheDocument();
+    expect(screen.getByText("必修一")).toBeInTheDocument();
+    expect(screen.getByText("集合")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "新建目录体系" }));
+    await waitFor(() => {
+      expect(knowledgeService.acceptDirectoryDonation).toHaveBeenCalledWith(
+        "teacher-1",
+        "directory-donation-1",
+        "new",
+      );
+    });
   });
 });

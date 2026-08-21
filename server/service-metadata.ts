@@ -777,6 +777,27 @@ export const serviceParameters = {
     "getKnowledgeTree": [
       "schoolId"
     ],
+    "listDirectoryCatalogs": [
+      "teacherId",
+      "type"
+    ],
+    "listDirectoryDonations": [
+      "teacherId",
+      "type"
+    ],
+    "donateDirectory": [
+      "teacherId",
+      "type"
+    ],
+    "acceptDirectoryDonation": [
+      "teacherId",
+      "donationId",
+      "mode"
+    ],
+    "activateDirectoryCatalog": [
+      "teacherId",
+      "catalogId"
+    ],
     "addChapter": [
       "schoolId",
       "parentId",
