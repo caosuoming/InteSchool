@@ -48,6 +48,7 @@ vi.mock("@/services/share", () => ({
     mergeDonationAlbums: vi.fn(),
     setDonationAlbum: vi.fn(),
     updateDonationOrder: vi.fn(),
+    deleteDonationAlbum: vi.fn(),
     deleteDonationResource: vi.fn(),
   },
 }));
@@ -238,6 +239,7 @@ describe("PlatformResourcesPage layout and filters", () => {
     expect(headerRow).toBeTruthy();
     expect(within(headerRow as HTMLElement).getByRole("button", { name: /修改属性/ })).toBeInTheDocument();
     expect(within(headerRow as HTMLElement).getByRole("button", { name: /本人捐赠/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "章节课" })).toBeInTheDocument();
   });
 
   it("shows a collapsed album category with type icons and moderator document management", async () => {
@@ -272,6 +274,7 @@ describe("PlatformResourcesPage layout and filters", () => {
     expect(screen.getByRole("group", { name: "平台专辑：函数专题" })).toBeInTheDocument();
     expect(screen.queryByText("函数专题试卷")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重命名" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除专辑" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "展开专辑：函数专题" }));
     expect(await screen.findByText("函数专题试卷")).toBeInTheDocument();
@@ -296,6 +299,29 @@ describe("PlatformResourcesPage layout and filters", () => {
         "album-1",
       );
     });
+  });
+
+  it("lets the original album donor delete their donated album", async () => {
+    const user = userEvent.setup();
+    const albumDonation = donationRecord("donation-album-self", "teacher-self", "examPaper", albumPaper);
+    albumDonation.donationAlbum = {
+      id: "album-self",
+      name: "本人专题",
+      resourceType: "examPaper",
+      libraryLabel: "试卷库",
+      ownerTeacherId: "teacher-self",
+    };
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([albumDonation]);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderPage();
+    const deleteButton = await screen.findByRole("button", { name: "删除专辑" });
+    await user.click(deleteButton);
+
+    await waitFor(() => {
+      expect(shareService.deleteDonationAlbum).toHaveBeenCalledWith("teacher-self", "数学", "album-self");
+    });
+    confirmSpy.mockRestore();
   });
 
   it("groups donated album documents in the regular list with their source library", async () => {

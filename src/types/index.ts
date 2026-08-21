@@ -1441,6 +1441,8 @@ export interface DonationAlbumSnapshot {
   name: string;
   resourceType: ResourceFolderType;
   libraryLabel: "试卷库" | "讲义库" | "课件库";
+  /** 原始专辑捐赠者；用于专辑级权限判断。旧数据可缺省。 */
+  ownerTeacherId?: string;
   /** 平台资源库中的置顶状态；旧数据缺省为未置顶。 */
   pinned?: boolean;
 }

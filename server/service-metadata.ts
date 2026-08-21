@@ -1528,6 +1528,11 @@ export const serviceParameters = {
       "subject",
       "donationIds"
     ],
+    "deleteDonationAlbum": [
+      "teacherId",
+      "subject",
+      "albumId"
+    ],
     "deleteDonationResource": [
       "teacherId",
       "donationId"

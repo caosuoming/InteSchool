@@ -178,6 +178,10 @@ export const shareService = {
     return rpcCall("share", "updateDonationOrder", [teacherId, subject, donationIds]) as any;
   },
 
+  async deleteDonationAlbum(teacherId: string, subject: string, albumId: string): Promise<void> {
+    await rpcCall("share", "deleteDonationAlbum", [teacherId, subject, albumId]);
+  },
+
   async deleteDonationResource(adminTeacherId: string, donationId: string): Promise<void> {
     await rpcCall("share", "deleteDonationResource", [adminTeacherId, donationId]);
   },

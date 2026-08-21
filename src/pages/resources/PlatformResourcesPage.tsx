@@ -124,6 +124,13 @@ function platformAlbumCreatedAt(group: PlatformAlbumGroup): string {
   return group.items.reduce((earliest, item) => !earliest || item.createdAt < earliest ? item.createdAt : earliest, "");
 }
 
+function platformAlbumOwnerTeacherId(group: PlatformAlbumGroup): string | undefined {
+  if (group.album.ownerTeacherId) return group.album.ownerTeacherId;
+  return group.items.reduce<PlatformResourceItem | undefined>((earliest, item) =>
+    !earliest || item.createdAt < earliest.createdAt ? item : earliest,
+  undefined)?.fromTeacherId;
+}
+
 function platformAlbumOrder(group: PlatformAlbumGroup): number {
   return group.items.reduce((minimum, item) => Math.min(minimum, item.order), Number.POSITIVE_INFINITY);
 }
@@ -1131,6 +1138,21 @@ export default function PlatformResourcesPage() {
     }
   };
 
+  const deletePlatformAlbum = async (group: PlatformAlbumGroup) => {
+    if (!teacher) return;
+    if (!window.confirm(`确认删除平台专辑“${group.album.name}”？专辑中的平台文档将一并移除。`)) return;
+    setAlbumWorkingKey(group.key);
+    try {
+      await shareService.deleteDonationAlbum(teacher.id, group.subject, group.album.id);
+      toast.success("平台专辑已删除");
+      await loadAll();
+    } catch (error: any) {
+      toast.error("删除专辑失败", error?.message);
+    } finally {
+      setAlbumWorkingKey(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -1230,7 +1252,7 @@ export default function PlatformResourcesPage() {
                 )}
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                章节目录
+                章节课
               </button>
               <button
                 onClick={() => setLeftTab("knowledge")}
@@ -1248,6 +1270,7 @@ export default function PlatformResourcesPage() {
                 <SearchableTree
                   data={chapterTree}
                   title="平台章节目录"
+                  showTitle={false}
                   accent="gold"
                   checkable
                   checkedIds={checkedChapters}
@@ -1419,6 +1442,7 @@ export default function PlatformResourcesPage() {
                 {platformAlbumGroups.map((group) => {
                   const expanded = expandedAlbumKeys.has(group.key);
                   const canManageAlbum = platformAdmin || Boolean(privileges?.moderatedSubjects.includes(group.subject));
+                  const canDeleteAlbum = canManageAlbum || platformAlbumOwnerTeacherId(group) === teacher?.id;
                   const targetAlbums = [...new Map(items
                     .filter((item) =>
                       item.subject === group.subject
@@ -1508,6 +1532,19 @@ export default function PlatformResourcesPage() {
                             </select>
                           </div>
                         )}
+                        {canDeleteAlbum && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn(!canManageAlbum && "ml-auto", "text-red-600 hover:bg-red-50 hover:text-red-700")}
+                            loading={albumWorkingKey === group.key}
+                            disabled={albumWorkingKey !== null && albumWorkingKey !== group.key}
+                            onClick={() => void deletePlatformAlbum(group)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            删除专辑
+                          </Button>
+                        )}
                       </div>
                       {expanded && (
                         <div className="divide-y divide-ink-100">
@@ -1563,6 +1600,8 @@ export default function PlatformResourcesPage() {
                 if (entry.kind === "album") {
                   const group = entry.group;
                   const expanded = expandedAlbumKeys.has(group.key);
+                  const canManageAlbum = platformAdmin || Boolean(privileges?.moderatedSubjects.includes(group.subject));
+                  const canDeleteAlbum = canManageAlbum || platformAlbumOwnerTeacherId(group) === teacher?.id;
                   return (
                     <div
                       key={group.key}
@@ -1591,6 +1630,19 @@ export default function PlatformResourcesPage() {
                         <span className="text-xs text-ink-500">{group.album.libraryLabel} · {group.items.length} 个文档</span>
                         <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">{group.subject}</span>
                         {group.album.pinned && <Pin className="h-3.5 w-3.5 text-amber-700" aria-label="已置顶" />}
+                        {canDeleteAlbum && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-auto text-red-600 hover:bg-red-50 hover:text-red-700"
+                            loading={albumWorkingKey === group.key}
+                            disabled={albumWorkingKey !== null && albumWorkingKey !== group.key}
+                            onClick={() => void deletePlatformAlbum(group)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            删除专辑
+                          </Button>
+                        )}
                       </div>
                       {expanded && (
                         <div className="divide-y divide-ink-100">

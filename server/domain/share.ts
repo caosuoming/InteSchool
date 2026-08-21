@@ -175,6 +175,7 @@ function validateDonationAlbums(
       name: folder.name,
       resourceType: folder.resourceType,
       libraryLabel: albumLibraryLabels[folder.resourceType],
+      ownerTeacherId: teacherId,
       pinned: false,
     });
   }
@@ -392,6 +393,24 @@ function primaryDonations(): ShareRecord[] {
 function contributionDonations(): ShareRecord[] {
   return (db.read("shareRecords") as ShareRecord[])
     .filter((item) => item.kind === "donation");
+}
+
+function donationAlbumOwnerTeacherId(records: ShareRecord[]): string | undefined {
+  const explicitOwner = records.find((item) => item.donationAlbum?.ownerTeacherId)?.donationAlbum?.ownerTeacherId;
+  if (explicitOwner) return explicitOwner;
+  return [...records]
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0]
+    ?.fromTeacherId;
+}
+
+function removePlatformDonations(donationIds: Set<string>): void {
+  db.update("shareRecords", (records: ShareRecord[]) => records.filter((record) =>
+    !donationIds.has(record.id)
+    && (!record.mergedIntoDonationId || !donationIds.has(record.mergedIntoDonationId)),
+  ));
+  db.update("platformResourceCorrections", (records: PlatformResourceCorrection[] = []) =>
+    records.filter((record) => !donationIds.has(record.donationId)),
+  );
 }
 
 function platformDonationById(donationId: string): ShareRecord {
@@ -1411,17 +1430,30 @@ export const shareService = {
       .sort((left, right) => (left.platformOrder || 0) - (right.platformOrder || 0));
   },
 
+  async deleteDonationAlbum(
+    teacherId: string,
+    subject: string,
+    albumId: string,
+  ): Promise<void> {
+    await delay(100);
+    const normalizedSubject = subject.trim();
+    const albumRecords = primaryDonations().filter((item) =>
+      donationSubject(item) === normalizedSubject && item.donationAlbum?.id === albumId,
+    );
+    if (albumRecords.length === 0) throw new Error("平台专辑不存在");
+    const ownerTeacherId = donationAlbumOwnerTeacherId(albumRecords);
+    if (teacherId !== ownerTeacherId && !canManageSubject(teacherId, normalizedSubject)) {
+      throw new Error("仅专辑捐赠者本人、该学科版主或平台超级管理员可以删除平台专辑");
+    }
+    removePlatformDonations(new Set(albumRecords.map((item) => item.id)));
+  },
+
   async deleteDonationResource(teacherId: string, donationId: string): Promise<void> {
     await delay(100);
     if (!isPlatformAdmin(teacherId)) throw new Error("仅平台超级管理员可以删除平台资源");
     const donation = primaryDonations().find((item) => item.id === donationId);
     if (!donation) throw new Error("平台资源不存在");
-    db.update("shareRecords", (records: ShareRecord[]) => records.filter((record) =>
-      record.id !== donationId && record.mergedIntoDonationId !== donationId,
-    ));
-    db.update("platformResourceCorrections", (records: PlatformResourceCorrection[] = []) =>
-      records.filter((record) => record.donationId !== donationId),
-    );
+    removePlatformDonations(new Set([donationId]));
   },
 
   async listIncomingShares(teacherId: string): Promise<ShareRecord[]> {
