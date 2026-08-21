@@ -3,7 +3,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import JSZip from "jszip";
@@ -2835,6 +2835,45 @@ describe("production backend", () => {
       now,
       now,
     );
+    const legacySessionToken = "legacy-teacher-session";
+    legacy.prepare(`
+      INSERT INTO sessions(id, token_hash, csrf_token, user_id, expires_at, created_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "legacy-pg-session",
+      createHash("sha256").update(legacySessionToken).digest("hex"),
+      "legacy-teacher-csrf",
+      "legacy-pg-user",
+      new Date(Date.now() + 86_400_000).toISOString(),
+      now,
+      now,
+    );
+    legacy.prepare(`
+      INSERT INTO parent_users(id, parent_id, phone, password_hash, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("legacy-parent-user", "legacy-parent", "13900009999", hashPassword("LegacyParent123"), now, now);
+    const legacyParentSessionToken = "legacy-parent-session";
+    legacy.prepare(`
+      INSERT INTO parent_sessions(id, token_hash, csrf_token, parent_user_id, expires_at, created_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "legacy-parent-session-id",
+      createHash("sha256").update(legacyParentSessionToken).digest("hex"),
+      "legacy-parent-csrf",
+      "legacy-parent-user",
+      new Date(Date.now() + 86_400_000).toISOString(),
+      now,
+      now,
+    );
+    legacy.prepare(`
+      INSERT INTO files(id, owner_id, school_id, original_name, mime_type, size, storage_name, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("legacy-file", legacyTeacher.id, legacyTeacher.schoolId, "legacy.txt", "text/plain", 6, "legacy-file.bin", now);
+    legacy.prepare(`
+      INSERT INTO registration_authorizations(
+        id, phone, kind, school_id, created_by_teacher_id, created_at, consumed_by_teacher_id, consumed_at, revoked_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("legacy-auth", "13700009999", "guarantee", legacyTeacher.schoolId, legacyTeacher.id, now, null, null, null);
     legacy.prepare("INSERT INTO metadata(key, value) VALUES ('schema_version', '5')").run();
     legacy.close();
 
@@ -2866,6 +2905,30 @@ describe("production backend", () => {
       payload: { identifier: legacyTeacher.email, password: "LegacyPostgres123" },
     });
     expect(migratedLogin.statusCode, migratedLogin.body).toBe(200);
+    expect(await built.store.getSession(legacySessionToken)).toMatchObject({
+      userId: "legacy-pg-user",
+      teacherId: legacyTeacher.id,
+      csrfToken: "legacy-teacher-csrf",
+    });
+    expect(await built.store.getParentUserByPhone("13900009999")).toMatchObject({
+      id: "legacy-parent-user",
+      parent_id: "legacy-parent",
+    });
+    expect(await built.store.getParentSession(legacyParentSessionToken)).toMatchObject({
+      userId: "legacy-parent-user",
+      parentId: "legacy-parent",
+      csrfToken: "legacy-parent-csrf",
+    });
+    expect(await built.store.getFile("legacy-file")).toMatchObject({
+      id: "legacy-file",
+      ownerId: legacyTeacher.id,
+      originalName: "legacy.txt",
+    });
+    expect(await built.store.listRegistrationAuthorizations({
+      schoolId: legacyTeacher.schoolId,
+      requesterTeacherId: legacyTeacher.id,
+      canManageSchool: true,
+    })).toContainEqual(expect.objectContaining({ id: "legacy-auth", phone: "13700009999" }));
 
     await built.app.close();
     built = await buildApp({
