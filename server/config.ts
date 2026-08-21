@@ -20,7 +20,10 @@ function trustProxyEnv(value: string | undefined): boolean | number | string {
 export interface ServerConfig {
   host: string;
   port: number;
+  databaseUrl: string;
+  databasePoolMax: number;
   databasePath: string;
+  legacyDatabasePath: string;
   uploadsDir: string;
   distDir: string;
   seedStatePath: string;
@@ -50,7 +53,10 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
   return {
     host: process.env.HOST || "0.0.0.0",
     port: integerEnv(process.env.PORT, 3000),
-    databasePath: resolve(process.env.INTESCHOOL_DATABASE_PATH || `${dataDir}/inteschool.sqlite`),
+    databaseUrl: process.env.INTESCHOOL_DATABASE_URL?.trim() || "",
+    databasePoolMax: Math.max(1, integerEnv(process.env.INTESCHOOL_DATABASE_POOL_MAX, 10)),
+    databasePath: resolve(process.env.INTESCHOOL_DATABASE_PATH || `${dataDir}/inteschool-test`),
+    legacyDatabasePath: resolve(process.env.INTESCHOOL_LEGACY_SQLITE_PATH || `${dataDir}/inteschool.sqlite`),
     uploadsDir: resolve(process.env.INTESCHOOL_UPLOADS_DIR || `${dataDir}/uploads`),
     distDir: resolve(process.env.INTESCHOOL_DIST_DIR || "dist"),
     seedStatePath: resolve(process.env.INTESCHOOL_SEED_PATH || "server/seed-state.json"),

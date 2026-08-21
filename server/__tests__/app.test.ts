@@ -10,6 +10,7 @@ import JSZip from "jszip";
 import Database from "better-sqlite3";
 import { buildApp, type BuiltApp } from "../app.js";
 import { fetchPublicText } from "../lib/safe-fetch.js";
+import { hashPassword } from "../lib/password.js";
 import { buildDefaultGradeSettings } from "../../src/lib/grade-statistics.js";
 import type { AppNotification } from "../../src/types/index.js";
 
@@ -29,11 +30,11 @@ function nextPhone(): string {
   return `138${suffix}`;
 }
 
-function authorizeRegistration(
+async function authorizeRegistration(
   phone: string,
   options: { creatorId?: string; schoolId?: string; kind?: "admin" | "guarantee" } = {},
-): void {
-  built.store.createRegistrationAuthorization({
+): Promise<void> {
+  await built.store.createRegistrationAuthorization({
     id: randomUUID(),
     phone,
     kind: options.kind || "guarantee",
@@ -48,7 +49,8 @@ function authorizeRegistration(
 
 async function createTestApp(databasePath?: string): Promise<BuiltApp> {
   return buildApp({
-    databasePath: databasePath || join(workDir, "inteschool.sqlite"),
+    databasePath: databasePath || join(workDir, "inteschool-test"),
+    legacyDatabasePath: join(workDir, "legacy-source-not-present.sqlite"),
     uploadsDir: join(workDir, "uploads"),
     seedStatePath: resolve("server/seed-state.json"),
     serveStatic: false,
@@ -91,7 +93,7 @@ async function register(
   name = "测试教师",
   phone = nextPhone(),
 ): Promise<SessionContext> {
-  authorizeRegistration(phone, { schoolId: "sch-2" });
+  await authorizeRegistration(phone, { schoolId: "sch-2" });
   const response = await app.inject({
     method: "POST",
     url: "/api/auth/register",
@@ -107,17 +109,15 @@ async function register(
     },
   });
   expect(response.statusCode).toBe(202);
-  approveRegistrationForTest(email);
+  await approveRegistrationForTest(email);
   return login(app, email, password);
 }
 
-function approveRegistrationForTest(identifier: string): void {
+async function approveRegistrationForTest(identifier: string): Promise<void> {
   const before = built.store.loadState();
   const after = structuredClone(before);
-  const user = built.store.sqlite.prepare(
-    "SELECT teacher_id FROM users WHERE lower(email) = lower(?) OR phone = ? LIMIT 1",
-  ).get(identifier, identifier) as { teacher_id: string } | undefined;
-  const teacher = after.teachers.find((item) => item.id === user?.teacher_id);
+  const teacherId = await built.store.getTeacherIdByAccountIdentifier(identifier);
+  const teacher = after.teachers.find((item) => item.id === teacherId);
   if (!teacher) throw new Error(`待审核教师不存在: ${identifier}`);
   const application = (after.applications as Array<Record<string, unknown>>).find((item) =>
     item.registrationApplication === true && item.teacherId === teacher.id && item.status === "pending",
@@ -146,7 +146,7 @@ function approveRegistrationForTest(identifier: string): void {
   application.status = "approved";
   const school = (after.schools as Array<Record<string, unknown>>).find((item) => item.id === schoolId);
   if (school) school.teacherCount = Number(school.teacherCount || 0) + 1;
-  built.store.saveState(before, after);
+  await built.store.saveState(before, after);
 }
 
 function multipartPayload(
@@ -232,61 +232,19 @@ describe("production backend", () => {
       role: "platform_admin",
       schoolId: "school-prod",
     });
-    expect(built.store.sqlite.prepare("SELECT COUNT(*) AS count FROM users WHERE email = ?")
-      .get("admin@example.com")).toEqual({ count: 1 });
+    expect(await built.store.getTeacherIdByAccountIdentifier("admin@example.com")).not.toBeNull();
     expect(built.store.loadState().schools).toEqual([
       expect.objectContaining({ id: "school-prod", name: "生产测试学校" }),
     ]);
     expect(built.store.loadState().questions).toEqual([]);
   });
 
-  it("migrates legacy accounts to nullable email without losing existing users", async () => {
-    await built.app.close();
-    const databasePath = join(workDir, "legacy-email.sqlite");
-    const legacy = new Database(databasePath);
-    legacy.exec(`
-      CREATE TABLE users (
-        id TEXT PRIMARY KEY,
-        teacher_id TEXT NOT NULL UNIQUE,
-        email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        phone TEXT UNIQUE,
-        password_hash TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-    `);
-    const now = new Date().toISOString();
-    legacy.prepare(`
-      INSERT INTO users(id, teacher_id, email, phone, password_hash, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("legacy-user", "legacy-teacher", "legacy@example.com", "13800000000", "legacy-hash", now, now);
-    legacy.close();
+  it("allows multiple phone-only accounts with nullable email", async () => {
+    await built.store.createUser("phone-only-teacher-1", null, "StrongPass123", "13800000001");
+    await built.store.createUser("phone-only-teacher-2", null, "StrongPass123", "13800000002");
 
-    built = await buildApp({
-      databasePath,
-      uploadsDir: join(workDir, "legacy-uploads"),
-      seedStatePath: resolve("server/seed-state.json"),
-      serveStatic: false,
-      logger: false,
-      enableDemoAccount: false,
-      seedDemoData: false,
-      cookieSecure: false,
-    });
-    await built.app.ready();
-
-    const emailColumn = (built.store.sqlite.prepare("PRAGMA table_info(users)").all() as Array<{
-      name: string;
-      notnull: number;
-    }>).find((column) => column.name === "email");
-    expect(emailColumn?.notnull).toBe(0);
-    expect(built.store.sqlite.prepare("SELECT email, phone FROM users WHERE id = ?").get("legacy-user"))
-      .toEqual({ email: "legacy@example.com", phone: "13800000000" });
-
-    built.store.createUser("phone-only-teacher-1", null, "StrongPass123", "13800000001");
-    built.store.createUser("phone-only-teacher-2", null, "StrongPass123", "13800000002");
-    expect(built.store.sqlite.prepare("SELECT COUNT(*) AS count FROM users WHERE email IS NULL").get())
-      .toEqual({ count: 2 });
-    expect(built.store.sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    expect(await built.store.getTeacherIdByAccountIdentifier("13800000001")).toBe("phone-only-teacher-1");
+    expect(await built.store.getTeacherIdByAccountIdentifier("13800000002")).toBe("phone-only-teacher-2");
   });
 
   it("serves health checks and maps invalid input to 400", async () => {
@@ -372,7 +330,7 @@ describe("production backend", () => {
   it("maps duplicate accounts to 409 and invalid credentials to 401", async () => {
     await register(built.app, "duplicate@example.com");
     const duplicatePhone = nextPhone();
-    authorizeRegistration(duplicatePhone);
+    await authorizeRegistration(duplicatePhone);
     const duplicate = await built.app.inject({
       method: "POST",
       url: "/api/auth/register",
@@ -431,7 +389,7 @@ describe("production backend", () => {
 
   it("registers with only an authorized phone and lets the teacher bind an email later", async () => {
     const phone = nextPhone();
-    authorizeRegistration(phone, { schoolId: "sch-2" });
+    await authorizeRegistration(phone, { schoolId: "sch-2" });
     const registered = await built.app.inject({
       method: "POST",
       url: "/api/auth/register",
@@ -448,8 +406,7 @@ describe("production backend", () => {
     });
     expect(registered.statusCode).toBe(202);
     expect(registered.json()).toMatchObject({ teacher: null, csrfToken: null, pending: true });
-    expect(built.store.sqlite.prepare("SELECT email FROM users WHERE phone = ?").get(phone))
-      .toEqual({ email: null });
+    expect(await built.store.getTeacherIdByAccountIdentifier(phone)).not.toBeNull();
 
     const personalLogin = await built.app.inject({
       method: "POST",
@@ -458,7 +415,7 @@ describe("production backend", () => {
     });
     expect(personalLogin.statusCode).toBe(200);
     expect(personalLogin.json<{ teacher: { schoolId: string | null } }>().teacher.schoolId).toBeNull();
-    approveRegistrationForTest(phone);
+    await approveRegistrationForTest(phone);
 
     const phoneLogin = await built.app.inject({
       method: "POST",
@@ -488,7 +445,7 @@ describe("production backend", () => {
     expect(emailLogin.statusCode).toBe(200);
 
     const otherPhone = nextPhone();
-    authorizeRegistration(otherPhone, { schoolId: "sch-2" });
+    await authorizeRegistration(otherPhone, { schoolId: "sch-2" });
     const other = await built.app.inject({
       method: "POST",
       url: "/api/auth/register",
@@ -503,7 +460,7 @@ describe("production backend", () => {
       },
     });
     expect(other.statusCode).toBe(202);
-    approveRegistrationForTest(otherPhone);
+    await approveRegistrationForTest(otherPhone);
     const otherLogin = await built.app.inject({
       method: "POST",
       url: "/api/auth/login",
@@ -619,7 +576,7 @@ describe("production backend", () => {
   });
 
   it("lets teachers guarantee registrations but reserves administrator preauthorization for admins", async () => {
-    built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
+    await built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
     const teacher = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
 
     const denied = await built.app.inject({
@@ -681,7 +638,7 @@ describe("production backend", () => {
   });
 
   it("lets teachers request new roles in backend settings and lets only their school administrator approve them", async () => {
-    built.store.createUser("tch-2", "role-applicant@example.com", "RoleApplicant123");
+    await built.store.createUser("tch-2", "role-applicant@example.com", "RoleApplicant123");
     const applicant = await login(built.app, "role-applicant@example.com", "RoleApplicant123");
     const applied = await built.app.inject({
       method: "POST",
@@ -742,11 +699,12 @@ describe("production backend", () => {
     expect(session.teacher).not.toHaveProperty("password");
     expect(session.teacher).not.toHaveProperty("passwordHash");
 
-    const user = built.store.sqlite.prepare(
-      "SELECT password_hash FROM users WHERE email = ?",
-    ).get("new-teacher@example.com") as { password_hash: string };
-    expect(user.password_hash).toMatch(/^scrypt\$/);
-    expect(user.password_hash).not.toContain(password);
+    const rejectedPassword = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "new-teacher@example.com", password: "definitely-wrong" },
+    });
+    expect(rejectedPassword.statusCode).toBe(401);
 
     const loginResponse = await built.app.inject({
       method: "POST",
@@ -768,7 +726,7 @@ describe("production backend", () => {
 
   it("requires approval for existing-school registration, grants requested roles, and keeps new-school creation direct", async () => {
     const phone = nextPhone();
-    authorizeRegistration(phone, { schoolId: "sch-1" });
+    await authorizeRegistration(phone, { schoolId: "sch-1" });
 
     const context = await built.app.inject({
       method: "GET",
@@ -925,7 +883,7 @@ describe("production backend", () => {
     expect(duplicateApplication.json()).toEqual({ error: "已加入该学校，无需重复申请" });
 
     const newSchoolPhone = nextPhone();
-    authorizeRegistration(newSchoolPhone, { schoolId: "sch-1" });
+    await authorizeRegistration(newSchoolPhone, { schoolId: "sch-1" });
     const created = await built.app.inject({
       method: "POST",
       url: "/api/auth/register",
@@ -989,7 +947,7 @@ describe("production backend", () => {
     managedTeacher.affiliations = managedTeacher.affiliations.map((item) => item.id === managedTeacher.currentAffiliationId
       ? { ...item, teachingGrades: ["高二"] }
       : item);
-    built.store.saveState(beforeLeaderGrant, leaderState);
+    await built.store.saveState(beforeLeaderGrant, leaderState);
 
     const leaderManaged = await built.app.inject({
       method: "PATCH",
@@ -1007,7 +965,7 @@ describe("production backend", () => {
     ordinaryManager.affiliations = ordinaryManager.affiliations.map((item) => item.id === ordinaryManager.currentAffiliationId
       ? { ...item, roles: ["teacher"] }
       : item);
-    built.store.saveState(afterLeaderGrant, ordinaryState);
+    await built.store.saveState(afterLeaderGrant, ordinaryState);
 
     const application = await built.app.inject({
       method: "POST",
@@ -1041,7 +999,7 @@ describe("production backend", () => {
     platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === platformTeacher.currentAffiliationId
       ? { ...item, role: "platform_admin" }
       : item);
-    built.store.saveState(beforePromotion, state);
+    await built.store.saveState(beforePromotion, state);
     const platformAdmin = await login(built.app);
     const pending = await built.app.inject({
       method: "GET",
@@ -1151,7 +1109,7 @@ describe("production backend", () => {
   });
 
   it("lets school administrators reset local teacher passwords and invalidates target sessions", async () => {
-    built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
+    await built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
     const targetSession = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
     const admin = await login(built.app);
 
@@ -1192,7 +1150,7 @@ describe("production backend", () => {
   });
 
   it("lets platform administrators reset passwords across schools with a specified password", async () => {
-    built.store.createUser("tch-3", "hua.liu@shsy.edu.cn", "TeacherPass123");
+    await built.store.createUser("tch-3", "hua.liu@shsy.edu.cn", "TeacherPass123");
     const before = built.store.loadState();
     const after = structuredClone(before);
     const platformTeacher = after.teachers.find((item) => item.id === "tch-1")!;
@@ -1200,7 +1158,7 @@ describe("production backend", () => {
     platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === platformTeacher.currentAffiliationId
       ? { ...item, role: "platform_admin" }
       : item);
-    built.store.saveState(before, after);
+    await built.store.saveState(before, after);
     const admin = await login(built.app);
 
     const reset = await built.app.inject({
@@ -1368,7 +1326,7 @@ describe("production backend", () => {
             : affiliation),
         }
       : item);
-    built.store.saveState(initial, ordinaryState);
+    await built.store.saveState(initial, ordinaryState);
 
     const forbidden = await built.app.inject({ method: "POST", url: "/api/rpc", headers, payload });
     expect(forbidden.statusCode).toBe(403);
@@ -1406,7 +1364,7 @@ describe("production backend", () => {
             : affiliation),
         }
       : item);
-    built.store.saveState(before, state);
+    await built.store.saveState(before, state);
 
     const allowed = await built.app.inject({ method: "POST", url: "/api/rpc", headers, payload });
     expect(allowed.statusCode).toBe(200);
@@ -1432,7 +1390,7 @@ describe("production backend", () => {
             : affiliation),
         }
       : item);
-    built.store.saveState(beforeLegacyRoles, legacyRolesState);
+    await built.store.saveState(beforeLegacyRoles, legacyRolesState);
 
     const allowedWithLegacyRoles = await built.app.inject({
       method: "POST",
@@ -1448,7 +1406,7 @@ describe("production backend", () => {
     const state = structuredClone(before);
     state.students = [];
     state.studentInteractions = [];
-    built.store.saveState(before, state);
+    await built.store.saveState(before, state);
 
     const session = await login(built.app);
     const schoolId = String(session.teacher.schoolId);
@@ -1706,7 +1664,7 @@ describe("production backend", () => {
         isShared: true,
       },
     );
-    built.store.saveState(before, state);
+    await built.store.saveState(before, state);
 
     const session = await login(built.app);
     const headers = {
@@ -1755,7 +1713,7 @@ describe("production backend", () => {
       stem: "不可被其他学校教师分享的私有题目",
       isShared: false,
     });
-    built.store.saveState(before, state);
+    await built.store.saveState(before, state);
 
     const session = await login(built.app);
     const headers = {
@@ -1809,7 +1767,7 @@ describe("production backend", () => {
   });
 
   it("allows only the intended recipient to accept a share", async () => {
-    built.store.createUser("tch-2", "share-recipient@example.com", "RecipientPass123");
+    await built.store.createUser("tch-2", "share-recipient@example.com", "RecipientPass123");
     const sender = await login(built.app);
     const created = await built.app.inject({
       method: "POST",
@@ -2009,7 +1967,7 @@ describe("production backend", () => {
     const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     const documentData = await docxWithImage(imageData);
     await writeFile(join(built.config.uploadsDir, storageName), documentData);
-    built.store.saveFile({
+    await built.store.saveFile({
       id: fileId,
       ownerId: "tch-1",
       schoolId: "sch-1",
@@ -2221,7 +2179,7 @@ describe("production backend", () => {
     });
     expect(missing.statusCode).toBe(404);
 
-    built.store.createUser("tch-2", "file-reader@example.com", "OtherTeacher123");
+    await built.store.createUser("tch-2", "file-reader@example.com", "OtherTeacher123");
     const other = await login(built.app, "file-reader@example.com", "OtherTeacher123");
     const forbiddenImport = await built.app.inject({
       method: "POST",
@@ -2409,7 +2367,7 @@ describe("production backend", () => {
     expect(confirmIncomplete.statusCode).toBe(400);
     expect(confirmIncomplete.json()).toEqual({ error: "请先补充答案和解析再入库" });
 
-    built.store.createUser("tch-2", "other-teacher@example.com", "OtherTeacher123");
+    await built.store.createUser("tch-2", "other-teacher@example.com", "OtherTeacher123");
     const other = await login(built.app, "other-teacher@example.com", "OtherTeacher123");
     const forbidden = await built.app.inject({
       method: "POST",
@@ -2458,7 +2416,7 @@ describe("production backend", () => {
     const application = apply.json<{ id: string; status: string }>();
     expect(application.status).toBe("pending");
 
-    built.store.createUser("tch-2", "ordinary-reviewer@example.com", "OrdinaryPass123");
+    await built.store.createUser("tch-2", "ordinary-reviewer@example.com", "OrdinaryPass123");
     const ordinary = await login(built.app, "ordinary-reviewer@example.com", "OrdinaryPass123");
     const forbiddenProof = await built.app.inject({
       method: "GET",
@@ -2508,7 +2466,7 @@ describe("production backend", () => {
       studentCount: 0,
       city: "南京",
     });
-    built.store.saveState(beforeSchool, stateWithSchool);
+    await built.store.saveState(beforeSchool, stateWithSchool);
 
     const applicant = await register(built.app, "optional-applicant@example.com");
     const missingSubjects = await built.app.inject({
@@ -2598,7 +2556,7 @@ describe("production backend", () => {
     platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === platformTeacher.currentAffiliationId
       ? { ...item, role: "platform_admin" }
       : item);
-    built.store.saveState(beforePromotion, promotedState);
+    await built.store.saveState(beforePromotion, promotedState);
 
     const platformAdmin = await login(built.app);
     const platformPending = await built.app.inject({
@@ -2750,104 +2708,180 @@ describe("production backend", () => {
     expect(createQuestion.json<{ result: { semester: string } }>().result.semester).toBe("上学期");
   });
 
-  it("backfills semester for existing resources and shared snapshots", async () => {
-    const databasePath = join(workDir, "inteschool.sqlite");
-    const lectureRow = built.store.sqlite.prepare(
-      "SELECT id, data_json FROM app_records WHERE collection = 'lectures' LIMIT 1",
-    ).get() as { id: string; data_json: string };
-    const lectureData = JSON.parse(lectureRow.data_json) as Record<string, unknown>;
-    delete lectureData.semester;
-    built.store.sqlite.prepare(
-      "UPDATE app_records SET data_json = ? WHERE collection = 'lectures' AND id = ?",
-    ).run(JSON.stringify(lectureData), lectureRow.id);
+  it("imports a schema v5 SQLite database into PostgreSQL storage exactly once", async () => {
+    const sourceState = built.store.loadState();
+    const sourceTeacher = sourceState.teachers[0];
+    const sourceSchool = (sourceState.schools as Array<Record<string, unknown>>)[0];
+    expect(sourceTeacher).toBeTruthy();
+    expect(sourceSchool).toBeTruthy();
 
+    await built.app.close();
+    const legacyPath = join(workDir, "legacy-v5.sqlite");
+    const legacy = new Database(legacyPath);
+    legacy.exec(`
+      CREATE TABLE app_records (
+        collection TEXT NOT NULL,
+        id TEXT NOT NULL,
+        school_id TEXT,
+        owner_id TEXT,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (collection, id)
+      );
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        teacher_id TEXT NOT NULL UNIQUE,
+        email TEXT,
+        phone TEXT UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        csrf_token TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+      CREATE TABLE parent_users (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT NOT NULL UNIQUE,
+        phone TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE parent_sessions (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        csrf_token TEXT NOT NULL,
+        parent_user_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+      );
+      CREATE TABLE files (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        school_id TEXT,
+        original_name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        storage_name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE registration_authorizations (
+        id TEXT PRIMARY KEY,
+        phone TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        school_id TEXT NOT NULL,
+        created_by_teacher_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        consumed_by_teacher_id TEXT,
+        consumed_at TEXT,
+        revoked_at TEXT
+      );
+      CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    `);
     const now = new Date().toISOString();
-    built.store.sqlite.prepare(
-      "INSERT OR REPLACE INTO app_records(collection, id, school_id, owner_id, data_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).run(
-      "shareRecords",
-      "share-semester-migration",
-      "sch-1",
-      "tch-1",
-      JSON.stringify({
-        id: "share-semester-migration",
-        resourceSnapshot: {
-          id: "lecture-old-snapshot",
-          title: "旧共享讲义",
-          schoolYear: "2025-2026",
-        },
-      }),
+    const legacyTeacher = {
+      ...sourceTeacher,
+      id: "legacy-pg-teacher",
+      email: "legacy-pg@example.com",
+      name: "迁移教师",
+      schoolId: String(sourceSchool.id),
+      createdAt: now,
+    };
+    const legacyQuestion = {
+      id: "legacy-pg-question",
+      teacherId: legacyTeacher.id,
+      schoolId: legacyTeacher.schoolId,
+      type: "short",
+      stem: "PostgreSQL 迁移题",
+      answer: "保留",
+      analysis: "来自旧 SQLite",
+      summary: "迁移验证",
+      chapterIds: [],
+      knowledgePointIds: [],
+      difficulty: 2,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "legacy",
+      isShared: false,
+      hiddenByExamIds: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    const insertRecord = legacy.prepare(`
+      INSERT INTO app_records(collection, id, school_id, owner_id, data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertRecord.run("schools", String(sourceSchool.id), String(sourceSchool.id), null, JSON.stringify(sourceSchool), now, now);
+    insertRecord.run("teachers", legacyTeacher.id, legacyTeacher.schoolId, legacyTeacher.id, JSON.stringify(legacyTeacher), now, now);
+    insertRecord.run("questions", legacyQuestion.id, legacyQuestion.schoolId, legacyQuestion.teacherId, JSON.stringify(legacyQuestion), now, now);
+    legacy.prepare(`
+      INSERT INTO users(id, teacher_id, email, phone, password_hash, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "legacy-pg-user",
+      legacyTeacher.id,
+      legacyTeacher.email,
+      "13800009999",
+      hashPassword("LegacyPostgres123"),
       now,
       now,
     );
-    built.store.sqlite.prepare(
-      "DELETE FROM app_records WHERE collection = 'schoolSettings' AND json_extract(data_json, '$.type') = 'questionType' AND json_extract(data_json, '$.value') = 'conceptFill'",
-    ).run();
-    const shortType = built.store.sqlite.prepare(
-      "SELECT id, data_json FROM app_records WHERE collection = 'schoolSettings' AND json_extract(data_json, '$.type') = 'questionType' AND json_extract(data_json, '$.value') = 'short' LIMIT 1",
-    ).get() as { id: string; data_json: string };
-    const shortTypeData = JSON.parse(shortType.data_json) as Record<string, unknown>;
-    shortTypeData.name = "简答题";
-    shortTypeData.sortOrder = 99;
-    built.store.sqlite.prepare(
-      "UPDATE app_records SET data_json = ? WHERE collection = 'schoolSettings' AND id = ?",
-    ).run(JSON.stringify(shortTypeData), shortType.id);
-    const customizedType = built.store.sqlite.prepare(
-      "SELECT id, data_json FROM app_records WHERE collection = 'schoolSettings' AND school_id = 'sch-2' AND json_extract(data_json, '$.value') = 'single' LIMIT 1",
-    ).get() as { id: string; data_json: string };
-    const customizedTypeData = JSON.parse(customizedType.data_json) as Record<string, unknown>;
-    customizedTypeData.name = "自定义选择题";
-    customizedTypeData.sortOrder = 42;
-    built.store.sqlite.prepare(
-      "UPDATE app_records SET data_json = ? WHERE collection = 'schoolSettings' AND id = ?",
-    ).run(JSON.stringify(customizedTypeData), customizedType.id);
-    built.store.sqlite.prepare(
-      "INSERT OR REPLACE INTO metadata(key, value) VALUES ('schema_version', '1')",
-    ).run();
+    legacy.prepare("INSERT INTO metadata(key, value) VALUES ('schema_version', '5')").run();
+    legacy.close();
 
-    await built.app.close();
-    built = await createTestApp(databasePath);
+    const targetPath = join(workDir, "postgres-import-target");
+    built = await buildApp({
+      databasePath: targetPath,
+      legacyDatabasePath: legacyPath,
+      uploadsDir: join(workDir, "legacy-import-uploads"),
+      seedStatePath: resolve("server/seed-state.json"),
+      serveStatic: false,
+      logger: false,
+      enableDemoAccount: false,
+      seedDemoData: false,
+      cookieSecure: false,
+    });
     await built.app.ready();
 
-    const migratedLecture = built.store.sqlite.prepare(
-      "SELECT data_json FROM app_records WHERE collection = 'lectures' AND id = ?",
-    ).get(lectureRow.id) as { data_json: string };
-    expect(JSON.parse(migratedLecture.data_json)).toMatchObject({ semester: "上学期" });
-
-    const migratedShare = built.store.sqlite.prepare(
-      "SELECT data_json FROM app_records WHERE collection = 'shareRecords' AND id = ?",
-    ).get("share-semester-migration") as { data_json: string };
-    expect(JSON.parse(migratedShare.data_json)).toMatchObject({
-      resourceSnapshot: { semester: "上学期" },
+    expect(built.store.getTeacherById(legacyTeacher.id)).toMatchObject({
+      id: legacyTeacher.id,
+      email: legacyTeacher.email,
+      name: legacyTeacher.name,
     });
-    const migratedQuestionTypes = built.store.sqlite.prepare(
-      "SELECT data_json FROM app_records WHERE collection = 'schoolSettings' AND school_id = 'sch-1'",
-    ).all()
-      .map((record: { data_json: string }) => JSON.parse(record.data_json) as Record<string, unknown>)
-      .filter((setting: Record<string, unknown>) => setting.type === "questionType")
-      .sort((a: Record<string, unknown>, b: Record<string, unknown>) => Number(a.sortOrder) - Number(b.sortOrder));
-    expect(migratedQuestionTypes.map((setting: Record<string, unknown>) => ({
-      name: setting.name,
-      value: setting.value,
-      sortOrder: setting.sortOrder,
-    }))).toEqual([
-      { name: "单选题", value: "single", sortOrder: 1 },
-      { name: "多选题", value: "multiple", sortOrder: 2 },
-      { name: "填空题", value: "short", sortOrder: 3 },
-      { name: "解答题", value: "essay", sortOrder: 4 },
-      { name: "判断题", value: "judge", sortOrder: 5 },
-      { name: "概念填空", value: "conceptFill", sortOrder: 6 },
+    expect((built.store.loadState().questions as Array<Record<string, unknown>>)).toEqual([
+      expect.objectContaining({ id: legacyQuestion.id, stem: legacyQuestion.stem }),
     ]);
-    const preservedCustomType = built.store.sqlite.prepare(
-      "SELECT data_json FROM app_records WHERE collection = 'schoolSettings' AND id = ?",
-    ).get(customizedType.id) as { data_json: string };
-    expect(JSON.parse(preservedCustomType.data_json)).toMatchObject({
-      name: "自定义选择题",
-      sortOrder: 42,
+    const migratedLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { identifier: legacyTeacher.email, password: "LegacyPostgres123" },
     });
-    expect(built.store.sqlite.prepare(
-      "SELECT value FROM metadata WHERE key = 'schema_version'",
-    ).get()).toEqual({ value: "5" });
+    expect(migratedLogin.statusCode, migratedLogin.body).toBe(200);
+
+    await built.app.close();
+    built = await buildApp({
+      databasePath: targetPath,
+      legacyDatabasePath: legacyPath,
+      uploadsDir: join(workDir, "legacy-import-uploads"),
+      seedStatePath: resolve("server/seed-state.json"),
+      serveStatic: false,
+      logger: false,
+      enableDemoAccount: false,
+      seedDemoData: false,
+      cookieSecure: false,
+    });
+    await built.app.ready();
+    expect((built.store.loadState().questions as Array<Record<string, unknown>>)
+      .filter((question) => question.id === legacyQuestion.id)).toHaveLength(1);
   });
 
 });

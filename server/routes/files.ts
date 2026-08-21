@@ -262,7 +262,7 @@ export async function registerFileRoutes(
     const courseware = coursewares.find((item) => item.onlineAccessToken === token);
     if (!courseware?.fileUrl) return reply.code(404).send({ error: "课件文件不存在" });
     const match = courseware.fileUrl.match(/^\/api\/files\/([^/?#]+)/);
-    const file = match ? store.getFile(match[1]) : null;
+    const file = match ? await store.getFile(match[1]) : null;
     if (!file) return reply.code(404).send({ error: "课件文件不存在" });
     const fileBelongsToCoursewareScope = file.ownerId === courseware.teacherId
       || Boolean(file.schoolId && file.schoolId === courseware.schoolId);
@@ -281,7 +281,7 @@ export async function registerFileRoutes(
   });
 
   app.get("/api/files/formula-capabilities", async (request) => {
-    requireSession(request, store);
+    await requireSession(request, store);
     const mathType = await probeMathTypeRuntime();
     return {
       officeFormulaConversion: {
@@ -294,7 +294,7 @@ export async function registerFileRoutes(
   });
 
   app.post("/api/files", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const part = await request.file();
     if (!part) throw new Error("请选择文件");
@@ -332,14 +332,14 @@ export async function registerFileRoutes(
       storageName,
       createdAt: new Date().toISOString(),
     };
-    store.saveFile(file);
+    await store.saveFile(file);
     return { ...file, url: `/api/files/${file.id}` };
   });
 
   app.get("/api/files/:id/content", async (request, reply) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const id = (request.params as { id: string }).id;
-    const file = store.getFile(id);
+    const file = await store.getFile(id);
     if (!file) return reply.code(404).send({ error: "文件不存在" });
     const teacher = store.getTeacherById(session.teacherId);
     if (!canReadFile(store, teacher, file)) {
@@ -369,10 +369,10 @@ export async function registerFileRoutes(
   });
 
   app.post("/api/files/:id/import", async (request, reply) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const id = (request.params as { id: string }).id;
-    const file = store.getFile(id);
+    const file = await store.getFile(id);
     if (!file) return reply.code(404).send({ error: "文件不存在" });
     if (file.ownerId !== session.teacherId) return reply.code(403).send({ error: "只能导入自己上传的文件" });
     const teacher = store.getTeacherById(session.teacherId);
@@ -400,9 +400,9 @@ export async function registerFileRoutes(
   });
 
   app.get("/api/files/:id/assets/:relationshipId", async (request, reply) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const { id, relationshipId } = request.params as { id: string; relationshipId: string };
-    const file = store.getFile(id);
+    const file = await store.getFile(id);
     if (!file) return reply.code(404).send({ error: "文件不存在" });
     const teacher = store.getTeacherById(session.teacherId);
     if (!canReadFile(store, teacher, file)) {
@@ -425,9 +425,9 @@ export async function registerFileRoutes(
   });
 
   app.get("/api/files/:id", async (request, reply) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const id = (request.params as { id: string }).id;
-    const file = store.getFile(id);
+    const file = await store.getFile(id);
     if (!file) return reply.code(404).send({ error: "文件不存在" });
     const teacher = store.getTeacherById(session.teacherId);
     if (!canReadFile(store, teacher, file)) {

@@ -1,16 +1,30 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { Question, QuestionFilter } from "../src/types/index.js";
 import type { AppState } from "./types.js";
 
-const stateStorage = new AsyncLocalStorage<AppState>();
-
-function currentState(): AppState {
-  const state = stateStorage.getStore();
-  if (!state) throw new Error("业务数据库上下文未初始化");
-  return state;
+interface DatabaseQueryBackend {
+  searchQuestions?(filter?: QuestionFilter): Promise<Question[]>;
 }
 
-export function runWithState<T>(state: AppState, fn: () => T): T {
-  return stateStorage.run(state, fn);
+interface RuntimeDatabaseContext {
+  state: AppState;
+  backend?: DatabaseQueryBackend;
+}
+
+const stateStorage = new AsyncLocalStorage<RuntimeDatabaseContext>();
+
+function currentContext(): RuntimeDatabaseContext {
+  const context = stateStorage.getStore();
+  if (!context) throw new Error("业务数据库上下文未初始化");
+  return context;
+}
+
+function currentState(): AppState {
+  return currentContext().state;
+}
+
+export function runWithState<T>(state: AppState, fn: () => T, backend?: DatabaseQueryBackend): T {
+  return stateStorage.run({ state, backend }, fn);
 }
 
 export function computeDuplicateHash(stem: string, answer: string, options?: string[]): string {
@@ -45,5 +59,9 @@ export const db = {
   },
   snapshot(): AppState {
     return structuredClone(currentState());
+  },
+  async searchQuestions(filter: QuestionFilter = {}): Promise<Question[] | null> {
+    const backend = currentContext().backend;
+    return backend?.searchQuestions ? backend.searchQuestions(filter) : null;
   },
 };

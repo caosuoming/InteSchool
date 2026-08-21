@@ -162,6 +162,8 @@ function matchFilter(q: Question, filter: QuestionFilter): boolean {
 
 export const questionService = {
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
+    const indexed = await db.searchQuestions(filter);
+    if (indexed) return indexed;
     await delay(300);
     const all = db.read("questions");
     return all.filter((q) => matchFilter(q, filter));
