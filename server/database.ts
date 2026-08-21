@@ -22,6 +22,7 @@ import { DEFAULT_QUESTION_TYPES } from "../src/types/index.js";
 export const COLLECTIONS = [
   "schools", "teachers", "applications", "schoolClasses", "personalClasses",
   "schoolGrades", "classTypeCategories", "students", "chapters", "knowledgePoints",
+  "directoryCatalogs", "directoryDonations",
   "schoolChapters", "schoolKnowledgePoints", "questions",
   "lectures", "lectureColumnTemplates", "examPapers", "coursewares", "materials", "resourceFolders", "baskets", "documents",
   "recognitions", "answerRecords", "subjectGroups", "prepGroups", "organizationDepartments", "onlineResources",

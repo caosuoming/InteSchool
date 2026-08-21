@@ -4,6 +4,7 @@ import {
   GitBranch, Search, Plus, Folder, FolderOpen, FileText,
   BookOpen, ArrowRight, ShoppingBasket,
   Pencil, Trash2, ChevronUp, ChevronDown, FolderInput, GitMerge,
+  Gift, Download, Layers3, ArrowLeft,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { knowledgeService } from "@/services/knowledge";
@@ -20,10 +21,41 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TreeView } from "@/components/tree/TreeView";
 import { QuestionCard } from "@/components/question/QuestionCard";
-import type { TreeNode, Question, Basket } from "@/types";
+import type {
+  TreeNode,
+  Question,
+  Basket,
+  DirectoryCatalogSummary,
+  DirectoryDonation,
+  DirectoryCatalogNode,
+} from "@/types";
 import { cn } from "@/lib/utils";
 
 type TreeKind = "chapter" | "knowledge";
+
+function directorySnapshotTree(type: TreeKind, nodes: DirectoryCatalogNode[]): TreeNode {
+  const childrenOf = (parentId: string | null): TreeNode[] => nodes
+    .filter((node) => node.parentId === parentId)
+    .sort((left, right) => left.order - right.order)
+    .map((node) => ({
+      id: node.id,
+      name: node.name,
+      type,
+      count: 0,
+      order: node.order,
+      parentId: node.parentId,
+      level: node.level,
+      description: node.description,
+      children: childrenOf(node.id),
+    }));
+  return {
+    id: "root",
+    name: type === "chapter" ? "全部章节" : "全部知识点",
+    type,
+    count: nodes.length,
+    children: childrenOf(null),
+  };
+}
 
 export default function KnowledgeTreePage() {
   const { teacher } = useAuthStore();
@@ -42,6 +74,13 @@ export default function KnowledgeTreePage() {
   const [moveToOpen, setMoveToOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [catalogs, setCatalogs] = useState<DirectoryCatalogSummary[]>([]);
+  const [directoryDonations, setDirectoryDonations] = useState<DirectoryDonation[]>([]);
+  const [donationBrowserOpen, setDonationBrowserOpen] = useState(false);
+  const [previewDonation, setPreviewDonation] = useState<DirectoryDonation | null>(null);
+  const [donatingDirectory, setDonatingDirectory] = useState(false);
+  const [acceptingDirectory, setAcceptingDirectory] = useState(false);
+  const [switchingCatalog, setSwitchingCatalog] = useState(false);
 
   const handleKindChange = (nextKind: TreeKind) => {
     if (nextKind === kind) return;
@@ -59,6 +98,7 @@ export default function KnowledgeTreePage() {
     setMoveToOpen(false);
     setMergeOpen(false);
     setMerging(false);
+    setPreviewDonation(null);
   };
 
   const loadTree = useCallback(async () => {
@@ -88,11 +128,22 @@ export default function KnowledgeTreePage() {
     setQuestionsLoading(false);
   }, [kind, selectedNode, teacher]);
 
+  const loadDirectoryMeta = useCallback(async () => {
+    if (!teacher) return;
+    const [nextCatalogs, nextDonations] = await Promise.all([
+      knowledgeService.listDirectoryCatalogs(teacher.id, kind),
+      knowledgeService.listDirectoryDonations(teacher.id, kind),
+    ]);
+    setCatalogs(nextCatalogs);
+    setDirectoryDonations(nextDonations);
+  }, [kind, teacher]);
+
   useEffect(() => {
     if (!teacher) return;
     loadTree();
+    loadDirectoryMeta();
     basketService.listBaskets(teacher.id).then(setBaskets);
-  }, [loadTree, teacher]);
+  }, [loadDirectoryMeta, loadTree, teacher]);
 
   useEffect(() => {
     if (selectedNode) {
@@ -276,6 +327,54 @@ export default function KnowledgeTreePage() {
     }
   };
 
+  const handleDonateDirectory = async () => {
+    if (!teacher) return;
+    setDonatingDirectory(true);
+    try {
+      const result = await knowledgeService.donateDirectory(teacher.id, kind);
+      toast.success(result.replaced ? "已覆盖此前捐赠的目录" : "目录已捐赠到平台");
+      await loadDirectoryMeta();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "目录捐赠失败");
+    } finally {
+      setDonatingDirectory(false);
+    }
+  };
+
+  const handleActivateCatalog = async (catalogId: string) => {
+    if (!teacher || catalogs.find((catalog) => catalog.id === catalogId)?.isActive) return;
+    setSwitchingCatalog(true);
+    try {
+      await knowledgeService.activateDirectoryCatalog(teacher.id, catalogId);
+      setSelectedNode(null);
+      setQuestions([]);
+      await Promise.all([loadTree(), loadDirectoryMeta()]);
+      toast.success("已切换启用目录");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "切换目录失败");
+    } finally {
+      setSwitchingCatalog(false);
+    }
+  };
+
+  const handleAcceptDirectory = async (mode: "merge" | "new") => {
+    if (!teacher || !previewDonation) return;
+    setAcceptingDirectory(true);
+    try {
+      await knowledgeService.acceptDirectoryDonation(teacher.id, previewDonation.id, mode);
+      setDonationBrowserOpen(false);
+      setPreviewDonation(null);
+      setSelectedNode(null);
+      setQuestions([]);
+      await Promise.all([loadTree(), loadDirectoryMeta()]);
+      toast.success(mode === "merge" ? "目录已合并到当前体系" : "已新建并启用目录体系");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "接受目录失败");
+    } finally {
+      setAcceptingDirectory(false);
+    }
+  };
+
   // 搜索高亮过滤
   const filterTree = (node: TreeNode, kw: string): TreeNode | null => {
     if (!kw) return node;
@@ -297,6 +396,10 @@ export default function KnowledgeTreePage() {
   const mergeCandidates = selectedParent
     ? selectedParent.children.filter((node) => node.id !== selectedNode?.id)
     : [];
+  const activeCatalog = catalogs.find((catalog) => catalog.isActive) || catalogs[0];
+  const previewTree = previewDonation
+    ? directorySnapshotTree(previewDonation.type, previewDonation.nodes)
+    : null;
 
   return (
     <div>
@@ -327,6 +430,60 @@ export default function KnowledgeTreePage() {
           </div>
         }
       />
+
+      <Card className="mb-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Layers3 className="w-4 h-4 text-gold-600" />
+              <span className="text-sm font-medium text-ink-800">
+                当前启用的{kind === "chapter" ? "章节课目录" : "知识点目录"}
+              </span>
+              {activeCatalog && (
+                <Badge variant="ink">{activeCatalog.nodeCount} 个节点</Badge>
+              )}
+            </div>
+            <select
+              aria-label={`当前启用的${kind === "chapter" ? "章节课目录" : "知识点目录"}`}
+              value={activeCatalog?.id || ""}
+              disabled={catalogs.length <= 1 || switchingCatalog}
+              onChange={(event) => handleActivateCatalog(event.target.value)}
+              className="input-base max-w-xl"
+            >
+              {catalogs.map((catalog) => (
+                <option key={catalog.id} value={catalog.id}>
+                  {catalog.name}{catalog.isActive ? "（当前）" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-ink-500">
+              可保留多套目录体系；切换前会保存当前目录，后台只启用选中的一套。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              loading={donatingDirectory}
+              onClick={handleDonateDirectory}
+            >
+              <Gift className="w-3.5 h-3.5" />
+              捐赠当前目录
+            </Button>
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={() => {
+                setPreviewDonation(null);
+                setDonationBrowserOpen(true);
+              }}
+            >
+              <Download className="w-3.5 h-3.5" />
+              浏览同学科捐赠{directoryDonations.length > 0 ? `（${directoryDonations.length}）` : ""}
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       <div className="grid lg:grid-cols-5 gap-5">
         {/* 左：树形 */}
@@ -666,6 +823,85 @@ export default function KnowledgeTreePage() {
             ));
           })()}
         </div>
+      </Modal>
+
+      <Modal
+        open={donationBrowserOpen}
+        onClose={() => {
+          if (acceptingDirectory) return;
+          setDonationBrowserOpen(false);
+          setPreviewDonation(null);
+        }}
+        size="lg"
+        title={previewDonation
+          ? `${previewDonation.donorNickname}捐赠的${kind === "chapter" ? "章节课目录" : "知识点目录"}`
+          : `同学科${kind === "chapter" ? "章节课目录" : "知识点目录"}捐赠`}
+        description={previewDonation
+          ? `学科：${previewDonation.subject} · ${previewDonation.nodes.length} 个节点 · 预览不会修改当前目录`
+          : "先预览目录内容，再选择合并到当前目录或新建独立目录体系。"}
+        footer={previewDonation ? (
+          <>
+            <Button
+              variant="ghost"
+              disabled={acceptingDirectory}
+              onClick={() => setPreviewDonation(null)}
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              返回列表
+            </Button>
+            <Button
+              variant="outline"
+              loading={acceptingDirectory}
+              onClick={() => handleAcceptDirectory("merge")}
+            >
+              合并到当前目录
+            </Button>
+            <Button
+              variant="gold"
+              loading={acceptingDirectory}
+              onClick={() => handleAcceptDirectory("new")}
+            >
+              新建目录体系
+            </Button>
+          </>
+        ) : undefined}
+      >
+        {previewDonation && previewTree ? (
+          <div className="rounded-lg border border-ink-100 bg-mist/30 p-3">
+            <TreeView
+              data={previewTree}
+              defaultExpandAll
+              className="max-h-[520px] overflow-auto"
+            />
+          </div>
+        ) : directoryDonations.length === 0 ? (
+          <EmptyState
+            icon={<Gift className="w-7 h-7" />}
+            title="暂无同学科目录捐赠"
+            description="其他同学科用户捐赠目录后会显示在这里"
+          />
+        ) : (
+          <div className="space-y-2">
+            {directoryDonations.map((donation) => (
+              <button
+                key={donation.id}
+                type="button"
+                onClick={() => setPreviewDonation(donation)}
+                className="w-full text-left p-3 rounded-lg border border-ink-100 hover:border-gold-300 hover:bg-gold-50/30 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Gift className="w-4 h-4 text-gold-600" />
+                  <span className="font-medium text-ink-900">{donation.donorNickname}</span>
+                  <Badge variant="ink">{donation.subject}</Badge>
+                  <span className="ml-auto text-xs text-ink-400">{donation.nodes.length} 个节点</span>
+                </div>
+                <div className="mt-1 text-xs text-ink-500">
+                  更新于 {new Date(donation.updatedAt).toLocaleString("zh-CN")}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -1,4 +1,16 @@
-import type { Chapter, KnowledgePoint, Question, TreeNode } from "../../src/types/index.js";
+import type {
+  Chapter,
+  DirectoryCatalog,
+  DirectoryCatalogNode,
+  DirectoryCatalogSummary,
+  DirectoryDonation,
+  DirectoryDonationAcceptMode,
+  DirectoryDonationUpsertResult,
+  KnowledgePoint,
+  Question,
+  TreeNode,
+  TreeNodeType,
+} from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
@@ -31,6 +43,222 @@ function getParentLevel<T extends { id: string; level: number }>(
 }
 
 type DirectoryRecord = Chapter | KnowledgePoint;
+
+type DirectoryTeacher = {
+  id: string;
+  schoolId?: string | null;
+  subject?: string;
+  nickname?: string;
+  name?: string;
+  affiliations?: Array<Record<string, unknown>>;
+  currentAffiliationId?: string | null;
+};
+
+function directoryCollection(type: TreeNodeType): "chapters" | "knowledgePoints" {
+  return type === "chapter" ? "chapters" : "knowledgePoints";
+}
+
+function directoryLabel(type: TreeNodeType): string {
+  return type === "chapter" ? "章节课目录" : "知识点目录";
+}
+
+function directoryTeacher(teacherId: string): DirectoryTeacher {
+  const teacher = ((db.read("teachers") || []) as DirectoryTeacher[]).find((item) => item.id === teacherId);
+  if (!teacher) throw new Error("教师不存在");
+  return teacher;
+}
+
+function currentAffiliation(teacher: DirectoryTeacher): Record<string, unknown> | undefined {
+  return teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent === true);
+}
+
+function directoryTeacherContext(teacherId: string): {
+  teacher: DirectoryTeacher;
+  schoolId: string;
+  subject: string;
+  nickname: string;
+} {
+  const teacher = directoryTeacher(teacherId);
+  const affiliation = currentAffiliation(teacher);
+  const schoolId = (typeof affiliation?.schoolId === "string" ? affiliation.schoolId : teacher.schoolId)?.trim();
+  if (!schoolId) throw new Error("请先完成学校认证");
+  const subject = (typeof affiliation?.subject === "string" ? affiliation.subject : teacher.subject)?.trim() || "";
+  const nickname = teacher.nickname?.trim() || teacher.name?.trim() || "匿名用户";
+  return { teacher, schoolId, subject, nickname };
+}
+
+function directoryCatalogs(): DirectoryCatalog[] {
+  return (db.read("directoryCatalogs") || []) as DirectoryCatalog[];
+}
+
+function directoryDonations(): DirectoryDonation[] {
+  return (db.read("directoryDonations") || []) as DirectoryDonation[];
+}
+
+function snapshotDirectoryNodes(schoolId: string, type: TreeNodeType): DirectoryCatalogNode[] {
+  const collection = directoryCollection(type);
+  return ((db.read(collection) || []) as DirectoryRecord[])
+    .filter((item) => item.schoolId === schoolId)
+    .sort((left, right) => left.level - right.level || left.order - right.order)
+    .map((item) => ({
+      id: item.id,
+      parentId: item.parentId,
+      name: item.name,
+      order: item.order,
+      level: item.level,
+      ...(type === "knowledge" && (item as KnowledgePoint).description
+        ? { description: (item as KnowledgePoint).description }
+        : {}),
+    }));
+}
+
+function materializeDirectoryNodes(
+  schoolId: string,
+  type: TreeNodeType,
+  nodes: DirectoryCatalogNode[],
+): void {
+  const collection = directoryCollection(type);
+  const current = ((db.read(collection) || []) as DirectoryRecord[])
+    .filter((item) => item.schoolId !== schoolId);
+  const materialized: DirectoryRecord[] = nodes.map((node) => type === "chapter"
+    ? {
+        id: node.id,
+        schoolId,
+        parentId: node.parentId,
+        name: node.name,
+        order: node.order,
+        level: node.level,
+        questionCount: 0,
+      } satisfies Chapter
+    : {
+        id: node.id,
+        schoolId,
+        parentId: node.parentId,
+        name: node.name,
+        description: node.description,
+        order: node.order,
+        level: node.level,
+        questionCount: 0,
+      } satisfies KnowledgePoint);
+  db.write(collection, [...current, ...materialized]);
+}
+
+function toCatalogSummary(catalog: DirectoryCatalog): DirectoryCatalogSummary {
+  return {
+    id: catalog.id,
+    schoolId: catalog.schoolId,
+    type: catalog.type,
+    name: catalog.name,
+    nodeCount: catalog.nodes.length,
+    isActive: catalog.isActive,
+    createdAt: catalog.createdAt,
+    updatedAt: catalog.updatedAt,
+  };
+}
+
+function ensureDefaultDirectoryCatalog(schoolId: string, type: TreeNodeType): DirectoryCatalog {
+  const scoped = directoryCatalogs().filter((item) => item.schoolId === schoolId && item.type === type);
+  const active = scoped.find((item) => item.isActive);
+  if (active) return active;
+
+  if (scoped.length > 0) {
+    const first = scoped[0];
+    db.update("directoryCatalogs", (items: DirectoryCatalog[]) => items.map((item) =>
+      item.schoolId === schoolId && item.type === type
+        ? { ...item, isActive: item.id === first.id }
+        : item,
+    ));
+    return { ...first, isActive: true };
+  }
+
+  const now = new Date().toISOString();
+  const created: DirectoryCatalog = {
+    id: genId("dircat"),
+    schoolId,
+    type,
+    name: `默认${directoryLabel(type)}`,
+    nodes: snapshotDirectoryNodes(schoolId, type),
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.update("directoryCatalogs", (items: DirectoryCatalog[]) => [...(items || []), created]);
+  return created;
+}
+
+function syncActiveDirectoryCatalog(schoolId: string, type: TreeNodeType): DirectoryCatalog {
+  const active = ensureDefaultDirectoryCatalog(schoolId, type);
+  const now = new Date().toISOString();
+  const nodes = snapshotDirectoryNodes(schoolId, type);
+  const updated = { ...active, nodes, updatedAt: now };
+  db.update("directoryCatalogs", (items: DirectoryCatalog[]) => items.map((item) =>
+    item.id === active.id ? updated : item,
+  ));
+  return updated;
+}
+
+function uniqueCatalogName(schoolId: string, type: TreeNodeType, baseName: string): string {
+  const names = new Set(directoryCatalogs()
+    .filter((item) => item.schoolId === schoolId && item.type === type)
+    .map((item) => item.name));
+  if (!names.has(baseName)) return baseName;
+  let suffix = 2;
+  while (names.has(`${baseName} ${suffix}`)) suffix += 1;
+  return `${baseName} ${suffix}`;
+}
+
+function cloneDirectoryNodes(type: TreeNodeType, nodes: DirectoryCatalogNode[]): DirectoryCatalogNode[] {
+  const idMap = new Map<string, string>();
+  for (const node of nodes) idMap.set(node.id, genId(type === "chapter" ? "ch" : "kp"));
+  return nodes.map((node) => ({
+    ...structuredClone(node),
+    id: idMap.get(node.id)!,
+    parentId: node.parentId ? idMap.get(node.parentId) || null : null,
+  }));
+}
+
+function mergeDirectorySnapshots(
+  type: TreeNodeType,
+  current: DirectoryCatalogNode[],
+  incoming: DirectoryCatalogNode[],
+): DirectoryCatalogNode[] {
+  const merged = structuredClone(current);
+  const incomingToMerged = new Map<string, string>();
+  const ordered = [...incoming].sort((left, right) =>
+    left.level - right.level || left.order - right.order,
+  );
+
+  for (const node of ordered) {
+    const parentId = node.parentId ? incomingToMerged.get(node.parentId) || null : null;
+    const existing = merged.find((candidate) =>
+      candidate.parentId === parentId && candidate.name === node.name,
+    );
+    if (existing) {
+      if (!existing.description && node.description) existing.description = node.description;
+      incomingToMerged.set(node.id, existing.id);
+      continue;
+    }
+
+    const order = merged
+      .filter((candidate) => candidate.parentId === parentId)
+      .reduce((maximum, candidate) => Math.max(maximum, candidate.order), 0) + 1;
+    const created: DirectoryCatalogNode = {
+      id: genId(type === "chapter" ? "ch" : "kp"),
+      parentId,
+      name: node.name,
+      order,
+      level: parentId
+        ? (merged.find((candidate) => candidate.id === parentId)?.level ?? -1) + 1
+        : 0,
+      ...(node.description ? { description: node.description } : {}),
+    };
+    merged.push(created);
+    incomingToMerged.set(node.id, created.id);
+  }
+
+  return merged;
+}
 
 const DIRECTORY_REFERENCE_COLLECTIONS = [
   "questions",
@@ -250,6 +478,156 @@ export const knowledgeService = {
       children: buildKnowledgeTree(points, null),
     };
     return annotateTreeWithQuestionCounts(tree, questions, "knowledge", points);
+  },
+
+  async listDirectoryCatalogs(
+    teacherId: string,
+    type: TreeNodeType,
+  ): Promise<DirectoryCatalogSummary[]> {
+    await delay(100);
+    const { schoolId } = directoryTeacherContext(teacherId);
+    const scoped = directoryCatalogs()
+      .filter((item) => item.schoolId === schoolId && item.type === type)
+      .map(toCatalogSummary);
+    if (scoped.length > 0) return scoped;
+
+    const now = new Date().toISOString();
+    return [{
+      id: `current-${schoolId}-${type}`,
+      schoolId,
+      type,
+      name: `默认${directoryLabel(type)}`,
+      nodeCount: snapshotDirectoryNodes(schoolId, type).length,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    }];
+  },
+
+  async listDirectoryDonations(
+    teacherId: string,
+    type: TreeNodeType,
+  ): Promise<DirectoryDonation[]> {
+    await delay(100);
+    const { subject } = directoryTeacherContext(teacherId);
+    if (!subject) return [];
+    return directoryDonations()
+      .filter((item) => item.type === type && item.subject === subject)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .map((item) => structuredClone(item));
+  },
+
+  async donateDirectory(
+    teacherId: string,
+    type: TreeNodeType,
+  ): Promise<DirectoryDonationUpsertResult> {
+    await delay(150);
+    const { schoolId, subject, nickname } = directoryTeacherContext(teacherId);
+    if (!subject) throw new Error("请先在当前任教单位设置学科后再捐赠目录");
+    const active = syncActiveDirectoryCatalog(schoolId, type);
+    if (active.nodes.length === 0) throw new Error("目录为空，无法捐赠");
+
+    const existing = directoryDonations().find((item) =>
+      item.donorTeacherId === teacherId && item.subject === subject && item.type === type,
+    );
+    const now = new Date().toISOString();
+    if (existing) {
+      const updated: DirectoryDonation = {
+        ...existing,
+        donorSchoolId: schoolId,
+        donorNickname: nickname,
+        nodes: structuredClone(active.nodes),
+        updatedAt: now,
+      };
+      db.update("directoryDonations", (items: DirectoryDonation[]) => (items || []).map((item) =>
+        item.id === existing.id ? updated : item,
+      ));
+      return { donation: structuredClone(updated), replaced: true };
+    }
+
+    const created: DirectoryDonation = {
+      id: genId("dirdonation"),
+      donorTeacherId: teacherId,
+      donorSchoolId: schoolId,
+      donorNickname: nickname,
+      subject,
+      type,
+      nodes: structuredClone(active.nodes),
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.update("directoryDonations", (items: DirectoryDonation[]) => [...(items || []), created]);
+    return { donation: structuredClone(created), replaced: false };
+  },
+
+  async acceptDirectoryDonation(
+    teacherId: string,
+    donationId: string,
+    mode: DirectoryDonationAcceptMode,
+  ): Promise<DirectoryCatalogSummary> {
+    await delay(150);
+    const { schoolId, subject } = directoryTeacherContext(teacherId);
+    const donation = directoryDonations().find((item) => item.id === donationId);
+    if (!donation) throw new Error("目录捐赠不存在");
+    if (!subject || donation.subject !== subject) throw new Error("只能接受同学科的目录捐赠");
+    if (mode !== "merge" && mode !== "new") throw new Error("目录接受方式不合法");
+
+    const active = syncActiveDirectoryCatalog(schoolId, donation.type);
+    const now = new Date().toISOString();
+    if (mode === "merge") {
+      const nodes = mergeDirectorySnapshots(donation.type, active.nodes, donation.nodes);
+      const updated: DirectoryCatalog = { ...active, nodes, updatedAt: now };
+      db.update("directoryCatalogs", (items: DirectoryCatalog[]) => (items || []).map((item) =>
+        item.id === active.id ? updated : item,
+      ));
+      materializeDirectoryNodes(schoolId, donation.type, nodes);
+      return toCatalogSummary(updated);
+    }
+
+    const nodes = cloneDirectoryNodes(donation.type, donation.nodes);
+    const created: DirectoryCatalog = {
+      id: genId("dircat"),
+      schoolId,
+      type: donation.type,
+      name: uniqueCatalogName(schoolId, donation.type, `${donation.donorNickname}的${directoryLabel(donation.type)}`),
+      nodes,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.update("directoryCatalogs", (items: DirectoryCatalog[]) => [
+      ...(items || []).map((item) =>
+        item.schoolId === schoolId && item.type === donation.type
+          ? { ...item, isActive: false }
+          : item,
+      ),
+      created,
+    ]);
+    materializeDirectoryNodes(schoolId, donation.type, nodes);
+    return toCatalogSummary(created);
+  },
+
+  async activateDirectoryCatalog(
+    teacherId: string,
+    catalogId: string,
+  ): Promise<DirectoryCatalogSummary> {
+    await delay(150);
+    const { schoolId } = directoryTeacherContext(teacherId);
+    const target = directoryCatalogs().find((item) => item.id === catalogId);
+    if (!target || target.schoolId !== schoolId) throw new Error("目录体系不存在");
+
+    const current = syncActiveDirectoryCatalog(schoolId, target.type);
+    if (current.id === target.id) return toCatalogSummary(current);
+
+    const refreshedTarget = directoryCatalogs().find((item) => item.id === target.id) || target;
+    const now = new Date().toISOString();
+    db.update("directoryCatalogs", (items: DirectoryCatalog[]) => (items || []).map((item) =>
+      item.schoolId === schoolId && item.type === target.type
+        ? { ...item, isActive: item.id === target.id, updatedAt: item.id === target.id ? now : item.updatedAt }
+        : item,
+    ));
+    materializeDirectoryNodes(schoolId, target.type, refreshedTarget.nodes);
+    return toCatalogSummary({ ...refreshedTarget, isActive: true, updatedAt: now });
   },
 
   async addChapter(

@@ -1117,6 +1117,59 @@ export interface TreeNode {
   level?: number;
 }
 
+/** 目录捐赠与本地目录体系共用的结构快照；不携带学校或资源关联。 */
+export interface DirectoryCatalogNode {
+  id: string;
+  parentId: string | null;
+  name: string;
+  order: number;
+  level: number;
+  description?: string;
+}
+
+/** 学校本地保存的一套章节课/知识点目录。 */
+export interface DirectoryCatalog {
+  id: string;
+  schoolId: string;
+  type: TreeNodeType;
+  name: string;
+  nodes: DirectoryCatalogNode[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DirectoryCatalogSummary {
+  id: string;
+  schoolId: string;
+  type: TreeNodeType;
+  name: string;
+  nodeCount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 面向同学科用户公开的目录捐赠快照。 */
+export interface DirectoryDonation {
+  id: string;
+  donorTeacherId: string;
+  donorSchoolId: string;
+  donorNickname: string;
+  subject: string;
+  type: TreeNodeType;
+  nodes: DirectoryCatalogNode[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DirectoryDonationAcceptMode = "merge" | "new";
+
+export interface DirectoryDonationUpsertResult {
+  donation: DirectoryDonation;
+  replaced: boolean;
+}
+
 export type BuiltInQuestionType =
   | "single"
   | "multiple"
