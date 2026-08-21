@@ -258,9 +258,13 @@ function convertRad(el: Element): string {
   const e = getMathChild(el, "e");
 
   // 检查是否隐藏次数
-  const radPr = el.getElementsByTagNameNS(MATH_NS, "radPr")[0];
-  const degHide = radPr?.getElementsByTagNameNS(MATH_NS, "degHide")[0];
-  const hideDeg = degHide?.getAttribute("m:val") === "1" || degHide?.getAttribute("val") === "1";
+  const radPr = directMathChildren(el, "radPr")[0];
+  const degHide = radPr ? directMathChildren(radPr, "degHide")[0] : undefined;
+  const degHideValue = degHide?.getAttribute("m:val") ?? degHide?.getAttribute("val");
+  const hideDeg = Boolean(degHide) && (
+    degHideValue === null
+    || !["0", "false", "off", "none"].includes(degHideValue.toLowerCase())
+  );
 
   if (hideDeg || !deg) {
     return `\\sqrt{${e}}`;
@@ -273,11 +277,8 @@ function convertRad(el: Element): string {
  * <m:sup><m:e>...</m:e><m:sup>...</m:sup></m:sup>
  */
 function convertSup(el: Element): string {
-  const eEl = el.getElementsByTagNameNS(MATH_NS, "e")[0];
-  const supEl = el.getElementsByTagNameNS(MATH_NS, "sup")[0];
-
-  const e = eEl ? convertChildren(eEl) : "";
-  const sup = supEl ? supEl.textContent || "" : "";
+  const e = getMathChild(el, "e");
+  const sup = getMathChild(el, "sup");
 
   if (!sup || sup.trim() === "") {
     return e;
@@ -707,7 +708,7 @@ function convertBorderBox(el: Element): string {
  * 获取指定标签的数学子元素的 LaTeX 内容
  */
 function getMathChild(parent: Element, tagName: string): string {
-  const child = parent.getElementsByTagNameNS(MATH_NS, tagName)[0];
+  const child = directMathChildren(parent, tagName)[0];
   if (!child) return "";
   return convertChildren(child);
 }
