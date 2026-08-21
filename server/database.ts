@@ -104,6 +104,12 @@ function jsonValue<T>(value: unknown): T {
   return (typeof value === "string" ? JSON.parse(value) : value) as T;
 }
 
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const nested of Object.values(value as Record<string, unknown>)) deepFreeze(nested);
+  return Object.freeze(value);
+}
+
 function iso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
 }
@@ -116,6 +122,7 @@ export class DuplicateAccountError extends Error {}
 
 export class DatabaseStore {
   private stateCache: AppState = { teachers: [], currentTeacherId: null };
+  private recordJsonCache = new Map<CollectionName, Map<string, string>>();
 
   private constructor(
     private readonly config: ServerConfig,
@@ -703,34 +710,48 @@ export class DatabaseStore {
       list.push(jsonValue<JsonRecord>(row.data_json));
     }
     state.teachers = (state.teachers || []).map(publicTeacher);
-    this.stateCache = state;
+    this.stateCache = deepFreeze(state);
+    this.recordJsonCache = this.buildRecordJsonCache(this.stateCache);
+  }
+
+  private buildRecordJsonCache(state: AppState): Map<CollectionName, Map<string, string>> {
+    const cache = new Map<CollectionName, Map<string, string>>();
+    for (const collection of COLLECTIONS) {
+      const records = (state[collection] || []) as JsonRecord[];
+      cache.set(collection, new Map(records.map((input) => {
+        const record = collection === "teachers"
+          ? publicTeacher(input as unknown as TeacherRecord) as unknown as JsonRecord
+          : input;
+        return [record.id, JSON.stringify(record)] as const;
+      })));
+    }
+    return cache;
   }
 
   loadState(): AppState {
     return structuredClone(this.stateCache);
   }
 
-  async saveState(before: AppState, after: AppState): Promise<void> {
+  readState(): AppState {
+    return this.stateCache;
+  }
+
+  async saveState(_before: AppState, after: AppState, adoptAfter = false): Promise<void> {
     const now = new Date().toISOString();
+    const nextRecordJsonCache = new Map<CollectionName, Map<string, string>>();
     await this.sql.transaction(async (client) => {
       for (const collection of COLLECTIONS) {
-        const oldRecords = new Map(((before[collection] || []) as JsonRecord[]).map((item) => [item.id, item]));
-        const newRecords = new Map(((after[collection] || []) as JsonRecord[]).map((item) => [item.id, item]));
-        for (const [id] of oldRecords) {
-          if (!newRecords.has(id)) {
-            await client.query("DELETE FROM app_records WHERE collection = $1 AND id = $2", [collection, id]);
-          }
-        }
-        for (const [id, input] of newRecords) {
-          const record = structuredClone(input);
-          if (collection === "teachers") {
-            delete record.password;
-            delete record.wechatOpenId;
-            delete record.wechatUnionId;
-            delete record.wecomUserId;
-            delete record.wecomCorpId;
-          }
-          if (JSON.stringify(oldRecords.get(id)) === JSON.stringify(record)) continue;
+        const previousRecords = this.recordJsonCache.get(collection) || new Map<string, string>();
+        const newRecords = (after[collection] || []) as JsonRecord[];
+        const nextCollectionCache = new Map<string, string>();
+
+        for (const input of newRecords) {
+          const record = collection === "teachers"
+            ? publicTeacher(input as unknown as TeacherRecord) as unknown as JsonRecord
+            : input;
+          const serialized = JSON.stringify(record);
+          nextCollectionCache.set(record.id, serialized);
+          if (previousRecords.get(record.id) === serialized) continue;
           const scope = recordScope(record);
           const createdAt = typeof record.createdAt === "string" ? record.createdAt : now;
           await client.query(`
@@ -741,12 +762,22 @@ export class DatabaseStore {
               owner_id = EXCLUDED.owner_id,
               data_json = EXCLUDED.data_json,
               updated_at = EXCLUDED.updated_at
-          `, [collection, id, scope.schoolId, scope.ownerId, JSON.stringify(record), createdAt, now]);
+          `, [collection, record.id, scope.schoolId, scope.ownerId, serialized, createdAt, now]);
         }
+
+        for (const id of previousRecords.keys()) {
+          if (!nextCollectionCache.has(id)) {
+            await client.query("DELETE FROM app_records WHERE collection = $1 AND id = $2", [collection, id]);
+          }
+        }
+        nextRecordJsonCache.set(collection, nextCollectionCache);
       }
     });
-    this.stateCache = structuredClone(after);
-    this.stateCache.teachers = this.stateCache.teachers.map(publicTeacher);
+
+    const nextState = adoptAfter ? after : structuredClone(after);
+    nextState.teachers = nextState.teachers.map(publicTeacher);
+    this.stateCache = deepFreeze(nextState);
+    this.recordJsonCache = nextRecordJsonCache;
   }
 
   getTeacherByEmail(email: string): TeacherRecord | null {

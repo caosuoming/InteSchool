@@ -206,6 +206,20 @@ afterEach(async () => {
 });
 
 describe("production backend", () => {
+  it("reuses a deeply frozen state snapshot for read-only RPCs", () => {
+    const first = built.store.readState();
+    const second = built.store.readState();
+    expect(second).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.schools)).toBe(true);
+    expect(() => (first.schools as Array<Record<string, unknown>>).push({ id: "should-not-mutate" })).toThrow();
+
+    const mutableCopy = built.store.loadState();
+    expect(mutableCopy).not.toBe(first);
+    expect(Object.isFrozen(mutableCopy)).toBe(false);
+    expect(Object.isFrozen(mutableCopy.schools)).toBe(false);
+  });
+
   it("creates a one-time bootstrap administrator without enabling the demo account", async () => {
     await built.app.close();
     built = await buildApp({
