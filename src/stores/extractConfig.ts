@@ -88,6 +88,7 @@ const defaultAnalysisKeywords = [
   "解析",
   "【解析】",
   "解析：",
+  "【解答】",
   "详解",
   "【详解】",
   "详解：",

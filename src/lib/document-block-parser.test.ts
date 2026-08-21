@@ -37,6 +37,27 @@ describe("document block parser", () => {
     });
   });
 
+  it.each([
+    ["【解答】", "由等式两边同乘 2 得 x=2。"],
+    ["【解答】由等式两边同乘 2 得 x=2。", null],
+  ])("treats %s as an analysis marker", (analysisLine, continuation) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 已知 x/2=1，求 x。",
+        analysisLine,
+        continuation,
+      ].filter((line): line is string => Boolean(line)).join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "1. 已知 x/2=1，求 x。",
+      analysis: "由等式两边同乘 2 得 x=2。",
+    });
+  });
+
   it.each(["4.", "４．"])("recognizes standalone question number %s after a summary", (number) => {
     const blocks = parseDocumentBlocks(
       [
