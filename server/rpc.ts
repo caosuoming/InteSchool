@@ -149,7 +149,7 @@ export function withSerializedState<T>(
     const state = store.loadState();
     const before = structuredClone(state);
     const result = await task(state);
-    store.saveState(before, state);
+    await store.saveState(before, state);
     return result;
   });
 }
@@ -655,7 +655,7 @@ export async function invokeRpc(
       method as (...values: unknown[]) => unknown,
       service,
       authorized.args,
-    ));
+    ), store);
     return sanitize(filterAuthorizedResult(
       serviceName as ServiceName,
       methodName,

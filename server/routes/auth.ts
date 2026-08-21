@@ -357,12 +357,12 @@ function setSessionCookie(reply: FastifyReply, token: string, config: ServerConf
   });
 }
 
-export function getSession(request: FastifyRequest, store: DatabaseStore): SessionUser | null {
+export async function getSession(request: FastifyRequest, store: DatabaseStore): Promise<SessionUser | null> {
   return store.getSession(request.cookies[SESSION_COOKIE]);
 }
 
-export function requireSession(request: FastifyRequest, store: DatabaseStore): SessionUser {
-  const session = getSession(request, store);
+export async function requireSession(request: FastifyRequest, store: DatabaseStore): Promise<SessionUser> {
+  const session = await getSession(request, store);
   if (!session) throw new Error("请先登录");
   return session;
 }
@@ -447,14 +447,14 @@ export async function registerAuthRoutes(
     const phone = phoneSchema.parse((request.query as { phone?: string }).phone);
     return {
       phone,
-      teacher: Boolean(store.getUserByPhone(phone)),
-      parent: Boolean(store.getParentUserByPhone(phone)),
+      teacher: Boolean(await store.getUserByPhone(phone)),
+      parent: Boolean(await store.getParentUserByPhone(phone)),
     };
   });
 
   app.get("/api/auth/registration-context", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (request) => {
     const phone = phoneSchema.parse((request.query as { phone?: string }).phone);
-    const authorization = store.getAvailableRegistrationAuthorization(phone);
+    const authorization = await store.getAvailableRegistrationAuthorization(phone);
     if (!authorization) {
       const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
       error.statusCode = 403;
@@ -477,12 +477,12 @@ export async function registerAuthRoutes(
   app.post("/api/auth/register", { config: { rateLimit: { max: 8, timeWindow: "15 minutes" } } }, async (request, reply) => {
     const input = registerSchema.parse(request.body);
     if (input.teachingClassIds.length > 0) throw new Error(TEACHING_CLASS_ASSIGNMENT_ERROR);
-    if (store.getUserByPhone(input.phone)) {
+    if (await store.getUserByPhone(input.phone)) {
       const error = new Error("该手机号已注册") as Error & { statusCode: number };
       error.statusCode = 409;
       throw error;
     }
-    const authorization = store.getAvailableRegistrationAuthorization(input.phone);
+    const authorization = await store.getAvailableRegistrationAuthorization(input.phone);
     if (!authorization) {
       const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
       error.statusCode = 403;
@@ -586,7 +586,7 @@ export async function registerAuthRoutes(
       currentAffiliationId: requiresReview ? personalAffiliationId : schoolAffiliationId,
       createdAt: now,
     };
-    store.createAuthorizedAccount(teacher, input.password, input.phone, { newSchool });
+    await store.createAuthorizedAccount(teacher, input.password, input.phone, { newSchool });
     if (requiresReview) {
       await withSerializedState(store, (latestState) => {
         const applications = latestState.applications as Array<Record<string, unknown>>;
@@ -619,44 +619,44 @@ export async function registerAuthRoutes(
       reply.code(202);
       return { teacher: null, csrfToken: null, pending: true };
     }
-    const user = store.authenticate(input.phone, input.password);
+    const user = await store.authenticate(input.phone, input.password);
     if (!user) throw new Error("账号创建失败");
-    const { token, session } = store.createSession(user);
+    const { token, session } = await store.createSession(user);
     setSessionCookie(reply, token, config);
     return { teacher: publicTeacher(teacher), csrfToken: session.csrfToken };
   });
 
   app.post("/api/auth/login", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (request, reply) => {
     const input = loginSchema.parse(request.body);
-    const user = store.authenticate(input.identifier, input.password);
+    const user = await store.authenticate(input.identifier, input.password);
     if (!user) {
       reply.code(401);
       throw new Error("邮箱、手机号或密码错误");
     }
     const teacher = store.getTeacherById(user.teacher_id);
     if (!teacher) throw new Error("账号关联的教师资料不存在");
-    const { token, session } = store.createSession(user);
+    const { token, session } = await store.createSession(user);
     setSessionCookie(reply, token, config);
     return { teacher: publicTeacher(teacher), csrfToken: session.csrfToken };
   });
 
   app.get("/api/auth/current", async (request) => {
-    const session = getSession(request, store);
+    const session = await getSession(request, store);
     if (!session) return { teacher: null, csrfToken: null };
     const teacher = sessionTeacher(store, session);
     return { teacher: publicTeacher(teacher), csrfToken: session.csrfToken };
   });
 
   app.post("/api/auth/logout", async (request, reply) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
-    store.deleteSession(request.cookies[SESSION_COOKIE]);
+    await store.deleteSession(request.cookies[SESSION_COOKIE]);
     reply.clearCookie(SESSION_COOKIE, { path: "/" });
     return { ok: true };
   });
 
   app.get("/api/auth/registration-authorizations", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const teacher = sessionTeacher(store, session);
     if (!teacher.schoolId || teacher.status !== "active") throw new Error("仅已加入学校的教师可以管理注册授权");
     const canManageSchool = ["school_admin", "platform_admin"].includes(activeRole(teacher));
@@ -668,7 +668,7 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/registration-authorizations", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const teacher = sessionTeacher(store, session);
     if (!teacher.schoolId || teacher.status !== "active") throw new Error("仅已加入学校的教师可以添加注册授权");
@@ -689,13 +689,13 @@ export async function registerAuthRoutes(
   });
 
   app.delete("/api/auth/registration-authorizations/:id", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const teacher = sessionTeacher(store, session);
     if (!teacher.schoolId || teacher.status !== "active") throw new Error("仅已加入学校的教师可以撤销注册授权");
     const id = z.string().uuid().parse((request.params as { id?: string }).id);
     const canManageSchool = ["school_admin", "platform_admin"].includes(activeRole(teacher));
-    store.revokeRegistrationAuthorization({
+    await store.revokeRegistrationAuthorization({
       id,
       schoolId: teacher.schoolId,
       requesterTeacherId: teacher.id,
@@ -705,18 +705,18 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/password", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const input = z.object({
       currentPassword: z.string().min(1).max(128),
       newPassword: z.string().min(10).max(128),
     }).parse(request.body);
-    store.changePassword(session.userId, input.currentPassword, input.newPassword);
+    await store.changePassword(session.userId, input.currentPassword, input.newPassword);
     return { ok: true };
   });
 
   app.post("/api/auth/teachers/:id/password-reset", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const manager = sessionTeacher(store, session);
     requireAdmin(manager);
@@ -737,19 +737,19 @@ export async function registerAuthRoutes(
     }
 
     const password = input.newPassword || randomBytes(12).toString("base64url");
-    store.resetPasswordByTeacherId(teacherId, password);
+    await store.resetPasswordByTeacherId(teacherId, password);
     return { password };
   });
 
   app.patch("/api/auth/email", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const input = emailBindingSchema.parse(request.body);
     return store.bindAccountEmail(session.userId, session.teacherId, input.email);
   });
 
   app.patch("/api/auth/profile", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const input = profileSchema.parse(request.body);
     if (input.teachingClassIds !== undefined) throw new Error(TEACHING_CLASS_ASSIGNMENT_ERROR);
@@ -773,7 +773,7 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/admin-applications", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const teacher = sessionTeacher(store, session);
     const input = adminApplicationSchema.parse(request.body);
@@ -807,7 +807,7 @@ export async function registerAuthRoutes(
   });
 
   app.get("/api/auth/admin-applications/mine", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const state = store.loadState();
     return (state.schoolAdminApplications as Array<Record<string, unknown>>)
       .filter((item) => item.kind !== "teacher_roles" && item.teacherId === session.teacherId)
@@ -815,7 +815,7 @@ export async function registerAuthRoutes(
   });
 
   app.get("/api/auth/admin-applications/pending", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const reviewer = sessionTeacher(store, session);
     requirePlatformAdmin(reviewer);
     const state = store.loadState();
@@ -825,7 +825,7 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/admin-applications/:id/review", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const reviewer = sessionTeacher(store, session);
     requirePlatformAdmin(reviewer);
@@ -867,7 +867,7 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/role-applications", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const teacher = sessionTeacher(store, session);
     const input = roleApplicationSchema.parse(request.body);
@@ -911,7 +911,7 @@ export async function registerAuthRoutes(
   });
 
   app.get("/api/auth/role-applications/mine", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const state = store.loadState();
     return (state.schoolAdminApplications as Array<Record<string, unknown>>)
       .filter((item) => item.kind === "teacher_roles" && item.teacherId === session.teacherId)
@@ -919,7 +919,7 @@ export async function registerAuthRoutes(
   });
 
   app.get("/api/auth/role-applications/pending", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const reviewer = sessionTeacher(store, session);
     requireSchoolAdmin(reviewer);
     if (!reviewer.schoolId) throw new Error("当前管理员没有学校身份");
@@ -930,7 +930,7 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/role-applications/:id/review", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const reviewer = sessionTeacher(store, session);
     requireSchoolAdmin(reviewer);
@@ -991,7 +991,7 @@ export async function registerAuthRoutes(
   });
 
   app.patch("/api/auth/teachers/:id/teaching-profile", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const manager = sessionTeacher(store, session);
     requireTeachingProfileManager(manager);
@@ -1018,11 +1018,11 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/applications", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const input = applicationSchema.parse(request.body);
     if (input.teachingClassIds.length > 0) throw new Error(TEACHING_CLASS_ASSIGNMENT_ERROR);
-    const file = input.proofFileId ? store.getFile(input.proofFileId) : null;
+    const file = input.proofFileId ? await store.getFile(input.proofFileId) : null;
     if (input.proofFileId && (!file || file.ownerId !== session.teacherId)) {
       throw new Error("证明文件不存在或无权使用");
     }
@@ -1096,14 +1096,14 @@ export async function registerAuthRoutes(
   });
 
   app.get("/api/auth/applications/mine", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const state = store.loadState();
     return (state.applications as Array<Record<string, unknown>>)
       .filter((item) => item.teacherId === session.teacherId);
   });
 
   app.get("/api/auth/applications/pending", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const teacher = sessionTeacher(store, session);
     requireAdmin(teacher);
     const state = store.loadState();
@@ -1124,7 +1124,7 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/applications/:id/review", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const reviewer = sessionTeacher(store, session);
     requireAdmin(reviewer);
@@ -1215,7 +1215,7 @@ export async function registerAuthRoutes(
   });
 
   app.post("/api/auth/affiliations/:id/activate", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     requireCsrf(request, session);
     const affiliationId = z.string().min(1).parse((request.params as { id?: string }).id);
     return withSerializedState(store, (state) => {
@@ -1246,7 +1246,7 @@ export async function registerAuthRoutes(
   });
 
   app.get("/api/auth/teachers", async (request) => {
-    const session = requireSession(request, store);
+    const session = await requireSession(request, store);
     const teacher = sessionTeacher(store, session);
     const state = store.loadState();
     return state.teachers

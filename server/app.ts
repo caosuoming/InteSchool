@@ -82,7 +82,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
     bodyLimit: 5 * 1024 * 1024,
     trustProxy: config.trustProxy,
   });
-  const store = new DatabaseStore(config);
+  const store = await DatabaseStore.open(config);
 
   await app.register(cookie);
   await app.register(compress);
@@ -127,7 +127,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
 
   app.get("/api/health", async () => ({ status: "ok" }));
   app.get("/api/ready", async () => {
-    store.sqlite.prepare("SELECT 1").get();
+    await store.ping();
     return { status: "ready" };
   });
 
@@ -137,7 +137,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
 
   app.post("/api/rpc", async (request) => {
     const input = rpcSchema.parse(request.body);
-    const session = getSession(request, store);
+    const session = await getSession(request, store);
     if (session) requireCsrf(request, session);
     return { result: await invokeRpc(store, session, input.service, input.method, input.args) };
   });
@@ -173,7 +173,9 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
 
 
 
-  app.addHook("onClose", async () => store.close());
-  store.cleanupSessions();
+  app.addHook("onClose", async () => {
+    await store.close();
+  });
+  await store.cleanupSessions();
   return { app, store, config };
 }

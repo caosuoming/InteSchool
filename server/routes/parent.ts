@@ -45,12 +45,12 @@ function setParentSessionCookie(reply: FastifyReply, token: string, config: Serv
   });
 }
 
-function getParentSession(request: FastifyRequest, store: DatabaseStore): ParentSessionUser | null {
+async function getParentSession(request: FastifyRequest, store: DatabaseStore): Promise<ParentSessionUser | null> {
   return store.getParentSession(request.cookies[PARENT_SESSION_COOKIE]);
 }
 
-function requireParentSession(request: FastifyRequest, store: DatabaseStore): ParentSessionUser {
-  const session = getParentSession(request, store);
+async function requireParentSession(request: FastifyRequest, store: DatabaseStore): Promise<ParentSessionUser> {
+  const session = await getParentSession(request, store);
   if (!session) throw new Error("请先登录家长账号");
   return session;
 }
@@ -195,7 +195,7 @@ export async function registerParentRoutes(
       error.statusCode = 403;
       throw error;
     }
-    return { phone, children, registered: Boolean(store.getParentUserByPhone(phone)) };
+    return { phone, children, registered: Boolean(await store.getParentUserByPhone(phone)) };
   });
 
   app.post("/api/parent/register", { config: { rateLimit: { max: 8, timeWindow: "15 minutes" } } }, async (request, reply) => {
@@ -207,8 +207,8 @@ export async function registerParentRoutes(
       error.statusCode = 403;
       throw error;
     }
-    const { user, parent } = store.createParentAccount({ ...input, phone });
-    const { token, session } = store.createParentSession(user);
+    const { user, parent } = await store.createParentAccount({ ...input, phone });
+    const { token, session } = await store.createParentSession(user);
     setParentSessionCookie(reply, token, config);
     return { parent, csrfToken: session.csrfToken };
   });
@@ -216,40 +216,40 @@ export async function registerParentRoutes(
   app.post("/api/parent/login", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (request, reply) => {
     const input = credentialSchema.parse(request.body);
     const phone = phoneSchema.parse(input.phone);
-    const user = store.authenticateParent(phone, input.password);
+    const user = await store.authenticateParent(phone, input.password);
     if (!user) {
       reply.code(401);
       throw new Error("手机号或密码错误");
     }
     const parent = store.getParentById(user.parent_id);
     if (!parent) throw new Error("账号关联的家长资料不存在");
-    const { token, session } = store.createParentSession(user);
+    const { token, session } = await store.createParentSession(user);
     setParentSessionCookie(reply, token, config);
     return { parent, csrfToken: session.csrfToken };
   });
 
   app.get("/api/parent/current", async (request) => {
-    const session = getParentSession(request, store);
+    const session = await getParentSession(request, store);
     if (!session) return { parent: null, csrfToken: null };
     const parent = store.getParentById(session.parentId);
     return { parent, csrfToken: session.csrfToken };
   });
 
   app.post("/api/parent/logout", async (request, reply) => {
-    const session = requireParentSession(request, store);
+    const session = await requireParentSession(request, store);
     requireParentCsrf(request, session);
-    store.deleteParentSession(request.cookies[PARENT_SESSION_COOKIE]);
+    await store.deleteParentSession(request.cookies[PARENT_SESSION_COOKIE]);
     reply.clearCookie(PARENT_SESSION_COOKIE, { path: "/" });
     return { ok: true };
   });
 
   app.get("/api/parent/children", async (request) => {
-    const session = requireParentSession(request, store);
+    const session = await requireParentSession(request, store);
     return childViews(store.loadState(), session.phone);
   });
 
   app.get("/api/parent/children/:studentId/grades", async (request) => {
-    const session = requireParentSession(request, store);
+    const session = await requireParentSession(request, store);
     const studentId = z.string().min(1).max(100).parse((request.params as { studentId?: string }).studentId);
     const state = store.loadState();
     const student = authorizedStudent(state, session.phone, studentId);
@@ -273,7 +273,7 @@ export async function registerParentRoutes(
   });
 
   app.get("/api/parent/children/:studentId/learning", async (request) => {
-    const session = requireParentSession(request, store);
+    const session = await requireParentSession(request, store);
     const studentId = z.string().min(1).max(100).parse((request.params as { studentId?: string }).studentId);
     const state = store.loadState();
     const student = authorizedStudent(state, session.phone, studentId);

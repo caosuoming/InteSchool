@@ -19,7 +19,8 @@ function cookie(response: { headers: Record<string, unknown> }): string {
 beforeEach(async () => {
   workDir = await mkdtemp(join(tmpdir(), "inteschool-parent-"));
   built = await buildApp({
-    databasePath: join(workDir, "inteschool.sqlite"),
+    databasePath: join(workDir, "inteschool-test"),
+    legacyDatabasePath: join(workDir, "legacy-source-not-present.sqlite"),
     uploadsDir: join(workDir, "uploads"),
     seedStatePath: resolve("server/seed-state.json"),
     serveStatic: false,
@@ -35,7 +36,7 @@ afterEach(async () => {
   await rm(workDir, { recursive: true, force: true });
 });
 
-function seedParentScenario(phone: string): void {
+async function seedParentScenario(phone: string): Promise<void> {
   const before = built.store.loadState();
   const after = structuredClone(before);
 
@@ -153,13 +154,13 @@ function seedParentScenario(phone: string): void {
     { id: "answer-child", studentId: "parent-child-1", questionId: "question-parent", lectureId: "lecture-x", score: "correct", isCorrect: true, answeredAt: "2026-08-01T00:00:00.000Z" },
     { id: "answer-peer", studentId: "parent-peer-1", questionId: "question-parent", lectureId: "lecture-x", score: "wrong", isCorrect: false, answeredAt: "2026-08-01T00:00:00.000Z" },
   ];
-  built.store.saveState(before, after);
+  await built.store.saveState(before, after);
 }
 
 describe("parent accounts", () => {
   it("supports a phone with both teacher and parent identities, cross-school children, published grades and scoped learning data", async () => {
     const phone = "13800138888";
-    seedParentScenario(phone);
+    await seedParentScenario(phone);
 
     const baseTeacher = built.store.getTeacherById("tch-1") || built.store.loadState().teachers[0];
     const teacher: TeacherRecord = {
@@ -170,8 +171,8 @@ describe("parent accounts", () => {
       schoolId: baseTeacher.schoolId,
       createdAt: new Date().toISOString(),
     };
-    built.store.insertTeacher(teacher);
-    built.store.createUser(teacher.id, teacher.email, "TeacherPass123", phone);
+    await built.store.insertTeacher(teacher);
+    await built.store.createUser(teacher.id, teacher.email, "TeacherPass123", phone);
 
     const context = await built.app.inject({ method: "GET", url: `/api/parent/registration-context?phone=${phone}` });
     expect(context.statusCode).toBe(200);
