@@ -91,6 +91,7 @@ import {
 } from "@/stores/extractTasks";
 import { parseDocumentBlocks, type DocumentBlock } from "@/lib/document-block-parser";
 import { matchingResourceTypeIds } from "@/lib/resource-type-hierarchy";
+import { annotateTreeWithResourceCounts } from "@/lib/resource-tree-counts";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
 import { loadCoursewarePptSlides } from "@/lib/pptx";
 import { openCoursewareInWps } from "@/lib/wps";
@@ -1466,6 +1467,31 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     selectedLectureTypeId,
     sortedData,
   ]);
+
+  const directoryCountResources = useMemo<ResourceListItem[] | null>(() => {
+    switch (activeTab) {
+      case "lecture":
+        return lectures.filter((item) => !item.isExtractCopy);
+      case "examPaper":
+        return examPapers.filter((item) => !item.isExtractCopy);
+      case "courseware":
+        return coursewares;
+      case "material":
+        return materials;
+      default:
+        return null;
+    }
+  }, [activeTab, coursewares, examPapers, lectures, materials]);
+
+  const displayedChapterTree = useMemo(() => {
+    if (!chapterTree || !directoryCountResources) return chapterTree;
+    return annotateTreeWithResourceCounts(chapterTree, directoryCountResources, "chapter");
+  }, [chapterTree, directoryCountResources]);
+
+  const displayedKnowledgeTree = useMemo(() => {
+    if (!knowledgeTree || !directoryCountResources) return knowledgeTree;
+    return annotateTreeWithResourceCounts(knowledgeTree, directoryCountResources, "knowledge");
+  }, [directoryCountResources, knowledgeTree]);
 
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
   const activeResourceQuota = activeTab === "basket" ? null : quota?.resources[activeTab] || null;
@@ -2871,10 +2897,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 知识点
               </button>
             </div>
-            {(leftTab === "chapter" ? chapterTree : knowledgeTree) ? (
+            {(leftTab === "chapter" ? displayedChapterTree : displayedKnowledgeTree) ? (
               leftTab === "chapter" ? (
                 <SearchableTree
-                  data={chapterTree!}
+                  data={displayedChapterTree!}
                   title="章节课目录"
                   showTitle={false}
                   accent="gold"
@@ -2889,7 +2915,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 />
               ) : (
                 <SearchableTree
-                  data={knowledgeTree!}
+                  data={displayedKnowledgeTree!}
                   title="知识点目录"
                   showTitle={false}
                   accent="teal"
@@ -3720,9 +3746,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       >
         <div className="max-h-[55vh] overflow-y-auto pr-1">
           {batchDirectoryMode === "chapter" ? (
-            chapterTree ? (
+            displayedChapterTree ? (
               <SearchableTree
-                data={chapterTree}
+                data={displayedChapterTree}
                 title="选择章节"
                 accent="gold"
                 checkable
@@ -3733,9 +3759,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             ) : (
               <div className="flex justify-center py-10"><Spinner size={20} /></div>
             )
-          ) : knowledgeTree ? (
+          ) : displayedKnowledgeTree ? (
             <SearchableTree
-              data={knowledgeTree}
+              data={displayedKnowledgeTree}
               title="选择知识点"
               accent="teal"
               checkable
