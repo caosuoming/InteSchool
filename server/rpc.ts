@@ -141,15 +141,32 @@ class SerialExecutor {
 
 const executor = new SerialExecutor();
 
+function sharedStateReader(store: DatabaseStore): (() => AppState) | null {
+  const readState = (store as DatabaseStore & { readState?: () => AppState }).readState;
+  return typeof readState === "function" ? readState.bind(store) : null;
+}
+
 export function withSerializedState<T>(
   store: DatabaseStore,
   task: (state: AppState) => Promise<T> | T,
 ): Promise<T> {
   return executor.run(async () => {
-    const before = store.readState();
-    const state = structuredClone(before);
+    const readSharedState = sharedStateReader(store);
+    if (readSharedState) {
+      const before = readSharedState();
+      const state = structuredClone(before);
+      const result = await task(state);
+      await store.saveState(before, state, true);
+      return result;
+    }
+
+    // Compatibility for lightweight test/custom stores that only implement the
+    // original loadState/saveState contract. Production DatabaseStore always
+    // takes the optimized shared-snapshot branch above.
+    const state = store.loadState();
+    const before = structuredClone(state);
     const result = await task(state);
-    await store.saveState(before, state, true);
+    await store.saveState(before, state);
     return result;
   });
 }
@@ -158,7 +175,8 @@ export async function withReadOnlyState<T>(
   store: DatabaseStore,
   task: (state: AppState) => Promise<T> | T,
 ): Promise<T> {
-  return task(store.readState());
+  const readSharedState = sharedStateReader(store);
+  return task(readSharedState ? readSharedState() : store.loadState());
 }
 
 function isReadOnly(service: ServiceName, method: string): boolean {
