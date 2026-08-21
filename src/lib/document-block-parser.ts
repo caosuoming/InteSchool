@@ -334,6 +334,7 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
   const structuredFieldPattern = keywordPattern([
     ...config.answerKeywords,
     ...categorizedKeywords.analysisKeywords,
+    ...builtInTrailingAnalysisKeywords,
     ...categorizedKeywords.summaryKeywords,
   ]);
   const numberedSubQuestionAnalysisPattern = keywordPattern(
@@ -756,7 +757,7 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
   return null;
 }
 
-const builtInTrailingAnalysisKeywords = ["详解", "【详解】"];
+const builtInTrailingAnalysisKeywords = ["详解", "【详解】", "【解答】"];
 const builtInAnalysisAsSummaryKeywords = ["分析", "【分析】", "分析："];
 
 function isAnalysisAsSummaryKeyword(keyword: string): boolean {
