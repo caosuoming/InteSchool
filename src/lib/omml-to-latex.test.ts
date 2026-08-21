@@ -209,6 +209,39 @@ function intervalWithFragmentedEntries(): string {
   `;
 }
 
+function superscriptWithFraction(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:sSup>
+        <m:e><m:r><m:t>a</m:t></m:r></m:e>
+        <m:sup>
+          <m:f>
+            <m:num><m:r><m:t>3</m:t></m:r></m:num>
+            <m:den><m:r><m:t>2</m:t></m:r></m:den>
+          </m:f>
+        </m:sup>
+      </m:sSup>
+    </m:oMath>
+  `;
+}
+
+function nestedRadicalWithoutEmptyDegree(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:rad>
+        <m:radPr><m:degHide m:val="on"/></m:radPr>
+        <m:e>
+          <m:rad>
+            <m:radPr><m:degHide m:val="off"/></m:radPr>
+            <m:deg><m:r><m:t>3</m:t></m:r></m:deg>
+            <m:e><m:r><m:t>x</m:t></m:r></m:e>
+          </m:rad>
+        </m:e>
+      </m:rad>
+    </m:oMath>
+  `;
+}
+
 describe("ommlToLatex", () => {
   it("keeps ordinary Latin set-name letters as ordinary variables", () => {
     expect(ommlToLatex(mathRun("C+Q+N+R+Z"))).toBe("C+Q+N+R+Z");
@@ -277,6 +310,18 @@ describe("ommlToLatex", () => {
   it("keeps finite-sum bounds above and below the operator in inline previews", () => {
     expect(ommlToLatex(finiteSum())).toBe(
       String.raw`\sum\limits_{i=1}^{n} {b}_{i}`,
+    );
+  });
+
+  it("preserves structured fractions inside superscripts", () => {
+    expect(ommlToLatex(superscriptWithFraction())).toBe(
+      String.raw`{a}^{\frac{3}{2}}`,
+    );
+  });
+
+  it("keeps nested radicals scoped to their direct degree elements", () => {
+    expect(ommlToLatex(nestedRadicalWithoutEmptyDegree())).toBe(
+      String.raw`\sqrt{\sqrt[3]{x}}`,
     );
   });
 });
