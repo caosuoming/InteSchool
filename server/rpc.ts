@@ -146,10 +146,10 @@ export function withSerializedState<T>(
   task: (state: AppState) => Promise<T> | T,
 ): Promise<T> {
   return executor.run(async () => {
-    const state = store.loadState();
-    const before = structuredClone(state);
+    const before = store.readState();
+    const state = structuredClone(before);
     const result = await task(state);
-    await store.saveState(before, state);
+    await store.saveState(before, state, true);
     return result;
   });
 }
@@ -158,7 +158,7 @@ export async function withReadOnlyState<T>(
   store: DatabaseStore,
   task: (state: AppState) => Promise<T> | T,
 ): Promise<T> {
-  return task(store.loadState());
+  return task(store.readState());
 }
 
 function isReadOnly(service: ServiceName, method: string): boolean {
