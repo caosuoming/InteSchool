@@ -22,4 +22,14 @@ describe("normalizeLegacyOmmlMathText", () => {
     expect(normalizeLegacyOmmlMathText("记 $\\mathbb{Q}$ 为给定对象。"))
       .toBe("记 $\\mathbb{Q}$ 为给定对象。");
   });
+
+  it("repairs Unicode vertical delimiters in stored OMML formulas", () => {
+    expect(
+      normalizeLegacyOmmlMathText(
+        "$T=\\left\\{x\\in Z\\left∥x-1\\right∥\\neq 1\\right\\}$",
+      ),
+    ).toBe(
+      "$T=\\left\\{x\\in Z\\left\\|x-1\\right\\|\\neq 1\\right\\}$",
+    );
+  });
 });

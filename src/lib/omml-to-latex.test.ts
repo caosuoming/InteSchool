@@ -242,6 +242,20 @@ function nestedRadicalWithoutEmptyDegree(): string {
   `;
 }
 
+function unicodeVerticalDelimiter(delimiter: string): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:d>
+        <m:dPr>
+          <m:begChr m:val="${delimiter}"/>
+          <m:endChr m:val="${delimiter}"/>
+        </m:dPr>
+        <m:e><m:r><m:t>x-1</m:t></m:r></m:e>
+      </m:d>
+    </m:oMath>
+  `;
+}
+
 describe("ommlToLatex", () => {
   it("keeps ordinary Latin set-name letters as ordinary variables", () => {
     expect(ommlToLatex(mathRun("C+Q+N+R+Z"))).toBe("C+Q+N+R+Z");
@@ -322,6 +336,15 @@ describe("ommlToLatex", () => {
   it("keeps nested radicals scoped to their direct degree elements", () => {
     expect(ommlToLatex(nestedRadicalWithoutEmptyDegree())).toBe(
       String.raw`\sqrt{\sqrt[3]{x}}`,
+    );
+  });
+
+  it("normalizes Unicode vertical delimiters emitted by Word and MathType", () => {
+    expect(ommlToLatex(unicodeVerticalDelimiter("∥"))).toBe(
+      String.raw`\left\|x-1\right\|`,
+    );
+    expect(ommlToLatex(unicodeVerticalDelimiter("∣"))).toBe(
+      String.raw`\left|x-1\right|`,
     );
   });
 });

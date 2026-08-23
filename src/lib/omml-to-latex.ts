@@ -410,6 +410,8 @@ function mapDelimiter(chr: string): string {
     "}": "\\}",
     "|": "|",
     "‖": "\\|",
+    "∥": "\\|",
+    "∣": "|",
     "⌈": "\\lceil",
     "⌉": "\\rceil",
     "⌊": "\\lfloor",
