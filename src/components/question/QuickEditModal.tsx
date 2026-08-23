@@ -8,6 +8,7 @@ import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
 import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
+import { DraggableModalSurface } from "@/components/ui/DraggableModalSurface";
 import { Textarea } from "@/components/ui/Input";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { SearchableTree } from "@/components/tree/SearchableTree";
@@ -388,9 +389,12 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-ink-950/40" onClick={onClose} />
-      <div className="relative bg-paper rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col animate-fade-in">
+      <DraggableModalSurface className="relative bg-paper rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col animate-fade-in">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100">
+        <div
+          data-modal-drag-handle
+          className="flex items-center justify-between px-5 py-4 border-b border-ink-100 cursor-move touch-none select-none"
+        >
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-gold-500" />
             <h3 className="font-serif font-semibold text-ink-900">快速调整属性</h3>
@@ -398,7 +402,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
               可通过箭头调整区块顺序
             </span>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-mist text-ink-400">
+          <button data-modal-drag-ignore onClick={onClose} className="p-1.5 rounded-lg hover:bg-mist text-ink-400">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -427,7 +431,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
             保存修改
           </Button>
         </div>
-      </div>
+      </DraggableModalSurface>
     </div>
   );
 }

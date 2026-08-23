@@ -2,6 +2,7 @@ import { type ReactNode, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DraggableModalSurface } from "./DraggableModalSurface";
 
 interface ModalProps {
   open: boolean;
@@ -53,15 +54,25 @@ export function Modal({
         className="absolute inset-0 bg-ink-950/50 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div
+      <DraggableModalSurface
         className={cn(
           "relative bg-paper rounded-xl shadow-2xl border border-ink-100 w-full max-h-[90vh] flex flex-col animate-scale-in",
           sizeClass[size],
           className,
         )}
       >
+        {!title && !description && (
+          <div
+            data-modal-drag-handle
+            className="absolute inset-x-0 top-0 z-10 h-3 cursor-move touch-none select-none"
+            aria-hidden="true"
+          />
+        )}
         {(title || description) && (
-          <div className="px-6 py-4 border-b border-ink-100 flex-shrink-0">
+          <div
+            data-modal-drag-handle
+            className="px-6 py-4 border-b border-ink-100 flex-shrink-0 cursor-move touch-none select-none"
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 {title && (
@@ -72,6 +83,7 @@ export function Modal({
                 )}
               </div>
               <button
+                data-modal-drag-ignore
                 onClick={onClose}
                 className="p-1.5 rounded-md text-ink-400 hover:bg-mist hover:text-ink-700 transition-colors"
               >
@@ -86,7 +98,7 @@ export function Modal({
             {footer}
           </div>
         )}
-      </div>
+      </DraggableModalSurface>
     </div>,
     document.body,
   );

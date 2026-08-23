@@ -3,6 +3,7 @@ import { X, Share2, Users, Copy, Check, Send } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
+import { DraggableModalSurface } from "@/components/ui/DraggableModalSurface";
 import type { Question } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -40,14 +41,17 @@ export function ShareModal({ open, onClose, question }: ShareModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-ink-950/40" onClick={onClose} />
-      <div className="relative bg-paper rounded-xl shadow-xl w-full max-w-md animate-fade-in">
+      <DraggableModalSurface className="relative bg-paper rounded-xl shadow-xl w-full max-w-md animate-fade-in">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100">
+        <div
+          data-modal-drag-handle
+          className="flex items-center justify-between px-5 py-4 border-b border-ink-100 cursor-move touch-none select-none"
+        >
           <div className="flex items-center gap-2">
             <Share2 className="w-5 h-5 text-gold-500" />
             <h3 className="font-serif font-semibold text-ink-900">分享题目</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-mist text-ink-400">
+          <button data-modal-drag-ignore onClick={onClose} className="p-1.5 rounded-lg hover:bg-mist text-ink-400">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -137,7 +141,7 @@ export function ShareModal({ open, onClose, question }: ShareModalProps) {
             关闭
           </Button>
         </div>
-      </div>
+      </DraggableModalSurface>
     </div>
   );
 }
