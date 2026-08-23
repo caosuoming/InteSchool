@@ -247,7 +247,7 @@ const knowledgeTree: TreeNode = {
   children: [],
 };
 
-function renderPage(initialTab: "material" | "examPaper" = "material") {
+function renderPage(initialTab: "question" | "material" | "examPaper" = "material") {
   return render(
     <MemoryRouter>
       <MyResourcesPage initialTab={initialTab} />
@@ -303,6 +303,25 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
     vi.mocked(classService.listMyClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([]);
+  });
+
+  it("does not preload the outer resource libraries when the embedded question bank is active", async () => {
+    renderPage("question");
+
+    expect((await screen.findAllByText("题库")).length).toBeGreaterThan(0);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(questionService.listQuestions).not.toHaveBeenCalled();
+    expect(lectureService.listLectures).not.toHaveBeenCalled();
+    expect(examPaperService.listPapers).not.toHaveBeenCalled();
+    expect(coursewareService.listCoursewares).not.toHaveBeenCalled();
+    expect(materialService.listMaterials).not.toHaveBeenCalled();
+    expect(lessonCoursewareService.listCoursewares).not.toHaveBeenCalled();
+    expect(knowledgeService.getChapterTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getKnowledgeTree).not.toHaveBeenCalled();
+    expect(basketService.listBaskets).not.toHaveBeenCalled();
+    expect(classService.listMyClasses).not.toHaveBeenCalled();
+    expect(classService.listMyStudents).not.toHaveBeenCalled();
   });
 
   it("marks an exam paper when its linked lesson has been completed", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Question } from "../../src/types/index.js";
 import type { AppState } from "../types.js";
+import type { TeacherRecord } from "../types.js";
 import { runWithState } from "../runtime-db.js";
 import { questionService } from "./question.js";
 
@@ -91,6 +92,31 @@ describe("question keyword search", () => {
       });
       expect(legacy.map((item) => item.id)).toEqual(["legacy-remark"]);
       expect(structured.map((item) => item.id)).toEqual(["structured-remark"]);
+    });
+  });
+});
+
+describe("question pagination", () => {
+  it("filters visibility before counting, sorts, and returns only the requested page", async () => {
+    const questions = [
+      question("owned-low", { teacherId: "teacher-1", usageCount: 2 }),
+      question("owned-high", { teacherId: "teacher-1", usageCount: 9 }),
+      question("shared", { teacherId: "teacher-2", isShared: true, usageCount: 5 }),
+      question("private-other", { teacherId: "teacher-2", isShared: false, usageCount: 99 }),
+    ];
+    const teacher = { id: "teacher-1", schoolId: "school-1" } as TeacherRecord;
+
+    await runWithState(state(questions), async () => {
+      const result = await questionService.listQuestionPage(
+        { schoolId: "school-1" },
+        2,
+        1,
+        "usage",
+        teacher,
+      );
+
+      expect(result.total).toBe(3);
+      expect(result.items.map((item) => item.id)).toEqual(["shared"]);
     });
   });
 });
