@@ -15,7 +15,7 @@ import { materialService } from "@/services/material";
 import { questionService } from "@/services/question";
 import { resourceFolderService } from "@/services/resourceFolder";
 import { shareService } from "@/services/share";
-import type { ExamPaper, LessonCourseware, Material, Teacher, TreeNode } from "@/types";
+import type { Courseware, ExamPaper, LessonCourseware, Material, Teacher, TreeNode } from "@/types";
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
   useSchoolResourceOptions: () => ({
@@ -183,6 +183,37 @@ const material: Material = {
   updatedAt: "2026-07-30T00:00:00.000Z",
 };
 
+const videoMaterial: Material = {
+  ...material,
+  id: "material-2",
+  title: "函数讲解视频",
+  type: "video",
+};
+
+const pptCourseware: Courseware = {
+  id: "courseware-1",
+  teacherId: "teacher-1",
+  schoolId: "school-1",
+  title: "函数 PPT",
+  chapterIds: [],
+  knowledgePointIds: [],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  type: "ppt",
+  content: "",
+  tags: [],
+  createdAt: "2026-07-30T00:00:00.000Z",
+  updatedAt: "2026-07-30T00:00:00.000Z",
+};
+
+const pdfCourseware: Courseware = {
+  ...pptCourseware,
+  id: "courseware-2",
+  title: "函数 PDF",
+  type: "pdf",
+};
+
 const examPaper: ExamPaper = {
   id: "paper-1",
   teacherId: "teacher-1",
@@ -247,7 +278,7 @@ const knowledgeTree: TreeNode = {
   children: [],
 };
 
-function renderPage(initialTab: "question" | "material" | "examPaper" = "material") {
+function renderPage(initialTab: "question" | "material" | "courseware" | "examPaper" = "material") {
   return render(
     <MemoryRouter>
       <MyResourcesPage initialTab={initialTab} />
@@ -303,6 +334,50 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
     vi.mocked(classService.listMyClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([]);
+  });
+
+  it("filters materials by the existing material types and places the type filter before grade", async () => {
+    vi.mocked(materialService.listMaterials).mockResolvedValue([material, videoMaterial]);
+
+    renderPage("material");
+
+    expect(await screen.findByText("函数素材")).toBeInTheDocument();
+    expect(screen.getByText("函数讲解视频")).toBeInTheDocument();
+
+    const typeButton = screen.getByRole("button", { name: "素材类型" });
+    const gradeButton = screen.getByRole("button", { name: "年级" });
+    expect(typeButton.compareDocumentPosition(gradeButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(typeButton);
+    expect(screen.getByRole("button", { name: "文本" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "视频" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "图片" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "视频" }));
+    expect(screen.queryByText("函数素材")).not.toBeInTheDocument();
+    expect(screen.getByText("函数讲解视频")).toBeInTheDocument();
+  });
+
+  it("filters coursewares by the existing courseware types and places the type filter before grade", async () => {
+    vi.mocked(coursewareService.listCoursewares).mockResolvedValue([pptCourseware, pdfCourseware]);
+
+    renderPage("courseware");
+
+    expect(await screen.findByText("函数 PPT")).toBeInTheDocument();
+    expect(screen.getByText("函数 PDF")).toBeInTheDocument();
+
+    const typeButton = screen.getByRole("button", { name: "课件类型" });
+    const gradeButton = screen.getByRole("button", { name: "年级" });
+    expect(typeButton.compareDocumentPosition(gradeButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(typeButton);
+    expect(screen.getByRole("button", { name: "PPT" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "PDF" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "GeoGebra" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "PDF" }));
+    expect(screen.queryByText("函数 PPT")).not.toBeInTheDocument();
+    expect(screen.getByText("函数 PDF")).toBeInTheDocument();
   });
 
   it("does not preload the outer resource libraries when the embedded question bank is active", async () => {
