@@ -179,4 +179,17 @@ describe("extract text renderer", () => {
     expect(formulas).toEqual(["C1", "Q"]);
     expect(container.querySelector(".mathbb")).toBeNull();
   });
+
+  it("renders stored formulas containing Unicode vertical delimiters", () => {
+    const html = renderExtractText(
+      "$S=\\left\\{y\\left| y=\\sqrt{{x}^{2}-5}\\right.\\right\\},"
+        + "T=\\left\\{x\\in Z\\left∥\\begin{aligned} x-1 \\end{aligned}\\right∥\\neq 1\\right\\}$",
+      [],
+      false,
+    );
+    const container = asElement(html);
+
+    expect(container.querySelector(".katex")).not.toBeNull();
+    expect(container.querySelector(".katex-error")).toBeNull();
+  });
 });

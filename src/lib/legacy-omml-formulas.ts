@@ -1,4 +1,15 @@
 const LEGACY_DOUBLE_STRUCK_PATTERN = /\\mathbb\{([CQN])\}/g;
+const LEGACY_UNICODE_DELIMITER_PATTERN = /\\(left|right)([‖∥∣])/g;
+
+function normalizeLegacyOmmlDelimiters(latex: string): string {
+  return latex.replace(
+    LEGACY_UNICODE_DELIMITER_PATTERN,
+    (_match, side: "left" | "right", delimiter: string) => {
+      const normalizedDelimiter = delimiter === "∣" ? "|" : "\\|";
+      return `\\${side}${normalizedDelimiter}`;
+    },
+  );
+}
 
 const LABEL_CONTEXT_PATTERN =
   /(?:点|曲线|圆|椭圆|双曲线|抛物线|直线|平面|焦点|交点|端点|顶点|轨迹)/;
@@ -42,23 +53,24 @@ function isLabelUsage(
 }
 
 export function normalizeLegacyOmmlLatex(latex: string, surroundingText: string): string {
-  return latex.replace(
+  const normalizedLatex = normalizeLegacyOmmlDelimiters(latex);
+  return normalizedLatex.replace(
     LEGACY_DOUBLE_STRUCK_PATTERN,
     (match, letter: "C" | "Q" | "N", offset: number) => {
-      if (isSetUsage(latex, offset, match.length, letter, surroundingText)) return match;
-      if (isLabelUsage(latex, offset, match.length, surroundingText)) return letter;
+      if (isSetUsage(normalizedLatex, offset, match.length, letter, surroundingText)) return match;
+      if (isLabelUsage(normalizedLatex, offset, match.length, surroundingText)) return letter;
       return match;
     },
   );
 }
 
 /**
- * Repairs formulas already persisted by the legacy OMML converter. The old
- * converter emitted \mathbb for every C/Q/N, so this only rewrites usages that
- * can be identified as curve or point labels while preserving set notation.
+ * Repairs formulas already persisted by older OMML converters. Besides the
+ * historical \mathbb label issue, some Word/MathType documents stored Unicode
+ * vertical delimiters directly after \left/\right, which KaTeX rejects.
  */
 export function normalizeLegacyOmmlMathText(text: string): string {
-  if (!text.includes("\\mathbb")) return text;
+  if (!text.includes("\\mathbb") && !/\\(?:left|right)[‖∥∣]/.test(text)) return text;
 
   return text.replace(/(\${1,2})([\s\S]+?)\1/g, (full, delimiter: string, latex: string, offset: number) => {
     const contextStart = Math.max(0, offset - 24);
