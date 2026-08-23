@@ -1213,6 +1213,13 @@ export const serviceParameters = {
     "listQuestions": [
       "filter"
     ],
+    "listQuestionPage": [
+      "filter",
+      "page",
+      "pageSize",
+      "sortKey",
+      "teacher"
+    ],
     "getQuestion": [
       "id"
     ],

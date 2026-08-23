@@ -9,6 +9,7 @@ import type {
   ResourceSemester,
   SimilarQuestionCandidate,
 } from "../../src/types/index.js";
+import type { TeacherRecord } from "../types.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { knowledgeService } from "./knowledge.js";
@@ -160,6 +161,33 @@ function matchFilter(q: Question, filter: QuestionFilter): boolean {
   return true;
 }
 
+type QuestionSortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
+
+function sortQuestions(questions: Question[], sortKey: QuestionSortKey): Question[] {
+  const sorted = [...questions];
+  switch (sortKey) {
+    case "usage":
+    case "weakness":
+      sorted.sort((a, b) => b.usageCount - a.usageCount);
+      break;
+    case "recentUse":
+      sorted.sort((a, b) => {
+        const ta = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+        const tb = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+        return tb - ta || b.usageCount - a.usageCount;
+      });
+      break;
+    case "recommendation":
+      sorted.sort((a, b) => b.recommendation - a.recommendation || b.usageCount - a.usageCount);
+      break;
+    case "newest":
+    default:
+      sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      break;
+  }
+  return sorted;
+}
+
 export const questionService = {
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
     const indexed = await db.searchQuestions(filter);
@@ -167,6 +195,27 @@ export const questionService = {
     await delay(300);
     const all = db.read("questions");
     return all.filter((q) => matchFilter(q, filter));
+  },
+
+  async listQuestionPage(
+    filter: QuestionFilter = {},
+    page = 1,
+    pageSize = 20,
+    sortKey: QuestionSortKey = "newest",
+    teacher: TeacherRecord,
+  ): Promise<{ items: Question[]; total: number }> {
+    const data = await this.listQuestions(filter);
+    const visible = data.filter((question) => question.teacherId === teacher.id || question.isShared);
+    const sorted = sortQuestions(visible, sortKey);
+    const safePageSize = Math.max(1, Math.min(200, Math.floor(pageSize) || 20));
+    const total = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(total / safePageSize));
+    const safePage = Math.max(1, Math.min(totalPages, Math.floor(page) || 1));
+    const start = (safePage - 1) * safePageSize;
+    return {
+      items: sorted.slice(start, start + safePageSize),
+      total,
+    };
   },
 
   async getQuestion(id: string): Promise<Question | null> {

@@ -554,7 +554,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [selectedLectureTypeId, setSelectedLectureTypeId] = useState("");
   const [selectedDocumentCategory, setSelectedDocumentCategory] = useState<DocumentCategory | "">("");
 
-  const [questions, setQuestions] = useState<Question[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [examPapers, setExamPapers] = useState<ExamPaper[]>([]);
   const [coursewares, setCoursewares] = useState<Courseware[]>([]);
@@ -612,6 +611,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [batchShareLink, setBatchShareLink] = useState("");
   const [batchShareCount, setBatchShareCount] = useState(0);
   const [resourceRefreshToken, setResourceRefreshToken] = useState(0);
+  const [platformCopyQuestionIds, setPlatformCopyQuestionIds] = useState<Set<string>>(new Set());
 
   // 课后反思相关：targetId -> 反思列表
   const [reflectionsMap, setReflectionsMap] = useState<Record<string, Reflection[]>>({});
@@ -847,6 +847,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [loadResourceFolders]);
 
   const loadAll = useCallback(async () => {
+    if (activeTab === "question") {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const baseFilter = {
       keyword,
@@ -860,8 +864,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
     };
     try {
-      const [qData, lecData, examData, cwData, matData, completedLessons, quotaSnapshot] = await Promise.all([
-        questionService.listQuestions({ ...baseFilter, teacherId: teacher?.id }),
+      const [lecData, examData, cwData, matData, completedLessons, quotaSnapshot] = await Promise.all([
         lectureService.listLectures({ ...baseFilter, teacherId: teacher?.id }),
         examPaperService.listPapers({ ...baseFilter, teacherId: teacher?.id }),
         coursewareService.listCoursewares({ ...baseFilter, teacherId: teacher?.id }),
@@ -875,12 +878,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           : Promise.resolve([]),
         teacher?.id ? quotaService.getQuota(teacher.id).catch(() => null) : Promise.resolve(null),
       ]);
-      const safeQuestions = qData || [];
       const safeLectures = lecData || [];
       const safeExamPapers = examData || [];
       const safeCoursewares = cwData || [];
       const safeMaterials = matData || [];
-      setQuestions(safeQuestions);
       setLectures(safeLectures);
       setExamPapers(safeExamPapers);
       setCoursewares(safeCoursewares);
@@ -919,6 +920,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       setLoading(false);
     }
   }, [
+    activeTab,
     keyword,
     checkedChapters,
     checkedKnowledge,
@@ -932,9 +934,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   ]);
 
   useEffect(() => {
+    if (activeTab === "question") return;
     knowledgeService.getChapterTree(schoolId).then(setChapterTree);
     knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
-  }, [schoolId]);
+  }, [activeTab, schoolId]);
 
   useEffect(() => {
     const timer = setTimeout(() => loadAll(), 300);
@@ -951,12 +954,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   // 资源篮加载逻辑
   useEffect(() => {
-    if (!teacher) return;
+    if (activeTab !== "basket" || !teacher) return;
     basketService.listBaskets(teacher.id).then(setBaskets);
-  }, [teacher]);
+  }, [activeTab, teacher]);
 
   useEffect(() => {
-    if (!teacher) return;
+    if (activeTab !== "basket" || !teacher) return;
     Promise.all([
       classService.listMyClasses(teacher.schoolId || null, teacher.id),
       classService.listMyStudents(teacher.schoolId || null, teacher.id),
@@ -967,7 +970,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       setAudienceClasses([]);
       setAudienceStudents([]);
     });
-  }, [teacher]);
+  }, [activeTab, teacher]);
 
   useEffect(() => {
     if (!selectedBasketId) {
@@ -1429,14 +1432,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       return sorted;
     };
     switch (activeTab) {
-      case "question": return sortByKey(questions);
+      case "question": return [];
       case "lecture": return sortByKey(lectures);
       case "examPaper": return sortByKey(examPapers);
       case "courseware": return sortByKey(coursewares);
       case "material": return sortByKey(materials);
       case "basket": return [];
     }
-  }, [activeTab, questions, lectures, examPapers, coursewares, materials, sortKey]);
+  }, [activeTab, lectures, examPapers, coursewares, materials, sortKey]);
 
   // 仅看未分类筛选
   const displayedData = useMemo(() => {
@@ -1754,12 +1757,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   };
 
   const platformCopyKeys = useMemo(() => new Set([
-    ...questions.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("question", item.id)),
+    ...[...platformCopyQuestionIds].map((id) => batchResourceKey("question", id)),
     ...examPapers.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("examPaper", item.id)),
     ...lectures.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("lecture", item.id)),
     ...coursewares.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("courseware", item.id)),
     ...materials.filter((item) => item.platformSourceDonationIds?.length).map((item) => batchResourceKey("material", item.id)),
-  ]), [questions, examPapers, lectures, coursewares, materials]);
+  ]), [platformCopyQuestionIds, examPapers, lectures, coursewares, materials]);
 
   const isDonated = (resourceType: ShareableResourceType, resourceId: string) =>
     teacherDonations.some((record) =>
@@ -2460,12 +2463,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               .filter((record) => record.resourceType === "question")
               .map((record) => record.sourceResourceId),
           )}
-          donationLockedQuestionIds={new Set(
-            questions
-              .filter((question) => question.platformSourceDonationIds?.length)
-              .map((question) => question.id),
-          )}
-          onToggleSelection={(question) => toggleResourceSelection("question", question.id)}
+          onToggleSelection={(question) => {
+            if (question.platformSourceDonationIds?.length) {
+              setPlatformCopyQuestionIds((previous) => new Set(previous).add(question.id));
+            }
+            toggleResourceSelection("question", question.id);
+          }}
           onQuestionDeleted={(questionId) => {
             setResourceSelections((previous) => {
               const next = new Set(previous);

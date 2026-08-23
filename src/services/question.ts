@@ -37,9 +37,25 @@ export interface QuestionInput {
   duplicateDecision?: "add";
 }
 
+export type QuestionSortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
+
+export interface QuestionPage {
+  items: Question[];
+  total: number;
+}
+
 export const questionService = {
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
     return rpcCall("question", "listQuestions", [filter]) as any;
+  },
+
+  async listQuestionPage(
+    filter: QuestionFilter = {},
+    page = 1,
+    pageSize = 20,
+    sortKey: QuestionSortKey = "newest",
+  ): Promise<QuestionPage> {
+    return rpcCall("question", "listQuestionPage", [filter, page, pageSize, sortKey, null]) as any;
   },
 
   async getQuestion(id: string): Promise<Question | null> {

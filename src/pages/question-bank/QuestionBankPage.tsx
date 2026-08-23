@@ -152,6 +152,7 @@ export default function QuestionBankPage({
   const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
 
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [totalQuestionCount, setTotalQuestionCount] = useState(0);
   const [quota, setQuota] = useState<UserQuotaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
@@ -239,9 +240,11 @@ export default function QuestionBankPage({
   // 已选用题目列表
   const [usedQuestionIds, setUsedQuestionIds] = useState<string[]>([]);
 
-  // 讲义列表（用于查重、已选用判断、使用次数详情）
+  // 讲义/试卷体积较大，仅在学情模式或查看使用记录时按需加载。
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [examPapers, setExamPapers] = useState<ExamPaper[]>([]);
+  const [usageResourcesLoaded, setUsageResourcesLoaded] = useState(false);
+  const [usageResourcesLoading, setUsageResourcesLoading] = useState(false);
 
   // 使用次数详情弹窗
   const [usageDetailModal, setUsageDetailModal] = useState<{
@@ -286,29 +289,37 @@ export default function QuestionBankPage({
       excludeIds = Array.from(await analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange));
     }
 
-    const [data, quotaSnapshot] = await Promise.all([
-      questionService.listQuestions({
-        schoolId: teacher.schoolId!,
-        keyword,
-        searchFields,
-        chapterIds: checkedChapters,
-        chapterLogic,
-        knowledgePointIds: checkedKnowledge,
-        knowledgeLogic,
-        noChapter,
-        noKnowledge,
-        difficulty: selectedDifficulties,
-        type: selectedTypes as any,
-        grade: selectedGrade || undefined,
-        schoolYear: selectedYear || undefined,
-        semester: (selectedSemester || undefined) as ResourceSemester | undefined,
-        sourceType: selectedSources,
-        category: selectedCategories,
-        excludeQuestionIds: excludeIds,
-      }),
-      quotaService.getQuota(teacher.id).catch(() => null),
-    ]);
-    if (quotaSnapshot) setQuota(quotaSnapshot);
+    const filter = {
+      schoolId: teacher.schoolId!,
+      keyword,
+      searchFields,
+      chapterIds: checkedChapters,
+      chapterLogic,
+      knowledgePointIds: checkedKnowledge,
+      knowledgeLogic,
+      noChapter,
+      noKnowledge,
+      difficulty: selectedDifficulties,
+      type: selectedTypes as any,
+      grade: selectedGrade || undefined,
+      schoolYear: selectedYear || undefined,
+      semester: (selectedSemester || undefined) as ResourceSemester | undefined,
+      sourceType: selectedSources,
+      category: selectedCategories,
+      excludeQuestionIds: excludeIds,
+    };
+
+    void quotaService.getQuota(teacher.id).then(setQuota).catch(() => undefined);
+
+    if (mode === "manage") {
+      const page = await questionService.listQuestionPage(filter, currentPage, pageSize, sortKey);
+      setQuestions(page.items);
+      setTotalQuestionCount(page.total);
+      setLoading(false);
+      return;
+    }
+
+    const data = await questionService.listQuestions(filter);
 
     const sorted = [...data];
     if (mode === "use" && selectedStudentIds.length > 0 && sortKey === "weakness") {
@@ -348,12 +359,14 @@ export default function QuestionBankPage({
     }
 
     setQuestions(sorted);
+    setTotalQuestionCount(sorted.length);
     setLoading(false);
   }, [
     teacher, keyword, searchFields, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic,
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, mode, selectedStudentIds, excludeDone, sortKey, dateRange,
+    currentPage, pageSize,
   ]);
 
   useEffect(() => {
@@ -446,12 +459,27 @@ export default function QuestionBankPage({
     prepService.getUsedQuestionIds(teacher.id).then(setUsedQuestionIds);
   }, [teacher]);
 
-  // 加载讲义和试卷列表（用于使用次数详情和已选用判断）
+  const loadUsageResources = useCallback(async () => {
+    if (!teacher?.schoolId || usageResourcesLoaded || usageResourcesLoading) return;
+    setUsageResourcesLoading(true);
+    try {
+      const [nextLectures, nextExamPapers] = await Promise.all([
+        lectureService.listLectures({ schoolId: teacher.schoolId }),
+        examPaperService.listPapers({ schoolId: teacher.schoolId }),
+      ]);
+      setLectures(nextLectures);
+      setExamPapers(nextExamPapers);
+      setUsageResourcesLoaded(true);
+    } finally {
+      setUsageResourcesLoading(false);
+    }
+  }, [teacher?.schoolId, usageResourcesLoaded, usageResourcesLoading]);
+
+  // 学情模式需要判断题目是否已在选中学生的讲义中使用；默认管理模式无需预取。
   useEffect(() => {
-    if (!teacher?.schoolId) return;
-    lectureService.listLectures({ schoolId: teacher.schoolId }).then(setLectures);
-    examPaperService.listPapers({ schoolId: teacher.schoolId }).then(setExamPapers);
-  }, [teacher]);
+    if (selectedStudentIds.length === 0) return;
+    void loadUsageResources();
+  }, [loadUsageResources, selectedStudentIds.length]);
 
   // 初始化替换题目的表单
   useEffect(() => {
@@ -754,13 +782,18 @@ export default function QuestionBankPage({
   }, [selectedClassId, students, personalClasses]);
 
   // 分页计算
-  const totalQuestions = questions.length;
+  const totalQuestions = mode === "manage" ? totalQuestionCount : questions.length;
   const totalPages = Math.max(1, Math.ceil(totalQuestions / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginatedQuestions = useMemo(() => {
+    if (mode === "manage") return questions;
     const start = (safeCurrentPage - 1) * pageSize;
     return questions.slice(start, start + pageSize);
-  }, [questions, safeCurrentPage, pageSize]);
+  }, [mode, questions, safeCurrentPage, pageSize]);
+
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) setCurrentPage(safeCurrentPage);
+  }, [currentPage, safeCurrentPage]);
 
   const pageSizeOptions = [10, 20, 50, 100, 200];
 
@@ -1135,7 +1168,10 @@ export default function QuestionBankPage({
                   onQuickAddToDefault={defaultBasket ? handleAddToDefaultBasket : undefined}
                   onRemoveFromDefault={defaultBasket ? handleRemoveFromDefaultBasket : undefined}
                   isInDefaultBasket={defaultBasket?.questionIds?.includes(q.id) || false}
-                  onShowUsageDetail={(question) => setUsageDetailModal({ open: true, question })}
+                  onShowUsageDetail={(question) => {
+                    setUsageDetailModal({ open: true, question });
+                    void loadUsageResources();
+                  }}
                   onNavigateToLecture={(lectureId) => openPage(`/lectures/${lectureId}/preview`)}
                   onQuickEdit={setQuickEditQuestion}
                   onShare={setShareQuestion}
@@ -1160,7 +1196,9 @@ export default function QuestionBankPage({
                   wideLayout={directoryCollapsed}
                   selected={selectedQuestionIds?.has(q.id) || false}
                   donated={donatedQuestionIds?.has(q.id) || false}
-                  donationLocked={donationLockedQuestionIds?.has(q.id) || false}
+                  donationLocked={donationLockedQuestionIds
+                    ? donationLockedQuestionIds.has(q.id)
+                    : Boolean(q.platformSourceDonationIds?.length)}
                   onToggleSelection={onToggleSelection}
                   getQuestionTypeLabel={getQuestionTypeLabel}
                   getSourceLabel={getSourceLabel}
@@ -1617,7 +1655,11 @@ export default function QuestionBankPage({
       >
         {usageDetailModal && (
           <div className="space-y-3">
-            {(() => {
+            {usageResourcesLoading && !usageResourcesLoaded ? (
+              <div className="flex items-center justify-center py-8">
+                <Spinner size={20} />
+              </div>
+            ) : (() => {
               const usingLectures = getLecturesUsingQuestion(usageDetailModal.question.id);
               const usingExamPapers = getExamPapersUsingQuestion(usageDetailModal.question.id);
               const usingResources = [
