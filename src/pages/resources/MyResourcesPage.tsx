@@ -550,6 +550,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [selectedGrade, setSelectedGrade] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
   const [selectedSemester, setSelectedSemester] = useState("");
+  const [selectedCoursewareType, setSelectedCoursewareType] = useState<CoursewareType | "">("");
+  const [selectedMaterialType, setSelectedMaterialType] = useState<MaterialType | "">("");
   const [selectedExamPaperTypeId, setSelectedExamPaperTypeId] = useState("");
   const [selectedLectureTypeId, setSelectedLectureTypeId] = useState("");
   const [selectedDocumentCategory, setSelectedDocumentCategory] = useState<DocumentCategory | "">("");
@@ -1410,6 +1412,19 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     setCheckedKnowledge([]);
   }, []);
 
+  const coursewareTypeOptions = useMemo(
+    () => Object.entries(coursewareTypeLabel)
+      .filter(([value]) => coursewares.some((item) => item.type === value))
+      .map(([value, label]) => ({ value, label })),
+    [coursewares],
+  );
+  const materialTypeOptions = useMemo(
+    () => Object.entries(materialTypeLabel)
+      .filter(([value]) => materials.some((item) => item.type === value))
+      .map(([value, label]) => ({ value, label })),
+    [materials],
+  );
+
   // 排序
   const sortedData = useMemo<ResourceListItem[]>(() => {
     const sortByKey = <T extends { updatedAt: string; createdAt: string; title?: string; stem?: string }>(arr: T[]) => {
@@ -1459,6 +1474,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       const matchingIds = matchingResourceTypeIds(selectedLectureTypeId, lectureTypes);
       result = (result as Lecture[]).filter((item) => Boolean(item.typeId && matchingIds.has(item.typeId)));
     }
+    if (activeTab === "courseware" && selectedCoursewareType) {
+      result = (result as Courseware[]).filter((item) => item.type === selectedCoursewareType);
+    }
+    if (activeTab === "material" && selectedMaterialType) {
+      result = (result as Material[]).filter((item) => item.type === selectedMaterialType);
+    }
     return result;
   }, [
     activeTab,
@@ -1466,8 +1487,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     lectureTypes,
     noTreeSelection,
     onlyUncategorized,
+    selectedCoursewareType,
     selectedExamPaperTypeId,
     selectedLectureTypeId,
+    selectedMaterialType,
     sortedData,
   ]);
 
@@ -3020,6 +3043,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   value={selectedLectureTypeId}
                   options={lectureTypeOptions}
                   onChange={setSelectedLectureTypeId}
+                />
+              )}
+              {activeTab === "courseware" && (
+                <FilterSelect
+                  label="课件类型"
+                  value={selectedCoursewareType}
+                  options={coursewareTypeOptions}
+                  onChange={(value) => setSelectedCoursewareType(value as CoursewareType | "")}
+                />
+              )}
+              {activeTab === "material" && (
+                <FilterSelect
+                  label="素材类型"
+                  value={selectedMaterialType}
+                  options={materialTypeOptions}
+                  onChange={(value) => setSelectedMaterialType(value as MaterialType | "")}
                 />
               )}
               <FilterSelect
