@@ -124,6 +124,18 @@ function vectorEquationSystem(): string {
   `;
 }
 
+function literalBraceEquationSystem(): string {
+  return `
+    <m:oMath xmlns:m="${MATH_NS}">
+      <m:r><m:t>{</m:t></m:r>
+      <m:eqArr>
+        <m:e><m:r><m:t>x=1</m:t></m:r></m:e>
+        <m:e><m:r><m:t>y=2</m:t></m:r></m:e>
+      </m:eqArr>
+    </m:oMath>
+  `;
+}
+
 function delimitedEquationSystem(): string {
   return `
     <m:oMath xmlns:m="${MATH_NS}">
@@ -306,6 +318,15 @@ describe("ommlToLatex", () => {
   it("does not turn nested vector operands into extra equation rows", () => {
     expect(ommlToLatex(vectorEquationSystem())).toBe(
       "\\begin{cases}\n\\vec{a}=\\vec{b} \\\\\n\\vec{c}=0\n\\end{cases}",
+    );
+  });
+
+  it("does not duplicate a literal brace before an equation array", () => {
+    expect(ommlToLatex(literalBraceEquationSystem())).toBe(
+      String.raw`\begin{cases}
+x=1 \\
+y=2
+\end{cases}`,
     );
   });
 
