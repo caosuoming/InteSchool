@@ -10,6 +10,7 @@ import katex from "katex";
 import { mml2omml } from "mathml2omml";
 import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
+import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
 import {
   parseDocumentImageDisplaySize,
   parseOfficeMetafileLayout,
@@ -223,7 +224,7 @@ function textRunsWithLineBreaks(text: string, style: DocumentTextStyle = {}): Te
 }
 
 function documentTextChildren(value: string | undefined, style: DocumentTextStyle = {}): ParagraphChild[] {
-  const text = mergeInlineFormulaRuns(plainDocumentText(value));
+  const text = mergeInlineFormulaRuns(normalizeLegacyOmmlMathText(plainDocumentText(value)));
   if (!text) return [textRun("", style)];
 
   const children: ParagraphChild[] = [];
@@ -871,7 +872,7 @@ async function documentRichChildren(
   style: DocumentTextStyle = {},
 ): Promise<ParagraphChild[]> {
   const { text: extractedText, images } = extractRichDocumentContent(value);
-  const text = mergeInlineFormulaRuns(extractedText);
+  const text = mergeInlineFormulaRuns(normalizeLegacyOmmlMathText(extractedText));
   if (!text) return [textRun("", style)];
 
   const children: ParagraphChild[] = [];

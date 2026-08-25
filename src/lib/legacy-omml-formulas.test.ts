@@ -32,4 +32,14 @@ describe("normalizeLegacyOmmlMathText", () => {
       "$T=\\left\\{x\\in Z\\left\\|x-1\\right\\|\\neq 1\\right\\}$",
     );
   });
+
+  it("collapses legacy piecewise formulas that contain two left braces", () => {
+    expect(
+      normalizeLegacyOmmlMathText(
+        "已知函数 $f\\left(x\\right)=\\left\\{\\begin{aligned} \\begin{cases} a\\cdot 2^x,&x\\le 0\\\\ \\log_{2}x,&x>0 \\end{cases} \\end{aligned}\\right.若关于x的方程 f\\left(f\\left(x\\right)\\right)=0 有且仅有两个实数根，则实数a$ 的取值范围是（ ）。",
+      ),
+    ).toBe(
+      "已知函数 $f\\left(x\\right)=\\begin{cases} a\\cdot 2^x,&x\\le 0\\\\ \\log_{2}x,&x>0 \\end{cases}若关于x的方程 f\\left(f\\left(x\\right)\\right)=0 有且仅有两个实数根，则实数a$ 的取值范围是（ ）。",
+    );
+  });
 });

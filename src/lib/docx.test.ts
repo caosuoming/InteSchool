@@ -434,6 +434,44 @@ describe("generateExamPaperDocx", () => {
     ).toBe(false);
   });
 
+  it("repairs persisted double-brace piecewise formulas before DOCX export", async () => {
+    const legacyStem = [
+      "已知函数 $f\\left(x\\right)=\\left\\{\\begin{aligned} ",
+      "\\begin{cases} a\\cdot 2^x,&x\\le 0\\\\ \\log_{2}x,&x>0 \\end{cases} ",
+      "\\end{aligned}\\right.若关于x的方程 f\\left(f\\left(x\\right)\\right)=0 ",
+      "有且仅有两个实数根，则实数a$ 的取值范围是（ ）。",
+    ].join("");
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: legacyStem,
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: legacyStem,
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const xml = new DOMParser().parseFromString(documentXml, "application/xml");
+    const piecewiseDelimiters = Array.from(xml.getElementsByTagName("m:d")).filter((item) =>
+      item.getElementsByTagName("m:begChr")[0]?.getAttribute("m:val") === "{");
+
+    expect(piecewiseDelimiters).toHaveLength(1);
+    expect(piecewiseDelimiters[0].getElementsByTagName("m:mr")).toHaveLength(2);
+    expect(documentXml).not.toContain("\\begin{cases}");
+    expect(documentXml).not.toContain("\\begin{aligned}");
+    expect(documentXml).not.toContain("$f\\left");
+    expect(documentXml).not.toContain("f\\left(f\\left");
+    const documentText = xml.documentElement.textContent || "";
+    expect(documentText).toContain("若关于x的方程");
+    expect(documentText).toContain("f(f(x))=0");
+    expect(documentText).toContain("取值范围");
+  });
+
   it("restores imported rich-text scripts as editable Office math", async () => {
     const formulaPaper: ExamPaper = {
       ...structuredPaper,
@@ -621,7 +659,11 @@ describe("generateExamPaperDocx", () => {
   it("builds lecture downloads from preview sections with editable formulas", async () => {
     const lectureQuestion: Question = {
       ...linkedQuestion,
-      stem: "已知 $f(x)=x^2$，求函数值。",
+      stem: [
+        "已知 $f\\left(x\\right)=\\left\\{\\begin{aligned} ",
+        "\\begin{cases} 2^x,&x\\le 0\\\\ x^2,&x>0 \\end{cases} ",
+        "\\end{aligned}\\right.$，求 $f\\left(f\\left(x\\right)\\right)$。",
+      ].join(""),
       options: ["$0$", "$1$"],
       answer: "$1$",
     };
@@ -665,6 +707,11 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("例1");
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:sSup>");
+    expect(documentXml).not.toContain("\\begin{cases}");
+    const xml = new DOMParser().parseFromString(documentXml, "application/xml");
+    expect(Array.from(xml.getElementsByTagName("m:d")).filter((item) =>
+      item.getElementsByTagName("m:begChr")[0]?.getAttribute("m:val") === "{",
+    )).toHaveLength(1);
   });
 
   it("supports lecture download modes and marks multiple-choice questions", async () => {

@@ -1,5 +1,7 @@
 const LEGACY_DOUBLE_STRUCK_PATTERN = /\\mathbb\{([CQN])\}/g;
 const LEGACY_UNICODE_DELIMITER_PATTERN = /\\(left|right)([‖∥∣])/g;
+const LEGACY_REDUNDANT_CASES_WRAPPER_PATTERN =
+  /\\left\\\{\s*\\begin\{aligned\}\s*(\\begin\{cases\}[\s\S]*?\\end\{cases\})\s*\\end\{aligned\}\s*\\right\./g;
 
 function normalizeLegacyOmmlDelimiters(latex: string): string {
   return latex.replace(
@@ -9,6 +11,10 @@ function normalizeLegacyOmmlDelimiters(latex: string): string {
       return `\\${side}${normalizedDelimiter}`;
     },
   );
+}
+
+function normalizeLegacyOmmlStructures(latex: string): string {
+  return latex.replace(LEGACY_REDUNDANT_CASES_WRAPPER_PATTERN, "$1");
 }
 
 const LABEL_CONTEXT_PATTERN =
@@ -53,7 +59,7 @@ function isLabelUsage(
 }
 
 export function normalizeLegacyOmmlLatex(latex: string, surroundingText: string): string {
-  const normalizedLatex = normalizeLegacyOmmlDelimiters(latex);
+  const normalizedLatex = normalizeLegacyOmmlStructures(normalizeLegacyOmmlDelimiters(latex));
   return normalizedLatex.replace(
     LEGACY_DOUBLE_STRUCK_PATTERN,
     (match, letter: "C" | "Q" | "N", offset: number) => {
@@ -70,7 +76,11 @@ export function normalizeLegacyOmmlLatex(latex: string, surroundingText: string)
  * vertical delimiters directly after \left/\right, which KaTeX rejects.
  */
 export function normalizeLegacyOmmlMathText(text: string): string {
-  if (!text.includes("\\mathbb") && !/\\(?:left|right)[‖∥∣]/.test(text)) return text;
+  if (
+    !text.includes("\\mathbb")
+    && !/\\(?:left|right)[‖∥∣]/.test(text)
+    && !(text.includes("\\left\\{") && text.includes("\\begin{cases}"))
+  ) return text;
 
   return text.replace(/(\${1,2})([\s\S]+?)\1/g, (full, delimiter: string, latex: string, offset: number) => {
     const contextStart = Math.max(0, offset - 24);
