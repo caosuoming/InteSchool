@@ -49,6 +49,13 @@ export function ommlToLatex(mathEl: Element | string): string {
 function stretchMatrixDelimiters(latex: string): string {
   return latex
     .replace(
+      /\\\{\s*(\\begin\{cases\}[\s\S]*?\\end\{cases\})/g,
+      // Some equations encode the visible system brace as a literal run and
+      // the rows as m:eqArr. The array already becomes a cases environment,
+      // so keeping both would render two adjacent left braces.
+      "$1",
+    )
+    .replace(
       /\\\{(\s*\\begin\{matrix\}[\s\S]*?\\end\{matrix\})(\\\})?/g,
       (
         match: string,
