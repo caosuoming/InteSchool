@@ -274,6 +274,7 @@ export default function ExamPaperEditorPage() {
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
     { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
+  const [expandedPreviewQuestionIds, setExpandedPreviewQuestionIds] = useState<Set<string>>(() => new Set());
   const [documentMetadataOpen, setDocumentMetadataOpen] = useState(false);
   const [savingDocumentMetadata, setSavingDocumentMetadata] = useState(false);
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
@@ -727,6 +728,29 @@ export default function ExamPaperEditorPage() {
   );
 
   const isStructuredExtract = Boolean(paper?.isExtractCopy && contentBlocks.length > 0);
+  const previewQuestionIds = useMemo(
+    () => isStructuredExtract
+      ? contentBlocks.filter((block) => block.type === "question").map((block) => block.id)
+      : paperQuestions.map((question) => question.id),
+    [contentBlocks, isStructuredExtract, paperQuestions],
+  );
+  const allPreviewAnswersExpanded = previewQuestionIds.length > 0
+    && previewQuestionIds.every((questionId) => expandedPreviewQuestionIds.has(questionId));
+  const setPreviewQuestionExpanded = useCallback((questionId: string, expanded: boolean) => {
+    setExpandedPreviewQuestionIds((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(questionId);
+      else next.delete(questionId);
+      return next;
+    });
+  }, []);
+  const toggleAllPreviewAnswers = useCallback(() => {
+    setExpandedPreviewQuestionIds((current) => {
+      const allExpanded = previewQuestionIds.length > 0
+        && previewQuestionIds.every((questionId) => current.has(questionId));
+      return allExpanded ? new Set() : new Set(previewQuestionIds);
+    });
+  }, [previewQuestionIds]);
 
   const buildNavigationDraft = useCallback((): ExamPaperNavigationDraft | undefined => {
     if (!paper) return undefined;
@@ -1578,6 +1602,15 @@ export default function ExamPaperEditorPage() {
               创建副本
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={toggleAllPreviewAnswers}
+            disabled={previewQuestionIds.length === 0}
+            aria-pressed={allPreviewAnswersExpanded}
+          >
+            <Eye className="w-4 h-4" />
+            {allPreviewAnswersExpanded ? "收起全部答案" : "一键显示答案"}
+          </Button>
           <Button variant="outline" onClick={() => setDownloadModalOpen(true)}>
             <Download className="w-4 h-4" />
             下载
@@ -1688,6 +1721,8 @@ export default function ExamPaperEditorPage() {
                             answer={display.answer}
                             analysis={display.analysis}
                             optionVariant="plain"
+                            expanded={expandedPreviewQuestionIds.has(block.id)}
+                            onExpandedChange={(expanded) => setPreviewQuestionExpanded(block.id, expanded)}
                           />
                         </section>
                       )}
@@ -1753,7 +1788,14 @@ export default function ExamPaperEditorPage() {
                   ...group.questions.map((item) => (
                     <PreviewQuestionPair
                       key={item.pq.id}
-                      left={<PreviewQuestionItem pq={item.pq} index={item.displayIndex} />}
+                      left={(
+                        <PreviewQuestionItem
+                          pq={item.pq}
+                          index={item.displayIndex}
+                          expanded={expandedPreviewQuestionIds.has(item.pq.id)}
+                          onExpandedChange={(expanded) => setPreviewQuestionExpanded(item.pq.id, expanded)}
+                        />
+                      )}
                       right={(
                         <PreviewQuestionDetails
                           pq={item.pq}
@@ -1786,7 +1828,14 @@ export default function ExamPaperEditorPage() {
                 return (
                   <PreviewQuestionPair
                     key={paperQuestion.id}
-                    left={<PreviewQuestionItem pq={paperQuestion} index={index} />}
+                    left={(
+                      <PreviewQuestionItem
+                        pq={paperQuestion}
+                        index={index}
+                        expanded={expandedPreviewQuestionIds.has(paperQuestion.id)}
+                        onExpandedChange={(expanded) => setPreviewQuestionExpanded(paperQuestion.id, expanded)}
+                      />
+                    )}
                     right={(
                       <PreviewQuestionDetails
                         pq={paperQuestion}
@@ -3683,19 +3732,27 @@ function PreviewQuestionDetails({
 
 // ===== 预览模式的题目项 =====
 function PreviewQuestionItem({
-  pq, index,
+  pq, index, expanded: controlledExpanded, onExpandedChange,
 }: {
   pq: ExamPaperQuestion;
   index: number;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? internalExpanded;
+  const toggleExpanded = () => {
+    const nextExpanded = !expanded;
+    if (controlledExpanded === undefined) setInternalExpanded(nextExpanded);
+    onExpandedChange?.(nextExpanded);
+  };
   return (
     <div className="py-4">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           {/* 题干（编号+题目） */}
           <div
-            onClick={() => setExpanded(!expanded)}
+            onClick={toggleExpanded}
             className="flex cursor-pointer items-start gap-1 text-sm leading-relaxed text-ink-900 transition-colors hover:text-gold-700"
           >
             <span className="flex-shrink-0 font-mono font-bold text-ink-400">{index + 1}.</span>

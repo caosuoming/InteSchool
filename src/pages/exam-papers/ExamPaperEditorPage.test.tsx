@@ -619,6 +619,20 @@ describe("ExamPaperEditorPage preview", () => {
     expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
   });
 
+  it("shows and hides all answers from the preview toolbar", async () => {
+    renderPage();
+
+    const preview = await screen.findByTestId("exam-paper-preview");
+    expect(within(preview).queryByText("解析：")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "一键显示答案" }));
+    expect(within(preview).getByText("解析：")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起全部答案" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起全部答案" }));
+    expect(within(preview).queryByText("解析：")).not.toBeInTheDocument();
+  });
+
   it("places preview controls on a second row below the page header", async () => {
     renderPage();
 
@@ -628,6 +642,7 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "发布试卷" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "创建副本" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "一键显示答案" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "下载" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "编辑试卷" })).toBeInTheDocument();
     expect(toolbar.previousElementSibling).toContainElement(

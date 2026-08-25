@@ -375,6 +375,20 @@ describe("LecturePreviewPage", () => {
     });
   });
 
+  it("shows and hides all answers from the preview actions", async () => {
+    renderPage();
+
+    const paper = await screen.findByTestId("lecture-paper");
+    expect(within(paper).queryByText("解析：")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "一键显示答案" }));
+    expect(within(paper).getByText("解析：")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起全部答案" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起全部答案" }));
+    expect(within(paper).queryByText("解析：")).not.toBeInTheDocument();
+  });
+
   it("reduces choice options to two columns when four columns wrap and removes option borders", async () => {
     const restoreMeasurements = mockOptionWrapping(new Set([4]));
     try {
