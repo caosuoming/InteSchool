@@ -2,7 +2,7 @@ import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
-  ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
+  ArrowLeft, Save, Eye, EyeOff, Edit3, Plus, Trash2, ShoppingBasket,
   FileSpreadsheet, GraduationCap, Users, Send,
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered, Copy,
   AlertCircle, Lock, Calendar, Layout,
@@ -274,6 +274,7 @@ export default function ExamPaperEditorPage() {
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
     { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
+  const [expandedPreviewQuestionIds, setExpandedPreviewQuestionIds] = useState<Set<string>>(new Set());
   const [documentMetadataOpen, setDocumentMetadataOpen] = useState(false);
   const [savingDocumentMetadata, setSavingDocumentMetadata] = useState(false);
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
@@ -727,6 +728,17 @@ export default function ExamPaperEditorPage() {
   );
 
   const isStructuredExtract = Boolean(paper?.isExtractCopy && contentBlocks.length > 0);
+  const previewQuestionKeys = useMemo(() => {
+    if (!isStructuredExtract) return paperQuestions.map((paperQuestion) => paperQuestion.id);
+    return contentBlocks
+      .filter((block) => block.type === "question")
+      .map((block) => {
+        const paperQuestion = paperQuestions.find((item) => item.id === block.examPaperQuestionId);
+        return paperQuestion?.id || `block:${block.id}`;
+      });
+  }, [contentBlocks, isStructuredExtract, paperQuestions]);
+  const allPreviewAnswersExpanded = previewQuestionKeys.length > 0
+    && previewQuestionKeys.every((questionKey) => expandedPreviewQuestionIds.has(questionKey));
 
   const buildNavigationDraft = useCallback((): ExamPaperNavigationDraft | undefined => {
     if (!paper) return undefined;
@@ -1578,6 +1590,18 @@ export default function ExamPaperEditorPage() {
               创建副本
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={() => setExpandedPreviewQuestionIds(
+              allPreviewAnswersExpanded ? new Set() : new Set(previewQuestionKeys),
+            )}
+            disabled={previewQuestionKeys.length === 0}
+          >
+            {allPreviewAnswersExpanded
+              ? <EyeOff className="w-4 h-4" />
+              : <Eye className="w-4 h-4" />}
+            {allPreviewAnswersExpanded ? "隐藏全部答案" : "显示全部答案"}
+          </Button>
           <Button variant="outline" onClick={() => setDownloadModalOpen(true)}>
             <Download className="w-4 h-4" />
             下载
@@ -1676,6 +1700,7 @@ export default function ExamPaperEditorPage() {
                     linkedQuestion,
                     block.content,
                   );
+                  const previewQuestionKey = paperQuestion?.id || `block:${block.id}`;
                   return (
                     <PreviewQuestionPair
                       key={block.id}
@@ -1688,6 +1713,13 @@ export default function ExamPaperEditorPage() {
                             answer={display.answer}
                             analysis={display.analysis}
                             optionVariant="plain"
+                            expanded={expandedPreviewQuestionIds.has(previewQuestionKey)}
+                            onExpandedChange={(expanded) => setExpandedPreviewQuestionIds((current) => {
+                              const next = new Set(current);
+                              if (expanded) next.add(previewQuestionKey);
+                              else next.delete(previewQuestionKey);
+                              return next;
+                            })}
                           />
                         </section>
                       )}
@@ -1753,7 +1785,19 @@ export default function ExamPaperEditorPage() {
                   ...group.questions.map((item) => (
                     <PreviewQuestionPair
                       key={item.pq.id}
-                      left={<PreviewQuestionItem pq={item.pq} index={item.displayIndex} />}
+                      left={
+                        <PreviewQuestionItem
+                          pq={item.pq}
+                          index={item.displayIndex}
+                          expanded={expandedPreviewQuestionIds.has(item.pq.id)}
+                          onExpandedChange={(expanded) => setExpandedPreviewQuestionIds((current) => {
+                            const next = new Set(current);
+                            if (expanded) next.add(item.pq.id);
+                            else next.delete(item.pq.id);
+                            return next;
+                          })}
+                        />
+                      }
                       right={(
                         <PreviewQuestionDetails
                           pq={item.pq}
@@ -1786,7 +1830,19 @@ export default function ExamPaperEditorPage() {
                 return (
                   <PreviewQuestionPair
                     key={paperQuestion.id}
-                    left={<PreviewQuestionItem pq={paperQuestion} index={index} />}
+                    left={
+                      <PreviewQuestionItem
+                        pq={paperQuestion}
+                        index={index}
+                        expanded={expandedPreviewQuestionIds.has(paperQuestion.id)}
+                        onExpandedChange={(expanded) => setExpandedPreviewQuestionIds((current) => {
+                          const next = new Set(current);
+                          if (expanded) next.add(paperQuestion.id);
+                          else next.delete(paperQuestion.id);
+                          return next;
+                        })}
+                      />
+                    }
                     right={(
                       <PreviewQuestionDetails
                         pq={paperQuestion}
@@ -3683,19 +3739,20 @@ function PreviewQuestionDetails({
 
 // ===== 预览模式的题目项 =====
 function PreviewQuestionItem({
-  pq, index,
+  pq, index, expanded, onExpandedChange,
 }: {
   pq: ExamPaperQuestion;
   index: number;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   return (
     <div className="py-4">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           {/* 题干（编号+题目） */}
           <div
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => onExpandedChange(!expanded)}
             className="flex cursor-pointer items-start gap-1 text-sm leading-relaxed text-ink-900 transition-colors hover:text-gold-700"
           >
             <span className="flex-shrink-0 font-mono font-bold text-ink-400">{index + 1}.</span>

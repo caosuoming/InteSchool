@@ -619,6 +619,38 @@ describe("ExamPaperEditorPage preview", () => {
     expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
   });
 
+  it("shows and hides all answers in a structured paper preview", async () => {
+    renderPage();
+    const preview = await screen.findByTestId("exam-paper-preview");
+
+    expect(within(preview).queryByText("答案：")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "显示全部答案" }));
+
+    expect(within(preview).getByText("答案：")).toBeInTheDocument();
+    expect(within(preview).getByText("解析：")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "隐藏全部答案" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "隐藏全部答案" }));
+    await waitFor(() => {
+      expect(within(preview).queryByText("答案：")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows all answers in a regular paper preview", async () => {
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+    });
+
+    renderPage();
+    const preview = await screen.findByTestId("exam-paper-preview");
+    fireEvent.click(screen.getByRole("button", { name: "显示全部答案" }));
+
+    expect(within(preview).getByText("答案：")).toBeInTheDocument();
+    expect(within(preview).getByText("解析：")).toBeInTheDocument();
+  });
+
   it("places preview controls on a second row below the page header", async () => {
     renderPage();
 

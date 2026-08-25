@@ -12,6 +12,8 @@ interface ExtractedQuestionContentProps {
   analysis: string;
   compact?: boolean;
   optionVariant?: "boxed" | "plain";
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 export function ExtractedQuestionContent({
@@ -22,9 +24,16 @@ export function ExtractedQuestionContent({
   analysis,
   compact = false,
   optionVariant = "boxed",
+  expanded: controlledExpanded,
+  onExpandedChange,
 }: ExtractedQuestionContentProps) {
-  const [expanded, setExpanded] = useState(false);
-  const toggleExpanded = () => setExpanded((value) => !value);
+  const [localExpanded, setLocalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? localExpanded;
+  const toggleExpanded = () => {
+    const nextExpanded = !expanded;
+    if (onExpandedChange) onExpandedChange(nextExpanded);
+    else setLocalExpanded(nextExpanded);
+  };
 
   return (
     <div className="min-w-0 flex-1">

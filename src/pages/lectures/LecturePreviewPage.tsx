@@ -2,7 +2,7 @@ import { openPage } from "@/lib/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
-  BookOpen, CheckSquare, Edit3, Eye, FileText, GraduationCap,
+  BookOpen, CheckSquare, Edit3, Eye, EyeOff, FileText, GraduationCap,
   Copy, Download, Layout, Printer, Type, UserCheck, Users,
 } from "lucide-react";
 import { lectureService } from "@/services/lecture";
@@ -128,6 +128,7 @@ export default function LecturePreviewPage() {
   const [answerRecords, setAnswerRecords] = useState<AnswerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [paperSize, setPaperSize] = useState<PaperSize>("A4");
+  const [expandedQuestionSectionIds, setExpandedQuestionSectionIds] = useState<Set<string>>(new Set());
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [audienceClassIds, setAudienceClassIds] = useState<string[]>([]);
   const [savingAudience, setSavingAudience] = useState(false);
@@ -284,6 +285,14 @@ export default function LecturePreviewPage() {
     () => buildPreviewRows(sections, documentTitleSectionId),
     [documentTitleSectionId, sections],
   );
+  const questionSectionIds = useMemo(
+    () => previewRows
+      .filter((row) => row.section.type === "question")
+      .map((row) => row.section.id),
+    [previewRows],
+  );
+  const allAnswersExpanded = questionSectionIds.length > 0
+    && questionSectionIds.every((sectionId) => expandedQuestionSectionIds.has(sectionId));
   const questionCount = useMemo(
     () => allSections.filter((section) => section.type === "question").length,
     [allSections],
@@ -650,6 +659,19 @@ export default function LecturePreviewPage() {
       </Card>
 
       <div className="no-print mb-4 flex items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setExpandedQuestionSectionIds(
+            allAnswersExpanded ? new Set() : new Set(questionSectionIds),
+          )}
+          disabled={questionSectionIds.length === 0}
+        >
+          {allAnswersExpanded
+            ? <EyeOff className="w-3.5 h-3.5" />
+            : <Eye className="w-3.5 h-3.5" />}
+          {allAnswersExpanded ? "隐藏全部答案" : "显示全部答案"}
+        </Button>
         <select
           aria-label="纸张大小"
           value={paperSize}
@@ -738,6 +760,13 @@ export default function LecturePreviewPage() {
                     <PreviewSectionContent
                       row={row}
                       question={question}
+                      expanded={expandedQuestionSectionIds.has(row.section.id)}
+                      onExpandedChange={(expanded) => setExpandedQuestionSectionIds((current) => {
+                        const next = new Set(current);
+                        if (expanded) next.add(row.section.id);
+                        else next.delete(row.section.id);
+                        return next;
+                      })}
                     />
                   )}
                   right={row.questionNumber ? (
@@ -955,9 +984,13 @@ function LecturePreviewPair({
 function PreviewSectionContent({
   row,
   question,
+  expanded,
+  onExpandedChange,
 }: {
   row: LecturePreviewRow;
   question: Question | null | undefined;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
   const { section, depth, questionNumber } = row;
   const nestedClassName = depth > 0 ? "ml-3 border-l-2 border-ink-100 pl-3" : undefined;
@@ -984,6 +1017,8 @@ function PreviewSectionContent({
         question={question}
         questionNumber={questionNumber || 0}
         className={nestedClassName}
+        expanded={expanded}
+        onExpandedChange={onExpandedChange}
       />
     );
   }
@@ -1022,17 +1057,20 @@ function QuestionPreviewContent({
   question,
   questionNumber,
   className,
+  expanded,
+  onExpandedChange,
 }: {
   section: LectureSection;
   question: Question | null | undefined;
   questionNumber: number;
   className?: string;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [optionColumns, setOptionColumns] = useState<1 | 2 | 4>(4);
   const optionsRef = useRef<HTMLDivElement>(null);
   const optionSignature = question?.options?.join("\u0000") || "";
-  const toggleExpanded = () => setExpanded((value) => !value);
+  const toggleExpanded = () => onExpandedChange(!expanded);
 
   useLayoutEffect(() => {
     setOptionColumns(4);
