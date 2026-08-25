@@ -33,13 +33,16 @@ const masteryConfig: Record<
 export function ChapterMasteryCard({
   mastery,
   placements,
+  selectedChapterIds,
   onPlacementsChange,
+  onSelectedChapterIdsChange,
 }: {
   mastery: ChapterMastery[];
   placements: Record<string, ChapterPlacement>;
+  selectedChapterIds: ReadonlySet<string>;
   onPlacementsChange: (placements: Record<string, ChapterPlacement>) => void;
+  onSelectedChapterIdsChange: (selectedChapterIds: Set<string>) => void;
 }) {
-  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [collapsedChapterIds, setCollapsedChapterIds] = useState<Set<string>>(new Set());
 
   const trainedCount = mastery.filter((item) => item.totalAttempts > 0).length;
@@ -55,16 +58,14 @@ export function ChapterMasteryCard({
     && mastery.every((item) => selectedChapterIds.has(item.chapterId));
 
   const toggleChapter = (chapterId: string) => {
-    setSelectedChapterIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(chapterId)) next.delete(chapterId);
-      else next.add(chapterId);
-      return next;
-    });
+    const next = new Set(selectedChapterIds);
+    if (next.has(chapterId)) next.delete(chapterId);
+    else next.add(chapterId);
+    onSelectedChapterIdsChange(next);
   };
 
   const toggleAllChapters = () => {
-    setSelectedChapterIds(
+    onSelectedChapterIdsChange(
       allChaptersSelected
         ? new Set()
         : new Set(mastery.map((item) => item.chapterId)),
@@ -86,7 +87,7 @@ export function ChapterMasteryCard({
       selectedChapterIds,
       placement,
     ));
-    setSelectedChapterIds(new Set());
+    onSelectedChapterIdsChange(new Set());
   };
 
   return (

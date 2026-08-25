@@ -6,7 +6,8 @@ import { classService } from "@/services/class";
 import { settingsService } from "@/services/settings";
 import { analyticsService } from "@/services/analytics";
 import { knowledgeService } from "@/services/knowledge";
-import type { SchoolClass, Teacher } from "@/types";
+import { questionService } from "@/services/question";
+import type { Question, SchoolClass, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({
   classService: {
@@ -38,6 +39,40 @@ vi.mock("@/services/analytics", () => ({
   },
 }));
 
+vi.mock("@/services/question", () => ({
+  questionService: {
+    listQuestions: vi.fn(),
+  },
+}));
+
+vi.mock("@/components/basket/AddToBasketDropdown", () => ({
+  AddToBasketDropdown: ({ resourceId }: { resourceId: string }) => (
+    <button type="button">加入资源篮 {resourceId}</button>
+  ),
+}));
+
+function makeQuestion(id: string, stem: string, chapterIds: string[], knowledgePointIds: string[]): Question {
+  return {
+    id,
+    teacherId: "teacher-1",
+    schoolId: "school-1",
+    type: "single",
+    stem,
+    options: ["选项 A", "选项 B"],
+    answer: "答案 $x=2$",
+    analysis: "解析 $x^2=4$",
+    chapterIds,
+    knowledgePointIds,
+    difficulty: 2,
+    recommendation: 3,
+    usageCount: 0,
+    remark: "",
+    isShared: false,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+  };
+}
+
 const schoolClass: SchoolClass = {
   id: "class-1",
   type: "school",
@@ -51,6 +86,7 @@ const schoolClass: SchoolClass = {
 
 describe("StudentLearningPage", () => {
   beforeEach(() => {
+    localStorage.clear();
     useAuthStore.setState({
       teacher: {
         id: "teacher-1",
@@ -100,6 +136,7 @@ describe("StudentLearningPage", () => {
     vi.mocked(analyticsService.getSameGradeTypeAverage).mockResolvedValue([]);
     vi.mocked(analyticsService.getPrevGradeBestClass).mockResolvedValue(null);
     vi.mocked(analyticsService.getClassAverageMastery).mockResolvedValue([]);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([]);
   });
 
   it("supports collapsible chapter and knowledge trees with persistent global placement", async () => {
@@ -111,6 +148,7 @@ describe("StudentLearningPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: /章节课训练与掌握情况/ })).toHaveAttribute("aria-selected", "true");
       expect(screen.getByText("集合章节")).toBeInTheDocument();
+      expect(analyticsService.getStudentAnswerDetails).toHaveBeenCalledTimes(2);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "折叠章节 苏教必修第一册" }));
@@ -147,4 +185,93 @@ describe("StudentLearningPage", () => {
       .toContain('"point-1":"top"');
     expect(classService.listMyClasses).toHaveBeenCalledWith("school-1", "teacher-1");
   });
+
+  it("filters answered and unanswered questions by the selected directory and expands math answers", async () => {
+    const answeredInFirstBook = makeQuestion(
+      "q-answered-in",
+      "第一册已做：$x^2=4$",
+      ["chapter-1"],
+      ["point-1"],
+    );
+    const answeredOutside = makeQuestion(
+      "q-answered-out",
+      "第二册已做",
+      ["book-2"],
+      [],
+    );
+    const unansweredInFirstBook = makeQuestion(
+      "q-unanswered-in",
+      "第一册未做：$y^2=9$",
+      ["chapter-1"],
+      ["point-1"],
+    );
+    const unansweredOutside = makeQuestion(
+      "q-unanswered-out",
+      "第二册未做",
+      ["book-2"],
+      [],
+    );
+
+    vi.mocked(questionService.listQuestions).mockResolvedValue([
+      answeredInFirstBook,
+      answeredOutside,
+      unansweredInFirstBook,
+      unansweredOutside,
+    ]);
+    vi.mocked(analyticsService.getStudentAnswerDetails).mockResolvedValue([
+      {
+        record: {
+          id: "record-in",
+          studentId: "student-1",
+          questionId: answeredInFirstBook.id,
+          lectureId: "lecture-1",
+          isCorrect: true,
+          score: "correct",
+          answeredAt: "2026-08-20T00:00:00.000Z",
+        },
+        question: answeredInFirstBook,
+        lectureTitle: "第一册练习",
+      },
+      {
+        record: {
+          id: "record-out",
+          studentId: "student-1",
+          questionId: answeredOutside.id,
+          lectureId: "lecture-2",
+          isCorrect: false,
+          score: "wrong",
+          answeredAt: "2026-08-19T00:00:00.000Z",
+        },
+        question: answeredOutside,
+        lectureTitle: "第二册练习",
+      },
+    ]);
+
+    const { container } = render(<StudentLearningPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "高一（1）班" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/第一册已做/)).toBeInTheDocument();
+      expect(screen.getByText("第二册已做")).toBeInTheDocument();
+      expect(analyticsService.getStudentAnswerDetails).toHaveBeenCalledTimes(2);
+    });
+    expect(container.querySelector('[data-latex="x^2=4"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择章节课 苏教必修第一册" }));
+    expect(screen.getByText(/第一册已做/)).toBeInTheDocument();
+    expect(screen.queryByText("第二册已做")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "未做过的题" }));
+    expect(await screen.findByText(/第一册未做/)).toBeInTheDocument();
+    expect(screen.queryByText("第二册未做")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "加入资源篮 q-unanswered-in" })).toBeInTheDocument();
+    expect(container.querySelector('[data-latex="y^2=9"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开题目详情" }));
+    expect(container.querySelector('[data-latex="x=2"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择章节课 苏教必修第一册" }));
+    expect(await screen.findByText("第二册未做")).toBeInTheDocument();
+  });
+
 });
