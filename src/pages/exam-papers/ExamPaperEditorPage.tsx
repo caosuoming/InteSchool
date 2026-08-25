@@ -3576,6 +3576,7 @@ function PreviewQuestionDetails({
                 students={students}
                 answerRecords={answerRecords}
                 questionId={completionQuestionId}
+                unansweredLabel="待做"
                 onChange={onUpdateStudentAnswer}
                 showAnsweredList={visibility.answeredList}
               />
@@ -3754,7 +3755,7 @@ function QuestionProgressBadge({ progress }: { progress?: QuestionProgress }) {
   if (progress.answeredCount === 0) {
     return (
       <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] text-ink-500">
-        使用对象未做
+        使用对象待做
       </span>
     );
   }

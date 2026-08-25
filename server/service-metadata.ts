@@ -250,6 +250,9 @@ export const serviceParameters = {
       "studentIds",
       "range"
     ],
+    "listPendingQuestionAssignments": [
+      "studentIds"
+    ],
     "listAllAnswerRecordsByQuestion": [
       "questionId"
     ],
