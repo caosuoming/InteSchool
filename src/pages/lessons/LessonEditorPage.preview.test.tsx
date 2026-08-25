@@ -1,10 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Basket, LessonCourseware, Question, Teacher } from "@/types";
 
 const mocks = vi.hoisted(() => ({
   getCourseware: vi.fn(),
+  updateCourseware: vi.fn(),
   getQuestion: vi.fn(),
   listBaskets: vi.fn(),
   listMyStudents: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock("@/stores/auth", () => ({
 vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
     getCourseware: mocks.getCourseware,
+    updateCourseware: mocks.updateCourseware,
   },
 }));
 vi.mock("@/services/class", () => ({
@@ -83,10 +85,42 @@ describe("LessonEditorPage preview query", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getCourseware.mockResolvedValue(courseware);
+    mocks.updateCourseware.mockImplementation(async (_id, patch) => ({ ...courseware, ...patch }));
     mocks.getQuestion.mockResolvedValue(null);
     mocks.listBaskets.mockResolvedValue([]);
     mocks.listMyStudents.mockResolvedValue([]);
     mocks.listMyClasses.mockResolvedValue([]);
+  });
+
+  it("disables save while clean and can undo unsaved courseware changes", async () => {
+    mocks.listMyClasses.mockResolvedValue([{ id: "class-1", type: "school", schoolId: teacher.schoolId, grade: "高一", name: "1班" }]);
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+
+    const saveButton = await screen.findByRole("button", { name: "保存" });
+    const undoButton = screen.getByRole("button", { name: "撤销" });
+    expect(saveButton).toBeDisabled();
+    expect(undoButton).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "授课班级" }));
+    fireEvent.click(await screen.findByRole("button", { name: "高一 · 1班" }));
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+
+    expect(saveButton).toBeEnabled();
+    expect(undoButton).toBeEnabled();
+    fireEvent.click(undoButton);
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "授课班级" }));
+    fireEvent.click(await screen.findByRole("button", { name: "高一 · 1班" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存班级" }));
+
+    await waitFor(() => {
+      expect(mocks.updateCourseware).toHaveBeenCalledWith(
+        courseware.id,
+        expect.objectContaining({ classIds: ["class-1"] }),
+      );
+      expect(saveButton).toBeDisabled();
+    });
   });
 
   it("opens linked courseware directly in preview mode when preview=1", async () => {

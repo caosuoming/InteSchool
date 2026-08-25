@@ -1,5 +1,6 @@
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
+import { useAutosave } from "@/hooks/useAutosave";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
@@ -7,7 +8,7 @@ import {
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered, Copy,
   AlertCircle, Lock, Calendar, Layout,
   Sparkles, BookOpen, Lightbulb, Download,
-  CheckSquare, ArrowUpDown, Link2,
+  CheckSquare, ArrowUpDown, Link2, RotateCcw,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { examPaperService } from "@/services/examPaper";
@@ -221,6 +222,44 @@ interface ExamPaperNavigationState {
   examPaperDraft?: ExamPaperNavigationDraft;
 }
 
+type ExamPaperSaveState = Pick<
+  ExamPaper,
+  | "title"
+  | "description"
+  | "grade"
+  | "schoolYear"
+  | "semester"
+  | "duration"
+  | "totalScore"
+  | "questions"
+  | "classIds"
+  | "studentIds"
+  | "typeId"
+  | "contentBlocks"
+  | "layoutMode"
+>;
+
+function examPaperSaveStateFromPaper(paper: ExamPaper): ExamPaperSaveState {
+  const structureLocked = isDocumentStructureLocked(paper);
+  return {
+    title: paper.title,
+    description: paper.description || "",
+    grade: paper.grade,
+    schoolYear: paper.schoolYear,
+    semester: paper.semester || "上学期",
+    duration: paper.duration,
+    totalScore: paper.questions.reduce((sum, question) => sum + question.score, 0),
+    questions: paper.questions,
+    classIds: paper.classIds || [],
+    studentIds: [],
+    typeId: paper.typeId || undefined,
+    ...(structureLocked ? {} : {
+      contentBlocks: paper.contentBlocks || [],
+      layoutMode: paper.layoutMode || "grouped",
+    }),
+  };
+}
+
 export default function ExamPaperEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -237,6 +276,7 @@ export default function ExamPaperEditorPage() {
   const [questions, setQuestions] = useState<Record<string, Question>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedDraft, setSavedDraft] = useState<ExamPaperSaveState | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
@@ -447,24 +487,8 @@ export default function ExamPaperEditorPage() {
       const draft = navigationDraft?.paperId === p.id ? navigationDraft : undefined;
       const nextPaperQuestions = draft?.paperQuestions || p.questions;
       const nextContentBlocks = draft?.contentBlocks || p.contentBlocks || [];
-      const nextPaper = draft
-        ? {
-            ...p,
-            title: draft.title,
-            description: draft.description,
-            grade: draft.grade,
-            schoolYear: draft.schoolYear,
-            semester: draft.semester,
-            typeId: draft.typeId || undefined,
-            duration: draft.duration,
-            questions: nextPaperQuestions,
-            contentBlocks: nextContentBlocks,
-            layoutMode: draft.layoutMode,
-            classIds: draft.selectedClassIds,
-            studentIds: [],
-          }
-        : p;
-      setPaper(nextPaper);
+      setPaper(p);
+      setSavedDraft(examPaperSaveStateFromPaper(p));
       setTitle(draft?.title ?? p.title);
       setDescription(draft?.description ?? p.description ?? "");
       setGrade(draft?.grade ?? p.grade);
@@ -882,6 +906,7 @@ export default function ExamPaperEditorPage() {
     try {
       const updated = await examPaperService.updatePaper(paper.id, value);
       setPaper(updated);
+      setSavedDraft(examPaperSaveStateFromPaper(updated));
       setTitle(updated.title);
       setGrade(updated.grade);
       setSchoolYear(updated.schoolYear);
@@ -999,6 +1024,7 @@ export default function ExamPaperEditorPage() {
         totalScore: nextQuestions.reduce((sum, question) => sum + question.score, 0),
       });
       setPaper(updated);
+      setSavedDraft(examPaperSaveStateFromPaper(updated));
       setPaperQuestions(updated.questions);
       toast.success("题目分值已更新");
     } catch (error) {
@@ -1156,7 +1182,7 @@ export default function ExamPaperEditorPage() {
     closeAddQuestion();
   };
 
-  const buildPaperPatch = useCallback((): Partial<ExamPaper> => ({
+  const buildPaperPatch = useCallback((): ExamPaperSaveState => ({
     title,
     description,
     grade,
@@ -1185,26 +1211,61 @@ export default function ExamPaperEditorPage() {
     typeId,
   ]);
 
+  const currentSaveState = buildPaperPatch();
+  const hasUnsavedChanges = savedDraft !== null
+    && JSON.stringify(currentSaveState) !== JSON.stringify(savedDraft);
+
+  const handleUndo = () => {
+    if (!savedDraft) return;
+    setTitle(savedDraft.title);
+    setDescription(savedDraft.description || "");
+    setGrade(savedDraft.grade);
+    setSchoolYear(savedDraft.schoolYear);
+    setSemester(savedDraft.semester || "上学期");
+    setDuration(savedDraft.duration);
+    setPaperQuestions(structuredClone(savedDraft.questions));
+    setSelectedClassIds([...(savedDraft.classIds || [])]);
+    setTypeId(savedDraft.typeId || "");
+    if (!isStructureLocked) {
+      setContentBlocks(structuredClone(savedDraft.contentBlocks || []));
+      setLayoutMode(savedDraft.layoutMode || "grouped");
+    }
+    toast.success("已撤销未保存修改");
+  };
+
   // 保存
-  const handleSave = async () => {
-    if (!paper || !title.trim()) { toast.error("请填写文档名"); return; }
+  const handleSave = async (silent = false) => {
+    if (!paper || saving) return;
+    if (!title.trim()) {
+      if (!silent) toast.error("请填写文档名");
+      return;
+    }
     setSaving(true);
     try {
+      const payload = buildPaperPatch();
       const updated = prepTaskId
-        ? await prepService.updateLinkedResource(prepTaskId, buildPaperPatch(), prepPassword || undefined) as ExamPaper
-        : await examPaperService.updatePaper(paper.id, buildPaperPatch());
+        ? await prepService.updateLinkedResource(prepTaskId, payload, prepPassword || undefined) as ExamPaper
+        : await examPaperService.updatePaper(paper.id, payload);
       setPaper(updated);
-      toast.success("试卷已保存");
+      setSavedDraft(examPaperSaveStateFromPaper(updated));
+      if (!silent) toast.success("试卷已保存");
     } catch (e: any) {
       const message = e?.message || "保存失败";
       if (prepTaskId && String(message).includes("密码")) {
         setPrepPasswordOpen(true);
       }
-      toast.error("保存失败", message);
+      toast.error(silent ? "自动保存失败" : "保存失败", message);
     } finally {
       setSaving(false);
     }
   };
+
+  useAutosave({
+    enabled: !isPreview && Boolean(paper) && !prepTaskId && Boolean(title.trim()),
+    dirty: hasUnsavedChanges,
+    saving,
+    onSave: () => handleSave(true),
+  });
 
   const handlePrepPasswordSubmit = () => {
     if (!prepTaskId || !prepPasswordInput.trim()) {
@@ -1229,6 +1290,7 @@ export default function ExamPaperEditorPage() {
         studentIds: [],
       });
       setPaper(updated);
+      setSavedDraft(examPaperSaveStateFromPaper(updated));
       setAudiencePickerOpen(false);
       toast.success("使用对象已更新");
     } catch (error) {
@@ -1341,6 +1403,7 @@ export default function ExamPaperEditorPage() {
       if (!isPreview || navigationDraft?.paperId === paper.id) {
         const updated = await examPaperService.updatePaper(paper.id, buildPaperPatch());
         setPaper(updated);
+        setSavedDraft(examPaperSaveStateFromPaper(updated));
       }
       const courseware = await lessonCoursewareService.createFromExamPaper(
         teacher.id,
@@ -1917,7 +1980,7 @@ export default function ExamPaperEditorPage() {
   return (
     <div>
       <PageHeader
-        title={`编辑：${paper?.title || title}`}
+        title={`编辑：${title || paper?.title || ""}`}
         icon={<FileSpreadsheet className="w-5 h-5" />}
         className={prepTaskId ? undefined : "mb-3"}
         action={
@@ -1945,7 +2008,22 @@ export default function ExamPaperEditorPage() {
                 {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
               </Button>
             )}
-            <Button variant="gold" onClick={handleSave} loading={saving}>
+            <Button
+              variant="outline"
+              onClick={handleUndo}
+              disabled={!hasUnsavedChanges || saving}
+              title={hasUnsavedChanges ? "撤销到上次保存的内容" : "没有可撤销的修改"}
+            >
+              <RotateCcw className="w-4 h-4" />
+              撤销
+            </Button>
+            <Button
+              variant="gold"
+              onClick={() => void handleSave()}
+              loading={saving}
+              disabled={!hasUnsavedChanges}
+              title={hasUnsavedChanges ? "保存修改；有未保存修改时会定时自动保存" : "没有需要保存的修改"}
+            >
               <Save className="w-4 h-4" />
               保存
             </Button>

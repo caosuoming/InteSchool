@@ -1,4 +1,5 @@
 import { openPage } from "@/lib/navigation";
+import { useAutosave } from "@/hooks/useAutosave";
 import {
   useCallback,
   useState,
@@ -9,7 +10,7 @@ import {
 } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
-  ChevronLeft, ChevronRight, Plus, Trash2, Send, Save,
+  ChevronLeft, ChevronRight, Plus, Trash2, Send, Save, RotateCcw,
   FileQuestion, Blocks, Check,
   Play, School, ExternalLink,
   GripVertical, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
@@ -71,6 +72,20 @@ interface SlideNavigatorResizeState {
   startWidth: number;
 }
 
+interface LessonSaveState {
+  slides: LessonSlide[];
+  title: string;
+  classIds: string[];
+}
+
+function lessonSaveStateFromCourseware(courseware: LessonCourseware): LessonSaveState {
+  return {
+    slides: courseware.slides,
+    title: courseware.title,
+    classIds: courseware.classIds,
+  };
+}
+
 export function LessonEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -82,6 +97,7 @@ export function LessonEditorPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedDraft, setSavedDraft] = useState<LessonSaveState | null>(null);
   const [publishing, setPublishing] = useState(false);
 
   const [relatedQuestions, setRelatedQuestions] = useState<Question[]>([]);
@@ -136,6 +152,7 @@ export function LessonEditorPage() {
         return;
       }
       setCourseware(cw);
+      setSavedDraft(lessonSaveStateFromCourseware(cw));
       setSlides(cw.slides);
       // 预加载所有相关题
       const allRelatedIds = Array.from(
@@ -411,8 +428,31 @@ export function LessonEditorPage() {
     setSelectedElementId(null);
   };
 
-  const handleSave = async () => {
-    if (!courseware) return;
+  const currentSaveState: LessonSaveState | null = courseware ? {
+    slides,
+    title: courseware.title,
+    classIds: courseware.classIds,
+  } : null;
+  const hasUnsavedChanges = currentSaveState !== null
+    && savedDraft !== null
+    && JSON.stringify(currentSaveState) !== JSON.stringify(savedDraft);
+
+  const handleUndo = () => {
+    if (!courseware || !savedDraft) return;
+    setSlides(structuredClone(savedDraft.slides));
+    setCourseware({
+      ...courseware,
+      title: savedDraft.title,
+      classIds: [...savedDraft.classIds],
+    });
+    setSelectedElementId(null);
+    setSelectedTextRegion(null);
+    setCurrentIndex((index) => Math.min(index, Math.max(0, savedDraft.slides.length - 1)));
+    toast.success("已撤销未保存修改");
+  };
+
+  const handleSave = async (silent = false) => {
+    if (!courseware || saving || !hasUnsavedChanges) return;
     setSaving(true);
     try {
       const updated = await lessonCoursewareService.updateCourseware(courseware.id, {
@@ -421,13 +461,21 @@ export function LessonEditorPage() {
         classIds: courseware.classIds,
       });
       setCourseware(updated);
-      toast.success("已保存");
+      setSavedDraft(lessonSaveStateFromCourseware(updated));
+      if (!silent) toast.success("已保存");
     } catch (err) {
-      toast.error("保存失败", err instanceof Error ? err.message : undefined);
+      toast.error(silent ? "自动保存失败" : "保存失败", err instanceof Error ? err.message : undefined);
     } finally {
       setSaving(false);
     }
   };
+
+  useAutosave({
+    enabled: Boolean(courseware),
+    dirty: hasUnsavedChanges,
+    saving,
+    onSave: () => handleSave(true),
+  });
 
   const handlePublish = async () => {
     if (!courseware) return;
@@ -682,7 +730,24 @@ export function LessonEditorPage() {
           <School className="w-4 h-4" />
           授课班级 {courseware?.classIds.length ? `(${courseware.classIds.length})` : ""}
         </Button>
-        <Button variant="outline" size="sm" onClick={handleSave} loading={saving}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleUndo}
+          disabled={!hasUnsavedChanges || saving}
+          title={hasUnsavedChanges ? "撤销到上次保存的内容" : "没有可撤销的修改"}
+        >
+          <RotateCcw className="w-4 h-4" />
+          撤销
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void handleSave()}
+          loading={saving}
+          disabled={!hasUnsavedChanges}
+          title={hasUnsavedChanges ? "保存修改；有未保存修改时会定时自动保存" : "没有需要保存的修改"}
+        >
           <Save className="w-4 h-4" />
           保存
         </Button>
@@ -1054,7 +1119,12 @@ export function LessonEditorPage() {
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setClassModalOpen(false)}>完成</Button>
-            <Button variant="gold" onClick={async () => { await handleSave(); setClassModalOpen(false); }} loading={saving}>
+            <Button
+              variant="gold"
+              onClick={async () => { await handleSave(); setClassModalOpen(false); }}
+              loading={saving}
+              disabled={!hasUnsavedChanges}
+            >
               <Save className="w-4 h-4" />保存班级
             </Button>
           </div>

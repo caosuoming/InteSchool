@@ -59,13 +59,13 @@
 
   /* 学术金按钮 */
   .btn-gold {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-gold-400 text-ink-900 font-medium text-sm shadow-sm transition-all duration-200 hover:bg-gold-300 hover:shadow-gold active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-gold-400 text-ink-900 font-medium text-sm shadow-sm transition-all duration-200 hover:bg-gold-300 hover:shadow-gold active:scale-[0.98] disabled:bg-ink-100 disabled:text-ink-400 disabled:shadow-none disabled:hover:bg-ink-100 disabled:hover:shadow-none disabled:opacity-100 disabled:cursor-not-allowed;
   }
   .btn-ink {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-ink-900 text-white font-medium text-sm shadow-sm transition-all duration-200 hover:bg-ink-800 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-ink-900 text-white font-medium text-sm shadow-sm transition-all duration-200 hover:bg-ink-800 active:scale-[0.98] disabled:bg-ink-100 disabled:text-ink-400 disabled:shadow-none disabled:hover:bg-ink-100 disabled:opacity-100 disabled:cursor-not-allowed;
   }
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-transparent text-ink-700 font-medium text-sm border border-ink-200 transition-all duration-200 hover:bg-mist hover:border-ink-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-transparent text-ink-700 font-medium text-sm border border-ink-200 transition-all duration-200 hover:bg-mist hover:border-ink-300 active:scale-[0.98] disabled:bg-mist disabled:text-ink-400 disabled:border-ink-100 disabled:hover:bg-mist disabled:hover:border-ink-100 disabled:opacity-100 disabled:cursor-not-allowed;
   }
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md bg-transparent text-ink-600 font-medium text-sm transition-all duration-200 hover:bg-mist hover:text-ink-900 active:scale-[0.98];

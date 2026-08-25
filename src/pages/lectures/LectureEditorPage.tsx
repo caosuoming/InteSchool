@@ -1,5 +1,6 @@
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useCallback, useMemo, type ComponentProps, type ReactNode } from "react";
+import { useAutosave } from "@/hooks/useAutosave";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   DndContext,
@@ -25,7 +26,7 @@ import {
   Type, ListOrdered, CheckCircle2, Edit3, Eye,
   UserCheck, Award, Clock, Presentation, FileBox,
   Lightbulb, Printer, LayoutTemplate, FileStack,
-  CheckSquare, GripVertical, Lock,
+  CheckSquare, GripVertical, Lock, RotateCcw,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
@@ -215,6 +216,37 @@ function LectureContentDropZone({
   );
 }
 
+type LectureSaveState = Pick<
+  Lecture,
+  | "title"
+  | "description"
+  | "chapterIds"
+  | "knowledgePointIds"
+  | "grade"
+  | "schoolYear"
+  | "semester"
+  | "classIds"
+  | "studentIds"
+  | "typeId"
+> & { sections?: LectureSection[] };
+
+function lectureSaveStateFromLecture(lecture: Lecture): LectureSaveState {
+  const structureLocked = isDocumentStructureLocked(lecture);
+  return {
+    title: lecture.title,
+    description: lecture.description || "",
+    chapterIds: lecture.chapterIds,
+    knowledgePointIds: lecture.knowledgePointIds,
+    grade: lecture.grade,
+    schoolYear: lecture.schoolYear,
+    semester: lecture.semester || "上学期",
+    classIds: lecture.classIds || [],
+    studentIds: [],
+    typeId: lecture.typeId || undefined,
+    ...(structureLocked ? {} : { sections: lecture.sections }),
+  };
+}
+
 export default function LectureEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -228,6 +260,7 @@ export default function LectureEditorPage() {
   const isStructureLocked = isDocumentStructureLocked(lecture);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedDraft, setSavedDraft] = useState<LectureSaveState | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
   const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
@@ -463,6 +496,7 @@ export default function LectureEditorPage() {
             return;
           }
           setLecture(lec);
+          setSavedDraft(lectureSaveStateFromLecture(lec));
           setTitle(lec.title);
           setDescription(lec.description || "");
           setGrade(lec.grade);
@@ -643,7 +677,7 @@ export default function LectureEditorPage() {
     setSelectedResourceIds([]);
   };
 
-  const buildLecturePatch = () => ({
+  const buildLecturePatch = (): LectureSaveState => ({
     title,
     description,
     chapterIds: selectedChapterIds,
@@ -657,10 +691,32 @@ export default function LectureEditorPage() {
     ...(isStructureLocked ? {} : { sections }),
   });
 
-  const handleSave = async (publish = false) => {
-    if (!teacher) return;
+  const currentSaveState = buildLecturePatch();
+  const hasUnsavedChanges = lecture
+    ? savedDraft !== null && JSON.stringify(currentSaveState) !== JSON.stringify(savedDraft)
+    : true;
+
+  const handleUndo = () => {
+    if (!savedDraft) return;
+    setTitle(savedDraft.title);
+    setDescription(savedDraft.description || "");
+    setSelectedChapterIds([...(savedDraft.chapterIds || [])]);
+    setSelectedPointIds([...(savedDraft.knowledgePointIds || [])]);
+    setGrade(savedDraft.grade);
+    setSchoolYear(savedDraft.schoolYear);
+    setSemester(savedDraft.semester || "上学期");
+    setSelectedClassIds([...(savedDraft.classIds || [])]);
+    setTypeId(savedDraft.typeId || "");
+    if (!isStructureLocked) {
+      setSections(structuredClone(savedDraft.sections || []));
+    }
+    toast.success("已撤销未保存修改");
+  };
+
+  const handleSave = async (publish = false, silent = false) => {
+    if (!teacher || saving) return;
     if (!title.trim()) {
-      toast.error("请填写讲义标题");
+      if (!silent) toast.error("请填写讲义标题");
       return;
     }
     setSaving(true);
@@ -674,26 +730,34 @@ export default function LectureEditorPage() {
           ? await prepService.updateLinkedResource(prepTaskId, payload, prepPassword || undefined) as Lecture
           : await lectureService.updateLecture(lecture.id, payload);
         if (publish && !prepTaskId) await lectureService.publish(lecture.id);
-        toast.success(publish ? "讲义已发布" : "讲义已保存");
+        if (!silent) toast.success(publish ? "讲义已发布" : "讲义已保存");
         setLecture(updated);
+        setSavedDraft(lectureSaveStateFromLecture(updated));
       } else {
         const created = await lectureService.createLecture(teacher.id, teacher.schoolId!, {
           ...payload,
           sections,
         });
         if (publish) await lectureService.publish(created.id);
-        toast.success(publish ? "讲义已创建并发布" : "讲义已创建");
+        if (!silent) toast.success(publish ? "讲义已创建并发布" : "讲义已创建");
         navigate(`/lectures/${created.id}/edit`);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "保存失败";
       if (prepTaskId && message.includes("密码")) setPrepPasswordOpen(true);
-      toast.error("保存失败", message);
+      toast.error(silent ? "自动保存失败" : "保存失败", message);
     } finally {
       setSaving(false);
       setPublishing(false);
     }
   };
+
+  useAutosave({
+    enabled: !isPreview && Boolean(lecture) && !prepTaskId && Boolean(title.trim()),
+    dirty: hasUnsavedChanges,
+    saving,
+    onSave: () => handleSave(false, true),
+  });
 
   const handleSendToMyCourseware = async () => {
     if (!lecture || !teacher?.schoolId || prepTaskId) return;
@@ -710,6 +774,7 @@ export default function LectureEditorPage() {
       if (!isPreview) {
         const updated = await lectureService.updateLecture(lecture.id, buildLecturePatch());
         setLecture(updated);
+        setSavedDraft(lectureSaveStateFromLecture(updated));
       }
       const courseware = await lessonCoursewareService.createFromLecture(
         teacher.id,
@@ -738,6 +803,7 @@ export default function LectureEditorPage() {
         studentIds: [],
       });
       setLecture(updated);
+      setSavedDraft(lectureSaveStateFromLecture(updated));
       setAudienceClassPickerOpen(false);
       toast.success("使用对象已更新");
     } catch (error) {
@@ -2020,7 +2086,26 @@ export default function LectureEditorPage() {
                   预览
                 </Button>
               )}
-              <Button variant="outline" onClick={() => handleSave(false)} loading={saving}>
+              {lecture && (
+                <Button
+                  variant="outline"
+                  onClick={handleUndo}
+                  disabled={!hasUnsavedChanges || saving}
+                  title={hasUnsavedChanges ? "撤销到上次保存的内容" : "没有可撤销的修改"}
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  撤销
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => void handleSave(false)}
+                loading={saving}
+                disabled={Boolean(lecture) && !hasUnsavedChanges}
+                title={lecture
+                  ? (hasUnsavedChanges ? "保存修改；有未保存修改时会定时自动保存" : "没有需要保存的修改")
+                  : "保存新讲义"}
+              >
                 <Save className="w-4 h-4" />
                 保存
               </Button>
