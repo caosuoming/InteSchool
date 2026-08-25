@@ -362,6 +362,7 @@ describe("MyResourcesPage resource basket", () => {
 
     fireEvent.click(await screen.findByText("函数训练"));
 
+    expect((await screen.findAllByText("班级：高一（1）班")).length).toBeGreaterThan(0);
     expect(await screen.findByText("所选学生已使用")).toBeInTheDocument();
     expect(screen.getByText(/使用时间：.*2026/)).toBeInTheDocument();
     expect(screen.getByText("薄弱 25%")).toBeInTheDocument();
@@ -553,6 +554,7 @@ describe("MyResourcesPage resource basket", () => {
         classIds: [],
         studentIds: [studentOne.id],
       });
+      expect(screen.getAllByText("学生：张同学").length).toBeGreaterThan(0);
     });
   });
 });

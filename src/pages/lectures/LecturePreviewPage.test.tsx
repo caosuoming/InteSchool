@@ -314,7 +314,7 @@ describe("LecturePreviewPage", () => {
     fireEvent.change(screen.getByLabelText("年级"), { target: { value: "高二" } });
     fireEvent.change(screen.getByLabelText("学年"), { target: { value: "2027-2028" } });
     fireEvent.change(screen.getByLabelText("学期"), { target: { value: "下学期" } });
-    const chapterRow = (await screen.findByText("函数章节")).parentElement;
+    const chapterRow = screen.getByText("函数章节").parentElement;
     expect(chapterRow).not.toBeNull();
     fireEvent.click(chapterRow!.querySelector("button")!);
     fireEvent.click(screen.getByRole("button", { name: "保存文档属性" }));
@@ -373,6 +373,20 @@ describe("LecturePreviewPage", () => {
     await waitFor(() => {
       expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4);
     });
+  });
+
+  it("shows and hides all answers from the preview actions", async () => {
+    renderPage();
+
+    const paper = await screen.findByTestId("lecture-paper");
+    expect(within(paper).queryByText("解析：")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "一键显示答案" }));
+    expect(within(paper).getByText("解析：")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起全部答案" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起全部答案" }));
+    expect(within(paper).queryByText("解析：")).not.toBeInTheDocument();
   });
 
   it("reduces choice options to two columns when four columns wrap and removes option borders", async () => {
@@ -468,23 +482,6 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByText("1.")).not.toBeInTheDocument();
   });
 
-  it("shows and hides all answers from the preview controls", async () => {
-    renderPage();
-    const preview = await screen.findByTestId("lecture-paper");
-
-    expect(within(preview).queryByText("答案：")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "显示全部答案" }));
-
-    expect(within(preview).getByText("答案：")).toBeInTheDocument();
-    expect(within(preview).getByText("解析：")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "隐藏全部答案" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "隐藏全部答案" }));
-    await waitFor(() => {
-      expect(within(preview).queryByText("答案：")).not.toBeInTheDocument();
-    });
-  });
-
   it("toggles answer and analysis by clicking the question stem", async () => {
     renderPage();
     await screen.findByText("预览：函数专题讲义_2026（拆解版）");
@@ -519,8 +516,8 @@ describe("LecturePreviewPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题属性" }));
     expect(screen.getByRole("heading", { name: "编辑题目属性" })).toBeInTheDocument();
-    expect(await screen.findByText("章节目录")).toBeInTheDocument();
-    expect(await screen.findByText("知识点目录")).toBeInTheDocument();
+    expect(screen.getByText("章节目录")).toBeInTheDocument();
+    expect(screen.getByText("知识点目录")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("题型"), { target: { value: "essay" } });
     fireEvent.change(screen.getByLabelText("难度"), { target: { value: "4" } });

@@ -60,6 +60,10 @@ export const analyticsService = {
     return rpcCall("analytics", "listAnswerRecordsByStudents", [studentIds, range]) as any;
   },
 
+  async listPendingQuestionAssignments(studentIds: string[]): Promise<Array<{ studentId: string; questionId: string }>> {
+    return rpcCall("analytics", "listPendingQuestionAssignments", [studentIds]) as any;
+  },
+
   async listAllAnswerRecordsByQuestion(questionId: string): Promise<AnswerRecord[]> {
     return rpcCall("analytics", "listAllAnswerRecordsByQuestion", [questionId]) as any;
   },

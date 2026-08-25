@@ -2,7 +2,7 @@ import { openPage } from "@/lib/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
-  BookOpen, CheckSquare, Edit3, Eye, EyeOff, FileText, GraduationCap,
+  BookOpen, CheckSquare, Edit3, Eye, FileText, GraduationCap,
   Copy, Download, Layout, Printer, Type, UserCheck, Users,
 } from "lucide-react";
 import { lectureService } from "@/services/lecture";
@@ -128,7 +128,6 @@ export default function LecturePreviewPage() {
   const [answerRecords, setAnswerRecords] = useState<AnswerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [paperSize, setPaperSize] = useState<PaperSize>("A4");
-  const [expandedQuestionSectionIds, setExpandedQuestionSectionIds] = useState<Set<string>>(new Set());
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [audienceClassIds, setAudienceClassIds] = useState<string[]>([]);
   const [savingAudience, setSavingAudience] = useState(false);
@@ -150,6 +149,7 @@ export default function LecturePreviewPage() {
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
     { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
+  const [expandedPreviewQuestionIds, setExpandedPreviewQuestionIds] = useState<Set<string>>(() => new Set());
   const schoolId = lecture?.schoolId || teacher?.schoolId;
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
   const { options: questionTypeOptions } = useQuestionTypeOptions(schoolId);
@@ -285,14 +285,29 @@ export default function LecturePreviewPage() {
     () => buildPreviewRows(sections, documentTitleSectionId),
     [documentTitleSectionId, sections],
   );
-  const questionSectionIds = useMemo(
+  const previewQuestionIds = useMemo(
     () => previewRows
       .filter((row) => row.section.type === "question")
       .map((row) => row.section.id),
     [previewRows],
   );
-  const allAnswersExpanded = questionSectionIds.length > 0
-    && questionSectionIds.every((sectionId) => expandedQuestionSectionIds.has(sectionId));
+  const allPreviewAnswersExpanded = previewQuestionIds.length > 0
+    && previewQuestionIds.every((questionId) => expandedPreviewQuestionIds.has(questionId));
+  const setPreviewQuestionExpanded = (questionId: string, expanded: boolean) => {
+    setExpandedPreviewQuestionIds((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(questionId);
+      else next.delete(questionId);
+      return next;
+    });
+  };
+  const toggleAllPreviewAnswers = () => {
+    setExpandedPreviewQuestionIds((current) => {
+      const allExpanded = previewQuestionIds.length > 0
+        && previewQuestionIds.every((questionId) => current.has(questionId));
+      return allExpanded ? new Set() : new Set(previewQuestionIds);
+    });
+  };
   const questionCount = useMemo(
     () => allSections.filter((section) => section.type === "question").length,
     [allSections],
@@ -563,6 +578,15 @@ export default function LecturePreviewPage() {
               <Layout className="w-4 h-4" />
               制作答题卡
             </Button>
+            <Button
+              variant="outline"
+              onClick={toggleAllPreviewAnswers}
+              disabled={previewQuestionIds.length === 0}
+              aria-pressed={allPreviewAnswersExpanded}
+            >
+              <Eye className="w-4 h-4" />
+              {allPreviewAnswersExpanded ? "收起全部答案" : "一键显示答案"}
+            </Button>
             <Button variant="outline" onClick={() => setDownloadModalOpen(true)}>
               <Download className="w-4 h-4" />
               下载
@@ -659,19 +683,6 @@ export default function LecturePreviewPage() {
       </Card>
 
       <div className="no-print mb-4 flex items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setExpandedQuestionSectionIds(
-            allAnswersExpanded ? new Set() : new Set(questionSectionIds),
-          )}
-          disabled={questionSectionIds.length === 0}
-        >
-          {allAnswersExpanded
-            ? <EyeOff className="w-3.5 h-3.5" />
-            : <Eye className="w-3.5 h-3.5" />}
-          {allAnswersExpanded ? "隐藏全部答案" : "显示全部答案"}
-        </Button>
         <select
           aria-label="纸张大小"
           value={paperSize}
@@ -760,13 +771,8 @@ export default function LecturePreviewPage() {
                     <PreviewSectionContent
                       row={row}
                       question={question}
-                      expanded={expandedQuestionSectionIds.has(row.section.id)}
-                      onExpandedChange={(expanded) => setExpandedQuestionSectionIds((current) => {
-                        const next = new Set(current);
-                        if (expanded) next.add(row.section.id);
-                        else next.delete(row.section.id);
-                        return next;
-                      })}
+                      expanded={expandedPreviewQuestionIds.has(row.section.id)}
+                      onExpandedChange={(expanded) => setPreviewQuestionExpanded(row.section.id, expanded)}
                     />
                   )}
                   right={row.questionNumber ? (
@@ -989,8 +995,8 @@ function PreviewSectionContent({
 }: {
   row: LecturePreviewRow;
   question: Question | null | undefined;
-  expanded: boolean;
-  onExpandedChange: (expanded: boolean) => void;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const { section, depth, questionNumber } = row;
   const nestedClassName = depth > 0 ? "ml-3 border-l-2 border-ink-100 pl-3" : undefined;
@@ -1057,20 +1063,26 @@ function QuestionPreviewContent({
   question,
   questionNumber,
   className,
-  expanded,
+  expanded: controlledExpanded,
   onExpandedChange,
 }: {
   section: LectureSection;
   question: Question | null | undefined;
   questionNumber: number;
   className?: string;
-  expanded: boolean;
-  onExpandedChange: (expanded: boolean) => void;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? internalExpanded;
   const [optionColumns, setOptionColumns] = useState<1 | 2 | 4>(4);
   const optionsRef = useRef<HTMLDivElement>(null);
   const optionSignature = question?.options?.join("\u0000") || "";
-  const toggleExpanded = () => onExpandedChange(!expanded);
+  const toggleExpanded = () => {
+    const nextExpanded = !expanded;
+    if (controlledExpanded === undefined) setInternalExpanded(nextExpanded);
+    onExpandedChange?.(nextExpanded);
+  };
 
   useLayoutEffect(() => {
     setOptionColumns(4);
@@ -1286,6 +1298,7 @@ function LectureQuestionDetails({
             students={students}
             answerRecords={answerRecords}
             questionId={question.id}
+            unansweredLabel="待做"
             onChange={onUpdateStudentAnswer}
             showAnsweredList={visibility.answeredList}
           />

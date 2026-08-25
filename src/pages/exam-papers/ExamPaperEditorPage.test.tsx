@@ -619,36 +619,18 @@ describe("ExamPaperEditorPage preview", () => {
     expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
   });
 
-  it("shows and hides all answers in a structured paper preview", async () => {
+  it("shows and hides all answers from the preview toolbar", async () => {
     renderPage();
+
     const preview = await screen.findByTestId("exam-paper-preview");
+    expect(within(preview).queryByText("解析：")).not.toBeInTheDocument();
 
-    expect(within(preview).queryByText("答案：")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "显示全部答案" }));
-
-    expect(within(preview).getByText("答案：")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "一键显示答案" }));
     expect(within(preview).getByText("解析：")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "隐藏全部答案" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起全部答案" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "隐藏全部答案" }));
-    await waitFor(() => {
-      expect(within(preview).queryByText("答案：")).not.toBeInTheDocument();
-    });
-  });
-
-  it("shows all answers in a regular paper preview", async () => {
-    mocks.getPaper.mockResolvedValue({
-      ...paper,
-      isExtractCopy: false,
-      contentBlocks: [],
-    });
-
-    renderPage();
-    const preview = await screen.findByTestId("exam-paper-preview");
-    fireEvent.click(screen.getByRole("button", { name: "显示全部答案" }));
-
-    expect(within(preview).getByText("答案：")).toBeInTheDocument();
-    expect(within(preview).getByText("解析：")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "收起全部答案" }));
+    expect(within(preview).queryByText("解析：")).not.toBeInTheDocument();
   });
 
   it("places preview controls on a second row below the page header", async () => {
@@ -660,6 +642,7 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "发布试卷" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "创建副本" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "一键显示答案" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "下载" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "编辑试卷" })).toBeInTheDocument();
     expect(toolbar.previousElementSibling).toContainElement(
@@ -817,7 +800,7 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(answerStatus).getByText("已有备注")).toBeInTheDocument();
 
     fireEvent.click(within(answerStatus).getByRole("button", { name: "添加备注" }));
-    fireEvent.change(within(answerStatus).getByLabelText("新增题目备注"), {
+    fireEvent.change(await within(answerStatus).findByLabelText("新增题目备注"), {
       target: { value: "新备注" },
     });
     fireEvent.click(within(answerStatus).getByRole("button", { name: "添加" }));
@@ -946,6 +929,36 @@ describe("ExamPaperEditorPage preview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "显示已答题名单" }));
     expect(screen.queryByTestId("answered-student-list")).not.toBeInTheDocument();
+  });
+
+  it("disables save while clean and can undo unsaved editor changes", async () => {
+    renderEditorPage();
+
+    const saveButton = await screen.findByRole("button", { name: "保存" });
+    const undoButton = screen.getByRole("button", { name: "撤销" });
+    const titleInput = screen.getByLabelText("文档名");
+
+    expect(saveButton).toBeDisabled();
+    expect(undoButton).toBeDisabled();
+
+    fireEvent.change(titleInput, { target: { value: "修改后的试卷标题" } });
+    expect(saveButton).toBeEnabled();
+    expect(undoButton).toBeEnabled();
+
+    fireEvent.click(undoButton);
+    expect(titleInput).toHaveValue(paper.title);
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.change(titleInput, { target: { value: "最终试卷标题" } });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(
+        paper.id,
+        expect.objectContaining({ title: "最终试卷标题" }),
+      );
+      expect(saveButton).toBeDisabled();
+    });
   });
 
   it("places secondary editor actions below the title and removes the subtitle", async () => {

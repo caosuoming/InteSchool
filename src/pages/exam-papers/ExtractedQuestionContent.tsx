@@ -27,12 +27,12 @@ export function ExtractedQuestionContent({
   expanded: controlledExpanded,
   onExpandedChange,
 }: ExtractedQuestionContentProps) {
-  const [localExpanded, setLocalExpanded] = useState(false);
-  const expanded = controlledExpanded ?? localExpanded;
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? internalExpanded;
   const toggleExpanded = () => {
     const nextExpanded = !expanded;
-    if (onExpandedChange) onExpandedChange(nextExpanded);
-    else setLocalExpanded(nextExpanded);
+    if (controlledExpanded === undefined) setInternalExpanded(nextExpanded);
+    onExpandedChange?.(nextExpanded);
   };
 
   return (

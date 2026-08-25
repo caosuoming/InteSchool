@@ -2,9 +2,14 @@ import type {
   AnswerRecord,
   AnswerScore,
   AnswerSource,
+  ExamPaper,
   KnowledgePoint,
+  Lecture,
+  LectureSection,
+  PersonalClass,
   Question,
   SchoolClass,
+  Student,
   TreeNode,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
@@ -52,6 +57,37 @@ function filterByDateRange(records: AnswerRecord[], range?: DateRange): AnswerRe
   });
 }
 
+export interface PendingQuestionAssignment {
+  studentId: string;
+  questionId: string;
+}
+
+function collectLectureQuestionIds(sections: LectureSection[], ids = new Set<string>()): Set<string> {
+  for (const section of sections) {
+    if (section.questionId) ids.add(section.questionId);
+    if (section.children?.length) collectLectureQuestionIds(section.children, ids);
+  }
+  return ids;
+}
+
+function selectedAudienceStudentIds(
+  classIds: string[] | undefined,
+  directStudentIds: string[] | undefined,
+  students: Student[],
+  personalClassIdsByStudent: Map<string, Set<string>>,
+): string[] {
+  const audienceClassIds = new Set(classIds || []);
+  const directIds = new Set(directStudentIds || []);
+  return students
+    .filter((student) => {
+      if (directIds.has(student.id)) return true;
+      if (student.classId && audienceClassIds.has(student.classId)) return true;
+      const personalClassIds = personalClassIdsByStudent.get(student.id);
+      return personalClassIds ? Array.from(personalClassIds).some((id) => audienceClassIds.has(id)) : false;
+    })
+    .map((student) => student.id);
+}
+
 export const analyticsService = {
   async listAnswerRecordsByQuestion(questionId: string, range?: DateRange): Promise<AnswerRecord[]> {
     await delay(200);
@@ -77,6 +113,72 @@ export const analyticsService = {
     if (studentIds.length === 0) return [];
     const records = db.read("answerRecords").filter((a) => studentIds.includes(a.studentId));
     return filterByDateRange(records, range);
+  },
+
+  /**
+   * 获取选中学生当前被讲义/试卷使用对象覆盖的题目。
+   * 这是派生的“待做”关系，不写入答题记录；调用方应让真实答题/使用记录优先展示。
+   */
+  async listPendingQuestionAssignments(studentIds: string[]): Promise<PendingQuestionAssignment[]> {
+    await delay(150);
+    if (studentIds.length === 0) return [];
+
+    const selectedIds = new Set(studentIds);
+    const students = (db.read("students") as Student[])
+      .filter((student) => selectedIds.has(student.id) && student.status === "active");
+    if (students.length === 0) return [];
+
+    const personalClassIdsByStudent = new Map<string, Set<string>>();
+    for (const personalClass of (db.read("personalClasses") || []) as PersonalClass[]) {
+      for (const studentId of personalClass.studentIds) {
+        if (!selectedIds.has(studentId)) continue;
+        const ids = personalClassIdsByStudent.get(studentId) || new Set<string>();
+        ids.add(personalClass.id);
+        personalClassIdsByStudent.set(studentId, ids);
+      }
+    }
+
+    const pendingByStudent = new Map<string, Set<string>>();
+    const addDocumentAssignments = (
+      classIds: string[] | undefined,
+      directStudentIds: string[] | undefined,
+      questionIds: Iterable<string>,
+    ) => {
+      const audienceStudentIds = selectedAudienceStudentIds(
+        classIds,
+        directStudentIds,
+        students,
+        personalClassIdsByStudent,
+      );
+      if (audienceStudentIds.length === 0) return;
+      const ids = Array.from(questionIds);
+      if (ids.length === 0) return;
+      for (const studentId of audienceStudentIds) {
+        const assigned = pendingByStudent.get(studentId) || new Set<string>();
+        ids.forEach((questionId) => assigned.add(questionId));
+        pendingByStudent.set(studentId, assigned);
+      }
+    };
+
+    for (const lecture of (db.read("lectures") || []) as Lecture[]) {
+      addDocumentAssignments(
+        lecture.classIds,
+        lecture.studentIds,
+        collectLectureQuestionIds(lecture.sections || []),
+      );
+    }
+
+    for (const paper of (db.read("examPapers") || []) as ExamPaper[]) {
+      addDocumentAssignments(
+        paper.classIds,
+        paper.studentIds,
+        paper.questions.map((question) => question.questionId).filter((id): id is string => Boolean(id)),
+      );
+    }
+
+    return Array.from(pendingByStudent.entries()).flatMap(([studentId, questionIds]) =>
+      Array.from(questionIds).map((questionId) => ({ studentId, questionId })),
+    );
   },
 
   /** 获取一道题的所有答题记录（含其他学生，供参考） */

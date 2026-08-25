@@ -9,6 +9,7 @@ import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
 import { settingsService } from "@/services/settings";
 import { knowledgeService } from "@/services/knowledge";
+import { questionService } from "@/services/question";
 import { analyticsService, type KnowledgeMastery, type StudentAnswerDetail, type DateRange } from "@/services/analytics";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
@@ -16,7 +17,9 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory, Chapter, KnowledgePoint } from "@/types";
+import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
+import { ExpandableQuestionContent } from "@/components/resource/ExpandableQuestionContent";
+import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory, Chapter, KnowledgePoint, Question } from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import {
@@ -34,6 +37,12 @@ import {
   saveStudentLearningPlacementPreferences,
   studentLearningPlacementStorageKey,
 } from "./student-learning-preferences";
+import {
+  expandedChapterSelection,
+  expandedKnowledgePointSelection,
+  filterAnsweredQuestionDetails,
+  filterUnansweredQuestions,
+} from "./student-learning-questions";
 
 const questionTypeLabel: Record<string, string> = {
   single: "单选",
@@ -62,6 +71,7 @@ const scoreConfig: Record<AnswerScore, { label: string; color: string; bg: strin
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 type MasteryView = "chapter" | "knowledge";
+type QuestionListMode = "answered" | "unanswered";
 
 const timeRangeOptions: { value: TimeRangeKey; label: string }[] = [
   { value: "all", label: "全部时间" },
@@ -123,15 +133,20 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
 
   const [mastery, setMastery] = useState<KnowledgeMastery[]>([]);
   const [answerDetails, setAnswerDetails] = useState<StudentAnswerDetail[]>([]);
+  const [allQuestions, setAllQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
+  const [loadingQuestions, setLoadingQuestions] = useState(true);
   const [masteryView, setMasteryView] = useState<MasteryView>("chapter");
+  const [questionListMode, setQuestionListMode] = useState<QuestionListMode>("answered");
+  const [expandedQuestionRows, setExpandedQuestionRows] = useState<Set<string>>(new Set());
 
   // 对比数据
   const [sameGradeTypeAvg, setSameGradeTypeAvg] = useState<KnowledgeMastery[]>([]);
   const [prevBestClass, setPrevBestClass] = useState<{ mastery: KnowledgeMastery[]; className: string } | null>(null);
   const [classAvgMastery, setClassAvgMastery] = useState<KnowledgeMastery[]>([]);
   const [showComparison, setShowComparison] = useState(true);
+  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<Set<string>>(new Set());
   const [collapsedKnowledgePointIds, setCollapsedKnowledgePointIds] = useState<Set<string>>(new Set());
   const placementStorageKey = studentLearningPlacementStorageKey(teacher?.id || "anonymous", schoolId);
@@ -166,6 +181,33 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   );
   const allKnowledgePointsSelected = mastery.length > 0
     && mastery.every((item) => selectedKnowledgePointIds.has(item.knowledgePointId));
+  const expandedSelectedChapterIds = useMemo(
+    () => expandedChapterSelection(chapters, selectedChapterIds),
+    [chapters, selectedChapterIds],
+  );
+  const expandedSelectedKnowledgePointIds = useMemo(
+    () => expandedKnowledgePointSelection(knowledgePoints, selectedKnowledgePointIds),
+    [knowledgePoints, selectedKnowledgePointIds],
+  );
+  const filteredAnswerDetails = useMemo(
+    () => filterAnsweredQuestionDetails(
+      answerDetails,
+      masteryView,
+      expandedSelectedChapterIds,
+      expandedSelectedKnowledgePointIds,
+    ),
+    [answerDetails, expandedSelectedChapterIds, expandedSelectedKnowledgePointIds, masteryView],
+  );
+  const unansweredQuestions = useMemo(
+    () => filterUnansweredQuestions(
+      allQuestions,
+      answerDetails,
+      masteryView,
+      expandedSelectedChapterIds,
+      expandedSelectedKnowledgePointIds,
+    ),
+    [allQuestions, answerDetails, expandedSelectedChapterIds, expandedSelectedKnowledgePointIds, masteryView],
+  );
 
   useEffect(() => {
     saveStudentLearningPlacementPreferences(placementStorageKey, {
@@ -193,6 +235,25 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
     };
     load();
   }, [schoolId, teacher?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadQuestions = async () => {
+      setLoadingQuestions(true);
+      try {
+        const questions = await questionService.listQuestions({ schoolId });
+        if (!cancelled) setAllQuestions(questions);
+      } catch {
+        if (!cancelled) setAllQuestions([]);
+      } finally {
+        if (!cancelled) setLoadingQuestions(false);
+      }
+    };
+    void loadQuestions();
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolId]);
 
   // 展开班级时加载学生
   const toggleClassExpand = useCallback(async (classId: string) => {
@@ -284,7 +345,9 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   }, [chapterMastery]);
 
   const selectClass = (cls: AnyClass) => {
+    setSelectedChapterIds(new Set());
     setSelectedKnowledgePointIds(new Set());
+    setExpandedQuestionRows(new Set());
     setSelection({
       type: "class",
       classId: cls.id,
@@ -296,7 +359,9 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   };
 
   const selectStudent = (cls: AnyClass, student: Student) => {
+    setSelectedChapterIds(new Set());
     setSelectedKnowledgePointIds(new Set());
+    setExpandedQuestionRows(new Set());
     setSelection({
       type: "student",
       classId: cls.id,
@@ -681,7 +746,9 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                   key={`${selection.type}:${selection.classId}:${selection.studentId ?? ""}`}
                   mastery={chapterMastery}
                   placements={chapterPlacements}
+                  selectedChapterIds={selectedChapterIds}
                   onPlacementsChange={setChapterPlacements}
+                  onSelectedChapterIdsChange={setSelectedChapterIds}
                 />
               ) : (
               <Card className="relative">
@@ -998,77 +1065,170 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
               </Card>
               )}
 
-              {/* 做过的题目列表 */}
+              {/* 已做过 / 未做过的题目列表 */}
               <Card>
                 <CardHeader
-                  title="做过的题目"
-                  subtitle={`共 ${answerDetails.length} 条答题记录`}
-                  action={<FileText className="w-4 h-4 text-gold-600" />}
+                  title={questionListMode === "answered" ? "已做过的题" : "未做过的题"}
+                  subtitle={questionListMode === "answered"
+                    ? `共 ${filteredAnswerDetails.length} 条答题记录${(masteryView === "chapter" ? selectedChapterIds.size : selectedKnowledgePointIds.size) > 0 ? "（已按选中目录筛选）" : ""}`
+                    : `共 ${unansweredQuestions.length} 题${(masteryView === "chapter" ? selectedChapterIds.size : selectedKnowledgePointIds.size) > 0 ? "（已按选中目录筛选）" : ""}`}
+                  action={
+                    <div className="inline-flex rounded-lg border border-ink-200 bg-mist/40 p-0.5">
+                      <button
+                        type="button"
+                        aria-pressed={questionListMode === "answered"}
+                        onClick={() => setQuestionListMode("answered")}
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          questionListMode === "answered"
+                            ? "bg-paper text-gold-700 shadow-sm"
+                            : "text-ink-500 hover:text-ink-700",
+                        )}
+                      >
+                        已做过的题
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={questionListMode === "unanswered"}
+                        onClick={() => setQuestionListMode("unanswered")}
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          questionListMode === "unanswered"
+                            ? "bg-paper text-gold-700 shadow-sm"
+                            : "text-ink-500 hover:text-ink-700",
+                        )}
+                      >
+                        未做过的题
+                      </button>
+                    </div>
+                  }
                 />
-                {answerDetails.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-ink-400">暂无答题记录</div>
+
+                {questionListMode === "answered" ? (
+                  filteredAnswerDetails.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-ink-400">
+                      {answerDetails.length > 0 ? "当前选中目录暂无答题记录" : "暂无答题记录"}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredAnswerDetails.map((detail) => {
+                        const { record, question, lectureTitle } = detail;
+                        const score = record.score || (record.isCorrect ? "correct" : "wrong");
+                        const sc = scoreConfig[score];
+                        const rowKey = `answered:${record.id}`;
+                        return (
+                          <div
+                            key={record.id}
+                            className="flex items-start gap-3 rounded-md border border-ink-100 p-3 transition-colors hover:bg-mist/30"
+                          >
+                            <div className={cn("flex-shrink-0 rounded border px-2 py-1 text-[10px] font-medium", sc.bg)}>
+                              {sc.label}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              {question ? (
+                                <>
+                                  <div className="mb-1 flex items-center gap-1.5">
+                                    <Badge variant="default">{questionTypeLabel[question.type] || question.type}</Badge>
+                                    <span className="text-[10px] text-ink-400">
+                                      难度：{"★".repeat(question.difficulty)}
+                                    </span>
+                                  </div>
+                                  <ExpandableQuestionContent
+                                    question={question}
+                                    expanded={expandedQuestionRows.has(rowKey)}
+                                    onToggle={() => setExpandedQuestionRows((previous) => {
+                                      const next = new Set(previous);
+                                      if (next.has(rowKey)) next.delete(rowKey);
+                                      else next.add(rowKey);
+                                      return next;
+                                    })}
+                                  />
+                                  <div className="flex flex-wrap items-center gap-3 text-xs text-ink-400">
+                                    {selection.type === "class" && (
+                                      <span className="flex items-center gap-1">
+                                        <User className="h-3 w-3" />
+                                        {questionService_studentName(record.studentId, studentsByClass, selection)}
+                                      </span>
+                                    )}
+                                    {lectureTitle && (
+                                      <span className="flex items-center gap-1">
+                                        <FileText className="h-3 w-3" />
+                                        {lectureTitle}
+                                      </span>
+                                    )}
+                                    {question.knowledgePointIds.length > 0 && (
+                                      <span className="flex items-center gap-1 text-teal-600">
+                                        {question.knowledgePointIds.length} 个知识点
+                                      </span>
+                                    )}
+                                    <span className="ml-auto flex items-center gap-1">
+                                      <Calendar className="h-3 w-3" />
+                                      {formatDate(record.answeredAt, true)}
+                                    </span>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-sm text-ink-500">
+                                  题目已删除（ID: {record.questionId}）
+                                  <div className="mt-1 text-xs text-ink-400">
+                                    {formatDate(record.answeredAt, true)}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : loadingQuestions ? (
+                  <div className="flex justify-center py-8">
+                    <Spinner size={20} />
+                  </div>
+                ) : unansweredQuestions.length === 0 ? (
+                  <div className="text-center py-8 text-sm text-ink-400">
+                    当前范围内暂无未做过的题
+                  </div>
                 ) : (
                   <div className="space-y-2">
-                    {answerDetails.map((detail) => {
-                      const { record, question, lectureTitle } = detail;
-                      const score = record.score || (record.isCorrect ? "correct" : "wrong");
-                      const sc = scoreConfig[score];
+                    {unansweredQuestions.map((question) => {
+                      const rowKey = `unanswered:${question.id}`;
                       return (
                         <div
-                          key={record.id}
-                          className="flex items-start gap-3 p-3 rounded-md border border-ink-100 hover:bg-mist/30 transition-colors"
+                          key={question.id}
+                          className="rounded-md border border-ink-100 p-3 transition-colors hover:bg-mist/30"
                         >
-                          {/* 答题结果标记 */}
-                          <div className={cn("flex-shrink-0 px-2 py-1 rounded text-[10px] font-medium border", sc.bg)}>
-                            {sc.label}
+                          <div className="mb-1 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="default">{questionTypeLabel[question.type] || question.type}</Badge>
+                              <span className="text-[10px] text-ink-400">
+                                难度：{"★".repeat(question.difficulty)}
+                              </span>
+                            </div>
+                            <AddToBasketDropdown
+                              resourceType="question"
+                              resourceId={question.id}
+                              resourceTitle={question.stem}
+                              variant="outline"
+                              quickLabel="加入资源篮"
+                            />
                           </div>
-
-                          {/* 题目内容 */}
-                          <div className="flex-1 min-w-0">
-                            {question ? (
-                              <>
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <Badge variant="default">{questionTypeLabel[question.type] || question.type}</Badge>
-                                  <span className="text-[10px] text-ink-400">
-                                    难度：{"★".repeat(question.difficulty)}
-                                  </span>
-                                </div>
-                                <div className="text-sm text-ink-900 line-clamp-2 mb-1">
-                                  {question.stem}
-                                </div>
-                                <div className="flex items-center gap-3 text-xs text-ink-400 flex-wrap">
-                                  {selection.type === "class" && (
-                                    <span className="flex items-center gap-1">
-                                      <User className="w-3 h-3" />
-                                      {questionService_studentName(record.studentId, studentsByClass, selection)}
-                                    </span>
-                                  )}
-                                  {lectureTitle && (
-                                    <span className="flex items-center gap-1">
-                                      <FileText className="w-3 h-3" />
-                                      {lectureTitle}
-                                    </span>
-                                  )}
-                                  {question.knowledgePointIds.length > 0 && (
-                                    <span className="flex items-center gap-1 text-teal-600">
-                                      {question.knowledgePointIds.length} 个知识点
-                                    </span>
-                                  )}
-                                  <span className="flex items-center gap-1 ml-auto">
-                                    <Calendar className="w-3 h-3" />
-                                    {formatDate(record.answeredAt, true)}
-                                  </span>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="text-sm text-ink-500">
-                                题目已删除（ID: {record.questionId}）
-                                <div className="text-xs text-ink-400 mt-1">
-                                  {formatDate(record.answeredAt, true)}
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <ExpandableQuestionContent
+                            question={question}
+                            expanded={expandedQuestionRows.has(rowKey)}
+                            onToggle={() => setExpandedQuestionRows((previous) => {
+                              const next = new Set(previous);
+                              if (next.has(rowKey)) next.delete(rowKey);
+                              else next.add(rowKey);
+                              return next;
+                            })}
+                          />
+                          {question.knowledgePointIds.length > 0 && (
+                            <div className="text-xs text-teal-600">
+                              {question.knowledgePointIds.length} 个知识点
+                            </div>
+                          )}
                         </div>
                       );
                     })}
