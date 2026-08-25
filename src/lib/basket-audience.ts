@@ -29,16 +29,33 @@ export function resolveBasketAudienceStudentIds(
 
 export function basketAudienceLabel(
   basket: Pick<Basket, "classIds" | "studentIds">,
-  audienceStudentCount?: number,
+  classes: AnyClass[],
+  students: Student[],
 ): string {
-  const classCount = basket.classIds?.length || 0;
-  const studentCount = basket.studentIds?.length || 0;
-  if (classCount === 0 && studentCount === 0) return "尚未选择使用对象";
+  const classIds = basket.classIds || [];
+  const studentIds = basket.studentIds || [];
+  if (classIds.length === 0 && studentIds.length === 0) return "尚未选择使用对象";
+
+  const classNameById = new Map(classes.map((cls) => [cls.id, cls.name]));
+  const studentNameById = new Map(students.map((student) => [student.id, student.name]));
+  const classNames = classIds.map((id) => classNameById.get(id)).filter(Boolean) as string[];
+  const studentNames = studentIds.map((id) => studentNameById.get(id)).filter(Boolean) as string[];
 
   const parts: string[] = [];
-  if (classCount > 0) parts.push(`${classCount} 个班级`);
-  if (studentCount > 0) parts.push(`${studentCount} 名指定学生`);
-  if (typeof audienceStudentCount === "number") parts.push(`共 ${audienceStudentCount} 人`);
+  if (classIds.length > 0) {
+    parts.push(
+      classNames.length === classIds.length
+        ? `班级：${classNames.join("、")}`
+        : `${classIds.length} 个班级`,
+    );
+  }
+  if (studentIds.length > 0) {
+    parts.push(
+      studentNames.length === studentIds.length
+        ? `学生：${studentNames.join("、")}`
+        : `${studentIds.length} 名指定学生`,
+    );
+  }
   return parts.join(" · ");
 }
 

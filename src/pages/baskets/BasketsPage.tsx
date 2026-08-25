@@ -376,7 +376,7 @@ export default function BasketsPage() {
                       )}
                     </div>
                     <div className="text-xs text-ink-500 mt-0.5">{b.description || "无描述"}</div>
-                    <div className="text-[11px] text-ink-400 mt-1 truncate">{basketAudienceLabel(b)}</div>
+                    <div className="text-[11px] leading-4 text-ink-400 mt-1 break-words">{basketAudienceLabel(b, audienceClasses, audienceStudents)}</div>
                   </div>
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     {!b.isDefault && (
@@ -433,7 +433,7 @@ export default function BasketsPage() {
                   audienceStudentIds.length > 0 ? "text-ink-500" : "text-amber-600",
                 )}>
                   <Users className="w-3.5 h-3.5" />
-                  {basketAudienceLabel(selectedBasket, audienceStudentIds.length)}
+                  {basketAudienceLabel(selectedBasket, audienceClasses, audienceStudents)}
                 </div>
               </div>
             </div>
