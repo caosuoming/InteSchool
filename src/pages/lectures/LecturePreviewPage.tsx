@@ -1298,6 +1298,7 @@ function LectureQuestionDetails({
             students={students}
             answerRecords={answerRecords}
             questionId={question.id}
+            unansweredLabel="待做"
             onChange={onUpdateStudentAnswer}
             showAnsweredList={visibility.answeredList}
           />

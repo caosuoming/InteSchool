@@ -3,14 +3,6 @@ import type { AnswerRecord, AnswerScore, Student } from "@/types";
 import { inferScore } from "@/services/analytics";
 import { cn } from "@/lib/utils";
 
-const scoreOptions: Array<{ value: "none" | AnswerScore; label: string }> = [
-  { value: "none", label: "未做" },
-  { value: "done", label: "已做" },
-  { value: "correct", label: "全对" },
-  { value: "partial", label: "半对" },
-  { value: "wrong", label: "做错" },
-];
-
 const scoreLabels: Record<AnswerScore, string> = {
   done: "已做",
   correct: "全对",
@@ -24,6 +16,7 @@ export function StudentAnswerStatusControl({
   questionId,
   onChange,
   showAnsweredList = false,
+  unansweredLabel = "未做",
   className = "",
 }: {
   students: Student[];
@@ -31,6 +24,7 @@ export function StudentAnswerStatusControl({
   questionId: string;
   onChange: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void> | void;
   showAnsweredList?: boolean;
+  unansweredLabel?: "未做" | "待做";
   className?: string;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState("");
@@ -67,6 +61,14 @@ export function StudentAnswerStatusControl({
       setSaving(false);
     }
   };
+
+  const scoreOptions: Array<{ value: "none" | AnswerScore; label: string }> = [
+    { value: "none", label: unansweredLabel },
+    { value: "done", label: "已做" },
+    { value: "correct", label: "全对" },
+    { value: "partial", label: "半对" },
+    { value: "wrong", label: "做错" },
+  ];
 
   const answerSelect = (
     <select

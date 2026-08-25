@@ -1903,7 +1903,7 @@ export default function LectureEditorPage() {
                             {scCfg.label}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-ink-400 px-1.5 py-0.5">未做</span>
+                          <span className="text-[10px] text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded">待做</span>
                         )}
                       </div>
                     );
@@ -4120,7 +4120,7 @@ function QuestionInfoPopover({
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-ink-300" />
             <span className="text-ink-500 font-medium">{lectureStudents.length - answeredCount}</span>
-            <span className="text-ink-500">未做</span>
+            <span className="text-ink-500">待做</span>
           </span>
         </div>
 
@@ -4128,6 +4128,7 @@ function QuestionInfoPopover({
           students={lectureStudents}
           answerRecords={answerRecords}
           questionId={question.id}
+          unansweredLabel="待做"
           onChange={(studentId, questionId, score) => onUpdateStudentAnswer?.(studentId, questionId, score)}
         />
       </div>

@@ -196,6 +196,11 @@ export default function QuestionBankPage({
 
   // 选中学学生的答题记录（题库使用模式下用于在题目上方显示答题情况）
   const [studentAnswerRecords, setStudentAnswerRecords] = useState<AnswerRecord[]>([]);
+  const [pendingQuestionAssignments, setPendingQuestionAssignments] = useState<Array<{ studentId: string; questionId: string }>>([]);
+  const pendingQuestionKeys = useMemo(
+    () => new Set(pendingQuestionAssignments.map((item) => `${item.studentId}:${item.questionId}`)),
+    [pendingQuestionAssignments],
+  );
   const [excludeDone, setExcludeDone] = useState(true);
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("all");
   const dateRange = useMemo(() => getDateRange(timeRangeKey), [timeRangeKey]);
@@ -286,7 +291,14 @@ export default function QuestionBankPage({
 
     let excludeIds: string[] = [];
     if (mode === "use" && excludeDone && selectedStudentIds.length > 0) {
-      excludeIds = Array.from(await analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange));
+      const [answeredIds, pendingAssignments] = await Promise.all([
+        analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange),
+        analyticsService.listPendingQuestionAssignments(selectedStudentIds),
+      ]);
+      excludeIds = Array.from(new Set([
+        ...answeredIds,
+        ...pendingAssignments.map((item) => item.questionId),
+      ]));
     }
 
     const filter = {
@@ -441,16 +453,25 @@ export default function QuestionBankPage({
     };
   }, [selectedStudentIds, teacher, dateRange, questions, studentAnswerRecords]);
 
-  // 拉取选中学生的答题记录（用于在题目上方显示答题情况）
+  // 拉取选中学生的答题记录和文档使用对象派生的“待做”题目。
   useEffect(() => {
     if (mode !== "use" || selectedStudentIds.length === 0) {
       setStudentAnswerRecords([]);
+      setPendingQuestionAssignments([]);
       return;
     }
-    analyticsService
-      .listAnswerRecordsByStudents(selectedStudentIds, dateRange)
-      .then(setStudentAnswerRecords)
-      .catch(() => setStudentAnswerRecords([]));
+    Promise.all([
+      analyticsService.listAnswerRecordsByStudents(selectedStudentIds, dateRange),
+      analyticsService.listPendingQuestionAssignments(selectedStudentIds),
+    ])
+      .then(([records, pendingAssignments]) => {
+        setStudentAnswerRecords(records);
+        setPendingQuestionAssignments(pendingAssignments);
+      })
+      .catch(() => {
+        setStudentAnswerRecords([]);
+        setPendingQuestionAssignments([]);
+      });
   }, [mode, selectedStudentIds, dateRange]);
 
   // 加载已选用题目列表
@@ -518,14 +539,11 @@ export default function QuestionBankPage({
     return examPapers.filter((paper) => paper.questions.some((question) => question.questionId === questionId));
   }, [examPapers]);
 
-  // 判断某题目是否被选中学生的讲义引用
+  // 判断某题目是否处于选中学生当前文档使用对象中。
   const isQuestionUsedBySelectedStudents = useCallback((questionId: string): boolean => {
     if (selectedStudentIds.length === 0) return false;
-    return lectures.some((l) =>
-      l.studentIds.some((sid) => selectedStudentIds.includes(sid)) &&
-      sectionContainsQuestion(l.sections, questionId),
-    );
-  }, [lectures, selectedStudentIds, sectionContainsQuestion]);
+    return selectedStudentIds.some((studentId) => pendingQuestionKeys.has(`${studentId}:${questionId}`));
+  }, [pendingQuestionKeys, selectedStudentIds]);
 
   const getSelectedStudentNames = useCallback((): string => {
     if (selectedStudentIds.length === 0) return "";
@@ -1037,7 +1055,7 @@ export default function QuestionBankPage({
                     onChange={(e) => setExcludeDone(e.target.checked)}
                     className="w-4 h-4 rounded border-ink-300 text-gold-500 focus:ring-gold-500"
                   />
-                  <span className="text-ink-600">自动排除已做过的题目</span>
+                  <span className="text-ink-600">自动排除做过和待做的题目</span>
                 </label>
               </div>
             )}
@@ -1155,6 +1173,7 @@ export default function QuestionBankPage({
                   students={students}
                   selectedStudentIds={selectedStudentIds}
                   studentAnswerRecords={studentAnswerRecords}
+                  pendingQuestionKeys={pendingQuestionKeys}
                   defaultBasket={defaultBasket}
                   showChapter={mode === "use" ? showChapter : undefined}
                   showKnowledge={mode === "use" ? showKnowledge : undefined}
@@ -1945,7 +1964,7 @@ function ToggleFilter({
 
 function QuestionRow({
   question, mode, chapterMap, knowledgeMap, teacher,
-  students, selectedStudentIds, studentAnswerRecords,
+  students, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
   defaultBasket, showChapter, showKnowledge, showRemark, showStudentAnswers,
   isUsedBySelectedStudents, lecturesUsingQuestion,
   onView, onEdit, onAddToBasket, onQuickAddToDefault, onRemoveFromDefault, isInDefaultBasket,
@@ -1971,6 +1990,7 @@ function QuestionRow({
   students: Student[];
   selectedStudentIds: string[];
   studentAnswerRecords: AnswerRecord[];
+  pendingQuestionKeys: Set<string>;
   defaultBasket?: { id: string; name: string; isDefault?: boolean; questionIds?: string[] } | undefined;
   showChapter?: boolean;
   showKnowledge?: boolean;
@@ -2023,9 +2043,10 @@ function QuestionRow({
         (r) => r.studentId === sid && r.questionId === question.id,
       );
       const score = record ? inferScore(record) : null;
-      return { student, record, score };
+      const pending = !record && pendingQuestionKeys.has(`${sid}:${question.id}`);
+      return { student, record, score, pending };
     });
-  }, [mode, selectedStudentIds, students, studentAnswerRecords, question.id]);
+  }, [mode, selectedStudentIds, students, studentAnswerRecords, pendingQuestionKeys, question.id]);
 
   // 管理模式：只有点击题干/选项区域才展开，其他区域不触发
   const handleStemClick = (e: React.MouseEvent) => {
@@ -2093,12 +2114,12 @@ function QuestionRow({
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {questionStudentAnswers.map(({ student, score }) => {
+                {questionStudentAnswers.map(({ student, score, pending }) => {
                   const name = student?.name || "未知学生";
                   const studentId = student?.id;
                   if (editingAnswers && onUpdateStudentAnswer && studentId) {
                     const options: Array<{ value: AnswerScore | null; label: string; cls: string }> = [
-                      { value: null, label: "未做", cls: "bg-ink-100 text-ink-500 border-ink-200" },
+                      { value: null, label: pending ? "待做" : "未做", cls: "bg-ink-100 text-ink-500 border-ink-200" },
                       { value: "done", label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200" },
                       { value: "correct", label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
                       { value: "partial", label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200" },
@@ -2134,12 +2155,20 @@ function QuestionRow({
                     return (
                       <span
                         key={student?.id || name}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-ink-100 text-ink-500"
-                        title="未作答"
+                        className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px]",
+                          pending
+                            ? "bg-sky-50 text-sky-700 border border-sky-200"
+                            : "bg-ink-100 text-ink-500",
+                        )}
+                        title={pending ? "待做" : "未作答"}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full bg-ink-300" />
+                        <span className={cn(
+                          "w-1.5 h-1.5 rounded-full",
+                          pending ? "bg-sky-500" : "bg-ink-300",
+                        )} />
                         {name}
-                        <span className="opacity-70">未做</span>
+                        <span className="opacity-70">{pending ? "待做" : "未做"}</span>
                       </span>
                     );
                   }
