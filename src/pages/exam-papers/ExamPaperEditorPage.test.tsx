@@ -800,7 +800,7 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(answerStatus).getByText("已有备注")).toBeInTheDocument();
 
     fireEvent.click(within(answerStatus).getByRole("button", { name: "添加备注" }));
-    fireEvent.change(within(answerStatus).getByLabelText("新增题目备注"), {
+    fireEvent.change(await within(answerStatus).findByLabelText("新增题目备注"), {
       target: { value: "新备注" },
     });
     fireEvent.click(within(answerStatus).getByRole("button", { name: "添加" }));
@@ -929,6 +929,36 @@ describe("ExamPaperEditorPage preview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "显示已答题名单" }));
     expect(screen.queryByTestId("answered-student-list")).not.toBeInTheDocument();
+  });
+
+  it("disables save while clean and can undo unsaved editor changes", async () => {
+    renderEditorPage();
+
+    const saveButton = await screen.findByRole("button", { name: "保存" });
+    const undoButton = screen.getByRole("button", { name: "撤销" });
+    const titleInput = screen.getByLabelText("文档名");
+
+    expect(saveButton).toBeDisabled();
+    expect(undoButton).toBeDisabled();
+
+    fireEvent.change(titleInput, { target: { value: "修改后的试卷标题" } });
+    expect(saveButton).toBeEnabled();
+    expect(undoButton).toBeEnabled();
+
+    fireEvent.click(undoButton);
+    expect(titleInput).toHaveValue(paper.title);
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.change(titleInput, { target: { value: "最终试卷标题" } });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(
+        paper.id,
+        expect.objectContaining({ title: "最终试卷标题" }),
+      );
+      expect(saveButton).toBeDisabled();
+    });
   });
 
   it("places secondary editor actions below the title and removes the subtitle", async () => {

@@ -179,6 +179,36 @@ describe("LectureEditorPage courseware action", () => {
     mocks.createFromLecture.mockResolvedValue({ id: "lesson-courseware-1" });
   });
 
+  it("disables save while clean and can undo unsaved lecture changes", async () => {
+    renderPage();
+
+    const saveButton = await screen.findByRole("button", { name: "保存" });
+    const undoButton = screen.getByRole("button", { name: "撤销" });
+    const titleInput = screen.getAllByLabelText("标题")[0];
+
+    expect(saveButton).toBeDisabled();
+    expect(undoButton).toBeDisabled();
+
+    fireEvent.change(titleInput, { target: { value: "修改后的讲义标题" } });
+    expect(saveButton).toBeEnabled();
+    expect(undoButton).toBeEnabled();
+
+    fireEvent.click(undoButton);
+    expect(titleInput).toHaveValue(lecture.title);
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.change(titleInput, { target: { value: "最终讲义标题" } });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(mocks.updateLecture).toHaveBeenCalledWith(
+        lecture.id,
+        expect.objectContaining({ title: "最终讲义标题" }),
+      );
+      expect(saveButton).toBeDisabled();
+    });
+  });
+
   it("saves current lecture edits before creating courseware from edit mode", async () => {
     const user = userEvent.setup();
     renderPage();
