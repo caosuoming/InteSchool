@@ -321,6 +321,34 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.batchSaveAnswerRecords.mockResolvedValue([]);
   });
 
+  it("edits and persists decomposed exam-paper document metadata from preview", async () => {
+    renderPage();
+    await screen.findByTestId("exam-paper-preview");
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑文档属性" }));
+    expect(screen.getByRole("heading", { name: "编辑试卷属性" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("文档名"), { target: { value: "函数单元检测卷" } });
+    fireEvent.change(screen.getByLabelText("年级"), { target: { value: "高二" } });
+    fireEvent.change(screen.getByLabelText("学年"), { target: { value: "2027-2028" } });
+    fireEvent.change(screen.getByLabelText("学期"), { target: { value: "下学期" } });
+    const chapterRow = screen.getByText("函数与方程").parentElement;
+    expect(chapterRow).not.toBeNull();
+    fireEvent.click(chapterRow!.querySelector("button")!);
+    fireEvent.click(screen.getByRole("button", { name: "保存文档属性" }));
+
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, {
+        title: "函数单元检测卷",
+        grade: "高二",
+        schoolYear: "2027-2028",
+        semester: "下学期",
+        chapterIds: ["chapter-1"],
+      });
+    });
+    expect(await screen.findAllByText("函数单元检测卷")).toHaveLength(2);
+  });
+
   it("removes a basket question after adding it to the paper when confirmed", async () => {
     const basket = {
       id: "basket-1",

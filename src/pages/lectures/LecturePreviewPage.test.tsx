@@ -303,6 +303,33 @@ describe("LecturePreviewPage", () => {
     basketMocks.removeQuestion.mockResolvedValue(undefined);
   });
 
+  it("edits and persists decomposed lecture document metadata from preview", async () => {
+    renderPage();
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑文档属性" }));
+    expect(screen.getByRole("heading", { name: "编辑讲义属性" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("文档名"), { target: { value: "函数专题讲义（修订）" } });
+    fireEvent.change(screen.getByLabelText("年级"), { target: { value: "高二" } });
+    fireEvent.change(screen.getByLabelText("学年"), { target: { value: "2027-2028" } });
+    fireEvent.change(screen.getByLabelText("学期"), { target: { value: "下学期" } });
+    const chapterRow = screen.getByText("函数章节").parentElement;
+    expect(chapterRow).not.toBeNull();
+    fireEvent.click(chapterRow!.querySelector("button")!);
+    fireEvent.click(screen.getByRole("button", { name: "保存文档属性" }));
+
+    await waitFor(() => {
+      expect(lectureService.updateLecture).toHaveBeenCalledWith(lecture.id, {
+        title: "函数专题讲义（修订）",
+        grade: "高二",
+        schoolYear: "2027-2028",
+        semester: "下学期",
+        chapterIds: ["chapter-1"],
+      });
+    });
+  });
+
   it("renders a synchronized two-column preview with question metadata", async () => {
     const { container } = renderPage();
 

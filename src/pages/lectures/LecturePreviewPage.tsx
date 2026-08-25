@@ -30,6 +30,10 @@ import {
 } from "@/components/editor/PreviewSidebarControls";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadModeModal } from "@/components/resource/DocumentDownloadModeModal";
+import {
+  DocumentMetadataModal,
+  type DocumentMetadataValue,
+} from "@/components/resource/DocumentMetadataModal";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
@@ -140,6 +144,8 @@ export default function LecturePreviewPage() {
   const [metadataQuestion, setMetadataQuestion] = useState<Question | null>(null);
   const [metadataDraft, setMetadataDraft] = useState<QuestionMetadataDraft | null>(null);
   const [savingQuestionMetadata, setSavingQuestionMetadata] = useState(false);
+  const [documentMetadataOpen, setDocumentMetadataOpen] = useState(false);
+  const [savingDocumentMetadata, setSavingDocumentMetadata] = useState(false);
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
     { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
@@ -319,6 +325,21 @@ export default function LecturePreviewPage() {
       toast.error("更新使用对象失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSavingAudience(false);
+    }
+  };
+
+  const saveDocumentMetadata = async (value: DocumentMetadataValue) => {
+    if (!lecture) return;
+    setSavingDocumentMetadata(true);
+    try {
+      const updated = await lectureService.updateLecture(lecture.id, value);
+      setLecture(updated);
+      setDocumentMetadataOpen(false);
+      toast.success("讲义属性已更新");
+    } catch (error) {
+      toast.error("更新讲义属性失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingDocumentMetadata(false);
     }
   };
 
@@ -502,6 +523,12 @@ export default function LecturePreviewPage() {
         icon={<Eye className="w-5 h-5" />}
         action={
           <div className="no-print flex flex-wrap items-center justify-end gap-2">
+            {lecture.teacherId === teacher?.id && (
+              <Button variant="outline" onClick={() => setDocumentMetadataOpen(true)}>
+                <Edit3 className="w-4 h-4" />
+                编辑文档属性
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setAudienceOpen(true)}>
               <Users className="w-4 h-4" />
               <span className="max-w-48 truncate">{usageTarget === "未指定" ? "添加使用对象" : usageTarget}</span>
@@ -544,6 +571,27 @@ export default function LecturePreviewPage() {
           </div>
         }
       />
+
+      {documentMetadataOpen && (
+        <DocumentMetadataModal
+          open
+          onClose={() => setDocumentMetadataOpen(false)}
+          onSave={saveDocumentMetadata}
+          loading={savingDocumentMetadata}
+          resourceLabel="讲义"
+          value={{
+            title: lecture.title,
+            grade: lecture.grade,
+            schoolYear: lecture.schoolYear,
+            semester: lecture.semester || "上学期",
+            chapterIds: lecture.chapterIds,
+          }}
+          gradeOptions={gradeOptions}
+          schoolYearOptions={schoolYearOptions}
+          semesterOptions={semesterOptions}
+          chapterTree={chapterTree}
+        />
+      )}
 
       <DocumentDownloadModeModal
         open={downloadModalOpen}
