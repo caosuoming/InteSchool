@@ -2544,8 +2544,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <div className="text-xs text-ink-400 mt-0.5">
                           {b.questionIds.length} 题 · {b.materialIds.length} 素材
                         </div>
-                        <div className="text-[11px] text-ink-400 mt-0.5 truncate">
-                          {basketAudienceLabel(b)}
+                        <div className="text-[11px] leading-4 text-ink-400 mt-0.5 break-words">
+                          {basketAudienceLabel(b, audienceClasses, audienceStudents)}
                         </div>
                       </div>
                       <div className="flex items-center gap-0.5 ml-2">
@@ -2607,7 +2607,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     )}>
                       <Users className="w-3.5 h-3.5" />
                       {selectedBasket
-                        ? basketAudienceLabel(selectedBasket, basketAudienceStudentIds.length)
+                        ? basketAudienceLabel(selectedBasket, audienceClasses, audienceStudents)
                         : "尚未选择使用对象"}
                     </div>
                   </div>
