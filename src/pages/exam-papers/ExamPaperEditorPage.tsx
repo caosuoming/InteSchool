@@ -47,6 +47,10 @@ import {
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
 import { ResourceCommentButton } from "@/components/prep/ResourceCommentButton";
 import { DocumentDownloadModeModal } from "@/components/resource/DocumentDownloadModeModal";
+import {
+  DocumentMetadataModal,
+  type DocumentMetadataValue,
+} from "@/components/resource/DocumentMetadataModal";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
 import {
   commonScoreUnderHeading,
@@ -270,6 +274,8 @@ export default function ExamPaperEditorPage() {
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
     { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
+  const [documentMetadataOpen, setDocumentMetadataOpen] = useState(false);
+  const [savingDocumentMetadata, setSavingDocumentMetadata] = useState(false);
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
 
@@ -845,6 +851,25 @@ export default function ExamPaperEditorPage() {
       throw error;
     }
   }, []);
+
+  const saveDocumentMetadata = async (value: DocumentMetadataValue) => {
+    if (!paper) return;
+    setSavingDocumentMetadata(true);
+    try {
+      const updated = await examPaperService.updatePaper(paper.id, value);
+      setPaper(updated);
+      setTitle(updated.title);
+      setGrade(updated.grade);
+      setSchoolYear(updated.schoolYear);
+      setSemester(updated.semester || "上学期");
+      setDocumentMetadataOpen(false);
+      toast.success("试卷属性已更新");
+    } catch (error) {
+      toast.error("更新试卷属性失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingDocumentMetadata(false);
+    }
+  };
 
   // 编辑模式：调整顺序
   const handleMove = (idx: number, dir: "up" | "down") => {
@@ -1509,6 +1534,12 @@ export default function ExamPaperEditorPage() {
           aria-label="试卷预览操作"
           className="no-print mb-6 flex flex-wrap items-center justify-end gap-2"
         >
+          {!prepTaskId && paper?.teacherId === teacher?.id && (
+            <Button variant="outline" onClick={() => setDocumentMetadataOpen(true)}>
+              <Edit3 className="w-4 h-4" />
+              编辑文档属性
+            </Button>
+          )}
           {!prepTaskId && (
             <Button variant="outline" onClick={() => setAudiencePickerOpen(true)}>
               <Users className="w-4 h-4" />
@@ -1808,6 +1839,26 @@ export default function ExamPaperEditorPage() {
           loading={downloading}
           resourceLabel="试卷"
         />
+        {paper && documentMetadataOpen && (
+          <DocumentMetadataModal
+            open
+            onClose={() => setDocumentMetadataOpen(false)}
+            onSave={saveDocumentMetadata}
+            loading={savingDocumentMetadata}
+            resourceLabel="试卷"
+            value={{
+              title,
+              grade,
+              schoolYear,
+              semester,
+              chapterIds: paper.chapterIds,
+            }}
+            gradeOptions={gradeOptions}
+            schoolYearOptions={schoolYearOptions}
+            semesterOptions={semesterOptions}
+            chapterTree={chapterTree}
+          />
+        )}
         {audienceModal}
       </div>
     );
