@@ -59,6 +59,20 @@ function restoreEditableChapterHierarchy(sections: LectureSection[]): LectureSec
   return roots;
 }
 
+function containedKnowledgePointIds(lecture: Lecture): string[] {
+  const questionIds = new Set(collectQuestionIds(lecture.sections));
+  if (questionIds.size === 0) return lecture.knowledgePointIds;
+
+  const ids = new Set<string>();
+  let resolvedQuestion = false;
+  for (const question of db.read("questions")) {
+    if (!questionIds.has(question.id)) continue;
+    resolvedQuestion = true;
+    question.knowledgePointIds.forEach((id) => ids.add(id));
+  }
+  return resolvedQuestion ? [...ids] : lecture.knowledgePointIds;
+}
+
 function matchFilter(l: Lecture, filter: LectureFilter): boolean {
   if (filter.keyword) {
     const kw = filter.keyword.toLowerCase();
@@ -73,11 +87,12 @@ function matchFilter(l: Lecture, filter: LectureFilter): boolean {
     }
   }
   if (filter.knowledgePointIds?.length) {
+    const ids = containedKnowledgePointIds(l);
     const logic = filter.knowledgeLogic || "or";
     if (logic === "and") {
-      if (!filter.knowledgePointIds.every((k) => l.knowledgePointIds.includes(k))) return false;
+      if (!filter.knowledgePointIds.every((k) => ids.includes(k))) return false;
     } else {
-      if (!filter.knowledgePointIds.some((k) => l.knowledgePointIds.includes(k))) return false;
+      if (!filter.knowledgePointIds.some((k) => ids.includes(k))) return false;
     }
   }
   if (filter.grade && l.grade !== filter.grade) return false;
