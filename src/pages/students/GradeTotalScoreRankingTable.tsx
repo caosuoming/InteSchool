@@ -95,7 +95,7 @@ export function GradeTotalScoreRankingTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeTotalScoreRankingReport(report);
+      await exportGradeTotalScoreRankingReport(report, exam.name);
       toast.success("总分前 N 名已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);

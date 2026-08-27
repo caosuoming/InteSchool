@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GradeExam, GradeImportContext } from "@/types";
 import { buildDefaultGradeSettings } from "./grade-statistics";
+import { buildGradeClassAverageReport } from "./grade-class-average";
+import { buildGradeTotalScoreSegmentReport } from "./grade-total-score-segment";
+import { buildGradeSubjectScoreSegmentReport } from "./grade-subject-score-segment";
+import { buildGradeElectiveScoreSegmentReport } from "./grade-elective-score-segment";
 import {
+  exportGradeClassAverageReport,
   exportGradeClassStatisticsReport,
+  exportGradeElectiveScoreSegmentReport,
+  exportGradeSubjectScoreSegmentReport,
   exportGradeTotalScoreRankingReport,
+  exportGradeTotalScoreSegmentReport,
   exportGradeTablesOneToFive,
 } from "./grade-spreadsheet";
 import { buildGradeClassStatisticsReport } from "./grade-class-statistics";
@@ -149,7 +157,111 @@ describe("combined grade exports", () => {
       "总分（赋分）",
     ]);
     expect(tableFive.data[2].map((cell) => cell.value)).toEqual([1, "001", "张三", "1班", 120, 90, 210]);
-    expect(toFile).toHaveBeenCalledWith("2027届高三期末考试_表一至表五.xlsx");
+    expect(toFile).toHaveBeenCalledWith("期末考试表一至表五.xlsx");
+  });
+
+  it("uses valid merged cells that mirror the on-screen tables", async () => {
+    await exportGradeTablesOneToFive({
+      exam,
+      settings,
+      context,
+      classAverageTemplate,
+      totalScoreSegmentTemplate,
+    });
+
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
+      sheet: string;
+      data: Array<Array<null | { value?: string | number; align?: string; columnSpan?: number; rowSpan?: number }>>;
+    }>;
+
+    const tableOne = sheets.find((sheet) => sheet.sheet.startsWith("表一"))!;
+    const firstCategoryRow = tableOne.data.slice(2).find((row) => row[0]?.rowSpan);
+    expect(firstCategoryRow?.[0]?.rowSpan).toBeGreaterThan(1);
+    const firstCategoryIndex = tableOne.data.indexOf(firstCategoryRow!);
+    expect(tableOne.data[firstCategoryIndex + 1][0]).toBeNull();
+    expect(tableOne.data[firstCategoryIndex][1]?.rowSpan).toBe(2);
+    expect(tableOne.data[firstCategoryIndex + 1][1]).toBeNull();
+    const overallRow = tableOne.data.find((row) => row[0]?.value === "全校平均")!;
+    expect(overallRow[0]?.columnSpan).toBe(3);
+    expect(overallRow.slice(1, 3)).toEqual([null, null]);
+
+    const tableTwo = sheets.find((sheet) => sheet.sheet.startsWith("表二"))!;
+    const standardRow = tableTwo.data.find((row) => typeof row[0]?.value === "string" && row[0].value.includes("理科标准"))!;
+    expect(standardRow[0]?.columnSpan).toBe(standardRow.length);
+    expect(standardRow.slice(1).every((cell) => cell === null)).toBe(true);
+
+    const tableThree = sheets.find((sheet) => sheet.sheet.startsWith("表三"))!;
+    const tableThreeTotal = tableThree.data.find((row) => row[0]?.value === "累计")!;
+    const tableThreeRate = tableThree.data.find((row) => row[0]?.value === "所占比例")!;
+    expect(tableThree.data[1][1]?.value).toBe("语文");
+    expect(tableThreeTotal[0]?.columnSpan).toBe(2);
+    expect(tableThreeTotal[1]).toBeNull();
+    expect(tableThreeRate[0]?.columnSpan).toBe(3);
+    expect(tableThreeRate.slice(1, 3)).toEqual([null, null]);
+
+    const tableFour = sheets.find((sheet) => sheet.sheet.startsWith("表四"))!;
+    const tableFourTotal = tableFour.data.find((row) => row[0]?.value === "累计")!;
+    const tableFourRate = tableFour.data.find((row) => row[0]?.value === "所占比例")!;
+    expect(tableFourTotal[0]?.columnSpan).toBe(2);
+    expect(tableFourTotal[1]).toBeNull();
+    expect(tableFourRate[0]?.columnSpan).toBe(3);
+    expect(tableFourRate.slice(1, 3)).toEqual([null, null]);
+
+    const tableFive = sheets.find((sheet) => sheet.sheet.startsWith("表五"))!;
+    expect(tableFive.data[2].every((cell) => cell?.align === "center")).toBe(true);
+  });
+
+  it("names standalone exports from the exam name plus table type", async () => {
+    const classAverageReport = buildGradeClassAverageReport(exam, classAverageTemplate, context, settings);
+    const totalScoreSegmentReport = buildGradeTotalScoreSegmentReport(
+      exam,
+      totalScoreSegmentTemplate,
+      context,
+      classAverageTemplate,
+    );
+    const subjectScoreSegmentReport = buildGradeSubjectScoreSegmentReport(
+      exam,
+      totalScoreSegmentTemplate,
+      context,
+      settings,
+      classAverageTemplate,
+    );
+    const electiveScoreSegmentReport = buildGradeElectiveScoreSegmentReport(
+      exam,
+      totalScoreSegmentTemplate,
+      context,
+      settings,
+      classAverageTemplate,
+    );
+    const totalScoreRankingReport = buildGradeTotalScoreRankingReport(
+      exam,
+      totalScoreSegmentTemplate,
+      context,
+      classAverageTemplate,
+    );
+    const classStatisticsReport = buildGradeClassStatisticsReport(exam, [], {
+      showSubjectClassRanks: false,
+      showSubjectGradeRanks: false,
+      showRawTotal: false,
+      showAssignedTotal: false,
+      comparisonExamIds: [],
+    });
+
+    await exportGradeClassAverageReport(classAverageReport, exam.name);
+    await exportGradeTotalScoreSegmentReport(totalScoreSegmentReport, exam.name);
+    await exportGradeSubjectScoreSegmentReport(subjectScoreSegmentReport, exam.name);
+    await exportGradeElectiveScoreSegmentReport(electiveScoreSegmentReport, exam.name);
+    await exportGradeTotalScoreRankingReport(totalScoreRankingReport, exam.name);
+    await exportGradeClassStatisticsReport(classStatisticsReport, exam.name);
+
+    expect(toFile.mock.calls.map(([fileName]) => fileName)).toEqual([
+      "期末考试班级平均分统计表.xlsx",
+      "期末考试总分分数段汇总表.xlsx",
+      "期末考试各单科分数段.xlsx",
+      "期末考试选修分数段.xlsx",
+      "期末考试总分前50名.xlsx",
+      "期末考试各班成绩统计.xlsx",
+    ]);
   });
 
   it("places every class from table six in its own sheet", async () => {
@@ -161,12 +273,12 @@ describe("combined grade exports", () => {
       comparisonExamIds: [],
     });
 
-    await exportGradeClassStatisticsReport(report);
+    await exportGradeClassStatisticsReport(report, exam.name);
 
     expect(writeXlsxFile).toHaveBeenCalledTimes(1);
     const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string }>;
     expect(sheets.map((sheet) => sheet.sheet)).toEqual(["高三（1）班", "高三（2）班"]);
-    expect(toFile).toHaveBeenCalledWith("2027届高三期末考试各班成绩统计.xlsx");
+    expect(toFile).toHaveBeenCalledWith("期末考试各班成绩统计.xlsx");
   });
 
   it("includes every subject score in the standalone table-five export", async () => {
