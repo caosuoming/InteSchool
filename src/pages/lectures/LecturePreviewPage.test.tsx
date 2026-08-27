@@ -314,7 +314,7 @@ describe("LecturePreviewPage", () => {
     fireEvent.change(screen.getByLabelText("年级"), { target: { value: "高二" } });
     fireEvent.change(screen.getByLabelText("学年"), { target: { value: "2027-2028" } });
     fireEvent.change(screen.getByLabelText("学期"), { target: { value: "下学期" } });
-    const chapterRow = screen.getByText("函数章节").parentElement;
+    const chapterRow = (await screen.findByText("函数章节")).parentElement;
     expect(chapterRow).not.toBeNull();
     fireEvent.click(chapterRow!.querySelector("button")!);
     fireEvent.click(screen.getByRole("button", { name: "保存文档属性" }));

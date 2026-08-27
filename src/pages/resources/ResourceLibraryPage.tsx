@@ -364,7 +364,9 @@ export default function ResourceLibraryPage() {
             </div>
             {leftTab === "chapter" ? (
               <SearchableTree
+                editable
                 data={chapterTree!}
+                onDataChange={setChapterTree}
                 title="章节目录"
                 accent="gold"
                 checkable
@@ -377,7 +379,9 @@ export default function ResourceLibraryPage() {
               />
             ) : (
               <SearchableTree
+                editable
                 data={knowledgeTree!}
+                onDataChange={setKnowledgeTree}
                 title="知识点目录"
                 accent="teal"
                 checkable

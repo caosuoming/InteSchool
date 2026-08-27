@@ -9,7 +9,6 @@ import {
   FileSpreadsheet,
   Link2,
   Settings2,
-  TableProperties,
   Upload,
 } from "lucide-react";
 import type {
@@ -52,6 +51,7 @@ import {
   buildDefaultGradeSettings,
   DEFAULT_ASSIGNMENT_RULES,
   inferClassSubjectAvailability,
+  inferStatisticSubjectsFromSelections,
   normalizeGradeSettings,
 } from "@/lib/grade-statistics";
 import {
@@ -61,7 +61,7 @@ import {
 import { cn } from "@/lib/utils";
 import { GradeSettingsEditor } from "./GradeSettingsEditor";
 
-type WizardStep = 1 | 2 | 3 | 4;
+type WizardStep = 1 | 2 | 3;
 
 interface GradeImportWizardProps {
   open: boolean;
@@ -76,7 +76,6 @@ const steps = [
   { step: 1 as const, label: "选择文件与字段", icon: Upload },
   { step: 2 as const, label: "匹配学生", icon: Link2 },
   { step: 3 as const, label: "核对设置", icon: Settings2 },
-  { step: 4 as const, label: "统计模板", icon: TableProperties },
 ];
 
 function mappedSubjects(mappings: GradeColumnMapping[]): string[] {
@@ -345,11 +344,27 @@ export function GradeImportWizard({
         importedSubjects,
         classStudentCounts,
       );
+      const classSelections = new Map<string, string[]>();
+      matched.forEach((row) => {
+        const classId = row.createStudent?.classId
+          || (row.studentId ? studentClassIds.get(row.studentId) : undefined);
+        const selection = row.subjectSelection?.trim();
+        if (!classId || !selection) return;
+        classSelections.set(classId, [...(classSelections.get(classId) || []), selection]);
+      });
+      const classStatisticSubjectPresets = Object.fromEntries(context.classes.flatMap((classItem) => {
+        const selections = classSelections.get(classItem.id)
+          || context.classProfiles?.[classItem.id]?.subjectSelections
+          || [];
+        const preset = inferStatisticSubjectsFromSelections(importedSubjects, selections);
+        return preset ? [[classItem.id, preset]] : [];
+      }));
       const defaults = buildDefaultGradeSettings(
         importedSubjects,
         context.classes.map((item) => item.id),
         context.teachers,
         classSubjectAvailability,
+        classStatisticSubjectPresets,
       );
       const formulaDefaults = context.templateProfile
         ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }
@@ -473,6 +488,19 @@ export function GradeImportWizard({
     setSettings({ ...settings, assignmentRules });
   };
 
+  const persistTeacherSettings = async (nextSettings: GradeExamSettings): Promise<GradeExamSettings> => {
+    if (!cohortKey || subjects.length === 0) return nextSettings;
+    const saved = await gradeService.saveCohortSettings(
+      schoolId,
+      teacherId,
+      cohortKey,
+      subjects,
+      nextSettings,
+    );
+    setCohortSettings(saved);
+    return structuredClone(saved.settings);
+  };
+
   const handleSubmit = async () => {
     if (!workbook || !selectedSheet || !settings || !context) return;
     setSubmitting(true);
@@ -502,7 +530,6 @@ export function GradeImportWizard({
       <div className="text-xs text-ink-400">
         {step === 2 && `${rows.length - unresolvedCount}/${rows.length} 行已完成匹配`}
         {step === 3 && "保存后仍可在统计设置中重新计算"}
-        {step === 4 && "导入后自动生成成绩查询与统计表"}
       </div>
       <div className="flex gap-2">
         {step > 1 && (
@@ -524,12 +551,6 @@ export function GradeImportWizard({
           </Button>
         )}
         {step === 3 && (
-          <Button variant="gold" onClick={() => setStep(4)}>
-            下一步：统计模板
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        )}
-        {step === 4 && (
           <Button variant="gold" onClick={handleSubmit} loading={submitting}>
             <Check className="h-4 w-4" />
             完成导入
@@ -549,7 +570,7 @@ export function GradeImportWizard({
       description="按年级读取 Excel，核对字段与学生名单，再生成可查询、可重算的成绩数据。"
       footer={footer}
     >
-      <div className="mb-6 grid grid-cols-4 gap-2">
+      <div className="mb-6 grid grid-cols-3 gap-2">
         {steps.map((item) => {
           const Icon = item.icon;
           const active = step === item.step;
@@ -1042,19 +1063,11 @@ export function GradeImportWizard({
             onChange={setSettings}
             section="settings"
             importedAssignedSubjects={importedAssignedSubjects}
+            onTeacherImport={persistTeacherSettings}
           />
         </div>
       )}
 
-      {step === 4 && context && settings && (
-        <GradeSettingsEditor
-          settings={settings}
-          subjects={subjects}
-          context={context}
-          onChange={setSettings}
-          section="templates"
-        />
-      )}
     </Modal>
   );
 }

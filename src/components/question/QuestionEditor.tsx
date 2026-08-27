@@ -527,7 +527,9 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
       <div className="grid gap-4 md:grid-cols-2">
         {chapterTree ? (
           <SearchableTree
+            editable
             data={chapterTree}
+            onDataChange={setChapterTree}
             title={(
               <span className="flex items-center gap-1.5 text-gold-800">
                 <BookOpen className="h-3.5 w-3.5 text-gold-700" />
@@ -566,7 +568,9 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
 
         {knowledgeTree ? (
           <SearchableTree
+            editable
             data={knowledgeTree}
+            onDataChange={setKnowledgeTree}
             title={(
               <span className="flex items-center gap-1.5 text-teal-800">
                 <Lightbulb className="h-3.5 w-3.5 text-teal-700" />
