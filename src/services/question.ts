@@ -1,3 +1,4 @@
+import { normalizeLegacyQuestionMeanNotation } from "@/lib/legacy-question-math";
 import { rpcCall } from "./api";
 
 import type {
@@ -46,7 +47,8 @@ export interface QuestionPage {
 
 export const questionService = {
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
-    return rpcCall("question", "listQuestions", [filter]) as any;
+    const questions = await rpcCall("question", "listQuestions", [filter]) as Question[];
+    return questions.map(normalizeLegacyQuestionMeanNotation);
   },
 
   async listQuestionPage(
@@ -55,15 +57,29 @@ export const questionService = {
     pageSize = 20,
     sortKey: QuestionSortKey = "newest",
   ): Promise<QuestionPage> {
-    return rpcCall("question", "listQuestionPage", [filter, page, pageSize, sortKey, null]) as any;
+    const result = await rpcCall(
+      "question",
+      "listQuestionPage",
+      [filter, page, pageSize, sortKey, null],
+    ) as QuestionPage;
+    return {
+      ...result,
+      items: result.items.map(normalizeLegacyQuestionMeanNotation),
+    };
   },
 
   async getQuestion(id: string): Promise<Question | null> {
-    return rpcCall("question", "getQuestion", [id]) as any;
+    const question = await rpcCall("question", "getQuestion", [id]) as Question | null;
+    return question ? normalizeLegacyQuestionMeanNotation(question) : null;
   },
 
   async checkDuplicate(stem: string, answer: string, options?: string[], schoolId?: string): Promise<Question[]> {
-    return rpcCall("question", "checkDuplicate", [stem, answer, options, schoolId]) as any;
+    const questions = await rpcCall(
+      "question",
+      "checkDuplicate",
+      [stem, answer, options, schoolId],
+    ) as Question[];
+    return questions.map(normalizeLegacyQuestionMeanNotation);
   },
 
   async findSimilarQuestions(
@@ -71,7 +87,15 @@ export const questionService = {
     schoolId: string,
     excludeQuestionId?: string,
   ): Promise<SimilarQuestionCandidate[]> {
-    return rpcCall("question", "findSimilarQuestions", [stem, schoolId, excludeQuestionId]) as any;
+    const candidates = await rpcCall(
+      "question",
+      "findSimilarQuestions",
+      [stem, schoolId, excludeQuestionId],
+    ) as SimilarQuestionCandidate[];
+    return candidates.map((candidate) => ({
+      ...candidate,
+      question: normalizeLegacyQuestionMeanNotation(candidate.question),
+    }));
   },
 
   async createQuestion(teacherId: string, schoolId: string, input: QuestionInput): Promise<Question> {

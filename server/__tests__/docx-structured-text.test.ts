@@ -76,6 +76,25 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves statistical mean overbars during document decomposition", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>样本均值 </w:t></w:r>
+        <m:oMath>
+          <m:acc>
+            <m:accPr><m:chr m:val="̅"/></m:accPr>
+            <m:e><m:r><m:t>x</m:t></m:r></m:e>
+          </m:acc>
+        </m:oMath>
+        <w:r><w:t>=67。</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      String.raw`样本均值 $\bar{x}$=67。`,
+    );
+  });
+
   it("preserves Word run superscript and subscript formatting", async () => {
     const data = await makeDocx(`
       <w:p>

@@ -360,6 +360,20 @@ y=2
     );
   });
 
+  it.each(["̄", "̅", "¯", "‾"])(
+    "renders Word overbar accent %s as a bar instead of a vector",
+    (accent) => {
+      expect(ommlToLatex(`
+        <m:oMath xmlns:m="${MATH_NS}">
+          <m:acc>
+            <m:accPr><m:chr m:val="${accent}"/></m:accPr>
+            <m:e><m:r><m:t>x</m:t></m:r></m:e>
+          </m:acc>
+        </m:oMath>
+      `)).toBe(String.raw`\bar{x}`);
+    },
+  );
+
   it("normalizes Unicode vertical delimiters emitted by Word and MathType", () => {
     expect(ommlToLatex(unicodeVerticalDelimiter("∥"))).toBe(
       String.raw`\left\|x-1\right\|`,
