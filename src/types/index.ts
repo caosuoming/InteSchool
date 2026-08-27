@@ -875,6 +875,8 @@ export interface GradeExamSettings {
   classSubjectTeacherIds?: Record<string, Record<string, string[]>>;
   /** 无平台账号或尚未维护教学关系的任课教师姓名，可按班级和学科手动补录。 */
   classSubjectTeacherNames?: Record<string, Record<string, string[]>>;
+  /** 成绩统计使用的班主任姓名，按班级随年级配置保存；缺失时回退到组织架构中的班主任。 */
+  classHomeroomTeacherNames?: Record<string, string[]>;
   /** 仅需要赋分的学科配置规则；未配置的科目沿用原始分。 */
   assignmentRules: Record<string, GradeBandRule[]>;
   classSubjects: GradeClassSubjectSetting[];

@@ -119,6 +119,30 @@ describe("GradeSettingsEditor", () => {
     expect(classSetting.examSubjects).toContain("数学");
   });
 
+  it("allows manually editing the grade-bound homeroom teacher", async () => {
+    const user = userEvent.setup();
+    const settings = buildDefaultGradeSettings(["数学"], classes.map((item) => item.id));
+    const onChange = vi.fn();
+
+    render(
+      <GradeSettingsEditor
+        settings={settings}
+        subjects={["数学"]}
+        context={context}
+        onChange={onChange}
+        section="settings"
+      />,
+    );
+
+    const input = screen.getByRole("textbox", { name: "高三(2)班班主任" });
+    await user.type(input, "赵班主任");
+    await user.tab();
+
+    expect(onChange.mock.lastCall?.[0].classHomeroomTeacherNames).toMatchObject({
+      "class-2": ["赵班主任"],
+    });
+  });
+
   it("accepts manually entered teachers when no linked account exists", async () => {
     const user = userEvent.setup();
     const settings = buildDefaultGradeSettings(["数学"], classes.map((item) => item.id));

@@ -346,9 +346,11 @@ export function buildGradeClassAverageReport(
         classLabel: options.classLabels?.[classId] || compactGradeClassLabel(className),
         category: options.classCategories?.[classId] || "普通班",
         studentCount: records.length,
-        homeroomTeachers: unique(context.teachers
-          .filter((teacher) => teacher.homeroomClassIds?.includes(classId))
-          .map((teacher) => teacher.name)),
+        homeroomTeachers: Object.prototype.hasOwnProperty.call(settings.classHomeroomTeacherNames || {}, classId)
+          ? unique(settings.classHomeroomTeacherNames?.[classId] || [])
+          : unique(context.teachers
+              .filter((teacher) => teacher.homeroomClassIds?.includes(classId))
+              .map((teacher) => teacher.name)),
         subjectTeachers: Object.fromEntries(effectiveSubjects.map((subject) => [
           subject,
           teacherNamesForSubject(classId, subject, settings, context),

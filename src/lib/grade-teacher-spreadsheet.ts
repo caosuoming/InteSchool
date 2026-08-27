@@ -5,27 +5,30 @@ type CellValue = string | number | boolean | Date | null | undefined;
 
 export interface GradeTeacherImportRow {
   className: string;
+  homeroomTeacherNames?: string[];
   teacherNamesBySubject: Record<string, string[]>;
 }
 
 export interface GradeTeacherImportCell {
-  key: string;
   classId: string;
   className: string;
   subject: string;
-  existingNames: string[];
   importedNames: string[];
-  conflict: boolean;
+}
+
+export interface GradeTeacherHomeroomImportCell {
+  classId: string;
+  className: string;
+  importedNames: string[];
 }
 
 export interface GradeTeacherImportPlan {
   cells: GradeTeacherImportCell[];
-  conflicts: GradeTeacherImportCell[];
+  homeroomCells: GradeTeacherHomeroomImportCell[];
 }
 
-export type GradeTeacherConflictChoice = "existing" | "imported";
-
 const CLASS_HEADERS = new Set(["班级", "班级名称", "行政班"].map(normalizeGradeHeader));
+const HOMEROOM_HEADERS = new Set(["班主任", "班主任姓名"].map(normalizeGradeHeader));
 
 function text(value: CellValue): string {
   if (value === null || value === undefined) return "";
@@ -52,12 +55,6 @@ export function parseGradeTeacherNames(value: string): string[] {
   return uniqueTeacherNames(value.split(/[、,，;；\n]+/)).slice(0, 10);
 }
 
-function sameTeacherNames(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) return false;
-  const normalizedRight = new Set(right.map(normalizeTeacherName));
-  return left.every((value) => normalizedRight.has(normalizeTeacherName(value)));
-}
-
 function teacherNamesForCell(
   settings: GradeExamSettings,
   context: GradeImportContext,
@@ -76,7 +73,14 @@ function teacherNamesForCell(
   return uniqueTeacherNames([...linkedNames, ...manualNames]);
 }
 
-function homeroomTeacherNames(context: GradeImportContext, classId: string): string[] {
+function homeroomTeacherNames(
+  settings: GradeExamSettings,
+  context: GradeImportContext,
+  classId: string,
+): string[] {
+  if (Object.prototype.hasOwnProperty.call(settings.classHomeroomTeacherNames || {}, classId)) {
+    return uniqueTeacherNames(settings.classHomeroomTeacherNames?.[classId] || []);
+  }
   return uniqueTeacherNames(context.teachers
     .filter((teacher) => teacher.homeroomClassIds?.includes(classId))
     .map((teacher) => teacher.name));
@@ -92,6 +96,7 @@ export function parseGradeTeacherTable(
   const headers = rows[firstNonEmpty].map((cell) => normalizeGradeHeader(text(cell)));
   const classColumn = headers.findIndex((header) => CLASS_HEADERS.has(header));
   if (classColumn < 0) throw new Error("模板缺少“班级”列");
+  const homeroomColumn = headers.findIndex((header) => HOMEROOM_HEADERS.has(header));
 
   const subjectsByHeader = new Map(subjects.map((subject) => [normalizeGradeHeader(subject), subject]));
   const subjectColumns = headers.flatMap((header, columnIndex) => {
@@ -110,6 +115,9 @@ export function parseGradeTeacherTable(
     seenClasses.add(classKey);
     return [{
       className,
+      homeroomTeacherNames: homeroomColumn >= 0
+        ? parseGradeTeacherNames(text(row[homeroomColumn]))
+        : undefined,
       teacherNamesBySubject: Object.fromEntries(subjectColumns.map(({ columnIndex, subject }) => [
         subject,
         parseGradeTeacherNames(text(row[columnIndex])),
@@ -158,7 +166,7 @@ export async function downloadGradeTeacherTemplate(
   const rows = classes.map((classItem) => [
     classItem.name,
     context.classProfiles?.[classItem.id]?.classTypeName || "",
-    homeroomTeacherNames(context, classItem.id).join("、"),
+    homeroomTeacherNames(settings, context, classItem.id).join("、"),
     ...subjects.map((subject) => teacherNamesForCell(settings, context, classItem.id, subject).join("、")),
   ]);
   const safeName = cohortLabel.replace(/[\\/:*?"<>|]/g, "_");
@@ -191,26 +199,25 @@ export function buildGradeTeacherImportPlan(
     classesByName.set(key, classItem);
   });
 
+  const homeroomCells: GradeTeacherHomeroomImportCell[] = [];
   const cells = rows.flatMap((row) => {
     const classItem = classesByName.get(normalizeClassName(row.className));
     if (!classItem) throw new Error(`模板中的班级“${row.className}”不属于当前年级`);
-    return Object.entries(row.teacherNamesBySubject).map(([subject, importedNames]) => {
-      const existingNames = teacherNamesForCell(settings, context, classItem.id, subject);
-      return {
-        key: `${classItem.id}:${subject}`,
+    if (row.homeroomTeacherNames !== undefined) {
+      homeroomCells.push({
         classId: classItem.id,
         className: classItem.name,
-        subject,
-        existingNames,
-        importedNames,
-        conflict: existingNames.length > 0 && !sameTeacherNames(existingNames, importedNames),
-      } satisfies GradeTeacherImportCell;
-    });
+        importedNames: row.homeroomTeacherNames,
+      });
+    }
+    return Object.entries(row.teacherNamesBySubject).map(([subject, importedNames]) => ({
+      classId: classItem.id,
+      className: classItem.name,
+      subject,
+      importedNames,
+    } satisfies GradeTeacherImportCell));
   });
-  return {
-    cells,
-    conflicts: cells.filter((cell) => cell.conflict),
-  };
+  return { cells, homeroomCells };
 }
 
 function resolveImportedTeacherAssignment(
@@ -258,7 +265,6 @@ export function applyGradeTeacherImportPlan(
   context: GradeImportContext,
   subjects: string[],
   plan: GradeTeacherImportPlan,
-  choices: Record<string, GradeTeacherConflictChoice> = {},
 ): GradeExamSettings {
   const classSubjectTeacherIds: Record<string, Record<string, string[]>> = Object.fromEntries(
     context.classes.map((classItem) => [
@@ -280,9 +286,15 @@ export function applyGradeTeacherImportPlan(
       ])),
     ]),
   );
+  const classHomeroomTeacherNames: Record<string, string[]> = {
+    ...(settings.classHomeroomTeacherNames || {}),
+  };
+
+  plan.homeroomCells.forEach((cell) => {
+    classHomeroomTeacherNames[cell.classId] = [...cell.importedNames];
+  });
 
   plan.cells.forEach((cell) => {
-    if (cell.conflict && choices[cell.key] === "existing") return;
     const resolved = resolveImportedTeacherAssignment(cell, settings, context);
     classSubjectTeacherIds[cell.classId] = {
       ...classSubjectTeacherIds[cell.classId],
@@ -307,5 +319,6 @@ export function applyGradeTeacherImportPlan(
     subjectTeacherIds,
     classSubjectTeacherIds,
     classSubjectTeacherNames,
+    classHomeroomTeacherNames,
   };
 }

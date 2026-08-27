@@ -30,6 +30,41 @@ export const DEFAULT_ASSIGNMENT_RULES: GradeBandRule[] = [
 ];
 
 export type GradeClassSubjectAvailability = Record<string, string[]>;
+export type GradeClassStatisticSubjectPresets = Record<string, string[]>;
+
+const ELECTIVE_SELECTION_ALIASES: Record<string, string[]> = {
+  物理: ["物理", "物"],
+  化学: ["化学", "化"],
+  生物: ["生物", "生"],
+  政治: ["政治", "政"],
+  历史: ["历史", "史"],
+  地理: ["地理", "地"],
+};
+
+export function inferStatisticSubjectsFromSelections(
+  subjects: string[],
+  subjectSelections: string[],
+): string[] | undefined {
+  const normalizedSubjects = unique(subjects);
+  const selections = subjectSelections.map((value) => value.trim()).filter(Boolean);
+  if (selections.length === 0) return undefined;
+
+  const parsedSelections = selections.map((selection) => new Set(
+    normalizedSubjects.filter((subject) => {
+      const aliases = ELECTIVE_SELECTION_ALIASES[subject];
+      return aliases?.some((alias) => selection.includes(alias)) || false;
+    }),
+  )).filter((selection) => selection.size > 0);
+  if (parsedSelections.length === 0) return undefined;
+
+  const commonElectives = normalizedSubjects.filter((subject) =>
+    parsedSelections.every((selection) => selection.has(subject)),
+  );
+  const coreSubjects = normalizedSubjects.filter((subject) =>
+    CORE_GRADE_SUBJECTS.includes(subject as (typeof CORE_GRADE_SUBJECTS)[number]),
+  );
+  return unique([...coreSubjects, ...commonElectives]);
+}
 
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
@@ -91,6 +126,7 @@ export function buildDefaultGradeSettings(
   classIds: string[],
   teachers: GradeTeacherOption[] = [],
   classSubjectAvailability: GradeClassSubjectAvailability = {},
+  classStatisticSubjectPresets: GradeClassStatisticSubjectPresets = {},
 ): GradeExamSettings {
   const normalizedSubjects = unique(subjects);
   const electiveSubjects = normalizedSubjects.filter((subject) =>
@@ -126,6 +162,14 @@ export function buildDefaultGradeSettings(
       Object.fromEntries(normalizedSubjects.map((subject) => [subject, []])),
     ]),
   );
+  const classHomeroomTeacherNames = Object.fromEntries(
+    unique(classIds).flatMap((classId) => {
+      const names = unique(teachers
+        .filter((teacher) => teacher.homeroomClassIds?.includes(classId))
+        .map((teacher) => teacher.name));
+      return names.length > 0 ? [[classId, names]] : [];
+    }),
+  );
   const assignmentRules = Object.fromEntries(
     assignableSubjects.map((subject) => [
       subject,
@@ -138,10 +182,14 @@ export function buildDefaultGradeSettings(
     const defaultSubjects = hasObservedSubjects
       ? normalizedSubjects.filter((subject) => observedSubjects.has(subject))
       : normalizedSubjects;
+    const statisticPreset = classStatisticSubjectPresets[classId];
+    const statisticSubjects = statisticPreset
+      ? defaultSubjects.filter((subject) => statisticPreset.includes(subject))
+      : defaultSubjects;
     return {
       classId,
       examSubjects: [...defaultSubjects],
-      statisticSubjects: [...defaultSubjects],
+      statisticSubjects: [...statisticSubjects],
       separateRankSubjects: [],
     };
   });
@@ -150,6 +198,7 @@ export function buildDefaultGradeSettings(
     subjectTeacherIds,
     classSubjectTeacherIds,
     classSubjectTeacherNames,
+    classHomeroomTeacherNames,
     assignmentRules,
     classSubjects,
     templates: [
@@ -379,6 +428,14 @@ export function normalizeGradeSettings(
       ])),
     ]),
   );
+  const classHomeroomTeacherNames = Object.fromEntries(
+    Object.entries(settings.classHomeroomTeacherNames || {})
+      .filter(([classId]) => classSet.has(classId))
+      .map(([classId, names]) => [
+        classId,
+        unique((names || []).map((name) => name.trim())).filter(Boolean).slice(0, 10),
+      ]),
+  );
 
   const byClass = new Map(
     (settings.classSubjects || [])
@@ -468,6 +525,7 @@ export function normalizeGradeSettings(
     subjectTeacherIds,
     classSubjectTeacherIds,
     classSubjectTeacherNames,
+    classHomeroomTeacherNames,
     assignmentRules,
     classSubjects,
     templates,

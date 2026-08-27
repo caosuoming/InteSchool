@@ -26,6 +26,7 @@ import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
   inferClassSubjectAvailability,
+  inferStatisticSubjectsFromSelections,
   normalizeGradeSettings,
 } from "../../src/lib/grade-statistics.js";
 import { averageGradeValues } from "../../src/lib/grade-reports.js";
@@ -258,12 +259,14 @@ function defaultOrNormalizedSettings(
   subjects: string[],
   context: GradeImportContext,
   classSubjectAvailability: Record<string, string[]> = {},
+  classStatisticSubjectPresets: Record<string, string[]> = {},
 ): GradeExamSettings {
   const defaults = buildDefaultGradeSettings(
     subjects,
     context.classes.map((item) => item.id),
     context.teachers,
     classSubjectAvailability,
+    classStatisticSubjectPresets,
   );
   const baseSettings = settings || defaults;
   const inheritedDefaults = context.templateProfile
@@ -734,11 +737,23 @@ export const gradeService = {
         ),
       ]),
     );
+    const targetClassHomeroomTeacherNames = Object.fromEntries(
+      classMappings.flatMap(({ targetClass, sourceClass }) => {
+        if (!sourceClass || !Object.prototype.hasOwnProperty.call(source.settings.classHomeroomTeacherNames || {}, sourceClass.id)) {
+          return [];
+        }
+        return [[
+          targetClass.id,
+          structuredClone(source.settings.classHomeroomTeacherNames?.[sourceClass.id] || []),
+        ]];
+      }),
+    );
     const copied: GradeExamSettings = {
       ...structuredClone(source.settings),
       classSubjects: targetClassSubjects,
       classSubjectTeacherIds: targetClassSubjectTeacherIds,
       classSubjectTeacherNames: targetClassSubjectTeacherNames,
+      classHomeroomTeacherNames: targetClassHomeroomTeacherNames,
     };
     return persistCohortSettings(
       schoolId,
@@ -865,11 +880,25 @@ export const gradeService = {
       context.students.filter((student) => student.classId === classItem.id).length
         + newStudents.filter((student) => student.classId === classItem.id).length,
     ]));
+    const classSelections = new Map<string, string[]>();
+    baseRecords.forEach((record) => {
+      const selection = record.subjectSelection?.trim();
+      if (!selection) return;
+      classSelections.set(record.classId, [...(classSelections.get(record.classId) || []), selection]);
+    });
+    const classStatisticSubjectPresets = Object.fromEntries(context.classes.flatMap((classItem) => {
+      const selections = classSelections.get(classItem.id)
+        || context.classProfiles?.[classItem.id]?.subjectSelections
+        || [];
+      const subjectPreset = inferStatisticSubjectsFromSelections(subjects, selections);
+      return subjectPreset ? [[classItem.id, subjectPreset]] : [];
+    }));
     const settings = defaultOrNormalizedSettings(
       input.settings || preset?.settings,
       subjects,
       context,
       inferClassSubjectAvailability(baseRecords, subjects, importedClassCounts),
+      classStatisticSubjectPresets,
     );
     const records = calculateGradeRecords(baseRecords, subjects, settings);
     const now = new Date().toISOString();
