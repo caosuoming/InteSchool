@@ -53,7 +53,6 @@ import { Input, Textarea, Select } from "@/components/ui/Input";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
-import { TreeView } from "@/components/tree/TreeView";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
@@ -2256,26 +2255,35 @@ export default function LectureEditorPage() {
                   <div>
                     <div className="text-xs font-medium text-ink-600 mb-1.5">章节目录</div>
                     {chapterTree && (
-                      <TreeView
+                      <SearchableTree
+                        editable
                         data={chapterTree}
+                        onDataChange={setChapterTree}
+                        title="章节目录"
+                        showHeader={false}
                         checkable
                         checkedIds={selectedChapterIds}
                         onCheck={setSelectedChapterIds}
                         expandLevel={1}
-                        className="text-xs max-h-52 overflow-auto"
+                        treeMaxHeightClassName="max-h-52"
                       />
                     )}
                   </div>
                   <div>
                     <div className="text-xs font-medium text-ink-600 mb-1.5">知识点</div>
                     {knowledgeTree && (
-                      <TreeView
+                      <SearchableTree
+                        editable
                         data={knowledgeTree}
+                        onDataChange={setKnowledgeTree}
+                        title="知识点目录"
+                        accent="teal"
+                        showHeader={false}
                         checkable
                         checkedIds={selectedPointIds}
                         onCheck={setSelectedPointIds}
                         expandLevel={1}
-                        className="text-xs max-h-52 overflow-auto"
+                        treeMaxHeightClassName="max-h-52"
                       />
                     )}
                   </div>
@@ -3011,7 +3019,9 @@ export default function LectureEditorPage() {
             <div className="h-72 overflow-y-auto border border-ink-100 rounded-lg p-2">
               {autoLeftTab === "chapter" && chapterTree && (
                 <SearchableTree
+                  editable
                   data={chapterTree}
+                  onDataChange={setChapterTree}
                   title="章节目录"
                   accent="gold"
                   checkable
@@ -3022,7 +3032,9 @@ export default function LectureEditorPage() {
               )}
               {autoLeftTab === "knowledge" && knowledgeTree && (
                 <SearchableTree
+                  editable
                   data={knowledgeTree}
+                  onDataChange={setKnowledgeTree}
                   title="知识点目录"
                   accent="teal"
                   checkable
@@ -3267,7 +3279,9 @@ export default function LectureEditorPage() {
             {chapterTree ? (
               <div className="h-[300px] overflow-y-auto rounded-lg border border-ink-100 p-2">
                 <SearchableTree
+                  editable
                   data={chapterTree}
+                  onDataChange={setChapterTree}
                   title="章节目录"
                   accent="gold"
                   checkable
@@ -3414,7 +3428,9 @@ export default function LectureEditorPage() {
               <div className="rounded-lg border border-gold-100">
                 {chapterTree ? (
                   <SearchableTree
+                    editable
                     data={chapterTree}
+                    onDataChange={setChapterTree}
                     title="章节课目录"
                     checkable
                     checkedIds={bankChapterIds}
@@ -3430,7 +3446,9 @@ export default function LectureEditorPage() {
               <div className="rounded-lg border border-teal-100">
                 {knowledgeTree ? (
                   <SearchableTree
+                    editable
                     data={knowledgeTree}
+                    onDataChange={setKnowledgeTree}
                     title="知识点目录"
                     accent="teal"
                     checkable

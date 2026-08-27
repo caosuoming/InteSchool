@@ -71,4 +71,78 @@ describe("document resource metadata", () => {
         .resolves.toEqual([expect.objectContaining({ id: lecture.id })]);
     });
   });
+
+  it("filters papers and lectures by knowledge points from their contained questions", async () => {
+    const state: AppState = {
+      teachers: [],
+      currentTeacherId: null,
+      questions: [{
+        id: "question-contained",
+        schoolId: "school-1",
+        chapterIds: [],
+        knowledgePointIds: ["knowledge-contained"],
+      } as any],
+      examPapers: [],
+      lectures: [],
+    };
+
+    await runWithState(state, async () => {
+      const paper = await examPaperService.createPaper("teacher-1", "school-1", {
+        title: "函数试卷",
+        chapterIds: ["chapter-paper"],
+        knowledgePointIds: ["knowledge-document"],
+        grade: "高一",
+        schoolYear: "2026-2027",
+        duration: 60,
+        totalScore: 100,
+        questions: [{
+          id: "paper-question-1",
+          questionId: "question-contained",
+          stem: "题目",
+          answer: "答案",
+          analysis: "",
+          score: 10,
+          type: "single",
+        }],
+      });
+      const lecture = await lectureService.createLecture("teacher-1", "school-1", {
+        title: "函数讲义",
+        chapterIds: ["chapter-lecture"],
+        knowledgePointIds: ["knowledge-document"],
+        grade: "高一",
+        schoolYear: "2026-2027",
+        classIds: [],
+        studentIds: [],
+        sections: [{
+          id: "section-question-1",
+          title: "例题",
+          type: "question",
+          content: "",
+          questionId: "question-contained",
+          children: [],
+        }],
+      });
+
+      await expect(examPaperService.listPapers({ knowledgePointIds: ["knowledge-contained"] }))
+        .resolves.toEqual([expect.objectContaining({ id: paper.id })]);
+      await expect(lectureService.listLectures({ knowledgePointIds: ["knowledge-contained"] }))
+        .resolves.toEqual([expect.objectContaining({ id: lecture.id })]);
+      await expect(examPaperService.listPapers({ knowledgePointIds: ["knowledge-document"] }))
+        .resolves.toEqual([]);
+      await expect(lectureService.listLectures({ knowledgePointIds: ["knowledge-document"] }))
+        .resolves.toEqual([]);
+
+      await expect(examPaperService.listPapers({ chapterIds: ["chapter-paper"] }))
+        .resolves.toEqual([expect.objectContaining({ id: paper.id })]);
+      await expect(lectureService.listLectures({ chapterIds: ["chapter-lecture"] }))
+        .resolves.toEqual([expect.objectContaining({ id: lecture.id })]);
+
+      state.questions![0].knowledgePointIds = [];
+      await expect(examPaperService.listPapers({ knowledgePointIds: ["knowledge-document"] }))
+        .resolves.toEqual([]);
+      await expect(lectureService.listLectures({ knowledgePointIds: ["knowledge-document"] }))
+        .resolves.toEqual([]);
+    });
+  });
+
 });

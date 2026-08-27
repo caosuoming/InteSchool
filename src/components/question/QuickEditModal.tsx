@@ -244,7 +244,9 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
           {key === "chapter" && (
             chapterTree ? (
               <SearchableTree
+                editable
                 data={chapterTree}
+                onDataChange={setChapterTree}
                 title="章节目录"
                 checkable
                 checkedIds={chapterIds}
@@ -262,7 +264,9 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
           {key === "knowledge" && (
             knowledgeTree ? (
               <SearchableTree
+                editable
                 data={knowledgeTree}
+                onDataChange={setKnowledgeTree}
                 title="知识点目录"
                 accent="teal"
                 checkable

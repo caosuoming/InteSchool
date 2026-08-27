@@ -805,7 +805,9 @@ export function UploadPage() {
                     <div className="rounded-lg border border-ink-100 overflow-hidden">
                       {chapterTree ? (
                         <SearchableTree
+                          editable
                           data={chapterTree}
+                          onDataChange={setChapterTree}
                           title="章节目录"
                           accent="gold"
                           checkable
@@ -826,7 +828,9 @@ export function UploadPage() {
                     <div className="rounded-lg border border-ink-100 overflow-hidden">
                       {knowledgeTree ? (
                         <SearchableTree
+                          editable
                           data={knowledgeTree}
+                          onDataChange={setKnowledgeTree}
                           title="知识点目录"
                           accent="teal"
                           checkable
@@ -1091,7 +1095,9 @@ export function UploadPage() {
                                   <div className="rounded-lg border border-ink-100 overflow-hidden max-h-64 overflow-y-auto">
                                     {chapterTree ? (
                                       <SearchableTree
+                                        editable
                                         data={chapterTree}
+                                        onDataChange={setChapterTree}
                                         title="章节目录（覆盖）"
                                         accent="gold"
                                         checkable
@@ -1109,7 +1115,9 @@ export function UploadPage() {
                                   <div className="rounded-lg border border-ink-100 overflow-hidden max-h-64 overflow-y-auto">
                                     {knowledgeTree ? (
                                       <SearchableTree
+                                        editable
                                         data={knowledgeTree}
+                                        onDataChange={setKnowledgeTree}
                                         title="知识点目录（覆盖）"
                                         accent="teal"
                                         checkable
@@ -1349,7 +1357,9 @@ export function UploadPage() {
                 <div className="rounded-lg border border-ink-100 overflow-hidden max-h-52">
                   {chapterTree ? (
                     <SearchableTree
+                      editable
                       data={chapterTree}
+                      onDataChange={setChapterTree}
                       title="关联章节"
                       accent="gold"
                       checkable
@@ -1369,7 +1379,9 @@ export function UploadPage() {
                 <div className="rounded-lg border border-ink-100 overflow-hidden max-h-52">
                   {knowledgeTree ? (
                     <SearchableTree
+                      editable
                       data={knowledgeTree}
+                      onDataChange={setKnowledgeTree}
                       title="关联知识点"
                       accent="teal"
                       checkable

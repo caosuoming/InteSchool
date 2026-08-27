@@ -110,7 +110,7 @@ export function GradeSubjectScoreSegmentTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeSubjectScoreSegmentReport(report);
+      await exportGradeSubjectScoreSegmentReport(report, exam.name);
       toast.success("各单科分数段已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);

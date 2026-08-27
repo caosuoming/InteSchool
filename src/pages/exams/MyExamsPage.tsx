@@ -40,6 +40,7 @@ import {
   ASSIGNMENT_GRADE_SUBJECTS,
   buildDefaultGradeSettings,
   DEFAULT_ASSIGNMENT_RULES,
+  inferStatisticSubjectsFromSelections,
   normalizeGradeSettings,
 } from "@/lib/grade-statistics";
 import { GradeSettingsEditor } from "@/pages/students/GradeSettingsEditor";
@@ -230,11 +231,18 @@ function GradePreprocessing({
           .filter(([, profile]) => profile.hasImportedScores)
           .map(([classId, profile]) => [classId, profile.scoreSubjects]),
       );
+      const classStatisticSubjectPresets = Object.fromEntries(
+        Object.entries(nextContext.classProfiles || {}).flatMap(([classId, profile]) => {
+          const preset = inferStatisticSubjectsFromSelections(nextSubjects, profile.subjectSelections);
+          return preset ? [[classId, preset]] : [];
+        }),
+      );
       const baseSettings = nextRecord?.settings || buildDefaultGradeSettings(
         nextSubjects,
         nextContext.classes.map((item) => item.id),
         nextContext.teachers,
         classSubjectAvailability,
+        classStatisticSubjectPresets,
       );
       const nextSettings = normalizeGradeSettings(
         nextContext.templateProfile
@@ -433,7 +441,7 @@ function GradePreprocessing({
       classStatisticsOptions,
     );
     await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-    await exportGradeClassStatisticsReport(report);
+    await exportGradeClassStatisticsReport(report, selectedExam.name);
   }, [classStatisticsOptions, previousExams, selectedExam, teacherId]);
 
   const copy = async () => {

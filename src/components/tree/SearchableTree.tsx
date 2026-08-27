@@ -1,10 +1,19 @@
-import { useState, useMemo, type ReactNode } from "react";
-import { Search, X, RotateCcw } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { Pencil, Plus, RotateCcw, Search, X } from "lucide-react";
 import { TreeView } from "./TreeView";
 import type { TreeNode, FilterLogic } from "@/types";
 import { cn } from "@/lib/utils";
+import { knowledgeService } from "@/services/knowledge";
+import { useAuthStore } from "@/stores/auth";
+import { toast } from "@/stores/ui";
 
-interface SearchableTreeProps {
+export interface SearchableTreeProps {
   data: TreeNode;
   title: ReactNode;
   accent?: "gold" | "teal";
@@ -34,12 +43,31 @@ interface SearchableTreeProps {
   showResetButton?: boolean;
   /** 目录滚动区域的高度类名 */
   treeMaxHeightClassName?: string;
+  /** 是否允许直接新增子节点和改名。 */
+  editable?: boolean;
+  /** 可显式指定编辑所用学校；通常由当前教师身份自动提供。 */
+  editableSchoolId?: string;
+  /** 目录发生结构变更后把最新树同步给父组件。 */
+  onDataChange?: (data: TreeNode) => void;
 }
+
+type DirectoryTreeUpdateDetail = {
+  schoolId: string;
+  type: TreeNode["type"];
+  data: TreeNode;
+};
+
+const DIRECTORY_TREE_UPDATED_EVENT = "inteschool:directory-tree-updated";
 
 function findMatchingNodeIds(node: TreeNode, keyword: string): string[] {
   const normalizedKeyword = keyword.toLowerCase();
-  const matches = node.name.toLowerCase().includes(normalizedKeyword) ? [node.id] : [];
-  return [...matches, ...node.children.flatMap((child) => findMatchingNodeIds(child, keyword))];
+  const matches = node.name.toLowerCase().includes(normalizedKeyword)
+    ? [node.id]
+    : [];
+  return [
+    ...matches,
+    ...node.children.flatMap((child) => findMatchingNodeIds(child, keyword)),
+  ];
 }
 
 /**
@@ -78,19 +106,177 @@ export function SearchableTree({
   showTitle = true,
   showResetButton = true,
   treeMaxHeightClassName,
+  editable = false,
+  editableSchoolId,
+  onDataChange,
 }: SearchableTreeProps) {
+  const currentSchoolId = useAuthStore((state) => state.teacher?.schoolId);
+  const activeEditableSchoolId = editableSchoolId ?? (editable ? currentSchoolId ?? undefined : undefined);
   const [keyword, setKeyword] = useState("");
+  const [displayData, setDisplayData] = useState(data);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const normalizedKeyword = keyword.trim();
 
+  useEffect(() => {
+    setDisplayData(data);
+  }, [data]);
+
+  useEffect(() => {
+    if (!activeEditableSchoolId) return;
+    const handleDirectoryTreeUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<DirectoryTreeUpdateDetail>).detail;
+      if (detail.schoolId !== activeEditableSchoolId || detail.type !== data.type) return;
+      setDisplayData(detail.data);
+      onDataChange?.(detail.data);
+    };
+    window.addEventListener(DIRECTORY_TREE_UPDATED_EVENT, handleDirectoryTreeUpdated);
+    return () => window.removeEventListener(DIRECTORY_TREE_UPDATED_EVENT, handleDirectoryTreeUpdated);
+  }, [data.type, activeEditableSchoolId, onDataChange]);
+
   const filteredData = useMemo(() => {
-    if (!normalizedKeyword) return data;
-    return filterTree(data, normalizedKeyword) ?? data;
-  }, [data, normalizedKeyword]);
+    if (!normalizedKeyword) return displayData;
+    return filterTree(displayData, normalizedKeyword) ?? displayData;
+  }, [displayData, normalizedKeyword]);
 
   const matchingIds = useMemo(
-    () => normalizedKeyword ? findMatchingNodeIds(data, normalizedKeyword) : [],
-    [data, normalizedKeyword],
+    () =>
+      normalizedKeyword
+        ? findMatchingNodeIds(displayData, normalizedKeyword)
+        : [],
+    [displayData, normalizedKeyword],
   );
+
+  const refreshDirectoryTree = useCallback(async () => {
+    if (!activeEditableSchoolId) return null;
+    const nextTree =
+      displayData.type === "chapter"
+        ? await knowledgeService.getChapterTree(activeEditableSchoolId)
+        : await knowledgeService.getKnowledgeTree(activeEditableSchoolId);
+    window.dispatchEvent(new CustomEvent<DirectoryTreeUpdateDetail>(DIRECTORY_TREE_UPDATED_EVENT, {
+      detail: { schoolId: activeEditableSchoolId, type: displayData.type, data: nextTree },
+    }));
+    return nextTree;
+  }, [displayData.type, activeEditableSchoolId]);
+
+  const handleAddNode = useCallback(
+    async (parent: TreeNode) => {
+      if (!activeEditableSchoolId || editingNodeId) return;
+      const entered = window.prompt(
+        `在「${parent.name}」下添加新节点，请输入名称`,
+      );
+      if (entered === null) return;
+      const name = entered.trim();
+      if (!name) return;
+
+      const type = displayData.type;
+      const parentId = parent.id === "root" ? null : parent.id;
+      setEditingNodeId(parent.id);
+      try {
+        if (type === "chapter") {
+          const chapters =
+            await knowledgeService.listChapters(activeEditableSchoolId);
+          if (
+            chapters.some(
+              (item) => item.parentId === parentId && item.name === name,
+            )
+          ) {
+            toast.error("同一父节点下已存在同名节点");
+            return;
+          }
+          await knowledgeService.addChapter(activeEditableSchoolId, parentId, name);
+          toast.success("节点已添加");
+        } else {
+          const points =
+            await knowledgeService.listKnowledgePoints(activeEditableSchoolId);
+          if (
+            points.some(
+              (item) => item.parentId === parentId && item.name === name,
+            )
+          ) {
+            toast.error("同一父节点下已存在同名节点");
+            return;
+          }
+          const existingPoint = points.find((item) => item.name === name);
+          await knowledgeService.addKnowledgePoint(
+            activeEditableSchoolId,
+            parentId,
+            name,
+            existingPoint?.questionCount,
+          );
+          toast.success(existingPoint ? "已克隆同名节点" : "节点已添加");
+        }
+        await refreshDirectoryTree();
+      } catch (error) {
+        toast.error(
+          "添加节点失败",
+          error instanceof Error ? error.message : undefined,
+        );
+      } finally {
+        setEditingNodeId(null);
+      }
+    },
+    [displayData.type, activeEditableSchoolId, editingNodeId, refreshDirectoryTree],
+  );
+
+  const handleRenameNode = useCallback(
+    async (node: TreeNode) => {
+      if (!activeEditableSchoolId || editingNodeId || node.id === "root") return;
+      const entered = window.prompt("请输入新名称", node.name);
+      if (entered === null) return;
+      const name = entered.trim();
+      if (!name || name === node.name) return;
+
+      setEditingNodeId(node.id);
+      try {
+        await knowledgeService.renameNode(node.id, displayData.type, name);
+        toast.success("已改名");
+        await refreshDirectoryTree();
+      } catch (error) {
+        toast.error(
+          "改名失败",
+          error instanceof Error ? error.message : undefined,
+        );
+      } finally {
+        setEditingNodeId(null);
+      }
+    },
+    [displayData.type, activeEditableSchoolId, editingNodeId, refreshDirectoryTree],
+  );
+
+  const renderNodeActions = activeEditableSchoolId
+    ? (node: TreeNode) => (
+        <span className="ml-1 flex flex-shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleAddNode(node);
+            }}
+            disabled={editingNodeId !== null}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+            title="添加新节点"
+            aria-label={`在${node.name}下添加新节点`}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+          {node.id !== "root" && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleRenameNode(node);
+              }}
+              disabled={editingNodeId !== null}
+              className="inline-flex h-6 w-6 items-center justify-center rounded text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+              title="改名"
+              aria-label={`改名：${node.name}`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </span>
+      )
+    : undefined;
 
   const isSearching = normalizedKeyword.length > 0;
   const hasSearchResults = matchingIds.length > 0;
@@ -105,7 +291,9 @@ export function SearchableTree({
   };
 
   const accentClass =
-    accent === "gold" ? "text-gold-700 border-gold-200 bg-gold-50/40" : "text-teal-700 border-teal-200 bg-teal-50/40";
+    accent === "gold"
+      ? "text-gold-700 border-gold-200 bg-gold-50/40"
+      : "text-teal-700 border-teal-200 bg-teal-50/40";
 
   const logicAccentClass =
     accent === "gold"
@@ -147,7 +335,9 @@ export function SearchableTree({
                 </div>
               )}
               {showTitle && (
-                <div className="min-w-0 font-serif text-sm font-semibold">{title}</div>
+                <div className="min-w-0 font-serif text-sm font-semibold">
+                  {title}
+                </div>
               )}
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
@@ -187,9 +377,16 @@ export function SearchableTree({
           )}
         </div>
 
-        <div className={cn("max-h-[500px] overflow-auto -mx-1 px-1", treeMaxHeightClassName)}>
+        <div
+          className={cn(
+            "max-h-[500px] overflow-auto -mx-1 px-1",
+            treeMaxHeightClassName,
+          )}
+        >
           {isSearching && !hasSearchResults ? (
-            <div className="py-6 text-center text-xs text-ink-400">未匹配到节点</div>
+            <div className="py-6 text-center text-xs text-ink-400">
+              未匹配到节点
+            </div>
           ) : (
             <TreeView
               key={isSearching ? `search:${normalizedKeyword}` : "default"}
@@ -202,6 +399,7 @@ export function SearchableTree({
               highlightedIds={matchingIds}
               highlightAccent={accent}
               showDoneCount={showDoneCount}
+              renderNodeActions={renderNodeActions}
               className="text-xs"
             />
           )}

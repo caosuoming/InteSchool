@@ -623,6 +623,7 @@ export default function LecturePreviewPage() {
           schoolYearOptions={schoolYearOptions}
           semesterOptions={semesterOptions}
           chapterTree={chapterTree}
+          onChapterTreeChange={setChapterTree}
         />
       )}
 
@@ -924,7 +925,9 @@ export default function LecturePreviewPage() {
               <div className="overflow-hidden rounded-lg border border-ink-150">
                 {chapterTree ? (
                   <SearchableTree
+                    editable
                     data={chapterTree}
+                    onDataChange={setChapterTree}
                     title="章节目录"
                     accent="gold"
                     checkable
@@ -940,7 +943,9 @@ export default function LecturePreviewPage() {
               <div className="overflow-hidden rounded-lg border border-ink-150">
                 {knowledgeTree ? (
                   <SearchableTree
+                    editable
                     data={knowledgeTree}
+                    onDataChange={setKnowledgeTree}
                     title="知识点目录"
                     accent="teal"
                     checkable

@@ -173,7 +173,7 @@ export function GradeTotalScoreSegmentTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeTotalScoreSegmentReport(report);
+      await exportGradeTotalScoreSegmentReport(report, exam.name);
       toast.success("总分分数段汇总表已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);

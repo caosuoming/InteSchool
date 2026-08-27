@@ -1797,6 +1797,8 @@ export default function ExamPaperEditorPage() {
                           progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
                           chapterTree={chapterTree}
                           knowledgeTree={knowledgeTree}
+                          onChapterTreeChange={setChapterTree}
+                          onKnowledgeTreeChange={setKnowledgeTree}
                           chapterNameMap={chapterNameMap}
                           knowledgeNameMap={knowledgeNameMap}
                           onUpdateCatalogs={handleUpdateQuestionCatalogs}
@@ -1867,6 +1869,8 @@ export default function ExamPaperEditorPage() {
                           progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
                           chapterTree={chapterTree}
                           knowledgeTree={knowledgeTree}
+                          onChapterTreeChange={setChapterTree}
+                          onKnowledgeTreeChange={setKnowledgeTree}
                           chapterNameMap={chapterNameMap}
                           knowledgeNameMap={knowledgeNameMap}
                           onUpdateCatalogs={handleUpdateQuestionCatalogs}
@@ -1907,6 +1911,8 @@ export default function ExamPaperEditorPage() {
                         progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
                         chapterTree={chapterTree}
                         knowledgeTree={knowledgeTree}
+                        onChapterTreeChange={setChapterTree}
+                        onKnowledgeTreeChange={setKnowledgeTree}
                         chapterNameMap={chapterNameMap}
                         knowledgeNameMap={knowledgeNameMap}
                         onUpdateCatalogs={handleUpdateQuestionCatalogs}
@@ -1969,6 +1975,7 @@ export default function ExamPaperEditorPage() {
             schoolYearOptions={schoolYearOptions}
             semesterOptions={semesterOptions}
             chapterTree={chapterTree}
+            onChapterTreeChange={setChapterTree}
           />
         )}
         {audienceModal}
@@ -2372,6 +2379,8 @@ export default function ExamPaperEditorPage() {
                             schoolId={schoolId}
                             chapterTree={chapterTree}
                             knowledgeTree={knowledgeTree}
+                            onChapterTreeChange={setChapterTree}
+                            onKnowledgeTreeChange={setKnowledgeTree}
                             chapterNameMap={chapterNameMap}
                             knowledgeNameMap={knowledgeNameMap}
                             onUpdateCatalogs={handleUpdateQuestionCatalogs}
@@ -2504,6 +2513,8 @@ export default function ExamPaperEditorPage() {
                                   schoolId={schoolId}
                                   chapterTree={chapterTree}
                                   knowledgeTree={knowledgeTree}
+                                  onChapterTreeChange={setChapterTree}
+                                  onKnowledgeTreeChange={setKnowledgeTree}
                                   chapterNameMap={chapterNameMap}
                                   knowledgeNameMap={knowledgeNameMap}
                                   onUpdateCatalogs={handleUpdateQuestionCatalogs}
@@ -2555,6 +2566,8 @@ export default function ExamPaperEditorPage() {
                           schoolId={schoolId}
                           chapterTree={chapterTree}
                           knowledgeTree={knowledgeTree}
+                          onChapterTreeChange={setChapterTree}
+                          onKnowledgeTreeChange={setKnowledgeTree}
                           chapterNameMap={chapterNameMap}
                           knowledgeNameMap={knowledgeNameMap}
                           onUpdateCatalogs={handleUpdateQuestionCatalogs}
@@ -2763,7 +2776,9 @@ export default function ExamPaperEditorPage() {
             <div className="h-72 overflow-y-auto border border-ink-100 rounded-lg p-2">
               {autoLeftTab === "chapter" && autoChapterTree && (
                 <SearchableTree
+                  editable
                   data={autoChapterTree}
+                  onDataChange={setAutoChapterTree}
                   title="章节目录"
                   accent="gold"
                   checkable
@@ -2774,7 +2789,9 @@ export default function ExamPaperEditorPage() {
               )}
               {autoLeftTab === "knowledge" && autoKnowledgeTree && (
                 <SearchableTree
+                  editable
                   data={autoKnowledgeTree}
+                  onDataChange={setAutoKnowledgeTree}
                   title="知识点目录"
                   accent="teal"
                   checkable
@@ -3034,7 +3051,9 @@ export default function ExamPaperEditorPage() {
               <div className="rounded-lg border border-gold-100">
                 {chapterTree ? (
                   <SearchableTree
+                    editable
                     data={chapterTree}
+                    onDataChange={setChapterTree}
                     title="章节课目录"
                     checkable
                     checkedIds={bankChapterIds}
@@ -3050,7 +3069,9 @@ export default function ExamPaperEditorPage() {
               <div className="rounded-lg border border-teal-100">
                 {knowledgeTree ? (
                   <SearchableTree
+                    editable
                     data={knowledgeTree}
+                    onDataChange={setKnowledgeTree}
                     title="知识点目录"
                     accent="teal"
                     checkable
@@ -3221,6 +3242,8 @@ function EditQuestionCatalogPanel({
   schoolId,
   chapterTree,
   knowledgeTree,
+  onChapterTreeChange,
+  onKnowledgeTreeChange,
   chapterNameMap,
   knowledgeNameMap,
   onUpdateCatalogs,
@@ -3237,6 +3260,8 @@ function EditQuestionCatalogPanel({
   schoolId: string;
   chapterTree: TreeNode | null;
   knowledgeTree: TreeNode | null;
+  onChapterTreeChange: (tree: TreeNode) => void;
+  onKnowledgeTreeChange: (tree: TreeNode) => void;
   chapterNameMap: Map<string, string>;
   knowledgeNameMap: Map<string, string>;
   onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[]) => Promise<void>;
@@ -3464,7 +3489,9 @@ function EditQuestionCatalogPanel({
             </div>
             {chapterTree ? (
               <SearchableTree
+                editable
                 data={chapterTree}
+                onDataChange={onChapterTreeChange}
                 title="章节课目录"
                 checkable
                 checkedIds={draftChapterIds}
@@ -3485,7 +3512,9 @@ function EditQuestionCatalogPanel({
             </div>
             {knowledgeTree ? (
               <SearchableTree
+                editable
                 data={knowledgeTree}
+                onDataChange={onKnowledgeTreeChange}
                 title="知识点目录"
                 accent="teal"
                 checkable
@@ -3513,6 +3542,8 @@ function PreviewQuestionDetails({
   progress,
   chapterTree,
   knowledgeTree,
+  onChapterTreeChange,
+  onKnowledgeTreeChange,
   chapterNameMap,
   knowledgeNameMap,
   onUpdateCatalogs,
@@ -3532,6 +3563,8 @@ function PreviewQuestionDetails({
   progress?: QuestionProgress;
   chapterTree: TreeNode | null;
   knowledgeTree: TreeNode | null;
+  onChapterTreeChange: (tree: TreeNode) => void;
+  onKnowledgeTreeChange: (tree: TreeNode) => void;
   chapterNameMap: Map<string, string>;
   knowledgeNameMap: Map<string, string>;
   onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[]) => Promise<void>;
@@ -3767,7 +3800,9 @@ function PreviewQuestionDetails({
             </div>
             {chapterTree ? (
               <SearchableTree
+                editable
                 data={chapterTree}
+                onDataChange={onChapterTreeChange}
                 title="章节课目录"
                 checkable
                 checkedIds={draftChapterIds}
@@ -3788,7 +3823,9 @@ function PreviewQuestionDetails({
             </div>
             {knowledgeTree ? (
               <SearchableTree
+                editable
                 data={knowledgeTree}
+                onDataChange={onKnowledgeTreeChange}
                 title="知识点目录"
                 accent="teal"
                 checkable
