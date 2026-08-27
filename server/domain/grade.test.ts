@@ -178,6 +178,35 @@ describe("grade service", () => {
     });
   });
 
+  it("presets unified ranking from the imported class subject selection", async () => {
+    const appState = state();
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+
+    await runWithState(appState, async () => {
+      const scores = Object.fromEntries(subjects.map((subject, index) => [subject, 100 - index]));
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "史政地联考",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects,
+        rows: [{
+          rowKey: "row-selection",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          studentId: "student-1",
+          subjectSelection: "史政地",
+          scores,
+        }],
+      });
+
+      expect(exam.settings.classSubjects.find((item) => item.classId === "class-1")?.statisticSubjects)
+        .toEqual(["语文", "数学", "英语", "政治", "历史", "地理"]);
+    });
+  });
+
   it("discovers cohorts and imports matched, renamed, and new students", async () => {
     const appState = state();
 

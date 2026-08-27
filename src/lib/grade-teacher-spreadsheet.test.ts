@@ -97,7 +97,7 @@ describe("grade teacher spreadsheet", () => {
     writeXlsxFile.mockReturnValue({ toFile });
   });
 
-  it("parses class teacher rows while treating class type and homeroom columns as context only", () => {
+  it("parses class, homeroom, and subject teacher rows", () => {
     const rows = parseGradeTeacherTable([
       ["班级", "班型", "班主任", "数学", "英语"],
       ["高三(1)班", "实验班", "张班主任", "李老师、赵老师", "陈老师"],
@@ -107,16 +107,18 @@ describe("grade teacher spreadsheet", () => {
     expect(rows).toEqual([
       {
         className: "高三(1)班",
+        homeroomTeacherNames: ["张班主任"],
         teacherNamesBySubject: { 数学: ["李老师", "赵老师"], 英语: ["陈老师"] },
       },
       {
         className: "高三(2)班",
+        homeroomTeacherNames: [],
         teacherNamesBySubject: { 数学: ["王老师"], 英语: [] },
       },
     ]);
   });
 
-  it("detects changed existing names and applies per-cell conflict choices", () => {
+  it("overwrites existing teacher names and imports homeroom names by default", () => {
     const current = settings();
     const rows = parseGradeTeacherTable([
       ["班级", "班型", "班主任", "数学", "英语"],
@@ -125,25 +127,14 @@ describe("grade teacher spreadsheet", () => {
     ], ["数学", "英语"]);
     const plan = buildGradeTeacherImportPlan(current, context, rows);
 
-    expect(plan.conflicts.map((item) => item.key)).toEqual(["class-1:数学"]);
-    expect(plan.conflicts[0]).toMatchObject({
-      existingNames: ["王老师"],
-      importedNames: ["李老师", "赵老师"],
-    });
-
-    const imported = applyGradeTeacherImportPlan(current, context, ["数学", "英语"], plan, {
-      "class-1:数学": "imported",
+    const imported = applyGradeTeacherImportPlan(current, context, ["数学", "英语"], plan);
+    expect(imported.classHomeroomTeacherNames).toEqual({
+      "class-1": ["张班主任"],
+      "class-2": [],
     });
     expect(imported.classSubjectTeacherIds?.["class-1"]?.数学).toEqual(["math-li"]);
     expect(imported.classSubjectTeacherNames?.["class-1"]?.数学).toEqual(["赵老师"]);
     expect(imported.classSubjectTeacherNames?.["class-2"]?.英语).toEqual(["周老师"]);
-
-    const preserved = applyGradeTeacherImportPlan(current, context, ["数学", "英语"], plan, {
-      "class-1:数学": "existing",
-    });
-    expect(preserved.classSubjectTeacherIds?.["class-1"]?.数学).toEqual(["math-wang"]);
-    expect(preserved.classSubjectTeacherNames?.["class-1"]?.数学).toEqual([]);
-    expect(preserved.classSubjectTeacherNames?.["class-2"]?.英语).toEqual(["周老师"]);
   });
 
   it("exports a cohort template prefilled with class type, homeroom teacher, and current subject teachers", async () => {

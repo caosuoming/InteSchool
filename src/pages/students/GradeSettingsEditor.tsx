@@ -21,7 +21,6 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
-import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 import {
   applyGradeTeacherImportPlan,
@@ -29,7 +28,6 @@ import {
   downloadGradeTeacherTemplate,
   parseGradeTeacherNames,
   readGradeTeacherFile,
-  type GradeTeacherConflictChoice,
   type GradeTeacherImportPlan,
 } from "@/lib/grade-teacher-spreadsheet";
 import {
@@ -41,6 +39,7 @@ import {
   ASSIGNMENT_GRADE_SUBJECTS,
   calculateGradeRecords,
   DEFAULT_ASSIGNMENT_RULES,
+  inferStatisticSubjectsFromSelections,
 } from "@/lib/grade-statistics";
 import { toast } from "@/stores/ui";
 
@@ -212,6 +211,20 @@ function updateClassTeacherNames(
   };
 }
 
+function updateClassHomeroomTeacherNames(
+  settings: GradeExamSettings,
+  classId: string,
+  teacherNames: string[],
+): GradeExamSettings {
+  return {
+    ...settings,
+    classHomeroomTeacherNames: {
+      ...settings.classHomeroomTeacherNames,
+      [classId]: teacherNames,
+    },
+  };
+}
+
 function TeacherSettings({
   settings,
   subjects,
@@ -221,25 +234,26 @@ function TeacherSettings({
 }: GradeSettingsEditorProps) {
   const classes = useMemo(() => orderedClasses(context), [context]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pendingImport, setPendingImport] = useState<GradeTeacherImportPlan | null>(null);
-  const [conflictChoices, setConflictChoices] = useState<Record<string, GradeTeacherConflictChoice>>({});
   const [importing, setImporting] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  const commitImport = async (
-    plan: GradeTeacherImportPlan,
-    choices: Record<string, GradeTeacherConflictChoice>,
-  ) => {
-    const nextSettings = applyGradeTeacherImportPlan(settings, context, subjects, plan, choices);
+  const persistTeacherChange = (nextSettings: GradeExamSettings) => {
+    onChange(nextSettings);
+    if (!onTeacherImport) return;
+    void onTeacherImport(nextSettings)
+      .then((committed) => onChange(committed))
+      .catch((error) => toast.error("保存任课教师失败", error instanceof Error ? error.message : undefined));
+  };
+
+  const commitImport = async (plan: GradeTeacherImportPlan) => {
+    const nextSettings = applyGradeTeacherImportPlan(settings, context, subjects, plan);
     setImporting(true);
     try {
       const committed = onTeacherImport ? await onTeacherImport(nextSettings) : nextSettings;
       onChange(committed);
-      setPendingImport(null);
-      setConflictChoices({});
       toast.success(
         onTeacherImport ? "任课教师名单已导入并保存" : "任课教师名单已导入",
-        onTeacherImport ? "名单已绑定当前年级，再次上传可覆盖对应班级和学科。" : undefined,
+        onTeacherImport ? "上传内容已覆盖当前年级名单，之后可继续手动修改。" : undefined,
       );
     } catch (error) {
       toast.error("导入任课教师失败", error instanceof Error ? error.message : undefined);
@@ -254,12 +268,7 @@ function TeacherSettings({
     try {
       const rows = await readGradeTeacherFile(file, subjects);
       const plan = buildGradeTeacherImportPlan(settings, context, rows);
-      if (plan.conflicts.length > 0) {
-        setPendingImport(plan);
-        setConflictChoices(Object.fromEntries(plan.conflicts.map((conflict) => [conflict.key, "imported"])));
-      } else {
-        await commitImport(plan, {});
-      }
+      await commitImport(plan);
     } catch (error) {
       toast.error("读取任课教师模板失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -280,50 +289,75 @@ function TeacherSettings({
   };
 
   return (
-    <>
-      <Card className="p-0 overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-teal-50 p-2 text-teal-700">
-              <UsersRound className="h-4 w-4" />
-            </div>
-            <div>
-              <div className="font-medium text-ink-900">配置1、班级任课教师</div>
-              <div className="mt-0.5 text-xs text-ink-500">已维护教学关系的教师可直接勾选；也可下载当前年级模板批量填写后上传，名单按年级保存。</div>
-            </div>
+    <Card className="p-0 overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-teal-50 p-2 text-teal-700">
+            <UsersRound className="h-4 w-4" />
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={handleDownload} loading={downloading}>
-              <Download className="h-4 w-4" />下载任课教师模板
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} loading={importing}>
-              <Upload className="h-4 w-4" />批量导入
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xlsm"
-              className="hidden"
-              aria-label="上传班级任课教师模板"
-              onChange={(event) => void handleImportFile(event.target.files?.[0])}
-            />
+          <div>
+            <div className="font-medium text-ink-900">配置1、班级任课教师</div>
+            <div className="mt-0.5 text-xs text-ink-500">
+              模板包含班主任和各科任课教师；上传后直接覆盖当前年级名单，名单会在同一年级后续成绩导入中复用，也可继续手动修改。
+            </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-max w-full text-xs">
-            <thead className="bg-ink-50 text-ink-500">
-              <tr>
-                <th className="sticky left-0 z-10 min-w-28 border-r border-ink-100 bg-ink-50 px-4 py-2.5 text-left font-medium">班级</th>
-                {subjects.map((subject) => (
-                  <th key={subject} className="min-w-44 px-4 py-2.5 text-left font-medium">{subject}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-100">
-              {classes.map((classItem) => (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={handleDownload} loading={downloading}>
+            <Download className="h-4 w-4" />下载任课教师模板
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} loading={importing}>
+            <Upload className="h-4 w-4" />批量导入
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xlsm"
+            className="hidden"
+            aria-label="上传班级任课教师模板"
+            onChange={(event) => void handleImportFile(event.target.files?.[0])}
+          />
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-max w-full text-xs">
+          <thead className="bg-ink-50 text-ink-500">
+            <tr>
+              <th className="sticky left-0 z-10 min-w-28 border-r border-ink-100 bg-ink-50 px-4 py-2.5 text-left font-medium">班级</th>
+              <th className="min-w-44 px-4 py-2.5 text-left font-medium">班主任</th>
+              {subjects.map((subject) => (
+                <th key={subject} className="min-w-44 px-4 py-2.5 text-left font-medium">{subject}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {classes.map((classItem) => {
+              const configuredHomeroom = Object.prototype.hasOwnProperty.call(
+                settings.classHomeroomTeacherNames || {},
+                classItem.id,
+              );
+              const linkedHomeroomNames = context.teachers
+                .filter((teacher) => teacher.homeroomClassIds?.includes(classItem.id))
+                .map((teacher) => teacher.name);
+              const homeroomNames = configuredHomeroom
+                ? settings.classHomeroomTeacherNames?.[classItem.id] || []
+                : linkedHomeroomNames;
+              return (
                 <tr key={classItem.id} className="align-top">
                   <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-4 py-3 font-medium text-ink-800">
                     <ClassSummary classItem={classItem} context={context} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <ManualTeacherInput
+                      names={homeroomNames}
+                      label={`${classItem.name}班主任`}
+                      hasLinkedTeacher={linkedHomeroomNames.length > 0}
+                      onCommit={(teacherNames) => persistTeacherChange(updateClassHomeroomTeacherNames(
+                        settings,
+                        classItem.id,
+                        teacherNames,
+                      ))}
+                    />
                   </td>
                   {subjects.map((subject) => {
                     const teachers = context.teachers.filter((teacher) => teacher.subject === subject);
@@ -341,7 +375,7 @@ function TeacherSettings({
                               key={teacher.id}
                               checked={selected.includes(teacher.id)}
                               label={teacher.name}
-                              onChange={() => onChange(updateClassTeacherSelection(
+                              onChange={() => persistTeacherChange(updateClassTeacherSelection(
                                 settings,
                                 classItem.id,
                                 subject,
@@ -354,7 +388,7 @@ function TeacherSettings({
                           names={manualNames}
                           label={`${classItem.name}${subject}手动任课教师`}
                           hasLinkedTeacher={selected.length > 0}
-                          onCommit={(teacherNames) => onChange(updateClassTeacherNames(
+                          onCommit={(teacherNames) => persistTeacherChange(updateClassTeacherNames(
                             settings,
                             classItem.id,
                             subject,
@@ -365,129 +399,12 @@ function TeacherSettings({
                     );
                   })}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <Modal
-        open={Boolean(pendingImport)}
-        onClose={() => {
-          if (importing) return;
-          setPendingImport(null);
-          setConflictChoices({});
-        }}
-        title="选择任课教师名单"
-        description={pendingImport
-          ? `上传名单与当前年级已有配置有 ${pendingImport.conflicts.length} 处不同，请逐项选择保留哪一份。`
-          : undefined}
-        size="lg"
-        footer={pendingImport && (
-          <>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setPendingImport(null);
-                setConflictChoices({});
-              }}
-              disabled={importing}
-            >
-              取消
-            </Button>
-            <Button
-              variant="gold"
-              loading={importing}
-              onClick={() => void commitImport(pendingImport, conflictChoices)}
-            >
-              确认导入
-            </Button>
-          </>
-        )}
-      >
-        {pendingImport && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs text-ink-500">无冲突的单元格会直接采用上传名单；以下仅显示有差异的项目。</div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setConflictChoices(Object.fromEntries(
-                    pendingImport.conflicts.map((conflict) => [conflict.key, "existing"]),
-                  ))}
-                >
-                  全部保留现有
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setConflictChoices(Object.fromEntries(
-                    pendingImport.conflicts.map((conflict) => [conflict.key, "imported"]),
-                  ))}
-                >
-                  全部使用上传
-                </Button>
-              </div>
-            </div>
-            <div className="overflow-x-auto rounded-lg border border-ink-100">
-              <table className="w-full min-w-[44rem] text-xs">
-                <thead className="bg-ink-50 text-ink-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">班级</th>
-                    <th className="px-3 py-2 text-left font-medium">学科</th>
-                    <th className="px-3 py-2 text-left font-medium">现有名单</th>
-                    <th className="px-3 py-2 text-left font-medium">上传名单</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-100">
-                  {pendingImport.conflicts.map((conflict) => (
-                    <tr key={conflict.key}>
-                      <td className="px-3 py-2 font-medium text-ink-800">{conflict.className}</td>
-                      <td className="px-3 py-2 text-ink-700">{conflict.subject}</td>
-                      <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          className={cn(
-                            "w-full rounded-md border px-2.5 py-2 text-left transition-colors",
-                            conflictChoices[conflict.key] === "existing"
-                              ? "border-teal-400 bg-teal-50 text-teal-900"
-                              : "border-ink-200 text-ink-600 hover:border-ink-300",
-                          )}
-                          onClick={() => setConflictChoices((current) => ({
-                            ...current,
-                            [conflict.key]: "existing",
-                          }))}
-                        >
-                          {conflict.existingNames.join("、") || "清空"}
-                        </button>
-                      </td>
-                      <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          className={cn(
-                            "w-full rounded-md border px-2.5 py-2 text-left transition-colors",
-                            conflictChoices[conflict.key] === "imported"
-                              ? "border-gold-400 bg-gold-50 text-gold-900"
-                              : "border-ink-200 text-ink-600 hover:border-ink-300",
-                          )}
-                          onClick={() => setConflictChoices((current) => ({
-                            ...current,
-                            [conflict.key]: "imported",
-                          }))}
-                        >
-                          {conflict.importedNames.join("、") || "清空"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </Modal>
-    </>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
@@ -747,7 +664,7 @@ function ClassSubjectSettings({
         <div>
           <div className="font-medium text-ink-900">配置3、各班统一排名与单独排名科目</div>
           <div className="mt-0.5 text-xs text-ink-500">
-            每个科目最多选择一列；切换列时会自动取消另一列。尚未保存配置时，系统按最近一次导入成绩中整班均有分数的科目默认勾选。
+            每个科目最多选择一列；切换列时会自动取消另一列。尚未保存配置时，统一排名优先按班级学生整体选科预设，无法识别选科时再参考整班成绩科目。
           </div>
         </div>
       </div>
@@ -766,10 +683,17 @@ function ClassSubjectSettings({
               const inferredSubjects = profile?.hasImportedScores
                 ? subjects.filter((subject) => profile.scoreSubjects.includes(subject))
                 : subjects;
+              const selectionPreset = inferStatisticSubjectsFromSelections(
+                subjects,
+                profile?.subjectSelections || [],
+              );
+              const presetStatisticSubjects = selectionPreset
+                ? inferredSubjects.filter((subject) => selectionPreset.includes(subject))
+                : inferredSubjects;
               const current = settings.classSubjects.find((item) => item.classId === classItem.id) || {
                 classId: classItem.id,
                 examSubjects: inferredSubjects,
-                statisticSubjects: inferredSubjects,
+                statisticSubjects: presetStatisticSubjects,
                 separateRankSubjects: [],
               };
               const replace = (patch: Partial<typeof current>) => {
@@ -797,9 +721,11 @@ function ClassSubjectSettings({
                 <tr key={classItem.id} className="align-top">
                   <td className="px-4 py-3">
                     <ClassSummary classItem={classItem} context={context} />
-                    {profile?.hasImportedScores && (
-                      <div className="mt-1.5 text-[11px] text-blue-600">已参考最近一次整班成绩</div>
-                    )}
+                    {selectionPreset ? (
+                      <div className="mt-1.5 text-[11px] text-blue-600">已按班级整体选科预设统一排名科目</div>
+                    ) : profile?.hasImportedScores ? (
+                      <div className="mt-1.5 text-[11px] text-blue-600">选科无法识别，已参考最近一次整班成绩</div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex max-w-2xl flex-wrap gap-1.5">
