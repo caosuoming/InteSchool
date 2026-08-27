@@ -24,6 +24,7 @@ interface DocumentMetadataModalProps {
   schoolYearOptions: { value: string; label: string }[];
   semesterOptions: { value: string; label: string }[];
   chapterTree: TreeNode | null;
+  onChapterTreeChange?: (tree: TreeNode) => void;
   loading?: boolean;
 }
 
@@ -37,6 +38,7 @@ export function DocumentMetadataModal({
   schoolYearOptions,
   semesterOptions,
   chapterTree,
+  onChapterTreeChange,
   loading = false,
 }: DocumentMetadataModalProps) {
   const [draft, setDraft] = useState(value);
@@ -103,7 +105,9 @@ export function DocumentMetadataModal({
         <div className="overflow-hidden rounded-lg border border-ink-150">
           {chapterTree ? (
             <SearchableTree
+              editable
               data={chapterTree}
+              onDataChange={onChapterTreeChange}
               title="所属章节课目录"
               accent="gold"
               checkable

@@ -2926,7 +2926,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             {(leftTab === "chapter" ? displayedChapterTree : displayedKnowledgeTree) ? (
               leftTab === "chapter" ? (
                 <SearchableTree
+                  editable
                   data={displayedChapterTree!}
+                  onDataChange={setChapterTree}
                   title="章节课目录"
                   showTitle={false}
                   accent="gold"
@@ -2941,7 +2943,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 />
               ) : (
                 <SearchableTree
+                  editable
                   data={displayedKnowledgeTree!}
+                  onDataChange={setKnowledgeTree}
                   title="知识点目录"
                   showTitle={false}
                   accent="teal"
@@ -3790,7 +3794,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           {batchDirectoryMode === "chapter" ? (
             displayedChapterTree ? (
               <SearchableTree
+                editable
                 data={displayedChapterTree}
+                onDataChange={setChapterTree}
                 title="选择章节"
                 accent="gold"
                 checkable
@@ -3803,7 +3809,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             )
           ) : displayedKnowledgeTree ? (
             <SearchableTree
+              editable
               data={displayedKnowledgeTree}
+              onDataChange={setKnowledgeTree}
               title="选择知识点"
               accent="teal"
               checkable
