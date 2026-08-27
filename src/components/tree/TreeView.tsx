@@ -1,5 +1,12 @@
-import { useState, useCallback } from "react";
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, Circle } from "lucide-react";
+import { useState, useCallback, type ReactNode } from "react";
+import {
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  FileText,
+  Circle,
+} from "lucide-react";
 import type { TreeNode } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +24,8 @@ interface TreeViewProps {
   expandLevel?: number;
   highlightedIds?: string[];
   highlightAccent?: "gold" | "teal";
+  /** Optional per-node actions rendered at the right edge of each row. */
+  renderNodeActions?: (node: TreeNode) => ReactNode;
 }
 
 export function TreeView({
@@ -33,6 +42,7 @@ export function TreeView({
   expandLevel = 1,
   highlightedIds = [],
   highlightAccent = "gold",
+  renderNodeActions,
 }: TreeViewProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     if (defaultExpandAll) {
@@ -114,7 +124,7 @@ export function TreeView({
         : depth;
 
     return (
-      <div key={node.id}>
+      <div key={node.id} className="relative">
         <div
           data-search-match={isHighlighted ? "true" : undefined}
           className={cn(
@@ -122,11 +132,11 @@ export function TreeView({
             !isRoot && "hover:bg-mist cursor-pointer",
             isSelected && "bg-gold-50 border border-gold-200",
             isRoot && "font-serif font-semibold text-ink-900",
-            isHighlighted && (
-              highlightAccent === "gold"
+            isHighlighted &&
+              (highlightAccent === "gold"
                 ? "bg-gold-100/80 ring-1 ring-inset ring-gold-300"
-                : "bg-teal-100/80 ring-1 ring-inset ring-teal-300"
-            ),
+                : "bg-teal-100/80 ring-1 ring-inset ring-teal-300"),
+            renderNodeActions && "pr-14",
           )}
           style={{ paddingLeft: `${indentDepth * 16 + 8}px` }}
           onClick={() => !isRoot && onSelect?.(node)}
@@ -159,7 +169,11 @@ export function TreeView({
             >
               {isChecked ? (
                 <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-gold-400 text-ink-900">
-                  <svg viewBox="0 0 12 12" className="w-3 h-3" fill="currentColor">
+                  <svg
+                    viewBox="0 0 12 12"
+                    className="w-3 h-3"
+                    fill="currentColor"
+                  >
                     <path d="M10 3L4.5 8.5 2 6l-.7.7L4.5 9.9 10.7 3.7z" />
                   </svg>
                 </span>
@@ -199,11 +213,10 @@ export function TreeView({
             className={cn(
               "flex-1 whitespace-nowrap text-sm",
               isRoot ? "font-medium text-ink-900" : "text-ink-700",
-              isHighlighted && (
-                highlightAccent === "gold"
+              isHighlighted &&
+                (highlightAccent === "gold"
                   ? "font-semibold text-gold-800"
-                  : "font-semibold text-teal-800"
-              ),
+                  : "font-semibold text-teal-800"),
             )}
             title={node.name}
           >
@@ -218,7 +231,14 @@ export function TreeView({
               <span className="text-ink-400">{node.count}</span>
             </span>
           )}
+
         </div>
+
+        {renderNodeActions && (
+          <div className="absolute right-1 top-1.5 z-10">
+            {renderNodeActions(node)}
+          </div>
+        )}
 
         {hasChildren && expanded && (
           <div className="animate-fade-in">

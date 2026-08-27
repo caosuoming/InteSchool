@@ -13,6 +13,24 @@ import { sanitizeExamPaperPatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveExamPaperToLecture } from "./document-library-move.js";
 
+function containedKnowledgePointIds(paper: ExamPaper): string[] {
+  const questionIds = new Set(
+    paper.questions
+      .map((item) => item.questionId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  if (questionIds.size === 0) return paper.knowledgePointIds;
+
+  const ids = new Set<string>();
+  let resolvedQuestion = false;
+  for (const question of db.read("questions")) {
+    if (!questionIds.has(question.id)) continue;
+    resolvedQuestion = true;
+    question.knowledgePointIds.forEach((id) => ids.add(id));
+  }
+  return resolvedQuestion ? [...ids] : paper.knowledgePointIds;
+}
+
 function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
   if (filter.keyword) {
     const kw = filter.keyword.toLowerCase();
@@ -28,11 +46,12 @@ function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
     }
   }
   if (filter.knowledgePointIds?.length) {
+    const ids = containedKnowledgePointIds(p);
     const logic = filter.knowledgeLogic || "or";
     if (logic === "and") {
-      if (!filter.knowledgePointIds.every((k) => p.knowledgePointIds.includes(k))) return false;
+      if (!filter.knowledgePointIds.every((k) => ids.includes(k))) return false;
     } else {
-      if (!filter.knowledgePointIds.some((k) => p.knowledgePointIds.includes(k))) return false;
+      if (!filter.knowledgePointIds.some((k) => ids.includes(k))) return false;
     }
   }
   if (filter.grade && p.grade !== filter.grade) return false;
