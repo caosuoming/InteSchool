@@ -212,6 +212,21 @@ describe("grade class average report", () => {
     expect(report.overallAverage).toEqual(group.average);
   });
 
+  it("uses grade-bound homeroom names ahead of organization defaults", () => {
+    const settings = {
+      ...exam.settings,
+      classHomeroomTeacherNames: { "class-2": ["导入班主任"] },
+    };
+    const report = buildGradeClassAverageReport(
+      { ...exam, settings },
+      template,
+      context,
+      settings,
+    );
+
+    expect(report.groups[0].rows[0].homeroomTeachers).toEqual(["导入班主任"]);
+  });
+
   it("only allows assigned-score display modes for assignable subjects", () => {
     const scoredExam: GradeExam = {
       ...exam,

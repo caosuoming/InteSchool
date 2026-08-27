@@ -4,6 +4,7 @@ import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
   inferClassSubjectAvailability,
+  inferStatisticSubjectsFromSelections,
   normalizeGradeSettings,
   validateAssignmentRules,
 } from "./grade-statistics.js";
@@ -39,6 +40,26 @@ const baseRecords = [
 ];
 
 describe("grade statistics", () => {
+  it("presets unified ranking subjects from the class elective combination", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+    const preset = inferStatisticSubjectsFromSelections(subjects, ["史政地"]);
+
+    expect(preset).toEqual(["语文", "数学", "英语", "政治", "历史", "地理"]);
+
+    const settings = buildDefaultGradeSettings(
+      subjects,
+      ["class-1"],
+      [],
+      { "class-1": subjects },
+      { "class-1": preset! },
+    );
+    expect(settings.classSubjects[0]).toMatchObject({
+      examSubjects: subjects,
+      statisticSubjects: ["语文", "数学", "英语", "政治", "历史", "地理"],
+      separateRankSubjects: [],
+    });
+  });
+
   it("infers complete score subjects for each class", () => {
     const availability = inferClassSubjectAvailability([
       { classId: "class-1", scores: { 数学: 100, 化学: 90 } },
