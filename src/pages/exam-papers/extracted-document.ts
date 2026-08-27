@@ -1,3 +1,4 @@
+import { normalizeLegacyQuestionMeanNotation } from "@/lib/legacy-question-math";
 import type {
   ExamPaperQuestion,
   ExtractedDocumentBlock,
@@ -20,12 +21,12 @@ export function resolveExtractedQuestionDisplay(
     ? paperQuestion.options
     : linkedQuestion?.options;
 
-  return {
+  return normalizeLegacyQuestionMeanNotation({
     stem: stemOverride || paperQuestion?.stem || linkedQuestion?.stem || "",
     options,
     answer: paperQuestion?.answer || linkedQuestion?.answer || "",
     analysis: paperQuestion?.analysis || linkedQuestion?.analysis || "",
-  };
+  });
 }
 
 export function questionIdsUnderHeading(

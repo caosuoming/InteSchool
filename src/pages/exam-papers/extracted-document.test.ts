@@ -65,6 +65,27 @@ describe("extracted document question helpers", () => {
     expect(commonScoreUnderHeading(blocks, mixed, "heading-single")).toBeNull();
   });
 
+  it("repairs legacy mean vectors in an already decomposed paper snapshot", () => {
+    const display = resolveExtractedQuestionDisplay(
+      {
+        id: "paper-question-738",
+        stem: "估计正确识别图像数量的均值$\\vec{x}$。",
+        answer: "$\\vec{x}=67$。",
+        analysis: "所以$\\vec{x}=67$。",
+        score: 12,
+        type: "essay",
+      },
+      undefined,
+    );
+
+    expect(display).toEqual({
+      stem: "估计正确识别图像数量的均值$\\bar{x}$。",
+      options: undefined,
+      answer: "$\\bar{x}=67$。",
+      analysis: "所以$\\bar{x}=67$。",
+    });
+  });
+
   it("keeps the extracted stem and fills missing details from the linked question", () => {
     const display = resolveExtractedQuestionDisplay(
       {
