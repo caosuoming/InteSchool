@@ -353,17 +353,25 @@ describe("LecturePreviewPage", () => {
     expect(within(paper).queryByText("单调性")).not.toBeInTheDocument();
     expect(within(paper).getByText(/在给定区间内判断函数的增减/)).toBeInTheDocument();
     const previewControls = screen.getByTestId("lecture-preview-details");
-    expect(previewControls).toHaveTextContent("题目属性");
+    expect(previewControls).toHaveTextContent("显示内容");
+    expect(previewControls).not.toHaveTextContent("题目属性与使用情况");
     expect(previewControls).toHaveClass("preview-sticky-controls");
     expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
+    const previewIntro = previewControls.previousElementSibling as HTMLElement;
+    expect(previewIntro).toHaveClass("preview-sidebar-intro");
+    expect(previewIntro).toHaveTextContent("题目属性与使用情况");
+    expect(within(previewIntro).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
+    expect(within(previewControls).queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
     const previewShell = paper.closest(".preview-sticky-shell");
     expect(previewShell).not.toBeNull();
     expect(paper.querySelector(".preview-sticky-spacer")).not.toBeNull();
     const questionDetails = screen.getByTestId("lecture-question-details-1");
     expect(questionDetails).toHaveTextContent("第 1 题");
-    expect(questionDetails).toHaveTextContent("单选");
-    expect(questionDetails).toHaveTextContent("较易");
-    expect(questionDetails).toHaveTextContent("使用次数3 次");
+    expect(questionDetails).toHaveTextContent("暂无关联章节课");
+    expect(questionDetails).toHaveTextContent("暂无关联知识点");
+    expect(questionDetails).not.toHaveTextContent("单选");
+    expect(questionDetails).not.toHaveTextContent("较易");
+    expect(questionDetails).not.toHaveTextContent("使用次数");
     expect(questionDetails.parentElement).toHaveClass("lecture-preview-right");
 
     fireEvent.change(screen.getByLabelText("纸张大小"), { target: { value: "8K" } });
@@ -488,8 +496,8 @@ describe("LecturePreviewPage", () => {
 
     const questionStem = await screen.findByRole("button", { name: /显示答案与解析/ });
     const questionDetails = screen.getByTestId("lecture-question-details-1");
-    expect(questionDetails).toHaveTextContent("较易");
-    expect(questionDetails).toHaveTextContent("单选");
+    expect(questionDetails).toHaveTextContent("暂无关联章节课");
+    expect(questionDetails).toHaveTextContent("暂无关联知识点");
     expect(screen.queryByText("展开答案与解析")).not.toBeInTheDocument();
     expect(screen.queryByText("答案：")).not.toBeInTheDocument();
 
@@ -547,10 +555,11 @@ describe("LecturePreviewPage", () => {
       });
     });
     const details = screen.getByTestId("lecture-question-details-1");
-    expect(details).toHaveTextContent("解答");
-    expect(details).toHaveTextContent("较难");
-    expect(details).toHaveTextContent("5 / 5");
-    expect(details).toHaveTextContent("1 项");
+    expect(details).toHaveTextContent("章节课：函数章节");
+    expect(details).toHaveTextContent("知识点：函数单调性");
+    expect(details).not.toHaveTextContent("解答");
+    expect(details).not.toHaveTextContent("较难");
+    expect(details).not.toHaveTextContent("5 / 5");
   });
 
   it("edits document usage by class only", async () => {
