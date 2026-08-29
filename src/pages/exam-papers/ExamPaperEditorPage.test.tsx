@@ -439,16 +439,23 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.getByText("实数集").parentElement).not.toHaveClass("border", "rounded");
 
     const previewControls = screen.getByTestId("exam-paper-preview-details");
-    expect(previewControls).toHaveTextContent("题目信息");
+    expect(previewControls).toHaveTextContent("显示内容");
+    expect(previewControls).not.toHaveTextContent("题目信息与使用情况");
     expect(previewControls).toHaveClass("preview-sticky-controls");
     expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
+    const previewIntro = previewControls.previousElementSibling as HTMLElement;
+    expect(previewIntro).toHaveClass("preview-sidebar-intro");
+    expect(previewIntro).toHaveTextContent("题目信息与使用情况");
+    expect(within(previewIntro).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
+    expect(within(previewControls).queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
     expect(preview.closest(".preview-sticky-shell")).not.toBeNull();
     expect(preview.querySelector(".preview-sticky-spacer")).not.toBeNull();
     const questionDetails = screen.getByTestId("exam-question-details-1");
     expect(questionDetails).toHaveTextContent("第 1 题");
-    expect(questionDetails).toHaveTextContent("较易");
     expect(questionDetails).toHaveTextContent("5 分");
     expect(questionDetails).toHaveTextContent("函数定义域");
+    expect(questionDetails).not.toHaveTextContent("较易");
+    expect(questionDetails).not.toHaveTextContent("高推荐题目");
     expect(questionDetails.parentElement).toHaveClass("exam-paper-preview-right");
     expect(screen.queryByRole("button", { name: "收起信息栏" })).not.toBeInTheDocument();
 

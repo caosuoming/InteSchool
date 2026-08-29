@@ -54,6 +54,7 @@ import type {
   TreeNode,
 } from "@/types";
 import { cn } from "@/lib/utils";
+import { treeNameMap } from "@/lib/basket-audience";
 import {
   downloadLectureDocxVariants,
   type DocumentDownloadMode,
@@ -81,14 +82,6 @@ interface QuestionMetadataDraft {
 }
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
-const difficultyVariant = ["", "green", "green", "amber", "red", "red"];
-const typeLabel: Record<string, string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
 
 function flattenSections(sections: LectureSection[]): LectureSection[] {
   return sections.flatMap((section) => [section, ...flattenSections(section.children || [])]);
@@ -159,6 +152,8 @@ export default function LecturePreviewPage() {
     getSourceLabel,
     getCategoryLabel,
   } = useQuestionMetadataOptions(schoolId);
+  const chapterNameMap = useMemo(() => treeNameMap(chapterTree), [chapterTree]);
+  const knowledgeNameMap = useMemo(() => treeNameMap(knowledgeTree), [knowledgeTree]);
 
   useEffect(() => {
     let cancelled = false;
@@ -702,7 +697,7 @@ export default function LecturePreviewPage() {
         )}
       >
         <aside className="preview-sticky-rail no-print">
-          <div className="preview-sticky-controls" data-testid="lecture-preview-details">
+          <div className="preview-sidebar-intro">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="font-serif text-sm font-semibold text-ink-900">题目属性与使用情况</div>
@@ -721,6 +716,8 @@ export default function LecturePreviewPage() {
                 </Button>
               )}
             </div>
+          </div>
+          <div className="preview-sticky-controls" data-testid="lecture-preview-details">
             <PreviewSidebarControls
               value={previewSidebarVisibility}
               onChange={setPreviewSidebarVisibility}
@@ -787,6 +784,8 @@ export default function LecturePreviewPage() {
                       onEditMetadata={lecture.teacherId === teacher?.id
                         ? openQuestionMetadataEditor
                         : undefined}
+                      chapterNameMap={chapterNameMap}
+                      knowledgeNameMap={knowledgeNameMap}
                       visibility={previewSidebarVisibility}
                     />
                   ) : undefined}
@@ -1223,6 +1222,8 @@ function LectureQuestionDetails({
   onUpdateStudentAnswer,
   onQuestionUpdated,
   onEditMetadata,
+  chapterNameMap,
+  knowledgeNameMap,
   visibility,
 }: {
   question: Question | null | undefined;
@@ -1232,6 +1233,8 @@ function LectureQuestionDetails({
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
   onQuestionUpdated: (question: Question) => void;
   onEditMetadata?: (question: Question) => void;
+  chapterNameMap: Map<string, string>;
+  knowledgeNameMap: Map<string, string>;
   visibility: PreviewSidebarVisibility;
 }) {
   if (!question) {
@@ -1243,6 +1246,12 @@ function LectureQuestionDetails({
   }
 
   if (!visibility.properties && !visibility.answerStatus && !visibility.basket) return null;
+  const chapterNames = question.chapterIds
+    .map((chapterId) => chapterNameMap.get(chapterId))
+    .filter(Boolean) as string[];
+  const knowledgeNames = question.knowledgePointIds
+    .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
+    .filter(Boolean) as string[];
 
   return (
     <div
@@ -1251,50 +1260,31 @@ function LectureQuestionDetails({
     >
       {visibility.properties && (
         <div data-testid={`lecture-question-properties-${questionNumber}`}>
-          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <span className="font-mono text-xs font-bold text-ink-500">第 {questionNumber} 题</span>
-            <Badge variant="ink">{typeLabel[question.type] || question.type}</Badge>
-            <Badge variant={difficultyVariant[question.difficulty] as "green" | "amber" | "red"}>
-              {difficultyLabel[question.difficulty]}
-            </Badge>
             {onEditMetadata && (
               <button
                 type="button"
                 onClick={() => onEditMetadata(question)}
-                className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-800"
+                className="no-print inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700"
                 aria-label={`编辑第 ${questionNumber} 题属性`}
+                title="编辑章节课和知识点"
               >
                 <Edit3 className="h-3 w-3" />
-                编辑属性
+                编辑
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] leading-5">
-            <QuestionProperty label="年级" value={question.grade || "未设置"} />
-            <QuestionProperty label="学年学期" value={[
-              question.schoolYear,
-              question.semester,
-            ].filter(Boolean).join(" · ") || "未设置"} />
-            <QuestionProperty label="使用次数" value={`${question.usageCount} 次`} />
-            <QuestionProperty label="推荐度" value={`${question.recommendation} / 5`} />
-            <QuestionProperty label="章节关联" value={question.chapterIds.length > 0 ? `${question.chapterIds.length} 项` : "未关联"} />
-            <QuestionProperty label="知识点" value={question.knowledgePointIds.length > 0 ? `${question.knowledgePointIds.length} 项` : "未关联"} />
+          <div className="border-t border-ink-100 pt-2 text-[11px] leading-5 text-ink-500">
+            <div>
+              <span className="text-ink-400">章节课：</span>
+              {chapterNames.length > 0 ? chapterNames.join("、") : "暂无关联章节课"}
+            </div>
+            <div>
+              <span className="text-ink-400">知识点：</span>
+              {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
+            </div>
           </div>
-          {question.category && (
-            <div className="mt-2 text-[11px] leading-5 text-ink-500">
-              <span className="text-ink-400">题类：</span>{question.category}
-            </div>
-          )}
-          {question.sourceType && (
-            <div className="text-[11px] leading-5 text-ink-500">
-              <span className="text-ink-400">来源：</span>{question.sourceType}
-            </div>
-          )}
-          {question.remark && (
-            <div className="mt-2 rounded-md bg-ink-50 px-2 py-1.5 text-[11px] leading-5 text-ink-500">
-              {question.remark}
-            </div>
-          )}
         </div>
       )}
       {visibility.answerStatus && (
@@ -1332,15 +1322,6 @@ function LectureQuestionDetails({
           />
         </div>
       )}
-    </div>
-  );
-}
-
-function QuestionProperty({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-ink-400">{label}</div>
-      <div className="truncate font-medium text-ink-600" title={value}>{value}</div>
     </div>
   );
 }
