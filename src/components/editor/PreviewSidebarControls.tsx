@@ -25,7 +25,7 @@ export function PreviewSidebarControls({ value, onChange }: PreviewSidebarContro
     <div
       role="toolbar"
       aria-label="题目侧栏显示控制"
-      className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3"
+      className="flex flex-wrap items-center gap-1.5"
     >
       <span className="mr-1 text-[11px] font-medium text-ink-400">显示内容</span>
       {items.map(({ key, label, icon: Icon }) => {

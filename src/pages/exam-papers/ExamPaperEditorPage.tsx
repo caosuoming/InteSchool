@@ -1689,7 +1689,7 @@ export default function ExamPaperEditorPage() {
 
         <div className="preview-sticky-shell">
           <aside className="preview-sticky-rail no-print">
-            <div className="preview-sticky-controls" data-testid="exam-paper-preview-details">
+            <div className="preview-sidebar-intro">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="font-serif text-sm font-semibold text-ink-900">题目信息与使用情况</div>
@@ -1708,6 +1708,8 @@ export default function ExamPaperEditorPage() {
                   </Button>
                 )}
               </div>
+            </div>
+            <div className="preview-sticky-controls" data-testid="exam-paper-preview-details">
               <PreviewSidebarControls
                 value={previewSidebarVisibility}
                 onChange={setPreviewSidebarVisibility}
@@ -3591,7 +3593,6 @@ function PreviewQuestionDetails({
   const knowledgeNames = (question?.knowledgePointIds || [])
     .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
     .filter(Boolean) as string[];
-  const difficulty = question?.difficulty || 3;
 
   useEffect(() => {
     if (!scoreEditing) setScoreDraft(String(pq.score));
@@ -3646,10 +3647,6 @@ function PreviewQuestionDetails({
             <div data-testid={`exam-question-properties-${index + 1}`}>
               <div className="mb-2 flex flex-wrap items-center gap-1.5">
                 <span className="font-mono text-xs font-bold text-ink-500">第 {index + 1} 题</span>
-                <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
-                <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
-                  {difficultyLabel[difficulty]}
-                </Badge>
                 {scoreEditing ? (
                   <div className="no-print inline-flex items-center gap-1">
                     <Input
@@ -3719,8 +3716,6 @@ function PreviewQuestionDetails({
                   <span className="text-ink-400">知识点：</span>
                   {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
                 </div>
-                {question && question.usageCount > 0 && <div>题库使用 {question.usageCount} 次</div>}
-                {question && question.recommendation >= 4 && <div className="font-medium text-gold-600">高推荐题目</div>}
               </div>
             </div>
           )}

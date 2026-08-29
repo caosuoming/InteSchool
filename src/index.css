@@ -217,10 +217,17 @@
   min-width: 17rem;
   pointer-events: none;
 }
+.preview-sidebar-intro {
+  border-left: 1px solid rgba(16, 42, 67, 0.2);
+  padding: 0.75rem 0 0.75rem 1.25rem;
+  background: #f5f7fa;
+  pointer-events: auto;
+}
 .preview-sticky-controls {
   position: sticky;
   top: 0;
   border-left: 1px solid rgba(16, 42, 67, 0.2);
+  border-top: 1px solid rgba(16, 42, 67, 0.08);
   padding: 0.75rem 0 0.75rem 1.25rem;
   background: #f5f7fa;
   pointer-events: auto;
