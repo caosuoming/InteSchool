@@ -476,6 +476,17 @@ export interface Student {
   }>;
 }
 
+/**
+ * 个人教学班按姓名查找校外学生时返回的最小候选信息。
+ * 不包含学号、联系方式等跨校不应暴露的学生档案字段。
+ */
+export interface PersonalClassStudentCandidate {
+  id: string;
+  name: string;
+  schoolName: string;
+  grade: string;
+}
+
 export interface StudentRosterImportRow {
   className: string;
   name: string;

@@ -479,6 +479,10 @@ export const serviceParameters = {
       "classId",
       "input"
     ],
+    "searchExternalStudentCandidates": [
+      "nameInput",
+      "teacher"
+    ],
     "listStudentsByClass": [
       "classId"
     ],

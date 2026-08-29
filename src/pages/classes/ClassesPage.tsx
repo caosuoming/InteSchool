@@ -19,7 +19,14 @@ import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { SchoolClass, PersonalClass, Student, AnyClass, ClassTypeCategory } from "@/types";
+import type {
+  SchoolClass,
+  PersonalClass,
+  PersonalClassStudentCandidate,
+  Student,
+  AnyClass,
+  ClassTypeCategory,
+} from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
@@ -89,6 +96,9 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
   const [extStudentGrade, setExtStudentGrade] = useState("");
   const [extStudentGender, setExtStudentGender] = useState<"male" | "female">("male");
   const [extStudentSchool, setExtStudentSchool] = useState("");
+  const [externalCandidates, setExternalCandidates] = useState<PersonalClassStudentCandidate[]>([]);
+  const [externalSearchDone, setExternalSearchDone] = useState(false);
+  const [externalSearchLoading, setExternalSearchLoading] = useState(false);
 
   // 编辑学生（含学号）
   const [editStudentOpen, setEditStudentOpen] = useState(false);
@@ -277,6 +287,34 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
     setExtStudentName("");
     setExtStudentNo("");
     setExtStudentSchool("");
+    setExternalCandidates([]);
+    setExternalSearchDone(false);
+    await load();
+    await loadClassStudents(selectedClass);
+  };
+
+  const handleSearchExternalStudents = async () => {
+    const name = extStudentName.trim();
+    if (!name) {
+      toast.error("请先填写学生姓名");
+      return;
+    }
+    setExternalSearchLoading(true);
+    try {
+      const candidates = await classService.searchExternalStudentCandidates(name);
+      setExternalCandidates(candidates);
+      setExternalSearchDone(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "搜索学生失败");
+    } finally {
+      setExternalSearchLoading(false);
+    }
+  };
+
+  const handleUseExternalCandidate = async (candidate: PersonalClassStudentCandidate) => {
+    if (!selectedClass) return;
+    await classService.addStudentToPersonalClass(selectedClass.id, candidate.id);
+    toast.success(`已关联「${candidate.name}」`, "已有学情与使用数据将继续保留");
     await load();
     await loadClassStudents(selectedClass);
   };
@@ -856,6 +894,8 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                   <div className="relative">
                     {classStudents.map((s, idx) => {
                       const isSuspended = s.status === "suspended";
+                      const isOutsideSchool = selectedClass.type === "personal"
+                        && (s.isExternal || Boolean(s.schoolId && schoolId && s.schoolId !== schoolId));
                       const isNearBottom = idx >= classStudents.length - 3;
                       return (
                         <div
@@ -869,7 +909,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                           <div className="col-span-3 flex items-center gap-2">
                             <div className={cn(
                               "w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0",
-                              s.isExternal
+                              isOutsideSchool
                                 ? "bg-amber-50 text-amber-600"
                                 : s.gender === "female"
                                 ? "bg-pink-50 text-pink-600"
@@ -880,7 +920,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                             <div className="min-w-0">
                               <div className="text-ink-900 truncate flex items-center gap-1">
                                 {s.name}
-                                {s.isExternal && (
+                                {isOutsideSchool && (
                                   <Badge variant="amber" className="text-[10px] px-1 py-0">校外</Badge>
                                 )}
                               </div>
@@ -892,7 +932,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                           <div className="col-span-3 text-ink-600 font-mono text-xs">{s.studentNo || "—"}</div>
                           <div className="col-span-2 text-ink-600">{s.grade || "—"}</div>
                           <div className="col-span-2">
-                            {selectedClass.type === "personal" && s.isExternal ? (
+                            {isOutsideSchool ? (
                               <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                                 <School className="w-3 h-3" />
                                 外校
@@ -1241,7 +1281,11 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
               <Input
                 label="姓名"
                 value={extStudentName}
-                onChange={(e) => setExtStudentName(e.target.value)}
+                onChange={(e) => {
+                  setExtStudentName(e.target.value);
+                  setExternalCandidates([]);
+                  setExternalSearchDone(false);
+                }}
                 placeholder="学生姓名"
               />
               <Input
@@ -1251,6 +1295,55 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                 placeholder="学号/编号"
               />
             </div>
+            <Button
+              variant="outline"
+              onClick={handleSearchExternalStudents}
+              disabled={externalSearchLoading || !extStudentName.trim()}
+              className="w-full"
+            >
+              {externalSearchLoading ? <Spinner size={14} /> : <Users className="w-4 h-4" />}
+              搜索同名学生
+            </Button>
+            {externalSearchDone && (
+              <div className="rounded-md border border-ink-100 bg-mist/50 p-3 space-y-2">
+                {externalCandidates.length > 0 ? (
+                  <>
+                    <div className="text-xs text-ink-600">
+                      找到 {externalCandidates.length} 名同名学生。若确认是同一人，请直接关联；已有学情与使用数据会保留。
+                    </div>
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                      {externalCandidates.map((candidate) => {
+                        const inClass = classStudentIds.has(candidate.id);
+                        return (
+                          <div
+                            key={candidate.id}
+                            className="flex items-center gap-3 rounded-md border border-ink-100 bg-paper p-2.5"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm text-ink-900">{candidate.name}</div>
+                              <div className="text-xs text-ink-500 truncate">
+                                {candidate.schoolName}{candidate.grade ? ` · ${candidate.grade}` : ""}
+                              </div>
+                            </div>
+                            <Button
+                              variant={inClass ? "ghost" : "outline"}
+                              size="sm"
+                              disabled={inClass}
+                              onClick={() => handleUseExternalCandidate(candidate)}
+                            >
+                              {inClass ? "已添加" : "确认并添加"}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="text-xs text-ink-500">若以上均不是同一人，请继续填写下方信息并新建。</div>
+                  </>
+                ) : (
+                  <div className="text-xs text-ink-500">未找到其他学校的同名在读学生，可继续填写信息并新建。</div>
+                )}
+              </div>
+            )}
             <Input
               label="学校名称"
               value={extStudentSchool}
