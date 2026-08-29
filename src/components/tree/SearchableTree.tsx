@@ -71,16 +71,19 @@ function findMatchingNodeIds(node: TreeNode, keyword: string): string[] {
 }
 
 /**
- * 在搜索时过滤树：保留命中节点及其所有祖先
+ * 在搜索时过滤树：保留命中节点及其所有祖先；命中节点保留完整子树，
+ * 便于从搜索结果继续展开并选择下一级目录。
  */
 function filterTree(node: TreeNode, keyword: string): TreeNode | null {
   if (!keyword) return node;
   const kw = keyword.toLowerCase();
   const nameMatch = node.name.toLowerCase().includes(kw);
+  if (nameMatch) return node;
+
   const filteredChildren = node.children
     .map((c) => filterTree(c, keyword))
     .filter((c): c is TreeNode => c !== null);
-  if (nameMatch || filteredChildren.length > 0) {
+  if (filteredChildren.length > 0) {
     return { ...node, children: filteredChildren };
   }
   return null;

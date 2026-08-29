@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { knowledgeService } from "@/services/knowledge";
@@ -77,6 +77,33 @@ describe("SearchableTree", () => {
     expect(screen.getByText("函数单调性")).toBeVisible();
     expect(screen.queryByText("第二章 几何")).not.toBeInTheDocument();
     expect(screen.getByText("函数单调性").closest('[data-search-match="true"]')).not.toBeNull();
+  });
+
+  it("keeps descendants selectable under a matching directory", () => {
+    const onCheck = vi.fn();
+    render(
+      <SearchableTree
+        data={tree}
+        title="章节目录"
+        searchPlaceholder="搜索章节..."
+        checkable
+        checkedIds={[]}
+        onCheck={onCheck}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("搜索章节..."), {
+      target: { value: "集合" },
+    });
+
+    const childLabel = screen.getByText("第一节 函数性质");
+    expect(childLabel).toBeVisible();
+    const childRow = childLabel.parentElement;
+    expect(childRow).not.toBeNull();
+    const childButtons = within(childRow!).getAllByRole("button");
+    fireEvent.click(childButtons[1]);
+
+    expect(onCheck).toHaveBeenCalledWith(["lesson-1", "point-1"]);
   });
 
   it("shows an empty state when no node matches", () => {
