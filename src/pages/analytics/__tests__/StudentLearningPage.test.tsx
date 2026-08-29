@@ -139,54 +139,58 @@ describe("StudentLearningPage", () => {
     vi.mocked(questionService.listQuestions).mockResolvedValue([]);
   });
 
-  it("supports collapsible chapter and knowledge trees with persistent global placement", async () => {
+  it("defaults directory trees to collapsed and opens placement controls in a draggable directory modal", async () => {
     render(<StudentLearningPage />);
 
     expect(screen.getByRole("separator", { name: "调整左侧列表宽度" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "折叠左侧列表" }));
+    expect(screen.getByRole("button", { name: "展开左侧列表" })).toBeInTheDocument();
+    expect(localStorage.getItem("inteschool:student-learning-sidebar-width:collapsed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "展开左侧列表" }));
+
     fireEvent.click(await screen.findByRole("button", { name: "高一（1）班" }));
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: /章节课训练与掌握情况/ })).toHaveAttribute("aria-selected", "true");
-      expect(screen.getByText("集合章节")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "展开章节 苏教必修第一册" })).toBeInTheDocument();
+      expect(screen.queryByText("集合章节")).not.toBeInTheDocument();
       expect(analyticsService.getStudentAnswerDetails).toHaveBeenCalledTimes(2);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "折叠章节 苏教必修第一册" }));
-    expect(screen.queryByText("集合章节")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "展开章节 苏教必修第一册" }));
     expect(screen.getByText("集合章节")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择章节课 苏教必修第一册" }));
-    expect(screen.getByRole("toolbar", { name: "章节课排序操作" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看章节课目录 苏教必修第一册" }));
+    expect(screen.getByRole("heading", { name: "苏教必修第一册" })).toBeInTheDocument();
+    expect(document.querySelector("[data-modal-drag-handle]")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "置顶" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "正常" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "沉底" }));
+    expect(localStorage.getItem("inteschool:student-learning:placements:school-1:teacher-1"))
+      .toContain('"book-1":"bottom"');
+    fireEvent.keyDown(window, { key: "Escape" });
 
     const chapterRows = screen.getAllByRole("row").map((row) => row.textContent ?? "");
     expect(chapterRows.findIndex((text) => text.includes("苏教必修第二册")))
       .toBeLessThan(chapterRows.findIndex((text) => text.includes("苏教必修第一册")));
 
     fireEvent.click(screen.getByRole("tab", { name: /知识点训练与掌握情况/ }));
-    expect(await screen.findByRole("button", { name: "折叠知识点 集合" })).toBeInTheDocument();
-    expect(screen.getByTitle("集合\\集合的概念")).toHaveTextContent("集合的概念");
-    fireEvent.click(screen.getByRole("button", { name: "折叠知识点 集合" }));
-    expect(screen.queryByText("集合的概念")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "展开知识点 集合" })).toBeInTheDocument();
+      expect(screen.queryByText("集合的概念")).not.toBeInTheDocument();
+    });
     fireEvent.click(screen.getByRole("button", { name: "展开知识点 集合" }));
-    expect(screen.getByText("集合的概念")).toBeInTheDocument();
+    expect(screen.getByTitle("集合\\集合的概念")).toHaveTextContent("集合的概念");
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择知识点 集合的概念" }));
-    expect(screen.getByRole("toolbar", { name: "知识点排序操作" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "置顶" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "正常" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "沉底" })).toBeInTheDocument();
-
+    fireEvent.click(screen.getByRole("button", { name: "查看知识点目录 集合的概念" }));
+    expect(screen.getByText("知识点目录题目")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "置顶" }));
-    expect(screen.queryByRole("toolbar", { name: "知识点排序操作" })).not.toBeInTheDocument();
     expect(localStorage.getItem("inteschool:student-learning:placements:school-1:teacher-1"))
       .toContain('"point-1":"top"');
     expect(classService.listMyClasses).toHaveBeenCalledWith("school-1", "teacher-1");
   });
 
-  it("filters answered and unanswered questions by the selected directory and expands math answers", async () => {
+  it("shows only the clicked directory's answered and unanswered questions and allows adding both to baskets", async () => {
     const answeredInFirstBook = makeQuestion(
       "q-answered-in",
       "第一册已做：$x^2=4$",
@@ -247,31 +251,30 @@ describe("StudentLearningPage", () => {
       },
     ]);
 
-    const { container } = render(<StudentLearningPage />);
+    render(<StudentLearningPage />);
     fireEvent.click(await screen.findByRole("button", { name: "高一（1）班" }));
-
     await waitFor(() => {
-      expect(screen.getByText(/第一册已做/)).toBeInTheDocument();
-      expect(screen.getByText("第二册已做")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "查看章节课目录 苏教必修第一册" })).toBeInTheDocument();
       expect(analyticsService.getStudentAnswerDetails).toHaveBeenCalledTimes(2);
     });
-    expect(container.querySelector('[data-latex="x^2=4"]')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择章节课 苏教必修第一册" }));
-    expect(screen.getByText(/第一册已做/)).toBeInTheDocument();
+    expect(screen.queryByText(/第一册已做/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看章节课目录 苏教必修第一册" }));
+
+    expect(await screen.findByText(/第一册已做/)).toBeInTheDocument();
     expect(screen.queryByText("第二册已做")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "加入资源篮 q-answered-in" })).toBeInTheDocument();
+    expect(document.querySelector('[data-latex="x^2=4"]')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "未做过的题" }));
+    fireEvent.click(screen.getByRole("tab", { name: /未做题/ }));
     expect(await screen.findByText(/第一册未做/)).toBeInTheDocument();
     expect(screen.queryByText("第二册未做")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "加入资源篮 q-unanswered-in" })).toBeInTheDocument();
-    expect(container.querySelector('[data-latex="y^2=9"]')).not.toBeNull();
+    expect(document.querySelector('[data-latex="y^2=9"]')).not.toBeNull();
 
+    fireEvent.click(screen.getByRole("tab", { name: /已做题/ }));
     fireEvent.click(screen.getByRole("button", { name: "展开题目详情" }));
-    expect(container.querySelector('[data-latex="x=2"]')).not.toBeNull();
-
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择章节课 苏教必修第一册" }));
-    expect(await screen.findByText("第二册未做")).toBeInTheDocument();
+    expect(document.querySelector('[data-latex="x=2"]')).not.toBeNull();
   });
 
 });

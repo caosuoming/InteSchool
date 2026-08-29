@@ -1,20 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
-  ArrowDownToLine,
-  ArrowUpToLine,
   BookOpen,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
-  Minus,
   XCircle,
 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
 import {
-  applyChapterPlacement,
   orderVisibleChapterMastery,
   type ChapterMastery,
   type ChapterPlacement,
@@ -33,15 +29,11 @@ const masteryConfig: Record<
 export function ChapterMasteryCard({
   mastery,
   placements,
-  selectedChapterIds,
-  onPlacementsChange,
-  onSelectedChapterIdsChange,
+  onDirectoryOpen,
 }: {
   mastery: ChapterMastery[];
   placements: Record<string, ChapterPlacement>;
-  selectedChapterIds: ReadonlySet<string>;
-  onPlacementsChange: (placements: Record<string, ChapterPlacement>) => void;
-  onSelectedChapterIdsChange: (selectedChapterIds: Set<string>) => void;
+  onDirectoryOpen: (item: ChapterMastery) => void;
 }) {
   const [collapsedChapterIds, setCollapsedChapterIds] = useState<Set<string>>(new Set());
 
@@ -50,27 +42,18 @@ export function ChapterMasteryCard({
     () => new Set(mastery.flatMap((item) => item.parentId ? [item.parentId] : [])),
     [mastery],
   );
+  const treeShapeKey = useMemo(
+    () => mastery.map((item) => `${item.chapterId}:${item.parentId ?? ""}`).join("|"),
+    [mastery],
+  );
   const visibleMastery = useMemo(
     () => orderVisibleChapterMastery(mastery, placements, collapsedChapterIds),
     [collapsedChapterIds, mastery, placements],
   );
-  const allChaptersSelected = mastery.length > 0
-    && mastery.every((item) => selectedChapterIds.has(item.chapterId));
 
-  const toggleChapter = (chapterId: string) => {
-    const next = new Set(selectedChapterIds);
-    if (next.has(chapterId)) next.delete(chapterId);
-    else next.add(chapterId);
-    onSelectedChapterIdsChange(next);
-  };
-
-  const toggleAllChapters = () => {
-    onSelectedChapterIdsChange(
-      allChaptersSelected
-        ? new Set()
-        : new Set(mastery.map((item) => item.chapterId)),
-    );
-  };
+  useEffect(() => {
+    setCollapsedChapterIds(new Set(parentChapterIds));
+  }, [parentChapterIds, treeShapeKey]);
 
   const toggleChapterCollapsed = (chapterId: string) => {
     setCollapsedChapterIds((previous) => {
@@ -79,15 +62,6 @@ export function ChapterMasteryCard({
       else next.add(chapterId);
       return next;
     });
-  };
-
-  const placeSelectedChapters = (placement: ChapterPlacement) => {
-    onPlacementsChange(applyChapterPlacement(
-      placements,
-      selectedChapterIds,
-      placement,
-    ));
-    onSelectedChapterIdsChange(new Set());
   };
 
   return (
@@ -104,18 +78,7 @@ export function ChapterMasteryCard({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-xs text-ink-500">
-                <th className="text-left py-2 px-3 font-medium">
-                  <label className="inline-flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      aria-label="全选章节课"
-                      checked={allChaptersSelected}
-                      onChange={toggleAllChapters}
-                      className="w-3.5 h-3.5 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                    />
-                    <span>章节课</span>
-                  </label>
-                </th>
+                <th className="text-left py-2 px-3 font-medium">章节课</th>
                 <th className="text-center py-2 px-3 font-medium">训练次数</th>
                 <th className="text-center py-2 px-3 font-medium">全对</th>
                 <th className="text-center py-2 px-3 font-medium">半对</th>
@@ -128,7 +91,6 @@ export function ChapterMasteryCard({
               {visibleMastery.map((item) => {
                 const cfg = masteryConfig[item.masteryLevel];
                 const MasteryIcon = cfg.icon;
-                const selected = selectedChapterIds.has(item.chapterId);
                 const hasChildren = parentChapterIds.has(item.chapterId);
                 const collapsed = collapsedChapterIds.has(item.chapterId);
                 const fullPath = item.chapterPath.join(" \\ ");
@@ -138,13 +100,11 @@ export function ChapterMasteryCard({
                     key={item.chapterId}
                     className={cn(
                       "border-b border-ink-50 transition-colors",
-                      selected
-                        ? "bg-gold-50/70"
-                        : placement === "top"
-                          ? "bg-amber-50/70 hover:bg-amber-100/60"
-                          : placement === "bottom"
-                            ? "bg-sky-50/70 hover:bg-sky-100/60"
-                            : "hover:bg-mist/50",
+                      placement === "top"
+                        ? "bg-amber-50/70 hover:bg-amber-100/60"
+                        : placement === "bottom"
+                          ? "bg-sky-50/70 hover:bg-sky-100/60"
+                          : "hover:bg-mist/50",
                     )}
                   >
                     <td className="py-2.5 px-3 text-ink-900 font-medium">
@@ -152,13 +112,6 @@ export function ChapterMasteryCard({
                         className="flex min-w-[180px] items-center gap-2"
                         style={{ paddingLeft: `${Math.max(item.level, 0) * 16}px` }}
                       >
-                        <input
-                          type="checkbox"
-                          aria-label={`选择章节课 ${item.chapterName}`}
-                          checked={selected}
-                          onChange={() => toggleChapter(item.chapterId)}
-                          className="w-3.5 h-3.5 flex-shrink-0 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                        />
                         {hasChildren ? (
                           <button
                             type="button"
@@ -174,7 +127,15 @@ export function ChapterMasteryCard({
                         ) : (
                           <span className="w-4 flex-shrink-0" aria-hidden="true" />
                         )}
-                        <span className="whitespace-nowrap" title={fullPath}>{item.chapterName}</span>
+                        <button
+                          type="button"
+                          aria-label={`查看章节课目录 ${item.chapterName}`}
+                          title={fullPath}
+                          onClick={() => onDirectoryOpen(item)}
+                          className="whitespace-nowrap text-left hover:text-gold-700 hover:underline"
+                        >
+                          {item.chapterName}
+                        </button>
                       </div>
                     </td>
                     <td className="py-2.5 px-3 text-center font-mono text-ink-700">{item.totalAttempts}</td>
@@ -216,43 +177,6 @@ export function ChapterMasteryCard({
               })}
             </tbody>
           </table>
-        </div>
-      )}
-      {selectedChapterIds.size > 0 && (
-        <div
-          role="toolbar"
-          aria-label="章节课排序操作"
-          className="fixed right-6 top-1/2 z-40 -translate-y-1/2 rounded-xl border border-ink-200 bg-paper/95 p-2 shadow-xl backdrop-blur"
-        >
-          <div className="px-2 pb-1.5 text-[11px] text-ink-500">
-            已选择 {selectedChapterIds.size} 个章节节点
-          </div>
-          <div className="flex flex-col gap-1">
-            <button
-              type="button"
-              onClick={() => placeSelectedChapters("top")}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-gold-50 hover:text-gold-700"
-            >
-              <ArrowUpToLine className="w-3.5 h-3.5" />
-              置顶
-            </button>
-            <button
-              type="button"
-              onClick={() => placeSelectedChapters("normal")}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-mist"
-            >
-              <Minus className="w-3.5 h-3.5" />
-              正常
-            </button>
-            <button
-              type="button"
-              onClick={() => placeSelectedChapters("bottom")}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-mist"
-            >
-              <ArrowDownToLine className="w-3.5 h-3.5" />
-              沉底
-            </button>
-          </div>
         </div>
       )}
     </Card>

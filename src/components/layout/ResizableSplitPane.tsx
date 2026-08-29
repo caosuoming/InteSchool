@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ResizableSplitPaneProps {
@@ -17,6 +18,7 @@ interface ResizableSplitPaneProps {
   minSidebarWidth?: number;
   maxSidebarWidth?: number;
   minContentWidth?: number;
+  collapsible?: boolean;
   className?: string;
   sidebarClassName?: string;
   contentClassName?: string;
@@ -37,6 +39,14 @@ function readStoredWidth(storageKey: string, fallback: number, minWidth: number,
   }
 }
 
+function readStoredCollapsed(storageKey: string): boolean {
+  try {
+    return window.localStorage.getItem(`${storageKey}:collapsed`) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function ResizableSplitPane({
   storageKey,
   sidebar,
@@ -45,6 +55,7 @@ export function ResizableSplitPane({
   minSidebarWidth = 220,
   maxSidebarWidth = 520,
   minContentWidth = 420,
+  collapsible = false,
   className,
   sidebarClassName,
   contentClassName,
@@ -53,6 +64,7 @@ export function ResizableSplitPane({
   const [sidebarWidth, setSidebarWidth] = useState(() =>
     readStoredWidth(storageKey, defaultSidebarWidth, minSidebarWidth, maxSidebarWidth),
   );
+  const [collapsed, setCollapsed] = useState(() => collapsible && readStoredCollapsed(storageKey));
   const [resizing, setResizing] = useState(false);
 
   const effectiveMaxWidth = useCallback(() => {
@@ -75,6 +87,15 @@ export function ResizableSplitPane({
       // Storage may be unavailable in private browsing or restricted embeds.
     }
   }, [sidebarWidth, storageKey]);
+
+  useEffect(() => {
+    if (!collapsible) return;
+    try {
+      window.localStorage.setItem(`${storageKey}:collapsed`, String(collapsed));
+    } catch {
+      // Storage may be unavailable in private browsing or restricted embeds.
+    }
+  }, [collapsed, collapsible, storageKey]);
 
   useEffect(() => {
     if (!resizing) return;
@@ -117,37 +138,60 @@ export function ResizableSplitPane({
     <div
       ref={containerRef}
       className={cn(
-        "grid grid-cols-1 gap-4 lg:grid-cols-[var(--sidebar-width)_1rem_minmax(0,1fr)] lg:gap-0",
+        "grid grid-cols-1 gap-4 lg:gap-0",
+        collapsible
+          ? collapsed
+            ? "lg:grid-cols-[0_2rem_minmax(0,1fr)]"
+            : "lg:grid-cols-[var(--sidebar-width)_2rem_minmax(0,1fr)]"
+          : "lg:grid-cols-[var(--sidebar-width)_1rem_minmax(0,1fr)]",
         className,
       )}
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
-      <div className={cn("min-w-0", sidebarClassName)}>{sidebar}</div>
-      <div
-        role="separator"
-        aria-label="调整左侧列表宽度"
-        aria-orientation="vertical"
-        aria-valuemin={minSidebarWidth}
-        aria-valuemax={effectiveMaxWidth()}
-        aria-valuenow={sidebarWidth}
-        tabIndex={0}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          event.preventDefault();
-          setResizing(true);
-        }}
-        onKeyDown={handleKeyDown}
-        className={cn(
-          "group hidden h-full cursor-col-resize items-stretch justify-center outline-none lg:flex",
-          "focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2",
+      <div className={cn("min-w-0", collapsed && "lg:hidden", sidebarClassName)}>{sidebar}</div>
+      <div className="relative hidden h-full items-stretch justify-center lg:flex">
+        {!collapsed && (
+          <div
+            role="separator"
+            aria-label="调整左侧列表宽度"
+            aria-orientation="vertical"
+            aria-valuemin={minSidebarWidth}
+            aria-valuemax={effectiveMaxWidth()}
+            aria-valuenow={sidebarWidth}
+            tabIndex={0}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              setResizing(true);
+            }}
+            onKeyDown={handleKeyDown}
+            className={cn(
+              "group flex h-full flex-1 cursor-col-resize items-stretch justify-center outline-none",
+              "focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2",
+            )}
+          >
+            <div
+              className={cn(
+                "w-px rounded-full bg-ink-200 transition-all group-hover:w-1 group-hover:bg-gold-300",
+                resizing && "w-1 bg-gold-400",
+              )}
+            />
+          </div>
         )}
-      >
-        <div
-          className={cn(
-            "w-px rounded-full bg-ink-200 transition-all group-hover:w-1 group-hover:bg-gold-300",
-            resizing && "w-1 bg-gold-400",
-          )}
-        />
+        {collapsible && (
+          <button
+            type="button"
+            aria-label={collapsed ? "展开左侧列表" : "折叠左侧列表"}
+            title={collapsed ? "展开左侧列表" : "向左折叠左侧列表"}
+            onClick={() => {
+              setResizing(false);
+              setCollapsed((value) => !value);
+            }}
+            className="absolute top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-ink-200 bg-paper text-ink-500 shadow-sm transition-colors hover:border-gold-300 hover:text-gold-700"
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        )}
       </div>
       <div className={cn("min-w-0", contentClassName)}>{children}</div>
     </div>
