@@ -4,6 +4,7 @@ import type {
   SchoolClass,
   SchoolGrade,
   PersonalClass,
+  PersonalClassStudentCandidate,
   Student,
   AnyClass,
   ClassroomChoice,
@@ -110,6 +111,10 @@ export const classService = {
 
   async addExternalStudentToPersonalClass(classId: string, input: Omit<StudentInput, "isExternal"> & { externalSchool: string }): Promise<Student> {
     return rpcCall("class", "addExternalStudentToPersonalClass", [classId, input]) as any;
+  },
+
+  async searchExternalStudentCandidates(name: string): Promise<PersonalClassStudentCandidate[]> {
+    return rpcCall("class", "searchExternalStudentCandidates", [name, undefined]) as any;
   },
 
   async listStudentsByClass(classId: string): Promise<Student[]> {

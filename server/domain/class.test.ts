@@ -122,6 +122,91 @@ function getStudent(state: AppState, studentId: string) {
 }
 
 describe("class lifecycle service", () => {
+  it("searches exact-name students from other schools without exposing private roster fields", async () => {
+    const state = createState();
+    state.schools = [
+      { id: "school-1", name: "本校" },
+      { id: "school-2", name: "友好中学" },
+    ];
+    (state.students as Array<Record<string, unknown>>).push(
+      {
+        id: "student-local-same-name",
+        name: "王同学",
+        studentNo: "LOCAL-001",
+        classId: "class-1",
+        schoolId: "school-1",
+        grade: "高一",
+        status: "active",
+      },
+      {
+        id: "student-other-school",
+        name: "王同学",
+        studentNo: "PRIVATE-001",
+        classId: "class-other",
+        schoolId: "school-2",
+        grade: "高一",
+        status: "active",
+        contacts: { studentPhone: "13800000000" },
+      },
+      {
+        id: "student-external-record",
+        name: "王同学",
+        studentNo: "PRIVATE-002",
+        classId: "",
+        schoolId: "",
+        grade: "高二",
+        status: "active",
+        isExternal: true,
+        externalSchool: "校外机构",
+      },
+      {
+        id: "student-suspended-other-school",
+        name: "王同学",
+        studentNo: "PRIVATE-003",
+        classId: "class-other",
+        schoolId: "school-2",
+        grade: "高一",
+        status: "suspended",
+      },
+      {
+        id: "student-other-name",
+        name: "李同学",
+        studentNo: "PRIVATE-004",
+        classId: "class-other",
+        schoolId: "school-2",
+        grade: "高一",
+        status: "active",
+      },
+    );
+    const teacher = {
+      id: "teacher-1",
+      schoolId: "school-1",
+      affiliations: [],
+      currentAffiliationId: null,
+    } as any;
+
+    await runWithState(state, async () => {
+      const candidates = await classService.searchExternalStudentCandidates(" 王同学 ", teacher);
+
+      expect(candidates).toEqual([
+        {
+          id: "student-external-record",
+          name: "王同学",
+          schoolName: "校外机构",
+          grade: "高二",
+        },
+        {
+          id: "student-other-school",
+          name: "王同学",
+          schoolName: "友好中学",
+          grade: "高一",
+        },
+      ]);
+      expect(candidates[1]).not.toHaveProperty("studentNo");
+      expect(candidates[1]).not.toHaveProperty("contacts");
+    });
+  });
+
   it("archives early graduates and transferred students while preserving their records", async () => {
     const state = createState();
 

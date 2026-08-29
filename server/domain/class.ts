@@ -1,5 +1,5 @@
 import type {
-  SchoolClass, PersonalClass, Student, AnyClass, ClassroomChoice, Teacher,
+  SchoolClass, PersonalClass, PersonalClassStudentCandidate, Student, AnyClass, ClassroomChoice, Teacher,
   StudentArchiveOverview, StudentArchiveRecord, StudentArchiveStatus,
   StudentArchiveStatusInput, StudentContactInfo,
 } from "../../src/types/index.js";
@@ -278,6 +278,38 @@ export const classService = {
       ),
     );
     return student;
+  },
+
+  async searchExternalStudentCandidates(
+    nameInput: string,
+    teacher: Teacher,
+  ): Promise<PersonalClassStudentCandidate[]> {
+    await delay(150);
+    const name = nameInput.trim();
+    if (!name) return [];
+
+    const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+      || teacher.affiliations?.find((item) => item.isCurrent)
+      || null;
+    const currentSchoolId = affiliation?.schoolId || teacher.schoolId || null;
+    const schoolNames = new Map(db.read("schools").map((school) => [school.id, school.name]));
+    const normalizedName = name.toLocaleLowerCase("zh-CN");
+
+    return db.read("students")
+      .filter((student) =>
+        student.status === "active"
+        && student.name.trim().toLocaleLowerCase("zh-CN") === normalizedName
+        && (!currentSchoolId || student.schoolId !== currentSchoolId),
+      )
+      .map((student) => ({
+        id: student.id,
+        name: student.name,
+        schoolName: student.schoolId
+          ? schoolNames.get(student.schoolId) || "其他学校"
+          : cleanOptional(student.externalSchool) || "校外学生",
+        grade: student.grade || "",
+      }))
+      .sort((left, right) => `${left.schoolName}${left.grade}`.localeCompare(`${right.schoolName}${right.grade}`, "zh-CN"));
   },
 
   async listStudentsByClass(classId: string): Promise<Student[]> {

@@ -23,6 +23,8 @@ vi.mock("@/services/class", () => ({
     listSuspendedStudents: vi.fn(),
     listDepartedStudents: vi.fn(),
     listStudentsByClass: vi.fn(),
+    searchExternalStudentCandidates: vi.fn(),
+    addExternalStudentToPersonalClass: vi.fn(),
     addStudentToPersonalClass: vi.fn(),
     updatePersonalClass: vi.fn(),
     removeStudentFromPersonalClass: vi.fn(),
@@ -102,6 +104,7 @@ describe("ClassesPage", () => {
     vi.mocked(classService.listSuspendedStudents).mockResolvedValue([]);
     vi.mocked(classService.listDepartedStudents).mockResolvedValue([]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([student]);
+    vi.mocked(classService.searchExternalStudentCandidates).mockResolvedValue([]);
     vi.mocked(settingsService.listClassTypes).mockResolvedValue([]);
     vi.mocked(classService.updatePersonalClass).mockResolvedValue(personalClass);
   });
@@ -167,6 +170,44 @@ describe("ClassesPage", () => {
         name: "竞赛冲刺班",
       });
     });
+  });
+
+  it("reuses a same-name student from another school instead of creating a duplicate", async () => {
+    vi.mocked(classService.searchExternalStudentCandidates).mockResolvedValue([{
+      id: "student-other-school",
+      name: "王同学",
+      schoolName: "友好中学",
+      grade: "高一",
+    }]);
+
+    render(
+      <MemoryRouter>
+        <ClassesPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "个人教学班 (1)" }));
+    fireEvent.click(await screen.findByText("竞赛辅导班"));
+    fireEvent.click(await screen.findByRole("button", { name: "添加学生" }));
+    fireEvent.click(screen.getByRole("button", { name: "校外学生" }));
+
+    fireEvent.change(screen.getByLabelText("姓名"), { target: { value: "王同学" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索同名学生" }));
+
+    await waitFor(() => {
+      expect(classService.searchExternalStudentCandidates).toHaveBeenCalledWith("王同学");
+    });
+    expect(await screen.findByText("友好中学 · 高一")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认并添加" }));
+
+    await waitFor(() => {
+      expect(classService.addStudentToPersonalClass).toHaveBeenCalledWith(
+        personalClass.id,
+        "student-other-school",
+      );
+    });
+    expect(classService.addExternalStudentToPersonalClass).not.toHaveBeenCalled();
   });
 
   it("marks external students and limits personal-class actions by student source", async () => {
