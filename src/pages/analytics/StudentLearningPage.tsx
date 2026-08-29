@@ -3,7 +3,6 @@ import {
   BarChart3, Users, GraduationCap, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, AlertCircle, Circle, TrendingUp,
   Award, FileText, Calendar, User, Clock, Network, BookOpen,
-  ArrowUpToLine, ArrowDownToLine, Minus,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
@@ -14,13 +13,9 @@ import { analyticsService, type KnowledgeMastery, type StudentAnswerDetail, type
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
-import { ExpandableQuestionContent } from "@/components/resource/ExpandableQuestionContent";
-import type { SchoolClass, PersonalClass, Student, AnyClass, AnswerScore, ClassTypeCategory, Chapter, KnowledgePoint, Question } from "@/types";
-import { formatDate } from "@/lib/service-utils";
+import type { SchoolClass, PersonalClass, Student, AnyClass, ClassTypeCategory, Chapter, KnowledgePoint, Question } from "@/types";
 import { cn } from "@/lib/utils";
 import {
   knowledgePointDisplayName,
@@ -30,8 +25,9 @@ import {
   orderVisibleKnowledgeMasteryRows,
   type KnowledgePointPlacement,
 } from "./student-learning-table";
-import { buildChapterMastery, type ChapterPlacement } from "./student-learning-chapters";
+import { applyChapterPlacement, buildChapterMastery, type ChapterPlacement } from "./student-learning-chapters";
 import { ChapterMasteryCard } from "./ChapterMasteryCard";
+import { StudentDirectoryQuestionsModal, type StudentQuestionDirectory } from "./StudentDirectoryQuestionsModal";
 import {
   loadStudentLearningPlacementPreferences,
   saveStudentLearningPlacementPreferences,
@@ -44,14 +40,6 @@ import {
   filterUnansweredQuestions,
 } from "./student-learning-questions";
 
-const questionTypeLabel: Record<string, string> = {
-  single: "单选",
-  multiple: "多选",
-  judge: "判断",
-  short: "填空",
-  essay: "解答",
-};
-
 const masteryConfig: Record<
   KnowledgeMastery["masteryLevel"],
   { label: string; color: string; bg: string; icon: typeof CheckCircle2 }
@@ -62,16 +50,8 @@ const masteryConfig: Record<
   untrained: { label: "未训练", color: "text-ink-400", bg: "bg-mist border-ink-200", icon: Circle },
 };
 
-const scoreConfig: Record<AnswerScore, { label: string; color: string; bg: string }> = {
-  correct: { label: "全对", color: "text-emerald-700", bg: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  partial: { label: "半对", color: "text-amber-700", bg: "bg-amber-50 text-amber-700 border-amber-200" },
-  wrong: { label: "做错", color: "text-red-700", bg: "bg-red-50 text-red-700 border-red-200" },
-  done: { label: "已做", color: "text-teal-700", bg: "bg-teal-50 text-teal-700 border-teal-200" },
-};
-
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 type MasteryView = "chapter" | "knowledge";
-type QuestionListMode = "answered" | "unanswered";
 
 const timeRangeOptions: { value: TimeRangeKey; label: string }[] = [
   { value: "all", label: "全部时间" },
@@ -138,16 +118,13 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   const [loadingList, setLoadingList] = useState(true);
   const [loadingQuestions, setLoadingQuestions] = useState(true);
   const [masteryView, setMasteryView] = useState<MasteryView>("chapter");
-  const [questionListMode, setQuestionListMode] = useState<QuestionListMode>("answered");
-  const [expandedQuestionRows, setExpandedQuestionRows] = useState<Set<string>>(new Set());
 
   // 对比数据
   const [sameGradeTypeAvg, setSameGradeTypeAvg] = useState<KnowledgeMastery[]>([]);
   const [prevBestClass, setPrevBestClass] = useState<{ mastery: KnowledgeMastery[]; className: string } | null>(null);
   const [classAvgMastery, setClassAvgMastery] = useState<KnowledgeMastery[]>([]);
   const [showComparison, setShowComparison] = useState(true);
-  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
-  const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<Set<string>>(new Set());
+  const [activeDirectory, setActiveDirectory] = useState<StudentQuestionDirectory | null>(null);
   const [collapsedKnowledgePointIds, setCollapsedKnowledgePointIds] = useState<Set<string>>(new Set());
   const placementStorageKey = studentLearningPlacementStorageKey(teacher?.id || "anonymous", schoolId);
   const [knowledgePointPlacements, setKnowledgePointPlacements] = useState<Record<string, KnowledgePointPlacement>>(
@@ -179,15 +156,19 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
     () => buildChapterMastery(chapters, answerDetails),
     [answerDetails, chapters],
   );
-  const allKnowledgePointsSelected = mastery.length > 0
-    && mastery.every((item) => selectedKnowledgePointIds.has(item.knowledgePointId));
   const expandedSelectedChapterIds = useMemo(
-    () => expandedChapterSelection(chapters, selectedChapterIds),
-    [chapters, selectedChapterIds],
+    () => expandedChapterSelection(
+      chapters,
+      activeDirectory?.view === "chapter" ? new Set([activeDirectory.id]) : new Set(),
+    ),
+    [activeDirectory, chapters],
   );
   const expandedSelectedKnowledgePointIds = useMemo(
-    () => expandedKnowledgePointSelection(knowledgePoints, selectedKnowledgePointIds),
-    [knowledgePoints, selectedKnowledgePointIds],
+    () => expandedKnowledgePointSelection(
+      knowledgePoints,
+      activeDirectory?.view === "knowledge" ? new Set([activeDirectory.id]) : new Set(),
+    ),
+    [activeDirectory, knowledgePoints],
   );
   const filteredAnswerDetails = useMemo(
     () => filterAnsweredQuestionDetails(
@@ -215,6 +196,12 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
       chapters: chapterPlacements,
     });
   }, [chapterPlacements, knowledgePointPlacements, placementStorageKey]);
+
+  useEffect(() => {
+    setCollapsedKnowledgePointIds(new Set(
+      knowledgePoints.flatMap((item) => item.parentId ? [item.parentId] : []),
+    ));
+  }, [knowledgePoints, selection?.type, selection?.classId, selection?.studentId]);
 
   // 加载班级列表
   useEffect(() => {
@@ -345,9 +332,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   }, [chapterMastery]);
 
   const selectClass = (cls: AnyClass) => {
-    setSelectedChapterIds(new Set());
-    setSelectedKnowledgePointIds(new Set());
-    setExpandedQuestionRows(new Set());
+    setActiveDirectory(null);
     setSelection({
       type: "class",
       classId: cls.id,
@@ -359,9 +344,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
   };
 
   const selectStudent = (cls: AnyClass, student: Student) => {
-    setSelectedChapterIds(new Set());
-    setSelectedKnowledgePointIds(new Set());
-    setExpandedQuestionRows(new Set());
+    setActiveDirectory(null);
     setSelection({
       type: "student",
       classId: cls.id,
@@ -369,32 +352,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
       studentId: student.id,
       studentName: student.name,
     });
-  };
-
-  const toggleKnowledgePoint = (knowledgePointId: string) => {
-    setSelectedKnowledgePointIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(knowledgePointId)) next.delete(knowledgePointId);
-      else next.add(knowledgePointId);
-      return next;
-    });
-  };
-
-  const toggleAllKnowledgePoints = () => {
-    setSelectedKnowledgePointIds(
-      allKnowledgePointsSelected
-        ? new Set()
-        : new Set(mastery.map((item) => item.knowledgePointId)),
-    );
-  };
-
-  const placeSelectedKnowledgePoints = (placement: KnowledgePointPlacement) => {
-    setKnowledgePointPlacements((previous) => applyKnowledgePointPlacement(
-      previous,
-      selectedKnowledgePointIds,
-      placement,
-    ));
-    setSelectedKnowledgePointIds(new Set());
   };
 
   const toggleKnowledgePointCollapsed = (knowledgePointId: string) => {
@@ -405,6 +362,22 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
       return next;
     });
   };
+
+  const changeActiveDirectoryPlacement = (placement: ChapterPlacement) => {
+    if (!activeDirectory) return;
+    const ids = new Set([activeDirectory.id]);
+    if (activeDirectory.view === "chapter") {
+      setChapterPlacements((previous) => applyChapterPlacement(previous, ids, placement));
+    } else {
+      setKnowledgePointPlacements((previous) => applyKnowledgePointPlacement(previous, ids, placement));
+    }
+  };
+
+  const activeDirectoryPlacement: ChapterPlacement = !activeDirectory
+    ? "normal"
+    : activeDirectory.view === "chapter"
+      ? chapterPlacements[activeDirectory.id] ?? "normal"
+      : knowledgePointPlacements[activeDirectory.id] ?? "normal";
 
   const renderClassItem = (cls: AnyClass, isPersonal: boolean) => {
     const expanded = expandedClasses.has(cls.id);
@@ -503,6 +476,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
 
       <ResizableSplitPane
         storageKey="inteschool:student-learning-sidebar-width"
+        collapsible
         className="items-start"
         sidebarClassName="min-w-0"
         sidebar={
@@ -679,7 +653,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                   type="button"
                   role="tab"
                   aria-selected={masteryView === "chapter"}
-                  onClick={() => setMasteryView("chapter")}
+                  onClick={() => { setMasteryView("chapter"); setActiveDirectory(null); }}
                   className={cn(
                     "rounded-xl border p-4 text-left transition-all",
                     masteryView === "chapter"
@@ -711,7 +685,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                   type="button"
                   role="tab"
                   aria-selected={masteryView === "knowledge"}
-                  onClick={() => setMasteryView("knowledge")}
+                  onClick={() => { setMasteryView("knowledge"); setActiveDirectory(null); }}
                   className={cn(
                     "rounded-xl border p-4 text-left transition-all",
                     masteryView === "knowledge"
@@ -746,9 +720,11 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                   key={`${selection.type}:${selection.classId}:${selection.studentId ?? ""}`}
                   mastery={chapterMastery}
                   placements={chapterPlacements}
-                  selectedChapterIds={selectedChapterIds}
-                  onPlacementsChange={setChapterPlacements}
-                  onSelectedChapterIdsChange={setSelectedChapterIds}
+                  onDirectoryOpen={(item) => setActiveDirectory({
+                    view: "chapter",
+                    id: item.chapterId,
+                    name: item.chapterName,
+                  })}
                 />
               ) : (
               <Card className="relative">
@@ -802,18 +778,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-ink-100 text-xs text-ink-500">
-                          <th className="text-left py-2 px-3 font-medium">
-                            <label className="inline-flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                aria-label="全选知识点"
-                                checked={allKnowledgePointsSelected}
-                                onChange={toggleAllKnowledgePoints}
-                                className="w-3.5 h-3.5 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                              />
-                              <span>知识点</span>
-                            </label>
-                          </th>
+                          <th className="text-left py-2 px-3 font-medium">知识点</th>
                           <th className="text-center py-2 px-3 font-medium">训练次数</th>
                           <th className="text-center py-2 px-3 font-medium">全对</th>
                           <th className="text-center py-2 px-3 font-medium">半对</th>
@@ -827,7 +792,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                             const m = treeRow.mastery;
                             const cfg = masteryConfig[m.masteryLevel];
                             const MasteryIcon = cfg.icon;
-                            const selected = selectedKnowledgePointIds.has(m.knowledgePointId);
                             const displayName = knowledgePoints.length > 0
                               ? m.knowledgePointName
                               : knowledgePointDisplayName(m);
@@ -840,13 +804,11 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                 key={m.knowledgePointId}
                                 className={cn(
                                   "border-b border-ink-50 transition-colors",
-                                  selected
-                                    ? "bg-gold-50/70"
-                                    : placement === "top"
-                                      ? "bg-amber-50/70 hover:bg-amber-100/60"
-                                      : placement === "bottom"
-                                        ? "bg-sky-50/70 hover:bg-sky-100/60"
-                                        : "hover:bg-mist/50",
+                                  placement === "top"
+                                    ? "bg-amber-50/70 hover:bg-amber-100/60"
+                                    : placement === "bottom"
+                                      ? "bg-sky-50/70 hover:bg-sky-100/60"
+                                      : "hover:bg-mist/50",
                                 )}
                               >
                                 <td className="py-2.5 px-3 text-ink-900 font-medium">
@@ -854,13 +816,6 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                     className="flex min-w-[180px] items-center gap-2"
                                     style={{ paddingLeft: `${Math.max(treeRow.level, 0) * 16}px` }}
                                   >
-                                    <input
-                                      type="checkbox"
-                                      aria-label={`选择知识点 ${displayName}`}
-                                      checked={selected}
-                                      onChange={() => toggleKnowledgePoint(m.knowledgePointId)}
-                                      className="w-3.5 h-3.5 flex-shrink-0 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                                    />
                                     {hasChildren ? (
                                       <button
                                         type="button"
@@ -876,7 +831,19 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                     ) : (
                                       <span className="w-4 flex-shrink-0" aria-hidden="true" />
                                     )}
-                                    <span className="whitespace-nowrap" title={fullPath}>{displayName}</span>
+                                    <button
+                                      type="button"
+                                      aria-label={`查看知识点目录 ${displayName}`}
+                                      title={fullPath}
+                                      onClick={() => setActiveDirectory({
+                                        view: "knowledge",
+                                        id: m.knowledgePointId,
+                                        name: displayName,
+                                      })}
+                                      className="whitespace-nowrap text-left hover:text-gold-700 hover:underline"
+                                    >
+                                      {displayName}
+                                    </button>
                                   </div>
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-mono text-ink-700">
@@ -1025,231 +992,23 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                     </table>
                   </div>
                 )}
-                {selectedKnowledgePointIds.size > 0 && (
-                  <div
-                    role="toolbar"
-                    aria-label="知识点排序操作"
-                    className="fixed right-6 top-1/2 z-40 -translate-y-1/2 rounded-xl border border-ink-200 bg-paper/95 p-2 shadow-xl backdrop-blur"
-                  >
-                    <div className="px-2 pb-1.5 text-[11px] text-ink-500">
-                      已选择 {selectedKnowledgePointIds.size} 个知识点
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <button
-                        type="button"
-                        onClick={() => placeSelectedKnowledgePoints("top")}
-                        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-gold-50 hover:text-gold-700"
-                      >
-                        <ArrowUpToLine className="w-3.5 h-3.5" />
-                        置顶
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => placeSelectedKnowledgePoints("normal")}
-                        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-mist"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                        正常
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => placeSelectedKnowledgePoints("bottom")}
-                        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-ink-700 hover:bg-mist"
-                      >
-                        <ArrowDownToLine className="w-3.5 h-3.5" />
-                        沉底
-                      </button>
-                    </div>
-                  </div>
-                )}
               </Card>
               )}
-
-              {/* 已做过 / 未做过的题目列表 */}
-              <Card>
-                <CardHeader
-                  title={questionListMode === "answered" ? "已做过的题" : "未做过的题"}
-                  subtitle={questionListMode === "answered"
-                    ? `共 ${filteredAnswerDetails.length} 条答题记录${(masteryView === "chapter" ? selectedChapterIds.size : selectedKnowledgePointIds.size) > 0 ? "（已按选中目录筛选）" : ""}`
-                    : `共 ${unansweredQuestions.length} 题${(masteryView === "chapter" ? selectedChapterIds.size : selectedKnowledgePointIds.size) > 0 ? "（已按选中目录筛选）" : ""}`}
-                  action={
-                    <div className="inline-flex rounded-lg border border-ink-200 bg-mist/40 p-0.5">
-                      <button
-                        type="button"
-                        aria-pressed={questionListMode === "answered"}
-                        onClick={() => setQuestionListMode("answered")}
-                        className={cn(
-                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                          questionListMode === "answered"
-                            ? "bg-paper text-gold-700 shadow-sm"
-                            : "text-ink-500 hover:text-ink-700",
-                        )}
-                      >
-                        已做过的题
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={questionListMode === "unanswered"}
-                        onClick={() => setQuestionListMode("unanswered")}
-                        className={cn(
-                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                          questionListMode === "unanswered"
-                            ? "bg-paper text-gold-700 shadow-sm"
-                            : "text-ink-500 hover:text-ink-700",
-                        )}
-                      >
-                        未做过的题
-                      </button>
-                    </div>
-                  }
-                />
-
-                {questionListMode === "answered" ? (
-                  filteredAnswerDetails.length === 0 ? (
-                    <div className="text-center py-8 text-sm text-ink-400">
-                      {answerDetails.length > 0 ? "当前选中目录暂无答题记录" : "暂无答题记录"}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {filteredAnswerDetails.map((detail) => {
-                        const { record, question, lectureTitle } = detail;
-                        const score = record.score || (record.isCorrect ? "correct" : "wrong");
-                        const sc = scoreConfig[score];
-                        const rowKey = `answered:${record.id}`;
-                        return (
-                          <div
-                            key={record.id}
-                            className="flex items-start gap-3 rounded-md border border-ink-100 p-3 transition-colors hover:bg-mist/30"
-                          >
-                            <div className={cn("flex-shrink-0 rounded border px-2 py-1 text-[10px] font-medium", sc.bg)}>
-                              {sc.label}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              {question ? (
-                                <>
-                                  <div className="mb-1 flex items-center gap-1.5">
-                                    <Badge variant="default">{questionTypeLabel[question.type] || question.type}</Badge>
-                                    <span className="text-[10px] text-ink-400">
-                                      难度：{"★".repeat(question.difficulty)}
-                                    </span>
-                                  </div>
-                                  <ExpandableQuestionContent
-                                    question={question}
-                                    expanded={expandedQuestionRows.has(rowKey)}
-                                    onToggle={() => setExpandedQuestionRows((previous) => {
-                                      const next = new Set(previous);
-                                      if (next.has(rowKey)) next.delete(rowKey);
-                                      else next.add(rowKey);
-                                      return next;
-                                    })}
-                                  />
-                                  <div className="flex flex-wrap items-center gap-3 text-xs text-ink-400">
-                                    {selection.type === "class" && (
-                                      <span className="flex items-center gap-1">
-                                        <User className="h-3 w-3" />
-                                        {questionService_studentName(record.studentId, studentsByClass, selection)}
-                                      </span>
-                                    )}
-                                    {lectureTitle && (
-                                      <span className="flex items-center gap-1">
-                                        <FileText className="h-3 w-3" />
-                                        {lectureTitle}
-                                      </span>
-                                    )}
-                                    {question.knowledgePointIds.length > 0 && (
-                                      <span className="flex items-center gap-1 text-teal-600">
-                                        {question.knowledgePointIds.length} 个知识点
-                                      </span>
-                                    )}
-                                    <span className="ml-auto flex items-center gap-1">
-                                      <Calendar className="h-3 w-3" />
-                                      {formatDate(record.answeredAt, true)}
-                                    </span>
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="text-sm text-ink-500">
-                                  题目已删除（ID: {record.questionId}）
-                                  <div className="mt-1 text-xs text-ink-400">
-                                    {formatDate(record.answeredAt, true)}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )
-                ) : loadingQuestions ? (
-                  <div className="flex justify-center py-8">
-                    <Spinner size={20} />
-                  </div>
-                ) : unansweredQuestions.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-ink-400">
-                    当前范围内暂无未做过的题
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {unansweredQuestions.map((question) => {
-                      const rowKey = `unanswered:${question.id}`;
-                      return (
-                        <div
-                          key={question.id}
-                          className="rounded-md border border-ink-100 p-3 transition-colors hover:bg-mist/30"
-                        >
-                          <div className="mb-1 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-1.5">
-                              <Badge variant="default">{questionTypeLabel[question.type] || question.type}</Badge>
-                              <span className="text-[10px] text-ink-400">
-                                难度：{"★".repeat(question.difficulty)}
-                              </span>
-                            </div>
-                            <AddToBasketDropdown
-                              resourceType="question"
-                              resourceId={question.id}
-                              resourceTitle={question.stem}
-                              variant="outline"
-                              quickLabel="加入资源篮"
-                            />
-                          </div>
-                          <ExpandableQuestionContent
-                            question={question}
-                            expanded={expandedQuestionRows.has(rowKey)}
-                            onToggle={() => setExpandedQuestionRows((previous) => {
-                              const next = new Set(previous);
-                              if (next.has(rowKey)) next.delete(rowKey);
-                              else next.add(rowKey);
-                              return next;
-                            })}
-                          />
-                          {question.knowledgePointIds.length > 0 && (
-                            <div className="text-xs text-teal-600">
-                              {question.knowledgePointIds.length} 个知识点
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
             </div>
           )}
       </ResizableSplitPane>
+
+      <StudentDirectoryQuestionsModal
+        directory={activeDirectory}
+        placement={activeDirectoryPlacement}
+        answeredDetails={filteredAnswerDetails}
+        unansweredQuestions={unansweredQuestions}
+        loadingQuestions={loadingQuestions}
+        onPlacementChange={changeActiveDirectoryPlacement}
+        onClose={() => setActiveDirectory(null)}
+      />
     </div>
   );
-}
-
-/** 辅助：从已加载的学生列表中查找学生姓名 */
-function questionService_studentName(
-  studentId: string,
-  studentsByClass: Record<string, Student[]>,
-  selection: Selection,
-): string {
-  const students = studentsByClass[selection.classId] || [];
-  return students.find((s) => s.id === studentId)?.name || studentId;
 }
 
 /** 辅助：判断是否有可用的对比数据 */
