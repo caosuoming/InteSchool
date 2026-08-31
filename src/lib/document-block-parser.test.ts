@@ -1292,6 +1292,44 @@ describe("document block parser", () => {
   });
 
   it.each([
+    "练习",
+    "练习题",
+    "训练",
+    "拓展",
+    "拓展提升",
+    "提升练习",
+    "提升训练",
+  ])("classifies standalone %s as a project group title", (projectHeading) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 已知数列满足递推关系，求其通项公式。",
+        projectHeading,
+        "例2 已知另一数列，求其通项公式。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["question", "例1 已知数列满足递推关系，求其通项公式。"],
+      ["groupTitle", projectHeading],
+      ["question", "例2 已知另一数列，求其通项公式。"],
+    ]);
+  });
+
+  it.each([
+    "练习1 求数列的最大项。",
+    "练习题1 求数列的最小项。",
+    "训练1 求数列的通项公式。",
+    "拓展1 求数列的前 n 项和。",
+    "拓展题1 求数列的最值。",
+  ])("keeps numbered %s as a question", (questionLine) => {
+    const blocks = parseDocumentBlocks(questionLine, config);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ type: "question", content: questionLine });
+  });
+
+  it.each([
     "考向1 $a_{n+1}=pa_n+q^n$",
     "考向２：递推数列的构造",
     "考向三 数列通项公式的求法",
