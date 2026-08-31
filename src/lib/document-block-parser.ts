@@ -109,10 +109,13 @@ const builtInQuestionSectionPattern = new RegExp(
 
 const dottedSectionHeadingPattern = /^\d{1,3}(?:\s*\.\s*\d{1,3}){2,4}\s+\S/;
 
-const knowledgeBlockLabels = ["教学目标", "学习目标"];
+const knowledgeBlockLabels = ["教学目标", "学习目标", "引入"];
+const numberedKnowledgeBlockLabels = ["角度", "探究"];
 const knowledgeBlockLabelSource = `(?:${knowledgeBlockLabels.map(flexibleLiteralSource).join("|")})`;
+const numberedKnowledgeBlockLabelSource = `(?:${numberedKnowledgeBlockLabels.map(flexibleLiteralSource).join("|")})`;
+const knowledgeBlockIndexSource = "(?:[\\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})";
 const knowledgeBlockStartPattern = new RegExp(
-  `^(?:(?:[【［[]\\s*)${knowledgeBlockLabelSource}\\s*[】］\\]]|${knowledgeBlockLabelSource}(?=\\s|[:：、]|$))`,
+  `^(?:(?:[【［[]\\s*)${knowledgeBlockLabelSource}\\s*[】］\\]]|${knowledgeBlockLabelSource}(?=\\s|[:：、]|$)|(?:[【［[]\\s*)${numberedKnowledgeBlockLabelSource}\\s*(?:第\\s*)?${knowledgeBlockIndexSource}\\s*[】］\\]]|${numberedKnowledgeBlockLabelSource}\\s*(?:第\\s*)?${knowledgeBlockIndexSource}(?=\\s|[:：、.．)）]|$))`,
 );
 
 function isKnowledgeBlockStart(text: string): boolean {
@@ -315,6 +318,8 @@ function isHeading(text: string, config: DocumentParseConfig): boolean {
 }
 
 const builtInSummaryKeywords = [
+  "思维升华",
+  "【思维升华】",
   "规律方法",
   "【规律方法】",
   "易错提醒",

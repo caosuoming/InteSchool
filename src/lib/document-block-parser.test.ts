@@ -716,6 +716,56 @@ describe("document block parser", () => {
     });
   });
 
+  it.each([
+    "引入 从生活中的分类现象认识集合。",
+    "【引入】从生活中的分类现象认识集合。",
+  ])("starts a knowledge block at lecture intro label %s", (introLine) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 已知集合 A={1,2}，求元素个数。",
+        "解析：直接数出集合中的元素即可。",
+        introLine,
+        "集合是由确定对象组成的整体。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: "question" });
+    expect(blocks[1]).toMatchObject({
+      type: "knowledge",
+      content: `${introLine}\n集合是由确定对象组成的整体。`,
+    });
+  });
+
+  it("starts separate knowledge blocks at numbered angle and exploration labels", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 判断给定对象能否构成集合。",
+        "解析：依据集合元素的确定性判断。",
+        "角度1 描述法表示集合",
+        "描述法适用于元素不便逐一列举的集合。",
+        "角度２：列举法表示集合",
+        "列举法适用于元素较少的集合。",
+        "探究三 集合元素的互异性",
+        "集合中的元素不能重复。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual([
+      "question",
+      "knowledge",
+      "knowledge",
+      "knowledge",
+    ]);
+    expect(blocks.slice(1).map((block) => block.content)).toEqual([
+      "角度1 描述法表示集合\n描述法适用于元素不便逐一列举的集合。",
+      "角度２：列举法表示集合\n列举法适用于元素较少的集合。",
+      "探究三 集合元素的互异性\n集合中的元素不能重复。",
+    ]);
+  });
+
   it("separates document title and information before structured content", () => {
     const blocks = parseDocumentBlocks(
       [
@@ -1154,6 +1204,8 @@ describe("document block parser", () => {
   });
 
   it.each([
+    "思维升华：判断对象能否构成集合时先检查确定性。",
+    "【思维升华】判断对象能否构成集合时先检查确定性。",
     "规律方法：注意等价转化。",
     "【规律方法】注意等价转化。",
     "易错提醒：不要漏掉端点。",
@@ -1168,7 +1220,7 @@ describe("document block parser", () => {
       config,
     );
 
-    expect(blocks[0].summary).toMatch(/注意等价转化|不要漏掉端点/);
+    expect(blocks[0].summary).toMatch(/判断对象能否构成集合|注意等价转化|不要漏掉端点/);
   });
 
   it("keeps sequential numbered summary items in the same question", () => {
