@@ -353,7 +353,7 @@ export const analyticsService = {
     return scoreMap;
   },
 
-  // 为章节/知识点树注入学生已做题数
+  // 为章节/知识点树注入学生已做题数与掌握率
   async annotateTreeWithStudentProgress(
     tree: TreeNode,
     studentIds: string[],
@@ -380,12 +380,22 @@ export const analyticsService = {
       .filter((record: AnswerRecord) => studentIds.includes(record.studentId));
     answeredRecords = filterByDateRange(answeredRecords, range);
     const answeredIds = new Set<string>(answeredRecords.map((record) => record.questionId));
+    const scoredProgressByQuestionId = new Map<string, { correct: number; total: number }>();
+    for (const record of answeredRecords) {
+      const score = inferScore(record);
+      if (score === "done") continue;
+      const progress = scoredProgressByQuestionId.get(record.questionId) ?? { correct: 0, total: 0 };
+      progress.total += 1;
+      if (score === "correct") progress.correct += 1;
+      scoredProgressByQuestionId.set(record.questionId, progress);
+    }
     return annotateTreeWithQuestionCounts(
       tree,
       allQuestions,
       type,
       knowledgePoints,
       answeredIds,
+      scoredProgressByQuestionId,
     );
   },
 
