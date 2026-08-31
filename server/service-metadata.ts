@@ -246,6 +246,9 @@ export const serviceParameters = {
       "lectureId",
       "range"
     ],
+    "listUsedDocumentIds": [
+      "documentIds"
+    ],
     "listAnswerRecordsByStudents": [
       "studentIds",
       "range"

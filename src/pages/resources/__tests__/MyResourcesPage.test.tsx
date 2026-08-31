@@ -9,7 +9,8 @@ import {
   QuestionListItem,
   ResourceCard,
 } from "@/pages/resources/MyResourcesPage";
-import type { Material, Question } from "@/types";
+import { documentResourceUsageSummary } from "@/lib/document-resource-usage";
+import type { AnyClass, Material, Question } from "@/types";
 
 vi.mock("@/components/ui/MathHtml", () => ({
   MathHtml: ({ children, className }: { children: string; className?: string }) => (
@@ -19,6 +20,68 @@ vi.mock("@/components/ui/MathHtml", () => ({
 vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
   default: () => <div>题库</div>,
 }));
+
+describe("documentResourceUsageSummary", () => {
+  const classes: AnyClass[] = [
+    {
+      id: "class-1",
+      type: "school",
+      schoolId: "school-1",
+      name: "高一（1）班",
+      grade: "高一",
+      studentCount: 40,
+      createdBy: "teacher-1",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    },
+    {
+      id: "class-2",
+      type: "school",
+      schoolId: "school-1",
+      name: "高一（2）班",
+      grade: "高一",
+      studentCount: 42,
+      createdBy: "teacher-1",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    },
+  ];
+
+  it("shows named applicable classes and unused state", () => {
+    expect(documentResourceUsageSummary(
+      { id: "paper-1", classIds: ["class-1", "class-2"] },
+      classes,
+      new Set(),
+    )).toBe("适用对象：高一（1）班、高一（2）班 · 未用");
+  });
+
+  it("marks a document as used once answer status exists", () => {
+    expect(documentResourceUsageSummary(
+      { id: "lecture-1", classIds: ["class-1"] },
+      classes,
+      new Set(["lecture-1"]),
+    )).toBe("适用对象：高一（1）班 · 已用");
+  });
+
+  it("still shows usage state before an applicable audience is selected", () => {
+    expect(documentResourceUsageSummary(
+      { id: "paper-1", classIds: [] },
+      classes,
+      new Set(["paper-1"]),
+    )).toBe("已用");
+    expect(documentResourceUsageSummary(
+      { id: "paper-2", classIds: [] },
+      classes,
+      new Set(),
+    )).toBe("未用");
+  });
+
+  it("falls back to a class count when old class metadata is unavailable", () => {
+    expect(documentResourceUsageSummary(
+      { id: "paper-1", classIds: ["deleted-class"] },
+      classes,
+      new Set(),
+    )).toBe("适用对象：1 个班级 · 未用");
+  });
+});
 
 describe("DocumentResourceGroup", () => {
   it("wraps related resources without a source label or category header", () => {
