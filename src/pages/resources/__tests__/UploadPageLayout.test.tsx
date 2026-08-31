@@ -125,6 +125,20 @@ describe("UploadPage public attributes layout", () => {
     }
   });
 
+  it.each(["lecture", "examPaper"])("only exposes the chapter catalog for %s uploads", async (type) => {
+    renderPage(type);
+
+    expect(await screen.findByText("章节课目录")).toBeInTheDocument();
+    expect(screen.queryByText("知识点目录")).not.toBeInTheDocument();
+  });
+
+  it("keeps the knowledge catalog for non-document uploads", async () => {
+    renderPage("courseware");
+
+    expect(await screen.findByText("章节课目录")).toBeInTheDocument();
+    expect(screen.getByText("知识点目录")).toBeInTheDocument();
+  });
+
   it("keeps the courseware type with the common attributes in one row", () => {
     renderPage("courseware");
 

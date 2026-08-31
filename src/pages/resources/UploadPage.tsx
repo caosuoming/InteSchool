@@ -405,7 +405,8 @@ export function UploadPage() {
         const finalSchoolYear = item.schoolYear || schoolYear;
         const finalSemester = item.semester || semester;
         const finalChapterIds = item.chapterIds ?? checkedChapters;
-        const finalKnowledgeIds = item.knowledgePointIds ?? checkedKnowledge;
+        const isDocument = currentType === "examPaper" || currentType === "lecture";
+        const finalKnowledgeIds = isDocument ? [] : (item.knowledgePointIds ?? checkedKnowledge);
         const baseInput = {
           title: item.title.trim(),
           description: item.description.trim() || undefined,
@@ -800,20 +801,23 @@ export function UploadPage() {
                     )}
                   </div>
 
-                  {/* 章节目录 + 知识点目录 */}
-                  <div className="grid md:grid-cols-2 gap-4">
+                  {/* 文档仅设置章节课目录；其它资源可同时设置知识点目录。 */}
+                  <div className={cn(
+                    "grid gap-4",
+                    selectedType !== "examPaper" && selectedType !== "lecture" && "md:grid-cols-2",
+                  )}>
                     <div className="rounded-lg border border-ink-100 overflow-hidden">
                       {chapterTree ? (
                         <SearchableTree
                           editable
                           data={chapterTree}
                           onDataChange={setChapterTree}
-                          title="章节目录"
+                          title="章节课目录"
                           accent="gold"
                           checkable
                           checkedIds={checkedChapters}
                           onCheck={setCheckedChapters}
-                          searchPlaceholder="搜索章节..."
+                          searchPlaceholder="搜索章节课..."
                           showLogicSelector
                           logic={chapterLogic}
                           onLogicChange={setChapterLogic}
@@ -825,29 +829,31 @@ export function UploadPage() {
                         </div>
                       )}
                     </div>
-                    <div className="rounded-lg border border-ink-100 overflow-hidden">
-                      {knowledgeTree ? (
-                        <SearchableTree
-                          editable
-                          data={knowledgeTree}
-                          onDataChange={setKnowledgeTree}
-                          title="知识点目录"
-                          accent="teal"
-                          checkable
-                          checkedIds={checkedKnowledge}
-                          onCheck={setCheckedKnowledge}
-                          searchPlaceholder="搜索知识点..."
-                          showLogicSelector
-                          logic={knowledgeLogic}
-                          onLogicChange={setKnowledgeLogic}
-                        />
-                      ) : (
-                        <div className="p-6 text-center text-xs text-ink-400">
-                          <Loader2 className="w-4 h-4 mx-auto mb-1 animate-spin" />
-                          加载知识点目录...
-                        </div>
-                      )}
-                    </div>
+                    {selectedType !== "examPaper" && selectedType !== "lecture" && (
+                      <div className="rounded-lg border border-ink-100 overflow-hidden">
+                        {knowledgeTree ? (
+                          <SearchableTree
+                            editable
+                            data={knowledgeTree}
+                            onDataChange={setKnowledgeTree}
+                            title="知识点目录"
+                            accent="teal"
+                            checkable
+                            checkedIds={checkedKnowledge}
+                            onCheck={setCheckedKnowledge}
+                            searchPlaceholder="搜索知识点..."
+                            showLogicSelector
+                            logic={knowledgeLogic}
+                            onLogicChange={setKnowledgeLogic}
+                          />
+                        ) : (
+                          <div className="p-6 text-center text-xs text-ink-400">
+                            <Loader2 className="w-4 h-4 mx-auto mb-1 animate-spin" />
+                            加载知识点目录...
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <p className="text-xs text-ink-400 -mt-2">
                     提示：也可以暂时不选择，自动进入「未分类」
@@ -936,10 +942,11 @@ export function UploadPage() {
                       const expanded = expandedFileIds.has(item.id);
                       const itemChapterIds = item.chapterIds ?? [];
                       const itemKnowledgeIds = item.knowledgePointIds ?? [];
+                      const isDocument = selectedType === "examPaper" || selectedType === "lecture";
                       const hasOverride = Boolean(
                         item.grade || item.schoolYear || item.semester
                           || item.chapterIds?.length
-                          || item.knowledgePointIds?.length,
+                          || (!isDocument && item.knowledgePointIds?.length),
                       );
                       const isLocked = item.status === "uploading" || item.status === "done";
                       return (
@@ -1091,19 +1098,19 @@ export function UploadPage() {
                                     disabled={item.status === "uploading"}
                                   />
                                 </div>
-                                <div className="grid md:grid-cols-2 gap-3">
+                                <div className={cn("grid gap-3", !isDocument && "md:grid-cols-2")}>
                                   <div className="rounded-lg border border-ink-100 overflow-hidden max-h-64 overflow-y-auto">
                                     {chapterTree ? (
                                       <SearchableTree
                                         editable
                                         data={chapterTree}
                                         onDataChange={setChapterTree}
-                                        title="章节目录（覆盖）"
+                                        title="章节课目录（覆盖）"
                                         accent="gold"
                                         checkable
                                         checkedIds={itemChapterIds}
                                         onCheck={(ids) => updateBatchItem(item.id, { chapterIds: ids })}
-                                        searchPlaceholder="搜索章节..."
+                                        searchPlaceholder="搜索章节课..."
                                       />
                                     ) : (
                                       <div className="p-4 text-center text-xs text-ink-400">
@@ -1112,26 +1119,28 @@ export function UploadPage() {
                                       </div>
                                     )}
                                   </div>
-                                  <div className="rounded-lg border border-ink-100 overflow-hidden max-h-64 overflow-y-auto">
-                                    {knowledgeTree ? (
-                                      <SearchableTree
-                                        editable
-                                        data={knowledgeTree}
-                                        onDataChange={setKnowledgeTree}
-                                        title="知识点目录（覆盖）"
-                                        accent="teal"
-                                        checkable
-                                        checkedIds={itemKnowledgeIds}
-                                        onCheck={(ids) => updateBatchItem(item.id, { knowledgePointIds: ids })}
-                                        searchPlaceholder="搜索知识点..."
-                                      />
-                                    ) : (
-                                      <div className="p-4 text-center text-xs text-ink-400">
-                                        <Loader2 className="w-4 h-4 mx-auto mb-1 animate-spin" />
-                                        加载中...
-                                      </div>
-                                    )}
-                                  </div>
+                                  {!isDocument && (
+                                    <div className="rounded-lg border border-ink-100 overflow-hidden max-h-64 overflow-y-auto">
+                                      {knowledgeTree ? (
+                                        <SearchableTree
+                                          editable
+                                          data={knowledgeTree}
+                                          onDataChange={setKnowledgeTree}
+                                          title="知识点目录（覆盖）"
+                                          accent="teal"
+                                          checkable
+                                          checkedIds={itemKnowledgeIds}
+                                          onCheck={(ids) => updateBatchItem(item.id, { knowledgePointIds: ids })}
+                                          searchPlaceholder="搜索知识点..."
+                                        />
+                                      ) : (
+                                        <div className="p-4 text-center text-xs text-ink-400">
+                                          <Loader2 className="w-4 h-4 mx-auto mb-1 animate-spin" />
+                                          加载中...
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex items-center justify-end">
                                   <button

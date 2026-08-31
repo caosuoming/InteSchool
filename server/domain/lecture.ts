@@ -16,6 +16,7 @@ import { classService } from "./class.js";
 import { sanitizeLecturePatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveLectureToExamPaper } from "./document-library-move.js";
+import { lectureKnowledgePointIds } from "./document-knowledge.js";
 
 function collectQuestionIds(sections: LectureSection[]): string[] {
   const ids: string[] = [];
@@ -59,18 +60,8 @@ function restoreEditableChapterHierarchy(sections: LectureSection[]): LectureSec
   return roots;
 }
 
-function containedKnowledgePointIds(lecture: Lecture): string[] {
-  const questionIds = new Set(collectQuestionIds(lecture.sections));
-  if (questionIds.size === 0) return lecture.knowledgePointIds;
-
-  const ids = new Set<string>();
-  let resolvedQuestion = false;
-  for (const question of db.read("questions")) {
-    if (!questionIds.has(question.id)) continue;
-    resolvedQuestion = true;
-    question.knowledgePointIds.forEach((id) => ids.add(id));
-  }
-  return resolvedQuestion ? [...ids] : lecture.knowledgePointIds;
+function withDerivedKnowledgePoints(lecture: Lecture): Lecture {
+  return { ...lecture, knowledgePointIds: lectureKnowledgePointIds(lecture) };
 }
 
 function matchFilter(l: Lecture, filter: LectureFilter): boolean {
@@ -87,7 +78,7 @@ function matchFilter(l: Lecture, filter: LectureFilter): boolean {
     }
   }
   if (filter.knowledgePointIds?.length) {
-    const ids = containedKnowledgePointIds(l);
+    const ids = lectureKnowledgePointIds(l);
     const logic = filter.knowledgeLogic || "or";
     if (logic === "and") {
       if (!filter.knowledgePointIds.every((k) => ids.includes(k))) return false;
@@ -137,12 +128,14 @@ export const lectureService = {
     return db
       .read("lectures")
       .filter((l) => matchFilter(l, filter))
+      .map(withDerivedKnowledgePoints)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   },
 
   async getLecture(id: string): Promise<Lecture | null> {
     await delay(200);
-    return db.read("lectures").find((l) => l.id === id) || null;
+    const lecture = db.read("lectures").find((l) => l.id === id);
+    return lecture ? withDerivedKnowledgePoints(lecture) : null;
   },
 
   async listColumnTemplates(
@@ -224,7 +217,7 @@ export const lectureService = {
       title: input.title,
       description: input.description,
       chapterIds: input.chapterIds,
-      knowledgePointIds: input.knowledgePointIds,
+      knowledgePointIds: [],
       grade: input.grade,
       schoolYear: input.schoolYear,
       semester: input.semester || "上学期",
@@ -244,7 +237,7 @@ export const lectureService = {
       updatedAt: now,
     };
     db.update("lectures", (list) => [lecture, ...list]);
-    return lecture;
+    return withDerivedKnowledgePoints(lecture);
   },
 
   async updateLecture(id: string, patch: Partial<Lecture>): Promise<Lecture> {
@@ -255,6 +248,7 @@ export const lectureService = {
       list.map((l) => {
         if (l.id === id) {
           const safePatch = sanitizeLecturePatch(l, patch);
+          delete safePatch.knowledgePointIds;
           updated = {
             ...l,
             ...safePatch,
@@ -267,7 +261,7 @@ export const lectureService = {
       }),
     );
     if (!updated) throw new Error("讲义不存在");
-    return updated;
+    return withDerivedKnowledgePoints(updated);
   },
 
   async deleteLecture(id: string): Promise<void> {
@@ -299,6 +293,7 @@ export const lectureService = {
       status: "draft",
       version: 1,
       sections: editableSections,
+      knowledgePointIds: [],
       contentBlocks: undefined,
       originalFileUrl: undefined,
       originalFileName: undefined,
@@ -322,7 +317,7 @@ export const lectureService = {
       source.id,
       duplicated.id,
     );
-    return duplicated;
+    return withDerivedKnowledgePoints(duplicated);
   },
 
   async addQuestionToLecture(
@@ -508,6 +503,7 @@ export const lectureService = {
       id: genId("lec"),
       title: `${source.title}（拆解版）`,
       sections: extractedSections.length > 0 ? extractedSections : copyLectureSections(source.sections),
+      knowledgePointIds: [],
       contentBlocks: normalizedBlocks.length > 0 ? normalizedBlocks : source.contentBlocks,
       isExtractCopy: true,
       sourceResourceId: sourceId,
@@ -533,7 +529,7 @@ export const lectureService = {
     recordQuestionUsage(
       collectQuestionIds(copy.sections),
     );
-    return copy;
+    return withDerivedKnowledgePoints(copy);
   },
 
   /**
@@ -541,9 +537,10 @@ export const lectureService = {
    */
   async getExtractCopy(sourceId: string): Promise<Lecture | null> {
     await delay(200);
-    return db.read("lectures").find(
+    const copy = db.read("lectures").find(
       (l) => l.sourceResourceId === sourceId && l.isExtractCopy,
-    ) || null;
+    );
+    return copy ? withDerivedKnowledgePoints(copy) : null;
   },
 
   /** 将讲义连同其文档状态一起移动到试卷库。 */

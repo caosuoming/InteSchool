@@ -123,6 +123,9 @@ describe("document resource metadata", () => {
         }],
       });
 
+      expect(paper.knowledgePointIds).toEqual(["knowledge-contained"]);
+      expect(lecture.knowledgePointIds).toEqual(["knowledge-contained"]);
+
       await expect(examPaperService.listPapers({ knowledgePointIds: ["knowledge-contained"] }))
         .resolves.toEqual([expect.objectContaining({ id: paper.id })]);
       await expect(lectureService.listLectures({ knowledgePointIds: ["knowledge-contained"] }))
@@ -138,6 +141,10 @@ describe("document resource metadata", () => {
         .resolves.toEqual([expect.objectContaining({ id: lecture.id })]);
 
       state.questions![0].knowledgePointIds = [];
+      await expect(examPaperService.getPaper(paper.id))
+        .resolves.toEqual(expect.objectContaining({ knowledgePointIds: [] }));
+      await expect(lectureService.getLecture(lecture.id))
+        .resolves.toEqual(expect.objectContaining({ knowledgePointIds: [] }));
       await expect(examPaperService.listPapers({ knowledgePointIds: ["knowledge-document"] }))
         .resolves.toEqual([]);
       await expect(lectureService.listLectures({ knowledgePointIds: ["knowledge-document"] }))
