@@ -12,23 +12,10 @@ import { reflectionService } from "./reflection.js";
 import { sanitizeExamPaperPatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveExamPaperToLecture } from "./document-library-move.js";
+import { examPaperKnowledgePointIds } from "./document-knowledge.js";
 
-function containedKnowledgePointIds(paper: ExamPaper): string[] {
-  const questionIds = new Set(
-    paper.questions
-      .map((item) => item.questionId)
-      .filter((id): id is string => Boolean(id)),
-  );
-  if (questionIds.size === 0) return paper.knowledgePointIds;
-
-  const ids = new Set<string>();
-  let resolvedQuestion = false;
-  for (const question of db.read("questions")) {
-    if (!questionIds.has(question.id)) continue;
-    resolvedQuestion = true;
-    question.knowledgePointIds.forEach((id) => ids.add(id));
-  }
-  return resolvedQuestion ? [...ids] : paper.knowledgePointIds;
+function withDerivedKnowledgePoints(paper: ExamPaper): ExamPaper {
+  return { ...paper, knowledgePointIds: examPaperKnowledgePointIds(paper) };
 }
 
 function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
@@ -46,7 +33,7 @@ function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
     }
   }
   if (filter.knowledgePointIds?.length) {
-    const ids = containedKnowledgePointIds(p);
+    const ids = examPaperKnowledgePointIds(p);
     const logic = filter.knowledgeLogic || "or";
     if (logic === "and") {
       if (!filter.knowledgePointIds.every((k) => ids.includes(k))) return false;
@@ -92,12 +79,14 @@ export const examPaperService = {
     return db
       .read("examPapers")
       .filter((p) => matchFilter(p, filter))
+      .map(withDerivedKnowledgePoints)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   },
 
   async getPaper(id: string): Promise<ExamPaper | null> {
     await delay(200);
-    return db.read("examPapers").find((p) => p.id === id) || null;
+    const paper = db.read("examPapers").find((p) => p.id === id);
+    return paper ? withDerivedKnowledgePoints(paper) : null;
   },
 
   async createPaper(
@@ -116,7 +105,7 @@ export const examPaperService = {
       title: input.title,
       description: input.description,
       chapterIds: input.chapterIds,
-      knowledgePointIds: input.knowledgePointIds,
+      knowledgePointIds: [],
       grade: input.grade,
       schoolYear: input.schoolYear,
       semester: input.semester || "上学期",
@@ -138,7 +127,7 @@ export const examPaperService = {
       updatedAt: now,
     };
     db.update("examPapers", (list) => [paper, ...list]);
-    return paper;
+    return withDerivedKnowledgePoints(paper);
   },
 
   async updatePaper(id: string, patch: Partial<ExamPaper>): Promise<ExamPaper> {
@@ -149,6 +138,7 @@ export const examPaperService = {
       list.map((p) => {
         if (p.id === id) {
           const safePatch = sanitizeExamPaperPatch(p, patch);
+          delete safePatch.knowledgePointIds;
           updated = {
             ...p,
             ...safePatch,
@@ -160,7 +150,7 @@ export const examPaperService = {
       }),
     );
     if (!updated) throw new Error("试卷不存在");
-    return updated;
+    return withDerivedKnowledgePoints(updated);
   },
 
   async deletePaper(id: string): Promise<void> {
@@ -192,6 +182,7 @@ export const examPaperService = {
       title: newTitle || `${source.title}（副本）`,
       status: "draft",
       questions: copiedQuestions,
+      knowledgePointIds: [],
       contentBlocks: undefined,
       originalFileUrl: undefined,
       originalFileName: undefined,
@@ -211,7 +202,7 @@ export const examPaperService = {
       source.id,
       duplicated.id,
     );
-    return duplicated;
+    return withDerivedKnowledgePoints(duplicated);
   },
 
   /**
@@ -243,8 +234,8 @@ export const examPaperService = {
           options: eq.options,
           answer: eq.answer,
           analysis: eq.analysis,
-          chapterIds: paper.chapterIds,
-          knowledgePointIds: paper.knowledgePointIds,
+          chapterIds: [],
+          knowledgePointIds: [],
           grade: paper.grade,
           schoolYear: paper.schoolYear,
           semester: paper.semester || "上学期",
@@ -311,6 +302,7 @@ export const examPaperService = {
       id: genId("exam"),
       title: `${source.title}（拆解版）`,
       questions: copiedQuestions,
+      knowledgePointIds: [],
       totalScore: copiedQuestions.reduce((sum, question) => sum + question.score, 0),
       contentBlocks: normalizedBlocks.length > 0 ? normalizedBlocks : source.contentBlocks,
       isExtractCopy: true,
@@ -334,7 +326,7 @@ export const examPaperService = {
     recordQuestionUsage(
       copiedQuestions.flatMap((question) => question.questionId ? [question.questionId] : []),
     );
-    return copy;
+    return withDerivedKnowledgePoints(copy);
   },
 
   /**
@@ -342,9 +334,10 @@ export const examPaperService = {
    */
   async getExtractCopy(sourceId: string): Promise<ExamPaper | null> {
     await delay(200);
-    return db.read("examPapers").find(
+    const copy = db.read("examPapers").find(
       (p) => p.sourceResourceId === sourceId && p.isExtractCopy,
-    ) || null;
+    );
+    return copy ? withDerivedKnowledgePoints(copy) : null;
   },
 
   /** 将试卷连同其文档状态一起移动到讲义库。 */
