@@ -40,14 +40,15 @@ function answer(
   studentId: string,
   questionId: string,
   answeredAt = now,
+  score: AnswerRecord["score"] = "correct",
 ): AnswerRecord {
   return {
     id,
     studentId,
     questionId,
     lectureId: "manual",
-    isCorrect: true,
-    score: "correct",
+    isCorrect: score === "correct",
+    score,
     source: "manual",
     answeredAt,
   };
@@ -222,8 +223,12 @@ describe("live directory counts", () => {
     });
   });
 
-  it("shows distinct completed-question counts for the selected students and date range", async () => {
+  it("shows distinct completed-question counts and mastery for the selected students and date range", async () => {
     const appState = state();
+    (appState.answerRecords as AnswerRecord[]).push(
+      answer("a-6", "student-1", "q-child", now, "wrong"),
+      answer("a-7", "student-1", "q-parent", now, "done"),
+    );
     await runWithState(appState, async () => {
       const baseTree = await knowledgeService.getChapterTree("school-a");
       const annotated = await analyticsService.annotateTreeWithStudentProgress(
@@ -233,8 +238,8 @@ describe("live directory counts", () => {
         { start: "2026-01-01T00:00:00.000Z", end: "2026-12-31T23:59:59.999Z" },
       );
 
-      expect(findNode(annotated, "ch-parent")).toMatchObject({ count: 3, doneCount: 2 });
-      expect(findNode(annotated, "ch-child")).toMatchObject({ count: 2, doneCount: 1 });
+      expect(findNode(annotated, "ch-parent")).toMatchObject({ count: 3, doneCount: 2, masteryRate: 0.75 });
+      expect(findNode(annotated, "ch-child")).toMatchObject({ count: 2, doneCount: 1, masteryRate: 0.5 });
     });
   });
 });
