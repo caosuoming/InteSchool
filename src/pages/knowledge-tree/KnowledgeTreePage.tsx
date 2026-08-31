@@ -217,6 +217,43 @@ export default function KnowledgeTreePage() {
     return ids;
   };
 
+  const findTreeNode = (root: TreeNode, id: string): TreeNode | null => {
+    if (root.id === id) return root;
+    for (const child of root.children) {
+      const found = findTreeNode(child, id);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const canDropTreeNode = (source: TreeNode, target: TreeNode): boolean => {
+    if (!tree || source.id === "root") return false;
+    const fullSource = findTreeNode(tree, source.id);
+    if (!fullSource) return false;
+    const currentParent = findParentTreeNode(tree, source.id);
+    if (currentParent?.id === target.id) return false;
+    return !collectDescendantIds(fullSource).has(target.id);
+  };
+
+  const handleNodeDrop = async (source: TreeNode, target: TreeNode) => {
+    if (!tree || !canDropTreeNode(source, target)) return;
+    const fullSource = findTreeNode(tree, source.id);
+    if (!fullSource) return;
+
+    try {
+      await knowledgeService.moveNode(
+        source.id,
+        kind,
+        target.id === "root" ? null : target.id,
+      );
+      toast.success(`已将「${source.name}」移动到「${target.name}」`);
+      if (selectedNode?.id === source.id) setSelectedNode(fullSource);
+      await loadTree();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "移动失败");
+    }
+  };
+
   // 将树扁平化为带路径的列表（不含 root）
   const flattenTreeWithPaths = (root: TreeNode): Array<{ node: TreeNode; path: string[] }> => {
     const result: Array<{ node: TreeNode; path: string[] }> = [];
@@ -509,6 +546,8 @@ export default function KnowledgeTreePage() {
                 data={displayedTree}
                 selectedId={selectedNode?.id}
                 onSelect={(node) => setSelectedNode(node)}
+                onNodeDrop={handleNodeDrop}
+                canDropNode={canDropTreeNode}
                 defaultExpandAll={Boolean(search)}
                 expandLevel={1}
                 className="max-h-[600px] overflow-auto"
@@ -519,6 +558,10 @@ export default function KnowledgeTreePage() {
                 title="未找到匹配的节点"
               />
             )}
+
+            <p className="mt-2 text-[11px] leading-5 text-ink-400">
+              可直接拖动节点到另一个节点下；拖到“全部章节/全部知识点”可移到顶级。
+            </p>
 
             <div className="mt-3 pt-3 border-t border-ink-100">
               <Button

@@ -191,6 +191,35 @@ describe("KnowledgeTreePage", () => {
     expect(knowledgeService.listChapters).not.toHaveBeenCalled();
   });
 
+  it("moves a chapter by dragging it onto the new parent", async () => {
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    const sourceRow = (await screen.findByText("章节课")).parentElement!;
+    const targetRow = screen.getByText("目标章节").parentElement!;
+    const dataTransfer = {
+      effectAllowed: "none",
+      dropEffect: "none",
+      setData: vi.fn(),
+      getData: vi.fn(),
+    };
+
+    fireEvent.dragStart(sourceRow, { dataTransfer });
+    fireEvent.dragOver(targetRow, { dataTransfer });
+    fireEvent.drop(targetRow, { dataTransfer });
+
+    await waitFor(() => {
+      expect(knowledgeService.moveNode).toHaveBeenCalledWith(
+        "chapter-course",
+        "chapter",
+        "chapter-target",
+      );
+    });
+  });
+
   it("merges a selected node into another child of the same parent", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
