@@ -327,7 +327,17 @@ const builtInSummaryKeywords = [
   "【感悟】",
 ];
 
-const builtInProjectHeadingLabels = ["课前引入", "知识梳理"];
+const builtInProjectHeadingLabels = [
+  "课前引入",
+  "知识梳理",
+  "练习",
+  "练习题",
+  "训练",
+  "拓展",
+  "拓展提升",
+  "提升练习",
+  "提升训练",
+];
 
 function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
