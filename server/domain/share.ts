@@ -32,6 +32,7 @@ import type {
   TreeNode,
   ResourceSemester,
 } from "../../src/types/index.js";
+import { examPaperKnowledgePointIds, lectureKnowledgePointIds } from "./document-knowledge.js";
 import { assertResourceCapacity, recordDonationDownload } from "./quota.js";
 
 type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
@@ -196,6 +197,18 @@ function findOwnedResource(
   }
   if (resource.platformSourceDonationIds?.length) {
     throw new Error("从平台资源创建的副本不能再次捐赠");
+  }
+  if (type === "examPaper") {
+    return {
+      ...resource,
+      knowledgePointIds: examPaperKnowledgePointIds(resource as ExamPaper),
+    } as ShareableResource;
+  }
+  if (type === "lecture") {
+    return {
+      ...resource,
+      knowledgePointIds: lectureKnowledgePointIds(resource as Lecture),
+    } as ShareableResource;
   }
   return resource;
 }

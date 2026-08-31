@@ -28,6 +28,7 @@ import {
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { assertResourceCapacity } from "./quota.js";
+import { examPaperKnowledgePointIds, lectureKnowledgePointIds } from "./document-knowledge.js";
 
 function matchFilter(c: LessonCourseware, filter: LessonCoursewareFilter): boolean {
   const lifecycleStatus = c.lifecycleStatus || "active";
@@ -950,7 +951,7 @@ export const lessonCoursewareService = {
     const lesson = await this.createCourseware(teacherId, schoolId, {
       title: `${examPaper.title}（上课课件）`,
       chapterIds: examPaper.chapterIds,
-      knowledgePointIds: examPaper.knowledgePointIds,
+      knowledgePointIds: examPaperKnowledgePointIds(examPaper),
       grade: examPaper.grade,
       schoolYear: examPaper.schoolYear,
       semester: examPaper.semester || "上学期",
@@ -1022,7 +1023,7 @@ export const lessonCoursewareService = {
     const lesson = await this.createCourseware(teacherId, schoolId, {
       title: `${lecture.title}（上课课件）`,
       chapterIds: lecture.chapterIds,
-      knowledgePointIds: lecture.knowledgePointIds,
+      knowledgePointIds: lectureKnowledgePointIds(lecture),
       grade: lecture.grade,
       schoolYear: lecture.schoolYear,
       semester: lecture.semester || "上学期",

@@ -147,6 +147,8 @@ describe("document extract copies", () => {
     const appState = state();
 
     await runWithState(appState, async () => {
+      appState.questions![0].knowledgePointIds = ["knowledge-1"];
+      appState.questions![1].knowledgePointIds = ["knowledge-2"];
       const copy = await examPaperService.createExtractCopy("paper-source", blocks());
 
       expect(copy.questions).toHaveLength(2);
@@ -182,9 +184,14 @@ describe("document extract copies", () => {
       expect(copy).toMatchObject({
         isExtractCopy: true,
         sourceResourceId: "paper-source",
+        knowledgePointIds: ["knowledge-1", "knowledge-2"],
         originalFileUrl: undefined,
         status: "draft",
       });
+      await expect(examPaperService.getPaper("paper-source"))
+        .resolves.toEqual(expect.objectContaining({
+          knowledgePointIds: ["knowledge-1", "knowledge-2"],
+        }));
       expect((appState.examPapers as ExamPaper[]).find((paper) => paper.id === "paper-source"))
         .toMatchObject({ extractStatus: "done" });
       expect(appState.questions).toEqual(expect.arrayContaining([
@@ -203,6 +210,8 @@ describe("document extract copies", () => {
     ));
 
     await runWithState(appState, async () => {
+      appState.questions![0].knowledgePointIds = ["knowledge-1"];
+      appState.questions![1].knowledgePointIds = ["knowledge-2"];
       const copy = await lectureService.createExtractCopy("lecture-source", lectureBlocks);
 
       expect(copy.sections.map((section) => section.type)).toEqual([
@@ -242,10 +251,15 @@ describe("document extract copies", () => {
       expect(copy).toMatchObject({
         isExtractCopy: true,
         sourceResourceId: "lecture-source",
+        knowledgePointIds: ["knowledge-1", "knowledge-2"],
         versionType: "extract",
         hasOrigin: true,
         originalFileUrl: undefined,
       });
+      await expect(lectureService.getLecture("lecture-source"))
+        .resolves.toEqual(expect.objectContaining({
+          knowledgePointIds: ["knowledge-1", "knowledge-2"],
+        }));
       expect((appState.lectures as Lecture[]).find((lecture) => lecture.id === "lecture-source"))
         .toMatchObject({ extractStatus: "done" });
       expect(appState.questions).toEqual(expect.arrayContaining([
