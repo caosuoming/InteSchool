@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   X, Save, BookOpen, Lightbulb, FileText,
-  ChevronUp, ChevronDown, Plus, Trash2, Edit3, Clock,
+  Plus, Trash2, Edit3, Clock,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
@@ -23,13 +23,7 @@ interface QuickEditModalProps {
   onSaved: (question: Question) => void;
 }
 
-type SectionKey = "chapter" | "knowledge" | "remark";
-
-const sectionMeta: Record<SectionKey, { label: string; icon: typeof BookOpen; color: string }> = {
-  chapter: { label: "章节目录", icon: BookOpen, color: "gold" },
-  knowledge: { label: "知识点目录", icon: Lightbulb, color: "teal" },
-  remark: { label: "备注", icon: FileText, color: "ink" },
-};
+type DirectoryTab = "chapter" | "knowledge";
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
@@ -42,14 +36,12 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
   const [chapterIds, setChapterIds] = useState<string[]>([]);
   const [knowledgePointIds, setKnowledgePointIds] = useState<string[]>([]);
   const [remarks, setRemarks] = useState<QuestionRemark[]>([]);
-  const [sectionOrder, setSectionOrder] = useState<SectionKey[]>(["chapter", "knowledge", "remark"]);
+  const [activeDirectoryTab, setActiveDirectoryTab] = useState<DirectoryTab>("chapter");
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [saving, setSaving] = useState(false);
-  // 新增备注的临时状态
   const [newRemarkContent, setNewRemarkContent] = useState("");
   const [addingRemark, setAddingRemark] = useState(false);
-  // 编辑备注的状态
   const [editingRemarkId, setEditingRemarkId] = useState<string | null>(null);
   const [editingRemarkContent, setEditingRemarkContent] = useState("");
 
@@ -58,11 +50,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
     setChapterIds([...question.chapterIds]);
     setKnowledgePointIds([...question.knowledgePointIds]);
     setRemarks([...(question.remarks || [])]);
-    setSectionOrder(
-      (question.sectionOrder && question.sectionOrder.length === 3
-        ? question.sectionOrder
-        : ["chapter", "knowledge", "remark"]) as SectionKey[],
-    );
+    setActiveDirectoryTab("chapter");
     setNewRemarkContent("");
     setAddingRemark(false);
     setEditingRemarkId(null);
@@ -78,14 +66,12 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
     if (!question) return;
     setSaving(true);
     try {
-      // 同步最新备注到 remark 字段（兼容旧逻辑）
       const latestRemark = remarks[remarks.length - 1]?.content || "";
       const updated = await questionService.updateQuestion(question.id, {
         chapterIds,
         knowledgePointIds,
         remarks,
         remark: latestRemark,
-        sectionOrder,
       });
       toast.success("属性已更新");
       onSaved(updated);
@@ -95,15 +81,6 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
     } finally {
       setSaving(false);
     }
-  };
-
-  const moveSection = (key: SectionKey, direction: "up" | "down") => {
-    const idx = sectionOrder.indexOf(key);
-    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= sectionOrder.length) return;
-    const next = [...sectionOrder];
-    [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
-    setSectionOrder(next);
   };
 
   const handleAddRemark = () => {
@@ -150,140 +127,141 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
 
   if (!open || !question) return null;
 
-  // 按顺序渲染区块
-  const renderSection = (key: SectionKey, index: number) => {
-    const meta = sectionMeta[key];
-    const Icon = meta.icon;
-    const isFirst = index === 0;
-    const isLast = index === sectionOrder.length - 1;
+  const activeTree = activeDirectoryTab === "chapter" ? chapterTree : knowledgeTree;
+  const activeCheckedIds = activeDirectoryTab === "chapter" ? chapterIds : knowledgePointIds;
+  const activeSetCheckedIds = activeDirectoryTab === "chapter" ? setChapterIds : setKnowledgePointIds;
+  const activeSetTree = activeDirectoryTab === "chapter" ? setChapterTree : setKnowledgeTree;
+  const activeTitle = activeDirectoryTab === "chapter" ? "章节课目录" : "知识点目录";
+  const activeSearchPlaceholder = activeDirectoryTab === "chapter" ? "搜索章节课目录..." : "搜索知识点目录...";
 
-    return (
-      <div
-        key={key}
-        className={cn(
-          "border rounded-lg overflow-hidden",
-          meta.color === "gold" && "border-gold-200",
-          meta.color === "teal" && "border-teal-200",
-          meta.color === "ink" && "border-ink-200",
-        )}
-      >
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-ink-950/40" onClick={onClose} />
+      <DraggableModalSurface className="relative bg-paper rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col animate-fade-in">
         <div
-          className={cn(
-            "px-4 py-2.5 border-b flex items-center justify-between",
-            meta.color === "gold" && "bg-gold-50 border-gold-200",
-            meta.color === "teal" && "bg-teal-50 border-teal-200",
-            meta.color === "ink" && "bg-mist/50 border-ink-200",
-          )}
+          data-modal-drag-handle
+          className="flex items-center justify-between px-5 py-4 border-b border-ink-100 cursor-move touch-none select-none"
         >
-          <div className="flex items-center gap-1.5">
-            <Icon
-              className={cn(
-                "w-4 h-4",
-                meta.color === "gold" && "text-gold-600",
-                meta.color === "teal" && "text-teal-600",
-                meta.color === "ink" && "text-ink-600",
-              )}
-            />
-            <span
-              className={cn(
-                "font-medium text-sm",
-                meta.color === "gold" && "text-gold-800",
-                meta.color === "teal" && "text-teal-800",
-                meta.color === "ink" && "text-ink-800",
-              )}
-            >
-              {meta.label}
-            </span>
-            {key === "chapter" && (
-              <span className="text-xs text-gold-600">已选 {chapterIds.length}</span>
-            )}
-            {key === "knowledge" && (
-              <span className="text-xs text-teal-600">已选 {knowledgePointIds.length}</span>
-            )}
-            {key === "remark" && (
-              <span className="text-xs text-ink-500">{remarks.length} 条</span>
-            )}
+          <div className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-gold-500" />
+            <h3 className="font-serif font-semibold text-ink-900">快速调整属性</h3>
           </div>
-          <div className="flex items-center gap-1">
-            {key === "chapter" && chapterIds.length > 0 && (
-              <button
-                onClick={() => setChapterIds([])}
-                className="text-xs text-gold-600 hover:text-red-600 mr-2"
-              >
-                清除
-              </button>
-            )}
-            {key === "knowledge" && knowledgePointIds.length > 0 && (
-              <button
-                onClick={() => setKnowledgePointIds([])}
-                className="text-xs text-teal-600 hover:text-red-600 mr-2"
-              >
-                清除
-              </button>
-            )}
-            <button
-              onClick={() => moveSection(key, "up")}
-              disabled={isFirst}
-              className="p-1 rounded text-ink-400 hover:text-gold-600 hover:bg-paper disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="上移"
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => moveSection(key, "down")}
-              disabled={isLast}
-              className="p-1 rounded text-ink-400 hover:text-gold-600 hover:bg-paper disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="下移"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <button data-modal-drag-ignore onClick={onClose} className="p-1.5 rounded-lg hover:bg-mist text-ink-400">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        <div className="p-3">
-          {key === "chapter" && (
-            chapterTree ? (
-              <SearchableTree
-                editable
-                data={chapterTree}
-                onDataChange={setChapterTree}
-                title="章节目录"
-                checkable
-                checkedIds={chapterIds}
-                onCheck={setChapterIds}
-                expandLevel={2}
-                searchPlaceholder="搜索章节目录..."
-                showHeader={false}
-                treeMaxHeightClassName="max-h-[160px]"
-              />
-            ) : (
-              <div className="py-6 text-center text-xs text-ink-400">加载中...</div>
-            )
-          )}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="p-3 rounded-lg bg-mist/50 border border-ink-100">
+            <div className="text-xs font-medium text-ink-500 mb-1">当前题目</div>
+            <MathHtml className="block text-sm text-ink-900 line-clamp-3 whitespace-pre-wrap">
+              {question.stem}
+            </MathHtml>
+          </div>
 
-          {key === "knowledge" && (
-            knowledgeTree ? (
-              <SearchableTree
-                editable
-                data={knowledgeTree}
-                onDataChange={setKnowledgeTree}
-                title="知识点目录"
-                accent="teal"
-                checkable
-                checkedIds={knowledgePointIds}
-                onCheck={setKnowledgePointIds}
-                expandLevel={2}
-                searchPlaceholder="搜索知识点目录..."
-                showHeader={false}
-                treeMaxHeightClassName="max-h-[160px]"
-              />
-            ) : (
-              <div className="py-6 text-center text-xs text-ink-400">加载中...</div>
-            )
-          )}
+          <div className="overflow-hidden rounded-lg border border-ink-200">
+            <div
+              role="tablist"
+              aria-label="题目目录"
+              className="grid grid-cols-2 border-b border-ink-200 bg-mist/30"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeDirectoryTab === "chapter"}
+                onClick={() => setActiveDirectoryTab("chapter")}
+                className={cn(
+                  "flex items-center justify-center gap-2 border-r border-ink-200 px-4 py-3 text-sm font-medium transition-colors",
+                  activeDirectoryTab === "chapter"
+                    ? "bg-gold-50 text-gold-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-gold-500"
+                    : "text-ink-500 hover:bg-paper hover:text-ink-800",
+                )}
+              >
+                <BookOpen className="h-4 w-4" />
+                <span>章节课目录</span>
+                <span className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[11px]",
+                  activeDirectoryTab === "chapter" ? "bg-gold-100 text-gold-700" : "bg-ink-100 text-ink-500",
+                )}>
+                  已选 {chapterIds.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeDirectoryTab === "knowledge"}
+                onClick={() => setActiveDirectoryTab("knowledge")}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors",
+                  activeDirectoryTab === "knowledge"
+                    ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
+                    : "text-ink-500 hover:bg-paper hover:text-ink-800",
+                )}
+              >
+                <Lightbulb className="h-4 w-4" />
+                <span>知识点目录</span>
+                <span className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[11px]",
+                  activeDirectoryTab === "knowledge" ? "bg-teal-100 text-teal-700" : "bg-ink-100 text-ink-500",
+                )}>
+                  已选 {knowledgePointIds.length}
+                </span>
+              </button>
+            </div>
 
-          {key === "remark" && (
-            <div className="space-y-2">
+            <div
+              role="tabpanel"
+              data-testid="quick-edit-directory-panel"
+              className="min-h-[390px] p-3"
+            >
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-xs text-ink-500">{activeTitle}</span>
+                {activeCheckedIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => activeSetCheckedIds([])}
+                    className={cn(
+                      "text-xs transition-colors hover:text-red-600",
+                      activeDirectoryTab === "chapter" ? "text-gold-600" : "text-teal-600",
+                    )}
+                  >
+                    清除已选
+                  </button>
+                )}
+              </div>
+
+              {activeTree ? (
+                <SearchableTree
+                  key={activeDirectoryTab}
+                  editable
+                  data={activeTree}
+                  onDataChange={activeSetTree}
+                  title={activeTitle}
+                  accent={activeDirectoryTab === "knowledge" ? "teal" : "gold"}
+                  checkable
+                  checkedIds={activeCheckedIds}
+                  onCheck={activeSetCheckedIds}
+                  expandLevel={2}
+                  searchPlaceholder={activeSearchPlaceholder}
+                  showHeader={false}
+                  treeMaxHeightClassName="h-[330px] max-h-[330px]"
+                />
+              ) : (
+                <div className="flex h-[330px] items-center justify-center text-xs text-ink-400">加载中...</div>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-ink-200">
+            <div className="flex items-center justify-between border-b border-ink-200 bg-mist/50 px-4 py-2.5">
+              <div className="flex items-center gap-1.5">
+                <FileText className="h-4 w-4 text-ink-600" />
+                <span className="text-sm font-medium text-ink-800">备注</span>
+                <span className="text-xs text-ink-500">{remarks.length} 条</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 p-3">
               {remarks.length === 0 && !addingRemark && (
                 <div className="py-4 text-center text-xs text-ink-400">
                   暂无备注
@@ -292,7 +270,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
               {remarks.map((r) => (
                 <div
                   key={r.id}
-                  className="p-2.5 rounded-md bg-gold-50/40 border border-gold-100 group"
+                  className="group rounded-md border border-gold-100 bg-gold-50/40 p-2.5"
                 >
                   {editingRemarkId === r.id ? (
                     <div className="space-y-2">
@@ -322,25 +300,25 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                   ) : (
                     <>
                       <div className="text-sm text-ink-800 whitespace-pre-wrap">{r.content}</div>
-                      <div className="flex items-center justify-between mt-1.5">
+                      <div className="mt-1.5 flex items-center justify-between">
                         <div className="flex items-center gap-1 text-[11px] text-ink-400">
-                          <Clock className="w-3 h-3" />
+                          <Clock className="h-3 w-3" />
                           {formatTimestamp(r.updatedAt)}
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                           <button
                             onClick={() => startEditRemark(r)}
-                            className="p-1 rounded text-ink-400 hover:bg-mist hover:text-gold-600"
+                            className="rounded p-1 text-ink-400 hover:bg-mist hover:text-gold-600"
                             title="编辑"
                           >
-                            <Edit3 className="w-3 h-3" />
+                            <Edit3 className="h-3 w-3" />
                           </button>
                           <button
                             onClick={() => handleDeleteRemark(r.id)}
-                            className="p-1 rounded text-ink-400 hover:bg-red-50 hover:text-red-600"
+                            className="rounded p-1 text-ink-400 hover:bg-red-50 hover:text-red-600"
                             title="删除"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="h-3 w-3" />
                           </button>
                         </div>
                       </div>
@@ -350,7 +328,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
               ))}
 
               {addingRemark ? (
-                <div className="p-2.5 rounded-md border border-gold-200 bg-paper space-y-2">
+                <div className="space-y-2 rounded-md border border-gold-200 bg-paper p-2.5">
                   <Textarea
                     value={newRemarkContent}
                     onChange={(e) => setNewRemarkContent(e.target.value)}
@@ -377,56 +355,17 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
               ) : (
                 <button
                   onClick={() => setAddingRemark(true)}
-                  className="w-full py-2 text-xs text-gold-600 hover:text-gold-700 border border-dashed border-gold-200 hover:border-gold-300 rounded-md transition-colors flex items-center justify-center gap-1"
+                  className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-gold-200 py-2 text-xs text-gold-600 transition-colors hover:border-gold-300 hover:text-gold-700"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="h-3.5 w-3.5" />
                   新增备注
                 </button>
               )}
             </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-ink-950/40" onClick={onClose} />
-      <DraggableModalSurface className="relative bg-paper rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col animate-fade-in">
-        {/* Header */}
-        <div
-          data-modal-drag-handle
-          className="flex items-center justify-between px-5 py-4 border-b border-ink-100 cursor-move touch-none select-none"
-        >
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-gold-500" />
-            <h3 className="font-serif font-semibold text-ink-900">快速调整属性</h3>
-            <span className="text-xs text-ink-400 ml-2">
-              可通过箭头调整区块顺序
-            </span>
           </div>
-          <button data-modal-drag-ignore onClick={onClose} className="p-1.5 rounded-lg hover:bg-mist text-ink-400">
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {/* 题干预览 */}
-          <div className="p-3 rounded-lg bg-mist/50 border border-ink-100">
-            <div className="text-xs font-medium text-ink-500 mb-1">当前题目</div>
-            <MathHtml className="block text-sm text-ink-900 line-clamp-3 whitespace-pre-wrap">
-              {question.stem}
-            </MathHtml>
-          </div>
-
-          {/* 按用户自定义顺序渲染区块 */}
-          {sectionOrder.map((key, index) => renderSection(key, index))}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-ink-100 flex justify-end gap-2">
+        <div className="flex justify-end gap-2 border-t border-ink-100 px-5 py-3">
           <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>
             取消
           </Button>
