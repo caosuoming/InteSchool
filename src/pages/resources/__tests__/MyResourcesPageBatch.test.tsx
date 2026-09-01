@@ -17,7 +17,26 @@ import { questionService } from "@/services/question";
 import { prepService } from "@/services/prep";
 import { resourceFolderService } from "@/services/resourceFolder";
 import { shareService } from "@/services/share";
-import type { Courseware, ExamPaper, LessonCourseware, Material, Teacher, TreeNode } from "@/types";
+import type { Courseware, ExamPaper, LessonCourseware, Material, Question, Teacher, TreeNode } from "@/types";
+
+const batchQuestion = vi.hoisted(() => ({
+  id: "question-1",
+  teacherId: "teacher-1",
+  schoolId: "school-1",
+  type: "single",
+  stem: "函数定义题",
+  answer: "A",
+  analysis: "函数定义",
+  chapterIds: ["chapter-existing"],
+  knowledgePointIds: ["knowledge-existing"],
+  difficulty: 2,
+  recommendation: 3,
+  usageCount: 0,
+  remark: "",
+  isShared: false,
+  createdAt: "2026-07-30T00:00:00.000Z",
+  updatedAt: "2026-07-30T00:00:00.000Z",
+}) as Question);
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
   useSchoolResourceOptions: () => ({
@@ -39,19 +58,28 @@ const questionFixtures = vi.hoisted(() => ({
     stem: "函数 f(x)=x² 的最小值", answer: "0", analysis: "x=0 时取得", summary: "二次函数",
     chapterIds: [], knowledgePointIds: [], difficulty: 2, recommendation: 3, usageCount: 0,
     remark: "", isShared: false, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
-  },
+  } as Question,
   second: {
     id: "question-2", teacherId: "teacher-1", schoolId: "school-1", type: "short",
     stem: "求函数 f(x)=x² 的最小值", answer: "最小值为0", analysis: "配方法", summary: "函数最值",
     chapterIds: [], knowledgePointIds: [], difficulty: 2, recommendation: 3, usageCount: 0,
     remark: "", isShared: false, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
-  },
+  } as Question,
 }));
 
 vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
-  default: ({ onToggleSelection }: { onToggleSelection?: (question: typeof questionFixtures.first) => void }) => (
+  default: ({
+    selectedQuestionIds,
+    onToggleSelection,
+  }: {
+    selectedQuestionIds?: Set<string>;
+    onToggleSelection?: (question: Question) => void;
+  }) => (
     <div>
       题库
+      <button type="button" onClick={() => onToggleSelection?.(batchQuestion)}>
+        {selectedQuestionIds?.has(batchQuestion.id) ? "取消选择题库题目" : "选择题库题目"}
+      </button>
       <button type="button" aria-label="选择题目一" onClick={() => onToggleSelection?.(questionFixtures.first)}>题目一</button>
       <button type="button" aria-label="选择题目二" onClick={() => onToggleSelection?.(questionFixtures.second)}>题目二</button>
     </div>
@@ -438,6 +466,58 @@ describe("MyResourcesPage batch actions", () => {
     expect(classService.listMyStudents).not.toHaveBeenCalled();
   });
 
+  it("lazy-loads the knowledge tree and appends a shared knowledge point to selected questions", async () => {
+    vi.mocked(questionService.getQuestion).mockResolvedValue(batchQuestion);
+    vi.mocked(questionService.updateQuestion).mockResolvedValue({
+      ...batchQuestion,
+      knowledgePointIds: ["knowledge-existing", "knowledge-new"],
+    });
+
+    renderPage("question");
+    fireEvent.click(await screen.findByRole("button", { name: "选择题库题目" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "knowledge" },
+    });
+
+    await waitFor(() => {
+      expect(knowledgeService.getKnowledgeTree).toHaveBeenCalledWith("school-1");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "选择知识点" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
+
+    await waitFor(() => {
+      expect(questionService.updateQuestion).toHaveBeenCalledWith("question-1", {
+        knowledgePointIds: ["knowledge-existing", "knowledge-new"],
+      });
+    });
+  });
+
+  it("lazy-loads the chapter tree and appends a shared chapter without replacing question chapters", async () => {
+    vi.mocked(questionService.getQuestion).mockResolvedValue(batchQuestion);
+    vi.mocked(questionService.updateQuestion).mockResolvedValue({
+      ...batchQuestion,
+      chapterIds: ["chapter-existing", "chapter-new"],
+    });
+
+    renderPage("question");
+    fireEvent.click(await screen.findByRole("button", { name: "选择题库题目" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "chapter" },
+    });
+
+    await waitFor(() => {
+      expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("school-1");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "选择章节课" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
+
+    await waitFor(() => {
+      expect(questionService.updateQuestion).toHaveBeenCalledWith("question-1", {
+        chapterIds: ["chapter-existing", "chapter-new"],
+      });
+    });
+  });
+
   it("loads personal resource libraries by teacher without restricting them to the active school", async () => {
     useAuthStore.setState((state) => ({
       ...state,
@@ -641,7 +721,7 @@ describe("MyResourcesPage batch actions", () => {
     expect(screen.getByRole("option", { name: "批量分享" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "批量删除" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "捐赠到平台" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "新增统一章节" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "新增统一章节课" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "新增统一知识点" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "取消批量选择" }));
@@ -675,7 +755,7 @@ describe("MyResourcesPage batch actions", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
       target: { value: "chapter" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "选择章节" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择章节课" }));
     fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
 
     await waitFor(() => {
