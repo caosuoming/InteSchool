@@ -378,6 +378,37 @@ function questionKeywordPrefixes(config: DocumentParseConfig): string[] {
     .sort((left, right) => right.length - left.length);
 }
 
+const questionScoreAnnotationSource = String.raw`[（(]\s*本\s*(?:小\s*)?题\s*(?:(?:满\s*分(?:\s*为)?|共)\s*)?[\d０-９]+(?:[.．][\d０-９]+)?\s*分\s*[）)]`;
+
+function stripQuestionScoreAnnotation(text: string, config: DocumentParseConfig): string {
+  const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
+  const keywordMarker = prefixes.length
+    ? `(?:[【［[]\\s*)?(?:${prefixes.join("|")})\\s*(?:题\\s*)?(?:第\\s*)?[（(]?\\s*[\\d０-９零〇一二三四五六七八九十百两]+\\s*[）)]?(?:\\s*题)?(?:\\s*[】］\\]])?`
+    : null;
+  const questionMarkers = [
+    String.raw`第\s*[\d０-９]+\s*题(?:\s*[、.．:：)）])?`,
+    String.raw`[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)`,
+    keywordMarker,
+  ].filter((marker): marker is string => Boolean(marker));
+
+  const scoreAfterQuestionMarker = new RegExp(
+    `^(\\s*(?:${questionMarkers.join("|")})\\s*)(?:${questionScoreAnnotationSource}\\s*)+`,
+  );
+  const afterMarker = text.replace(scoreAfterQuestionMarker, "$1").trim();
+  if (afterMarker !== text.trim()) return afterMarker;
+
+  const withoutLeadingScore = text
+    .replace(new RegExp(`^\\s*(?:${questionScoreAnnotationSource}\\s*)+`), "")
+    .trim();
+  return withoutLeadingScore !== text.trim() && isQuestionStart(withoutLeadingScore, config)
+    ? withoutLeadingScore
+    : text.trim();
+}
+
+function isStandaloneQuestionScoreAnnotation(text: string): boolean {
+  return new RegExp(`^\\s*(?:${questionScoreAnnotationSource}\\s*)+$`).test(text);
+}
+
 function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
   if (/^第\s*[\d０-９]+\s*题(?:\s|[、.．:：)）]|$)/.test(text)) return true;
   if (/^[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)(?:\s*\S|\s*$)/.test(text)) return true;
@@ -1253,10 +1284,17 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     }
   }
   const hasFutureStructuredField = (index: number): boolean => structuredFieldAhead[index] || false;
+  const nextNonEmptyLine = (index: number): string | undefined => {
+    for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
+      const candidate = lines[nextIndex].trim();
+      if (candidate) return candidate;
+    }
+    return undefined;
+  };
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const originalLine = lines[lineIndex];
-    const line = originalLine.trim();
+    let line = originalLine.trim();
     if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
 
     if (isKnowledgeBlockStart(line)) {
@@ -1284,6 +1322,13 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       });
       continue;
     }
+
+    if (isStandaloneQuestionScoreAnnotation(line)) {
+      const nextLine = nextNonEmptyLine(lineIndex);
+      if (nextLine && isQuestionStart(stripQuestionScoreAnnotation(nextLine, config), config)) continue;
+    }
+
+    line = stripQuestionScoreAnnotation(line, config);
 
     if (
       currentBlock.type === "question"
