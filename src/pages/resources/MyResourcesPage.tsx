@@ -17,6 +17,7 @@ import { toast } from "@/stores/ui";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { extractStoredFile } from "@/services/api";
 import { questionService } from "@/services/question";
+import { prepService } from "@/services/prep";
 import { examPaperService } from "@/services/examPaper";
 import { coursewareService } from "@/services/courseware";
 import { materialService } from "@/services/material";
@@ -54,7 +55,12 @@ import { timeAgo } from "@/lib/service-utils";
 import { genId } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
+import { questionStemSimilarity } from "@/lib/question-similarity";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
+import {
+  QuestionDuplicateReviewModal,
+  type QuestionDuplicateResolution,
+} from "@/components/extract/QuestionDuplicateReviewModal";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { DocumentFormatIcon } from "@/components/resource/DocumentFormatIcon";
@@ -608,6 +614,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [donationDecisions, setDonationDecisions] = useState<Record<string, DonationDecision>>({});
   const [donating, setDonating] = useState(false);
   const [batchWorking, setBatchWorking] = useState(false);
+  const [batchMergeQuestions, setBatchMergeQuestions] = useState<{ target: Question; source: Question } | null>(null);
   const [batchDirectoryMode, setBatchDirectoryMode] = useState<"chapter" | "knowledge" | null>(null);
   const [batchDirectoryIds, setBatchDirectoryIds] = useState<string[]>([]);
   const [batchShareLink, setBatchShareLink] = useState("");
@@ -2012,8 +2019,56 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
+  const selectedQuestionPairRefs = (): BatchResourceRef[] | null => {
+    const refs = selectedResourceRefs();
+    return refs.length === 2 && refs.every((ref) => ref.resourceType === "question") ? refs : null;
+  };
+
+  const openBatchQuestionMerge = async () => {
+    const refs = selectedQuestionPairRefs();
+    if (!refs) return;
+    setBatchWorking(true);
+    try {
+      const [target, source] = await Promise.all(refs.map((ref) => questionService.getQuestion(ref.resourceId)));
+      if (!target || !source) throw new Error("选中的题目不存在或已被删除");
+      setBatchMergeQuestions({ target, source });
+    } catch (error) {
+      toast.error("加载题目失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setBatchWorking(false);
+    }
+  };
+
+  const handleConfirmBatchQuestionMerge = async (
+    resolutions: Record<string, QuestionDuplicateResolution>,
+  ) => {
+    if (!batchMergeQuestions) return;
+    const resolution = resolutions[batchMergeQuestions.source.id];
+    if (!resolution || resolution.action !== "merge") return;
+
+    setBatchWorking(true);
+    try {
+      await prepService.mergeQuestions(
+        batchMergeQuestions.target.id,
+        batchMergeQuestions.source.id,
+        resolution.fields,
+      );
+      setBatchMergeQuestions(null);
+      setResourceSelections(new Set());
+      await refreshResourceViews();
+      toast.success("题目已合并");
+    } catch (error) {
+      toast.error("合并失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setBatchWorking(false);
+    }
+  };
+
   const handleBatchAction = (action: string) => {
     switch (action) {
+      case "mergeQuestions":
+        void openBatchQuestionMerge();
+        break;
       case "share":
         void handleBatchShare();
         break;
@@ -3721,6 +3776,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <option value="" disabled>
               {batchWorking || donating ? "正在处理..." : `批量操作（${resourceSelections.size}）`}
             </option>
+            {selectedQuestionPairRefs() && <option value="mergeQuestions">合并两题</option>}
             <option value="share">批量分享</option>
             <option value="delete">批量删除</option>
             <option value="donate">捐赠到平台</option>
@@ -3729,6 +3785,25 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <option value="knowledge">新增统一知识点</option>
           </select>
         </div>
+      )}
+
+      {batchMergeQuestions && (
+        <QuestionDuplicateReviewModal
+          mode="merge"
+          items={[{
+            id: batchMergeQuestions.source.id,
+            similarity: questionStemSimilarity(batchMergeQuestions.target.stem, batchMergeQuestions.source.stem),
+            existing: batchMergeQuestions.target,
+            incoming: batchMergeQuestions.source,
+            canMerge: true,
+          }]}
+          existingLabel="题目一"
+          incomingLabel="题目二"
+          onClose={() => {
+            if (!batchWorking) setBatchMergeQuestions(null);
+          }}
+          onConfirm={(resolutions) => void handleConfirmBatchQuestionMerge(resolutions)}
+        />
       )}
 
       <Modal
