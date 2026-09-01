@@ -672,6 +672,37 @@ function splitIndependentSubQuestionField(value: string, count: number): string[
     .trim());
 }
 
+function splitIndependentChoiceAnswerLines(
+  value: string,
+  questions: DocumentBlock[],
+): string[] | null {
+  if (questions.length < 2 || !questions.every((question) => (question.options?.length || 0) >= 2)) {
+    return null;
+  }
+
+  const lines = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length !== questions.length) return null;
+
+  const valid = lines.every((line, index) => {
+    const compact = line.replace(/[\s,，、/;；]/g, "");
+    if (!/^[A-H]+$/i.test(compact)) return false;
+    const optionCount = questions[index].options?.length || 0;
+    return [...compact.toUpperCase()].every((label) => optionIndex(label) < optionCount);
+  });
+  return valid ? lines : null;
+}
+
+function splitIndependentSubQuestionAnswer(
+  value: string,
+  questions: DocumentBlock[],
+): string[] | null {
+  return splitIndependentSubQuestionField(value, questions.length)
+    || splitIndependentChoiceAnswerLines(value, questions);
+}
+
 function independentSubQuestionRun(
   questions: DocumentBlock[],
   startIndex: number,
@@ -704,7 +735,9 @@ function distributeIndependentSubQuestionFields(
       for (const source of run) {
         const value = source[field]?.trim();
         if (!value) continue;
-        const parts = splitIndependentSubQuestionField(value, run.length);
+        const parts = field === "answer"
+          ? splitIndependentSubQuestionAnswer(value, run)
+          : splitIndependentSubQuestionField(value, run.length);
         if (!parts) continue;
         run.forEach((question, partIndex) => {
           question[field] = parts[partIndex];
@@ -1106,7 +1139,7 @@ function mergeTrailingSolutions(
       : [];
     if (independentRun.length > 1) {
       const splitAnswer = solution.answer
-        ? splitIndependentSubQuestionField(solution.answer, independentRun.length)
+        ? splitIndependentSubQuestionAnswer(solution.answer, independentRun)
         : null;
       const splitAnalysis = solution.analysis
         ? splitIndependentSubQuestionField(solution.analysis, independentRun.length)
@@ -1314,9 +1347,9 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
 
     if (
       currentBlock.type === "question"
-      && currentQuestionField === "content"
       && independentSubQuestionNextIndex !== undefined
       && leadingNestedSubQuestionIndex(line) === independentSubQuestionNextIndex
+      && !shouldContinueSequentialSubQuestion(line, currentBlock, currentQuestionField)
     ) {
       submitCurrent();
       const inline = splitQuestionAndInlineOptions(
