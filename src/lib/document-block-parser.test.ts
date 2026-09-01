@@ -1061,6 +1061,86 @@ describe("document block parser", () => {
     });
   });
 
+  it("starts the next independent sub-question after the previous answer and analysis", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 （1）下列命题是真命题的是（　） A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案：D",
+        "解析：逐项判断可知 D 正确。",
+        "（2）（多选）下列命题为真命题的是（　） A. 戊 B. 己 C. 庚 D. 辛",
+        "答案：BC",
+        "解析：由定义可知 B、C 正确。",
+        "（3）（多选）下列命题为真命题的是（　） A. 子 B. 丑 C. 寅 D. 卯",
+        "答案：BCD",
+        "解析：逐项验证可得 B、C、D。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(3);
+    expect(blocks.map((block) => block.content)).toEqual([
+      "例1 （1）下列命题是真命题的是（　）",
+      "（2）（多选）下列命题为真命题的是（　）",
+      "（3）（多选）下列命题为真命题的是（　）",
+    ]);
+    expect(blocks.map((block) => block.answer)).toEqual(["D", "BC", "BCD"]);
+    expect(blocks.map((block) => block.analysis)).toEqual([
+      "逐项判断可知 D 正确。",
+      "由定义可知 B、C 正确。",
+      "逐项验证可得 B、C、D。",
+    ]);
+  });
+
+  it("splits screenshot-style sub-questions and distributes a shared multiline choice answer list", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 （1）下列命题是真命题的是（　） A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案：",
+        "D",
+        "BC",
+        "BCD",
+        "解析：对于 A、B、C 分别判断，只有 D 正确。",
+        "（2）（多选）下列命题为真命题的是（　） A. 戊 B. 己 C. 庚 D. 辛",
+        "解析：由定义可知 B、C 正确。",
+        "（3）（多选）下列命题为真命题的是（　） A. 子 B. 丑 C. 寅 D. 卯",
+        "解析：逐项验证可得 B、C、D。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(3);
+    expect(blocks.map((block) => block.content)).toEqual([
+      "例1 （1）下列命题是真命题的是（　）",
+      "（2）（多选）下列命题为真命题的是（　）",
+      "（3）（多选）下列命题为真命题的是（　）",
+    ]);
+    expect(blocks.map((block) => block.answer)).toEqual(["D", "BC", "BCD"]);
+    expect(blocks.map((block) => block.analysis)).toEqual([
+      "对于 A、B、C 分别判断，只有 D 正确。",
+      "由定义可知 B、C 正确。",
+      "逐项验证可得 B、C、D。",
+    ]);
+  });
+
+  it("keeps numbered answer continuations before the next independent sub-question", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "训练1 （1）第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案：（1）A",
+        "（2）B",
+        "（2）第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks.map((block) => block.answer)).toEqual(["A", "B"]);
+    expect(blocks.map((block) => block.content)).toEqual([
+      "训练1 （1）第一小题",
+      "（2）第二小题",
+    ]);
+  });
+
   it("keeps sub-questions together when a shared stem precedes them", () => {
     const blocks = parseDocumentBlocks(
       [
