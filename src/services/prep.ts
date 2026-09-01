@@ -14,6 +14,7 @@ import type {
   PrepResourceTaskInput,
   QuestionReference,
   Question,
+  DuplicateQuestionMergeFields,
   Teacher,
   ExamPaper,
   Lecture,
@@ -165,7 +166,11 @@ export const prepService = {
     return rpcCall("prep", "checkDuplicateQuestion", [stem, teacherId, excludeQuestionId]) as any;
   },
 
-  async mergeQuestions(targetQuestionId: string, sourceQuestionId: string): Promise<void> {
-    return rpcCall("prep", "mergeQuestions", [targetQuestionId, sourceQuestionId]) as any;
+  async mergeQuestions(
+    targetQuestionId: string,
+    sourceQuestionId: string,
+    fields?: DuplicateQuestionMergeFields,
+  ): Promise<void> {
+    return rpcCall("prep", "mergeQuestions", [targetQuestionId, sourceQuestionId, fields]) as any;
   }
 };

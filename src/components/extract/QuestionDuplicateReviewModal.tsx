@@ -30,6 +30,9 @@ interface QuestionDuplicateReviewModalProps {
   items: QuestionDuplicateReviewItem[];
   onClose: () => void;
   onConfirm: (resolutions: Record<string, QuestionDuplicateResolution>) => void;
+  mode?: "duplicate" | "merge";
+  existingLabel?: string;
+  incomingLabel?: string;
 }
 
 const defaultFields = (): DuplicateQuestionMergeFields => ({
@@ -218,14 +221,18 @@ export function QuestionDuplicateReviewModal({
   items,
   onClose,
   onConfirm,
+  mode = "duplicate",
+  existingLabel = "库中题",
+  incomingLabel = "上传题",
 }: QuestionDuplicateReviewModalProps) {
+  const mergeOnly = mode === "merge";
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [resolutions, setResolutions] = useState<Record<string, {
     action?: "merge" | "add";
     fields: DuplicateQuestionMergeFields;
   }>>(() => Object.fromEntries(items.map((item) => [
     item.id,
-    { action: undefined, fields: defaultFields() },
+    { action: mergeOnly ? "merge" : undefined, fields: defaultFields() },
   ])));
 
   const updateFields = (
@@ -278,8 +285,10 @@ export function QuestionDuplicateReviewModal({
     <Modal
       open
       onClose={onClose}
-      title="重题处理"
-      description="左侧为题库中的相似题，右侧为本次上传题。题干必须二选一；答案、解析、总结至少保留一侧，也可以同时保留。"
+      title={mergeOnly ? "合并两题" : "重题处理"}
+      description={mergeOnly
+        ? "题干必须二选一；答案、解析、总结至少保留一侧，也可以同时保留。合并后题目二将删除，其引用会迁移到题目一。"
+        : "左侧为题库中的相似题，右侧为本次上传题。题干必须二选一；答案、解析、总结至少保留一侧，也可以同时保留。"}
       size="full"
       className="max-w-[1400px]"
       footer={(
@@ -288,9 +297,9 @@ export function QuestionDuplicateReviewModal({
             已处理 {items.filter((item) => resolutions[item.id]?.action).length} / {items.length} 道
           </span>
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={onClose}>返回审阅</Button>
+            <Button type="button" variant="ghost" onClick={onClose}>{mergeOnly ? "取消" : "返回审阅"}</Button>
             <Button type="button" variant="gold" disabled={!allResolved} onClick={submit}>
-              完成重题处理并入库
+              {mergeOnly ? "确认合并" : "完成重题处理并入库"}
             </Button>
           </div>
         </div>
@@ -330,6 +339,7 @@ export function QuestionDuplicateReviewModal({
                         ? "border-gold-400 bg-gold-400 text-ink-950"
                         : "border-ink-200 bg-paper text-ink-700 hover:border-gold-300 hover:bg-gold-50",
                       !item.canMerge && "cursor-not-allowed opacity-45 hover:border-ink-200 hover:bg-paper",
+                      mergeOnly && "hidden",
                     )}
                   >
                     <Merge className="h-4 w-4" />
@@ -344,6 +354,7 @@ export function QuestionDuplicateReviewModal({
                       resolution.action === "add"
                         ? "border-ink-700 bg-ink-800 text-white"
                         : "border-ink-200 bg-paper text-ink-700 hover:border-ink-400 hover:bg-mist",
+                      mergeOnly && "hidden",
                     )}
                   >
                     <Plus className="h-4 w-4" />
@@ -358,7 +369,7 @@ export function QuestionDuplicateReviewModal({
                   aria-label={`相似题 ${index + 1} 库中题`}
                   className="border-b border-ink-100 p-4 md:border-b-0 md:border-r"
                 >
-                  <div className="mb-3 text-sm font-semibold text-ink-800">库中题</div>
+                  <div className="mb-3 text-sm font-semibold text-ink-800">{existingLabel}</div>
                   <div className={cn(
                     "rounded-lg border p-3",
                     resolution.fields.stem === "existing" ? "border-gold-400 bg-gold-50/60" : "border-ink-100 bg-mist/20",
@@ -394,7 +405,7 @@ export function QuestionDuplicateReviewModal({
                   aria-label={`相似题 ${index + 1} 上传题`}
                   className="p-4"
                 >
-                  <div className="mb-3 text-sm font-semibold text-ink-800">上传题</div>
+                  <div className="mb-3 text-sm font-semibold text-ink-800">{incomingLabel}</div>
                   <div className={cn(
                     "rounded-lg border p-3",
                     resolution.fields.stem === "incoming" ? "border-gold-400 bg-gold-50/60" : "border-ink-100 bg-mist/20",

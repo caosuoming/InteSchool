@@ -13,16 +13,42 @@ import type {
   PrepResourceTaskInput,
   QuestionReference,
   Question,
+  DuplicateQuestionMergeFields,
   Teacher,
   LectureSection,
   ExamPaper,
   Lecture,
 } from "../../src/types/index.js";
 import { sanitizeExamPaperPatch, sanitizeLecturePatch } from "./document-resource-lock.js";
-import { db } from "../runtime-db.js";
+import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { createNotification } from "./notification.js";
+
+function mergeQuestionTextField(
+  targetValue: string | undefined,
+  sourceValue: string | undefined,
+  choice: "existing" | "incoming" | "both",
+  secondLabel: string,
+): string {
+  const target = targetValue?.trim() || "";
+  const source = sourceValue?.trim() || "";
+  if (choice === "existing") return target;
+  if (choice === "incoming") return source;
+  if (!target) return source;
+  if (!source || target === source) return targetValue || target;
+  return `${targetValue}\n\n${secondLabel}：${sourceValue}`;
+}
+
+function validateQuestionMergeFields(fields: DuplicateQuestionMergeFields): DuplicateQuestionMergeFields {
+  if (fields.stem !== "existing" && fields.stem !== "incoming") throw new Error("题干只能二选一");
+  for (const key of ["answer", "analysis", "summary"] as const) {
+    if (!["existing", "incoming", "both"].includes(fields[key])) {
+      throw new Error(`${key} 至少需要保留一侧内容`);
+    }
+  }
+  return fields;
+}
 
 /** 流程类型中文标签 */
 export const taskTypeLabels: Record<PrepTaskType, string> = {
@@ -971,13 +997,37 @@ export const prepService = {
   async mergeQuestions(
     targetQuestionId: string,
     sourceQuestionId: string,
+    mergeFields?: DuplicateQuestionMergeFields,
   ): Promise<void> {
     await delay(300);
+
+    if (targetQuestionId === sourceQuestionId) throw new Error("不能合并同一道题");
 
     const target = db.read("questions").find((q) => q.id === targetQuestionId);
     const source = db.read("questions").find((q) => q.id === sourceQuestionId);
 
     if (!target || !source) throw new Error("题目不存在");
+
+    if (mergeFields) {
+      const fields = validateQuestionMergeFields(mergeFields);
+      const stem = fields.stem === "incoming" ? source.stem : target.stem;
+      const options = fields.stem === "incoming" ? source.options : target.options;
+      const answer = mergeQuestionTextField(target.answer, source.answer, fields.answer, "答案2");
+      const analysis = mergeQuestionTextField(target.analysis, source.analysis, fields.analysis, "解析2");
+      const summary = mergeQuestionTextField(target.summary, source.summary, fields.summary, "总结2");
+      db.update("questions", (list) =>
+        list.map((question) => question.id === targetQuestionId ? {
+          ...question,
+          stem,
+          options,
+          answer,
+          analysis,
+          summary,
+          duplicateHash: computeDuplicateHash(stem, answer, options),
+          updatedAt: new Date().toISOString(),
+        } : question),
+      );
+    }
 
     // 更新目标题目的使用记录
     const targetRefs = db.read("questionReferences").filter((r) => r.questionId === targetQuestionId);
