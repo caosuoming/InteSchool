@@ -6,6 +6,7 @@ import type {
   LessonQuestionContentSection,
   LessonSlide,
   LessonSlideElement,
+  PptSlideImportElement,
   ExamPaper,
   Lecture,
   LectureSection,
@@ -106,6 +107,68 @@ function safeImageSource(value: string): string | null {
   return /^(?:https?:\/\/|data:image\/[a-z0-9.+-]+;base64,|\/)/i.test(source)
     ? source
     : null;
+}
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
+function importedPptElements(elements: PptSlideImportElement[] | undefined): LessonSlideElement[] {
+  if (!Array.isArray(elements)) return [];
+  return elements.slice(0, 300).flatMap((candidate): LessonSlideElement[] => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const x = boundedNumber(candidate.x, 5, 0, 99.5);
+    const y = boundedNumber(candidate.y, 5, 0, 99.5);
+    const width = boundedNumber(candidate.width, 30, 0.5, 100 - x);
+    const height = boundedNumber(candidate.height, 15, 0.5, 100 - y);
+
+    if (candidate.kind === "image") {
+      const src = typeof candidate.src === "string" ? safeImageSource(candidate.src) : null;
+      if (!src) return [];
+      return [{
+        id: genId("element"),
+        kind: "image",
+        src,
+        alt: typeof candidate.alt === "string" ? candidate.alt.slice(0, 300) : "PPT 图片",
+        x,
+        y,
+        width,
+        height,
+      }];
+    }
+
+    if (candidate.kind !== "text" || typeof candidate.content !== "string") return [];
+    const fontSize = boundedNumber(candidate.fontSize, 24, 6, 240);
+    const padding = boundedNumber(candidate.padding, 0, 0, 48);
+    const textAlign = candidate.textAlign === "center" || candidate.textAlign === "right"
+      ? candidate.textAlign
+      : "left";
+    return [{
+      id: genId("element"),
+      kind: "text",
+      content: candidate.content.slice(0, 100_000),
+      x,
+      y,
+      width,
+      height,
+      fontSize,
+      fontFamily: typeof candidate.fontFamily === "string"
+        ? candidate.fontFamily.slice(0, 120)
+        : undefined,
+      fontWeight: candidate.fontWeight === "bold" ? "bold" : undefined,
+      fontStyle: candidate.fontStyle === "italic" ? "italic" : undefined,
+      textDecoration: candidate.textDecoration === "underline" || candidate.textDecoration === "line-through"
+        ? candidate.textDecoration
+        : undefined,
+      color: typeof candidate.color === "string" ? candidate.color.slice(0, 64) : undefined,
+      backgroundColor: typeof candidate.backgroundColor === "string"
+        ? candidate.backgroundColor.slice(0, 64)
+        : "transparent",
+      padding,
+      textAlign,
+    }];
+  });
 }
 
 function imageAlt(html: string): string {
@@ -1051,7 +1114,11 @@ export const lessonCoursewareService = {
     options: {
       mode?: "editable" | "direct";
       pageCount?: number;
-      pptSlides?: Array<{ title?: string; content?: string }>;
+      pptSlides?: Array<{
+        title?: string;
+        content?: string;
+        elements?: PptSlideImportElement[];
+      }>;
     } = {},
   ): Promise<LessonCourseware> {
     const source = db.read("coursewares").find((item) =>
@@ -1082,8 +1149,10 @@ export const lessonCoursewareService = {
       slides = Array.from({ length: pageCount }, (_, index) => {
         const page = suppliedSlides[index];
         const pageNumber = index + 1;
-        const title = page?.title?.trim().slice(0, 300)
-          || `${source.title} · 第 ${pageNumber} 页`;
+        const importedElements = importedPptElements(page?.elements);
+        const title = importedElements.length > 0
+          ? `${source.title} · 第 ${pageNumber} 页`
+          : page?.title?.trim().slice(0, 300) || `${source.title} · 第 ${pageNumber} 页`;
         const content = page?.content?.trim().slice(0, 20_000)
           || `原 PPT 第 ${pageNumber} 页。可在此页继续编辑文字与课堂内容。`;
         return {
@@ -1091,6 +1160,9 @@ export const lessonCoursewareService = {
           type: "knowledge",
           title,
           content,
+          ...(importedElements.length > 0
+            ? { freeformLayout: true, elements: importedElements }
+            : undefined),
           pptSlideNumber: pageNumber,
           ...baseExternalFields,
         };

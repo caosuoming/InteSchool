@@ -179,6 +179,23 @@ describe("renderMathHtml", () => {
     expect(container).toHaveTextContent("![危险图片](javascript:alert(1))");
   });
 
+  it("preserves safe PPT text styles while removing unsupported inline CSS", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '<div style="text-align:center;background-image:url(javascript:alert(1))"><span style="font-family:Microsoft YaHei;font-size:24pt;font-weight:bold;color:#ff0000;position:fixed">课件文字</span></div>',
+    );
+
+    expect(container.querySelector("div")).toHaveStyle({ textAlign: "center" });
+    expect(container.querySelector("div")?.getAttribute("style") || "").not.toContain("background-image");
+    expect(container.querySelector("span")).toHaveStyle({
+      fontFamily: "Microsoft YaHei",
+      fontSize: "24pt",
+      fontWeight: "bold",
+      color: "rgb(255, 0, 0)",
+    });
+    expect(container.querySelector("span")?.getAttribute("style") || "").not.toContain("position");
+  });
+
   it("removes executable rich-text content", () => {
     const container = document.createElement("div");
     container.innerHTML = renderMathHtml(
