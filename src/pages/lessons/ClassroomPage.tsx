@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import html2canvas from "html2canvas";
+import { useLocation, useNavigate, useParams } from "react-router";
 import {
   ArrowDown,
   ArrowUp,
@@ -11,6 +12,7 @@ import {
   ClipboardList,
   Clock,
   Eye,
+  LockKeyhole,
   LogOut,
   Maximize2,
   Megaphone,
@@ -18,6 +20,7 @@ import {
   Minimize2,
   Play,
   Plus,
+  Power,
   Presentation,
   RotateCcw,
   School,
@@ -29,12 +32,13 @@ import { Spinner } from "@/components/ui/Spinner";
 import { SUBJECT_OPTIONS } from "@/lib/education";
 import { cn } from "@/lib/utils";
 import { classService } from "@/services/class";
+import { CLASSROOM_DEVICE_TOKEN_KEY, classroomDeviceService } from "@/services/classroomDevice";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { ClassroomHomework, ClassroomNotice, LessonCourseware, SchoolClass, Student } from "@/types";
+import type { ClassroomDeviceSnapshot, ClassroomHomework, ClassroomNotice, LessonCourseware, SchoolClass, Student } from "@/types";
 import { PresentationMode } from "./PresentationMode";
 
 const CLASSROOM_KEY = "inteschool-classroom-id";
@@ -181,6 +185,28 @@ function HomeworkRow({
   );
 }
 
+async function captureClassroomPreview(): Promise<string | undefined> {
+  try {
+    const rendered = await html2canvas(document.body, {
+      logging: false,
+      useCORS: true,
+      scale: 0.45,
+    });
+    const maxWidth = 640;
+    const ratio = Math.min(1, maxWidth / rendered.width);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(rendered.width * ratio));
+    canvas.height = Math.max(1, Math.round(rendered.height * ratio));
+    const context = canvas.getContext("2d");
+    if (!context) return undefined;
+    context.drawImage(rendered, 0, 0, canvas.width, canvas.height);
+    const screenshot = canvas.toDataURL("image/jpeg", 0.5);
+    return screenshot.length <= 340_000 ? screenshot : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function lessonSubject(lesson: LessonCourseware): string {
   return lesson.subject?.trim() || "其他";
 }
@@ -212,10 +238,11 @@ function LessonCard({ lesson, onOpen }: { lesson: LessonCourseware; onOpen: (les
   );
 }
 
-export default function ClassroomPage() {
+export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boolean }) {
   const classroomRootRef = useRef<HTMLDivElement>(null);
   const { classId: routeClassId } = useParams<{ classId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { teacher, logout } = useAuthStore();
   const [tab, setTab] = useState<ClassroomTab>("homework");
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -223,7 +250,7 @@ export default function ClassroomPage() {
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
   const [notices, setNotices] = useState<ClassroomNotice[]>([]);
   const [historyHomeworks, setHistoryHomeworks] = useState<ClassroomHomework[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
+  const [students, setStudents] = useState<Array<Pick<Student, "id" | "name">>>([]);
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -233,8 +260,11 @@ export default function ClassroomPage() {
   const [preferences, setPreferences] = useState<ClassroomPreferences>(() => readPreferences(routeClassId || ""));
   const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [deviceSnapshot, setDeviceSnapshot] = useState<ClassroomDeviceSnapshot | null>(null);
 
-  const selectedClassId = routeClassId || sessionStorage.getItem(CLASSROOM_KEY) || "";
+  const selectedClassId = deviceMode
+    ? deviceSnapshot?.classroom.id || ""
+    : routeClassId || sessionStorage.getItem(CLASSROOM_KEY) || "";
   const selectedClass = classes.find((item) => item.id === selectedClassId);
   const today = localDateValue();
 
@@ -253,7 +283,7 @@ export default function ClassroomPage() {
   }, [selectedClassId]);
 
   const loadClasses = useCallback(async () => {
-    if (!teacher?.schoolId) return;
+    if (deviceMode || !teacher?.schoolId) return;
     const data = await classService.listSchoolClasses(teacher.schoolId);
     const active = data.filter((item) => item.status !== "graduated");
     setClasses(active);
@@ -261,19 +291,33 @@ export default function ClassroomPage() {
       sessionStorage.setItem(CLASSROOM_KEY, active[0].id);
       navigate(`/classroom/${active[0].id}`, { replace: true });
     }
-  }, [navigate, selectedClassId, teacher?.schoolId]);
+  }, [deviceMode, navigate, selectedClassId, teacher?.schoolId]);
 
   const loadClassroomContent = useCallback(async (silent = false) => {
-    if (!teacher?.schoolId || !selectedClassId) {
-      setLessons([]);
-      setHomeworks([]);
-      setNotices([]);
-      setStudents([]);
-      setLoading(false);
-      return;
-    }
     if (!silent) setLoading(true);
     try {
+      if (deviceMode) {
+        const token = localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY);
+        if (!token) {
+          navigate("/classroom-login", { replace: true });
+          return;
+        }
+        const snapshot = await classroomDeviceService.getClassroomSnapshot(token);
+        setDeviceSnapshot(snapshot);
+        setClasses([snapshot.classroom]);
+        setLessons(snapshot.lessons);
+        setStudents(snapshot.students);
+        setHomeworks(snapshot.homeworks);
+        setNotices(snapshot.notices);
+        return;
+      }
+      if (!teacher?.schoolId || !selectedClassId) {
+        setLessons([]);
+        setHomeworks([]);
+        setNotices([]);
+        setStudents([]);
+        return;
+      }
       const [lessonData, studentData, homeworkData, noticeData] = await Promise.all([
         lessonCoursewareService.listCoursewares({
           schoolId: teacher.schoolId,
@@ -298,11 +342,16 @@ export default function ClassroomPage() {
       setHomeworks(homeworkData);
       setNotices(noticeData);
     } catch (error) {
-      if (!silent) toast.error("教室内容加载失败", error instanceof Error ? error.message : undefined);
+      if (deviceMode) {
+        localStorage.removeItem(CLASSROOM_DEVICE_TOKEN_KEY);
+        navigate("/classroom-login", { replace: true });
+      } else if (!silent) {
+        toast.error("教室内容加载失败", error instanceof Error ? error.message : undefined);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [selectedClassId, teacher?.schoolId, today]);
+  }, [deviceMode, navigate, selectedClassId, teacher?.schoolId, today]);
 
   useEffect(() => {
     void loadClasses().catch((error) => toast.error("班级加载失败", error instanceof Error ? error.message : undefined));
@@ -310,9 +359,43 @@ export default function ClassroomPage() {
 
   useEffect(() => {
     void loadClassroomContent();
-    const timer = window.setInterval(() => void loadClassroomContent(true), 60_000);
+    const timer = window.setInterval(() => void loadClassroomContent(true), deviceMode ? 15_000 : 60_000);
     return () => window.clearInterval(timer);
-  }, [loadClassroomContent]);
+  }, [deviceMode, loadClassroomContent]);
+
+  useEffect(() => {
+    if (!deviceMode) return;
+    let active = true;
+    let sending = false;
+    const heartbeat = async () => {
+      if (sending) return;
+      const token = localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY);
+      if (!token) return;
+      sending = true;
+      try {
+        const screenshot = await captureClassroomPreview();
+        const title = presenting
+          ? `课件：${presenting.title}`
+          : tab === "homework" ? "今日作业" : "上课课件";
+        const device = await classroomDeviceService.reportHeartbeat(token, {
+          path: location.pathname,
+          title,
+          ...(screenshot ? { screenshot } : {}),
+        });
+        if (active) setDeviceSnapshot((current) => current ? { ...current, device } : current);
+      } catch {
+        // Snapshot polling handles invalid/removed bindings and returns to the binding page.
+      } finally {
+        sending = false;
+      }
+    };
+    void heartbeat();
+    const timer = window.setInterval(() => void heartbeat(), 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [deviceMode, location.pathname, presenting, tab]);
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -376,6 +459,7 @@ export default function ClassroomPage() {
     .filter(([, items]) => items.length > 0);
 
   const handleClassChange = (classId: string) => {
+    if (deviceMode) return;
     sessionStorage.setItem(CLASSROOM_KEY, classId);
     navigate(`/classroom/${classId}`);
   };
@@ -427,6 +511,10 @@ export default function ClassroomPage() {
 
   const openHomeworkHistory = async () => {
     setHistoryOpen(true);
+    if (deviceMode) {
+      setHistoryHomeworks(deviceSnapshot?.homeworkHistory || []);
+      return;
+    }
     if (!teacher?.schoolId || !selectedClassId || historyHomeworks.length > 0) return;
     setHistoryLoading(true);
     try {
@@ -481,6 +569,22 @@ export default function ClassroomPage() {
     setPresenting(lesson);
   };
 
+  if (deviceMode && deviceSnapshot?.device.effectiveState !== "active") {
+    const closed = deviceSnapshot?.device.effectiveState === "closed";
+    const scheduled = deviceSnapshot?.device.controlState === "active" && !deviceSnapshot?.device.scheduleAllowsUse;
+    return (
+      <div className="flex h-screen min-h-[560px] flex-col items-center justify-center bg-black px-6 text-center text-white">
+        <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-neutral-800 bg-neutral-950 text-amber-400">
+          {closed ? <Power className="h-9 w-9" /> : <LockKeyhole className="h-9 w-9" />}
+        </div>
+        <h1 className="mt-6 text-2xl font-semibold">{closed ? "教室页面已远程关闭" : scheduled ? "当前不在允许使用时间段" : "教室一体机已锁定"}</h1>
+        <p className="mt-2 max-w-xl text-sm text-neutral-500">
+          {deviceSnapshot?.device.grade} · {deviceSnapshot?.device.className}。任课教师可在个人账号的“我的教室”中远程解锁。
+        </p>
+      </div>
+    );
+  }
+
   if (presenting) {
     return (
       <PresentationMode
@@ -503,21 +607,28 @@ export default function ClassroomPage() {
               当前班级
             </label>
           </div>
-          <div className="relative">
-            <School className="pointer-events-none absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-amber-400" />
-            <select
-              id="classroom-class"
-              value={selectedClassId}
-              onChange={(event) => handleClassChange(event.target.value)}
-              className="w-full appearance-none rounded-md border border-neutral-700 bg-neutral-900 py-1.5 pl-5 pr-3 text-[9px] text-white outline-none focus:border-amber-400 sm:text-[10px]"
-              title={selectedClass ? `${selectedClass.grade} · ${selectedClass.name}` : "选择班级"}
-            >
-              {classes.map((item) => (
-                <option key={item.id} value={item.id}>{item.grade} · {item.name}</option>
-              ))}
-            </select>
-            <ChevronRight className="pointer-events-none absolute right-0.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-neutral-500" />
-          </div>
+          {deviceMode ? (
+            <div className="rounded-md border border-neutral-700 bg-neutral-900 px-1.5 py-1.5 text-center text-[9px] text-white sm:text-[10px]" title={selectedClass ? `${selectedClass.grade} · ${selectedClass.name}` : "绑定班级"}>
+              <School className="mx-auto mb-1 h-3 w-3 text-amber-400" />
+              <span className="block truncate">{selectedClass ? `${selectedClass.grade} · ${selectedClass.name}` : "加载中"}</span>
+            </div>
+          ) : (
+            <div className="relative">
+              <School className="pointer-events-none absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-amber-400" />
+              <select
+                id="classroom-class"
+                value={selectedClassId}
+                onChange={(event) => handleClassChange(event.target.value)}
+                className="w-full appearance-none rounded-md border border-neutral-700 bg-neutral-900 py-1.5 pl-5 pr-3 text-[9px] text-white outline-none focus:border-amber-400 sm:text-[10px]"
+                title={selectedClass ? `${selectedClass.grade} · ${selectedClass.name}` : "选择班级"}
+              >
+                {classes.map((item) => (
+                  <option key={item.id} value={item.id}>{item.grade} · {item.name}</option>
+                ))}
+              </select>
+              <ChevronRight className="pointer-events-none absolute right-0.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-neutral-500" />
+            </div>
+          )}
         </div>
 
         <nav className="grid min-h-0 flex-1 grid-rows-2 gap-2 p-2">
@@ -570,15 +681,17 @@ export default function ClassroomPage() {
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             <span>{isFullscreen ? "退出全屏" : "全屏"}</span>
           </button>
-          <button
-            type="button"
-            onClick={() => void handleExit()}
-            className="flex h-9 w-full items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-900 hover:text-white"
-            aria-label="退出教室"
-            title="退出教室"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+          {!deviceMode && (
+            <button
+              type="button"
+              onClick={() => void handleExit()}
+              className="flex h-9 w-full items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-900 hover:text-white"
+              aria-label="退出教室"
+              title="退出教室"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </aside>
 

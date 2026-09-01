@@ -7,7 +7,7 @@ import {
   FolderOpen, Download,
   ChevronDown, ChevronRight, Building2, Cloud,
   BookOpen, Check, Crown, ClipboardCheck, ClipboardList, MapPinned, FileSpreadsheet,
-  CircleHelp,
+  CircleHelp, Monitor,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -42,6 +42,7 @@ const allNavItems: NavItem[] = [
     label: "我的上课",
     icon: BookOpen,
   },
+  { path: "/my-classrooms", label: "我的教室", icon: Monitor },
   { path: "/my-students", label: "我的学生", icon: Users },
   { path: "/school-resources", label: "校本资源", icon: Building2, schoolOnly: true },
   { path: "/platform-resources", label: "平台资源", icon: Cloud },

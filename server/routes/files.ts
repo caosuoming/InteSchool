@@ -3,17 +3,18 @@ import { readFile, rename, rm, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { pipeline } from "node:stream/promises";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { DatabaseStore } from "../database.js";
 import type { ServerConfig } from "../config.js";
 import type { StoredFile, TeacherRecord } from "../types.js";
-import { requireCsrf, requireSession } from "./auth.js";
+import { CLASSROOM_DEVICE_COOKIE, canClassroomDeviceReadFile } from "../classroom-device-auth.js";
+import { getSession, requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
 import { extractDocxImage } from "../lib/docx-structured-text.js";
 import { extractPptxImage } from "../lib/pptx-assets.js";
 import { convertMathTypeDocxToOmml, probeMathTypeRuntime } from "../lib/mathtype-docx.js";
 import { createAsyncLimiter } from "../lib/async-limiter.js";
-import { withSerializedState } from "../rpc.js";
+import { withReadOnlyState, withSerializedState } from "../rpc.js";
 
 function buildSections(text: string): Array<{
   id: string;
@@ -152,6 +153,18 @@ function canReadFile(
     }
   }
   return canReviewApplicationProof(store, teacher, file.id);
+}
+
+async function canClassroomDeviceRequestReadFile(
+  store: DatabaseStore,
+  request: FastifyRequest,
+  fileId: string,
+): Promise<boolean> {
+  return withReadOnlyState(store, (state) => canClassroomDeviceReadFile(
+    state,
+    request.cookies[CLASSROOM_DEVICE_COOKIE],
+    fileId,
+  ));
 }
 
 export async function registerFileRoutes(
@@ -401,12 +414,12 @@ export async function registerFileRoutes(
   });
 
   app.get("/api/files/:id/assets/:relationshipId", async (request, reply) => {
-    const session = await requireSession(request, store);
+    const session = await getSession(request, store);
     const { id, relationshipId } = request.params as { id: string; relationshipId: string };
     const file = await store.getFile(id);
     if (!file) return reply.code(404).send({ error: "文件不存在" });
-    const teacher = store.getTeacherById(session.teacherId);
-    if (!canReadFile(store, teacher, file)) {
+    const teacher = session ? store.getTeacherById(session.teacherId) : null;
+    if (!canReadFile(store, teacher, file) && !await canClassroomDeviceRequestReadFile(store, request, file.id)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
     const extension = extname(file.originalName).toLowerCase();
@@ -429,12 +442,12 @@ export async function registerFileRoutes(
   });
 
   app.get("/api/files/:id", async (request, reply) => {
-    const session = await requireSession(request, store);
+    const session = await getSession(request, store);
     const id = (request.params as { id: string }).id;
     const file = await store.getFile(id);
     if (!file) return reply.code(404).send({ error: "文件不存在" });
-    const teacher = store.getTeacherById(session.teacherId);
-    if (!canReadFile(store, teacher, file)) {
+    const teacher = session ? store.getTeacherById(session.teacherId) : null;
+    if (!canReadFile(store, teacher, file) && !await canClassroomDeviceRequestReadFile(store, request, file.id)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
     const extension = extname(file.originalName).toLowerCase();

@@ -45,6 +45,7 @@ const ClassesPage = lazy(() => import("@/pages/classes/ClassesPage"));
 const PrepWorkspacePage = lazy(() => import("@/pages/prep/PrepWorkspacePage"));
 const PrepTaskDetailPage = lazy(() => import("@/pages/prep/PrepTaskDetailPage"));
 const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
+const MyClassroomsPage = lazy(() => import("@/pages/lessons/MyClassroomsPage"));
 const LessonEditorPage = lazy(() => import("@/pages/lessons/LessonEditorPage"));
 const ClassroomPage = lazy(() => import("@/pages/lessons/ClassroomPage"));
 const MyStudentsPage = lazy(() => import("@/pages/students/MyStudentsPage"));
@@ -103,6 +104,7 @@ export default function App() {
             {/* 我的上课 */}
             <Route path="/my-lessons" element={<MyLessonsPage />} />
             <Route path="/my-lessons/:id/edit" element={<LessonEditorPage />} />
+            <Route path="/my-classrooms" element={<MyClassroomsPage />} />
             {/* 我的学生 */}
             <Route path="/my-students" element={<MyStudentsPage />} />
             <Route path="/my-students/interaction" element={<MyStudentsPage />} />
@@ -184,6 +186,7 @@ export default function App() {
             }
           />
           <Route path="/classroom-login" element={<ClassroomLoginPage />} />
+          <Route path="/classroom-device" element={<ClassroomPage deviceMode />} />
           <Route path="/grade-reports/:token" element={<PublishedGradeReportPage />} />
           <Route
             path="/classroom"

@@ -11,6 +11,11 @@ import { ZodError, z } from "zod";
 import { loadConfig, type ServerConfig } from "./config.js";
 import { DatabaseStore, DuplicateAccountError } from "./database.js";
 import { invokeRpc } from "./rpc.js";
+import {
+  CLASSROOM_DEVICE_COOKIE,
+  CLASSROOM_DEVICE_COOKIE_MAX_AGE,
+  classroomDeviceTokenFromRpc,
+} from "./classroom-device-auth.js";
 import { getSession, registerAuthRoutes, requireCsrf } from "./routes/auth.js";
 import { registerFileRoutes } from "./routes/files.js";
 import { registerParentRoutes } from "./routes/parent.js";
@@ -135,11 +140,22 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
   await registerParentRoutes(app, store, config);
   await registerFileRoutes(app, store, config);
 
-  app.post("/api/rpc", async (request) => {
+  app.post("/api/rpc", async (request, reply) => {
     const input = rpcSchema.parse(request.body);
     const session = await getSession(request, store);
     if (session) requireCsrf(request, session);
-    return { result: await invokeRpc(store, session, input.service, input.method, input.args) };
+    const result = await invokeRpc(store, session, input.service, input.method, input.args);
+    const classroomDeviceToken = classroomDeviceTokenFromRpc(input);
+    if (classroomDeviceToken) {
+      reply.setCookie(CLASSROOM_DEVICE_COOKIE, classroomDeviceToken, {
+        path: "/",
+        httpOnly: true,
+        sameSite: "lax",
+        secure: config.cookieSecure,
+        maxAge: CLASSROOM_DEVICE_COOKIE_MAX_AGE,
+      });
+    }
+    return { result };
   });
 
   if (config.serveStatic) {

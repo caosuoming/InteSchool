@@ -39,6 +39,47 @@ export const serviceParameters = {
       "teacher"
     ]
   },
+  "classroomDevice": {
+    "getDeviceSession": [
+      "deviceToken"
+    ],
+    "getClassroomSnapshot": [
+      "deviceToken"
+    ],
+    "reportHeartbeat": [
+      "deviceToken",
+      "input"
+    ],
+    "bindDevice": [
+      "input",
+      "teacher"
+    ],
+    "listManagedDevices": [
+      "targetSchoolId",
+      "teacher"
+    ],
+    "unlockDevice": [
+      "deviceId",
+      "teacher"
+    ],
+    "lockDevice": [
+      "deviceId",
+      "teacher"
+    ],
+    "closeDevice": [
+      "deviceId",
+      "teacher"
+    ],
+    "updateDeviceSchedule": [
+      "deviceId",
+      "ranges",
+      "teacher"
+    ],
+    "unbindDevice": [
+      "deviceId",
+      "teacher"
+    ]
+  },
   "notification": {
     "listNotifications": [
       "teacherId"
