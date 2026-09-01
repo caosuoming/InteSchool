@@ -102,6 +102,46 @@ describe("LessonSlideCanvas", () => {
     });
   });
 
+  it("applies imported PPT text formatting without adding a text-box background", () => {
+    render(
+      <LessonSlideCanvas
+        elements={[{
+          id: "ppt-text",
+          kind: "text",
+          content: "导入文字",
+          x: 10,
+          y: 10,
+          width: 40,
+          height: 15,
+          fontSize: 32,
+          fontFamily: "Microsoft YaHei",
+          fontWeight: "bold",
+          fontStyle: "italic",
+          textDecoration: "underline",
+          color: "#123456",
+          backgroundColor: "transparent",
+          padding: 0,
+          textAlign: "center",
+        }]}
+      >
+        <div />
+      </LessonSlideCanvas>,
+    );
+
+    const element = screen.getByText("导入文字").closest(".absolute");
+    const text = element?.querySelector<HTMLElement>(":scope > div");
+    expect(text).not.toBeNull();
+    expect(text?.style.fontSize).toBe("32px");
+    expect(text?.style.fontFamily).toBe("Microsoft YaHei");
+    expect(text?.style.fontWeight).toBe("bold");
+    expect(text?.style.fontStyle).toBe("italic");
+    expect(text?.style.textDecoration).toBe("underline");
+    expect(text?.style.color).toBe("rgb(18, 52, 86)");
+    expect(text?.style.backgroundColor).toBe("transparent");
+    expect(text?.style.padding).toBe("0px");
+    expect(text?.style.textAlign).toBe("center");
+  });
+
   it("shows the resize handle only for the selected element in editor mode", () => {
     render(
       <LessonSlideCanvas

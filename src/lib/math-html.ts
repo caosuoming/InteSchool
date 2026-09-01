@@ -27,7 +27,7 @@ function sanitizeRichText(content: string): string {
   return sanitizeHtml(content, {
     allowedTags: SAFE_RICH_TEXT_TAGS,
     allowedAttributes: {
-      "*": ["class", "title", "role", "aria-hidden", "data-latex"],
+      "*": ["class", "title", "role", "aria-hidden", "data-latex", "style"],
       a: ["href", "title", "target", "rel"],
       img: ["src", "alt", "title", "width", "height", "loading"],
       th: ["colspan", "rowspan", "scope"],
@@ -35,6 +35,17 @@ function sanitizeRichText(content: string): string {
       col: ["span"],
       math: ["xmlns", "display"],
       annotation: ["encoding"],
+    },
+    allowedStyles: {
+      "*": {
+        "font-family": [/^[^;{}<>]{1,120}$/],
+        "font-size": [/^\d+(?:\.\d+)?(?:px|pt|em|rem|%)$/],
+        "font-weight": [/^(?:normal|bold|[1-9]00)$/],
+        "font-style": [/^(?:normal|italic|oblique)$/],
+        "text-decoration": [/^(?:none|underline|line-through)$/],
+        color: [/^(?:#[0-9a-f]{3,8}|rgba?\([^;{}<>]+\)|hsla?\([^;{}<>]+\)|[a-z]+)$/i],
+        "text-align": [/^(?:left|center|right|justify)$/],
+      },
     },
     allowedSchemes: ["http", "https", "data"],
     allowedSchemesByTag: {

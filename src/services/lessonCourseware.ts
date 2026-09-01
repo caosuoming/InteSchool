@@ -6,6 +6,7 @@ import type {
   LessonCoursewareFilter,
   LessonDocumentBlock,
   LessonSlide,
+  PptSlideImportElement,
   ResourceSemester,
   TeacherLessonSchedule,
   TeacherLessonScheduleEntry,
@@ -123,7 +124,7 @@ export const lessonCoursewareService = {
     teacherId: string,
     schoolId: string,
     courseware: Courseware,
-    pptSlides: Array<{ title: string; content: string }> = [],
+    pptSlides: Array<{ title: string; content: string; elements?: PptSlideImportElement[] }> = [],
   ): Promise<LessonCourseware> {
     return rpcCall("lessonCourseware", "createFromCourseware", [teacherId, schoolId, courseware.id, {
       mode: "editable",

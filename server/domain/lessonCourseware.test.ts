@@ -261,6 +261,79 @@ describe("courseware lesson flow", () => {
     });
   });
 
+  it("keeps imported PPT text and images as freeform elements without showing the source text as a slide title", async () => {
+    const state = createState(sourceCourseware({
+      type: "ppt",
+      fileName: "function.pptx",
+      pageCount: 1,
+      onlineAccessToken: "preview-token",
+    }));
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromCourseware(
+        "teacher-1",
+        "school-1",
+        "courseware-1",
+        {
+          mode: "editable",
+          pageCount: 1,
+          pptSlides: [{
+            title: "这个原文本不应作为页面标题显示",
+            content: "第一行\n第二行",
+            elements: [{
+              kind: "text",
+              content: '<div><span style="font-family:宋体;font-size:24pt">第一行</span><br>第二行</div>',
+              x: 10,
+              y: 12,
+              width: 55,
+              height: 18,
+              fontSize: 32,
+              fontFamily: "宋体",
+              color: "#112233",
+              backgroundColor: "transparent",
+              padding: 0,
+              textAlign: "left",
+            }, {
+              kind: "image",
+              src: "/api/files/file-1/assets/ppt-slide-1-rId5",
+              alt: "函数图",
+              x: 60,
+              y: 20,
+              width: 30,
+              height: 50,
+            }],
+          }],
+        },
+      );
+
+      expect(lesson.slides[0]).toMatchObject({
+        type: "knowledge",
+        title: "函数图像课件 · 第 1 页",
+        content: "第一行\n第二行",
+        freeformLayout: true,
+        pptSlideNumber: 1,
+      });
+      expect(lesson.slides[0].title).not.toContain("这个原文本");
+      expect(lesson.slides[0].elements).toEqual([
+        expect.objectContaining({
+          id: expect.any(String),
+          kind: "text",
+          content: expect.stringContaining("<br>"),
+          fontFamily: "宋体",
+          color: "#112233",
+          backgroundColor: "transparent",
+          padding: 0,
+        }),
+        expect.objectContaining({
+          id: expect.any(String),
+          kind: "image",
+          src: "/api/files/file-1/assets/ppt-slide-1-rId5",
+          alt: "函数图",
+        }),
+      ]);
+    });
+  });
+
   it("keeps a direct PPT as one WPS-backed lesson slide", async () => {
     const state = createState(sourceCourseware({
       type: "ppt",
