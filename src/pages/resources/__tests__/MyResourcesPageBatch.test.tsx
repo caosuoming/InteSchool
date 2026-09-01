@@ -57,13 +57,13 @@ const questionFixtures = vi.hoisted(() => ({
     stem: "函数 f(x)=x² 的最小值", answer: "0", analysis: "x=0 时取得", summary: "二次函数",
     chapterIds: [], knowledgePointIds: [], difficulty: 2, recommendation: 3, usageCount: 0,
     remark: "", isShared: false, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
-  },
+  } as Question,
   second: {
     id: "question-2", teacherId: "teacher-1", schoolId: "school-1", type: "short",
     stem: "求函数 f(x)=x² 的最小值", answer: "最小值为0", analysis: "配方法", summary: "函数最值",
     chapterIds: [], knowledgePointIds: [], difficulty: 2, recommendation: 3, usageCount: 0,
     remark: "", isShared: false, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
-  },
+  } as Question,
 }));
 
 vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
