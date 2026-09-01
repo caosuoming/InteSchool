@@ -199,6 +199,48 @@ describe("document block parser", () => {
   });
 
   it.each([
+    ["（本小题12分）1. 已知 x=1，求 x+1。", "1. 已知 x=1，求 x+1。"],
+    ["1.（本题10分）已知 x=1，求 x+1。", "1.已知 x=1，求 x+1。"],
+    ["２．（本题满分１０分）已知 x=1，求 x+1。", "２．已知 x=1，求 x+1。"],
+    ["例3（本题共8分）已知 x=1，求 x+1。", "例3已知 x=1，求 x+1。"],
+  ])("filters a leading score annotation from question text: %s", (source, expected) => {
+    const blocks = parseDocumentBlocks(source, config);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: expected,
+    });
+  });
+
+  it("drops a standalone score annotation before a question", () => {
+    const blocks = parseDocumentBlocks(
+      ["（本题满分10分）", "1. 已知 x=1，求 x+1。"].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "1. 已知 x=1，求 x+1。",
+    });
+  });
+
+  it("keeps score wording when it is part of the question body", () => {
+    const source = [
+      "1. 某试卷的标注如下。",
+      "（本题10分）",
+      "判断这一表述是否规范。",
+    ].join("\n");
+    const blocks = parseDocumentBlocks(source, config);
+
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: source,
+    });
+  });
+
+  it.each([
     "分析：注意题目中的隐含条件。",
     "【分析】注意题目中的隐含条件。",
     "分析 注意题目中的隐含条件。",
