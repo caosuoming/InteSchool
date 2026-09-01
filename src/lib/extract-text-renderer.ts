@@ -11,7 +11,7 @@ import {
 } from "./office-metafile";
 
 const TOKEN_PATTERN = /\$((?:[^$]|[\r\n])*?)\$|!\[([^\]]*)\]\(([^)]+)\)/g;
-const RICH_INLINE_PATTERN = /<(sup|sub)>(.*?)<\/\1>|<i\s+class=["']math-variable["']>(.*?)<\/i>/gi;
+const RICH_INLINE_PATTERN = /<(sup|sub)>(.*?)<\/\1>|<i\s+class=["']math-(?:variable|vector)["']>.*?<\/i>/gi;
 const PLACEHOLDER_PATTERN = /\uE000(\d+)\uE001/g;
 
 function escapeHtml(value: string): string {

@@ -10,7 +10,7 @@ const ESCAPED_DOLLAR = "\uE000INTESCHOOL_DOLLAR\uE001";
 const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea";
 const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const LATEX_STRUCTURE_PATTERN = /\\[A-Za-z]+|[_^{}=<>]/;
-const ESCAPED_MATH_VARIABLE_PATTERN = /&lt;i\s+class=(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)math-variable(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)&gt;([\s\S]*?)&lt;\/i&gt;/gi;
+const ESCAPED_MATH_VARIABLE_PATTERN = /&lt;i\s+class=(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)(math-(?:variable|vector))(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)&gt;([\s\S]*?)&lt;\/i&gt;/gi;
 const ESCAPED_VERTICAL_SCRIPT_PATTERN = /&lt;(sub|sup)&gt;([\s\S]*?)&lt;\/\1&gt;/gi;
 
 const SAFE_RICH_TEXT_TAGS = sanitizeHtml.defaults.allowedTags.concat([
@@ -314,7 +314,7 @@ function restoreEscapedDollars(content: string): string {
 function restoreEscapedStructuredMathMarkup(content: string): string {
   let restored = content.replace(
     ESCAPED_MATH_VARIABLE_PATTERN,
-    (_match, value: string) => `<i class="math-variable">${value}</i>`,
+    (_match, className: string, value: string) => `<i class="${className}">${value}</i>`,
   );
 
   // Script markers may wrap an escaped math-variable marker, so restore them
