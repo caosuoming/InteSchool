@@ -10,6 +10,11 @@ export interface ClassroomDeviceRpcInput {
   args: unknown[];
 }
 
+interface ClassroomDeviceIdentity {
+  schoolId: string;
+  classId: string;
+}
+
 export function classroomDeviceTokenFromRpc(input: ClassroomDeviceRpcInput): string | null {
   if (input.service !== "classroomDevice") return null;
   if (["getDeviceSession", "getClassroomSnapshot", "reportHeartbeat"].includes(input.method)) {
@@ -32,18 +37,26 @@ function referencesStoredFile(value: unknown, fileId: string, depth = 0): boolea
     .some((item) => referencesStoredFile(item, fileId, depth + 1));
 }
 
+function classroomDeviceForToken(
+  state: AppState,
+  token: string | undefined,
+): ClassroomDeviceIdentity | null {
+  if (!token || token.length < 24 || token.length > 256) return null;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  return ((state.classroomDevices || []) as Array<ClassroomDeviceIdentity & { deviceTokenHash: string }>)
+    .find((item) => item.deviceTokenHash === tokenHash) || null;
+}
+
+export function isClassroomDeviceTokenValid(state: AppState, token: string | undefined): boolean {
+  return classroomDeviceForToken(state, token) !== null;
+}
+
 export function canClassroomDeviceReadFile(
   state: AppState,
   token: string | undefined,
   fileId: string,
 ): boolean {
-  if (!token || token.length < 24 || token.length > 256) return false;
-  const tokenHash = createHash("sha256").update(token).digest("hex");
-  const device = ((state.classroomDevices || []) as Array<{
-    schoolId: string;
-    classId: string;
-    deviceTokenHash: string;
-  }>).find((item) => item.deviceTokenHash === tokenHash);
+  const device = classroomDeviceForToken(state, token);
   if (!device) return false;
 
   const now = Date.now();

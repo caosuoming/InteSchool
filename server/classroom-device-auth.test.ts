@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   canClassroomDeviceReadFile,
   classroomDeviceTokenFromRpc,
+  isClassroomDeviceTokenValid,
 } from "./classroom-device-auth.js";
 import type { AppState } from "./types.js";
 
@@ -60,6 +61,13 @@ describe("classroom device authorization", () => {
       method: "getQuestion",
       args: [TOKEN],
     })).toBeNull();
+  });
+
+  it("distinguishes a valid classroom device token from an unauthenticated request", () => {
+    const snapshot = state();
+    expect(isClassroomDeviceTokenValid(snapshot, TOKEN)).toBe(true);
+    expect(isClassroomDeviceTokenValid(snapshot, "wrong-device-token-123456789012345")).toBe(false);
+    expect(isClassroomDeviceTokenValid(snapshot, undefined)).toBe(false);
   });
 
   it("allows only files referenced by published content assigned to the bound class", () => {
