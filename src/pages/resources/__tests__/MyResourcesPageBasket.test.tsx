@@ -101,12 +101,14 @@ vi.mock("@/services/reflection", () => ({
 }));
 vi.mock("@/services/class", () => ({
   classService: {
+    listAllClasses: vi.fn().mockResolvedValue([]),
     listMyClasses: vi.fn(),
     listMyStudents: vi.fn(),
   },
 }));
 vi.mock("@/services/analytics", () => ({
   analyticsService: {
+    listUsedDocumentIds: vi.fn().mockResolvedValue([]),
     listAnswerRecordsByStudents: vi.fn(),
     getKnowledgeMastery: vi.fn(),
   },
@@ -275,6 +277,7 @@ describe("MyResourcesPage resource basket", () => {
         children: [],
       }],
     });
+    vi.mocked(classService.listAllClasses).mockResolvedValue([classOne]);
     vi.mocked(classService.listMyClasses).mockResolvedValue([classOne]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([studentOne]);
     vi.mocked(questionService.listQuestions).mockResolvedValue([]);
@@ -282,6 +285,7 @@ describe("MyResourcesPage resource basket", () => {
     vi.mocked(materialService.listMaterials).mockResolvedValue([]);
     vi.mocked(donationService.listTeacherDonations).mockResolvedValue([]);
     vi.mocked(reflectionService.listByTeacher).mockResolvedValue([]);
+    vi.mocked(analyticsService.listUsedDocumentIds).mockResolvedValue([]);
     vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([]);
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([]);
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);

@@ -172,3 +172,47 @@ describe("pending question assignments", () => {
     });
   });
 });
+
+describe("document usage state", () => {
+  it("returns only requested documents that already have answer records", async () => {
+    const appState = state();
+    appState.answerRecords = [
+      {
+        id: "answer-lecture",
+        studentId: "student-school",
+        questionId: "q-school",
+        lectureId: "lecture-school",
+        isCorrect: true,
+        score: "correct",
+        answeredAt: now,
+      },
+      {
+        id: "answer-paper",
+        studentId: "student-personal",
+        questionId: "q-personal",
+        lectureId: "paper-personal",
+        isCorrect: false,
+        score: "wrong",
+        answeredAt: now,
+      },
+      {
+        id: "answer-unrelated",
+        studentId: "student-school",
+        questionId: "q-other",
+        lectureId: "other-document",
+        isCorrect: true,
+        score: "correct",
+        answeredAt: now,
+      },
+    ];
+
+    await runWithState(appState, async () => {
+      expect(await analyticsService.listUsedDocumentIds([
+        "paper-personal",
+        "lecture-no-audience",
+        "lecture-school",
+        "paper-personal",
+      ])).toEqual(["paper-personal", "lecture-school"]);
+    });
+  });
+});

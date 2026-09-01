@@ -82,6 +82,7 @@ import {
   resolveBasketAudienceStudentIds,
   treeNameMap,
 } from "@/lib/basket-audience";
+import { documentResourceUsageSummary } from "@/lib/document-resource-usage";
 import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import { createBlankLessonCourseware } from "@/lib/lesson-courseware-create";
 import {
@@ -728,6 +729,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [newBasketStudentIds, setNewBasketStudentIds] = useState<string[]>([]);
   const [audienceClasses, setAudienceClasses] = useState<AnyClass[]>([]);
   const [audienceStudents, setAudienceStudents] = useState<Student[]>([]);
+  const [resourceAudienceClasses, setResourceAudienceClasses] = useState<AnyClass[]>([]);
+  const [usedDocumentIds, setUsedDocumentIds] = useState<Set<string>>(new Set());
   const [editingBasketAudience, setEditingBasketAudience] = useState(false);
   const [savingBasketAudience, setSavingBasketAudience] = useState(false);
   const [draftBasketClassIds, setDraftBasketClassIds] = useState<string[]>([]);
@@ -890,10 +893,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       const safeExamPapers = examData || [];
       const safeCoursewares = cwData || [];
       const safeMaterials = matData || [];
+      const documentIds = [
+        ...safeLectures.map((item) => item.id),
+        ...safeExamPapers.map((item) => item.id),
+      ];
+      const [nextResourceAudienceClasses, nextUsedDocumentIds] = teacher?.id
+        ? await Promise.all([
+          classService.listAllClasses(schoolId, teacher.id).catch(() => []),
+          analyticsService.listUsedDocumentIds(documentIds).catch(() => []),
+        ])
+        : [[], []] as [AnyClass[], string[]];
       setLectures(safeLectures);
       setExamPapers(safeExamPapers);
       setCoursewares(safeCoursewares);
       setMaterials(safeMaterials);
+      setResourceAudienceClasses(nextResourceAudienceClasses);
+      setUsedDocumentIds(new Set(nextUsedDocumentIds));
       setQuota(quotaSnapshot);
       // 保存完整列表（含拆解副本），用于查找源资源的拆解副本
       setAllExamPapers(safeExamPapers);
@@ -924,6 +939,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       }
     } catch (e) {
       console.error("加载资源失败", e);
+      setResourceAudienceClasses([]);
+      setUsedDocumentIds(new Set());
     } finally {
       setLoading(false);
     }
@@ -3234,6 +3251,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       key={mainLecture.id}
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
+                      description={documentResourceUsageSummary(mainLecture, resourceAudienceClasses, usedDocumentIds)}
                       titleIcon={item.originalFileUrl ? (
                         <DocumentFormatIcon
                           fileType={item.originalFileType}
@@ -3373,6 +3391,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                         {...batchSelectionCardProps("examPaper", copy.id)}
                         title={copy.title}
+                        description={documentResourceUsageSummary(copy, resourceAudienceClasses, usedDocumentIds)}
                         titleActions={hasCompletedLesson("examPaper", copy.id)
                           || hasCompletedLesson("examPaper", item.id)
                           ? <Badge variant="green">已上课</Badge>
@@ -3438,6 +3457,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                           {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
+                          description={documentResourceUsageSummary(item, resourceAudienceClasses, usedDocumentIds)}
                           titleIcon={item.originalFileUrl ? (
                             <DocumentFormatIcon
                               fileType={item.originalFileType}

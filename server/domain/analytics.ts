@@ -107,6 +107,20 @@ export const analyticsService = {
     return filterByDateRange(records, range);
   },
 
+  /** 批量判断讲义/试卷是否已经录入过学生答题情况。 */
+  async listUsedDocumentIds(documentIds: string[]): Promise<string[]> {
+    await delay(150);
+    if (documentIds.length === 0) return [];
+    const requestedIds = Array.from(new Set(documentIds));
+    const requested = new Set(requestedIds);
+    const used = new Set(
+      db.read("answerRecords")
+        .filter((record) => requested.has(record.lectureId))
+        .map((record) => record.lectureId),
+    );
+    return requestedIds.filter((id) => used.has(id));
+  },
+
   /** 批量获取多个学生在所有题目上的答题记录 */
   async listAnswerRecordsByStudents(studentIds: string[], range?: DateRange): Promise<AnswerRecord[]> {
     await delay(200);
