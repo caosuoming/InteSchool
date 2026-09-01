@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactNode } from "react";
+import { useState, useCallback, type DragEvent, type ReactNode } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -26,6 +26,10 @@ interface TreeViewProps {
   highlightAccent?: "gold" | "teal";
   /** Optional per-node actions rendered at the right edge of each row. */
   renderNodeActions?: (node: TreeNode) => ReactNode;
+  /** Optional tree reparenting handler. When provided, non-root rows become draggable. */
+  onNodeDrop?: (source: TreeNode, target: TreeNode) => void | Promise<void>;
+  /** Additional caller-specific validation for a drag target. */
+  canDropNode?: (source: TreeNode, target: TreeNode) => boolean;
 }
 
 export function TreeView({
@@ -43,6 +47,8 @@ export function TreeView({
   highlightedIds = [],
   highlightAccent = "gold",
   renderNodeActions,
+  onNodeDrop,
+  canDropNode,
 }: TreeViewProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     if (defaultExpandAll) {
@@ -64,6 +70,8 @@ export function TreeView({
     collectToLevel(data, expandLevel);
     return initial;
   });
+  const [draggedNode, setDraggedNode] = useState<TreeNode | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
   const toggle = useCallback((id: string) => {
     setExpandedIds((prev) => {
@@ -109,6 +117,53 @@ export function TreeView({
     [onCheck, checkedIds, getNodeAndDescendants, isFullyChecked],
   );
 
+  const containsNode = useCallback((root: TreeNode, id: string): boolean => {
+    if (root.id === id) return true;
+    return root.children.some((child) => containsNode(child, id));
+  }, []);
+
+  const canDrop = useCallback((source: TreeNode, target: TreeNode): boolean => {
+    if (source.id === "root" || source.id === target.id || containsNode(source, target.id)) {
+      return false;
+    }
+    return canDropNode ? canDropNode(source, target) : true;
+  }, [canDropNode, containsNode]);
+
+  const handleDragStart = useCallback((event: DragEvent<HTMLDivElement>, node: TreeNode) => {
+    if (!onNodeDrop || node.id === "root") return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", node.id);
+    setDraggedNode(node);
+    setDropTargetId(null);
+  }, [onNodeDrop]);
+
+  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>, target: TreeNode) => {
+    if (!draggedNode) return;
+    if (!canDrop(draggedNode, target)) {
+      setDropTargetId(null);
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropTargetId(target.id);
+  }, [canDrop, draggedNode]);
+
+  const handleDrop = useCallback((event: DragEvent<HTMLDivElement>, target: TreeNode) => {
+    if (!draggedNode || !onNodeDrop || !canDrop(draggedNode, target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setExpandedIds((prev) => new Set(prev).add(target.id));
+    setDropTargetId(null);
+    const source = draggedNode;
+    setDraggedNode(null);
+    void onNodeDrop(source, target);
+  }, [canDrop, draggedNode, onNodeDrop]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedNode(null);
+    setDropTargetId(null);
+  }, []);
+
   const renderNode = (node: TreeNode, depth: number = 0): React.ReactNode => {
     const hasChildren = node.children.length > 0;
     const expanded = expandedIds.has(node.id);
@@ -117,6 +172,9 @@ export function TreeView({
     const isPartial = isPartiallyChecked(node);
     const isRoot = node.id === "root";
     const isHighlighted = highlightedIds.includes(node.id);
+    const isDragging = draggedNode?.id === node.id;
+    const isDropTarget = dropTargetId === node.id
+      && Boolean(draggedNode && canDrop(draggedNode, node));
     const indentDepth = isRoot
       ? 0
       : node.level !== undefined
@@ -127,11 +185,16 @@ export function TreeView({
       <div key={node.id} className="relative">
         <div
           data-search-match={isHighlighted ? "true" : undefined}
+          data-drop-target={isDropTarget ? "true" : undefined}
+          draggable={Boolean(onNodeDrop && !isRoot)}
           className={cn(
             "flex items-center gap-1.5 py-1.5 px-2 rounded-md transition-colors group",
             !isRoot && "hover:bg-mist cursor-pointer",
             isSelected && "bg-gold-50 border border-gold-200",
             isRoot && "font-serif font-semibold text-ink-900",
+            onNodeDrop && !isRoot && "cursor-grab active:cursor-grabbing",
+            isDragging && "opacity-40",
+            isDropTarget && "bg-gold-100 ring-2 ring-inset ring-gold-400",
             isHighlighted &&
               (highlightAccent === "gold"
                 ? "bg-gold-100/80 ring-1 ring-inset ring-gold-300"
@@ -140,6 +203,10 @@ export function TreeView({
           )}
           style={{ paddingLeft: `${indentDepth * 16 + 8}px` }}
           onClick={() => !isRoot && onSelect?.(node)}
+          onDragStart={(event) => handleDragStart(event, node)}
+          onDragOver={(event) => handleDragOver(event, node)}
+          onDrop={(event) => handleDrop(event, node)}
+          onDragEnd={handleDragEnd}
         >
           {hasChildren ? (
             <button

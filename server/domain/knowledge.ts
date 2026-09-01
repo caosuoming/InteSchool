@@ -34,12 +34,59 @@ function collectSubtree<T extends { id: string; parentId: string | null }>(
   return result;
 }
 
-// 计算父节点的 level（null 表示顶级，返回 -1）
-function getParentLevel<T extends { id: string; level: number }>(
+type MovableDirectoryRecord = {
+  id: string;
+  schoolId: string;
+  parentId: string | null;
+  name: string;
+  order: number;
+  level: number;
+};
+
+function moveDirectoryRecord<T extends MovableDirectoryRecord>(
   list: T[],
-  parentId: string | null,
-): number {
-  return parentId ? list.find((item) => item.id === parentId)?.level ?? 0 : -1;
+  id: string,
+  newParentId: string | null,
+): T[] {
+  const source = list.find((item) => item.id === id);
+  if (!source) throw new Error("节点不存在");
+  if (source.parentId === newParentId) return list;
+
+  const subtree = collectSubtree(list, id);
+  if (newParentId && subtree.has(newParentId)) {
+    throw new Error("不能将节点移动到自身或其子节点下");
+  }
+
+  const parent = newParentId ? list.find((item) => item.id === newParentId) : undefined;
+  if (newParentId && !parent) throw new Error("目标父节点不存在");
+  if (parent && parent.schoolId !== source.schoolId) {
+    throw new Error("不能跨学校移动目录节点");
+  }
+
+  const duplicateSibling = list.some((item) =>
+    item.id !== id
+      && item.schoolId === source.schoolId
+      && item.parentId === newParentId
+      && item.name === source.name,
+  );
+  if (duplicateSibling) throw new Error("目标父节点下已存在同名节点");
+
+  const newLevel = parent ? parent.level + 1 : 0;
+  const levelDelta = newLevel - source.level;
+  const targetSiblings = list.filter((item) =>
+    item.id !== id
+      && item.schoolId === source.schoolId
+      && item.parentId === newParentId,
+  );
+  const newOrder = targetSiblings.reduce((max, item) => Math.max(max, item.order), 0) + 1;
+
+  return list.map((item) => {
+    if (item.id === id) {
+      return { ...item, parentId: newParentId, level: newLevel, order: newOrder };
+    }
+    if (subtree.has(item.id)) return { ...item, level: item.level + levelDelta };
+    return item;
+  });
 }
 
 type DirectoryRecord = Chapter | KnowledgePoint;
@@ -807,31 +854,9 @@ export const knowledgeService = {
   ): Promise<void> {
     await delay(200);
     if (type === "chapter") {
-      const list = db.read("chapters");
-      const newLevel = getParentLevel(list, newParentId) + 1;
-      const subtree = collectSubtree(list, id);
-      const oldRootLevel = list.find((c) => c.id === id)?.level ?? newLevel;
-      const levelDelta = newLevel - oldRootLevel;
-      db.update("chapters", (l) =>
-        l.map((c) => {
-          if (c.id === id) return { ...c, parentId: newParentId, level: newLevel };
-          if (subtree.has(c.id)) return { ...c, level: c.level + levelDelta };
-          return c;
-        }),
-      );
+      db.update("chapters", (list) => moveDirectoryRecord(list, id, newParentId));
     } else {
-      const list = db.read("knowledgePoints");
-      const newLevel = getParentLevel(list, newParentId) + 1;
-      const subtree = collectSubtree(list, id);
-      const oldRootLevel = list.find((p) => p.id === id)?.level ?? newLevel;
-      const levelDelta = newLevel - oldRootLevel;
-      db.update("knowledgePoints", (l) =>
-        l.map((p) => {
-          if (p.id === id) return { ...p, parentId: newParentId, level: newLevel };
-          if (subtree.has(p.id)) return { ...p, level: p.level + levelDelta };
-          return p;
-        }),
-      );
+      db.update("knowledgePoints", (list) => moveDirectoryRecord(list, id, newParentId));
     }
   },
 
