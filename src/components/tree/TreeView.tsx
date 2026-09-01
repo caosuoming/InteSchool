@@ -293,7 +293,11 @@ export function TreeView({
           {showCount && !isRoot && (
             <span className="text-xs font-mono flex-shrink-0 flex items-center gap-1">
               {showDoneCount && node.doneCount !== undefined && (
-                <span className="text-emerald-600">{node.doneCount}/</span>
+                <span className="text-emerald-600">
+                  {node.doneCount}
+                  {node.masteryRate !== undefined && `（${Math.round(node.masteryRate * 100)}%）`}
+                  /
+                </span>
               )}
               <span className="text-ink-400">{node.count}</span>
             </span>

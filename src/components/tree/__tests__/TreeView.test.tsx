@@ -113,4 +113,26 @@ describe("TreeView", () => {
     expect(onNodeDrop).not.toHaveBeenCalled();
   });
 
+  it("shows mastery percentage after the completed-question count", () => {
+    const progressTree: TreeNode = {
+      id: "root",
+      name: "全部章节",
+      type: "chapter",
+      count: 5,
+      children: [{
+        id: "chapter-a",
+        name: "第一章",
+        type: "chapter",
+        count: 5,
+        doneCount: 3,
+        masteryRate: 2 / 3,
+        children: [],
+      }],
+    };
+
+    render(<TreeView data={progressTree} showDoneCount />);
+
+    expect(screen.getByText("3（67%）/")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
+  });
 });
