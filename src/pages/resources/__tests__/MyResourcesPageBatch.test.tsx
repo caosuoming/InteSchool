@@ -483,6 +483,28 @@ describe("MyResourcesPage batch actions", () => {
     });
   });
 
+  it("loads personal resource libraries by teacher without restricting them to the active school", async () => {
+    useAuthStore.setState((state) => ({
+      ...state,
+      teacher: { ...state.teacher!, schoolId: "school-2" } as Teacher,
+    }));
+
+    renderPage("material");
+
+    expect(material.schoolId).toBe("school-1");
+    expect(await screen.findByText(material.title)).toBeInTheDocument();
+
+    for (const call of [
+      vi.mocked(lectureService.listLectures).mock.calls[0],
+      vi.mocked(examPaperService.listPapers).mock.calls[0],
+      vi.mocked(coursewareService.listCoursewares).mock.calls[0],
+      vi.mocked(materialService.listMaterials).mock.calls[0],
+    ]) {
+      expect(call?.[0]).toMatchObject({ teacherId: "teacher-1" });
+      expect(call?.[0]).not.toHaveProperty("schoolId");
+    }
+  });
+
   it("marks an exam paper when its linked lesson has been completed", async () => {
     vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper]);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([completedLesson]);
