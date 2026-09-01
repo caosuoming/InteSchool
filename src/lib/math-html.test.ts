@@ -59,6 +59,17 @@ describe("renderMathHtml", () => {
     expect(firstCell?.textContent).not.toContain("<i");
   });
 
+  it("restores trusted print-vector markup escaped inside rich text", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '向量 &lt;i class=&quot;math-vector&quot;&gt;a&lt;/i&gt; 与 '
+        + '&lt;i class=&quot;math-vector&quot;&gt;b&lt;/i&gt;',
+    );
+
+    expect(container.querySelectorAll("i.math-vector")).toHaveLength(2);
+    expect(container.textContent).toBe("向量 a 与 b");
+  });
+
   it("does not render formulas that are already KaTeX markup", () => {
     const existing = '<span class="katex-formula" data-latex="x"><span class="katex">$x$</span></span>';
     const container = document.createElement("div");
@@ -166,6 +177,23 @@ describe("renderMathHtml", () => {
 
     expect(container.querySelector("img")).toBeNull();
     expect(container).toHaveTextContent("![危险图片](javascript:alert(1))");
+  });
+
+  it("preserves safe PPT text styles while removing unsupported inline CSS", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '<div style="text-align:center;background-image:url(javascript:alert(1))"><span style="font-family:Microsoft YaHei;font-size:24pt;font-weight:bold;color:#ff0000;position:fixed">课件文字</span></div>',
+    );
+
+    expect(container.querySelector("div")).toHaveStyle({ textAlign: "center" });
+    expect(container.querySelector("div")?.getAttribute("style") || "").not.toContain("background-image");
+    expect(container.querySelector("span")).toHaveStyle({
+      fontFamily: "Microsoft YaHei",
+      fontSize: "24pt",
+      fontWeight: "bold",
+      color: "rgb(255, 0, 0)",
+    });
+    expect(container.querySelector("span")?.getAttribute("style") || "").not.toContain("position");
   });
 
   it("removes executable rich-text content", () => {

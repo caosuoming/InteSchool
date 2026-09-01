@@ -229,9 +229,16 @@ export function LessonSlideCanvas({
         );
         const textStyle: CSSProperties = {
           fontSize: `${element.kind === "text" ? element.fontSize || 24 : 24}px`,
+          fontFamily: element.kind === "text" ? element.fontFamily : undefined,
+          fontWeight: element.kind === "text" ? element.fontWeight : undefined,
+          fontStyle: element.kind === "text" ? element.fontStyle : undefined,
+          textDecoration: element.kind === "text" ? element.textDecoration : undefined,
           textAlign: element.kind === "text" ? element.textAlign || "left" : "left",
-          color: textColor,
-          backgroundColor: textBackgroundColor,
+          color: textColor || (element.kind === "text" ? element.color : undefined),
+          backgroundColor: textBackgroundColor ?? (element.kind === "text" ? element.backgroundColor : undefined),
+          padding: element.kind === "text" && element.padding !== undefined
+            ? `${element.padding}px`
+            : undefined,
         };
         return (
           <div

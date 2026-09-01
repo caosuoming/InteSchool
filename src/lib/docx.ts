@@ -352,7 +352,7 @@ async function createOptionParagraphs(options: string[]): Promise<Paragraph[]> {
   return paragraphs;
 }
 
-const STRUCTURED_MATH_SELECTOR = "i.math-variable, sub, sup";
+const STRUCTURED_MATH_SELECTOR = "i.math-variable, i.math-vector, sub, sup";
 const MATH_CONTEXT_SYMBOLS = new Set(Array.from("+-−－＋=＝<>＜＞≤≥≠≈×÷*/·⋅()（）[]{}|.^±∓"));
 
 function isMathContextCharacter(value: string): boolean {
@@ -527,6 +527,7 @@ function richInlineMathLatex(node: Node): string {
   const content = Array.from(element.childNodes).map(richInlineMathLatex).join("");
   if (element.tagName.toLowerCase() === "sub") return `_{${content}}`;
   if (element.tagName.toLowerCase() === "sup") return `^{${content}}`;
+  if (element.matches("i.math-vector")) return `\\boldsymbol{${content}}`;
   return content;
 }
 

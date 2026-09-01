@@ -1213,7 +1213,8 @@ export const serviceParameters = {
     ],
     "mergeQuestions": [
       "targetQuestionId",
-      "sourceQuestionId"
+      "sourceQuestionId",
+      "mergeFields"
     ]
   },
   "question": {

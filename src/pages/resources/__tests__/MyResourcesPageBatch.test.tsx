@@ -13,6 +13,7 @@ import { lectureService } from "@/services/lecture";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { materialService } from "@/services/material";
 import { questionService } from "@/services/question";
+import { prepService } from "@/services/prep";
 import { resourceFolderService } from "@/services/resourceFolder";
 import { shareService } from "@/services/share";
 import type { Courseware, ExamPaper, LessonCourseware, Material, Question, Teacher, TreeNode } from "@/types";
@@ -50,6 +51,21 @@ vi.mock("@/hooks/useSchoolResourceOptions", () => ({
 vi.mock("@/hooks/useQuestionTypeOptions", () => ({
   useQuestionTypeOptions: () => ({ getLabel: (value: string) => value }),
 }));
+const questionFixtures = vi.hoisted(() => ({
+  first: {
+    id: "question-1", teacherId: "teacher-1", schoolId: "school-1", type: "short",
+    stem: "函数 f(x)=x² 的最小值", answer: "0", analysis: "x=0 时取得", summary: "二次函数",
+    chapterIds: [], knowledgePointIds: [], difficulty: 2, recommendation: 3, usageCount: 0,
+    remark: "", isShared: false, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
+  },
+  second: {
+    id: "question-2", teacherId: "teacher-1", schoolId: "school-1", type: "short",
+    stem: "求函数 f(x)=x² 的最小值", answer: "最小值为0", analysis: "配方法", summary: "函数最值",
+    chapterIds: [], knowledgePointIds: [], difficulty: 2, recommendation: 3, usageCount: 0,
+    remark: "", isShared: false, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
+  },
+}));
+
 vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
   default: ({
     selectedQuestionIds,
@@ -63,6 +79,8 @@ vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
       <button type="button" onClick={() => onToggleSelection?.(batchQuestion)}>
         {selectedQuestionIds?.has(batchQuestion.id) ? "取消选择题库题目" : "选择题库题目"}
       </button>
+      <button type="button" aria-label="选择题目一" onClick={() => onToggleSelection?.(questionFixtures.first)}>题目一</button>
+      <button type="button" aria-label="选择题目二" onClick={() => onToggleSelection?.(questionFixtures.second)}>题目二</button>
     </div>
   ),
 }));
@@ -106,6 +124,11 @@ vi.mock("@/services/question", () => ({
     getQuestion: vi.fn(),
     updateQuestion: vi.fn(),
     deleteQuestion: vi.fn(),
+  },
+}));
+vi.mock("@/services/prep", () => ({
+  prepService: {
+    mergeQuestions: vi.fn(),
   },
 }));
 vi.mock("@/services/examPaper", () => ({
@@ -331,6 +354,12 @@ describe("MyResourcesPage batch actions", () => {
     });
 
     vi.mocked(questionService.listQuestions).mockResolvedValue([]);
+    vi.mocked(questionService.getQuestion).mockImplementation(async (id) => {
+      if (id === questionFixtures.first.id) return questionFixtures.first as never;
+      if (id === questionFixtures.second.id) return questionFixtures.second as never;
+      return undefined;
+    });
+    vi.mocked(prepService.mergeQuestions).mockResolvedValue(undefined);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([]);
     vi.mocked(lectureService.listLectures).mockResolvedValue([]);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
@@ -767,4 +796,36 @@ describe("MyResourcesPage batch actions", () => {
       .toMatch(/\/shared-resources\/batch-share-/);
     expect(screen.getByRole("button", { name: "复制链接" })).toBeInTheDocument();
   });
+  it("offers merge for exactly two selected questions and submits merge fields", async () => {
+    renderPage("question");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择题目一" }));
+    expect(screen.queryByRole("option", { name: "合并两题" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择题目二" }));
+
+    const actionSelect = screen.getByRole("combobox", { name: "选择批量操作" });
+    expect(screen.getByRole("option", { name: "合并两题" })).toBeInTheDocument();
+    fireEvent.change(actionSelect, { target: { value: "mergeQuestions" } });
+
+    expect(await screen.findByText("合并两题")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("相似题 1 选择上传题题干"));
+    fireEvent.click(screen.getByRole("button", { name: "相似题 1 点击上传题题干展开详情" }));
+    fireEvent.click(screen.getByLabelText("相似题 1 保留上传题答案"));
+    fireEvent.click(screen.getByRole("button", { name: "确认合并" }));
+
+    await waitFor(() => {
+      expect(prepService.mergeQuestions).toHaveBeenCalledWith(
+        "question-1",
+        "question-2",
+        {
+          stem: "incoming",
+          answer: "both",
+          analysis: "existing",
+          summary: "existing",
+        },
+      );
+    });
+    expect(screen.queryByRole("region", { name: "批量操作" })).not.toBeInTheDocument();
+  });
+
 });
