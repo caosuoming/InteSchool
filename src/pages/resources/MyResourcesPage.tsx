@@ -3014,9 +3014,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             {(leftTab === "chapter" ? displayedChapterTree : displayedKnowledgeTree) ? (
               leftTab === "chapter" ? (
                 <SearchableTree
-                  editable
                   data={displayedChapterTree!}
-                  onDataChange={setChapterTree}
                   title="章节课目录"
                   showTitle={false}
                   accent="gold"
@@ -3031,9 +3029,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 />
               ) : (
                 <SearchableTree
-                  editable
                   data={displayedKnowledgeTree!}
-                  onDataChange={setKnowledgeTree}
                   title="知识点目录"
                   showTitle={false}
                   accent="teal"

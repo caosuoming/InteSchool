@@ -96,13 +96,15 @@ vi.mock("@/components/tree/SearchableTree", () => ({
     onCheck,
     onReset,
     showTitle = true,
+    editable = false,
   }: {
     title: string;
     onCheck?: (ids: string[]) => void;
     onReset?: () => void;
     showTitle?: boolean;
+    editable?: boolean;
   }) => (
-    <div>
+    <div data-testid={`searchable-tree-${title}`} data-editable={String(editable)}>
       <button
         type="button"
         aria-label={title.endsWith("目录") ? `勾选${title}` : undefined}
@@ -726,6 +728,15 @@ describe("MyResourcesPage batch actions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "取消批量选择" }));
     expect(screen.queryByRole("region", { name: "批量操作" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the left-side chapter and knowledge trees read-only", async () => {
+    renderPage();
+
+    expect(await screen.findByTestId("searchable-tree-章节课目录")).toHaveAttribute("data-editable", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "知识点" }));
+    expect(await screen.findByTestId("searchable-tree-知识点目录")).toHaveAttribute("data-editable", "false");
   });
 
   it("marks selected directory tabs and resets both directory selections together", async () => {
