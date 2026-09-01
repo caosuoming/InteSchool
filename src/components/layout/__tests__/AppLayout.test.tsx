@@ -110,4 +110,41 @@ describe("AppLayout", () => {
       "成绩统计",
     ]);
   });
+
+  it("shows 我的教务 immediately after 集体备课", () => {
+    const managerAffiliation: TeacherAffiliation = {
+      ...affiliation,
+      roles: ["gradeLeader"],
+    };
+    useAuthStore.setState({
+      teacher: {
+        id: "teacher-1",
+        name: "测试教师",
+        avatar: "测",
+        subject: "数学",
+        schoolId: "school-1",
+        roles: ["gradeLeader"],
+      } as Teacher,
+      getAffiliations: () => [managerAffiliation],
+      getCurrentAffiliation: () => managerAffiliation,
+    });
+
+    const { container } = render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <AppLayout>
+          <div>页面内容</div>
+        </AppLayout>
+      </MemoryRouter>,
+    );
+
+    const nav = container.querySelector("nav");
+    expect(nav).not.toBeNull();
+    const labels = Array.from(nav!.children).map((item) => item.textContent?.trim());
+    const prepIndex = labels.indexOf("集体备课");
+    const academicsIndex = labels.indexOf("我的教务");
+
+    expect(screen.queryByText("我的考试")).not.toBeInTheDocument();
+    expect(prepIndex).toBeGreaterThanOrEqual(0);
+    expect(academicsIndex).toBe(prepIndex + 1);
+  });
 });
