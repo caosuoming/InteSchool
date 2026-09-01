@@ -16,6 +16,9 @@ const PUBLIC_CALLS = new Set([
   "school.searchSchools",
   "school.getSchool",
   "class.listClassroomChoices",
+  "classroomDevice.getDeviceSession",
+  "classroomDevice.getClassroomSnapshot",
+  "classroomDevice.reportHeartbeat",
   "grade.getPublishedReportByToken",
 ]);
 
@@ -107,6 +110,7 @@ const SENSITIVE_KEYS = new Set([
   "password_hash",
   "viewPassword",
   "viewPasswordHash",
+  "deviceTokenHash",
   "wechatOpenId",
   "wechatUnionId",
   "wecomUserId",

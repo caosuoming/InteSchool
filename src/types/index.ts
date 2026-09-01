@@ -376,6 +376,70 @@ export interface ClassroomChoice {
   grade: string;
 }
 
+export type ClassroomDeviceControlState = "active" | "locked" | "closed";
+
+/** 教室一体机允许使用的固定周时间段。weekdays 使用 0-6 表示周日到周六。 */
+export interface ClassroomDeviceTimeRange {
+  id: string;
+  weekdays: number[];
+  start: string;
+  end: string;
+}
+
+export interface ClassroomDeviceCurrentPage {
+  path: string;
+  title: string;
+  screenshot?: string;
+  updatedAt?: string;
+}
+
+export interface ClassroomDevicePermissions {
+  canView: boolean;
+  canUnlock: boolean;
+  canLock: boolean;
+  canClose: boolean;
+  canUnbind: boolean;
+  canEditSchedule: boolean;
+}
+
+/** 已绑定到班级的教室一体机；deviceTokenHash 仅保存在服务端，不会下发。 */
+export interface ClassroomDevice {
+  id: string;
+  schoolId: string;
+  classId: string;
+  schoolName: string;
+  className: string;
+  grade: string;
+  deviceName: string;
+  installationId: string;
+  boundByTeacherId: string;
+  boundByTeacherName: string;
+  boundAt: string;
+  controlState: ClassroomDeviceControlState;
+  allowedTimeRanges: ClassroomDeviceTimeRange[];
+  /** 任课教师在时段外手动解锁时，临时放行至下一段管理员配置的允许时段开始。 */
+  manualUnlockUntil?: string;
+  lastSeenAt?: string;
+  currentPage?: ClassroomDeviceCurrentPage;
+  updatedAt: string;
+  effectiveState: ClassroomDeviceControlState;
+  scheduleAllowsUse: boolean;
+  permissions?: ClassroomDevicePermissions;
+}
+
+export interface ClassroomDeviceSession {
+  device: ClassroomDevice;
+  classroom: SchoolClass;
+}
+
+export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {
+  lessons: LessonCourseware[];
+  homeworks: ClassroomHomework[];
+  homeworkHistory: ClassroomHomework[];
+  notices: ClassroomNotice[];
+  students: Array<Pick<Student, "id" | "name">>;
+}
+
 export type StudentStatus = "active" | "suspended" | "graduated" | "transferred" | "deleted";
 
 export type StudentArchiveStatus =
