@@ -302,7 +302,7 @@ export default function QuestionBankPage({
     }
 
     const filter = {
-      schoolId: teacher.schoolId!,
+      teacherId: teacher.id,
       keyword,
       searchFields,
       chapterIds: checkedChapters,
