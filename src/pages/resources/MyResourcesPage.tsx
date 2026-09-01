@@ -860,7 +860,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       chapterLogic,
       knowledgePointIds: checkedKnowledge,
       knowledgeLogic,
-      schoolId,
       grade: selectedGrade || undefined,
       schoolYear: selectedYear || undefined,
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
