@@ -1369,6 +1369,29 @@ describe("document block parser", () => {
   });
 
   it.each([
+    "A组",
+    "B组",
+    "Ｃ组",
+    "课后训练",
+    "课后训练巩固提升",
+  ])("classifies %s as a project group title", (projectHeading) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 已知空间向量 a、b，求 a+b。",
+        projectHeading,
+        "1. 已知空间四边形 ABCD，求向量 CD。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["question", "例1 已知空间向量 a、b，求 a+b。"],
+      ["groupTitle", projectHeading],
+      ["question", "1. 已知空间四边形 ABCD，求向量 CD。"],
+    ]);
+  });
+
+  it.each([
     "练习1 求数列的最大项。",
     "练习题1 求数列的最小项。",
     "训练1 求数列的通项公式。",
