@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyResourcesPage from "@/pages/resources/MyResourcesPage";
 import { useAuthStore } from "@/stores/auth";
+import { analyticsService } from "@/services/analytics";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
 import { coursewareService } from "@/services/courseware";
@@ -132,12 +133,15 @@ vi.mock("@/services/basket", () => ({
 }));
 vi.mock("@/services/class", () => ({
   classService: {
+    listAllClasses: vi.fn().mockResolvedValue([]),
     listMyClasses: vi.fn(),
     listMyStudents: vi.fn(),
   },
 }));
 vi.mock("@/services/analytics", () => ({
-  analyticsService: {},
+  analyticsService: {
+    listUsedDocumentIds: vi.fn().mockResolvedValue([]),
+  },
 }));
 vi.mock("@/services/share", () => ({
   shareService: {
@@ -332,8 +336,10 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
+    vi.mocked(classService.listAllClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([]);
+    vi.mocked(analyticsService.listUsedDocumentIds).mockResolvedValue([]);
   });
 
   it("filters materials by the existing material types and places the type filter before grade", async () => {
