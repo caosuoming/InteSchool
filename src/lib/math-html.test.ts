@@ -59,6 +59,17 @@ describe("renderMathHtml", () => {
     expect(firstCell?.textContent).not.toContain("<i");
   });
 
+  it("restores trusted print-vector markup escaped inside rich text", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '向量 &lt;i class=&quot;math-vector&quot;&gt;a&lt;/i&gt; 与 '
+        + '&lt;i class=&quot;math-vector&quot;&gt;b&lt;/i&gt;',
+    );
+
+    expect(container.querySelectorAll("i.math-vector")).toHaveLength(2);
+    expect(container.textContent).toBe("向量 a 与 b");
+  });
+
   it("does not render formulas that are already KaTeX markup", () => {
     const existing = '<span class="katex-formula" data-latex="x"><span class="katex">$x$</span></span>';
     const container = document.createElement("div");

@@ -57,6 +57,21 @@ describe("extract text renderer", () => {
     expect(container.textContent).toBe("an=1");
   });
 
+  it("preserves extracted bold italic print-vector markers", () => {
+    const html = renderExtractText(
+      '向量 <i class="math-vector">a</i> 与 <i class="math-vector">b</i>，A. '
+        + '<i class="math-vector">a</i>+<i class="math-vector">b</i>',
+      [],
+      false,
+    );
+    const container = asElement(html);
+
+    expect(container.querySelectorAll("i.math-vector")).toHaveLength(4);
+    expect(container.querySelector("i.math-vector")).toHaveTextContent("a");
+    expect(container.textContent).toBe("向量 a 与 b，A. a+b");
+    expect(html).not.toContain("&lt;i");
+  });
+
   it("renders safe markdown images and leaves unsafe sources as text", () => {
     const html = renderExtractText(
       "![示意图](https://example.com/figure.png)\n![危险](javascript:alert(1))",
