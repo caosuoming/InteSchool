@@ -334,6 +334,8 @@ const builtInSummaryKeywords = [
 
 const builtInProjectHeadingLabels = [
   "课前引入",
+  "课后训练",
+  "课后训练巩固提升",
   "知识梳理",
   "练习",
   "练习题",
@@ -361,6 +363,7 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
   const normalized = normalizeStructuralText(text).trim();
   if (/^[【［[][^】］\]\n]{1,40}[】］\]](?:\s*[:：]?\s*)$/.test(normalized)) return true;
   if (builtInProjectHeadingLabels.includes(normalized)) return true;
+  if (/^[A-Z]组$/.test(normalized.toUpperCase())) return true;
   return /^(?:热点|考向|题型|类型)\s*(?:第\s*)?(?:[\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})(?:\s|[、.．:：)）]|$)/.test(normalized);
 }
 

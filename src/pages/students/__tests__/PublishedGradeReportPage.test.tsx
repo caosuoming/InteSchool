@@ -190,7 +190,7 @@ describe("PublishedGradeReportPage", () => {
     expect(await screen.findByText("张班主任")).toBeInTheDocument();
     expect(screen.getByText("类别")).toBeInTheDocument();
     expect(screen.getByText("分差")).toBeInTheDocument();
-    expect(screen.getByText("平均（1-2班）")).toBeInTheDocument();
+    expect(screen.getByText("平均（1-2）")).toBeInTheDocument();
     expect(screen.getByText("全校平均")).toBeInTheDocument();
     expect(screen.getAllByText("周老师").length).toBeGreaterThan(0);
     expect(screen.getAllByText("陈老师").length).toBeGreaterThan(0);

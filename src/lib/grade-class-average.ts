@@ -79,8 +79,6 @@ export function compactGradeClassLabel(className: string): string {
 }
 
 export function formatGradeClassRangeLabel(labels: string[]): string {
-  if (labels.length < 2) return labels.join("、");
-
   const classNumbers = labels.map((label) => {
     const match = label.trim().match(/^(\d+)\s*班$/);
     return match ? Number(match[1]) : null;
@@ -88,10 +86,24 @@ export function formatGradeClassRangeLabel(labels: string[]): string {
   if (!classNumbers.every((value): value is number => value !== null)) return labels.join("、");
 
   const sorted = [...classNumbers].sort((left, right) => left - right);
-  const isContinuous = sorted.every((value, index) => index === 0 || value === sorted[index - 1] + 1);
-  if (!isContinuous) return labels.join("、");
+  const ranges: string[] = [];
+  let rangeStart = sorted[0];
+  let rangeEnd = sorted[0];
 
-  return `${sorted[0]}-${sorted[sorted.length - 1]}班`;
+  for (const value of sorted.slice(1)) {
+    if (value === rangeEnd + 1) {
+      rangeEnd = value;
+      continue;
+    }
+    ranges.push(rangeStart === rangeEnd ? `${rangeStart}` : `${rangeStart}-${rangeEnd}`);
+    rangeStart = value;
+    rangeEnd = value;
+  }
+
+  if (rangeStart !== undefined && rangeEnd !== undefined) {
+    ranges.push(rangeStart === rangeEnd ? `${rangeStart}` : `${rangeStart}-${rangeEnd}`);
+  }
+  return ranges.join(",");
 }
 
 function fallbackReportDate(exam: GradeExam): string {
