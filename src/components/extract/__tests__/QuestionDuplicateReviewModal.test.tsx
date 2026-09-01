@@ -136,4 +136,41 @@ describe("QuestionDuplicateReviewModal", () => {
     expect(incoming.querySelector("mark img")).toHaveAttribute("src", incomingImage);
     expect(incoming).not.toHaveTextContent("![文档图片]");
   });
+  it("supports merge-only mode with field selection", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(
+      <QuestionDuplicateReviewModal
+        mode="merge"
+        items={[item]}
+        existingLabel="题目一"
+        incomingLabel="题目二"
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    expect(screen.getByText("合并两题")).toBeInTheDocument();
+    expect(screen.getByText("题目一")).toBeInTheDocument();
+    expect(screen.getByText("题目二")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认合并" })).toBeEnabled();
+
+    await user.click(screen.getByLabelText("相似题 1 选择上传题题干"));
+    await user.click(screen.getByRole("button", { name: "相似题 1 点击上传题题干展开详情" }));
+    await user.click(screen.getByLabelText("相似题 1 保留上传题答案"));
+    await user.click(screen.getByRole("button", { name: "确认合并" }));
+
+    expect(onConfirm).toHaveBeenCalledWith({
+      "incoming-1": {
+        action: "merge",
+        fields: {
+          stem: "incoming",
+          answer: "both",
+          analysis: "existing",
+          summary: "existing",
+        },
+      },
+    });
+  });
+
 });

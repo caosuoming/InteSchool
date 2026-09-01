@@ -230,9 +230,27 @@ function wordRunIsItalic(element: Element): boolean {
   return !["0", "false", "off", "none"].includes(value);
 }
 
-function mathVariableMarkup(content: string): string {
+function wordRunIsBold(element: Element): boolean {
+  const properties = elementChildren(element).find(
+    (child) => child.namespaceURI === WORD_NS && child.localName === "rPr",
+  );
+  if (!properties) return false;
+  const bold = elementChildren(properties).find(
+    (child) => child.namespaceURI === WORD_NS && ["b", "bCs"].includes(child.localName),
+  );
+  if (!bold) return false;
+  const value = (
+    bold.getAttributeNS(WORD_NS, "val")
+    || bold.getAttribute("w:val")
+    || "true"
+  ).toLowerCase();
+  return !["0", "false", "off", "none"].includes(value);
+}
+
+function mathVariableMarkup(content: string, bold = false): string {
+  const className = bold && /^[A-Za-z]$/.test(content) ? "math-vector" : "math-variable";
   return /^[A-Za-z]+$/.test(content)
-    ? `<i class="math-variable">${content}</i>`
+    ? `<i class="${className}">${content}</i>`
     : content;
 }
 
@@ -302,7 +320,9 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
       .filter((child) => child !== properties)
       .map((child) => extractInlineContent(child, imageUrl))
       .join("");
-    const styledContent = wordRunIsItalic(element) ? mathVariableMarkup(content) : content;
+    const styledContent = wordRunIsItalic(element)
+      ? mathVariableMarkup(content, wordRunIsBold(element))
+      : content;
     if (styledContent && verticalValue === "superscript") {
       return `<sup>${mathVariableMarkup(styledContent)}</sup>`;
     }

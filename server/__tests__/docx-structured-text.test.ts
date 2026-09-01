@@ -124,6 +124,25 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("marks bold italic single-letter Word runs as print-style vectors", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>已知向量 </w:t></w:r>
+        <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:i/></w:rPr><w:t>a</w:t></w:r>
+        <w:r><w:t>、</w:t></w:r>
+        <w:r><w:rPr><w:b/><w:i/></w:rPr><w:t>b</w:t></w:r>
+        <w:r><w:t> 与平面 </w:t></w:r>
+        <w:r><w:rPr><w:b/><w:i/></w:rPr><w:t>ABC</w:t></w:r>
+        <w:r><w:t>。</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      '已知向量 <i class="math-vector">a</i>、<i class="math-vector">b</i> 与平面 '
+        + '<i class="math-variable">ABC</i>。',
+    );
+  });
+
   it("preserves multi-letter italic Word math labels", async () => {
     const data = await makeDocx(`
       <w:p>

@@ -529,6 +529,30 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).not.toContain("(-1)n-1nan");
   });
 
+  it("preserves imported print-style vectors as bold italic Office math", async () => {
+    const vectorPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [],
+      contentBlocks: [{
+        id: "vector-formula",
+        type: "knowledge",
+        content: '已知向量 <i class="math-vector">a</i> 与 <i class="math-vector">b</i>。',
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(vectorPaper);
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const xml = new DOMParser().parseFromString(documentXml, "application/xml");
+    const boldItalicRuns = Array.from(xml.getElementsByTagName("m:r")).filter((run) =>
+      run.getElementsByTagName("m:sty")[0]?.getAttribute("m:val") === "bi"
+    );
+
+    expect(boldItalicRuns.map((run) => run.getElementsByTagName("m:t")[0]?.textContent)).toEqual(["a", "b"]);
+    expect(documentXml).not.toContain("math-vector");
+    expect(documentXml).not.toContain("\\boldsymbol");
+  });
+
   it("coalesces fragmented imported scripts before converting them to Office math", async () => {
     const formulaPaper: ExamPaper = {
       ...structuredPaper,

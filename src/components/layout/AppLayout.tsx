@@ -43,9 +43,12 @@ const allNavItems: NavItem[] = [
     icon: BookOpen,
   },
   { path: "/my-students", label: "我的学生", icon: Users },
+  { path: "/school-resources", label: "校本资源", icon: Building2, schoolOnly: true },
+  { path: "/platform-resources", label: "平台资源", icon: Cloud },
+  { path: "/prep", label: "集体备课", icon: Users, schoolOnly: true },
   {
     path: "/my-exams",
-    label: "我的考试",
+    label: "我的教务",
     icon: ClipboardList,
     schoolOnly: true,
     examManagerOnly: true,
@@ -55,9 +58,6 @@ const allNavItems: NavItem[] = [
       { path: "/my-exams/grades", label: "成绩统计", icon: FileSpreadsheet },
     ],
   },
-  { path: "/school-resources", label: "校本资源", icon: Building2, schoolOnly: true },
-  { path: "/platform-resources", label: "平台资源", icon: Cloud },
-  { path: "/prep", label: "集体备课", icon: Users, schoolOnly: true },
   { path: "/admin", label: "后台设置", icon: Settings },
 ];
 
