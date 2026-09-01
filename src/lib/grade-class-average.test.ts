@@ -155,13 +155,19 @@ const exam: GradeExam = {
 };
 
 describe("grade class average report", () => {
-  it("compacts only fully continuous numeric class labels", () => {
+  it("compacts continuous numeric class ranges without the 班 suffix", () => {
     expect(formatGradeClassRangeLabel(["1班", "2班", "3班", "4班", "5班"]))
-      .toBe("1-5班");
+      .toBe("1-5");
     expect(formatGradeClassRangeLabel(["10班", "8班", "9班"]))
-      .toBe("8-10班");
+      .toBe("8-10");
+    expect(formatGradeClassRangeLabel(["1班", "2班", "3班", "4班", "5班", "7班"]))
+      .toBe("1-5,7");
+    expect(formatGradeClassRangeLabel(["7班", "8班", "9班", "10班", "13班", "14班", "15班", "16班", "17班"]))
+      .toBe("7-10,13-17");
     expect(formatGradeClassRangeLabel(["1班", "2班", "4班", "5班"]))
-      .toBe("1班、2班、4班、5班");
+      .toBe("1-2,4-5");
+    expect(formatGradeClassRangeLabel(["7班"]))
+      .toBe("7");
     expect(formatGradeClassRangeLabel(["1班", "实验二班"]))
       .toBe("1班、实验二班");
   });
