@@ -208,6 +208,25 @@ describe("document extractor", () => {
     expect(result.html).not.toContain("&lt;i class=&quot;math-variable&quot;&gt;");
   });
 
+  it("renders structured print-style vectors instead of escaping their markup", async () => {
+    const filePath = join(workDir, "print-vectors.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({ value: "a+b-c", messages: [] });
+    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>a+b-c</p>", messages: [] });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      '已知向量 <i class="math-vector">a</i>、<i class="math-vector">b</i>，则 A. '
+        + '<i class="math-vector">a</i>+<i class="math-vector">b</i>-<i class="math-vector">c</i>',
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.text).toContain('<i class="math-vector">a</i>');
+    expect(result.html).toContain('<i class="math-vector">a</i>');
+    expect(result.html).toContain('<i class="math-vector">b</i>');
+    expect(result.html).toContain('<i class="math-vector">c</i>');
+    expect(result.html).not.toContain("&lt;i class=&quot;math-vector&quot;&gt;");
+  });
+
   it("renders preserved DOCX tables with formulas in their cells", async () => {
     const filePath = join(workDir, "table.docx");
     await writeFile(filePath, "fake docx");

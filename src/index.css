@@ -143,9 +143,14 @@
     vertical-align: middle;
   }
 
-  .math-variable {
+  .math-variable,
+  .math-vector {
     font-family: "Times New Roman", Times, serif;
     font-style: italic;
+  }
+
+  .math-vector {
+    font-weight: 700;
   }
 
   /* KaTeX's inline box sits slightly high beside the app's Chinese body fonts. */

@@ -10,6 +10,7 @@ import type { StoredFile, TeacherRecord } from "../types.js";
 import { requireCsrf, requireSession } from "./auth.js";
 import { extractDocument } from "../lib/document-extractor.js";
 import { extractDocxImage } from "../lib/docx-structured-text.js";
+import { extractPptxImage } from "../lib/pptx-assets.js";
 import { convertMathTypeDocxToOmml, probeMathTypeRuntime } from "../lib/mathtype-docx.js";
 import { createAsyncLimiter } from "../lib/async-limiter.js";
 import { withSerializedState } from "../rpc.js";
@@ -408,12 +409,15 @@ export async function registerFileRoutes(
     if (!canReadFile(store, teacher, file)) {
       return reply.code(403).send({ error: "无权访问该文件" });
     }
-    if (extname(file.originalName).toLowerCase() !== ".docx") {
+    const extension = extname(file.originalName).toLowerCase();
+    if (extension !== ".docx" && extension !== ".pptx") {
       return reply.code(404).send({ error: "图片不存在" });
     }
 
     const data = await readFile(join(config.uploadsDir, file.storageName));
-    const image = await extractDocxImage(data, relationshipId);
+    const image = extension === ".pptx"
+      ? await extractPptxImage(data, relationshipId)
+      : await extractDocxImage(data, relationshipId);
     if (!image) return reply.code(404).send({ error: "图片不存在" });
 
     reply.type(image.contentType);

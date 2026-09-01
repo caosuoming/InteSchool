@@ -10,7 +10,7 @@ const ESCAPED_DOLLAR = "\uE000INTESCHOOL_DOLLAR\uE001";
 const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea";
 const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const LATEX_STRUCTURE_PATTERN = /\\[A-Za-z]+|[_^{}=<>]/;
-const ESCAPED_MATH_VARIABLE_PATTERN = /&lt;i\s+class=(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)math-variable(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)&gt;([\s\S]*?)&lt;\/i&gt;/gi;
+const ESCAPED_MATH_VARIABLE_PATTERN = /&lt;i\s+class=(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)(math-(?:variable|vector))(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)&gt;([\s\S]*?)&lt;\/i&gt;/gi;
 const ESCAPED_VERTICAL_SCRIPT_PATTERN = /&lt;(sub|sup)&gt;([\s\S]*?)&lt;\/\1&gt;/gi;
 
 const SAFE_RICH_TEXT_TAGS = sanitizeHtml.defaults.allowedTags.concat([
@@ -27,7 +27,7 @@ function sanitizeRichText(content: string): string {
   return sanitizeHtml(content, {
     allowedTags: SAFE_RICH_TEXT_TAGS,
     allowedAttributes: {
-      "*": ["class", "title", "role", "aria-hidden", "data-latex"],
+      "*": ["class", "title", "role", "aria-hidden", "data-latex", "style"],
       a: ["href", "title", "target", "rel"],
       img: ["src", "alt", "title", "width", "height", "loading"],
       th: ["colspan", "rowspan", "scope"],
@@ -35,6 +35,17 @@ function sanitizeRichText(content: string): string {
       col: ["span"],
       math: ["xmlns", "display"],
       annotation: ["encoding"],
+    },
+    allowedStyles: {
+      "*": {
+        "font-family": [/^[^;{}<>]{1,120}$/],
+        "font-size": [/^\d+(?:\.\d+)?(?:px|pt|em|rem|%)$/],
+        "font-weight": [/^(?:normal|bold|[1-9]00)$/],
+        "font-style": [/^(?:normal|italic|oblique)$/],
+        "text-decoration": [/^(?:none|underline|line-through)$/],
+        color: [/^(?:#[0-9a-f]{3,8}|rgba?\([^;{}<>]+\)|hsla?\([^;{}<>]+\)|[a-z]+)$/i],
+        "text-align": [/^(?:left|center|right|justify)$/],
+      },
     },
     allowedSchemes: ["http", "https", "data"],
     allowedSchemesByTag: {
@@ -314,7 +325,7 @@ function restoreEscapedDollars(content: string): string {
 function restoreEscapedStructuredMathMarkup(content: string): string {
   let restored = content.replace(
     ESCAPED_MATH_VARIABLE_PATTERN,
-    (_match, value: string) => `<i class="math-variable">${value}</i>`,
+    (_match, className: string, value: string) => `<i class="${className}">${value}</i>`,
   );
 
   // Script markers may wrap an escaped math-variable marker, so restore them
