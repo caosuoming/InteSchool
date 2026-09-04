@@ -998,7 +998,7 @@ export const lessonCoursewareService = {
   ): Promise<LessonCourseware> {
     const sourceId = typeof source === "string" ? source : source.id;
     const examPaper = db.read("examPapers").find((item) =>
-      item.id === sourceId && item.teacherId === teacherId && item.schoolId === schoolId);
+      item.id === sourceId && item.teacherId === teacherId);
     if (!examPaper) throw new Error("试卷不存在或无权访问");
 
     const bodySlides = examPaperSlides(examPaper, db.read("questions"));
@@ -1046,7 +1046,7 @@ export const lessonCoursewareService = {
   ): Promise<LessonCourseware> {
     const sourceId = typeof source === "string" ? source : source.id;
     const lecture = db.read("lectures").find((item) =>
-      item.id === sourceId && item.teacherId === teacherId && item.schoolId === schoolId);
+      item.id === sourceId && item.teacherId === teacherId);
     if (!lecture) throw new Error("讲义不存在或无权访问");
 
     const questions = db.read("questions");
@@ -1122,7 +1122,7 @@ export const lessonCoursewareService = {
     } = {},
   ): Promise<LessonCourseware> {
     const source = db.read("coursewares").find((item) =>
-      item.id === sourceId && item.teacherId === teacherId && item.schoolId === schoolId);
+      item.id === sourceId && item.teacherId === teacherId);
     if (!source) throw new Error("课件不存在或无权访问");
     const mode = options.mode === "direct" ? "direct" : "editable";
     const baseExternalFields = {

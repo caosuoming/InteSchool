@@ -209,14 +209,12 @@ export function MyLessonsPage() {
     setLoading(true);
     try {
       const commonFilter = {
-        schoolId: teacher.schoolId,
         teacherId: teacher.id,
         keyword: keyword || undefined,
       };
       const [activeItems, completedItems, trashedItems] = await Promise.all([
         lessonCoursewareService.listCoursewares({
           ...commonFilter,
-          status: statusFilter === "all" ? undefined : (statusFilter as "draft" | "published"),
           lifecycleStatus: "active",
         }),
         lessonCoursewareService.listCoursewares({
@@ -232,7 +230,12 @@ export function MyLessonsPage() {
         if (sourceFilter === "all") return true;
         return c.sourceType === sourceFilter;
       };
-      setCoursewares(activeItems.filter(matchesSource));
+      const matchesStatus = (c: LessonCourseware) => {
+        if (statusFilter === "all") return true;
+        const effectiveStatus = c.schoolId === teacher.schoolId ? c.status : "draft";
+        return effectiveStatus === statusFilter;
+      };
+      setCoursewares(activeItems.filter(matchesSource).filter(matchesStatus));
       setCompletedCoursewares(completedItems.filter(matchesSource));
       setTrashedCoursewares(trashedItems.filter(matchesSource));
     } catch (err) {
@@ -1109,7 +1112,14 @@ export function MyLessonsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {coursewares.map((cw) => {
             const Icon = SourceIcon(cw);
-            const selectedClassNames = cw.classIds.map((id) => classNames.get(id) || id);
+            const belongsToCurrentSchool = cw.schoolId === teacher.schoolId;
+            const selectedClassNames = belongsToCurrentSchool
+              ? cw.classIds.flatMap((id) => {
+                const name = classNames.get(id);
+                return name ? [name] : [];
+              })
+              : [];
+            const isCurrentlyPublished = belongsToCurrentSchool && cw.status === "published";
             const directPptSlide = cw.coursewareMode === "direct"
               && cw.slides[0]?.coursewareType === "ppt"
               ? cw.slides[0]
@@ -1133,9 +1143,11 @@ export function MyLessonsPage() {
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant="ink">{sourceLabel[cw.sourceType]}</Badge>
                       <Badge
-                        variant={cw.status === "published" ? "green" : "amber"}
+                        variant={isCurrentlyPublished ? "green" : "amber"}
                       >
-                        {cw.status === "published" ? "已发布" : "草稿"}
+                        {isCurrentlyPublished
+                          ? "已发布"
+                          : belongsToCurrentSchool ? "草稿" : "待重新发布"}
                       </Badge>
                       {directPptSlide && <Badge variant="gold">WPS 上课</Badge>}
                     </div>
@@ -1174,11 +1186,11 @@ export function MyLessonsPage() {
                       : <Edit3 className="w-3.5 h-3.5" />}
                     {directPptSlide ? "WPS 编辑/上课" : "编辑课件"}
                   </Button>
-                  {cw.status === "draft" ? (
+                  {!isCurrentlyPublished ? (
                     <Button
                       variant="gold"
                       size="sm"
-                      onClick={() => cw.classIds.length > 0
+                      onClick={() => belongsToCurrentSchool && selectedClassNames.length > 0
                         ? handlePublish(cw)
                         : openPage(`/my-lessons/${cw.id}/edit`)}
                     >

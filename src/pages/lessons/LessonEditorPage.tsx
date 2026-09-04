@@ -151,8 +151,16 @@ export function LessonEditorPage() {
         navigate("/my-lessons");
         return;
       }
-      setCourseware(cw);
-      setSavedDraft(lessonSaveStateFromCourseware(cw));
+      const editableCourseware = teacher?.schoolId && cw.schoolId !== teacher.schoolId
+        ? {
+          ...cw,
+          classIds: [],
+          status: "draft" as const,
+          publishedAt: undefined,
+        }
+        : cw;
+      setCourseware(editableCourseware);
+      setSavedDraft(lessonSaveStateFromCourseware(editableCourseware));
       setSlides(cw.slides);
       // 预加载所有相关题
       const allRelatedIds = Array.from(
@@ -177,7 +185,7 @@ export function LessonEditorPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate]);
+  }, [id, navigate, teacher?.schoolId]);
 
   useEffect(() => {
     if (!id || !teacher) return;
@@ -478,7 +486,7 @@ export function LessonEditorPage() {
   });
 
   const handlePublish = async () => {
-    if (!courseware) return;
+    if (!courseware || !teacher?.schoolId) return;
     if (courseware.classIds.length === 0) {
       setClassModalOpen(true);
       toast.error("请先选择授课班级");
@@ -490,6 +498,9 @@ export function LessonEditorPage() {
         slides,
         title: courseware.title,
         classIds: courseware.classIds,
+        schoolId: teacher.schoolId,
+        status: "draft",
+        publishedAt: undefined,
       });
       await lessonCoursewareService.publishCourseware(courseware.id);
       toast.success("已发布", "课件已推送到“我要上课”页面");
