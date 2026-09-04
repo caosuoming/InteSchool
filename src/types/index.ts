@@ -2817,6 +2817,15 @@ export interface Reflection {
 /** 学生互动记录类型 */
 export type InteractionType = "chat" | "attitude" | "status";
 
+/** 学生互动聊天记录中的图片附件 */
+export interface StudentInteractionAttachment {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  size: number;
+}
+
 /** 学生互动记录 */
 export interface StudentInteraction {
   id: string;
@@ -2827,6 +2836,8 @@ export interface StudentInteraction {
   type: InteractionType;
   /** 内容 */
   content: string;
+  /** 聊天记录中的图片附件 */
+  attachments?: StudentInteractionAttachment[];
   /** 学习态度评分（1-5），type=attitude 时使用 */
   attitude?: number;
   /** 学习状态标签 */

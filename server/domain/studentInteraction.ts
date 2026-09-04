@@ -1,6 +1,7 @@
 import type {
   Student,
   StudentInteraction,
+  StudentInteractionAttachment,
   StudentInteractionView,
   InteractionType,
   Teacher,
@@ -13,9 +14,48 @@ export interface InteractionInput {
   studentId: string;
   type: InteractionType;
   content: string;
+  attachments?: StudentInteractionAttachment[];
   attitude?: number;
   statusTag?: string;
   shareWithHomeroom?: boolean;
+}
+
+interface StudentInteractionFollow {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  studentId: string;
+  createdAt: string;
+}
+
+const MAX_CHAT_ATTACHMENTS = 6;
+
+function normalizeAttachments(
+  type: InteractionType,
+  attachments: StudentInteractionAttachment[] | undefined,
+): StudentInteractionAttachment[] {
+  if (!attachments) return [];
+  if (!Array.isArray(attachments)) throw new Error("聊天图片格式不正确");
+  if (attachments.length > MAX_CHAT_ATTACHMENTS) {
+    throw new Error(`聊天图片不能超过 ${MAX_CHAT_ATTACHMENTS} 张`);
+  }
+  if (type !== "chat" && attachments.length > 0) {
+    throw new Error("只有聊天记录可以添加图片");
+  }
+  return attachments.map((attachment) => {
+    if (!attachment || typeof attachment !== "object") throw new Error("聊天图片格式不正确");
+    const id = String(attachment.id || "").trim();
+    const name = String(attachment.name || "").trim().slice(0, 200) || "聊天图片";
+    const url = String(attachment.url || "").trim();
+    const mimeType = String(attachment.mimeType || "").trim().slice(0, 120);
+    const size = Number(attachment.size);
+    if (!id || !/^\/api\/files\/[^/?#]+$/.test(url) || url !== `/api/files/${id}`) {
+      throw new Error("聊天图片信息不一致");
+    }
+    if (!mimeType.startsWith("image/")) throw new Error("聊天记录只能上传图片");
+    if (!Number.isFinite(size) || size < 0) throw new Error("聊天图片大小不正确");
+    return { id, name, url, mimeType, size };
+  });
 }
 
 async function requireStudentAccess(teacher: Teacher, studentId: string): Promise<void> {
@@ -99,6 +139,36 @@ export const studentInteractionService = {
       .map((interaction: StudentInteraction) => toVisibleInteraction(interaction, teacher));
   },
 
+  async listFollowedStudentIds(teacher: Teacher): Promise<string[]> {
+    const accessibleStudents = await classService.listMyStudents(teacher.schoolId, teacher.id);
+    const accessibleIds = new Set(accessibleStudents.map((student) => student.id));
+    const follows = (db.read("studentInteractionFollows") || []) as StudentInteractionFollow[];
+    return follows
+      .filter((follow) => follow.teacherId === teacher.id && accessibleIds.has(follow.studentId))
+      .map((follow) => follow.studentId);
+  },
+
+  async setStudentFollowed(studentId: string, followed: boolean, teacher: Teacher): Promise<void> {
+    await requireStudentAccess(teacher, studentId);
+    const current = (db.read("studentInteractionFollows") || []) as StudentInteractionFollow[];
+    const exists = current.some((follow) => follow.teacherId === teacher.id && follow.studentId === studentId);
+    if (followed && !exists) {
+      if (!teacher.schoolId) throw new Error("当前教师未加入学校");
+      const record: StudentInteractionFollow = {
+        id: genId("sif"),
+        teacherId: teacher.id,
+        schoolId: teacher.schoolId,
+        studentId,
+        createdAt: new Date().toISOString(),
+      };
+      db.update("studentInteractionFollows", (list: StudentInteractionFollow[] = []) => [record, ...list]);
+    } else if (!followed && exists) {
+      db.update("studentInteractionFollows", (list: StudentInteractionFollow[] = []) => list.filter((follow) => (
+        follow.teacherId !== teacher.id || follow.studentId !== studentId
+      )));
+    }
+  },
+
   async createInteraction(
     teacherId: string,
     schoolId: string,
@@ -108,6 +178,9 @@ export const studentInteractionService = {
     await delay(300);
     maybeThrowError();
     await requireStudentAccess(teacher, input.studentId);
+    const content = typeof input.content === "string" ? input.content.trim() : "";
+    const attachments = normalizeAttachments(input.type, input.attachments);
+    if (!content && attachments.length === 0) throw new Error("请输入内容或添加图片");
     const now = new Date().toISOString();
     const interaction: StudentInteraction = {
       id: genId("si"),
@@ -115,7 +188,8 @@ export const studentInteractionService = {
       schoolId,
       studentId: input.studentId,
       type: input.type,
-      content: input.content,
+      content,
+      attachments: attachments.length > 0 ? attachments : undefined,
       attitude: input.attitude,
       statusTag: input.statusTag,
       sharedWithHomeroom: input.shareWithHomeroom === true,

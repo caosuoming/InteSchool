@@ -1644,6 +1644,14 @@ export const serviceParameters = {
       "teacherId",
       "teacher"
     ],
+    "listFollowedStudentIds": [
+      "teacher"
+    ],
+    "setStudentFollowed": [
+      "studentId",
+      "followed",
+      "teacher"
+    ],
     "createInteraction": [
       "teacherId",
       "schoolId",
