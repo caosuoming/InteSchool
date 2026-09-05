@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -124,6 +124,7 @@ const activeNotice: ClassroomNotice = {
 function courseware(
   id: string,
   lifecycleStatus: "active" | "completed" | "trashed" = "active",
+  status: "draft" | "published" = "draft",
 ): LessonCourseware {
   return {
     id,
@@ -145,7 +146,7 @@ function courseware(
       askableStudentIds: [],
     }],
     classIds: ["class-1"],
-    status: "draft",
+    status,
     lifecycleStatus,
     completedAt: lifecycleStatus === "completed" ? "2026-08-02T12:00:00.000Z" : null,
     deletedAt: lifecycleStatus === "trashed" ? "2026-08-02T12:00:00.000Z" : null,
@@ -416,11 +417,12 @@ describe("MyLessonsPage classroom publishing", () => {
     expect(classroomHomeworkService.createHomework).not.toHaveBeenCalled();
   });
 
-  it("shows assigned class names and moves an active courseware to the completed list", async () => {
+  it("groups active coursewares by status and marks a published courseware as taught", async () => {
     const user = userEvent.setup();
-    const activeCourseware = courseware("active-1");
+    const publishedCourseware = courseware("published-1", "active", "published");
+    const editableCourseware = courseware("editable-1");
     vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) => {
-      if (filter.lifecycleStatus === "active") return [activeCourseware];
+      if (filter.lifecycleStatus === "active") return [publishedCourseware, editableCourseware];
       return [];
     });
 
@@ -431,16 +433,25 @@ describe("MyLessonsPage classroom publishing", () => {
     );
 
     await user.click(await screen.findByRole("tab", { name: "我的课件" }));
-    expect(await screen.findByText("授课班级：高一 · 高一（1）班")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "已上完 函数课件 active-1" }));
+    expect(await screen.findByRole("heading", { name: "已发布课件" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "待编辑课件" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("搜索课件标题...")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("全部状态")).not.toBeInTheDocument();
+    expect(screen.getAllByText("授课班级：高一 · 高一（1）班")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "已上课 函数课件 editable-1" })).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "撤回" }));
     await waitFor(() => {
-      expect(lessonCoursewareService.completeCourseware).toHaveBeenCalledWith("active-1");
+      expect(lessonCoursewareService.unpublishCourseware).toHaveBeenCalledWith("published-1");
+    });
+
+    await user.click(screen.getByRole("button", { name: "已上课 函数课件 published-1" }));
+    await waitFor(() => {
+      expect(lessonCoursewareService.completeCourseware).toHaveBeenCalledWith("published-1");
     });
   });
 
   it("keeps former-school coursewares in My Lessons and treats them as needing republish", async () => {
-    const user = userEvent.setup();
     const oldCourseware = {
       ...courseware("old-school"),
       schoolId: "school-old",
@@ -460,6 +471,7 @@ describe("MyLessonsPage classroom publishing", () => {
 
     expect(await screen.findByText("函数课件 old-school")).toBeInTheDocument();
     expect(screen.getByText("待重新发布")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "待编辑课件" })).toBeInTheDocument();
     expect(screen.getByText("尚未选择授课班级")).toBeInTheDocument();
 
     const activeCall = vi.mocked(lessonCoursewareService.listCoursewares).mock.calls
@@ -467,18 +479,16 @@ describe("MyLessonsPage classroom publishing", () => {
       .find((filter) => filter?.lifecycleStatus === "active");
     expect(activeCall).toMatchObject({ teacherId: "teacher-1", lifecycleStatus: "active" });
     expect(activeCall).not.toHaveProperty("schoolId");
-
-    await user.selectOptions(screen.getByDisplayValue("全部状态"), "draft");
-    expect(await screen.findByText("函数课件 old-school")).toBeInTheDocument();
   });
 
-  it("shows six completed coursewares by default and restores a trashed courseware", async () => {
+  it("shows six taught coursewares by default, previews them, and restores lifecycle groups", async () => {
     const user = userEvent.setup();
     const completed = Array.from({ length: 7 }, (_, index) => courseware(`completed-${index + 1}`, "completed"));
-    const trashed = courseware("trashed-1", "trashed");
+    const trashed = Array.from({ length: 7 }, (_, index) => courseware(`trashed-${index + 1}`, "trashed"));
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) => {
       if (filter.lifecycleStatus === "completed") return completed;
-      if (filter.lifecycleStatus === "trashed") return [trashed];
+      if (filter.lifecycleStatus === "trashed") return trashed;
       return [];
     });
 
@@ -489,17 +499,38 @@ describe("MyLessonsPage classroom publishing", () => {
     );
 
     await user.click(await screen.findByRole("tab", { name: "我的课件" }));
-    expect(await screen.findByText("已上完课件列表")).toBeInTheDocument();
+    expect(await screen.findByText("已上课课件")).toBeInTheDocument();
     expect(screen.getByText("函数课件 completed-6")).toBeInTheDocument();
     expect(screen.queryByText("函数课件 completed-7")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "更多" }));
+    await user.click(screen.getByRole("button", { name: "查看课件 函数课件 completed-1" }));
+    expect(openSpy).toHaveBeenCalledWith(
+      "/my-lessons/completed-1/edit?preview=1",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    await user.click(screen.getByRole("button", { name: "恢复课件 函数课件 completed-1" }));
+    await waitFor(() => {
+      expect(lessonCoursewareService.restoreCourseware).toHaveBeenCalledWith("completed-1");
+    });
+
+    const completedSection = screen.getByRole("heading", { name: "已上课课件" }).closest("section");
+    expect(completedSection).not.toBeNull();
+    await user.click(within(completedSection!).getByRole("button", { name: "更多" }));
     expect(await screen.findByText("函数课件 completed-7")).toBeInTheDocument();
-    expect(screen.getByText("课件回收站")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "恢复课件 函数课件 trashed-1" }));
+
+    const trashHeading = screen.getByRole("heading", { name: "课件回收站" });
+    const trashSection = trashHeading.closest("section");
+    expect(trashSection).not.toBeNull();
+    expect(within(trashSection!).getByText("函数课件 trashed-6")).toBeInTheDocument();
+    expect(within(trashSection!).queryByText("函数课件 trashed-7")).not.toBeInTheDocument();
+    await user.click(within(trashSection!).getByRole("button", { name: "更多" }));
+    expect(await within(trashSection!).findByText("函数课件 trashed-7")).toBeInTheDocument();
+    await user.click(within(trashSection!).getByRole("button", { name: "恢复课件 函数课件 trashed-1" }));
 
     await waitFor(() => {
       expect(lessonCoursewareService.restoreCourseware).toHaveBeenCalledWith("trashed-1");
     });
+    openSpy.mockRestore();
   });
 });

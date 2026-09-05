@@ -428,7 +428,7 @@ describe("courseware lesson flow", () => {
     });
   });
 
-  it("moves completed and deleted lessons out of the active classroom list and restores them as drafts", async () => {
+  it("restores completed lessons as published and deleted lessons as drafts", async () => {
     const state = createState(sourceCourseware({ onlineAccessToken: "preview-token" }));
 
     await runWithState(state, async () => {
@@ -451,6 +451,15 @@ describe("courseware lesson flow", () => {
         teacherId: "teacher-1",
       })).toHaveLength(1);
 
+      const restoredCompleted = await lessonCoursewareService.restoreCourseware(lesson.id);
+      expect(restoredCompleted).toMatchObject({
+        lifecycleStatus: "active",
+        status: "published",
+        completedAt: null,
+        deletedAt: null,
+        publishedAt: expect.any(String),
+      });
+
       await lessonCoursewareService.deleteCourseware(lesson.id);
       expect(await lessonCoursewareService.listCoursewares({ lifecycleStatus: "completed" })).toEqual([]);
       expect(await lessonCoursewareService.listCoursewares({ lifecycleStatus: "trashed" })).toEqual([
@@ -461,8 +470,8 @@ describe("courseware lesson flow", () => {
         }),
       ]);
 
-      const restored = await lessonCoursewareService.restoreCourseware(lesson.id);
-      expect(restored).toMatchObject({
+      const restoredDeleted = await lessonCoursewareService.restoreCourseware(lesson.id);
+      expect(restoredDeleted).toMatchObject({
         lifecycleStatus: "active",
         status: "draft",
         completedAt: null,

@@ -2,7 +2,7 @@ import { openPage } from "@/lib/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  BookOpen, Plus, Search, Trash2, Send,
+  BookOpen, Plus, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
   BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, MonitorPlay,
   CheckCircle2, RotateCcw, CalendarDays,
@@ -161,9 +161,6 @@ export function MyLessonsPage() {
   const [loading, setLoading] = useState(true);
   const [homeworkLoading, setHomeworkLoading] = useState(true);
   const [publishingHomework, setPublishingHomework] = useState(false);
-  const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("all");
   const [homeworkContent, setHomeworkContent] = useState("");
   const [homeworkUploads, setHomeworkUploads] = useState<HomeworkUpload[]>([]);
   const [homeworkDate, setHomeworkDate] = useState(localDateValue);
@@ -210,7 +207,6 @@ export function MyLessonsPage() {
     try {
       const commonFilter = {
         teacherId: teacher.id,
-        keyword: keyword || undefined,
       };
       const [activeItems, completedItems, trashedItems] = await Promise.all([
         lessonCoursewareService.listCoursewares({
@@ -226,24 +222,15 @@ export function MyLessonsPage() {
           lifecycleStatus: "trashed",
         }),
       ]);
-      const matchesSource = (c: LessonCourseware) => {
-        if (sourceFilter === "all") return true;
-        return c.sourceType === sourceFilter;
-      };
-      const matchesStatus = (c: LessonCourseware) => {
-        if (statusFilter === "all") return true;
-        const effectiveStatus = c.schoolId === teacher.schoolId ? c.status : "draft";
-        return effectiveStatus === statusFilter;
-      };
-      setCoursewares(activeItems.filter(matchesSource).filter(matchesStatus));
-      setCompletedCoursewares(completedItems.filter(matchesSource));
-      setTrashedCoursewares(trashedItems.filter(matchesSource));
+      setCoursewares(activeItems);
+      setCompletedCoursewares(completedItems);
+      setTrashedCoursewares(trashedItems);
     } catch (err) {
       toast.error("加载失败", err instanceof Error ? err.message : undefined);
     } finally {
       setLoading(false);
     }
-  }, [keyword, sourceFilter, statusFilter, teacher]);
+  }, [teacher]);
 
   useEffect(() => {
     loadData();
@@ -593,7 +580,7 @@ export function MyLessonsPage() {
   const handleComplete = async (cw: LessonCourseware) => {
     try {
       await lessonCoursewareService.completeCourseware(cw.id);
-      toast.success("已标记为上完", "课件已移入已上完课件列表");
+      toast.success("已标记为已上课", "课件已移入已上课课件");
       await loadData();
     } catch (err) {
       toast.error("操作失败", err instanceof Error ? err.message : undefined);
@@ -603,7 +590,10 @@ export function MyLessonsPage() {
   const handleRestore = async (cw: LessonCourseware) => {
     try {
       await lessonCoursewareService.restoreCourseware(cw.id);
-      toast.success("课件已恢复", "已恢复为草稿课件");
+      toast.success(
+        "课件已恢复",
+        cw.lifecycleStatus === "completed" ? "已恢复为已发布课件" : "已恢复为待编辑课件",
+      );
       await loadData();
     } catch (err) {
       toast.error("恢复失败", err instanceof Error ? err.message : undefined);
@@ -644,6 +634,126 @@ export function MyLessonsPage() {
       : cw.sourceType === "courseware"
         ? Presentation
         : BookOpen;
+
+  const publishedCoursewares = coursewares.filter((cw) => (
+    cw.schoolId === teacher.schoolId && cw.status === "published"
+  ));
+  const editableCoursewares = coursewares.filter((cw) => (
+    cw.schoolId !== teacher.schoolId || cw.status !== "published"
+  ));
+
+  const openCourseware = (cw: LessonCourseware, previewOnly = false) => {
+    const directPptSlide = cw.coursewareMode === "direct"
+      && cw.slides[0]?.coursewareType === "ppt"
+      ? cw.slides[0]
+      : null;
+    if (directPptSlide) {
+      void openCoursewareInWps(directPptSlide);
+      return;
+    }
+    openPage(`/my-lessons/${cw.id}/edit${previewOnly ? "?preview=1" : ""}`);
+  };
+
+  const renderActiveCoursewareCard = (cw: LessonCourseware, published: boolean) => {
+    const Icon = SourceIcon(cw);
+    const belongsToCurrentSchool = cw.schoolId === teacher.schoolId;
+    const selectedClassNames = belongsToCurrentSchool
+      ? cw.classIds.flatMap((id) => {
+        const name = classNames.get(id);
+        return name ? [name] : [];
+      })
+      : [];
+    const directPptSlide = cw.coursewareMode === "direct"
+      && cw.slides[0]?.coursewareType === "ppt";
+    return (
+      <Card key={cw.id} className="p-4 hover:shadow-cardHover transition-all group">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-10 h-10 rounded-lg bg-gold-50 flex items-center justify-center flex-shrink-0">
+            <Icon className="w-5 h-5 text-gold-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <button
+              type="button"
+              className="block w-full truncate text-left font-medium text-ink-900 hover:text-gold-700"
+              onClick={() => openCourseware(cw)}
+            >
+              {cw.title}
+            </button>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="ink">{sourceLabel[cw.sourceType]}</Badge>
+              <Badge variant={published ? "green" : "amber"}>
+                {published ? "已发布" : belongsToCurrentSchool ? "待编辑" : "待重新发布"}
+              </Badge>
+              {directPptSlide && <Badge variant="gold">WPS 上课</Badge>}
+            </div>
+          </div>
+        </div>
+
+        <div className="text-xs text-ink-500 space-y-1 mb-3">
+          <div className="flex items-center gap-1.5">
+            <Clock className="w-3 h-3" />
+            {cw.slides.length} 页 · 上次更新 {timeAgo(cw.updatedAt)}
+          </div>
+          {cw.sourceTitle && <div className="truncate">来源：{cw.sourceTitle}</div>}
+          <div className="flex items-center gap-1.5">
+            <Users className="w-3 h-3" />
+            <span className="truncate">
+              {selectedClassNames.length > 0
+                ? `授课班级：${selectedClassNames.join("、")}`
+                : "尚未选择授课班级"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1 pt-3 border-t border-ink-100">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => openCourseware(cw)}
+          >
+            {directPptSlide
+              ? <MonitorPlay className="w-3.5 h-3.5" />
+              : <Edit3 className="w-3.5 h-3.5" />}
+            {directPptSlide ? "WPS 编辑/上课" : "编辑课件"}
+          </Button>
+          {published ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => void handleUnpublish(cw)}>
+                撤回
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleComplete(cw)}
+                aria-label={`已上课 ${cw.title}`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />已上课
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="gold"
+              size="sm"
+              onClick={() => belongsToCurrentSchool && selectedClassNames.length > 0
+                ? void handlePublish(cw)
+                : openCourseware(cw)}
+            >
+              <Send className="w-3.5 h-3.5" />发布
+            </Button>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleDelete(cw.id)}
+            className="p-1.5 rounded text-ink-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+            title="删除"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </Card>
+    );
+  };
 
   return (
     <div>
@@ -1047,186 +1157,52 @@ export function MyLessonsPage() {
       </Card>}
 
       {activeTab === "courseware" && <>
-      {/* 筛选栏 */}
-      <Card className="p-4 mb-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
-            <input
-              type="text"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索课件标题..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg border border-ink-200 bg-paper text-sm focus:outline-none focus:border-gold-400"
-            />
-          </div>
-          <Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            options={[
-              { value: "all", label: "全部状态" },
-              { value: "draft", label: "草稿" },
-              { value: "published", label: "已发布" },
-            ]}
-            className="w-32"
-          />
-          <Select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            options={[
-              { value: "all", label: "全部来源" },
-              { value: "examPaper", label: "试卷来源" },
-              { value: "lecture", label: "讲义来源" },
-              { value: "courseware", label: "课件库来源" },
-              { value: "manual", label: "手动创建" },
-            ]}
-            className="w-32"
-          />
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="gold" onClick={() => openPage("/my-resources/coursewares")}>
-              <Plus className="w-4 h-4" />
-              从课件库添加
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      {/* 课件列表 */}
       {loading ? (
         <div className="py-16 text-center">
           <div className="inline-block w-8 h-8 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
           <div className="text-sm text-ink-500 mt-3">加载中...</div>
         </div>
-      ) : coursewares.length === 0 ? (
-        <Card className="p-12 text-center">
-          <BookOpen className="w-12 h-12 mx-auto text-ink-300 mb-3" />
-          <div className="text-sm text-ink-500 mb-2">暂无上课课件</div>
-          <div className="text-xs text-ink-400 mb-4">
-            在课件库、试卷库或讲义库中点击「添加到上课」即可创建上课课件
-          </div>
-          <Button variant="outline" onClick={() => openPage("/my-resources/exam-papers")}>
-            去试卷库看看
-          </Button>
-        </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {coursewares.map((cw) => {
-            const Icon = SourceIcon(cw);
-            const belongsToCurrentSchool = cw.schoolId === teacher.schoolId;
-            const selectedClassNames = belongsToCurrentSchool
-              ? cw.classIds.flatMap((id) => {
-                const name = classNames.get(id);
-                return name ? [name] : [];
-              })
-              : [];
-            const isCurrentlyPublished = belongsToCurrentSchool && cw.status === "published";
-            const directPptSlide = cw.coursewareMode === "direct"
-              && cw.slides[0]?.coursewareType === "ppt"
-              ? cw.slides[0]
-              : null;
-            const handleOpen = () => directPptSlide
-              ? void openCoursewareInWps(directPptSlide)
-              : openPage(`/my-lessons/${cw.id}/edit`);
-            return (
-              <Card key={cw.id} className="p-4 hover:shadow-cardHover transition-all group">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-lg bg-gold-50 flex items-center justify-center flex-shrink-0">
-                    <Icon className="w-5 h-5 text-gold-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div
-                      className="font-medium text-ink-900 truncate cursor-pointer hover:text-gold-700"
-                      onClick={handleOpen}
-                    >
-                      {cw.title}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="ink">{sourceLabel[cw.sourceType]}</Badge>
-                      <Badge
-                        variant={isCurrentlyPublished ? "green" : "amber"}
-                      >
-                        {isCurrentlyPublished
-                          ? "已发布"
-                          : belongsToCurrentSchool ? "草稿" : "待重新发布"}
-                      </Badge>
-                      {directPptSlide && <Badge variant="gold">WPS 上课</Badge>}
-                    </div>
-                  </div>
-                </div>
+        <>
+          <section aria-labelledby="published-coursewares-heading">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 id="published-coursewares-heading" className="font-semibold text-ink-900">已发布课件</h2>
+                <p className="mt-1 text-xs text-ink-400">当前已发布到授课班级的课件；撤回后进入待编辑课件</p>
+              </div>
+              <Badge variant="ink">{publishedCoursewares.length} 个</Badge>
+            </div>
+            {publishedCoursewares.length === 0 ? (
+              <Card className="p-6 text-center text-sm text-ink-400">暂无已发布课件</Card>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {publishedCoursewares.map((cw) => renderActiveCoursewareCard(cw, true))}
+              </div>
+            )}
+          </section>
 
-                <div className="text-xs text-ink-500 space-y-1 mb-3">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3 h-3" />
-                    {cw.slides.length} 页 · 上次更新 {timeAgo(cw.updatedAt)}
-                  </div>
-                  {cw.sourceTitle && (
-                    <div className="truncate">
-                      来源：{cw.sourceTitle}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5">
-                    <Users className="w-3 h-3" />
-                    <span className="truncate">
-                      {selectedClassNames.length > 0
-                        ? `授课班级：${selectedClassNames.join("、")}`
-                        : "尚未选择授课班级"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1 pt-3 border-t border-ink-100">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={handleOpen}
-                  >
-                    {directPptSlide
-                      ? <MonitorPlay className="w-3.5 h-3.5" />
-                      : <Edit3 className="w-3.5 h-3.5" />}
-                    {directPptSlide ? "WPS 编辑/上课" : "编辑课件"}
-                  </Button>
-                  {!isCurrentlyPublished ? (
-                    <Button
-                      variant="gold"
-                      size="sm"
-                      onClick={() => belongsToCurrentSchool && selectedClassNames.length > 0
-                        ? handlePublish(cw)
-                        : openPage(`/my-lessons/${cw.id}/edit`)}
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      发布
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleUnpublish(cw)}
-                    >
-                      撤回
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void handleComplete(cw)}
-                    aria-label={`已上完 ${cw.title}`}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    已上完
-                  </Button>
-                  <button
-                    onClick={() => void handleDelete(cw.id)}
-                    className="p-1.5 rounded text-ink-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                    title="删除"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+          <section className="mt-8" aria-labelledby="editable-coursewares-heading">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 id="editable-coursewares-heading" className="font-semibold text-ink-900">待编辑课件</h2>
+                <p className="mt-1 text-xs text-ink-400">尚未发布或已撤回的课件，可继续编辑后发布</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="ink">{editableCoursewares.length} 个</Badge>
+                <Button variant="gold" size="sm" onClick={() => openPage("/my-resources/coursewares")}>
+                  <Plus className="w-4 h-4" />从课件库添加
+                </Button>
+              </div>
+            </div>
+            {editableCoursewares.length === 0 ? (
+              <Card className="p-6 text-center text-sm text-ink-400">暂无待编辑课件</Card>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {editableCoursewares.map((cw) => renderActiveCoursewareCard(cw, false))}
+              </div>
+            )}
+          </section>
+        </>
       )}
 
       {!loading && (
@@ -1234,9 +1210,9 @@ export function MyLessonsPage() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 id="completed-coursewares-heading" className="font-semibold text-ink-900">
-                已上完课件列表
+                已上课课件
               </h2>
-              <p className="mt-1 text-xs text-ink-400">已结束授课的课件，可恢复后再次编制和发布</p>
+              <p className="mt-1 text-xs text-ink-400">已完成授课的课件仍可查看；恢复后回到已发布课件</p>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="ink">{completedCoursewares.length} 个</Badge>
@@ -1254,7 +1230,7 @@ export function MyLessonsPage() {
             </div>
           </div>
           {completedCoursewares.length === 0 ? (
-            <Card className="p-6 text-center text-sm text-ink-400">暂无已上完课件</Card>
+            <Card className="p-6 text-center text-sm text-ink-400">暂无已上课课件</Card>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {(completedExpanded ? completedCoursewares : completedCoursewares.slice(0, 6)).map((cw) => {
@@ -1267,10 +1243,16 @@ export function MyLessonsPage() {
                         <Icon className="h-5 w-5 text-ink-500" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium text-ink-900">{cw.title}</div>
+                        <button
+                          type="button"
+                          className="block w-full truncate text-left font-medium text-ink-900 hover:text-gold-700"
+                          onClick={() => openCourseware(cw, true)}
+                        >
+                          {cw.title}
+                        </button>
                         <div className="mt-1 flex flex-wrap items-center gap-2">
                           <Badge variant="ink">{sourceLabel[cw.sourceType]}</Badge>
-                          <Badge variant="green">已上完</Badge>
+                          <Badge variant="green">已上课</Badge>
                         </div>
                       </div>
                     </div>
@@ -1283,7 +1265,7 @@ export function MyLessonsPage() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Clock className="h-3 w-3" />
-                        {cw.completedAt ? `上完于 ${timeAgo(cw.completedAt)}` : `更新于 ${timeAgo(cw.updatedAt)}`}
+                        {cw.completedAt ? `上课于 ${timeAgo(cw.completedAt)}` : `更新于 ${timeAgo(cw.updatedAt)}`}
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-2 border-t border-ink-100 pt-3">
@@ -1291,10 +1273,18 @@ export function MyLessonsPage() {
                         variant="outline"
                         size="sm"
                         className="flex-1"
+                        onClick={() => openCourseware(cw, true)}
+                        aria-label={`查看课件 ${cw.title}`}
+                      >
+                        <MonitorPlay className="h-3.5 w-3.5" />查看课件
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => void handleRestore(cw)}
                         aria-label={`恢复课件 ${cw.title}`}
                       >
-                        <RotateCcw className="h-3.5 w-3.5" />恢复课件
+                        <RotateCcw className="h-3.5 w-3.5" />恢复
                       </Button>
                       <button
                         type="button"
@@ -1318,7 +1308,7 @@ export function MyLessonsPage() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 id="trashed-coursewares-heading" className="font-semibold text-ink-900">课件回收站</h2>
-              <p className="mt-1 text-xs text-ink-400">删除的课件会保留在这里，可随时恢复为草稿</p>
+              <p className="mt-1 text-xs text-ink-400">删除的课件会保留在这里，可随时恢复到待编辑课件</p>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="ink">{trashedCoursewares.length} 个</Badge>
