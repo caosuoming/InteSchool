@@ -956,12 +956,13 @@ export const lessonCoursewareService = {
     await delay(300);
     const courseware = db.read("lessonCoursewares").find((item) => item.id === id);
     if (!courseware) throw new Error("课件不存在");
+    const restoringCompleted = (courseware.lifecycleStatus || "active") === "completed";
     return this.updateCourseware(id, {
       lifecycleStatus: "active",
       completedAt: null,
       deletedAt: null,
-      status: "draft",
-      publishedAt: undefined,
+      status: restoringCompleted ? "published" : "draft",
+      publishedAt: restoringCompleted ? new Date().toISOString() : undefined,
     });
   },
 
