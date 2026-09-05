@@ -248,8 +248,9 @@ function wordRunIsBold(element: Element): boolean {
 }
 
 function mathVariableMarkup(content: string, bold = false): string {
-  const className = bold && /^[A-Za-z]$/.test(content) ? "math-vector" : "math-variable";
-  return /^[A-Za-z]+$/.test(content)
+  const isVector = bold && /^[A-Za-z0]$/.test(content);
+  const className = isVector ? "math-vector" : "math-variable";
+  return isVector || /^[A-Za-z]+$/.test(content)
     ? `<i class="${className}">${content}</i>`
     : content;
 }
@@ -320,9 +321,12 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
       .filter((child) => child !== properties)
       .map((child) => extractInlineContent(child, imageUrl))
       .join("");
-    const styledContent = wordRunIsItalic(element)
-      ? mathVariableMarkup(content, wordRunIsBold(element))
-      : content;
+    const bold = wordRunIsBold(element);
+    const styledContent = bold && /^[A-Za-z0]$/.test(content)
+      ? mathVariableMarkup(content, true)
+      : wordRunIsItalic(element)
+        ? mathVariableMarkup(content, bold)
+        : content;
     if (styledContent && verticalValue === "superscript") {
       return `<sup>${mathVariableMarkup(styledContent)}</sup>`;
     }

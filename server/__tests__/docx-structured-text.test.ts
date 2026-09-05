@@ -143,6 +143,25 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("marks standalone bold Word letters and zero as print-style vectors", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>已知向量 </w:t></w:r>
+        <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/></w:rPr><w:t>a</w:t></w:r>
+        <w:r><w:t> 与零向量 </w:t></w:r>
+        <w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/></w:rPr><w:t>0</w:t></w:r>
+        <w:r><w:t>，但粗体文本 </w:t></w:r>
+        <w:r><w:rPr><w:b/></w:rPr><w:t>ABC</w:t></w:r>
+        <w:r><w:t> 不应被当作向量。</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      '已知向量 <i class="math-vector">a</i> 与零向量 '
+        + '<i class="math-vector">0</i>，但粗体文本 ABC 不应被当作向量。',
+    );
+  });
+
   it("preserves multi-letter italic Word math labels", async () => {
     const data = await makeDocx(`
       <w:p>

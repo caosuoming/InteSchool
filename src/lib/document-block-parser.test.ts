@@ -37,6 +37,29 @@ describe("document block parser", () => {
     });
   });
 
+  it("preserves print-style vector markers in question text and options", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        '1. 已知向量 <i class="math-vector">a</i>，则 A. <i class="math-vector">a</i> B. <i class="math-vector">0</i> C. 1 D. 2',
+        "答案：A",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: '1. 已知向量 <i class="math-vector">a</i>，则',
+      options: [
+        '<i class="math-vector">a</i>',
+        '<i class="math-vector">0</i>',
+        "1",
+        "2",
+      ],
+      answer: "A",
+    });
+  });
+
   it.each([
     ["【解答】", "由等式两边同乘 2 得 x=2。"],
     ["【解答】由等式两边同乘 2 得 x=2。", null],
