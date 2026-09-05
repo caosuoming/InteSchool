@@ -304,7 +304,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
 
   // 统计概览
   const overview = useMemo(() => {
-    const trained = mastery.filter((m) => m.totalAttempts > 0);
+    const trained = mastery.filter((m) => m.totalAttempts > 0 || (m.doneCount ?? 0) > 0);
     const totalAttempts = trained.reduce((sum, m) => sum + m.totalAttempts, 0);
     const totalCorrect = trained.reduce((sum, m) => sum + m.correctCount, 0);
     const avgRate = totalAttempts > 0 ? totalCorrect / totalAttempts : 0;
@@ -780,6 +780,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                         <tr className="border-b border-ink-100 text-xs text-ink-500">
                           <th className="text-left py-2 px-3 font-medium">知识点</th>
                           <th className="text-center py-2 px-3 font-medium">训练次数</th>
+                          <th className="text-center py-2 px-3 font-medium">已做</th>
                           <th className="text-center py-2 px-3 font-medium">全对</th>
                           <th className="text-center py-2 px-3 font-medium">半对</th>
                           <th className="text-center py-2 px-3 font-medium">做错</th>
@@ -790,7 +791,15 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                       <tbody>
                         {visibleKnowledgeMastery.map((treeRow) => {
                             const m = treeRow.mastery;
-                            const cfg = masteryConfig[m.masteryLevel];
+                            const doneCount = m.doneCount ?? 0;
+                            const cfg = m.totalAttempts === 0 && doneCount > 0
+                              ? {
+                                  label: "已做待评",
+                                  color: "text-sky-600",
+                                  bg: "bg-sky-50 border-sky-200",
+                                  icon: CheckCircle2,
+                                }
+                              : masteryConfig[m.masteryLevel];
                             const MasteryIcon = cfg.icon;
                             const displayName = knowledgePoints.length > 0
                               ? m.knowledgePointName
@@ -847,7 +856,14 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                   </div>
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-mono text-ink-700">
-                                  {m.totalAttempts}
+                                  {m.totalAttempts + doneCount}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  {doneCount > 0 ? (
+                                    <span className="text-sky-600 font-mono">{doneCount}</span>
+                                  ) : (
+                                    <span className="text-ink-300">—</span>
+                                  )}
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
                                   {m.correctCount > 0 ? (

@@ -10,6 +10,7 @@ export interface KnowledgeMastery {
   correctCount: number;
   partialCount: number;
   wrongCount: number;
+  doneCount?: number;
   correctRate: number;
   masteryLevel: "mastered" | "basic" | "weak" | "untrained";
 }

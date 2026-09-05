@@ -2879,6 +2879,30 @@ export interface StudentInteractionView extends Omit<StudentInteraction, "teache
   canDelete: boolean;
 }
 
+/** 作业记录页面对知识点的标记状态。 */
+export type HomeworkKnowledgeStatus = AnswerScore;
+
+/** 教师针对单个学生、单个知识点保存的作业完成/正确情况。 */
+export interface HomeworkKnowledgeRecord {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  studentId: string;
+  knowledgePointId: string;
+  status: HomeworkKnowledgeStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 作业记录页的教师级固定知识点设置。 */
+export interface HomeworkRecordPreference {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  knowledgePointIds: string[];
+  updatedAt: string;
+}
+
 // ============ 校本资源备份 ============
 
 /** 校本资源备份类型 */

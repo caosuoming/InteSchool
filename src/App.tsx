@@ -108,6 +108,7 @@ export default function App() {
             {/* 我的学生 */}
             <Route path="/my-students" element={<MyStudentsPage />} />
             <Route path="/my-students/interaction" element={<MyStudentsPage />} />
+            <Route path="/my-students/homework" element={<MyStudentsPage />} />
             <Route path="/my-students/learning" element={<MyStudentsPage />} />
             <Route path="/my-students/archive" element={<Navigate to="/my-students?tab=archive" replace />} />
             <Route path="/my-students/grades" element={<StudentGradesPage />} />
