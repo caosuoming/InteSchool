@@ -112,6 +112,39 @@ describe("classroomDeviceService", () => {
     });
   });
 
+  it("binds a public classroom and lets the device switch between active classes in the same school", async () => {
+    const state = makeState();
+    state.classroomHomeworks = [{
+      id: "homework-class-2",
+      teacherId: "subject",
+      teacherName: "subject",
+      schoolId: "school-1",
+      subject: "数学",
+      content: "二班作业",
+      classIds: ["class-2"],
+      assignedDate: new Date().toISOString().slice(0, 10),
+      publishAt: CREATED_AT,
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+    }] as any;
+    await runWithState(state, async () => {
+      const bound = await classroomDeviceService.bindDevice({
+        publicClassroom: true,
+        deviceToken: TOKEN_1,
+        installationId: "installation-public-one",
+      }, pick(state, "admin"));
+      expect(bound).toMatchObject({ publicClassroom: true, className: "公共班级", schoolId: "school-1" });
+
+      const session = await classroomDeviceService.getDeviceSession(TOKEN_1);
+      expect(session.availableClassrooms.map((item) => item.id)).toEqual(["class-1", "class-2"]);
+
+      const snapshot = await classroomDeviceService.getClassroomSnapshot(TOKEN_1, "class-2");
+      expect(snapshot.classroom.id).toBe("class-2");
+      expect(snapshot.homeworks).toEqual([expect.objectContaining({ content: "二班作业" })]);
+      await expect(classroomDeviceService.getClassroomSnapshot(TOKEN_1, "class-3")).rejects.toThrow("不属于当前公共教室学校");
+    });
+  });
+
   it("grants subject teachers view/unlock and homeroom teachers lock/close permissions", async () => {
     const state = makeState();
     await runWithState(state, async () => {
@@ -164,6 +197,31 @@ describe("classroomDeviceService", () => {
 
       await classroomDeviceService.unbindDevice(bound.id, pick(state, "admin"));
       await expect(classroomDeviceService.getDeviceSession(TOKEN_1)).rejects.toThrow("尚未绑定");
+    });
+  });
+
+  it("lets only the school administrator update application and website black/white lists", async () => {
+    const state = makeState();
+    await runWithState(state, async () => {
+      const bound = await bindClassOne(state);
+      await expect(classroomDeviceService.updateDeviceAccessPolicy(bound.id, {
+        blacklist: [{ id: "blocked-site", kind: "website", target: "games.example.com" }],
+        whitelist: [{ id: "allowed-app", kind: "app", target: "calculator://" }],
+      }, pick(state, "subject"))).rejects.toThrow("无权");
+
+      const updated = await classroomDeviceService.updateDeviceAccessPolicy(bound.id, {
+        blacklist: [{ id: "blocked-site", kind: "website", target: "games.example.com" }],
+        whitelist: [{ id: "allowed-app", kind: "app", target: "calculator://" }],
+      }, pick(state, "admin"));
+      expect(updated.accessPolicy).toEqual({
+        blacklist: [{ id: "blocked-site", kind: "website", target: "https://games.example.com/" }],
+        whitelist: [{ id: "allowed-app", kind: "app", target: "calculator://" }],
+      });
+
+      await expect(classroomDeviceService.updateDeviceAccessPolicy(bound.id, {
+        blacklist: [{ id: "one", kind: "website", target: "https://example.com" }],
+        whitelist: [{ id: "two", kind: "website", target: "https://example.com" }],
+      }, pick(state, "admin"))).rejects.toThrow("同时加入黑名单和白名单");
     });
   });
 

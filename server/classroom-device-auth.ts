@@ -13,6 +13,7 @@ export interface ClassroomDeviceRpcInput {
 interface ClassroomDeviceIdentity {
   schoolId: string;
   classId: string;
+  publicClassroom?: boolean;
 }
 
 export function classroomDeviceTokenFromRpc(input: ClassroomDeviceRpcInput): string | null {
@@ -60,17 +61,28 @@ export function canClassroomDeviceReadFile(
   if (!device) return false;
 
   const now = Date.now();
+  const publicClassIds = device.publicClassroom
+    ? new Set(((state.schoolClasses || []) as Array<Record<string, unknown>>)
+      .filter((item) => (
+        item.schoolId === device.schoolId
+        && (!item.status || item.status === "active")
+        && typeof item.id === "string"
+      ))
+      .map((item) => item.id as string))
+    : null;
+  const assignedToDevice = (classIds: unknown) => Array.isArray(classIds)
+    && (device.publicClassroom
+      ? classIds.some((classId) => typeof classId === "string" && publicClassIds?.has(classId))
+      : classIds.includes(device.classId));
   const lessons = ((state.lessonCoursewares || []) as Array<Record<string, unknown>>).filter((item) => (
     item.schoolId === device.schoolId
-    && Array.isArray(item.classIds)
-    && item.classIds.includes(device.classId)
+    && assignedToDevice(item.classIds)
     && item.status === "published"
     && (!item.lifecycleStatus || item.lifecycleStatus === "active")
   ));
   const homeworks = ((state.classroomHomeworks || []) as Array<Record<string, unknown>>).filter((item) => (
     item.schoolId === device.schoolId
-    && Array.isArray(item.classIds)
-    && item.classIds.includes(device.classId)
+    && assignedToDevice(item.classIds)
     && typeof item.publishAt === "string"
     && new Date(item.publishAt).getTime() <= now
   ));

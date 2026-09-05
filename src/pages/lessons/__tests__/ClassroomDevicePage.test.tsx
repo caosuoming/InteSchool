@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ClassroomPage from "@/pages/lessons/ClassroomPage";
@@ -32,6 +33,12 @@ const classroom = {
   status: "active" as const,
   createdBy: "admin",
   createdAt: "2026-09-01T00:00:00.000Z",
+};
+
+const classroomTwo = {
+  ...classroom,
+  id: "class-2",
+  name: "高一（2）班",
 };
 
 function snapshot(state: "active" | "locked" | "closed" = "active"): ClassroomDeviceSnapshot {
@@ -107,11 +114,40 @@ describe("ClassroomPage device mode", () => {
 
   it("interrupts the classroom UI with the remote lock screen", async () => {
     const data = snapshot("locked");
+    data.device.accessPolicy = {
+      blacklist: [],
+      whitelist: [{ id: "school-site", kind: "website", target: "https://school.example.com/", label: "学校网站" }],
+    };
     vi.mocked(classroomDeviceService.getClassroomSnapshot).mockResolvedValue(data);
     vi.mocked(classroomDeviceService.reportHeartbeat).mockResolvedValue(data.device);
     renderDevicePage();
 
     expect(await screen.findByText("教室一体机已锁定")).toBeInTheDocument();
     expect(screen.getByText(/任课教师可在个人账号的“我的教室”中远程解锁/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /学校网站/ })).toHaveAttribute("href", "https://school.example.com/");
+  });
+
+  it("lets a public classroom switch the active class from the top-left selector", async () => {
+    const first = snapshot();
+    first.device.publicClassroom = true;
+    first.device.className = "公共班级";
+    first.device.grade = "公共教室";
+    first.availableClassrooms = [classroom, classroomTwo];
+    const second = { ...first, classroom: classroomTwo };
+    vi.mocked(classroomDeviceService.getClassroomSnapshot).mockImplementation(async (_token, classId) => (
+      classId === "class-2" ? second : first
+    ));
+    vi.mocked(classroomDeviceService.reportHeartbeat).mockResolvedValue(first.device);
+    const user = userEvent.setup();
+    renderDevicePage();
+
+    const selector = await screen.findByRole("combobox");
+    expect(selector).toHaveValue("class-1");
+    await user.selectOptions(selector, "class-2");
+    await waitFor(() => expect(classroomDeviceService.getClassroomSnapshot).toHaveBeenCalledWith(
+      "test-device-token-value-1234567890",
+      "class-2",
+    ));
+    expect(selector).toHaveValue("class-2");
   });
 });

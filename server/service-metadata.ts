@@ -44,7 +44,8 @@ export const serviceParameters = {
       "deviceToken"
     ],
     "getClassroomSnapshot": [
-      "deviceToken"
+      "deviceToken",
+      "requestedClassId"
     ],
     "reportHeartbeat": [
       "deviceToken",
@@ -73,6 +74,11 @@ export const serviceParameters = {
     "updateDeviceSchedule": [
       "deviceId",
       "ranges",
+      "teacher"
+    ],
+    "updateDeviceAccessPolicy": [
+      "deviceId",
+      "policy",
       "teacher"
     ],
     "unbindDevice": [

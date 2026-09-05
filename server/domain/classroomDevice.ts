@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type {
   ClassroomDevice,
+  ClassroomDeviceAccessPolicy,
+  ClassroomDeviceAccessRule,
   ClassroomDeviceControlState,
   ClassroomDeviceCurrentPage,
   ClassroomDevicePermissions,
@@ -22,7 +24,8 @@ interface StoredClassroomDevice extends Omit<ClassroomDevice, "effectiveState" |
 }
 
 export interface ClassroomDeviceBindInput {
-  classId: string;
+  classId?: string;
+  publicClassroom?: boolean;
   deviceToken: string;
   installationId: string;
   deviceName?: string;
@@ -37,6 +40,11 @@ export interface ClassroomDeviceHeartbeatInput {
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const SCREENSHOT_PATTERN = /^data:image\/(?:png|jpe?g|webp);base64,/i;
 const MAX_SCREENSHOT_LENGTH = 350_000;
+const PUBLIC_CLASSROOM_ID = "__public_classroom__";
+const MAX_ACCESS_RULES = 100;
+const MAX_ACCESS_TARGET_LENGTH = 500;
+
+const EMPTY_ACCESS_POLICY: ClassroomDeviceAccessPolicy = { blacklist: [], whitelist: [] };
 
 function activeAffiliation(teacher: Teacher): TeacherAffiliation | null {
   return teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
@@ -100,6 +108,48 @@ function normalizeTimeRanges(input: ClassroomDeviceTimeRange[]): ClassroomDevice
   });
 }
 
+function normalizeAccessRules(input: ClassroomDeviceAccessRule[], listName: string): ClassroomDeviceAccessRule[] {
+  if (!Array.isArray(input)) throw new Error(`${listName}格式不正确`);
+  if (input.length > MAX_ACCESS_RULES) throw new Error(`${listName}不能超过 ${MAX_ACCESS_RULES} 项`);
+  const seen = new Set<string>();
+  return input.map((rule, index) => {
+    const kind = rule?.kind === "app" || rule?.kind === "website" ? rule.kind : null;
+    if (!kind) throw new Error(`${listName}第 ${index + 1} 项类型不正确`);
+    let target = String(rule?.target || "").trim();
+    if (!target || target.length > MAX_ACCESS_TARGET_LENGTH) throw new Error(`${listName}第 ${index + 1} 项内容不正确`);
+    if (kind === "website") {
+      try {
+        const url = new URL(target.includes("://") ? target : `https://${target}`);
+        if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("invalid protocol");
+        target = url.toString();
+      } catch {
+        throw new Error(`${listName}第 ${index + 1} 项网页地址不正确`);
+      }
+    }
+    const key = `${kind}:${target.toLocaleLowerCase()}`;
+    if (seen.has(key)) throw new Error(`${listName}存在重复项`);
+    seen.add(key);
+    const label = String(rule?.label || "").trim().slice(0, 80);
+    return {
+      id: String(rule?.id || `access-${index + 1}`).trim().slice(0, 80) || `access-${index + 1}`,
+      kind,
+      target,
+      ...(label ? { label } : {}),
+    };
+  });
+}
+
+function normalizeAccessPolicy(input: ClassroomDeviceAccessPolicy): ClassroomDeviceAccessPolicy {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("黑白名单格式不正确");
+  const blacklist = normalizeAccessRules(input.blacklist, "黑名单");
+  const whitelist = normalizeAccessRules(input.whitelist, "白名单");
+  const blocked = new Set(blacklist.map((rule) => `${rule.kind}:${rule.target.toLocaleLowerCase()}`));
+  if (whitelist.some((rule) => blocked.has(`${rule.kind}:${rule.target.toLocaleLowerCase()}`))) {
+    throw new Error("同一应用或网页不能同时加入黑名单和白名单");
+  }
+  return { blacklist, whitelist };
+}
+
 function scheduleAllowsUse(ranges: ClassroomDeviceTimeRange[], now = new Date()): boolean {
   if (!ranges.length) return true;
   const weekday = now.getDay();
@@ -138,7 +188,9 @@ function publicDevice(
   const { deviceTokenHash: _deviceTokenHash, ...safe } = stored;
   return {
     ...safe,
+    publicClassroom: Boolean(stored.publicClassroom),
     allowedTimeRanges: stored.allowedTimeRanges || [],
+    accessPolicy: stored.accessPolicy || EMPTY_ACCESS_POLICY,
     effectiveState,
     scheduleAllowsUse: allowed,
     ...(permissions ? { permissions } : {}),
@@ -161,6 +213,7 @@ function managerPermissions(teacher: Teacher, device: StoredClassroomDevice): Cl
     canClose: schoolAdmin || homeroomTeacher,
     canUnbind: platform || schoolAdmin,
     canEditSchedule: schoolAdmin,
+    canEditAccessPolicy: schoolAdmin,
   };
 }
 
@@ -175,14 +228,17 @@ function requireDevicePermission(
   return device;
 }
 
-function currentClassroomContent(device: StoredClassroomDevice): Omit<ClassroomDeviceSnapshot, "device" | "classroom"> {
+function currentClassroomContent(
+  device: StoredClassroomDevice,
+  classId: string,
+): Omit<ClassroomDeviceSnapshot, "device" | "classroom" | "availableClassrooms"> {
   const now = new Date();
   const nowMs = now.getTime();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const lessons = (db.read("lessonCoursewares") as LessonCourseware[])
     .filter((item) => (
       item.schoolId === device.schoolId
-      && item.classIds.includes(device.classId)
+      && item.classIds.includes(classId)
       && item.status === "published"
       && (item.lifecycleStatus || "active") === "active"
     ))
@@ -190,7 +246,7 @@ function currentClassroomContent(device: StoredClassroomDevice): Omit<ClassroomD
   const allHomeworks = (db.read("classroomHomeworks") as ClassroomHomework[])
     .filter((item) => (
       item.schoolId === device.schoolId
-      && item.classIds.includes(device.classId)
+      && item.classIds.includes(classId)
       && new Date(item.publishAt).getTime() <= nowMs
     ))
     .sort((a, b) => b.assignedDate.localeCompare(a.assignedDate)
@@ -200,21 +256,37 @@ function currentClassroomContent(device: StoredClassroomDevice): Omit<ClassroomD
   const notices = (db.read("classroomNotices") as ClassroomNotice[])
     .filter((item) => (
       item.schoolId === device.schoolId
-      && item.classIds.includes(device.classId)
+      && item.classIds.includes(classId)
       && new Date(item.startsAt).getTime() <= nowMs
       && new Date(item.endsAt).getTime() >= nowMs
     ))
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
   const students = (db.read("students") as Student[])
-    .filter((item) => item.schoolId === device.schoolId && item.classId === device.classId && item.status === "active")
+    .filter((item) => item.schoolId === device.schoolId && item.classId === classId && item.status === "active")
     .map((item) => ({ id: item.id, name: item.name }));
   return { lessons, homeworks, homeworkHistory, notices, students };
 }
 
-function classroomForDevice(device: StoredClassroomDevice): SchoolClass {
-  const classroom = (db.read("schoolClasses") as SchoolClass[]).find((item) => item.id === device.classId);
-  if (!classroom || classroom.status === "deleted" || classroom.status === "graduated") {
-    throw new Error("绑定的班级已不可用，请联系管理员重新绑定");
+function availableClassroomsForDevice(device: StoredClassroomDevice): SchoolClass[] {
+  const classes = (db.read("schoolClasses") as SchoolClass[])
+    .filter((item) => item.schoolId === device.schoolId && item.status !== "deleted" && item.status !== "graduated")
+    .sort((a, b) => `${a.grade}${a.name}`.localeCompare(`${b.grade}${b.name}`, "zh-CN"));
+  if (device.publicClassroom) return classes;
+  return classes.filter((item) => item.id === device.classId);
+}
+
+function classroomForDevice(device: StoredClassroomDevice, requestedClassId?: string): SchoolClass {
+  const available = availableClassroomsForDevice(device);
+  const classroom = device.publicClassroom
+    ? available.find((item) => item.id === requestedClassId) || available[0]
+    : available[0];
+  if (!classroom) {
+    throw new Error(device.publicClassroom
+      ? "该校暂无可用于公共教室的班级"
+      : "绑定的班级已不可用，请联系管理员重新绑定");
+  }
+  if (device.publicClassroom && requestedClassId && classroom.id !== requestedClassId) {
+    throw new Error("所选班级不属于当前公共教室学校");
   }
   return classroom;
 }
@@ -223,17 +295,23 @@ export const classroomDeviceService = {
   async getDeviceSession(deviceToken: string) {
     await delay(30);
     const device = findStoredByToken(deviceToken);
-    return { device: publicDevice(device), classroom: classroomForDevice(device) };
-  },
-
-  async getClassroomSnapshot(deviceToken: string): Promise<ClassroomDeviceSnapshot> {
-    await delay(40);
-    const device = findStoredByToken(deviceToken);
     const classroom = classroomForDevice(device);
     return {
       device: publicDevice(device),
       classroom,
-      ...currentClassroomContent(device),
+      availableClassrooms: availableClassroomsForDevice(device),
+    };
+  },
+
+  async getClassroomSnapshot(deviceToken: string, requestedClassId?: string): Promise<ClassroomDeviceSnapshot> {
+    await delay(40);
+    const device = findStoredByToken(deviceToken);
+    const classroom = classroomForDevice(device, requestedClassId);
+    return {
+      device: publicDevice(device),
+      classroom,
+      availableClassrooms: availableClassroomsForDevice(device),
+      ...currentClassroomContent(device, classroom.id),
     };
   },
 
@@ -263,31 +341,60 @@ export const classroomDeviceService = {
   async bindDevice(input: ClassroomDeviceBindInput, teacher: Teacher): Promise<ClassroomDevice> {
     await delay(80);
     maybeThrowError();
-    const classroom = (db.read("schoolClasses") as SchoolClass[]).find((item) => item.id === input.classId);
-    if (!classroom || classroom.status === "deleted" || classroom.status === "graduated") throw new Error("班级不存在或已不可用");
     const role = accountRole(teacher);
-    const schoolId = currentSchoolId(teacher);
-    if (role !== "platform_admin" && !(role === "school_admin" && schoolId === classroom.schoolId)) {
+    const teacherSchoolId = currentSchoolId(teacher);
+    if (role !== "platform_admin" && role !== "school_admin") {
       throw new Error("首次绑定需要该校管理员账号");
     }
+
+    const publicClassroom = Boolean(input.publicClassroom);
+    let classroom: SchoolClass | undefined;
+    let bindingSchoolId = teacherSchoolId || "";
+    if (publicClassroom) {
+      if (!bindingSchoolId) throw new Error("绑定公共班级前请先切换到学校身份");
+      classroom = (db.read("schoolClasses") as SchoolClass[])
+        .find((item) => item.schoolId === bindingSchoolId && item.status !== "deleted" && item.status !== "graduated");
+      if (!classroom) throw new Error("该校暂无可用于公共教室的班级");
+    } else {
+      classroom = (db.read("schoolClasses") as SchoolClass[]).find((item) => item.id === input.classId);
+      if (!classroom || classroom.status === "deleted" || classroom.status === "graduated") {
+        throw new Error("班级不存在或已不可用");
+      }
+      bindingSchoolId = classroom.schoolId;
+    }
+    if (role === "school_admin" && teacherSchoolId !== bindingSchoolId) {
+      throw new Error("首次绑定需要该校管理员账号");
+    }
+
     const token = normalizeToken(input.deviceToken);
     const installationId = String(input.installationId || "").trim();
     if (installationId.length < 8 || installationId.length > 160) throw new Error("设备安装标识无效");
     const devices = db.read("classroomDevices") as StoredClassroomDevice[];
-    const existing = devices.find((item) => item.classId === classroom.id);
-    if (existing && existing.installationId !== installationId) {
-      throw new Error("该班级教室已绑定其他一体机，请先在“我的教室”中解绑");
+    const existing = devices.find((item) => item.installationId === installationId);
+    if (!publicClassroom) {
+      const occupied = devices.find((item) => (
+        !item.publicClassroom
+        && item.classId === classroom?.id
+        && item.id !== existing?.id
+      ));
+      if (occupied) throw new Error("该班级教室已绑定其他一体机，请先在“我的教室”中解绑");
     }
-    const school = (db.read("schools") as Array<{ id: string; name: string }>).find((item) => item.id === classroom.schoolId);
+
+    const school = (db.read("schools") as Array<{ id: string; name: string }>).find((item) => item.id === bindingSchoolId);
     const now = new Date().toISOString();
+    const classId = publicClassroom ? PUBLIC_CLASSROOM_ID : classroom.id;
+    const className = publicClassroom ? "公共班级" : classroom.name;
+    const grade = publicClassroom ? "公共教室" : classroom.grade;
+    const defaultDeviceName = publicClassroom ? "公共教室一体机" : `${classroom.grade}${classroom.name}一体机`;
     const record: StoredClassroomDevice = {
       id: existing?.id || genId("classroom-device"),
-      schoolId: classroom.schoolId,
-      classId: classroom.id,
+      schoolId: bindingSchoolId,
+      classId,
       schoolName: school?.name || "学校",
-      className: classroom.name,
-      grade: classroom.grade,
-      deviceName: String(input.deviceName || `${classroom.grade}${classroom.name}一体机`).trim().slice(0, 80) || `${classroom.name}一体机`,
+      className,
+      grade,
+      publicClassroom,
+      deviceName: String(input.deviceName || defaultDeviceName).trim().slice(0, 80) || defaultDeviceName,
       installationId,
       deviceTokenHash: tokenHash(token),
       boundByTeacherId: teacher.id,
@@ -295,6 +402,7 @@ export const classroomDeviceService = {
       boundAt: existing?.boundAt || now,
       controlState: existing?.controlState || "active",
       allowedTimeRanges: existing?.allowedTimeRanges || [],
+      accessPolicy: existing?.accessPolicy || EMPTY_ACCESS_POLICY,
       lastSeenAt: now,
       currentPage: existing?.currentPage,
       updatedAt: now,
@@ -360,6 +468,19 @@ export const classroomDeviceService = {
     const allowedTimeRanges = normalizeTimeRanges(ranges);
     const now = new Date().toISOString();
     const updated = { ...device, allowedTimeRanges, manualUnlockUntil: undefined, updatedAt: now };
+    db.update("classroomDevices", (items: StoredClassroomDevice[]) => items.map((item) => item.id === deviceId ? updated : item));
+    return publicDevice(updated, managerPermissions(teacher, updated));
+  },
+
+  async updateDeviceAccessPolicy(
+    deviceId: string,
+    policy: ClassroomDeviceAccessPolicy,
+    teacher: Teacher,
+  ): Promise<ClassroomDevice> {
+    const device = requireDevicePermission(teacher, deviceId, "canEditAccessPolicy");
+    const accessPolicy = normalizeAccessPolicy(policy);
+    const now = new Date().toISOString();
+    const updated = { ...device, accessPolicy, updatedAt: now };
     db.update("classroomDevices", (items: StoredClassroomDevice[]) => items.map((item) => item.id === deviceId ? updated : item));
     return publicDevice(updated, managerPermissions(teacher, updated));
   },

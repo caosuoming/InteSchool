@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Clock3, Eye, LockKeyhole, Monitor, Power, RefreshCw, Trash2, Unlock } from "lucide-react";
+import { Clock3, Eye, LockKeyhole, Monitor, Power, RefreshCw, ShieldCheck, Trash2, Unlock } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Select } from "@/components/ui/Input";
+import { Input, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { classroomDeviceService } from "@/services/classroomDevice";
 import { schoolService } from "@/services/school";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { ClassroomDevice, ClassroomDeviceTimeRange, School } from "@/types";
+import type {
+  ClassroomDevice,
+  ClassroomDeviceAccessPolicy,
+  ClassroomDeviceAccessRule,
+  ClassroomDeviceTimeRange,
+  School,
+} from "@/types";
 
 const WEEKDAYS = [
   [1, "一"], [2, "二"], [3, "三"], [4, "四"], [5, "五"], [6, "六"], [0, "日"],
@@ -30,6 +36,10 @@ function newRange(): ClassroomDeviceTimeRange {
   return { id: `range-${Date.now()}`, weekdays: [1, 2, 3, 4, 5], start: "07:00", end: "18:00" };
 }
 
+function newAccessRule(kind: ClassroomDeviceAccessRule["kind"] = "website"): ClassroomDeviceAccessRule {
+  return { id: `access-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, kind, target: "" };
+}
+
 export default function MyClassroomsPage() {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const affiliation = teacher ? getCurrentAffiliation() : null;
@@ -43,6 +53,8 @@ export default function MyClassroomsPage() {
   const [busyId, setBusyId] = useState("");
   const [scheduleDevice, setScheduleDevice] = useState<ClassroomDevice | null>(null);
   const [ranges, setRanges] = useState<ClassroomDeviceTimeRange[]>([]);
+  const [policyDevice, setPolicyDevice] = useState<ClassroomDevice | null>(null);
+  const [accessPolicy, setAccessPolicy] = useState<ClassroomDeviceAccessPolicy>({ blacklist: [], whitelist: [] });
 
   useEffect(() => {
     if (!platform) return;
@@ -126,6 +138,29 @@ export default function MyClassroomsPage() {
     }
   };
 
+  const openAccessPolicy = (device: ClassroomDevice) => {
+    setPolicyDevice(device);
+    setAccessPolicy({
+      blacklist: (device.accessPolicy?.blacklist || []).map((item) => ({ ...item })),
+      whitelist: (device.accessPolicy?.whitelist || []).map((item) => ({ ...item })),
+    });
+  };
+
+  const saveAccessPolicy = async () => {
+    if (!policyDevice) return;
+    setBusyId(policyDevice.id);
+    try {
+      await classroomDeviceService.updateDeviceAccessPolicy(policyDevice.id, accessPolicy);
+      toast.success("一体机黑白名单已更新");
+      setPolicyDevice(null);
+      await load(true);
+    } catch (error) {
+      toast.error("黑白名单保存失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setBusyId("");
+    }
+  };
+
   const schoolOptions = useMemo(() => schools.map((item) => ({ value: item.id, label: `${item.name} · ${item.city || "未填写城市"}` })), [schools]);
 
   return (
@@ -179,6 +214,7 @@ export default function MyClassroomsPage() {
                     {device.permissions?.canLock && <Button size="sm" variant="outline" onClick={() => void mutate(device, "lock")} disabled={busyId === device.id}><LockKeyhole className="h-3.5 w-3.5" />锁定</Button>}
                     {device.permissions?.canClose && <Button size="sm" variant="outline" onClick={() => void mutate(device, "close")} disabled={busyId === device.id}><Power className="h-3.5 w-3.5" />关闭页面</Button>}
                     {device.permissions?.canEditSchedule && <Button size="sm" variant="ghost" onClick={() => openSchedule(device)}><Clock3 className="h-3.5 w-3.5" />使用时段</Button>}
+                    {device.permissions?.canEditAccessPolicy && <Button size="sm" variant="ghost" onClick={() => openAccessPolicy(device)}><ShieldCheck className="h-3.5 w-3.5" />黑白名单</Button>}
                     {device.permissions?.canUnbind && <Button size="sm" variant="ghost" onClick={() => window.confirm(`确认解绑 ${device.grade}${device.className} 的一体机？`) && void mutate(device, "unbind")}><Trash2 className="h-3.5 w-3.5" />解绑</Button>}
                   </div>
                 </div>
@@ -226,6 +262,71 @@ export default function MyClassroomsPage() {
             </div>
           ))}
           <Button variant="outline" onClick={() => setRanges((items) => [...items, newRange()])}>添加时间段</Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(policyDevice)}
+        onClose={() => setPolicyDevice(null)}
+        title="一体机黑白名单"
+        description="黑名单中的应用或网页禁止打开；白名单中的项目即使一体机处于锁定状态也仍可打开。"
+        footer={<><Button variant="ghost" onClick={() => setPolicyDevice(null)}>取消</Button><Button variant="gold" onClick={() => void saveAccessPolicy()} loading={busyId === policyDevice?.id}>保存</Button></>}
+      >
+        <div className="space-y-5">
+          {(["blacklist", "whitelist"] as const).map((listName) => (
+            <section key={listName}>
+              <div className="mb-2">
+                <div className="text-sm font-medium text-ink-800">{listName === "blacklist" ? "黑名单" : "白名单"}</div>
+                <div className="mt-0.5 text-xs text-ink-400">
+                  {listName === "blacklist" ? "这些应用或网页不可在一体机上打开。" : "锁定状态下仍允许打开这些应用或网页。"}
+                </div>
+              </div>
+              <div className="space-y-2">
+                {accessPolicy[listName].map((rule, index) => (
+                  <div key={rule.id} className="grid gap-2 rounded-lg border border-ink-100 p-3 sm:grid-cols-[8rem_minmax(0,1fr)_auto] sm:items-end">
+                    <Select
+                      label="类型"
+                      value={rule.kind}
+                      onChange={(event) => setAccessPolicy((current) => ({
+                        ...current,
+                        [listName]: current[listName].map((item, itemIndex) => itemIndex === index
+                          ? { ...item, kind: event.target.value as ClassroomDeviceAccessRule["kind"] }
+                          : item),
+                      }))}
+                      options={[{ value: "website", label: "网页" }, { value: "app", label: "应用" }]}
+                    />
+                    <Input
+                      label={rule.kind === "website" ? "网页地址" : "应用名称或启动地址"}
+                      value={rule.target}
+                      placeholder={rule.kind === "website" ? "https://example.com" : "应用名或协议地址"}
+                      onChange={(event) => setAccessPolicy((current) => ({
+                        ...current,
+                        [listName]: current[listName].map((item, itemIndex) => itemIndex === index
+                          ? { ...item, target: event.target.value }
+                          : item),
+                      }))}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setAccessPolicy((current) => ({
+                        ...current,
+                        [listName]: current[listName].filter((_, itemIndex) => itemIndex !== index),
+                      }))}
+                    >删除</Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAccessPolicy((current) => ({
+                    ...current,
+                    [listName]: [...current[listName], newAccessRule()],
+                  }))}
+                >添加{listName === "blacklist" ? "黑名单" : "白名单"}项目</Button>
+              </div>
+            </section>
+          ))}
         </div>
       </Modal>
     </div>

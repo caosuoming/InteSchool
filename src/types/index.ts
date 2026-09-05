@@ -393,6 +393,20 @@ export interface ClassroomDeviceCurrentPage {
   updatedAt?: string;
 }
 
+export type ClassroomDeviceAccessRuleKind = "app" | "website";
+
+export interface ClassroomDeviceAccessRule {
+  id: string;
+  kind: ClassroomDeviceAccessRuleKind;
+  target: string;
+  label?: string;
+}
+
+export interface ClassroomDeviceAccessPolicy {
+  blacklist: ClassroomDeviceAccessRule[];
+  whitelist: ClassroomDeviceAccessRule[];
+}
+
 export interface ClassroomDevicePermissions {
   canView: boolean;
   canUnlock: boolean;
@@ -400,6 +414,7 @@ export interface ClassroomDevicePermissions {
   canClose: boolean;
   canUnbind: boolean;
   canEditSchedule: boolean;
+  canEditAccessPolicy?: boolean;
 }
 
 /** 已绑定到班级的教室一体机；deviceTokenHash 仅保存在服务端，不会下发。 */
@@ -410,6 +425,8 @@ export interface ClassroomDevice {
   schoolName: string;
   className: string;
   grade: string;
+  /** 公共班级设备可在本校所有有效班级间切换。 */
+  publicClassroom?: boolean;
   deviceName: string;
   installationId: string;
   boundByTeacherId: string;
@@ -417,6 +434,7 @@ export interface ClassroomDevice {
   boundAt: string;
   controlState: ClassroomDeviceControlState;
   allowedTimeRanges: ClassroomDeviceTimeRange[];
+  accessPolicy?: ClassroomDeviceAccessPolicy;
   /** 任课教师在时段外手动解锁时，临时放行至下一段管理员配置的允许时段开始。 */
   manualUnlockUntil?: string;
   lastSeenAt?: string;
@@ -430,6 +448,7 @@ export interface ClassroomDevice {
 export interface ClassroomDeviceSession {
   device: ClassroomDevice;
   classroom: SchoolClass;
+  availableClassrooms?: SchoolClass[];
 }
 
 export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {

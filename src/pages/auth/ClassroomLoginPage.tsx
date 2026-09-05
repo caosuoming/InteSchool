@@ -15,6 +15,8 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import type { ClassroomChoice } from "@/types";
 
+const PUBLIC_CLASSROOM_VALUE = "__public_classroom__";
+
 export default function ClassroomLoginPage() {
   const navigate = useNavigate();
   const { login, logout, loading, error, clearError } = useAuthStore();
@@ -57,10 +59,13 @@ export default function ClassroomLoginPage() {
   }, [checkingBinding]);
 
   const options = useMemo(
-    () => classes.map((item) => ({
-      value: item.id,
-      label: `${item.schoolName} · ${item.grade} · ${item.name}`,
-    })),
+    () => [
+      { value: PUBLIC_CLASSROOM_VALUE, label: "公共班级（管理员当前学校）" },
+      ...classes.map((item) => ({
+        value: item.id,
+        label: `${item.schoolName} · ${item.grade} · ${item.name}`,
+      })),
+    ],
     [classes],
   );
 
@@ -68,14 +73,25 @@ export default function ClassroomLoginPage() {
     event.preventDefault();
     clearError();
     setClassError("");
-    if (!classId || !email.trim() || !password) return;
+    if (!email.trim() || !password) return;
     setBinding(true);
     try {
       const ok = await login(email, password);
       if (!ok) return;
+      const loggedInTeacher = useAuthStore.getState().teacher;
+      const affiliation = loggedInTeacher?.affiliations?.find((item) => item.id === loggedInTeacher.currentAffiliationId)
+        || loggedInTeacher?.affiliations?.find((item) => item.isCurrent);
+      const role = affiliation?.role || loggedInTeacher?.role;
+      if (role !== "school_admin" && role !== "platform_admin") {
+        navigate(loggedInTeacher?.schoolId ? "/classroom" : "/school-auth", { replace: true });
+        return;
+      }
+      if (!classId) throw new Error("请选择要绑定的班级或公共班级");
       const deviceToken = createClassroomDeviceToken();
       await classroomDeviceService.bindDevice({
-        classId,
+        ...(classId === PUBLIC_CLASSROOM_VALUE
+          ? { publicClassroom: true }
+          : { classId }),
         deviceToken,
         installationId: classroomInstallationId(),
       });
@@ -116,34 +132,34 @@ export default function ClassroomLoginPage() {
             </div>
             <div>
               <h1 className="font-serif text-2xl font-semibold">我要上课</h1>
-              <p className="text-sm text-ink-300 mt-1">首次选择班级并由学校管理员绑定本教室一体机</p>
+              <p className="text-sm text-ink-300 mt-1">管理员首次登录可绑定一体机，普通账号直接登录使用</p>
             </div>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="p-7 space-y-4">
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-relaxed text-amber-900">
-            <div className="flex items-center gap-1.5 font-medium"><MonitorCheck className="h-4 w-4" />仅首次绑定需要管理员登录</div>
-            <p className="mt-1 text-amber-800">绑定完成后管理员会自动退出，本机后续点击“我要上课”将直接进入当前班级教室。</p>
+            <div className="flex items-center gap-1.5 font-medium"><MonitorCheck className="h-4 w-4" />管理员登录会绑定本机，普通账号不会绑定</div>
+            <p className="mt-1 text-amber-800">选择“公共班级”后，本机进入教室时可在左上角切换本校班级。固定班级绑定后仍会直接进入对应班级。</p>
           </div>
 
           <div className="relative">
             <School className="absolute left-3 top-9 w-4 h-4 text-ink-400 z-10" />
             <Select
-              label="绑定班级教室"
+              label="管理员绑定班级"
               value={classId}
               onChange={(event) => setClassId(event.target.value)}
               options={options}
               placeholder={classLoading ? "正在加载班级…" : "请选择班级"}
               className="pl-10"
-              disabled={classLoading || options.length === 0}
+              disabled={classLoading}
             />
           </div>
 
           <div className="relative">
             <Mail className="absolute left-3 top-9 w-4 h-4 text-ink-400" />
             <Input
-              label="学校管理员邮箱"
+              label="账号邮箱"
               type="email"
               autoComplete="username"
               value={email}
@@ -173,10 +189,10 @@ export default function ClassroomLoginPage() {
             variant="gold"
             size="lg"
             className="w-full"
-            loading={loading || classLoading || binding}
-            disabled={!classId || !email.trim() || !password}
+            loading={loading || binding}
+            disabled={!email.trim() || !password}
           >
-            <MonitorCheck className="w-4 h-4" />绑定并进入教室
+            <MonitorCheck className="w-4 h-4" />登录
           </Button>
         </form>
       </div>
