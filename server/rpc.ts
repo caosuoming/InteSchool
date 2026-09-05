@@ -16,11 +16,16 @@ const PUBLIC_CALLS = new Set([
   "school.searchSchools",
   "school.getSchool",
   "class.listClassroomChoices",
+  "classroomDevice.bindDevice",
   "classroomDevice.getDeviceSession",
   "classroomDevice.getClassroomSnapshot",
   "classroomDevice.reportHeartbeat",
   "grade.getPublishedReportByToken",
 ]);
+
+export function isPublicRpcCall(service: string, method: string): boolean {
+  return PUBLIC_CALLS.has(`${service}.${method}`);
+}
 
 const ADMIN_SERVICE_MUTATIONS = new Set(["settings"]);
 const EXAM_MANAGER_MUTATIONS = new Set([
@@ -423,10 +428,8 @@ function authorize(
   args: unknown[],
 ): { teacher: TeacherRecord | null; args: unknown[] } {
   const call = `${service}.${method}`;
-  if (!session) {
-    if (PUBLIC_CALLS.has(call)) return { teacher: null, args };
-    throw new Error("请先登录");
-  }
+  if (isPublicRpcCall(service, method)) return { teacher: null, args };
+  if (!session) throw new Error("请先登录");
 
   const teacher = state.teachers.find((item) => item.id === session.teacherId) || null;
   if (!teacher) throw new Error("账号关联的教师资料不存在");

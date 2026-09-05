@@ -8,6 +8,7 @@ import type {
 } from "@/types";
 
 export interface ClassroomDeviceBindInput {
+  schoolId: string;
   classId?: string;
   publicClassroom?: boolean;
   deviceToken: string;

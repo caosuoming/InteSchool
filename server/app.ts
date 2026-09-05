@@ -10,7 +10,7 @@ import fastifyStatic from "@fastify/static";
 import { ZodError, z } from "zod";
 import { loadConfig, type ServerConfig } from "./config.js";
 import { DatabaseStore, DuplicateAccountError } from "./database.js";
-import { invokeRpc } from "./rpc.js";
+import { invokeRpc, isPublicRpcCall } from "./rpc.js";
 import {
   CLASSROOM_DEVICE_COOKIE,
   CLASSROOM_DEVICE_COOKIE_MAX_AGE,
@@ -143,7 +143,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
   app.post("/api/rpc", async (request, reply) => {
     const input = rpcSchema.parse(request.body);
     const session = await getSession(request, store);
-    if (session) requireCsrf(request, session);
+    if (session && !isPublicRpcCall(input.service, input.method)) requireCsrf(request, session);
     const result = await invokeRpc(store, session, input.service, input.method, input.args);
     const classroomDeviceToken = classroomDeviceTokenFromRpc(input);
     if (classroomDeviceToken) {

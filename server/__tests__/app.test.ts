@@ -2329,7 +2329,8 @@ describe("production backend", () => {
       payload: { service: "class", method: "listClassroomChoices", args: [] },
     });
     expect(publicClasses.statusCode).toBe(200);
-    expect(publicClasses.json<{ result: Array<Record<string, unknown>> }>().result).toEqual(
+    const classChoices = publicClasses.json<{ result: Array<Record<string, unknown>> }>().result;
+    expect(classChoices).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: expect.any(String),
@@ -2340,6 +2341,44 @@ describe("production backend", () => {
         }),
       ]),
     );
+
+    const schoolId = String(classChoices[0]?.schoolId || "");
+    expect(schoolId).toBeTruthy();
+    const anonymousBind = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      payload: {
+        service: "classroomDevice",
+        method: "bindDevice",
+        args: [{
+          schoolId,
+          publicClassroom: true,
+          deviceToken: "anonymous-classroom-device-token-1234567890",
+          installationId: "anonymous-installation-817",
+        }],
+      },
+    });
+    expect(anonymousBind.statusCode).toBe(200);
+    expect(anonymousBind.json<{ result: Record<string, unknown> }>().result).toMatchObject({ schoolId, publicClassroom: true });
+    expect(String(anonymousBind.headers["set-cookie"] || "")).toContain("inteschool_classroom_device=");
+
+    const loggedIn = await login(built.app);
+    const bindWithExistingLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers: { cookie: loggedIn.cookie },
+      payload: {
+        service: "classroomDevice",
+        method: "bindDevice",
+        args: [{
+          schoolId,
+          publicClassroom: true,
+          deviceToken: "logged-in-classroom-device-token-1234567890",
+          installationId: "logged-in-installation-817",
+        }],
+      },
+    });
+    expect(bindWithExistingLogin.statusCode).toBe(200);
 
     const unknownService = await built.app.inject({
       method: "POST",

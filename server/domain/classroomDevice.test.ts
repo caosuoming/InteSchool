@@ -83,32 +83,42 @@ function pick(state: AppState, id: string): Teacher {
   return state.teachers.find((item) => item.id === id) as unknown as Teacher;
 }
 
-async function bindClassOne(state: AppState) {
+async function bindClassOne() {
   return classroomDeviceService.bindDevice({
+    schoolId: "school-1",
     classId: "class-1",
     deviceToken: TOKEN_1,
     installationId: "installation-class-one",
     deviceName: "高一1班一体机",
-  }, pick(state, "admin"));
+  });
 }
 
 describe("classroomDeviceService", () => {
-  it("requires a school administrator for first binding and exposes only the public device shape", async () => {
+  it("binds a selected school and class without a teacher account and exposes only the public device shape", async () => {
     const state = makeState();
     await runWithState(state, async () => {
       await expect(classroomDeviceService.bindDevice({
+        schoolId: "school-2",
         classId: "class-1",
         deviceToken: TOKEN_1,
         installationId: "installation-class-one",
-      }, pick(state, "subject"))).rejects.toThrow("管理员");
+      })).rejects.toThrow("不属于所选学校");
 
-      const bound = await bindClassOne(state);
+      const bound = await bindClassOne();
       expect(bound).toMatchObject({ classId: "class-1", deviceName: "高一1班一体机", effectiveState: "active" });
       expect(bound).not.toHaveProperty("deviceTokenHash");
+      expect(bound).toMatchObject({ boundByTeacherId: "self-service", boundByTeacherName: "设备自助绑定" });
 
       const session = await classroomDeviceService.getDeviceSession(TOKEN_1);
       expect(session.classroom.id).toBe("class-1");
       expect(session.device).not.toHaveProperty("deviceTokenHash");
+
+      await expect(classroomDeviceService.bindDevice({
+        schoolId: "school-1",
+        classId: "class-2",
+        deviceToken: TOKEN_2,
+        installationId: "installation-class-one",
+      })).rejects.toThrow("学校管理员解绑");
     });
   });
 
@@ -129,10 +139,11 @@ describe("classroomDeviceService", () => {
     }] as any;
     await runWithState(state, async () => {
       const bound = await classroomDeviceService.bindDevice({
+        schoolId: "school-1",
         publicClassroom: true,
         deviceToken: TOKEN_1,
         installationId: "installation-public-one",
-      }, pick(state, "admin"));
+      });
       expect(bound).toMatchObject({ publicClassroom: true, className: "公共班级", schoolId: "school-1" });
 
       const session = await classroomDeviceService.getDeviceSession(TOKEN_1);
@@ -148,7 +159,7 @@ describe("classroomDeviceService", () => {
   it("grants subject teachers view/unlock and homeroom teachers lock/close permissions", async () => {
     const state = makeState();
     await runWithState(state, async () => {
-      await bindClassOne(state);
+      await bindClassOne();
       const subjectDevices = await classroomDeviceService.listManagedDevices(undefined, pick(state, "subject"));
       expect(subjectDevices).toHaveLength(1);
       expect(subjectDevices[0].permissions).toMatchObject({
@@ -171,7 +182,7 @@ describe("classroomDeviceService", () => {
   it("lets school administrators configure schedules and unbind their school's device", async () => {
     const state = makeState();
     await runWithState(state, async () => {
-      const bound = await bindClassOne(state);
+      const bound = await bindClassOne();
       await expect(classroomDeviceService.updateDeviceSchedule(bound.id, [{
         id: "invalid",
         weekdays: [1],
@@ -203,7 +214,7 @@ describe("classroomDeviceService", () => {
   it("lets only the school administrator update application and website black/white lists", async () => {
     const state = makeState();
     await runWithState(state, async () => {
-      const bound = await bindClassOne(state);
+      const bound = await bindClassOne();
       await expect(classroomDeviceService.updateDeviceAccessPolicy(bound.id, {
         blacklist: [{ id: "blocked-site", kind: "website", target: "games.example.com" }],
         whitelist: [{ id: "allowed-app", kind: "app", target: "calculator://" }],
@@ -230,10 +241,11 @@ describe("classroomDeviceService", () => {
     await runWithState(state, async () => {
       const platform = pick(state, "platform");
       const bound = await classroomDeviceService.bindDevice({
+        schoolId: "school-2",
         classId: "class-3",
         deviceToken: TOKEN_2,
         installationId: "installation-class-three",
-      }, platform);
+      });
       const devices = await classroomDeviceService.listManagedDevices("school-2", platform);
       expect(devices).toHaveLength(1);
       expect(devices[0].permissions).toMatchObject({ canUnlock: true, canLock: false, canClose: false, canUnbind: true });

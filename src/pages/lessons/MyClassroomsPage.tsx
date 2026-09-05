@@ -183,7 +183,7 @@ export default function MyClassroomsPage() {
       ) : loading ? (
         <div className="flex min-h-64 items-center justify-center"><Spinner size={32} /></div>
       ) : devices.length === 0 ? (
-        <Card><div className="py-12 text-center"><Monitor className="mx-auto mb-3 h-10 w-10 text-ink-300" /><div className="font-medium text-ink-700">暂无可管理的一体机</div><p className="mt-1 text-sm text-ink-400">首次在教室设备点击登录页“我要上课”，由学校管理员完成绑定。</p></div></Card>
+        <Card><div className="py-12 text-center"><Monitor className="mx-auto mb-3 h-10 w-10 text-ink-300" /><div className="font-medium text-ink-700">暂无可管理的一体机</div><p className="mt-1 text-sm text-ink-400">首次在教室设备点击登录页“我要上课”，选择学校和班级即可绑定。</p></div></Card>
       ) : (
         <div className="grid gap-5 xl:grid-cols-2">
           {devices.map((device) => (
