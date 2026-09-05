@@ -1,9 +1,10 @@
-import { Archive, BarChart3, LineChart, MessagesSquare } from "lucide-react";
+import { Archive, BarChart3, LineChart, ListChecks, MessagesSquare } from "lucide-react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { cn } from "@/lib/utils";
 
 const tabs = [
   { key: "interaction", label: "师生互动", icon: MessagesSquare, path: "/my-students?tab=interaction" },
+  { key: "homework", label: "作业记录", icon: ListChecks, path: "/my-students?tab=homework" },
   { key: "learning", label: "学生学情", icon: LineChart, path: "/my-students?tab=learning" },
   { key: "grades", label: "成绩查询", icon: BarChart3, path: "/my-students/grades" },
   { key: "archive", label: "档案记录", icon: Archive, path: "/my-students?tab=archive" },
@@ -16,9 +17,11 @@ export function StudentSectionTabs() {
     ? "grades"
     : location.pathname === "/my-students/archive" || searchParams.get("tab") === "archive"
       ? "archive"
-      : searchParams.get("tab") === "learning"
+      : location.pathname === "/my-students/learning" || searchParams.get("tab") === "learning"
         ? "learning"
-        : "interaction";
+        : location.pathname === "/my-students/homework" || searchParams.get("tab") === "homework"
+          ? "homework"
+          : "interaction";
 
   return (
     <div className="mb-5 border-b border-ink-200">

@@ -3,6 +3,7 @@ import type {
   AnswerScore,
   AnswerSource,
   ExamPaper,
+  HomeworkKnowledgeRecord,
   KnowledgePoint,
   Lecture,
   LectureSection,
@@ -10,6 +11,7 @@ import type {
   Question,
   SchoolClass,
   Student,
+  Teacher,
   TreeNode,
 } from "../../src/types/index.js";
 import type { TeacherRecord } from "../types.js";
@@ -26,6 +28,8 @@ export interface KnowledgeMastery {
   correctCount: number;
   partialCount: number;
   wrongCount: number;
+  /** 仅确认“已做”、尚未录入对错的次数。 */
+  doneCount: number;
   correctRate: number;
   masteryLevel: "mastered" | "basic" | "weak" | "untrained";
 }
@@ -519,6 +523,7 @@ export const analyticsService = {
     studentIds: string[],
     schoolId: string,
     range?: DateRange,
+    teacher?: Teacher,
   ): Promise<KnowledgeMastery[]> {
     await delay(300);
     let records = db
@@ -526,8 +531,15 @@ export const analyticsService = {
       .filter((a) => studentIds.includes(a.studentId));
     records = filterByDateRange(records, range);
     const questions = db.read("questions").filter((q) => q.schoolId === schoolId);
-    const knowledgePoints = (db.read("knowledgePoints") as KnowledgePoint[])
-      .filter((p) => p.schoolId === schoolId);
+    const allKnowledgePoints = db.read("knowledgePoints") as KnowledgePoint[];
+    const hasPersonalKnowledgeDirectory = teacher
+      ? allKnowledgePoints.some((point) => point.teacherId === teacher.id)
+        || ((db.read("directoryCatalogs") || []) as Array<{ teacherId?: string; type?: string }>)
+          .some((catalog) => catalog.teacherId === teacher.id && catalog.type === "knowledge")
+      : false;
+    const knowledgePoints = teacher && hasPersonalKnowledgeDirectory
+      ? allKnowledgePoints.filter((point) => point.teacherId === teacher.id)
+      : allKnowledgePoints.filter((point) => !point.teacherId && point.schoolId === schoolId);
     const knowledgePointMap = new Map(knowledgePoints.map((point) => [point.id, point] as const));
 
     const getKnowledgePointPath = (knowledgePointId: string): string[] => {
@@ -546,10 +558,10 @@ export const analyticsService = {
       questions.map((q: Question) => [q.id, q] as const),
     );
 
-    // 按知识点聚合答题记录
+    // 按知识点聚合答题记录和知识点级作业记录。
     const kpStats = new Map<
       string,
-      { total: number; correct: number; partial: number; wrong: number }
+      { total: number; correct: number; partial: number; wrong: number; done: number }
     >();
 
     for (const record of records) {
@@ -557,7 +569,7 @@ export const analyticsService = {
       const question = questionMap.get(record.questionId);
       if (!question || !question.knowledgePointIds) continue;
       for (const kpId of question.knowledgePointIds) {
-        const stat = kpStats.get(kpId) || { total: 0, correct: 0, partial: 0, wrong: 0 };
+        const stat = kpStats.get(kpId) || { total: 0, correct: 0, partial: 0, wrong: 0, done: 0 };
         stat.total++;
         const score = record.score || (record.isCorrect ? "correct" : "wrong");
         if (score === "correct") stat.correct++;
@@ -567,9 +579,35 @@ export const analyticsService = {
       }
     }
 
-    // 构建结果：包含所有知识点（未训练的也列出）
+    let homeworkRecords = ((db.read("homeworkKnowledgeRecords") || []) as HomeworkKnowledgeRecord[])
+      .filter((record) => studentIds.includes(record.studentId));
+    if (teacher) homeworkRecords = homeworkRecords.filter((record) => record.teacherId === teacher.id);
+    if (range?.start || range?.end) {
+      homeworkRecords = homeworkRecords.filter((record) => {
+        const timestamp = new Date(record.updatedAt).getTime();
+        if (range.start && timestamp < new Date(range.start).getTime()) return false;
+        if (range.end && timestamp > new Date(range.end).getTime()) return false;
+        return true;
+      });
+    }
+    for (const record of homeworkRecords) {
+      if (!knowledgePointMap.has(record.knowledgePointId)) continue;
+      const stat = kpStats.get(record.knowledgePointId)
+        || { total: 0, correct: 0, partial: 0, wrong: 0, done: 0 };
+      if (record.status === "done") {
+        stat.done++;
+      } else {
+        stat.total++;
+        if (record.status === "correct") stat.correct++;
+        else if (record.status === "partial") stat.partial++;
+        else stat.wrong++;
+      }
+      kpStats.set(record.knowledgePointId, stat);
+    }
+
+    // 构建结果：包含所有知识点（未训练的也列出）。
     return knowledgePoints.map((kp) => {
-      const stat = kpStats.get(kp.id) || { total: 0, correct: 0, partial: 0, wrong: 0 };
+      const stat = kpStats.get(kp.id) || { total: 0, correct: 0, partial: 0, wrong: 0, done: 0 };
       const correctRate = stat.total > 0 ? stat.correct / stat.total : 0;
       let masteryLevel: KnowledgeMastery["masteryLevel"];
       if (stat.total === 0) masteryLevel = "untrained";
@@ -585,6 +623,7 @@ export const analyticsService = {
         correctCount: stat.correct,
         partialCount: stat.partial,
         wrongCount: stat.wrong,
+        doneCount: stat.done,
         correctRate,
         masteryLevel,
       };
@@ -599,12 +638,13 @@ export const analyticsService = {
     classId: string,
     schoolId: string,
     range?: DateRange,
+    teacher?: Teacher,
   ): Promise<KnowledgeMastery[]> {
     await delay(250);
     const allClasses = db.read("schoolClasses").filter((c) => c.schoolId === schoolId);
     const targetClass = allClasses.find((c) => c.id === classId);
     if (!targetClass || !targetClass.classTypeId) {
-      return this.getKnowledgeMastery([], schoolId, range);
+      return this.getKnowledgeMastery([], schoolId, range, teacher);
     }
 
     const sameTypeClasses = allClasses.filter(
@@ -615,7 +655,7 @@ export const analyticsService = {
     );
 
     if (sameTypeClasses.length === 0) {
-      return this.getKnowledgeMastery([], schoolId, range);
+      return this.getKnowledgeMastery([], schoolId, range, teacher);
     }
 
     const allStudents = db.read("students").filter((s) => s.schoolId === schoolId);
@@ -626,7 +666,7 @@ export const analyticsService = {
         .forEach((s) => classStudentIds.add(s.id));
     }
 
-    const mastery = await this.getKnowledgeMastery(Array.from(classStudentIds), schoolId, range);
+    const mastery = await this.getKnowledgeMastery(Array.from(classStudentIds), schoolId, range, teacher);
     return mastery;
   },
 
@@ -638,6 +678,7 @@ export const analyticsService = {
     classId: string,
     schoolId: string,
     range?: DateRange,
+    teacher?: Teacher,
   ): Promise<{ mastery: KnowledgeMastery[]; className: string } | null> {
     await delay(250);
     const allClasses = db.read("schoolClasses").filter((c) => c.schoolId === schoolId);
@@ -666,7 +707,7 @@ export const analyticsService = {
         .map((s) => s.id);
       if (studentIds.length === 0) continue;
 
-      const mastery = await this.getKnowledgeMastery(studentIds, schoolId, range);
+      const mastery = await this.getKnowledgeMastery(studentIds, schoolId, range, teacher);
       const trained = mastery.filter((m) => m.totalAttempts > 0);
       const totalAttempts = trained.reduce((sum, m) => sum + m.totalAttempts, 0);
       const totalCorrect = trained.reduce((sum, m) => sum + m.correctCount, 0);
@@ -683,7 +724,7 @@ export const analyticsService = {
     const bestStudentIds = allStudents
       .filter((s) => s.classId === bestClass!.id)
       .map((s) => s.id);
-    const mastery = await this.getKnowledgeMastery(bestStudentIds, schoolId, range);
+    const mastery = await this.getKnowledgeMastery(bestStudentIds, schoolId, range, teacher);
     return { mastery, className: bestClass.name };
   },
 
@@ -695,13 +736,14 @@ export const analyticsService = {
     classId: string,
     schoolId: string,
     range?: DateRange,
+    teacher?: Teacher,
   ): Promise<KnowledgeMastery[]> {
     await delay(200);
     const allStudents = db.read("students").filter((s) => s.schoolId === schoolId);
     const studentIds = allStudents
       .filter((s) => s.classId === classId)
       .map((s) => s.id);
-    return this.getKnowledgeMastery(studentIds, schoolId, range);
+    return this.getKnowledgeMastery(studentIds, schoolId, range, teacher);
   },
 
   /** 获取指定学生做过的题目列表（含题目信息和答题结果） */

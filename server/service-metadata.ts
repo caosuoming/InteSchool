@@ -343,22 +343,26 @@ export const serviceParameters = {
     "getKnowledgeMastery": [
       "studentIds",
       "schoolId",
-      "range"
+      "range",
+      "teacher"
     ],
     "getSameGradeTypeAverage": [
       "classId",
       "schoolId",
-      "range"
+      "range",
+      "teacher"
     ],
     "getPrevGradeBestClass": [
       "classId",
       "schoolId",
-      "range"
+      "range",
+      "teacher"
     ],
     "getClassAverageMastery": [
       "classId",
       "schoolId",
-      "range"
+      "range",
+      "teacher"
     ],
     "getStudentAnswerDetails": [
       "studentIds",
@@ -1644,6 +1648,23 @@ export const serviceParameters = {
     ],
     "revokeShare": [
       "shareId"
+    ]
+  },
+  "homeworkRecord": {
+    "listPinnedKnowledgePointIds": [
+      "teacher"
+    ],
+    "setPinnedKnowledgePointIds": [
+      "knowledgePointIds",
+      "teacher"
+    ],
+    "listByStudent": [
+      "studentId",
+      "teacher"
+    ],
+    "setRecord": [
+      "input",
+      "teacher"
     ]
   },
   "studentInteraction": {
