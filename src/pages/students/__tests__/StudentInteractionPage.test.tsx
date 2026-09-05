@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StudentInteractionPage } from "@/pages/students/StudentInteractionPage";
 import { classService } from "@/services/class";
 import { studentInteractionService } from "@/services/studentInteraction";
+import { uploadFile } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { SchoolClass, Student, StudentInteraction, Teacher } from "@/types";
 
@@ -18,9 +19,15 @@ vi.mock("@/services/studentInteraction", () => ({
   studentInteractionService: {
     listByStudent: vi.fn(),
     listByTeacher: vi.fn(),
+    listFollowedStudentIds: vi.fn(),
+    setStudentFollowed: vi.fn(),
     createInteraction: vi.fn(),
     deleteInteraction: vi.fn(),
   },
+}));
+
+vi.mock("@/services/api", () => ({
+  uploadFile: vi.fn(),
 }));
 
 vi.mock("@/stores/ui", () => ({
@@ -107,8 +114,20 @@ describe("StudentInteractionPage", () => {
     vi.mocked(classService.listMyClasses).mockResolvedValue(classes);
     vi.mocked(studentInteractionService.listByTeacher).mockResolvedValue([]);
     vi.mocked(studentInteractionService.listByStudent).mockResolvedValue([]);
+    vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue([]);
+    vi.mocked(studentInteractionService.setStudentFollowed).mockResolvedValue(undefined);
     vi.mocked(studentInteractionService.createInteraction).mockResolvedValue(createdInteraction);
     vi.mocked(studentInteractionService.deleteInteraction).mockResolvedValue(undefined);
+    vi.mocked(uploadFile).mockResolvedValue({
+      id: "file-1",
+      ownerId: "teacher-1",
+      schoolId: "school-1",
+      originalName: "clipboard.png",
+      mimeType: "image/png",
+      size: 5,
+      createdAt: "2026-08-03T09:00:00.000Z",
+      url: "/api/files/file-1",
+    });
   });
 
   it("groups students by class and toggles groups from a collapsed state", async () => {
@@ -120,24 +139,24 @@ describe("StudentInteractionPage", () => {
 
     expect(classOneToggle).toHaveAttribute("aria-expanded", "false");
     expect(classTwoToggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: /甲同学/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /丙同学/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^甲同学$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^丙同学$/ })).not.toBeInTheDocument();
 
     await user.click(classOneToggle);
 
     expect(classOneToggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: /甲同学/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /乙同学/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /丙同学/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^甲同学$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^乙同学$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^丙同学$/ })).not.toBeInTheDocument();
 
     await user.click(classTwoToggle);
 
-    expect(screen.getByRole("button", { name: /丙同学/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^丙同学$/ })).toBeInTheDocument();
 
     await user.click(classOneToggle);
 
     expect(classOneToggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: /甲同学/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^甲同学$/ })).not.toBeInTheDocument();
   });
 
   it("keeps sharing off by default and resets it after submission", async () => {
@@ -163,6 +182,59 @@ describe("StudentInteractionPage", () => {
       );
     });
     expect(shareCheckbox).not.toBeChecked();
+  });
+
+  it("persists followed students and lets the teacher toggle the star from the list", async () => {
+    const user = userEvent.setup();
+    vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue(["student-2"]);
+    render(<StudentInteractionPage embedded />);
+
+    const classOneToggle = await screen.findByRole("button", { name: /高一（1）班/ });
+    await user.click(classOneToggle);
+
+    expect(screen.getByRole("button", { name: "取消关注乙同学" })).toBeInTheDocument();
+    const followStudentOne = screen.getByRole("button", { name: "关注甲同学" });
+    await user.click(followStudentOne);
+
+    await waitFor(() => {
+      expect(studentInteractionService.setStudentFollowed).toHaveBeenCalledWith("student-1", true);
+    });
+    expect(screen.getByRole("button", { name: "取消关注甲同学" })).toBeInTheDocument();
+  });
+
+  it("uploads pasted chat images and submits an image-only interaction", async () => {
+    const user = userEvent.setup();
+    render(<StudentInteractionPage embedded />);
+
+    const textarea = await screen.findByPlaceholderText("记录本次与学生交流的内容...");
+    const image = new File(["image"], "clipboard.png", { type: "image/png" });
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        items: [{ kind: "file", type: "image/png", getAsFile: () => image }],
+      },
+    });
+
+    expect(await screen.findByAltText("clipboard.png")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "添加记录" }));
+
+    await waitFor(() => {
+      expect(studentInteractionService.createInteraction).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          studentId: "student-1",
+          type: "chat",
+          content: "",
+          attachments: [{
+            id: "file-1",
+            name: "clipboard.png",
+            url: "/api/files/file-1",
+            mimeType: "image/png",
+            size: 5,
+          }],
+        }),
+      );
+    });
   });
 
   it("labels received records as anonymous and only allows deleting owned records", async () => {

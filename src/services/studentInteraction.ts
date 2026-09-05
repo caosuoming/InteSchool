@@ -1,11 +1,17 @@
 import { rpcCall } from "./api";
 
-import type { StudentInteraction, StudentInteractionView, InteractionType } from "@/types";
+import type {
+  StudentInteraction,
+  StudentInteractionAttachment,
+  StudentInteractionView,
+  InteractionType,
+} from "@/types";
 
 export interface InteractionInput {
   studentId: string;
   type: InteractionType;
   content: string;
+  attachments?: StudentInteractionAttachment[];
   attitude?: number;
   statusTag?: string;
   shareWithHomeroom?: boolean;
@@ -18,6 +24,14 @@ export const studentInteractionService = {
 
   async listByTeacher(teacherId: string): Promise<StudentInteractionView[]> {
     return rpcCall("studentInteraction", "listByTeacher", [teacherId]) as any;
+  },
+
+  async listFollowedStudentIds(): Promise<string[]> {
+    return rpcCall("studentInteraction", "listFollowedStudentIds", []) as any;
+  },
+
+  async setStudentFollowed(studentId: string, followed: boolean): Promise<void> {
+    return rpcCall("studentInteraction", "setStudentFollowed", [studentId, followed]) as any;
   },
 
   async createInteraction(teacherId: string, schoolId: string, input: InteractionInput): Promise<StudentInteraction> {

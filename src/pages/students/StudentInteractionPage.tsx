@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, type ClipboardEvent } from "react";
 import {
   MessagesSquare, Search, Trash2,
   Smile, Meh, Frown, Star, Plus,
@@ -9,7 +9,8 @@ import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { classService } from "@/services/class";
 import { studentInteractionService } from "@/services/studentInteraction";
-import type { Student, StudentInteractionView, AnyClass } from "@/types";
+import { uploadFile } from "@/services/api";
+import type { Student, StudentInteractionAttachment, StudentInteractionView, AnyClass } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
 import { Card } from "@/components/ui/Card";
@@ -59,6 +60,8 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [interactions, setInteractions] = useState<StudentInteractionView[]>([]);
   const [keyword, setKeyword] = useState("");
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set());
+  const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
+  const [followPendingStudentIds, setFollowPendingStudentIds] = useState<Set<string>>(() => new Set());
   // 每个学生的最近互动时间
   const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
 
@@ -68,18 +71,22 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [newAttitude, setNewAttitude] = useState("3");
   const [newStatusTag, setNewStatusTag] = useState(statusTagOptions[0]);
   const [shareWithHomeroom, setShareWithHomeroom] = useState(false);
+  const [newAttachments, setNewAttachments] = useState<StudentInteractionAttachment[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const loadStudents = useCallback(async () => {
     if (!teacher?.schoolId || !teacher?.id) return;
     setLoading(true);
     try {
-      const [all, classes] = await Promise.all([
+      const [all, classes, followed] = await Promise.all([
         classService.listMyStudents(teacher.schoolId, teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
+        studentInteractionService.listFollowedStudentIds(),
       ]);
       setAllStudents(all);
       setMyClasses(classes);
+      setFollowedStudentIds(new Set(followed));
       // 加载所有学生的最近互动时间
       const teacherInteractions = await studentInteractionService.listByTeacher(teacher.id);
       const lastMap: Record<string, string> = {};
@@ -139,12 +146,15 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   // 按最近互动时间排序：越久远（或从未互动）的越靠前
   const sortStudentsByInteraction = useCallback((list: Student[]): Student[] => {
     return [...list].sort((a, b) => {
+      const aFollowed = followedStudentIds.has(a.id);
+      const bFollowed = followedStudentIds.has(b.id);
+      if (aFollowed !== bFollowed) return aFollowed ? -1 : 1;
       const ta = lastInteractionMap[a.id] ? new Date(lastInteractionMap[a.id]).getTime() : 0;
       const tb = lastInteractionMap[b.id] ? new Date(lastInteractionMap[b.id]).getTime() : 0;
       // 升序：越小（越久远或从未互动）越靠前
       return ta - tb;
     });
-  }, [lastInteractionMap]);
+  }, [followedStudentIds, lastInteractionMap]);
 
   const filteredStudents = useMemo(() => {
     return keyword.trim()
@@ -194,6 +204,67 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
 
   const selectedStudent = allStudents.find((s) => s.id === selectedStudentId);
 
+  const handleToggleFollow = useCallback(async (studentId: string) => {
+    if (followPendingStudentIds.has(studentId)) return;
+    const nextFollowed = !followedStudentIds.has(studentId);
+    setFollowPendingStudentIds((current) => new Set(current).add(studentId));
+    setFollowedStudentIds((current) => {
+      const next = new Set(current);
+      if (nextFollowed) next.add(studentId);
+      else next.delete(studentId);
+      return next;
+    });
+    try {
+      await studentInteractionService.setStudentFollowed(studentId, nextFollowed);
+    } catch (err) {
+      setFollowedStudentIds((current) => {
+        const next = new Set(current);
+        if (nextFollowed) next.delete(studentId);
+        else next.add(studentId);
+        return next;
+      });
+      toast.error("更新关注状态失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setFollowPendingStudentIds((current) => {
+        const next = new Set(current);
+        next.delete(studentId);
+        return next;
+      });
+    }
+  }, [followPendingStudentIds, followedStudentIds]);
+
+  const handlePasteImages = async (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (newType !== "chat") return;
+    const imageFiles = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (imageFiles.length === 0) return;
+    event.preventDefault();
+    if (newAttachments.length + imageFiles.length > 6) {
+      toast.error("每条聊天记录最多上传 6 张图片");
+      return;
+    }
+    setUploadingImages(true);
+    try {
+      const uploaded = await Promise.all(imageFiles.map(uploadFile));
+      setNewAttachments((current) => [
+        ...current,
+        ...uploaded.map((file) => ({
+          id: file.id,
+          name: file.originalName,
+          url: file.url,
+          mimeType: file.mimeType,
+          size: file.size,
+        })),
+      ]);
+    } catch (err) {
+      toast.error("图片上传失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setUploadingImages(false);
+    }
+  };
+
   // 最近态度
   const latestAttitude = useMemo(() => {
     const attitudes = interactions.filter((i) => i.type === "attitude");
@@ -213,8 +284,12 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
 
   const handleSubmit = async () => {
     if (!teacher || !selectedStudentId) return;
-    if (!newContent.trim()) {
-      toast.error("请输入内容");
+    if (!newContent.trim() && (newType !== "chat" || newAttachments.length === 0)) {
+      toast.error(newType === "chat" ? "请输入内容或粘贴图片" : "请输入内容");
+      return;
+    }
+    if (uploadingImages) {
+      toast.error("图片仍在上传，请稍后提交");
       return;
     }
     setSubmitting(true);
@@ -226,12 +301,14 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
           studentId: selectedStudentId,
           type: newType,
           content: newContent.trim(),
+          attachments: newType === "chat" ? newAttachments : undefined,
           attitude: newType === "attitude" ? parseInt(newAttitude) : undefined,
           statusTag: newType === "status" ? newStatusTag : undefined,
           shareWithHomeroom,
         },
       );
       setNewContent("");
+      setNewAttachments([]);
       setShareWithHomeroom(false);
       toast.success("记录已添加");
       loadInteractions();
@@ -321,8 +398,11 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                                 key={`${group.id}-${student.id}`}
                                 student={student}
                                 isSelected={selectedStudentId === student.id}
+                                isFollowed={followedStudentIds.has(student.id)}
+                                followPending={followPendingStudentIds.has(student.id)}
                                 lastInteraction={lastInteractionMap[student.id]}
                                 onClick={() => setSelectedStudentId(student.id)}
+                                onToggleFollow={() => void handleToggleFollow(student.id)}
                               />
                             ))}
                           </div>
@@ -387,7 +467,10 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                         聊天记录
                       </button>
                       <button
-                        onClick={() => setNewType("attitude")}
+                        onClick={() => {
+                          setNewType("attitude");
+                          setNewAttachments([]);
+                        }}
                         className={cn(
                           "px-3 py-1 text-xs rounded transition-colors flex items-center gap-1",
                           newType === "attitude" ? "bg-ink-900 text-paper" : "text-ink-600",
@@ -397,7 +480,10 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                         学习态度
                       </button>
                       <button
-                        onClick={() => setNewType("status")}
+                        onClick={() => {
+                          setNewType("status");
+                          setNewAttachments([]);
+                        }}
                         className={cn(
                           "px-3 py-1 text-xs rounded transition-colors flex items-center gap-1",
                           newType === "status" ? "bg-ink-900 text-paper" : "text-ink-600",
@@ -449,6 +535,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                   <Textarea
                     value={newContent}
                     onChange={(e) => setNewContent(e.target.value)}
+                    onPaste={(event) => void handlePasteImages(event)}
                     placeholder={
                       newType === "chat"
                         ? "记录本次与学生交流的内容..."
@@ -458,6 +545,39 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                     }
                     rows={3}
                   />
+
+                  {newType === "chat" && (
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-ink-400">
+                        可直接在输入框粘贴截图或图片，最多 6 张
+                        {uploadingImages ? " · 正在上传..." : ""}
+                      </div>
+                      {newAttachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {newAttachments.map((attachment) => (
+                            <div
+                              key={attachment.id}
+                              className="group relative overflow-hidden rounded-md border border-ink-100 bg-mist"
+                            >
+                              <img
+                                src={attachment.url}
+                                alt={attachment.name}
+                                className="h-20 w-24 object-cover"
+                              />
+                              <button
+                                type="button"
+                                className="absolute right-1 top-1 rounded bg-ink-950/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                                onClick={() => setNewAttachments((current) => current.filter((item) => item.id !== attachment.id))}
+                                aria-label={`移除 ${attachment.name}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between gap-4">
                     <label className="inline-flex items-start gap-2 text-xs text-ink-600 cursor-pointer">
@@ -479,7 +599,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                       size="sm"
                       onClick={handleSubmit}
                       loading={submitting}
-                      disabled={!newContent.trim()}
+                      disabled={uploadingImages || (!newContent.trim() && (newType !== "chat" || newAttachments.length === 0))}
                     >
                       <Plus className="w-4 h-4" />
                       添加记录
@@ -548,9 +668,31 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                               </button>
                             )}
                           </div>
-                          <div className="text-sm text-ink-700 leading-relaxed bg-mist/40 p-2 rounded">
-                            {it.content}
-                          </div>
+                          {(it.content || (it.attachments?.length || 0) > 0) && (
+                            <div className="text-sm text-ink-700 leading-relaxed bg-mist/40 p-2 rounded">
+                              {it.content && <div>{it.content}</div>}
+                              {(it.attachments?.length || 0) > 0 && (
+                                <div className={cn("flex flex-wrap gap-2", it.content && "mt-2")}>
+                                  {it.attachments?.map((attachment) => (
+                                    <a
+                                      key={attachment.id}
+                                      href={attachment.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block overflow-hidden rounded-md border border-ink-100 bg-paper"
+                                      title={attachment.name}
+                                    >
+                                      <img
+                                        src={attachment.url}
+                                        alt={attachment.name}
+                                        className="h-28 w-36 object-cover transition-transform hover:scale-[1.02]"
+                                      />
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -575,17 +717,22 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
 function StudentListItem({
   student,
   isSelected,
+  isFollowed,
+  followPending,
   lastInteraction,
   onClick,
+  onToggleFollow,
 }: {
   student: Student;
   isSelected: boolean;
+  isFollowed: boolean;
+  followPending: boolean;
   lastInteraction?: string;
   onClick: () => void;
+  onToggleFollow: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
+    <div
       className={cn(
         "w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-left transition-colors",
         isSelected
@@ -593,28 +740,48 @@ function StudentListItem({
           : "hover:bg-mist",
       )}
     >
-      <div className={cn(
-        "w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0",
-        isSelected ? "bg-gold-200 text-gold-800" : "bg-mist text-ink-600",
-      )}>
-        {student.name.slice(0, 1)}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-medium text-ink-900 truncate">{student.name}</span>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={student.name}
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+      >
+        <div className={cn(
+          "w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0",
+          isSelected ? "bg-gold-200 text-gold-800" : "bg-mist text-ink-600",
+        )}>
+          {student.name.slice(0, 1)}
         </div>
-        <div className="text-[10px] text-ink-400 flex items-center gap-1">
-          {lastInteraction ? (
-            <>
-              <Clock className="w-2.5 h-2.5" />
-              {timeAgo(lastInteraction)}
-            </>
-          ) : (
-            <span className="text-amber-500">未互动</span>
-          )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-medium text-ink-900 truncate">{student.name}</span>
+          </div>
+          <div className="text-[10px] text-ink-400 flex items-center gap-1">
+            {lastInteraction ? (
+              <>
+                <Clock className="w-2.5 h-2.5" />
+                {timeAgo(lastInteraction)}
+              </>
+            ) : (
+              <span className="text-amber-500">未互动</span>
+            )}
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+      <button
+        type="button"
+        onClick={onToggleFollow}
+        disabled={followPending}
+        aria-label={isFollowed ? `取消关注${student.name}` : `关注${student.name}`}
+        title={isFollowed ? "取消关注" : "关注"}
+        className={cn(
+          "flex-shrink-0 rounded p-1 transition-colors disabled:opacity-50",
+          isFollowed ? "text-gold-600" : "text-ink-300 hover:text-gold-500",
+        )}
+      >
+        <Star className={cn("h-4 w-4", isFollowed && "fill-current")} />
+      </button>
+    </div>
   );
 }
 

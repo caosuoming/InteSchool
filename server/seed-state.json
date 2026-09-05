@@ -3287,6 +3287,7 @@
   "lessonCoursewares": [],
   "reflections": [],
   "studentInteractions": [],
+  "studentInteractionFollows": [],
   "schoolBackups": [
     {
       "id": "sbk-seed-1",
