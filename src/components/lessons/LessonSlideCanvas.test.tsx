@@ -233,6 +233,67 @@ describe("LessonSlideCanvas", () => {
     ]));
   });
 
+  it("persists direct text edits on input and focuses a selected text object", async () => {
+    const onElementsChange = vi.fn();
+    render(
+      <LessonSlideCanvas
+        elements={elements}
+        editable
+        selectedElementId="text-1"
+        onSelectElement={vi.fn()}
+        onElementsChange={onElementsChange}
+      >
+        <div>基础课件内容</div>
+      </LessonSlideCanvas>,
+    );
+
+    const editor = screen.getByText("课堂重点");
+    await waitFor(() => expect(editor).toHaveFocus());
+    editor.innerHTML = "课堂重点补充";
+    fireEvent.input(editor);
+
+    expect(onElementsChange).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: "text-1", content: "课堂重点补充" }),
+    ]));
+  });
+
+  it("keeps imported PPT table cells directly editable", () => {
+    const onElementsChange = vi.fn();
+    const tableElement: LessonSlideElement = {
+      id: "table-1",
+      kind: "text",
+      content: '<table class="ppt-import-table"><tbody><tr><td>原内容</td></tr></tbody></table>',
+      x: 10,
+      y: 10,
+      width: 60,
+      height: 30,
+      fontSize: 20,
+    };
+    const { container } = render(
+      <LessonSlideCanvas
+        elements={[tableElement]}
+        editable
+        selectedElementId="table-1"
+        onSelectElement={vi.fn()}
+        onElementsChange={onElementsChange}
+      >
+        <div />
+      </LessonSlideCanvas>,
+    );
+
+    const editor = container.querySelector<HTMLDivElement>("[contenteditable='true']")!;
+    const cell = editor.querySelector("td")!;
+    cell.textContent = "修改后的内容";
+    fireEvent.input(editor);
+
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        id: "table-1",
+        content: expect.stringContaining("修改后的内容"),
+      }),
+    ]);
+  });
+
   it("moves a text object by dragging anywhere on it when text editing is disabled", () => {
     const onElementsChange = vi.fn();
     const { container } = render(

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { GripVertical, Maximize2 } from "lucide-react";
-import type { LessonSlideElement } from "@/types";
+import type { LessonSlideElement, LessonSlideTextElement } from "@/types";
 import { cn } from "@/lib/utils";
 import { renderMathHtml, serializeMathHtml } from "@/lib/math-html";
 import { hasLessonElementAnimation } from "@/lib/lesson-animation";
@@ -42,6 +42,70 @@ type Interaction = {
 };
 
 const MIN_SIZE = 6;
+
+function editableTextContent(editor: HTMLDivElement): string {
+  return editor.innerHTML === "<br>"
+    ? ""
+    : serializeMathHtml(editor.innerHTML);
+}
+
+function EditableLessonText({
+  element,
+  style,
+  registerRef,
+  onSelect,
+  onChange,
+}: {
+  element: LessonSlideTextElement;
+  style: CSSProperties;
+  registerRef: (node: HTMLDivElement | null) => void;
+  onSelect: () => void;
+  onChange: (content: string) => void;
+}) {
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || document.activeElement === editor) return;
+    const rendered = renderMathHtml(element.content);
+    if (editor.innerHTML !== rendered) editor.innerHTML = rendered;
+  }, [element.content]);
+
+  const setRef = (node: HTMLDivElement | null) => {
+    editorRef.current = node;
+    registerRef(node);
+  };
+
+  const commit = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const content = editableTextContent(editor);
+    onChange(content);
+    const rendered = renderMathHtml(content);
+    if (editor.innerHTML !== rendered) editor.innerHTML = rendered;
+  };
+
+  return (
+    <div
+      ref={setRef}
+      contentEditable
+      suppressContentEditableWarning
+      data-placeholder="直接输入文字"
+      className={cn(
+        "h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900 outline-none",
+        "empty:before:pointer-events-none empty:before:text-ink-300 empty:before:content-[attr(data-placeholder)]",
+        element.href && "text-gold-700 underline decoration-gold-300 underline-offset-4",
+      )}
+      style={style}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect();
+      }}
+      onInput={(event) => onChange(editableTextContent(event.currentTarget))}
+      onBlur={commit}
+    />
+  );
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -126,9 +190,9 @@ export function LessonSlideCanvas({
   useEffect(() => {
     if (!editable || !allowTextEditing || !selectedElementId) return;
     const element = elements.find((item) => item.id === selectedElementId);
-    if (element?.kind !== "text" || element.content) return;
+    if (element?.kind !== "text") return;
     const editor = textElementRefs.current.get(selectedElementId);
-    editor?.focus();
+    if (editor && document.activeElement !== editor) editor.focus({ preventScroll: true });
   }, [allowTextEditing, editable, elements, selectedElementId]);
 
   const startInteraction = (
@@ -303,30 +367,16 @@ export function LessonSlideCanvas({
               />
             ) : (
               editable && allowTextEditing ? (
-                <div
-                  ref={(node) => {
+                <EditableLessonText
+                  element={element}
+                  style={textStyle}
+                  registerRef={(node) => {
                     if (node) textElementRefs.current.set(element.id, node);
                     else textElementRefs.current.delete(element.id);
                   }}
-                  contentEditable
-                  suppressContentEditableWarning
-                  data-placeholder="直接输入文字"
-                  className={cn(
-                    "h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900 outline-none",
-                    "empty:before:pointer-events-none empty:before:text-ink-300 empty:before:content-[attr(data-placeholder)]",
-                    element.href && "text-gold-700 underline decoration-gold-300 underline-offset-4",
-                  )}
-                  style={textStyle}
-                  dangerouslySetInnerHTML={{ __html: renderMathHtml(element.content) }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelectElement?.(element.id);
-                  }}
-                  onBlur={(event) => {
+                  onSelect={() => onSelectElement?.(element.id)}
+                  onChange={(content) => {
                     if (!onElementsChange) return;
-                    const content = event.currentTarget.innerHTML === "<br>"
-                      ? ""
-                      : serializeMathHtml(event.currentTarget.innerHTML);
                     onElementsChange(elements.map((item) => (
                       item.id === element.id && item.kind === "text"
                         ? { ...item, content }

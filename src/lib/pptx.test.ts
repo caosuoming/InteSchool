@@ -121,6 +121,67 @@ describe("PPTX slide parser", () => {
     });
   });
 
+  it("preserves native PPT tables as editable rich-text elements", async () => {
+    const zip = new JSZip();
+    zip.file("ppt/presentation.xml", `<?xml version="1.0" encoding="UTF-8"?>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sldSz cx="12192000" cy="6858000"/>
+</p:presentation>`);
+    zip.file("ppt/slides/slide1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree>
+    <p:graphicFrame>
+      <p:nvGraphicFramePr><p:cNvPr id="4" name="表格 3"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+      <p:xfrm><a:off x="1219200" y="685800"/><a:ext cx="6096000" cy="2743200"/></p:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+        <a:tbl>
+          <a:tblPr firstRow="1"/>
+          <a:tblGrid><a:gridCol w="3048000"/><a:gridCol w="3048000"/></a:tblGrid>
+          <a:tr h="914400">
+            <a:tc gridSpan="2">
+              <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="2000" b="1"/><a:t>合并标题</a:t></a:r></a:p></a:txBody>
+              <a:tcPr anchor="ctr"><a:solidFill><a:srgbClr val="FFF2CC"/></a:solidFill></a:tcPr>
+            </a:tc>
+            <a:tc hMerge="1"><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>不应重复</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+          </a:tr>
+          <a:tr h="914400">
+            <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>左侧</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+            <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>右侧 $x^2$</a:t></a:r></a:p></a:txBody><a:tcPr anchor="b"/></a:tc>
+          </a:tr>
+        </a:tbl>
+      </a:graphicData></a:graphic>
+    </p:graphicFrame>
+  </p:spTree></p:cSld>
+</p:sld>`);
+    const source = await zip.generateAsync({ type: "uint8array" });
+
+    const [slide] = await extractPptxSlideOutlines(source);
+
+    expect(slide.elements).toHaveLength(1);
+    expect(slide.elements?.[0]).toMatchObject({
+      kind: "text",
+      x: 10,
+      y: 10,
+      width: 50,
+      height: 40,
+      fontWeight: "bold",
+      backgroundColor: "transparent",
+      padding: 0,
+    });
+    const content = slide.elements?.[0]?.kind === "text" ? slide.elements[0].content : "";
+    expect(content).toContain('class="ppt-import-table"');
+    expect(content).toContain('<col style="width:50.0000%">');
+    expect(content).toContain('style="height:50.0000%"');
+    expect(content).toContain('colspan="2"');
+    expect(content).toContain("background-color:#FFF2CC");
+    expect(content).toContain("vertical-align:middle");
+    expect(content).toContain("vertical-align:bottom");
+    expect(content).toContain("合并标题");
+    expect(content).toContain("右侧 $x^2$");
+    expect(content).not.toContain("不应重复");
+  });
+
   it("returns undefined for an invalid PPTX archive", async () => {
     await expect(countPptxSlides(new Uint8Array([1, 2, 3]))).resolves.toBeUndefined();
   });

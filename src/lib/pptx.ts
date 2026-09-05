@@ -111,7 +111,9 @@ function placeholderBounds(shape: Element, fallbackIndex: number): ElementBounds
 
 function elementBounds(shape: Element, slideSize: SlideSize, fallbackIndex: number): ElementBounds {
   const properties = directChild(shape, PRESENTATION_NS, "spPr");
-  const transform = properties ? directChild(properties, DRAWING_NS, "xfrm") : undefined;
+  const transform = properties
+    ? directChild(properties, DRAWING_NS, "xfrm")
+    : directChild(shape, PRESENTATION_NS, "xfrm");
   const offset = transform ? directChild(transform, DRAWING_NS, "off") : undefined;
   const extent = transform ? directChild(transform, DRAWING_NS, "ext") : undefined;
   const x = numericAttribute(offset, "x");
@@ -285,9 +287,7 @@ function paragraphAlignment(paragraph: Element): "left" | "center" | "right" {
   return "left";
 }
 
-function richTextFromShape(shape: Element): RichTextResult | null {
-  const textBody = directChild(shape, PRESENTATION_NS, "txBody");
-  if (!textBody) return null;
+function richTextFromTextBody(textBody: Element): RichTextResult | null {
   const paragraphs = Array.from(textBody.children).filter((child) => (
     child.namespaceURI === DRAWING_NS && child.localName === "p"
   ));
@@ -331,6 +331,11 @@ function richTextFromShape(shape: Element): RichTextResult | null {
   };
 }
 
+function richTextFromShape(shape: Element): RichTextResult | null {
+  const textBody = directChild(shape, PRESENTATION_NS, "txBody");
+  return textBody ? richTextFromTextBody(textBody) : null;
+}
+
 function shapeBackgroundColor(shape: Element): string {
   const properties = directChild(shape, PRESENTATION_NS, "spPr");
   if (!properties || directChild(properties, DRAWING_NS, "noFill")) return "transparent";
@@ -352,6 +357,99 @@ function extractTextElement(
     textAlign: text.textAlign,
     backgroundColor: shapeBackgroundColor(shape),
     padding: 0,
+  } as PptSlideImportElement;
+}
+
+function truthyOfficeBoolean(value: string | null): boolean {
+  return value === "1" || value === "true";
+}
+
+function positiveIntegerAttribute(element: Element, name: string): number | undefined {
+  const value = Number(element.getAttribute(name));
+  return Number.isInteger(value) && value > 1 ? value : undefined;
+}
+
+function tableCellHtml(cell: Element): { html: string; primaryStyle: RunStyle } {
+  const textBody = directChild(cell, DRAWING_NS, "txBody");
+  const richText = textBody ? richTextFromTextBody(textBody) : null;
+  const properties = directChild(cell, DRAWING_NS, "tcPr");
+  const backgroundColor = colorFromProperties(properties);
+  const anchor = properties?.getAttribute("anchor");
+  const styles: string[] = [];
+  if (backgroundColor) styles.push(`background-color:${backgroundColor}`);
+  if (anchor === "ctr") styles.push("vertical-align:middle");
+  if (anchor === "b") styles.push("vertical-align:bottom");
+
+  const attributes: string[] = [];
+  const gridSpan = positiveIntegerAttribute(cell, "gridSpan");
+  const rowSpan = positiveIntegerAttribute(cell, "rowSpan");
+  if (gridSpan) attributes.push(`colspan="${gridSpan}"`);
+  if (rowSpan) attributes.push(`rowspan="${rowSpan}"`);
+  if (styles.length > 0) attributes.push(`style="${escapeHtml(styles.join(";"))}"`);
+
+  return {
+    html: `<td${attributes.length > 0 ? ` ${attributes.join(" ")}` : ""}>${richText?.html || "<div><br></div>"}</td>`,
+    primaryStyle: richText?.primaryStyle || {},
+  };
+}
+
+function extractTableElement(
+  graphicFrame: Element,
+  slideSize: SlideSize,
+  fallbackIndex: number,
+): PptSlideImportElement | null {
+  const table = firstDescendant(graphicFrame, DRAWING_NS, "tbl");
+  if (!table) return null;
+
+  const rows = Array.from(table.children).filter((child) => (
+    child.namespaceURI === DRAWING_NS && child.localName === "tr"
+  ));
+  if (rows.length === 0) return null;
+
+  const grid = directChild(table, DRAWING_NS, "tblGrid");
+  const columnWidths = grid
+    ? Array.from(grid.children)
+      .filter((child) => child.namespaceURI === DRAWING_NS && child.localName === "gridCol")
+      .map((column) => numericAttribute(column, "w") || 0)
+    : [];
+  const totalColumnWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  const colgroup = totalColumnWidth > 0
+    ? `<colgroup>${columnWidths.map((width) => (
+        `<col style="width:${((width / totalColumnWidth) * 100).toFixed(4)}%">`
+      )).join("")}</colgroup>`
+    : "";
+
+  const rowHeights = rows.map((row) => numericAttribute(row, "h") || 0);
+  const totalRowHeight = rowHeights.reduce((sum, height) => sum + height, 0);
+  let primaryStyle: RunStyle = {};
+  const rowHtml = rows.map((row, rowIndex) => {
+    const cells = Array.from(row.children).filter((child) => (
+      child.namespaceURI === DRAWING_NS && child.localName === "tc"
+    ));
+    const cellHtml = cells.flatMap((cell) => {
+      if (truthyOfficeBoolean(cell.getAttribute("hMerge")) || truthyOfficeBoolean(cell.getAttribute("vMerge"))) {
+        return [];
+      }
+      const extracted = tableCellHtml(cell);
+      if (Object.keys(primaryStyle).length === 0 && Object.keys(extracted.primaryStyle).length > 0) {
+        primaryStyle = extracted.primaryStyle;
+      }
+      return [extracted.html];
+    });
+    const rowHeight = totalRowHeight > 0 && rowHeights[rowIndex] > 0
+      ? ` style="height:${((rowHeights[rowIndex] / totalRowHeight) * 100).toFixed(4)}%"`
+      : "";
+    return `<tr${rowHeight}>${cellHtml.join("")}</tr>`;
+  }).join("");
+
+  return {
+    kind: "text",
+    content: `<table class="ppt-import-table">${colgroup}<tbody>${rowHtml}</tbody></table>`,
+    ...elementBounds(graphicFrame, slideSize, fallbackIndex),
+    ...primaryStyle,
+    backgroundColor: "transparent",
+    padding: 0,
+    textAlign: "left",
   } as PptSlideImportElement;
 }
 
@@ -402,6 +500,27 @@ function importElementsFromSlide(
       continue;
     }
     if (child.localName === "pic") {
+      const image = extractImageElement(
+        child,
+        slideSize,
+        fallbackIndex,
+        slideNumberValue,
+        options.imageUrl,
+      );
+      if (image) {
+        elements.push(image);
+        fallbackIndex += 1;
+      }
+      continue;
+    }
+    if (child.localName === "graphicFrame") {
+      const table = extractTableElement(child, slideSize, fallbackIndex);
+      if (table) {
+        elements.push(table);
+        fallbackIndex += 1;
+        continue;
+      }
+
       const image = extractImageElement(
         child,
         slideSize,

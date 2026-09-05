@@ -196,6 +196,24 @@ describe("renderMathHtml", () => {
     expect(container.querySelector("span")?.getAttribute("style") || "").not.toContain("position");
   });
 
+  it("keeps imported PPT table layout styles while sanitizing unsafe CSS", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '<table class="ppt-import-table"><colgroup><col style="width:40%"><col style="width:60%"></colgroup><tbody><tr style="height:100%"><td style="background-color:#fff2cc;vertical-align:middle;background-image:url(javascript:alert(1))">单元格 $x^2$</td></tr></tbody></table>',
+    );
+
+    expect(container.querySelectorAll("col")).toHaveLength(2);
+    expect(container.querySelector("col")?.getAttribute("style")).toContain("width:40%");
+    expect(container.querySelector("tr")?.getAttribute("style")).toContain("height:100%");
+    const cell = container.querySelector("td");
+    expect(cell).toHaveStyle({
+      backgroundColor: "rgb(255, 242, 204)",
+      verticalAlign: "middle",
+    });
+    expect(cell?.getAttribute("style") || "").not.toContain("background-image");
+    expect(cell?.querySelector(".katex-formula")).toHaveAttribute("data-latex", "x^2");
+  });
+
   it("removes executable rich-text content", () => {
     const container = document.createElement("div");
     container.innerHTML = renderMathHtml(
