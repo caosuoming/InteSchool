@@ -32,6 +32,12 @@ export interface QuestionStat {
   studentIds: string[];
 }
 
+export interface SchoolQuestionStat {
+  questionId: string;
+  scoreRate: number | null;
+  studentCount: number;
+}
+
 export interface StudentStat {
   student: Student;
   answerCount: number;
@@ -106,6 +112,10 @@ export const analyticsService = {
 
   async getQuestionStats(schoolId: string, range?: DateRange): Promise<QuestionStat[]> {
     return rpcCall("analytics", "getQuestionStats", [schoolId, range]) as any;
+  },
+
+  async getSchoolQuestionStats(schoolId: string, questionIds: string[]): Promise<SchoolQuestionStat[]> {
+    return rpcCall("analytics", "getSchoolQuestionStats", [schoolId, questionIds]) as any;
   },
 
   async getStudentStats(schoolId: string, range?: DateRange): Promise<StudentStat[]> {

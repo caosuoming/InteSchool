@@ -6,7 +6,7 @@ import type {
   Question,
   Student,
 } from "../../src/types/index.js";
-import type { AppState } from "../types.js";
+import type { AppState, TeacherRecord } from "../types.js";
 import { runWithState } from "../runtime-db.js";
 import { analyticsService } from "./analytics.js";
 
@@ -94,6 +94,129 @@ function state(): AppState {
     answerRecords: [existing],
   };
 }
+
+describe("school question statistics", () => {
+  it("scopes stats to the active school, counts unique students, and uses each student's latest answer", async () => {
+    const appState = state();
+    const sharedQuestion = {
+      ...question("question-shared"),
+      teacherId: "teacher-2",
+      schoolId: "school-2",
+      isShared: true,
+    };
+    const privateQuestion = {
+      ...question("question-private"),
+      teacherId: "teacher-2",
+      schoolId: "school-2",
+      isShared: false,
+    };
+    appState.questions = [...appState.questions as Question[], sharedQuestion, privateQuestion];
+    appState.students = [
+      ...appState.students as Student[],
+      {
+        id: "student-2",
+        name: "同校学生二",
+        studentNo: "002",
+        classId: "class-1",
+        schoolId: "school-1",
+        grade: "高一",
+        status: "active",
+      },
+      {
+        id: "student-other-school",
+        name: "外校学生",
+        studentNo: "003",
+        classId: "class-2",
+        schoolId: "school-2",
+        grade: "高一",
+        status: "active",
+      },
+    ];
+    appState.answerRecords = [
+      ...appState.answerRecords as AnswerRecord[],
+      {
+        id: "shared-student-1-old",
+        studentId: "student-1",
+        questionId: sharedQuestion.id,
+        lectureId: "lecture-old",
+        isCorrect: false,
+        score: "wrong",
+        answeredAt: "2026-07-29T10:00:00.000Z",
+      },
+      {
+        id: "shared-student-1-new",
+        studentId: "student-1",
+        questionId: sharedQuestion.id,
+        lectureId: "lecture-new",
+        isCorrect: true,
+        score: "correct",
+        answeredAt: "2026-07-30T10:00:00.000Z",
+      },
+      {
+        id: "shared-student-2-scored",
+        studentId: "student-2",
+        questionId: sharedQuestion.id,
+        lectureId: "lecture-score",
+        isCorrect: false,
+        score: "partial",
+        answeredAt: "2026-07-30T09:00:00.000Z",
+      },
+      {
+        id: "shared-student-2-done",
+        studentId: "student-2",
+        questionId: sharedQuestion.id,
+        lectureId: "lecture-done",
+        isCorrect: false,
+        score: "done",
+        answeredAt: "2026-07-30T11:00:00.000Z",
+      },
+      {
+        id: "shared-other-school",
+        studentId: "student-other-school",
+        questionId: sharedQuestion.id,
+        lectureId: "lecture-other",
+        isCorrect: false,
+        score: "wrong",
+        answeredAt: "2026-07-30T11:15:00.000Z",
+      },
+      {
+        id: "done-only",
+        studentId: "student-1",
+        questionId: "question-done",
+        lectureId: "lecture-done-only",
+        isCorrect: false,
+        score: "done",
+        answeredAt: "2026-07-30T11:20:00.000Z",
+      },
+    ];
+
+    await runWithState(appState, async () => {
+      const teacher = { id: "teacher-1" } as TeacherRecord;
+      const stats = await analyticsService.getSchoolQuestionStats(
+        "school-1",
+        [sharedQuestion.id, "question-done", "question-scored", privateQuestion.id],
+        teacher,
+      );
+
+      expect(stats.find((item) => item.questionId === sharedQuestion.id)).toEqual({
+        questionId: sharedQuestion.id,
+        scoreRate: 0.75,
+        studentCount: 2,
+      });
+      expect(stats.find((item) => item.questionId === "question-done")).toEqual({
+        questionId: "question-done",
+        scoreRate: null,
+        studentCount: 1,
+      });
+      expect(stats.find((item) => item.questionId === "question-scored")).toEqual({
+        questionId: "question-scored",
+        scoreRate: 1,
+        studentCount: 1,
+      });
+      expect(stats.some((item) => item.questionId === privateQuestion.id)).toBe(false);
+    });
+  });
+});
 
 describe("neutral completed answer records", () => {
   it("stores completed records while excluding them from correctness and mastery denominators", async () => {
