@@ -138,7 +138,7 @@ export function buildGradeTotalScoreRankingReport(
     source: GradeScoreRecord[],
   ): GradeTotalScoreRankingTable => ({
     key,
-    title: `${exam.cohortLabel}${exam.name}${label}（${scoreModeLabel}）`,
+    title: `${exam.name}${label}（${scoreModeLabel}）`,
     rows: rankedRows(source, effectiveTemplate, subjects, classLabels, topN),
   });
 

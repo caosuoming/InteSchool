@@ -44,6 +44,7 @@ const totalScoreTemplate: GradeStatisticsTemplate = {
       语文: [150],
       化学: [100],
     },
+    totalScoreTopN: 1,
   },
 };
 
@@ -207,8 +208,18 @@ describe("PublishedGradeReportPage", () => {
     expect(teacherCell).toHaveClass("text-center");
 
     expect(screen.getAllByText("所占比例")).toHaveLength(2);
+    expect(screen.getByText("期末考试班级平均分统计表")).toBeInTheDocument();
+    expect(screen.getByText("期末考试总分分数段汇总表（赋分）")).toBeInTheDocument();
+    expect(screen.getByText("期末考试总分前1名（赋分）")).toBeInTheDocument();
+    expect(screen.getByText(/表五前 1 名学生/)).toBeInTheDocument();
+    expect(bundle.totalScoreRanking?.tables[0].rows[0]).not.toHaveProperty("studentId");
+    expect(bundle.totalScoreRanking?.tables[0].rows[0]).not.toHaveProperty("classId");
 
-    const chemistryHeading = screen.getByText("2027届高二期末考试化学选修分数段统计表");
+    document.querySelectorAll("table th, table td").forEach((cell) => {
+      if (cell.textContent?.trim()) expect(cell).toHaveClass("text-center");
+    });
+
+    const chemistryHeading = screen.getByText("期末考试化学选修分数段统计表");
     const chemistryTable = chemistryHeading.parentElement?.nextElementSibling;
     expect(chemistryTable).not.toBeNull();
     const classTwoRow = within(chemistryTable as HTMLElement).getByRole("row", { name: /2班 林老师 1/ });

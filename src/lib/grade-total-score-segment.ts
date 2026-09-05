@@ -376,7 +376,7 @@ export function buildGradeTotalScoreSegmentReport(
   ];
 
   return {
-    title: `${exam.cohortLabel}${exam.name}总分分数段汇总表（${template.scoreMode === "raw" ? "原始分" : "赋分"}）`,
+    title: `${exam.name}总分分数段汇总表（${template.scoreMode === "raw" ? "原始分" : "赋分"}）`,
     reportDate: exam.examDate || exam.createdAt.slice(0, 10),
     segmentMax,
     segmentMin,

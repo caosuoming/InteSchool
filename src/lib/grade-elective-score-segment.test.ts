@@ -126,7 +126,7 @@ describe("grade elective score segment report", () => {
     const report = buildGradeElectiveScoreSegmentReport(exam, template, context);
     const chemistry = report.subjects.find((item) => item.subject === "化学");
 
-    expect(chemistry?.title).toBe("2027届高二四校联合考试化学选修分数段统计表");
+    expect(chemistry?.title).toBe("四校联合考试化学选修分数段统计表");
     expect(chemistry?.gradeLabels).toEqual(["A", "B", "C", "D", "E"]);
     expect(chemistry?.thresholds).toEqual([90, 80, 70]);
     expect(chemistry?.rows[0]).toMatchObject({

@@ -74,7 +74,7 @@ describe("grade subject score segment report", () => {
     const report = buildGradeSubjectScoreSegmentReport(exam, template, context);
     const chinese = report.subjects.find((item) => item.subject === "语文");
 
-    expect(chinese?.title).toBe("2027届高二四校联合考试语文成绩情况统计表");
+    expect(chinese?.title).toBe("四校联合考试语文成绩情况统计表");
     expect(chinese?.thresholds).toEqual([111, 100, 90]);
     expect(chinese?.rows[0]).toMatchObject({
       classLabel: "1班",

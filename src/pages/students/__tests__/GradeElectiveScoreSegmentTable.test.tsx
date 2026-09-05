@@ -89,8 +89,8 @@ describe("GradeElectiveScoreSegmentTable", () => {
     render(<Harness />);
 
     expect(screen.getByText("表四、选修分数段")).toBeInTheDocument();
-    expect(screen.getByText("2027届高二四校联合考试化学选修分数段统计表")).toBeInTheDocument();
-    const chemistryTable = screen.getByText("2027届高二四校联合考试化学选修分数段统计表")
+    expect(screen.getByText("四校联合考试化学选修分数段统计表")).toBeInTheDocument();
+    const chemistryTable = screen.getByText("四校联合考试化学选修分数段统计表")
       .closest("section")?.querySelector("table");
     expect(chemistryTable).not.toBeNull();
     expect(within(chemistryTable!).getByRole("columnheader", { name: "任课教师" })).toBeInTheDocument();
@@ -142,7 +142,7 @@ describe("GradeElectiveScoreSegmentTable", () => {
       />,
     );
 
-    const chemistryTable = screen.getByText("2027届高二四校联合考试化学选修分数段统计表")
+    const chemistryTable = screen.getByText("四校联合考试化学选修分数段统计表")
       .closest("section")?.querySelector("table");
     expect(chemistryTable).not.toBeNull();
     for (const label of ["A", "B", "C", "D", "E"]) {

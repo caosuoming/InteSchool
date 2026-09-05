@@ -114,8 +114,8 @@ describe("buildGradeTotalScoreRankingReport", () => {
     expect(rawReport.scoreModeLabel).toBe("原始分");
     expect(rawReport.tables.map((table) => table.key)).toEqual(["science", "arts"]);
     expect(rawReport.tables.map((table) => table.title)).toEqual([
-      "2027届高三期末考试理科总分前1名（原始分）",
-      "2027届高三期末考试文科总分前1名（原始分）",
+      "期末考试理科总分前1名（原始分）",
+      "期末考试文科总分前1名（原始分）",
     ]);
     expect(rawReport.subjects).toEqual(["数学"]);
     expect(rawReport.tables[0].rows.map((row) => row.studentName)).toEqual(["甲"]);

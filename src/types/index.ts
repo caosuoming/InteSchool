@@ -871,7 +871,7 @@ export interface GradeTemplateColumn {
 }
 
 export interface GradeClassAverageOptions {
-  /** 报表标题；为空时根据年级和考试名称自动生成。 */
+  /** 报表标题；为空时根据考试名称自动生成。 */
   title?: string;
   /** 报表日期，格式为 YYYY-MM-DD。 */
   reportDate?: string;

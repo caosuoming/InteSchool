@@ -15,6 +15,19 @@ import {
   buildGradeTotalScoreSegmentReport,
   type GradeTotalScoreSegmentReport,
 } from "./grade-total-score-segment.js";
+import {
+  buildGradeTotalScoreRankingReport,
+  type GradeTotalScoreRankingReport,
+  type GradeTotalScoreRankingTable,
+} from "./grade-total-score-ranking.js";
+
+export interface GradePublishedTotalScoreRankingTable extends Omit<GradeTotalScoreRankingTable, "rows"> {
+  rows: Array<Omit<GradeTotalScoreRankingTable["rows"][number], "studentId" | "classId">>;
+}
+
+export interface GradePublishedTotalScoreRankingReport extends Omit<GradeTotalScoreRankingReport, "tables"> {
+  tables: GradePublishedTotalScoreRankingTable[];
+}
 
 export interface GradePublishedReportBundle {
   exam: {
@@ -28,6 +41,7 @@ export interface GradePublishedReportBundle {
   totalScoreSegment?: GradeTotalScoreSegmentReport;
   subjectScoreSegment?: GradeSubjectScoreSegmentReport;
   electiveScoreSegment?: GradeElectiveScoreSegmentReport;
+  totalScoreRanking?: GradePublishedTotalScoreRankingReport;
 }
 
 export function buildGradePublishedReportBundle(
@@ -76,6 +90,26 @@ export function buildGradePublishedReportBundle(
       exam.settings,
       classAverageTemplate,
     );
+    const ranking = buildGradeTotalScoreRankingReport(
+      exam,
+      totalScoreSegmentTemplate,
+      context,
+      classAverageTemplate,
+    );
+    bundle.totalScoreRanking = {
+      ...ranking,
+      tables: ranking.tables.map((table) => ({
+        ...table,
+        rows: table.rows.map((row) => ({
+          rank: row.rank,
+          studentNo: row.studentNo,
+          studentName: row.studentName,
+          classLabel: row.classLabel,
+          subjectScores: row.subjectScores,
+          score: row.score,
+        })),
+      })),
+    };
   }
 
   return bundle;

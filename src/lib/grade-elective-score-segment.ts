@@ -175,7 +175,7 @@ export function buildGradeElectiveScoreSegmentReport(
       ]));
       return {
         subject,
-        title: `${exam.cohortLabel}${exam.name}${subject}选修分数段统计表`,
+        title: `${exam.name}${subject}选修分数段统计表`,
         gradeLabels,
         thresholds,
         rows,

@@ -131,7 +131,7 @@ describe("GradeTotalScoreSegmentTable", () => {
     render(<Harness />);
 
     expect(screen.getByText("表二、总分分数段汇总表（赋分）")).toBeInTheDocument();
-    expect(screen.getByText("2026届高三期末考试总分分数段汇总表（赋分）")).toBeInTheDocument();
+    expect(screen.getByText("期末考试总分分数段汇总表（赋分）")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "1班" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "理科小计" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "总计" })).toBeInTheDocument();
@@ -153,7 +153,7 @@ describe("GradeTotalScoreSegmentTable", () => {
     const scoreMode = screen.getByRole("combobox", { name: "表二总分类型" });
     await user.selectOptions(scoreMode, "raw");
     expect(screen.getByText("表二、总分分数段汇总表（原始分）")).toBeInTheDocument();
-    expect(screen.getByText("2026届高三期末考试总分分数段汇总表（原始分）")).toBeInTheDocument();
+    expect(screen.getByText("期末考试总分分数段汇总表（原始分）")).toBeInTheDocument();
     expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)?.scoreMode).toBe("raw");
 
     const target = screen.getByRole("spinbutton", { name: "1班高分1目标" });
