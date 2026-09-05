@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
@@ -36,7 +36,23 @@ vi.mock("@/hooks/useQuestionMetadataOptions", () => ({
 }));
 
 vi.mock("@/components/tree/SearchableTree", () => ({
-  SearchableTree: () => <div>目录</div>,
+  SearchableTree: ({
+    data,
+    editable = false,
+    onDataChange,
+  }: {
+    data: TreeNode;
+    editable?: boolean;
+    onDataChange?: (data: TreeNode) => void;
+  }) => (
+    <div
+      data-testid={`searchable-tree-${data.type}`}
+      data-editable={String(editable)}
+      data-has-data-change={String(Boolean(onDataChange))}
+    >
+      目录
+    </div>
+  ),
 }));
 
 vi.mock("@/services/question", () => ({
@@ -136,6 +152,24 @@ describe("QuestionBankPage personal resource scope", () => {
     vi.mocked(classService.listMyStudents).mockResolvedValue([]);
     vi.mocked(prepService.getUsedQuestionIds).mockResolvedValue([]);
     vi.mocked(quotaService.getQuota).mockResolvedValue(null as never);
+  });
+
+  it("keeps the chapter and knowledge directory trees read-only", async () => {
+    render(
+      <MemoryRouter>
+        <QuestionBankPage />
+      </MemoryRouter>,
+    );
+
+    const chapterDirectory = await screen.findByTestId("searchable-tree-chapter");
+    expect(chapterDirectory).toHaveAttribute("data-editable", "false");
+    expect(chapterDirectory).toHaveAttribute("data-has-data-change", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "知识点目录" }));
+
+    const knowledgeDirectory = await screen.findByTestId("searchable-tree-knowledge");
+    expect(knowledgeDirectory).toHaveAttribute("data-editable", "false");
+    expect(knowledgeDirectory).toHaveAttribute("data-has-data-change", "false");
   });
 
   it("queries personal questions by teacher while keeping class context on the active school", async () => {

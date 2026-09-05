@@ -946,14 +946,9 @@ export default function QuestionBankPage({
               {/* 搜索 + 树 */}
               <div className="p-3">
                 <SearchableTree
-                  editable
                   title=""
                   accent={leftTab === "chapter" ? "gold" : "teal"}
                   data={displayTree ?? { id: "root", name: "", type: leftTab === "chapter" ? "chapter" : "knowledge", count: 0, children: [] }}
-                  onDataChange={(nextTree) => {
-                    if (nextTree.type === "chapter") setChapterTree(nextTree);
-                    else setKnowledgeTree(nextTree);
-                  }}
                   checkable
                   checkedIds={displayCheckedIds}
                   onCheck={setDisplayCheckedIds}
