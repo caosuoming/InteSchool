@@ -334,6 +334,7 @@ const builtInSummaryKeywords = [
 
 const builtInProjectHeadingLabels = [
   "课前引入",
+  "课时对点练",
   "课后训练",
   "课后训练巩固提升",
   "知识梳理",
@@ -370,6 +371,7 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
 function questionKeywordPrefixes(config: DocumentParseConfig): string[] {
   return [...new Set([
     ...config.questionKeywords,
+    "跟踪训练",
     "训练",
     "巩固题",
   ]

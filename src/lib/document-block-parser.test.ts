@@ -1348,6 +1348,28 @@ describe("document block parser", () => {
     });
   });
 
+  it("recognizes 跟踪训练 labels as question starts even with an older saved keyword config", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "跟踪训练1 已知 x+1=3，求 x。",
+        "解 x=2。",
+        "跟踪训练2 求证两个偶数之和仍为偶数。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: "跟踪训练1 已知 x+1=3，求 x。",
+      analysis: "x=2。",
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "跟踪训练2 求证两个偶数之和仍为偶数。",
+    });
+  });
+
   it.each([
     "思维升华：判断对象能否构成集合时先检查确定性。",
     "【思维升华】判断对象能否构成集合时先检查确定性。",
@@ -1517,6 +1539,7 @@ describe("document block parser", () => {
     "A组",
     "B组",
     "Ｃ组",
+    "课时对点练",
     "课后训练",
     "课后训练巩固提升",
   ])("classifies %s as a project group title", (projectHeading) => {

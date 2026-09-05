@@ -55,6 +55,7 @@ const defaultQuestionKeywords = [
   "拓展",
   "拓",
   "练习",
+  "跟踪训练",
   "训练",
   "习题",
   "第",
@@ -317,11 +318,15 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
     }),
     {
       name: "zhiti:extract-config",
-      version: 1,
+      version: 2,
       migrate: (persistedState) => {
         const state = persistedState as Partial<ExtractConfigState>;
         return {
           ...state,
+          questionKeywords: uniqueKeywords([
+            ...(state.questionKeywords || defaultQuestionKeywords),
+            "跟踪训练",
+          ]),
           analysisKeywords: (state.analysisKeywords || defaultAnalysisKeywords)
             .filter((keyword) => !isAnalysisAsSummaryKeyword(keyword)),
           summaryKeywords: uniqueKeywords([
