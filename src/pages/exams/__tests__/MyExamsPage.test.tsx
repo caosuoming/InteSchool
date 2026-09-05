@@ -14,7 +14,9 @@ vi.mock("@/services/examArrangement", () => ({
     listArrangements: vi.fn(),
     getContext: vi.fn(),
     getInvigilationProfile: vi.fn(),
+    getTeachingScheduleProfile: vi.fn(),
     saveInvigilationConfig: vi.fn(),
+    saveTeachingScheduleProfile: vi.fn(),
   },
 }));
 
@@ -94,6 +96,7 @@ describe("MyExamsPage", () => {
     vi.mocked(gradeService.listExams).mockResolvedValue([]);
     vi.mocked(examArrangementService.listArrangements).mockResolvedValue([]);
     vi.mocked(examArrangementService.getInvigilationProfile).mockResolvedValue(null);
+    vi.mocked(examArrangementService.getTeachingScheduleProfile).mockResolvedValue(null);
     vi.mocked(examArrangementService.getContext).mockResolvedValue({
       cohort,
       classes: [],
@@ -127,7 +130,7 @@ describe("MyExamsPage", () => {
     expect(await screen.findByTestId("grade-settings-editor")).toHaveAttribute("data-section", "settings");
   });
 
-  it("shows the invigilation tab between room setup and grade statistics", async () => {
+  it("shows 排课表 after grade statistics and uses 我的教务 as the page title", async () => {
     render(
       <MemoryRouter initialEntries={["/my-exams/invigilation"]}>
         <MyExamsPage section="invigilation" />
@@ -135,13 +138,29 @@ describe("MyExamsPage", () => {
     );
 
     expect(await screen.findByText("暂无监考表")).toBeInTheDocument();
-    const tabLinks = screen.getAllByRole("link").slice(0, 3);
+    expect(screen.getByText("我的教务")).toBeInTheDocument();
+    const tabLinks = screen.getAllByRole("link").slice(0, 4);
     expect(tabLinks.map((link) => link.textContent?.trim())).toEqual([
       "考场布置剩余 50 次",
       "监考表剩余 50 次",
       "成绩统计剩余 50 次",
+      "排课表",
     ]);
     expect(screen.queryByText("成绩处理")).not.toBeInTheDocument();
+  });
+
+  it("renders the four scheduling configurations", async () => {
+    render(
+      <MemoryRouter initialEntries={["/my-exams/schedule"]}>
+        <MyExamsPage section="schedule" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "配置一、教师分工表" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "配置二、年级学科课时" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "配置三、学科配置要求" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "配置四、教师要求" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /表一、课表/ })).toBeInTheDocument();
   });
 
   it("builds a print-room statistics table from a saved room arrangement", async () => {

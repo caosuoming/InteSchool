@@ -31,6 +31,73 @@ function state(): AppState {
 }
 
 describe("exam arrangement service", () => {
+  it("persists a cohort teaching schedule and rejects teacher double-booking", async () => {
+    const appState = state();
+    (appState.schoolClasses as any[]).push({
+      id: "class-2",
+      type: "school",
+      schoolId: "school-1",
+      name: "高三（2）班",
+      grade: "高三",
+      gradeYear: 2023,
+      gradYear: 2026,
+      studentCount: 0,
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    });
+
+    await runWithState(appState, async () => {
+      const baseConfig = {
+        assignments: [
+          { id: "a-1", classId: "class-1", subject: "数学", teacherName: "张老师" },
+          { id: "a-2", classId: "class-2", subject: "数学", teacherName: "张老师" },
+        ],
+        subjects: [{ subject: "数学", weeklyPeriods: 1 }],
+        subjectRequirements: { 数学: { "1-morning": "required" as const } },
+        teacherNotes: { "name:张老师": "周三下午教研" },
+        slots: {
+          "class-1:1:1": { subject: "数学", teacherName: "张老师", source: "manual" as const },
+          "class-2:1:2": { subject: "数学", teacherName: "张老师", source: "manual" as const },
+        },
+      };
+
+      const saved = await examArrangementService.saveTeachingScheduleProfile(
+        "school-1",
+        "teacher-1",
+        "grad-2026",
+        baseConfig,
+      );
+      expect(saved.cohortLabel).toContain("高三");
+      expect(saved.config.teacherNotes).toEqual({ "name:张老师": "周三下午教研" });
+      expect((appState.teachingScheduleProfiles as any[])).toHaveLength(1);
+      await expect(examArrangementService.getTeachingScheduleProfile("school-1", "grad-2026"))
+        .resolves.toMatchObject({ id: saved.id, updatedBy: "teacher-1" });
+
+      await expect(examArrangementService.saveTeachingScheduleProfile(
+        "school-1",
+        "teacher-1",
+        "grad-2026",
+        {
+          ...baseConfig,
+          slots: {
+            "class-1:1:1": { subject: "数学", teacherName: "张老师", source: "manual" },
+            "class-2:1:1": { subject: "数学", teacherName: "张老师", source: "manual" },
+          },
+        },
+      )).rejects.toThrow("同一时段被重复排课");
+
+      await expect(examArrangementService.saveTeachingScheduleProfile(
+        "school-1",
+        "teacher-1",
+        "grad-2026",
+        {
+          ...baseConfig,
+          subjectRequirements: { 数学: { "1-morning": "forbidden" } },
+        },
+      )).rejects.toThrow("配置三禁止的时段");
+    });
+  });
+
   it("saves, updates, lists, and deletes generated arrangements", async () => {
     const appState = state();
     await runWithState(appState, async () => {

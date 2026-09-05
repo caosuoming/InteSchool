@@ -6,9 +6,17 @@ import type {
   ExamInvigilationProfile,
   GradeExam,
   GradeImportContext,
+  TeachingScheduleConfig,
+  TeachingScheduleProfile,
   Teacher,
 } from "../../src/types/index.js";
 import { generateExamAssignments } from "../../src/lib/exam-arrangement.js";
+import {
+  normalizeTeachingScheduleConfig,
+  parseTeachingScheduleSlotKey,
+  teachingScheduleSlotAllowedByRequirement,
+  teachingScheduleTeacherKey,
+} from "../../src/lib/teaching-schedule.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { gradeService } from "./grade.js";
@@ -57,6 +65,16 @@ function readArrangements(): ExamArrangement[] {
 function readInvigilationProfiles(): ExamInvigilationProfile[] {
   const value = db.read("examInvigilationProfiles");
   return Array.isArray(value) ? value as ExamInvigilationProfile[] : [];
+}
+
+function readTeachingScheduleProfiles(): TeachingScheduleProfile[] {
+  const value = db.read("teachingScheduleProfiles");
+  return Array.isArray(value) ? value as TeachingScheduleProfile[] : [];
+}
+
+function teachingScheduleProfileFor(schoolId: string, cohortKey: string): TeachingScheduleProfile | null {
+  return readTeachingScheduleProfiles()
+    .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey) || null;
 }
 
 function invigilationProfileFor(schoolId: string, cohortKey: string): ExamInvigilationProfile | null {
@@ -124,6 +142,13 @@ export const examArrangementService = {
     await delay(80);
     await gradeService.getImportContext(schoolId, cohortKey);
     const profile = effectiveInvigilationProfileFor(schoolId, cohortKey);
+    return profile ? structuredClone(profile) : null;
+  },
+
+  async getTeachingScheduleProfile(schoolId: string, cohortKey: string): Promise<TeachingScheduleProfile | null> {
+    await delay(80);
+    await gradeService.getImportContext(schoolId, cohortKey);
+    const profile = teachingScheduleProfileFor(schoolId, cohortKey);
     return profile ? structuredClone(profile) : null;
   },
 
@@ -314,6 +339,62 @@ export const examArrangementService = {
       item.id === arrangementId ? updated : item
     )));
     return updated;
+  },
+
+  async saveTeachingScheduleProfile(
+    schoolId: string,
+    teacherId: string,
+    cohortKey: string,
+    config: TeachingScheduleConfig,
+  ): Promise<TeachingScheduleProfile> {
+    await delay(120);
+    maybeThrowError();
+    const context = toArrangementContext(await gradeService.getImportContext(schoolId, cohortKey));
+    const normalized = normalizeTeachingScheduleConfig(config, context);
+    const subjectNames = new Set(normalized.subjects.map((item) => item.subject));
+    const assignmentByCell = new Map<string, (typeof normalized.assignments)[number]>();
+    for (const assignment of normalized.assignments) {
+      if (!subjectNames.has(assignment.subject)) throw new Error(`教师分工包含未知学科“${assignment.subject}”`);
+      const key = `${assignment.classId}\u0000${assignment.subject}`;
+      if (assignmentByCell.has(key)) throw new Error(`同一班级的“${assignment.subject}”只能配置一位任课教师`);
+      assignmentByCell.set(key, assignment);
+    }
+
+    const occupiedTeachers = new Set<string>();
+    for (const [slotKey, slot] of Object.entries(normalized.slots)) {
+      const parsed = parseTeachingScheduleSlotKey(slotKey);
+      if (!parsed) throw new Error("课表中存在无效时段");
+      if (!teachingScheduleSlotAllowedByRequirement(normalized, slotKey, slot)) {
+        throw new Error(`课表中的“${slot.subject}”被安排在配置三禁止的时段`);
+      }
+      const assignedTeacher = assignmentByCell.get(`${parsed.classId}\u0000${slot.subject}`);
+      const sameTeacher = Boolean(assignedTeacher && (
+        (assignedTeacher.teacherId && slot.teacherId && assignedTeacher.teacherId === slot.teacherId)
+        || assignedTeacher.teacherName.trim() === slot.teacherName.trim()
+      ));
+      if (!sameTeacher) throw new Error(`课表中的“${slot.subject} ${slot.teacherName}”与教师分工表不一致`);
+      const teacherKey = teachingScheduleTeacherKey(slot.teacherId, slot.teacherName);
+      const occupiedKey = `${teacherKey}\u0000${parsed.day}\u0000${parsed.period}`;
+      if (occupiedTeachers.has(occupiedKey)) throw new Error(`教师“${slot.teacherName}”在同一时段被重复排课`);
+      occupiedTeachers.add(occupiedKey);
+    }
+
+    const existing = teachingScheduleProfileFor(schoolId, cohortKey);
+    const now = new Date().toISOString();
+    const profile: TeachingScheduleProfile = {
+      id: existing?.id || genId("teaching-schedule"),
+      schoolId,
+      cohortKey: context.cohort.key,
+      cohortLabel: context.cohort.label,
+      config: normalized,
+      updatedBy: teacherId,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    db.update("teachingScheduleProfiles", (items: TeachingScheduleProfile[] = []) => existing
+      ? items.map((item) => item.id === existing.id ? profile : item)
+      : [...items, profile]);
+    return structuredClone(profile);
   },
 
   async deleteInvigilationConfig(arrangementId: string, actor?: Teacher): Promise<void> {
