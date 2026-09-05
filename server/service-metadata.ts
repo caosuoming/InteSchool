@@ -331,6 +331,11 @@ export const serviceParameters = {
       "schoolId",
       "range"
     ],
+    "getSchoolQuestionStats": [
+      "schoolId",
+      "questionIds",
+      "teacher"
+    ],
     "getStudentStats": [
       "schoolId",
       "range"

@@ -12,6 +12,7 @@ import type {
   Student,
   TreeNode,
 } from "../../src/types/index.js";
+import type { TeacherRecord } from "../types.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
@@ -34,6 +35,12 @@ export interface StudentAnswerDetail {
   record: AnswerRecord;
   question: Question | null;
   lectureTitle?: string;
+}
+
+export interface SchoolQuestionStat {
+  questionId: string;
+  scoreRate: number | null;
+  studentCount: number;
 }
 
 /** 根据 isCorrect 推断 score（兼容旧数据） */
@@ -418,6 +425,72 @@ export const analyticsService = {
         };
       })
       .sort((a, b) => b.question.usageCount - a.question.usageCount);
+  },
+
+  /**
+   * 获取当前学校在指定题目上的校级得分率和作答学生数。
+   *
+   * 作答人数按学生去重；得分率对每名学生取该题最新的已评分记录，避免重复作答被重复计权。
+   * 全对记 1 分、半对记 0.5 分、做错记 0 分；“已做”只计作答人数，不进入得分率分母。
+   * 共享题按当前学校学生的答题记录统计，因此切换学校后会得到对应学校的数据。
+   */
+  async getSchoolQuestionStats(
+    schoolId: string,
+    questionIds: string[],
+    teacher: TeacherRecord,
+  ): Promise<SchoolQuestionStat[]> {
+    await delay(150);
+    const requestedIds = Array.from(new Set(questionIds));
+    if (requestedIds.length === 0) return [];
+
+    const requested = new Set(requestedIds);
+    const readableQuestionIds = new Set(
+      db.read("questions")
+        .filter((question) => requested.has(question.id) && (question.teacherId === teacher.id || question.isShared))
+        .map((question) => question.id),
+    );
+    const schoolStudentIds = new Set(
+      db.read("students")
+        .filter((student) => student.schoolId === schoolId)
+        .map((student) => student.id),
+    );
+
+    const studentsByQuestion = new Map<string, Set<string>>();
+    const latestScoredByStudentAndQuestion = new Map<string, AnswerRecord>();
+    for (const record of db.read("answerRecords")) {
+      if (!readableQuestionIds.has(record.questionId) || !schoolStudentIds.has(record.studentId)) continue;
+
+      const studentIds = studentsByQuestion.get(record.questionId) || new Set<string>();
+      studentIds.add(record.studentId);
+      studentsByQuestion.set(record.questionId, studentIds);
+
+      if (inferScore(record) === "done") continue;
+      const key = `${record.studentId}:${record.questionId}`;
+      const current = latestScoredByStudentAndQuestion.get(key);
+      if (!current || new Date(record.answeredAt).getTime() >= new Date(current.answeredAt).getTime()) {
+        latestScoredByStudentAndQuestion.set(key, record);
+      }
+    }
+
+    const aggregates = new Map<string, { earned: number; scoredCount: number }>();
+    for (const record of latestScoredByStudentAndQuestion.values()) {
+      const aggregate = aggregates.get(record.questionId) || { earned: 0, scoredCount: 0 };
+      const score = inferScore(record);
+      aggregate.earned += score === "correct" ? 1 : score === "partial" ? 0.5 : 0;
+      aggregate.scoredCount += 1;
+      aggregates.set(record.questionId, aggregate);
+    }
+
+    return requestedIds
+      .filter((questionId) => readableQuestionIds.has(questionId))
+      .map((questionId) => {
+        const aggregate = aggregates.get(questionId) || { earned: 0, scoredCount: 0 };
+        return {
+          questionId,
+          scoreRate: aggregate.scoredCount > 0 ? aggregate.earned / aggregate.scoredCount : null,
+          studentCount: studentsByQuestion.get(questionId)?.size || 0,
+        };
+      });
   },
 
   // 学生答题统计

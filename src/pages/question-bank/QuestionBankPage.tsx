@@ -16,7 +16,7 @@ import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
-import { analyticsService, type DateRange } from "@/services/analytics";
+import { analyticsService, type DateRange, type SchoolQuestionStat } from "@/services/analytics";
 import { prepService } from "@/services/prep";
 import { lectureService } from "@/services/lecture";
 import { examPaperService } from "@/services/examPaper";
@@ -152,6 +152,7 @@ export default function QuestionBankPage({
   const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
 
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [schoolQuestionStats, setSchoolQuestionStats] = useState<Map<string, SchoolQuestionStat>>(new Map());
   const [totalQuestionCount, setTotalQuestionCount] = useState(0);
   const [quota, setQuota] = useState<UserQuotaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -409,6 +410,28 @@ export default function QuestionBankPage({
     const t = setTimeout(loadQuestions, 300);
     return () => clearTimeout(t);
   }, [loadQuestions]);
+
+  useEffect(() => {
+    const schoolId = teacher?.schoolId;
+    if (!schoolId || questions.length === 0) {
+      setSchoolQuestionStats(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    analyticsService.getSchoolQuestionStats(schoolId, questions.map((question) => question.id))
+      .then((stats) => {
+        if (!cancelled) {
+          setSchoolQuestionStats(new Map(stats.map((stat) => [stat.questionId, stat])));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSchoolQuestionStats(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [teacher?.schoolId, questions, studentAnswerRecords]);
 
   useEffect(() => {
     if (refreshToken === 0) return;
@@ -1166,6 +1189,7 @@ export default function QuestionBankPage({
                 <QuestionRow
                   key={q.id}
                   question={q}
+                  schoolStat={schoolQuestionStats.get(q.id)}
                   mode={mode}
                   chapterMap={chapterMap}
                   knowledgeMap={knowledgeMap}
@@ -1963,7 +1987,7 @@ function ToggleFilter({
 }
 
 function QuestionRow({
-  question, mode, chapterMap, knowledgeMap, teacher,
+  question, schoolStat, mode, chapterMap, knowledgeMap, teacher,
   students, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
   defaultBasket, showChapter, showKnowledge, showRemark, showStudentAnswers,
   isUsedBySelectedStudents, lecturesUsingQuestion,
@@ -1983,6 +2007,7 @@ function QuestionRow({
   getCategoryLabel,
 }: {
   question: Question;
+  schoolStat?: SchoolQuestionStat;
   mode: Mode;
   chapterMap: Map<string, string>;
   knowledgeMap: Map<string, string>;
@@ -2217,14 +2242,19 @@ function QuestionRow({
                   return <Badge key="type" variant="ink">{getQuestionTypeLabel(question.type)}</Badge>;
                 case "difficulty":
                   return (
-                    <Badge
-                      key="difficulty"
-                      variant={
-                        question.difficulty <= 2 ? "green" : question.difficulty <= 3 ? "amber" : "red"
-                      }
-                    >
-                      {difficultyLabel[question.difficulty]}
-                    </Badge>
+                    <span key="difficulty" className="contents">
+                      <Badge
+                        variant={
+                          question.difficulty <= 2 ? "green" : question.difficulty <= 3 ? "amber" : "red"
+                        }
+                      >
+                        {difficultyLabel[question.difficulty]}
+                      </Badge>
+                      <span className="text-xs text-ink-500">
+                        校得分率 {schoolStat?.scoreRate == null ? "—" : `${Math.round(schoolStat.scoreRate * 100)}%`}
+                        （{schoolStat ? `${schoolStat.studentCount}人` : "—"}）
+                      </span>
+                    </span>
                   );
                 case "recommendation":
                   return question.recommendation >= 4 ? (
