@@ -6,6 +6,8 @@ import type {
   ExamInvigilationConfig,
   ExamInvigilationProfile,
   GradeCohort,
+  TeachingScheduleConfig,
+  TeachingScheduleProfile,
 } from "@/types";
 
 export const examArrangementService = {
@@ -19,6 +21,10 @@ export const examArrangementService = {
 
   async getInvigilationProfile(schoolId: string, cohortKey: string): Promise<ExamInvigilationProfile | null> {
     return rpcCall("examArrangement", "getInvigilationProfile", [schoolId, cohortKey]) as Promise<ExamInvigilationProfile | null>;
+  },
+
+  async getTeachingScheduleProfile(schoolId: string, cohortKey: string): Promise<TeachingScheduleProfile | null> {
+    return rpcCall("examArrangement", "getTeachingScheduleProfile", [schoolId, cohortKey]) as Promise<TeachingScheduleProfile | null>;
   },
 
   async listArrangements(schoolId: string, cohortKey?: string): Promise<ExamArrangement[]> {
@@ -39,6 +45,20 @@ export const examArrangementService = {
     config: ExamInvigilationConfig,
   ): Promise<ExamArrangement> {
     return rpcCall("examArrangement", "saveInvigilationConfig", [schoolId, arrangementId, config]) as Promise<ExamArrangement>;
+  },
+
+  async saveTeachingScheduleProfile(
+    schoolId: string,
+    teacherId: string,
+    cohortKey: string,
+    config: TeachingScheduleConfig,
+  ): Promise<TeachingScheduleProfile> {
+    return rpcCall("examArrangement", "saveTeachingScheduleProfile", [
+      schoolId,
+      teacherId,
+      cohortKey,
+      config,
+    ]) as Promise<TeachingScheduleProfile>;
   },
 
   async deleteInvigilationConfig(arrangementId: string): Promise<void> {

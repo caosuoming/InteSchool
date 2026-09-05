@@ -796,6 +796,55 @@ export interface ExamArrangementContext {
   previousGradeRanks?: Record<string, number>;
 }
 
+// ============ 年级排课 ============
+
+export type TeachingScheduleHalfDay = "morning" | "afternoon";
+export type TeachingScheduleSubjectRequirement = "required" | "forbidden" | "any";
+
+export interface TeachingScheduleTeacherAssignment {
+  id: string;
+  classId: string;
+  subject: string;
+  teacherName: string;
+  /** 能与学校教师清单匹配时保存稳定 ID；Excel 中的临时姓名允许暂时没有 ID。 */
+  teacherId?: string;
+}
+
+export interface TeachingScheduleSubjectConfig {
+  subject: string;
+  /** 每个班每周安排的标准课时数。 */
+  weeklyPeriods: number;
+}
+
+export interface TeachingScheduleSlotAssignment {
+  subject: string;
+  teacherName: string;
+  teacherId?: string;
+  source?: "auto" | "manual";
+}
+
+export interface TeachingScheduleConfig {
+  assignments: TeachingScheduleTeacherAssignment[];
+  subjects: TeachingScheduleSubjectConfig[];
+  /** key 格式为 `${weekday}-${halfDay}`，weekday 为 1—5。 */
+  subjectRequirements: Record<string, Record<string, TeachingScheduleSubjectRequirement>>;
+  /** 配置四中的教师特殊要求/备注，key 优先使用 teacherId，否则使用规范化姓名。 */
+  teacherNotes: Record<string, string>;
+  /** key 格式为 `${classId}:${weekday}:${period}`，weekday 为 1—5，period 为 1—7。 */
+  slots: Record<string, TeachingScheduleSlotAssignment>;
+}
+
+export interface TeachingScheduleProfile {
+  id: string;
+  schoolId: string;
+  cohortKey: string;
+  cohortLabel: string;
+  config: TeachingScheduleConfig;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface GradeTeacherOption {
   id: string;
   name: string;

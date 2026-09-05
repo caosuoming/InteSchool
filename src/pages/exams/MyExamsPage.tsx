@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   ArrowRight,
+  CalendarRange,
   ClipboardCheck,
   ClipboardList,
   Copy,
@@ -54,6 +55,7 @@ import { GradeClassStatisticsTable } from "@/pages/students/GradeClassStatistics
 import { GradeExamAdjustmentPanel } from "@/pages/students/GradeExamAdjustmentPanel";
 import ExamRoomArrangementPage from "@/pages/students/ExamRoomArrangementPage";
 import { InvigilationTableSection } from "@/pages/exams/InvigilationTableSection";
+import { TeachingScheduleSection } from "@/pages/exams/TeachingScheduleSection";
 import {
   exportGradeClassStatisticsReport,
   exportGradeTablesOneToFive,
@@ -65,7 +67,7 @@ import {
   type GradeClassStatisticsOptions,
 } from "@/lib/grade-class-statistics";
 
-export type MyExamsSection = "rooms" | "invigilation" | "grades";
+export type MyExamsSection = "rooms" | "invigilation" | "grades" | "schedule";
 
 const DEFAULT_COHORT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 
@@ -88,6 +90,7 @@ function ExamSectionTabs({
         ["rooms", "/my-exams/rooms", "考场布置", MapPinned, "examRoom"],
         ["invigilation", "/my-exams/invigilation", "监考表", ClipboardCheck, "invigilation"],
         ["grades", "/my-exams/grades", "成绩统计", FileSpreadsheet, "gradeStatistics"],
+        ["schedule", "/my-exams/schedule", "排课表", CalendarRange, null],
       ] as const).map(([value, path, label, Icon, usageKey]) => (
         <Link
           key={value}
@@ -101,12 +104,14 @@ function ExamSectionTabs({
         >
           <Icon className="h-4 w-4" />
           {label}
-          <span className={cn(
-            "rounded px-1.5 py-0.5 text-[10px]",
-            section === value ? "bg-white/15 text-paper" : "bg-ink-100 text-ink-500",
-          )}>
-            剩余 {quota?.exam[usageKey].remaining ?? "—"} 次
-          </span>
+          {usageKey && (
+            <span className={cn(
+              "rounded px-1.5 py-0.5 text-[10px]",
+              section === value ? "bg-white/15 text-paper" : "bg-ink-100 text-ink-500",
+            )}>
+              剩余 {quota?.exam[usageKey].remaining ?? "—"} 次
+            </span>
+          )}
         </Link>
       ))}
     </div>
@@ -800,14 +805,14 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
   return (
     <div>
       <PageHeader
-        title="我的考试"
-        description="统一管理考场布置、监考表和按年级复用的成绩统计配置"
+        title="我的教务"
+        description="统一管理考场布置、监考表、成绩统计和年级排课"
         icon={<ClipboardList className="h-5 w-5" />}
       />
       <ExamSectionTabs section={section} quota={quota} />
 
       {!schoolId || !teacher ? (
-        <Card><EmptyState title="请切换到学校身份" description="我的考试仅对已认证学校的管理身份开放。" /></Card>
+        <Card><EmptyState title="请切换到学校身份" description="我的教务仅对已认证学校的管理身份开放。" /></Card>
       ) : loading ? (
         <div className="flex justify-center py-24"><Spinner size={32} /></div>
       ) : cohorts.length === 0 ? (
@@ -823,7 +828,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
           onCohortChange={changeCohort}
           isSchoolAdmin={isAdmin}
         />
-      ) : (
+      ) : section === "grades" ? (
         <GradePreprocessing
           schoolId={schoolId}
           teacherId={teacher.id}
@@ -831,6 +836,14 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
           cohortKey={cohortKey}
           onCohortChange={changeCohort}
           isSchoolAdmin={isAdmin}
+        />
+      ) : (
+        <TeachingScheduleSection
+          schoolId={schoolId}
+          teacherId={teacher.id}
+          cohorts={cohorts}
+          cohortKey={cohortKey}
+          onCohortChange={changeCohort}
         />
       )}
     </div>
