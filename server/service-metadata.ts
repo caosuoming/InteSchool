@@ -52,8 +52,7 @@ export const serviceParameters = {
       "input"
     ],
     "bindDevice": [
-      "input",
-      "teacher"
+      "input"
     ],
     "listManagedDevices": [
       "targetSchoolId",

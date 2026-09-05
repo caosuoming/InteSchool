@@ -24,6 +24,7 @@ interface StoredClassroomDevice extends Omit<ClassroomDevice, "effectiveState" |
 }
 
 export interface ClassroomDeviceBindInput {
+  schoolId: string;
   classId?: string;
   publicClassroom?: boolean;
   deviceToken: string;
@@ -338,20 +339,17 @@ export const classroomDeviceService = {
     return publicDevice(updated);
   },
 
-  async bindDevice(input: ClassroomDeviceBindInput, teacher: Teacher): Promise<ClassroomDevice> {
+  async bindDevice(input: ClassroomDeviceBindInput): Promise<ClassroomDevice> {
     await delay(80);
     maybeThrowError();
-    const role = accountRole(teacher);
-    const teacherSchoolId = currentSchoolId(teacher);
-    if (role !== "platform_admin" && role !== "school_admin") {
-      throw new Error("首次绑定需要该校管理员账号");
-    }
-
+    const requestedSchoolId = String(input.schoolId || "").trim();
+    if (!requestedSchoolId) throw new Error("请选择学校");
+    const school = (db.read("schools") as Array<{ id: string; name: string }>).find((item) => item.id === requestedSchoolId);
+    if (!school) throw new Error("学校不存在或已不可用");
     const publicClassroom = Boolean(input.publicClassroom);
     let classroom: SchoolClass | undefined;
-    let bindingSchoolId = teacherSchoolId || "";
+    let bindingSchoolId = requestedSchoolId;
     if (publicClassroom) {
-      if (!bindingSchoolId) throw new Error("绑定公共班级前请先切换到学校身份");
       classroom = (db.read("schoolClasses") as SchoolClass[])
         .find((item) => item.schoolId === bindingSchoolId && item.status !== "deleted" && item.status !== "graduated");
       if (!classroom) throw new Error("该校暂无可用于公共教室的班级");
@@ -361,9 +359,9 @@ export const classroomDeviceService = {
         throw new Error("班级不存在或已不可用");
       }
       bindingSchoolId = classroom.schoolId;
-    }
-    if (role === "school_admin" && teacherSchoolId !== bindingSchoolId) {
-      throw new Error("首次绑定需要该校管理员账号");
+      if (bindingSchoolId !== requestedSchoolId) {
+        throw new Error("所选班级不属于所选学校");
+      }
     }
 
     const token = normalizeToken(input.deviceToken);
@@ -371,23 +369,22 @@ export const classroomDeviceService = {
     if (installationId.length < 8 || installationId.length > 160) throw new Error("设备安装标识无效");
     const devices = db.read("classroomDevices") as StoredClassroomDevice[];
     const existing = devices.find((item) => item.installationId === installationId);
+    if (existing) throw new Error("本机已绑定，请联系学校管理员解绑后重新绑定");
     if (!publicClassroom) {
       const occupied = devices.find((item) => (
         !item.publicClassroom
         && item.classId === classroom?.id
-        && item.id !== existing?.id
       ));
       if (occupied) throw new Error("该班级教室已绑定其他一体机，请先在“我的教室”中解绑");
     }
 
-    const school = (db.read("schools") as Array<{ id: string; name: string }>).find((item) => item.id === bindingSchoolId);
     const now = new Date().toISOString();
     const classId = publicClassroom ? PUBLIC_CLASSROOM_ID : classroom.id;
     const className = publicClassroom ? "公共班级" : classroom.name;
     const grade = publicClassroom ? "公共教室" : classroom.grade;
     const defaultDeviceName = publicClassroom ? "公共教室一体机" : `${classroom.grade}${classroom.name}一体机`;
     const record: StoredClassroomDevice = {
-      id: existing?.id || genId("classroom-device"),
+      id: genId("classroom-device"),
       schoolId: bindingSchoolId,
       classId,
       schoolName: school?.name || "学校",
@@ -397,21 +394,20 @@ export const classroomDeviceService = {
       deviceName: String(input.deviceName || defaultDeviceName).trim().slice(0, 80) || defaultDeviceName,
       installationId,
       deviceTokenHash: tokenHash(token),
-      boundByTeacherId: teacher.id,
-      boundByTeacherName: teacher.name,
-      boundAt: existing?.boundAt || now,
-      controlState: existing?.controlState || "active",
-      allowedTimeRanges: existing?.allowedTimeRanges || [],
-      accessPolicy: existing?.accessPolicy || EMPTY_ACCESS_POLICY,
+      boundByTeacherId: "self-service",
+      boundByTeacherName: "设备自助绑定",
+      boundAt: now,
+      controlState: "active",
+      allowedTimeRanges: [],
+      accessPolicy: EMPTY_ACCESS_POLICY,
       lastSeenAt: now,
-      currentPage: existing?.currentPage,
       updatedAt: now,
     };
     db.update("classroomDevices", (items: StoredClassroomDevice[]) => [
       ...items.filter((item) => item.id !== record.id),
       record,
     ]);
-    return publicDevice(record, managerPermissions(teacher, record));
+    return publicDevice(record);
   },
 
   async listManagedDevices(targetSchoolId: string | undefined, teacher: Teacher): Promise<ClassroomDevice[]> {

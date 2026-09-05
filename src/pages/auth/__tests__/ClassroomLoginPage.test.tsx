@@ -5,10 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ClassroomLoginPage from "@/pages/auth/ClassroomLoginPage";
 import { classService } from "@/services/class";
 import { CLASSROOM_DEVICE_TOKEN_KEY, classroomDeviceService } from "@/services/classroomDevice";
-import { useAuthStore } from "@/stores/auth";
-import type { Teacher } from "@/types";
+import { schoolService } from "@/services/school";
 
 vi.mock("@/services/class", () => ({ classService: { listClassroomChoices: vi.fn() } }));
+vi.mock("@/services/school", () => ({ schoolService: { listSchools: vi.fn() } }));
 vi.mock("@/services/classroomDevice", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/services/classroomDevice")>();
   return {
@@ -27,124 +27,118 @@ function renderPage() {
         <Route path="/classroom-login" element={<ClassroomLoginPage />} />
         <Route path="/classroom-device" element={<div>设备教室首页</div>} />
         <Route path="/login" element={<div>个人登录</div>} />
-        <Route path="/classroom" element={<div>普通课堂</div>} />
-        <Route path="/school-auth" element={<div>学校认证</div>} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
 describe("ClassroomLoginPage device binding", () => {
-  const login = vi.fn();
-  const logout = vi.fn();
-
-  function teacher(role: "teacher" | "school_admin"): Teacher {
-    return {
-      id: `${role}-1`,
-      email: `${role}@example.com`,
-      name: role === "school_admin" ? "管理员" : "王老师",
-      avatar: "教",
-      schoolId: "school-1",
-      subject: "数学",
-      status: "active",
-      role,
-      roles: ["teacher"],
-      subjectGroupIds: [],
-      prepGroupIds: [],
-      affiliations: [],
-      currentAffiliationId: "aff-current",
-      createdAt: "2026-09-01T00:00:00.000Z",
-    };
-  }
-
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    login.mockImplementation(async () => {
-      useAuthStore.setState({ teacher: teacher("school_admin") });
-      return true;
-    });
-    logout.mockResolvedValue(undefined);
-    useAuthStore.setState({
-      teacher: null,
-      loading: false,
-      error: null,
-      login,
-      logout,
-      clearError: vi.fn(),
-    });
-    vi.mocked(classService.listClassroomChoices).mockResolvedValue([{
-      id: "class-1",
-      schoolId: "school-1",
-      schoolName: "第一中学",
-      name: "1班",
-      grade: "高一",
-    }]);
+    vi.mocked(schoolService.listSchools).mockResolvedValue([
+      {
+        id: "school-1",
+        name: "第一中学",
+        code: "S1",
+        logo: "",
+        description: "",
+        teacherCount: 0,
+        studentCount: 0,
+        city: "南京",
+      },
+      {
+        id: "school-2",
+        name: "第二中学",
+        code: "S2",
+        logo: "",
+        description: "",
+        teacherCount: 0,
+        studentCount: 0,
+        city: "苏州",
+      },
+    ]);
+    vi.mocked(classService.listClassroomChoices).mockResolvedValue([
+      {
+        id: "class-1",
+        schoolId: "school-1",
+        schoolName: "第一中学",
+        name: "1班",
+        grade: "高一",
+      },
+      {
+        id: "class-2",
+        schoolId: "school-2",
+        schoolName: "第二中学",
+        name: "2班",
+        grade: "高二",
+      },
+    ]);
   });
 
-  it("sends an already-bound machine straight to the classroom without asking for a class", async () => {
+  it("sends an already-bound machine straight to the classroom without loading choices", async () => {
     localStorage.setItem(CLASSROOM_DEVICE_TOKEN_KEY, "existing-device-token-value-1234567890");
     vi.mocked(classroomDeviceService.getDeviceSession).mockResolvedValue({} as any);
     renderPage();
 
     expect(await screen.findByText("设备教室首页")).toBeInTheDocument();
+    expect(schoolService.listSchools).not.toHaveBeenCalled();
     expect(classService.listClassroomChoices).not.toHaveBeenCalled();
   });
 
-  it("binds a class once with administrator credentials, logs the administrator out, and stores the device credential", async () => {
+  it("binds the selected school and class without asking for teacher credentials", async () => {
     vi.mocked(classroomDeviceService.bindDevice).mockResolvedValue({} as any);
     const user = userEvent.setup();
     renderPage();
 
-    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
-    await user.type(screen.getByLabelText("账号邮箱"), "admin@example.com");
-    await user.type(screen.getByLabelText("密码"), "password-123");
-    await user.click(screen.getByRole("button", { name: "登录" }));
+    expect(await screen.findByRole("button", { name: "绑定" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("账号邮箱")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("学校"), "school-1");
+    await user.selectOptions(screen.getByLabelText("班级"), "class-1");
+    await user.click(screen.getByRole("button", { name: "绑定" }));
 
     await waitFor(() => expect(classroomDeviceService.bindDevice).toHaveBeenCalledWith(expect.objectContaining({
+      schoolId: "school-1",
       classId: "class-1",
       deviceToken: expect.any(String),
       installationId: expect.any(String),
     })));
-    expect(login).toHaveBeenCalledWith("admin@example.com", "password-123");
-    expect(logout).toHaveBeenCalled();
     expect(localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY)).toBeTruthy();
     expect(await screen.findByText("设备教室首页")).toBeInTheDocument();
   });
 
-  it("binds a school administrator machine as a public classroom when selected", async () => {
+  it("offers public classroom as a class choice and binds it to the selected school", async () => {
     vi.mocked(classroomDeviceService.bindDevice).mockResolvedValue({} as any);
     const user = userEvent.setup();
     renderPage();
 
-    await user.selectOptions(await screen.findByLabelText("管理员绑定班级"), "__public_classroom__");
-    await user.type(screen.getByLabelText("账号邮箱"), "admin@example.com");
-    await user.type(screen.getByLabelText("密码"), "password-123");
-    await user.click(screen.getByRole("button", { name: "登录" }));
+    await screen.findByRole("button", { name: "绑定" });
+    await user.selectOptions(screen.getByLabelText("学校"), "school-1");
+    await user.selectOptions(screen.getByLabelText("班级"), "__public_classroom__");
+    await user.click(screen.getByRole("button", { name: "绑定" }));
 
     await waitFor(() => expect(classroomDeviceService.bindDevice).toHaveBeenCalledWith(expect.objectContaining({
+      schoolId: "school-1",
       publicClassroom: true,
       deviceToken: expect.any(String),
       installationId: expect.any(String),
     })));
   });
 
-  it("lets a normal teacher log in without binding the machine", async () => {
-    login.mockImplementationOnce(async () => {
-      useAuthStore.setState({ teacher: teacher("teacher") });
-      return true;
-    });
+  it("shows only classes from the selected school", async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await screen.findByRole("button", { name: "登录" });
-    await user.type(screen.getByLabelText("账号邮箱"), "teacher@example.com");
-    await user.type(screen.getByLabelText("密码"), "password-123");
-    await user.click(screen.getByRole("button", { name: "登录" }));
+    await screen.findByRole("button", { name: "绑定" });
+    await user.selectOptions(screen.getByLabelText("学校"), "school-1");
+    expect(screen.getByRole("option", { name: "公共教室" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "高一 · 1班" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "高二 · 2班" })).not.toBeInTheDocument();
 
-    expect(await screen.findByText("普通课堂")).toBeInTheDocument();
-    expect(classroomDeviceService.bindDevice).not.toHaveBeenCalled();
-    expect(logout).not.toHaveBeenCalled();
-    expect(localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY)).toBeNull();
+    await user.selectOptions(screen.getByLabelText("学校"), "school-2");
+    expect(screen.getByRole("option", { name: "高二 · 2班" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "高一 · 1班" })).not.toBeInTheDocument();
   });
 });
