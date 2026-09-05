@@ -524,7 +524,7 @@ describe("LecturePreviewPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题属性" }));
     expect(screen.getByRole("heading", { name: "编辑题目属性" })).toBeInTheDocument();
-    expect(screen.getByText("章节目录")).toBeInTheDocument();
+    expect(await screen.findByText("章节目录")).toBeInTheDocument();
     expect(screen.getByText("知识点目录")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("题型"), { target: { value: "essay" } });
