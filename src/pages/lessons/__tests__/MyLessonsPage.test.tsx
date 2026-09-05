@@ -439,6 +439,39 @@ describe("MyLessonsPage classroom publishing", () => {
     });
   });
 
+  it("keeps former-school coursewares in My Lessons and treats them as needing republish", async () => {
+    const user = userEvent.setup();
+    const oldCourseware = {
+      ...courseware("old-school"),
+      schoolId: "school-old",
+      classIds: ["old-class"],
+      status: "published" as const,
+    };
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) => {
+      if (filter.lifecycleStatus === "active") return [oldCourseware];
+      return [];
+    });
+
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("函数课件 old-school")).toBeInTheDocument();
+    expect(screen.getByText("待重新发布")).toBeInTheDocument();
+    expect(screen.getByText("尚未选择授课班级")).toBeInTheDocument();
+
+    const activeCall = vi.mocked(lessonCoursewareService.listCoursewares).mock.calls
+      .map(([filter]) => filter)
+      .find((filter) => filter?.lifecycleStatus === "active");
+    expect(activeCall).toMatchObject({ teacherId: "teacher-1", lifecycleStatus: "active" });
+    expect(activeCall).not.toHaveProperty("schoolId");
+
+    await user.selectOptions(screen.getByDisplayValue("全部状态"), "draft");
+    expect(await screen.findByText("函数课件 old-school")).toBeInTheDocument();
+  });
+
   it("shows six completed coursewares by default and restores a trashed courseware", async () => {
     const user = userEvent.setup();
     const completed = Array.from({ length: 7 }, (_, index) => courseware(`completed-${index + 1}`, "completed"));

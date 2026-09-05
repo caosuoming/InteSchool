@@ -224,6 +224,39 @@ describe("courseware lesson flow", () => {
     });
   });
 
+  it("reuses a personal courseware from a former school in the teacher's current school", async () => {
+    const state = createState();
+    state.teachers[0].schoolId = "school-2";
+    state.teachers[0].teachingClassIds = ["class-2"];
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "class-2",
+      type: "school",
+      schoolId: "school-2",
+      name: "高一(2)班",
+      grade: "高一",
+      studentCount: 32,
+      status: "active",
+      createdBy: "teacher-1",
+      createdAt: now,
+    });
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromCourseware(
+        "teacher-1",
+        "school-2",
+        "courseware-1",
+      );
+
+      expect(state.coursewares[0].schoolId).toBe("school-1");
+      expect(lesson).toMatchObject({
+        teacherId: "teacher-1",
+        schoolId: "school-2",
+        sourceId: "courseware-1",
+        classIds: ["class-2"],
+      });
+    });
+  });
+
   it("splits an uploaded PPT into one editable lesson page per source slide", async () => {
     const state = createState(sourceCourseware({
       type: "ppt",

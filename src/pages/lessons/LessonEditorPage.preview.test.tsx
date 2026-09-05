@@ -6,6 +6,7 @@ import type { Basket, LessonCourseware, Question, Teacher } from "@/types";
 const mocks = vi.hoisted(() => ({
   getCourseware: vi.fn(),
   updateCourseware: vi.fn(),
+  publishCourseware: vi.fn(),
   getQuestion: vi.fn(),
   listBaskets: vi.fn(),
   listMyStudents: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
     getCourseware: mocks.getCourseware,
     updateCourseware: mocks.updateCourseware,
+    publishCourseware: mocks.publishCourseware,
   },
 }));
 vi.mock("@/services/class", () => ({
@@ -86,6 +88,7 @@ describe("LessonEditorPage preview query", () => {
     vi.clearAllMocks();
     mocks.getCourseware.mockResolvedValue(courseware);
     mocks.updateCourseware.mockImplementation(async (_id, patch) => ({ ...courseware, ...patch }));
+    mocks.publishCourseware.mockImplementation(async () => ({ ...courseware, status: "published" }));
     mocks.getQuestion.mockResolvedValue(null);
     mocks.listBaskets.mockResolvedValue([]);
     mocks.listMyStudents.mockResolvedValue([]);
@@ -127,6 +130,51 @@ describe("LessonEditorPage preview query", () => {
     renderPage(`/my-lessons/${courseware.id}/edit?preview=1`);
 
     expect(await screen.findByText("课件预览模式")).toBeInTheDocument();
+  });
+
+  it("clears former-school classes and rebinds the lesson to the current school when publishing", async () => {
+    const formerSchoolCourseware = {
+      ...courseware,
+      schoolId: "school-old",
+      classIds: ["old-class"],
+      status: "published" as const,
+    };
+    mocks.getCourseware.mockResolvedValue(formerSchoolCourseware);
+    mocks.updateCourseware.mockImplementation(async (_id, patch) => ({
+      ...formerSchoolCourseware,
+      ...patch,
+    }));
+    mocks.listMyClasses.mockResolvedValue([{
+      id: "class-1",
+      type: "school",
+      schoolId: teacher.schoolId,
+      grade: "高一",
+      name: "1班",
+    }]);
+
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+
+    await screen.findByText(courseware.title);
+    expect(screen.getByRole("button", { name: "授课班级" })).toBeInTheDocument();
+    expect(screen.getByText("草稿")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "授课班级" }));
+    fireEvent.click(await screen.findByRole("button", { name: "高一 · 1班" }));
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    fireEvent.click(screen.getByRole("button", { name: "发布到上课" }));
+
+    await waitFor(() => {
+      expect(mocks.updateCourseware).toHaveBeenCalledWith(
+        courseware.id,
+        expect.objectContaining({
+          schoolId: "school-1",
+          classIds: ["class-1"],
+          status: "draft",
+          publishedAt: undefined,
+        }),
+      );
+      expect(mocks.publishCourseware).toHaveBeenCalledWith(courseware.id);
+    });
   });
 
   it("keeps normal courseware navigation in edit mode without the preview query", async () => {
