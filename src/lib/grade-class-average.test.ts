@@ -175,11 +175,30 @@ describe("grade class average report", () => {
   it("builds defaults from class profiles and natural class order", () => {
     const options = buildDefaultClassAverageOptions(exam, context);
 
-    expect(options.title).toBe("2026届高三期末考试班级平均分统计表");
+    expect(options.title).toBe("期末考试班级平均分统计表");
     expect(options.reportDate).toBe("2026-01-27");
     expect(options.classOrder).toEqual(["class-2", "class-10"]);
     expect(options.classLabels).toEqual({ "class-2": "2班", "class-10": "10班" });
     expect(options.classCategories).toEqual({ "class-2": "实验班", "class-10": "实验班" });
+  });
+
+  it("migrates the legacy auto-generated title but preserves custom titles", () => {
+    const legacyTemplate: GradeStatisticsTemplate = {
+      ...template,
+      classAverageOptions: {
+        title: "2026届高三期末考试班级平均分统计表",
+      },
+    };
+    expect(buildGradeClassAverageReport(exam, legacyTemplate, context).title)
+      .toBe("期末考试班级平均分统计表");
+
+    const customTemplate: GradeStatisticsTemplate = {
+      ...template,
+      classAverageOptions: {
+        title: "期末质量分析",
+      },
+    };
+    expect(buildGradeClassAverageReport(exam, customTemplate, context).title).toBe("期末质量分析");
   });
 
   it("calculates class differences and student-weighted summaries", () => {

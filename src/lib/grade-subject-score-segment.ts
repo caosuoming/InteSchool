@@ -114,7 +114,7 @@ export function buildGradeSubjectScoreSegmentReport(
       ]));
       return {
         subject,
-        title: `${exam.cohortLabel}${exam.name}${subject}成绩情况统计表`,
+        title: `${exam.name}${subject}成绩情况统计表`,
         thresholds,
         rows,
         totalCandidateCount,

@@ -88,8 +88,8 @@ describe("GradeSubjectScoreSegmentTable", () => {
     render(<Harness />);
 
     expect(screen.getByText("表三、各单科分数段")).toBeInTheDocument();
-    expect(screen.getByText("2027届高二四校联合考试语文成绩情况统计表")).toBeInTheDocument();
-    const chineseTable = screen.getByText("2027届高二四校联合考试语文成绩情况统计表")
+    expect(screen.getByText("四校联合考试语文成绩情况统计表")).toBeInTheDocument();
+    const chineseTable = screen.getByText("四校联合考试语文成绩情况统计表")
       .closest("section")?.querySelector("table");
     expect(chineseTable).not.toBeNull();
     expect(within(chineseTable!).getByRole("columnheader", { name: "语文" })).toBeInTheDocument();
@@ -97,7 +97,7 @@ describe("GradeSubjectScoreSegmentTable", () => {
     expect(within(chineseTable!).getByRole("columnheader", { name: "140分以上" })).toBeInTheDocument();
     const chineseDataCells = chineseTable!.querySelector("tbody tr")!.querySelectorAll("td");
     expect(chineseDataCells[2]).toBeEmptyDOMElement();
-    expect(screen.getByText("2027届高二四校联合考试物理成绩情况统计表")).toBeInTheDocument();
+    expect(screen.getByText("四校联合考试物理成绩情况统计表")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "调整分数段" }));
     const chineseThresholds = screen.getByLabelText("语文分数段");

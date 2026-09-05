@@ -136,7 +136,7 @@ export function buildDefaultClassAverageOptions(
   const classNames = new Map(exam.records.map((record) => [record.classId, record.className]));
 
   return {
-    title: `${exam.cohortLabel}${exam.name}班级平均分统计表`,
+    title: `${exam.name}班级平均分统计表`,
     reportDate: fallbackReportDate(exam),
     classOrder,
     hiddenClassIds: [],
@@ -179,7 +179,9 @@ export function resolveClassAverageOptions(
   return {
     ...defaults,
     ...options,
-    title: options?.title?.trim() || defaults.title,
+    title: options?.title?.trim() === `${exam.cohortLabel}${exam.name}班级平均分统计表`
+      ? defaults.title
+      : options?.title?.trim() || defaults.title,
     reportDate: options?.reportDate || defaults.reportDate,
     classOrder,
     hiddenClassIds: unique(options?.hiddenClassIds || []),
@@ -391,7 +393,7 @@ export function buildGradeClassAverageReport(
   const reportRecords = classRows.flatMap((row) => recordsByClass.get(row.classId) || []);
 
   return {
-    title: options.title || `${exam.cohortLabel}${exam.name}班级平均分统计表`,
+    title: options.title || `${exam.name}班级平均分统计表`,
     reportDate: options.reportDate || fallbackReportDate(exam),
     subjects: effectiveSubjects,
     options,

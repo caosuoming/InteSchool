@@ -108,11 +108,11 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                       )}
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-500">{row.studentCount} 人</td>
                       {report.subjects.map((subject) => (
-                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums text-ink-900">
+                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900">
                           {scoreText(row.subjectAverages[subject], row.subjectScoreModes[subject])}
                         </td>
                       ))}
-                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                         {scoreText(row.totalAverages, report.options.totalScoreMode || "assigned")}
                       </td>
                     </tr>
@@ -124,11 +124,11 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                     <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-medium">分差</td>
                     <td className="border border-ink-300 px-3 py-2" />
                     {report.subjects.map((subject) => (
-                      <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right tabular-nums">
+                      <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center tabular-nums">
                         {scoreText(group.difference.subjectValues[subject], group.subjectScoreModes[subject])}
                       </td>
                     ))}
-                    <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums">
+                    <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
                       {scoreText(group.difference.totalValues, report.options.totalScoreMode || "assigned")}
                     </td>
                   </tr>
@@ -140,11 +140,11 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                     </td>
                     <td className="border border-ink-300 px-3 py-2" />
                     {report.subjects.map((subject) => (
-                      <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums">
+                      <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
                         {scoreText(group.average.subjectValues[subject], group.subjectScoreModes[subject])}
                       </td>
                     ))}
-                    <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums">
+                    <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums">
                       {scoreText(group.average.totalValues, report.options.totalScoreMode || "assigned")}
                     </td>
                   </tr>
@@ -155,11 +155,11 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
               <tr className="bg-ink-100/70">
                 <td colSpan={3} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold text-ink-900">全校平均</td>
                 {report.subjects.map((subject) => (
-                  <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
+                  <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                     {scoreText(report.overallAverage.subjectValues[subject], report.overallSubjectScoreModes[subject])}
                   </td>
                 ))}
-                <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
+                <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                   {scoreText(report.overallAverage.totalValues, report.options.totalScoreMode || "assigned")}
                 </td>
               </tr>
@@ -365,6 +365,51 @@ function ElectiveTables({ bundle }: { bundle: GradePublishedReportBundle }) {
   );
 }
 
+function TotalScoreRankingTables({ bundle }: { bundle: GradePublishedReportBundle }) {
+  const report = bundle.totalScoreRanking;
+  if (!report || report.tables.length === 0) return null;
+
+  return (
+    <Card className="space-y-8 overflow-hidden p-5">
+      {report.tables.map((rankingTable) => (
+        <section key={rankingTable.key} className="overflow-x-auto">
+          <ReportHeading title={rankingTable.title} date={report.reportDate} />
+          <table className="w-max min-w-full table-auto border-collapse text-[11px]">
+            <thead>
+              <tr className="bg-ink-50 text-ink-700">
+                <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">名次</th>
+                <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">学号</th>
+                <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">姓名</th>
+                <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">班级</th>
+                {report.subjects.map((subject) => (
+                  <th key={subject} className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{subject}</th>
+                ))}
+                <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">总分（{report.scoreModeLabel}）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rankingTable.rows.map((row) => (
+                <tr key={`${rankingTable.key}-${row.classLabel}-${row.studentNo}-${row.rank}`} className="bg-paper">
+                  <td className="border border-ink-300 px-3 py-1.5 text-center font-semibold tabular-nums">{row.rank}</td>
+                  <td className="border border-ink-300 px-3 py-1.5 text-center tabular-nums">{row.studentNo || "—"}</td>
+                  <td className="border border-ink-300 px-3 py-1.5 text-center font-medium text-ink-800">{row.studentName}</td>
+                  <td className="border border-ink-300 px-3 py-1.5 text-center">{row.classLabel}</td>
+                  {report.subjects.map((subject) => (
+                    <td key={subject} className="border border-ink-300 px-3 py-1.5 text-center tabular-nums">
+                      {numberText(row.subjectScores[subject])}
+                    </td>
+                  ))}
+                  <td className="border border-ink-300 px-3 py-1.5 text-center font-semibold tabular-nums">{numberText(row.score)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ))}
+    </Card>
+  );
+}
+
 export default function PublishedGradeReportPage() {
   const { token = "" } = useParams();
   const [bundle, setBundle] = useState<GradePublishedReportBundle | null>(null);
@@ -399,7 +444,10 @@ export default function PublishedGradeReportPage() {
                 考试时间：{bundle.exam.examDate || "未填写"} · 发布时间：{new Date(bundle.exam.publishedAt).toLocaleString("zh-CN")}
               </div>
               <div className="mt-2 flex items-center gap-1.5 text-xs text-ink-400">
-                <ShieldCheck className="h-3.5 w-3.5" />此公开页面仅包含聚合统计，不包含学生姓名和逐人成绩。
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {bundle.totalScoreRanking
+                  ? `此公开页面包含汇总统计及表五前 ${bundle.totalScoreRanking.topN} 名学生的姓名、学号和成绩，请仅在适当范围内分享。`
+                  : "此公开页面仅包含聚合统计，不包含学生姓名和逐人成绩。"}
               </div>
             </div>
           </div>
@@ -408,6 +456,7 @@ export default function PublishedGradeReportPage() {
         <TotalScoreTable bundle={bundle} />
         <SubjectTables bundle={bundle} />
         <ElectiveTables bundle={bundle} />
+        <TotalScoreRankingTables bundle={bundle} />
       </div>
     </main>
   );

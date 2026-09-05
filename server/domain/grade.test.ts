@@ -530,6 +530,11 @@ describe("grade service", () => {
       const context = await gradeService.getImportContext("school-1", "grad-2026");
       const subjects = ["数学", "化学"];
       const settings = buildDefaultGradeSettings(subjects, context.classes.map((item) => item.id), context.teachers);
+      const totalScoreTemplate = settings.templates.find((item) => item.kind === "totalScoreSegment")!;
+      totalScoreTemplate.totalScoreSegmentOptions = {
+        ...totalScoreTemplate.totalScoreSegmentOptions,
+        totalScoreTopN: 1,
+      };
       const exam = await gradeService.importExam("school-1", "teacher-1", {
         cohortKey: "grad-2026",
         name: "期中考试",
@@ -580,8 +585,10 @@ describe("grade service", () => {
       expect(teacherQuery.exams[0].reportToken).toBe(published.publication?.shareToken);
       const publicReport = await gradeService.getPublishedReportByToken(published.publication!.shareToken);
       expect(publicReport.exam).toMatchObject({ name: "期中考试", cohortLabel: "2026届高三" });
+      expect(publicReport.totalScoreRanking?.topN).toBe(1);
+      expect(publicReport.totalScoreRanking?.tables.flatMap((table) => table.rows.map((row) => row.studentName)))
+        .toEqual(["二班学生"]);
       expect(JSON.stringify(publicReport)).not.toContain("旧姓名");
-      expect(JSON.stringify(publicReport)).not.toContain("二班学生");
       await expect(gradeService.adjustExamScore(exam.id, "student-1", "数学", "raw", 119, teacher))
         .rejects.toThrow("请先撤回成绩发布");
       await expect(gradeService.saveCohortSettings("school-1", "teacher-1", "grad-2026", subjects, settings))

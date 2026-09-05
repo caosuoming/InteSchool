@@ -306,7 +306,7 @@ export function buildGradeClassStatisticsReport(
     .sort((left, right) => left.className.localeCompare(right.className, "zh-CN", { numeric: true }));
 
   return {
-    title: `${currentExam.cohortLabel}${currentExam.name}各班成绩统计`,
+    title: `${currentExam.name}各班成绩统计`,
     subjects,
     currentExamId: currentExam.id,
     includedExams: includedExams.map((exam) => ({

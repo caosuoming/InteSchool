@@ -76,6 +76,7 @@ describe("grade class statistics", () => {
       showAssignedTotal: false,
     });
 
+    expect(report.title).toBe("期末考试各班成绩统计");
     expect(report.classes.map((item) => item.className)).toEqual(["高三（1）班", "高三（2）班"]);
     expect(report.columns.map((column) => column.label)).toEqual(["班级", "姓名", "语文", "化学"]);
     expect(report.classes[0].rows[0].values["current:subject:化学"]).toBe(90);
