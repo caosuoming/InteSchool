@@ -1155,6 +1155,8 @@ export type TreeNodeType = "chapter" | "knowledge";
 export interface Chapter {
   id: string;
   schoolId: string;
+  /** 个人目录节点的所有者；旧数据未设置时仍按 schoolId 解释。 */
+  teacherId?: string;
   parentId: string | null;
   name: string;
   order: number;
@@ -1165,6 +1167,8 @@ export interface Chapter {
 export interface KnowledgePoint {
   id: string;
   schoolId: string;
+  /** 个人目录节点的所有者；旧数据未设置时仍按 schoolId 解释。 */
+  teacherId?: string;
   parentId: string | null;
   /** 旧数据可能保留该字段；知识点目录本身不依赖章节目录。 */
   chapterId?: string;
@@ -1206,10 +1210,11 @@ export interface DirectoryCatalogNode {
   description?: string;
 }
 
-/** 学校本地保存的一套章节课/知识点目录。 */
+/** 教师个人保存的一套章节课/知识点目录；schoolId 仅保留旧数据兼容。 */
 export interface DirectoryCatalog {
   id: string;
   schoolId: string;
+  teacherId?: string;
   type: TreeNodeType;
   name: string;
   nodes: DirectoryCatalogNode[];
@@ -1221,6 +1226,7 @@ export interface DirectoryCatalog {
 export interface DirectoryCatalogSummary {
   id: string;
   schoolId: string;
+  teacherId?: string;
   type: TreeNodeType;
   name: string;
   nodeCount: number;
@@ -1233,7 +1239,7 @@ export interface DirectoryCatalogSummary {
 export interface DirectoryDonation {
   id: string;
   donorTeacherId: string;
-  donorSchoolId: string;
+  donorSchoolId: string | null;
   donorNickname: string;
   subject: string;
   type: TreeNodeType;

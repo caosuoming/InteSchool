@@ -80,10 +80,10 @@ describe("knowledge directory donations", () => {
       const firstKnowledge = await knowledgeService.donateDirectory("teacher-a", "knowledge");
 
       appState.chapters = (appState.chapters as Chapter[]).map((item) =>
-        item.id === "a-chapter-root" ? { ...item, name: "必修一（修订）" } : item,
+        item.teacherId === "teacher-a" ? { ...item, name: "必修一（修订）" } : item,
       );
       appState.knowledgePoints = (appState.knowledgePoints as KnowledgePoint[]).map((item) =>
-        item.id === "a-knowledge-root" ? { ...item, description: "集合修订说明" } : item,
+        item.teacherId === "teacher-a" ? { ...item, description: "集合修订说明" } : item,
       );
 
       const secondChapter = await knowledgeService.donateDirectory("teacher-a", "chapter");
@@ -111,7 +111,7 @@ describe("knowledge directory donations", () => {
       const accepted = await knowledgeService.acceptDirectoryDonation("teacher-b", donation.id, "new");
 
       expect(accepted.isActive).toBe(true);
-      expect((appState.chapters as Chapter[]).filter((item) => item.schoolId === "school-b").map((item) => item.name))
+      expect((appState.chapters as Chapter[]).filter((item) => item.teacherId === "teacher-b").map((item) => item.name))
         .toEqual(["必修一"]);
 
       const catalogsAfterAccept = await knowledgeService.listDirectoryCatalogs("teacher-b", "chapter");
@@ -120,20 +120,20 @@ describe("knowledge directory donations", () => {
       expect(defaultCatalog.name).toBe("默认章节课目录");
 
       appState.chapters = (appState.chapters as Chapter[]).map((item) =>
-        item.id === "a-chapter-root" ? { ...item, name: "捐赠者后续版本" } : item,
+        item.teacherId === "teacher-a" ? { ...item, name: "捐赠者后续版本" } : item,
       );
       const updatedDonation = await knowledgeService.donateDirectory("teacher-a", "chapter");
       expect(updatedDonation.replaced).toBe(true);
 
-      expect((appState.chapters as Chapter[]).filter((item) => item.schoolId === "school-b").map((item) => item.name))
+      expect((appState.chapters as Chapter[]).filter((item) => item.teacherId === "teacher-b").map((item) => item.name))
         .toEqual(["必修一"]);
 
       await knowledgeService.activateDirectoryCatalog("teacher-b", defaultCatalog.id);
-      expect((appState.chapters as Chapter[]).filter((item) => item.schoolId === "school-b").map((item) => item.name))
+      expect((appState.chapters as Chapter[]).filter((item) => item.teacherId === "teacher-b").map((item) => item.name))
         .toEqual(["本地目录"]);
 
       await knowledgeService.activateDirectoryCatalog("teacher-b", accepted.id);
-      expect((appState.chapters as Chapter[]).filter((item) => item.schoolId === "school-b").map((item) => item.name))
+      expect((appState.chapters as Chapter[]).filter((item) => item.teacherId === "teacher-b").map((item) => item.name))
         .toEqual(["必修一"]);
     });
   });
@@ -179,15 +179,18 @@ describe("knowledge directory donations", () => {
       const { donation } = await knowledgeService.donateDirectory("teacher-a", "chapter");
       const before = await knowledgeService.listDirectoryCatalogs("teacher-b", "chapter");
       expect(before).toHaveLength(1);
+      const beforeNodes = await knowledgeService.listChapters("teacher-b");
+      const parentId = beforeNodes.find((item) => item.name === "必修一")!.id;
+      const setId = beforeNodes.find((item) => item.name === "集合")!.id;
 
       const mergedCatalog = await knowledgeService.acceptDirectoryDonation("teacher-b", donation.id, "merge");
-      const schoolB = (appState.chapters as Chapter[]).filter((item) => item.schoolId === "school-b");
-      expect(schoolB.find((item) => item.name === "必修一")?.id).toBe("b-parent");
-      expect(schoolB.find((item) => item.name === "集合")?.id).toBe("b-set");
-      expect(schoolB.find((item) => item.name === "函数")?.parentId).toBe("b-parent");
+      const personal = (appState.chapters as Chapter[]).filter((item) => item.teacherId === "teacher-b");
+      expect(personal.find((item) => item.name === "必修一")?.id).toBe(parentId);
+      expect(personal.find((item) => item.name === "集合")?.id).toBe(setId);
+      expect(personal.find((item) => item.name === "函数")?.parentId).toBe(parentId);
 
       const catalogs = appState.directoryCatalogs as DirectoryCatalog[];
-      expect(catalogs.filter((item) => item.schoolId === "school-b" && item.type === "chapter")).toHaveLength(1);
+      expect(catalogs.filter((item) => item.teacherId === "teacher-b" && item.type === "chapter")).toHaveLength(1);
       expect(catalogs.find((item) => item.id === mergedCatalog.id)?.nodes.map((item) => item.name))
         .toEqual(["必修一", "集合", "函数"]);
     });

@@ -86,10 +86,15 @@ export function createDuplicateConfirmationError(candidate: SimilarQuestionCandi
 }
 
 // 扩展知识点ID列表，将每个知识点替换为其所有同名分身ID
-function expandKnowledgePointAliases(ids: string[], schoolId: string): string[] {
+function expandKnowledgePointAliases(
+  ids: string[],
+  schoolId: string,
+  teacherId?: string,
+): string[] {
   const expanded = new Set<string>();
+  const scopeId = teacherId || schoolId;
   for (const id of ids) {
-    for (const aliasId of knowledgeService.getAliasIds(id, schoolId)) {
+    for (const aliasId of knowledgeService.getAliasIds(id, scopeId)) {
       expanded.add(aliasId);
     }
   }
@@ -277,7 +282,7 @@ export const questionService = {
     const now = new Date().toISOString();
     const duplicateHash = computeDuplicateHash(input.stem, input.answer, input.options);
     // 扩展知识点ID，关联所有同名分身
-    const expandedKpIds = expandKnowledgePointAliases(input.knowledgePointIds, schoolId);
+    const expandedKpIds = expandKnowledgePointAliases(input.knowledgePointIds, schoolId, teacherId);
     const question: Question = {
       id: genId("q"),
       teacherId,
@@ -387,6 +392,7 @@ export const questionService = {
             finalPatch.knowledgePointIds = expandKnowledgePointAliases(
               finalPatch.knowledgePointIds,
               q.schoolId,
+              q.teacherId,
             );
           }
           if (
@@ -532,7 +538,7 @@ export const questionService = {
       links: input.links?.map((link) => ({ ...link })) || [],
       explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
       chapterIds: input.chapterIds,
-      knowledgePointIds: expandKnowledgePointAliases(input.knowledgePointIds, schoolId),
+      knowledgePointIds: expandKnowledgePointAliases(input.knowledgePointIds, schoolId, teacherId),
       grade: input.grade,
       schoolYear: input.schoolYear,
       semester: input.semester || "上学期",
