@@ -261,6 +261,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
   const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [deviceSnapshot, setDeviceSnapshot] = useState<ClassroomDeviceSnapshot | null>(null);
+  const [deviceClassId, setDeviceClassId] = useState("");
 
   const selectedClassId = deviceMode
     ? deviceSnapshot?.classroom.id || ""
@@ -302,9 +303,9 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
           navigate("/classroom-login", { replace: true });
           return;
         }
-        const snapshot = await classroomDeviceService.getClassroomSnapshot(token);
+        const snapshot = await classroomDeviceService.getClassroomSnapshot(token, deviceClassId || undefined);
         setDeviceSnapshot(snapshot);
-        setClasses([snapshot.classroom]);
+        setClasses(snapshot.availableClassrooms?.length ? snapshot.availableClassrooms : [snapshot.classroom]);
         setLessons(snapshot.lessons);
         setStudents(snapshot.students);
         setHomeworks(snapshot.homeworks);
@@ -351,7 +352,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [deviceMode, navigate, selectedClassId, teacher?.schoolId, today]);
+  }, [deviceClassId, deviceMode, navigate, selectedClassId, teacher?.schoolId, today]);
 
   useEffect(() => {
     void loadClasses().catch((error) => toast.error("班级加载失败", error instanceof Error ? error.message : undefined));
@@ -459,7 +460,11 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
     .filter(([, items]) => items.length > 0);
 
   const handleClassChange = (classId: string) => {
-    if (deviceMode) return;
+    if (deviceMode) {
+      if (!deviceSnapshot?.device.publicClassroom) return;
+      setDeviceClassId(classId);
+      return;
+    }
     sessionStorage.setItem(CLASSROOM_KEY, classId);
     navigate(`/classroom/${classId}`);
   };
@@ -572,6 +577,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
   if (deviceMode && deviceSnapshot?.device.effectiveState !== "active") {
     const closed = deviceSnapshot?.device.effectiveState === "closed";
     const scheduled = deviceSnapshot?.device.controlState === "active" && !deviceSnapshot?.device.scheduleAllowsUse;
+    const whitelist = deviceSnapshot?.device.accessPolicy?.whitelist || [];
     return (
       <div className="flex h-screen min-h-[560px] flex-col items-center justify-center bg-black px-6 text-center text-white">
         <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-neutral-800 bg-neutral-950 text-amber-400">
@@ -581,6 +587,36 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         <p className="mt-2 max-w-xl text-sm text-neutral-500">
           {deviceSnapshot?.device.grade} · {deviceSnapshot?.device.className}。任课教师可在个人账号的“我的教室”中远程解锁。
         </p>
+        {whitelist.length > 0 && (
+          <div className="mt-8 w-full max-w-2xl rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-left">
+            <div className="text-sm font-medium text-neutral-200">锁定时仍可使用</div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {whitelist.map((rule) => {
+                const appProtocol = rule.kind === "app"
+                  && /^[a-z][a-z0-9+.-]*:/i.test(rule.target)
+                  && !/^(?:javascript|data|file|http|https):/i.test(rule.target);
+                const href = rule.kind === "website" || appProtocol ? rule.target : undefined;
+                const content = <>
+                  <span className="block text-[10px] uppercase tracking-wide text-neutral-600">{rule.kind === "website" ? "网页" : "应用"}</span>
+                  <span className="mt-1 block truncate">{rule.label || rule.target}</span>
+                </>;
+                return href ? (
+                  <a
+                    key={rule.id}
+                    href={href}
+                    target={rule.kind === "website" ? "_blank" : undefined}
+                    rel={rule.kind === "website" ? "noreferrer" : undefined}
+                    className="rounded-xl border border-neutral-800 bg-black px-4 py-3 text-sm text-amber-300 hover:border-amber-400"
+                  >{content}</a>
+                ) : (
+                  <div key={rule.id} className="rounded-xl border border-neutral-800 bg-black px-4 py-3 text-sm text-neutral-300" title="该应用由一体机客户端按应用标识放行">
+                    {content}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -607,7 +643,23 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
               当前班级
             </label>
           </div>
-          {deviceMode ? (
+          {deviceMode && deviceSnapshot?.device.publicClassroom ? (
+            <div className="relative">
+              <School className="pointer-events-none absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-amber-400" />
+              <select
+                id="classroom-class"
+                value={selectedClassId}
+                onChange={(event) => handleClassChange(event.target.value)}
+                className="w-full appearance-none rounded-md border border-neutral-700 bg-neutral-900 py-1.5 pl-5 pr-3 text-[9px] text-white outline-none focus:border-amber-400 sm:text-[10px]"
+                title={selectedClass ? `${selectedClass.grade} · ${selectedClass.name}` : "选择班级"}
+              >
+                {classes.map((item) => (
+                  <option key={item.id} value={item.id}>{item.grade} · {item.name}</option>
+                ))}
+              </select>
+              <ChevronRight className="pointer-events-none absolute right-0.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-neutral-500" />
+            </div>
+          ) : deviceMode ? (
             <div className="rounded-md border border-neutral-700 bg-neutral-900 px-1.5 py-1.5 text-center text-[9px] text-white sm:text-[10px]" title={selectedClass ? `${selectedClass.grade} · ${selectedClass.name}` : "绑定班级"}>
               <School className="mx-auto mb-1 h-3 w-3 text-amber-400" />
               <span className="block truncate">{selectedClass ? `${selectedClass.grade} · ${selectedClass.name}` : "加载中"}</span>

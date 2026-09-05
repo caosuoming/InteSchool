@@ -21,6 +21,11 @@ function state(): AppState {
       classId: "class-1",
       deviceTokenHash: createHash("sha256").update(TOKEN).digest("hex"),
     }],
+    schoolClasses: [
+      { id: "class-1", schoolId: "school-1", status: "active" },
+      { id: "class-2", schoolId: "school-1", status: "active" },
+      { id: "class-3", schoolId: "school-2", status: "active" },
+    ],
     lessonCoursewares: [{
       id: "lesson-1",
       schoolId: "school-1",
@@ -79,5 +84,28 @@ describe("classroom device authorization", () => {
 
     (snapshot.lessonCoursewares as Array<Record<string, unknown>>)[0].status = "draft";
     expect(canClassroomDeviceReadFile(snapshot, TOKEN, "file-1")).toBe(false);
+  });
+
+  it("allows a public classroom device to read published content from other classes in the same school only", () => {
+    const snapshot = state();
+    (snapshot.classroomDevices as Array<Record<string, unknown>>)[0].publicClassroom = true;
+    (snapshot.lessonCoursewares as Array<Record<string, unknown>>).push({
+      id: "lesson-2",
+      schoolId: "school-1",
+      classIds: ["class-2"],
+      status: "published",
+      lifecycleStatus: "active",
+      slides: [{ attachment: { url: "/api/files/file-class-2" } }],
+    }, {
+      id: "lesson-other-school",
+      schoolId: "school-2",
+      classIds: ["class-3"],
+      status: "published",
+      lifecycleStatus: "active",
+      slides: [{ attachment: { url: "/api/files/file-school-2" } }],
+    });
+
+    expect(canClassroomDeviceReadFile(snapshot, TOKEN, "file-class-2")).toBe(true);
+    expect(canClassroomDeviceReadFile(snapshot, TOKEN, "file-school-2")).toBe(false);
   });
 });

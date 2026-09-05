@@ -15,6 +15,7 @@ vi.mock("@/services/classroomDevice", () => ({
     closeDevice: vi.fn(),
     unbindDevice: vi.fn(),
     updateDeviceSchedule: vi.fn(),
+    updateDeviceAccessPolicy: vi.fn(),
   },
 }));
 vi.mock("@/services/school", () => ({ schoolService: { listSchools: vi.fn() } }));
@@ -112,21 +113,37 @@ describe("MyClassroomsPage", () => {
 
   it("shows school-wide controls and schedule editing to a school administrator", async () => {
     setTeacher("school_admin");
-    vi.mocked(classroomDeviceService.listManagedDevices).mockResolvedValue([device({
+    const managed = device({
       canView: true,
       canUnlock: true,
       canLock: true,
       canClose: true,
       canUnbind: true,
       canEditSchedule: true,
-    })]);
+      canEditAccessPolicy: true,
+    });
+    vi.mocked(classroomDeviceService.listManagedDevices).mockResolvedValue([managed]);
+    vi.mocked(classroomDeviceService.updateDeviceAccessPolicy).mockResolvedValue(managed);
+    const user = userEvent.setup();
     render(<MyClassroomsPage />);
 
     expect(await screen.findByRole("button", { name: /锁定本校全部/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^锁定$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /关闭页面/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /使用时段/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /黑白名单/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /解绑/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /黑白名单/ }));
+    await user.click(screen.getByRole("button", { name: "添加白名单项目" }));
+    await user.type(screen.getByLabelText("网页地址"), "https://school.example.com");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(classroomDeviceService.updateDeviceAccessPolicy).toHaveBeenCalledWith(
+      "device-1",
+      expect.objectContaining({
+        whitelist: [expect.objectContaining({ kind: "website", target: "https://school.example.com" })],
+      }),
+    ));
   });
 
   it("lets a platform administrator switch schools while exposing unlock/unbind but not lock/close", async () => {

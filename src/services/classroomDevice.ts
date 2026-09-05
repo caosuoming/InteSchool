@@ -1,5 +1,6 @@
 import { rpcCall } from "./api";
 import type {
+  ClassroomDeviceAccessPolicy,
   ClassroomDevice,
   ClassroomDeviceSession,
   ClassroomDeviceSnapshot,
@@ -7,7 +8,8 @@ import type {
 } from "@/types";
 
 export interface ClassroomDeviceBindInput {
-  classId: string;
+  classId?: string;
+  publicClassroom?: boolean;
   deviceToken: string;
   installationId: string;
   deviceName?: string;
@@ -44,8 +46,8 @@ export const classroomDeviceService = {
     return rpcCall("classroomDevice", "getDeviceSession", [deviceToken]) as any;
   },
 
-  async getClassroomSnapshot(deviceToken: string): Promise<ClassroomDeviceSnapshot> {
-    return rpcCall("classroomDevice", "getClassroomSnapshot", [deviceToken]) as any;
+  async getClassroomSnapshot(deviceToken: string, classId?: string): Promise<ClassroomDeviceSnapshot> {
+    return rpcCall("classroomDevice", "getClassroomSnapshot", [deviceToken, classId]) as any;
   },
 
   async reportHeartbeat(deviceToken: string, input: ClassroomDeviceHeartbeatInput): Promise<ClassroomDevice> {
@@ -74,6 +76,10 @@ export const classroomDeviceService = {
 
   async updateDeviceSchedule(deviceId: string, ranges: ClassroomDeviceTimeRange[]): Promise<ClassroomDevice> {
     return rpcCall("classroomDevice", "updateDeviceSchedule", [deviceId, ranges]) as any;
+  },
+
+  async updateDeviceAccessPolicy(deviceId: string, policy: ClassroomDeviceAccessPolicy): Promise<ClassroomDevice> {
+    return rpcCall("classroomDevice", "updateDeviceAccessPolicy", [deviceId, policy]) as any;
   },
 
   async unbindDevice(deviceId: string): Promise<void> {
