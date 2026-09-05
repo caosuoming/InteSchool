@@ -212,6 +212,7 @@ function createTextElement(
     content,
     ...position,
     fontSize: options.fontSize || 24,
+    autoHeight: true,
     textAlign: options.textAlign || "left",
     questionSection: options.questionSection,
   };
@@ -360,7 +361,7 @@ function questionSlide(
       width: labelWidth,
       height: QUESTION_LABEL_HEIGHT,
     }, {
-      fontSize: 22,
+      fontSize: 30,
       questionSection: "stem",
     }),
   ];
@@ -371,7 +372,7 @@ function questionSlide(
       width: stemWidth,
       height: options?.length ? 24 : 42,
     }, {
-      fontSize: 26,
+      fontSize: 30,
       questionSection: "stem",
     }));
   }
@@ -390,7 +391,7 @@ function questionSlide(
         height: 12,
       },
       {
-        fontSize: 20,
+        fontSize: 30,
         questionSection: "options",
       },
     ));
@@ -402,7 +403,7 @@ function questionSlide(
       width: 42,
       height: 24,
     }, {
-      fontSize: 18,
+      fontSize: 30,
       questionSection: "answer",
     }));
   }
@@ -418,7 +419,7 @@ function questionSlide(
         height: 24,
       },
       {
-        fontSize: 18,
+        fontSize: 30,
         questionSection: "analysis",
       },
     ));
@@ -512,7 +513,7 @@ function knowledgeSlide(title: string, content: string): LessonSlide {
       width: 88,
       height: 88,
     }, {
-      fontSize: 24,
+      fontSize: 30,
     })] : [],
     relatedQuestionIds: [],
     askableStudentIds: [],

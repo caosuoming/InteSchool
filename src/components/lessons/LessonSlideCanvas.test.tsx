@@ -80,6 +80,33 @@ describe("LessonSlideCanvas", () => {
     });
   });
 
+  it("lets generated text boxes expand with their content", () => {
+    render(
+      <LessonSlideCanvas
+        elements={[{
+          id: "auto-text",
+          kind: "text",
+          content: "这是一段需要自动扩展文本框高度的较长课堂文本。",
+          x: 8,
+          y: 10,
+          width: 40,
+          height: 12,
+          fontSize: 30,
+          autoHeight: true,
+        }]}
+      >
+        <div />
+      </LessonSlideCanvas>,
+    );
+
+    const text = screen.getByText(/需要自动扩展文本框高度/);
+    expect(text.closest(".absolute")).toHaveStyle({
+      height: "auto",
+      minHeight: "12%",
+    });
+    expect(text.parentElement).toHaveClass("overflow-visible");
+  });
+
   it("renders positioned text and image elements with presentation animations", () => {
     render(
       <LessonSlideCanvas elements={elements}>
