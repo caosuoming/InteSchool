@@ -115,6 +115,11 @@ export default function KnowledgeTreePage() {
   const loadQuestions = useCallback(async () => {
     if (!teacher || !selectedNode) return;
     setQuestionsLoading(true);
+    if (!teacher.schoolId) {
+      setQuestions([]);
+      setQuestionsLoading(false);
+      return;
+    }
     let filter;
     if (kind === "chapter") {
       filter = { schoolId: teacher.schoolId!, chapterIds: [selectedNode.id] };
@@ -142,7 +147,11 @@ export default function KnowledgeTreePage() {
     if (!teacher) return;
     loadTree();
     loadDirectoryMeta();
-    basketService.listBaskets(teacher.id).then(setBaskets);
+    if (teacher.schoolId) {
+      basketService.listBaskets(teacher.id).then(setBaskets);
+    } else {
+      setBaskets([]);
+    }
   }, [loadDirectoryMeta, loadTree, teacher]);
 
   useEffect(() => {

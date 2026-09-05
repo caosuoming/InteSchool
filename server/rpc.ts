@@ -66,7 +66,22 @@ const READ_METHODS = new Set([
 ]);
 const MUTATING_READ_PREFIX_CALLS = new Set([
   "examPublish.checkExpiry",
+  "knowledge.listChapters",
+  "knowledge.listKnowledgePoints",
+  "knowledge.getAliasIds",
+  "knowledge.getChapterTree",
+  "knowledge.getKnowledgeTree",
+  "knowledge.listDirectoryCatalogs",
 ]);
+const PERSONAL_DIRECTORY_SCOPE_ARG_INDEX: Partial<Record<string, number>> = {
+  listChapters: 0,
+  listKnowledgePoints: 0,
+  getAliasIds: 1,
+  getChapterTree: 0,
+  getKnowledgeTree: 0,
+  addChapter: 0,
+  addKnowledgePoint: 0,
+};
 
 const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   ai: "documents",
@@ -418,9 +433,16 @@ function authorize(
   const admin = isAdmin(teacher);
   const params = (serviceParameters as Record<string, Record<string, readonly string[]>>)[service]?.[method] || [];
   const normalizedArgs = [...args];
+  const personalDirectoryScopeIndex = service === "knowledge"
+    ? PERSONAL_DIRECTORY_SCOPE_ARG_INDEX[method]
+    : undefined;
+  if (personalDirectoryScopeIndex !== undefined) {
+    normalizedArgs[personalDirectoryScopeIndex] = teacher.id;
+  }
 
   params.forEach((name, index) => {
     const value = normalizedArgs[index];
+    if (personalDirectoryScopeIndex === index) return;
     if (name === "teacher") {
       normalizedArgs[index] = teacher;
       return;
@@ -452,7 +474,7 @@ function authorize(
     validateEmbeddedIdentity(value, teacher, admin, name);
   });
 
-  if (service !== "school" && service !== "help" && !teacher.schoolId) {
+  if (service !== "school" && service !== "help" && service !== "knowledge" && !teacher.schoolId) {
     throw new Error("请先完成学校认证");
   }
 

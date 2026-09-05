@@ -320,8 +320,14 @@ function knowledgePath(knowledgeId: string, points: KnowledgePoint[]): string {
 }
 
 function collectDirectorySnapshot(resource: ShareableResource): DonationDirectorySnapshot {
-  const chapters = (db.read("chapters") as Chapter[]).filter((item) => item.schoolId === resource.schoolId);
-  const points = (db.read("knowledgePoints") as KnowledgePoint[]).filter((item) => item.schoolId === resource.schoolId);
+  const chapters = (db.read("chapters") as Chapter[]).filter((item) =>
+    item.teacherId === resource.teacherId
+      || (!item.teacherId && item.schoolId === resource.schoolId),
+  );
+  const points = (db.read("knowledgePoints") as KnowledgePoint[]).filter((item) =>
+    item.teacherId === resource.teacherId
+      || (!item.teacherId && item.schoolId === resource.schoolId),
+  );
   const selectedChapterIds = new Set(resource.chapterIds || []);
   const selectedKnowledgeIds = new Set(resource.knowledgePointIds || []);
   const chapterIds = new Set<string>();

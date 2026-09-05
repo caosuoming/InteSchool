@@ -150,6 +150,33 @@ describe("KnowledgeTreePage", () => {
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
   });
 
+  it("loads the personal directory without an active school", async () => {
+    useAuthStore.setState({
+      teacher: {
+        id: "teacher-1",
+        schoolId: null,
+      } as Teacher,
+      loading: false,
+      error: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("章节课")).toBeInTheDocument();
+    expect(knowledgeService.getChapterTree).toHaveBeenCalledWith(null);
+    expect(knowledgeService.listDirectoryCatalogs).toHaveBeenCalledWith("teacher-1", "chapter");
+    expect(basketService.listBaskets).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("章节课"));
+    await waitFor(() => {
+      expect(questionService.listQuestions).not.toHaveBeenCalled();
+    });
+  });
+
   it("uses the knowledge-tree root after switching from a selected chapter", async () => {
     render(
       <MemoryRouter>
