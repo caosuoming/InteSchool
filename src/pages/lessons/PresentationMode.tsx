@@ -232,7 +232,11 @@ const DEFAULT_COLOR_PREFERENCES: PresentationColorPreferences = {
   textColor: "#111827",
   boardBackgroundColor: "#fffef8",
 };
-const COLOR_PRESETS = ["#fffef8", "#ffffff", "#f8fafc", "#fff7ed", "#eff6ff", "#ecfdf5", "#111827"];
+const COLOR_PRESETS = ["#fffef8", "#ffffff", "#f8fafc", "#fff7ed", "#eff6ff", "#ecfdf5", "#000000"];
+const DEFAULT_PRESENTATION_QUESTION_VISIBILITY: LessonQuestionContentVisibility = {
+  ...STEM_ONLY_QUESTION_VISIBILITY,
+  options: true,
+};
 
 const BOARD_RESIZE_HANDLES: BoardResizeHandle[] = [
   { direction: "n", label: "上边", className: "left-4 right-4 top-0 h-2 cursor-ns-resize" },
@@ -779,7 +783,7 @@ export function PresentationMode({
   const [eraserWidth, setEraserWidth] = useState(24);
   const [eraserSizeMenuOpen, setEraserSizeMenuOpen] = useState(false);
   const [questionVisibility, setQuestionVisibility] = useState<LessonQuestionContentVisibility>({
-    ...STEM_ONLY_QUESTION_VISIBILITY,
+    ...DEFAULT_PRESENTATION_QUESTION_VISIBILITY,
   });
   const [sidePanel, setSidePanel] = useState<{ side: Side; tab: SideTab } | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
@@ -862,11 +866,6 @@ export function PresentationMode({
   const questionContentControls = currentSlide?.questionSnapshot
     ? [
         {
-          key: "options" as const,
-          label: "选项",
-          available: Boolean(currentSlide.questionSnapshot.options?.length),
-        },
-        {
           key: "answer" as const,
           label: "答案",
           available: Boolean(currentSlide.questionSnapshot.answer),
@@ -915,7 +914,7 @@ export function PresentationMode({
   }, []);
 
   useEffect(() => {
-    setQuestionVisibility({ ...STEM_ONLY_QUESTION_VISIBILITY });
+    setQuestionVisibility({ ...DEFAULT_PRESENTATION_QUESTION_VISIBILITY });
     setSidePanel(null);
     setSelectedElementId(null);
     setPresetMenuToolId(null);

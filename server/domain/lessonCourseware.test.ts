@@ -602,6 +602,8 @@ describe("courseware lesson flow", () => {
           y: 5,
           width: 4,
           height: 6,
+          fontSize: 30,
+          autoHeight: true,
           questionSection: "stem",
         }),
         expect.objectContaining({
@@ -609,11 +611,15 @@ describe("courseware lesson flow", () => {
           content: "<p>观察图像并选择答案。</p>",
           x: 10,
           width: 85,
+          fontSize: 30,
+          autoHeight: true,
           questionSection: "stem",
         }),
         expect.objectContaining({
           kind: "text",
           content: "A. 递增",
+          fontSize: 30,
+          autoHeight: true,
           questionSection: "options",
         }),
         expect.objectContaining({
@@ -783,6 +789,8 @@ describe("courseware lesson flow", () => {
         expect.objectContaining({
           kind: "text",
           content: "函数描述两个变量之间的对应关系。",
+          fontSize: 30,
+          autoHeight: true,
         }),
       ]);
       expect(lesson.slides[1].elements).not.toEqual(expect.arrayContaining([

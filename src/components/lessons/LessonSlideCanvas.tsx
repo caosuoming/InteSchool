@@ -92,7 +92,8 @@ function EditableLessonText({
       suppressContentEditableWarning
       data-placeholder="直接输入文字"
       className={cn(
-        "h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900 outline-none",
+        "w-full whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900 outline-none",
+        element.autoHeight ? "overflow-visible" : "h-full overflow-hidden",
         "empty:before:pointer-events-none empty:before:text-ink-300 empty:before:content-[attr(data-placeholder)]",
         element.href && "text-gold-700 underline decoration-gold-300 underline-offset-4",
       )}
@@ -317,7 +318,12 @@ export function LessonSlideCanvas({
               left: `${element.x}%`,
               top: `${element.y}%`,
               width: `${element.width / layoutScale}%`,
-              height: `${element.height / layoutScale}%`,
+              height: element.kind === "text" && element.autoHeight
+                ? "auto"
+                : `${element.height / layoutScale}%`,
+              minHeight: element.kind === "text" && element.autoHeight
+                ? `${element.height / layoutScale}%`
+                : undefined,
               ...(referenceSize
                 ? {
                     transform: `scale(${layoutScale})`,
@@ -389,7 +395,10 @@ export function LessonSlideCanvas({
                   href={element.href}
                   target="_blank"
                   rel="noreferrer"
-                  className="block h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-gold-700 underline decoration-gold-300 underline-offset-4"
+                  className={cn(
+                    "block w-full whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-gold-700 underline decoration-gold-300 underline-offset-4",
+                    element.autoHeight ? "overflow-visible" : "h-full overflow-hidden",
+                  )}
                   style={textStyle}
                 >
                   <MathHtml className="leading-snug">{element.content || element.href}</MathHtml>
@@ -397,7 +406,8 @@ export function LessonSlideCanvas({
               ) : (
                 <div
                   className={cn(
-                    "h-full w-full overflow-hidden whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900",
+                    "w-full whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900",
+                    element.autoHeight ? "overflow-visible" : "h-full overflow-hidden",
                     element.href && "text-gold-700 underline decoration-gold-300 underline-offset-4",
                   )}
                   style={textStyle}

@@ -2547,6 +2547,8 @@ export interface LessonSlideTextElement extends LessonSlideElementBase {
   kind: "text";
   content: string;
   fontSize?: number;
+  /** 文本内容超过初始高度时允许文本框随内容向下扩展。 */
+  autoHeight?: boolean;
   fontFamily?: string;
   fontWeight?: "normal" | "bold";
   fontStyle?: "normal" | "italic";

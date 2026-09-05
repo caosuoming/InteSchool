@@ -348,8 +348,8 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("dialog", { name: "颜色设置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "文字颜色自动对比" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.change(screen.getByLabelText("页面颜色"), { target: { value: "#111827" } });
-    expect(slideCanvas).toHaveStyle({ backgroundColor: "#111827" });
+    await user.click(screen.getByRole("button", { name: "页面颜色 #000000" }));
+    expect(slideCanvas).toHaveStyle({ backgroundColor: "#000000" });
     expect(textBox).toHaveStyle({ color: "#ffffff" });
 
     await user.click(screen.getByRole("button", { name: "自定义文字颜色" }));
@@ -933,7 +933,7 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "放大所选文本" })).toBeEnabled();
   });
 
-  it("reveals question options, answers, and analysis from either mirrored display rail", async () => {
+  it("shows question options by default and keeps only answer and analysis as display toggles", async () => {
     const user = userEvent.setup();
     render(
       <PresentationMode
@@ -945,12 +945,12 @@ describe("PresentationMode", () => {
       />,
     );
 
-    expect(screen.queryByText("选项 A")).not.toBeInTheDocument();
+    expect(screen.getByText("选项 A")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "左侧显示内容" }));
     const displayPanel = screen.getByRole("group", { name: "显示内容开关" });
     expect(displayPanel).toHaveClass("flex", "items-center");
     expect(screen.queryByText("按需显示当前题目的内容。")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "选项" }));
+    expect(screen.queryByRole("button", { name: "选项" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "答案" }));
     await user.click(screen.getByRole("button", { name: "解析" }));
 
@@ -959,6 +959,6 @@ describe("PresentationMode", () => {
     expect(screen.getByText("详细解析")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "右侧显示内容" }));
-    expect(screen.getByRole("button", { name: "选项" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "选项" })).not.toBeInTheDocument();
   });
 });
