@@ -321,6 +321,62 @@ describe("PresentationMode", () => {
     expect(screen.getByLabelText("板书 1书写区 1")).toHaveAttribute("data-recorded-stroke-count", "1");
   });
 
+  it("draws handwriting incrementally without repainting the full canvas on pointer moves", async () => {
+    const clearRect = vi.fn();
+    const stroke = vi.fn();
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue({
+      clearRect,
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke,
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      lineCap: "round",
+      lineJoin: "round",
+      globalCompositeOperation: "source-over",
+      globalAlpha: 1,
+      lineWidth: 1,
+      strokeStyle: "#000000",
+    } as unknown as CanvasRenderingContext2D);
+
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={slides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "红色画笔" }));
+
+    const canvas = screen.getByLabelText("课件批注画布") as HTMLCanvasElement;
+    const bounds = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800,
+      width: 1000, height: 800, toJSON: () => ({}),
+    });
+    const clearsBeforeStroke = clearRect.mock.calls.length;
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 100 });
+    const clearsAfterPointerDown = clearRect.mock.calls.length;
+    for (let index = 1; index <= 20; index += 1) {
+      fireEvent.pointerMove(canvas, {
+        pointerId: 1,
+        clientX: 100 + index * 10,
+        clientY: 100 + index * 4,
+      });
+    }
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 310, clientY: 184 });
+
+    expect(clearsAfterPointerDown).toBe(clearsBeforeStroke);
+    expect(clearRect).toHaveBeenCalledTimes(clearsBeforeStroke);
+    expect(stroke.mock.calls.length).toBeGreaterThanOrEqual(22);
+    expect(bounds).toHaveBeenCalledTimes(1);
+    expect(canvas).toHaveAttribute("data-recorded-stroke-count", "1");
+  });
+
   it("combines page, text, and board colors with automatic maximum contrast", async () => {
     expect(getMaximumContrastTextColor("#ffffff")).toBe("#111827");
     expect(getMaximumContrastTextColor("#111827")).toBe("#ffffff");
