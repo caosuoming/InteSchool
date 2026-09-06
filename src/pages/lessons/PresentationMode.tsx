@@ -561,6 +561,7 @@ function WritableCanvas({
   const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
   const strokesRef = useRef<DrawingStroke[]>(strokes || []);
   const activeStrokeRef = useRef<DrawingStroke | null>(null);
+  const drawingBoundsRef = useRef<DOMRect | null>(null);
   const previousClearTokenRef = useRef(clearToken);
 
   const redraw = useCallback(() => {
@@ -591,11 +592,36 @@ function WritableCanvas({
     }
   }, []);
 
+  const drawStrokeFragment = useCallback((stroke: DrawingStroke, firstNewPointIndex: number) => {
+    const firstPointIndex = Math.max(0, firstNewPointIndex - 1);
+    const fragment = {
+      ...stroke,
+      points: stroke.points.slice(firstPointIndex),
+    };
+    if (fragment.points.length === 0) return;
+
+    const highlighterCanvas = highlighterCanvasRef.current;
+    const inkCanvas = inkCanvasRef.current;
+    if (stroke.kind === "highlighter" || stroke.kind === "eraser") {
+      const context = highlighterCanvas?.getContext("2d");
+      if (context && highlighterCanvas) {
+        drawRecordedStroke(context, fragment, highlighterCanvas.width, highlighterCanvas.height);
+      }
+    }
+    if (stroke.kind === "pen" || stroke.kind === "eraser") {
+      const context = inkCanvas?.getContext("2d");
+      if (context && inkCanvas) {
+        drawRecordedStroke(context, fragment, inkCanvas.width, inkCanvas.height);
+      }
+    }
+  }, []);
+
   const resizeCanvases = useCallback(() => {
     const interactionCanvas = interactionCanvasRef.current;
     const parent = interactionCanvas?.parentElement;
     if (!interactionCanvas || !parent) return;
     const rect = parent.getBoundingClientRect();
+    drawingBoundsRef.current = null;
     const width = Math.round(parent.clientWidth || rect.width);
     const height = Math.round(parent.clientHeight || rect.height);
     if (width <= 0 || height <= 0) return;
@@ -632,57 +658,94 @@ function WritableCanvas({
   }, [clearToken, onStrokesChange, redraw]);
 
   useEffect(() => {
-    if (!strokes) return;
+    if (!strokes || strokes === strokesRef.current) return;
     strokesRef.current = strokes;
     activeStrokeRef.current = null;
+    drawingBoundsRef.current = null;
     redraw();
   }, [redraw, strokes]);
 
   useEffect(() => {
     activeStrokeRef.current = null;
+    drawingBoundsRef.current = null;
     redraw();
   }, [cancelToken, redraw]);
 
-  const pointFromEvent = (event: ReactPointerEvent<HTMLCanvasElement>): DrawingPoint => {
+  const pointFromClientPosition = (clientX: number, clientY: number): DrawingPoint => {
     const canvas = interactionCanvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
+    const rect = drawingBoundsRef.current || canvas.getBoundingClientRect();
+    drawingBoundsRef.current = rect;
     return {
-      x: rect.width > 0 ? clamp((event.clientX - rect.left) / rect.width, 0, 1) : 0,
-      y: rect.height > 0 ? clamp((event.clientY - rect.top) / rect.height, 0, 1) : 0,
+      x: rect.width > 0 ? clamp((clientX - rect.left) / rect.width, 0, 1) : 0,
+      y: rect.height > 0 ? clamp((clientY - rect.top) / rect.height, 0, 1) : 0,
     };
+  };
+
+  const pointsFromMoveEvent = (event: ReactPointerEvent<HTMLCanvasElement>): DrawingPoint[] => {
+    const nativeEvent = event.nativeEvent;
+    const coalescedEvents = nativeEvent.getCoalescedEvents?.() || [];
+    const samples = coalescedEvents.length > 0 ? [...coalescedEvents] : [nativeEvent];
+    const lastSample = samples[samples.length - 1];
+    if (lastSample.clientX !== nativeEvent.clientX || lastSample.clientY !== nativeEvent.clientY) {
+      samples.push(nativeEvent);
+    }
+
+    const points: DrawingPoint[] = [];
+    for (const sample of samples) {
+      const point = pointFromClientPosition(sample.clientX, sample.clientY);
+      const previous = points[points.length - 1];
+      if (!previous || previous.x !== point.x || previous.y !== point.y) points.push(point);
+    }
+    return points;
   };
 
   const startDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (tool === "none" || tool === "select") return;
     event.preventDefault();
+    drawingBoundsRef.current = event.currentTarget.getBoundingClientRect();
     const stroke: DrawingStroke = tool === "eraser"
       ? { kind: "eraser", color: "#000000", width: eraserWidth, points: [] }
       : preset
         ? { kind: preset.kind, color: preset.color, width: preset.width, points: [] }
         : { kind: "pen", color: "#000000", width: 3, points: [] };
-    stroke.points.push(pointFromEvent(event));
+    stroke.points.push(pointFromClientPosition(event.clientX, event.clientY));
     activeStrokeRef.current = stroke;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    redraw();
+    drawStrokeFragment(stroke, 0);
   };
 
   const continueDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const stroke = activeStrokeRef.current;
     if (!stroke || tool === "none" || tool === "select") return;
     event.preventDefault();
-    stroke.points.push(pointFromEvent(event));
-    redraw();
+    const firstNewPointIndex = stroke.points.length;
+    const points = pointsFromMoveEvent(event);
+    if (points.length === 0) return;
+    const previous = stroke.points[stroke.points.length - 1];
+    if (previous && previous.x === points[0].x && previous.y === points[0].y) points.shift();
+    if (points.length === 0) return;
+    stroke.points.push(...points);
+    drawStrokeFragment(stroke, firstNewPointIndex);
   };
 
   const stopDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const stroke = activeStrokeRef.current;
     if (stroke) {
+      if (event.type === "pointerup") {
+        const lastPoint = stroke.points[stroke.points.length - 1];
+        const finalPoint = pointFromClientPosition(event.clientX, event.clientY);
+        if (!lastPoint || lastPoint.x !== finalPoint.x || lastPoint.y !== finalPoint.y) {
+          const firstNewPointIndex = stroke.points.length;
+          stroke.points.push(finalPoint);
+          drawStrokeFragment(stroke, firstNewPointIndex);
+        }
+      }
       const nextStrokes = [...strokesRef.current, stroke];
       strokesRef.current = nextStrokes;
       activeStrokeRef.current = null;
+      drawingBoundsRef.current = null;
       onStrokesChange?.(nextStrokes);
-      redraw();
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
   };
