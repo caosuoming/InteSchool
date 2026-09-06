@@ -427,6 +427,95 @@ describe("PresentationMode", () => {
     });
   });
 
+  it("defaults the whole courseware to 38 and persists a teacher-specific font size across lessons", async () => {
+    const user = userEvent.setup();
+    const sizedSlides: LessonSlide[] = [
+      {
+        id: "font-slide-1",
+        type: "knowledge",
+        title: "字号第一页",
+        freeformLayout: true,
+        elements: [{
+          id: "font-element-1",
+          kind: "text",
+          content: "字号正文一",
+          x: 5,
+          y: 5,
+          width: 90,
+          height: 40,
+          fontSize: 38,
+        }],
+      },
+      {
+        id: "font-slide-2",
+        type: "knowledge",
+        title: "字号第二页",
+        freeformLayout: true,
+        elements: [{
+          id: "font-element-2",
+          kind: "text",
+          content: "字号正文二",
+          x: 5,
+          y: 5,
+          width: 90,
+          height: 40,
+          fontSize: 38,
+        }],
+      },
+    ];
+
+    const firstRender = render(
+      <PresentationMode
+        slides={sizedSlides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        preferenceOwnerId="teacher-font"
+        onExit={vi.fn()}
+      />,
+    );
+
+    const fontSizeSelect = screen.getByRole("combobox", { name: "课件字号" });
+    expect(fontSizeSelect).toHaveValue("38");
+    expect(screen.getByText("字号正文一").closest<HTMLElement>('[style*="font-size"]')).toHaveStyle({ fontSize: "38px" });
+
+    await user.selectOptions(fontSizeSelect, "46");
+    expect(screen.getByText("字号正文一").closest<HTMLElement>('[style*="font-size"]')).toHaveStyle({ fontSize: "46px" });
+    await waitFor(() => {
+      expect(localStorage.getItem("inteschool-presentation-font-size:teacher-font")).toBe("46");
+    });
+
+    await user.click(screen.getByRole("button", { name: "左侧下一页" }));
+    expect(screen.getByText("字号正文二").closest<HTMLElement>('[style*="font-size"]')).toHaveStyle({ fontSize: "46px" });
+
+    firstRender.unmount();
+    const secondRender = render(
+      <PresentationMode
+        slides={sizedSlides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        preferenceOwnerId="teacher-font"
+        onExit={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("combobox", { name: "课件字号" })).toHaveValue("46");
+    expect(screen.getByText("字号正文一").closest<HTMLElement>('[style*="font-size"]')).toHaveStyle({ fontSize: "46px" });
+
+    secondRender.unmount();
+    render(
+      <PresentationMode
+        slides={sizedSlides}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        preferenceOwnerId="another-teacher"
+        onExit={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("combobox", { name: "课件字号" })).toHaveValue("38");
+  });
+
   it("uses arrow-only mirrored navigation, text resizing, upward pen tips, fullscreen, and formal boards", async () => {
     const user = userEvent.setup();
     const onExit = vi.fn();

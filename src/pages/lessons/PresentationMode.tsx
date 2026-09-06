@@ -53,6 +53,7 @@ interface PresentationModeProps {
   initialIndex: number;
   students: { id: string; name: string }[];
   relatedQuestionsById: Record<string, Question>;
+  preferenceOwnerId?: string;
   onExit: () => void;
 }
 
@@ -226,6 +227,14 @@ const questionTypeLabel: Record<string, string> = {
 };
 
 const PRESENTATION_COLOR_PREFERENCES_KEY = "inteschool-presentation-color-preferences";
+const PRESENTATION_FONT_SIZE_PREFERENCES_KEY = "inteschool-presentation-font-size";
+const DEFAULT_PRESENTATION_FONT_SIZE = 38;
+const MIN_PRESENTATION_FONT_SIZE = 20;
+const MAX_PRESENTATION_FONT_SIZE = 72;
+const PRESENTATION_FONT_SIZE_OPTIONS = Array.from(
+  { length: (MAX_PRESENTATION_FONT_SIZE - MIN_PRESENTATION_FONT_SIZE) / 2 + 1 },
+  (_, index) => MIN_PRESENTATION_FONT_SIZE + index * 2,
+);
 const DEFAULT_COLOR_PREFERENCES: PresentationColorPreferences = {
   pageBackgroundColor: "#fffef8",
   textColorMode: "auto",
@@ -253,6 +262,18 @@ const PRESENTATION_ELEMENT_PREFIX = "presentation-built-in";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function fontSizePreferencesKey(ownerId?: string): string {
+  return `${PRESENTATION_FONT_SIZE_PREFERENCES_KEY}:${ownerId || "default"}`;
+}
+
+function readPresentationFontSize(ownerId?: string): number {
+  const raw = localStorage.getItem(fontSizePreferencesKey(ownerId));
+  if (raw === null) return DEFAULT_PRESENTATION_FONT_SIZE;
+  const stored = Number(raw);
+  if (!Number.isFinite(stored)) return DEFAULT_PRESENTATION_FONT_SIZE;
+  return clamp(Math.round(stored / 2) * 2, MIN_PRESENTATION_FONT_SIZE, MAX_PRESENTATION_FONT_SIZE);
 }
 
 function readColorPreferences(): PresentationColorPreferences {
@@ -826,6 +847,7 @@ export function PresentationMode({
   initialIndex,
   students,
   relatedQuestionsById,
+  preferenceOwnerId,
   onExit,
 }: PresentationModeProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -861,6 +883,9 @@ export function PresentationMode({
   const [mainClearToken, setMainClearToken] = useState(0);
   const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
   const [colorPreferences, setColorPreferences] = useState<PresentationColorPreferences>(readColorPreferences);
+  const [presentationFontSize, setPresentationFontSize] = useState(() => (
+    readPresentationFontSize(preferenceOwnerId)
+  ));
 
   const currentSlide = slides[currentIndex];
   const currentSlideStateKey = currentSlide?.id || "__empty-slide__";
@@ -962,6 +987,10 @@ export function PresentationMode({
   useEffect(() => {
     localStorage.setItem(PRESENTATION_COLOR_PREFERENCES_KEY, JSON.stringify(colorPreferences));
   }, [colorPreferences]);
+
+  useEffect(() => {
+    localStorage.setItem(fontSizePreferencesKey(preferenceOwnerId), String(presentationFontSize));
+  }, [preferenceOwnerId, presentationFontSize]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -1855,6 +1884,7 @@ export function PresentationMode({
                   canvasStyle={{ backgroundColor: colorPreferences.pageBackgroundColor }}
                   textColor={effectiveTextColor}
                   textBackgroundColor="transparent"
+                  textFontSizeScale={presentationFontSize / DEFAULT_PRESENTATION_FONT_SIZE}
                 >
                   <LessonSlideContent slide={displayedSlide} questionVisibility={questionVisibility} />
                 </LessonSlideCanvas>
@@ -2434,6 +2464,19 @@ export function PresentationMode({
               </section>
             )}
           </div>
+          <label className="flex h-10 items-center gap-1 rounded-lg bg-mist px-1.5 text-ink-600" title="课件字号">
+            <span className="text-[10px] font-medium text-ink-500">字号</span>
+            <select
+              aria-label="课件字号"
+              value={presentationFontSize}
+              onChange={(event) => setPresentationFontSize(Number(event.target.value))}
+              className="h-7 w-14 cursor-pointer rounded-md border border-ink-200 bg-paper px-1 text-center text-xs font-semibold text-ink-800 outline-none focus:border-gold-400"
+            >
+              {PRESENTATION_FONT_SIZE_OPTIONS.map((fontSize) => (
+                <option key={fontSize} value={fontSize}>{fontSize}</option>
+              ))}
+            </select>
+          </label>
           <div
             aria-label="文本与全屏控制"
             className="absolute bottom-0 left-full ml-3 flex items-center gap-1 whitespace-nowrap rounded-xl border border-white/60 bg-paper/95 p-1.5 shadow-xl backdrop-blur"

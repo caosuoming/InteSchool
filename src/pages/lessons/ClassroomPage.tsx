@@ -628,6 +628,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         initialIndex={0}
         students={students}
         relatedQuestionsById={{}}
+        preferenceOwnerId={presenting.teacherId}
         onExit={() => setPresenting(null)}
       />
     );
