@@ -31,6 +31,7 @@ interface LessonSlideCanvasProps {
   canvasStyle?: CSSProperties;
   textColor?: string;
   textBackgroundColor?: string;
+  textFontSizeScale?: number;
 }
 
 type Interaction = {
@@ -153,6 +154,7 @@ export function LessonSlideCanvas({
   canvasStyle,
   textColor,
   textBackgroundColor,
+  textFontSizeScale = 1,
 }: LessonSlideCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const interactionRef = useRef<Interaction | null>(null);
@@ -293,7 +295,7 @@ export function LessonSlideCanvas({
           element.kind === "image" || (element.kind === "text" && !allowTextEditing)
         );
         const textStyle: CSSProperties = {
-          fontSize: `${element.kind === "text" ? element.fontSize || 24 : 24}px`,
+          fontSize: `${element.kind === "text" ? (element.fontSize || 24) * textFontSizeScale : 24}px`,
           fontFamily: element.kind === "text" ? element.fontFamily : undefined,
           fontWeight: element.kind === "text" ? element.fontWeight : undefined,
           fontStyle: element.kind === "text" ? element.fontStyle : undefined,

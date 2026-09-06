@@ -1198,6 +1198,7 @@ export function LessonEditorPage() {
           initialIndex={currentIndex}
           students={students}
           relatedQuestionsById={relatedQuestionsMap}
+          preferenceOwnerId={teacher?.id}
           onExit={closePreview}
         />
       )}

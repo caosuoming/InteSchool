@@ -218,6 +218,7 @@ function createTextElement(
   };
 }
 
+const DEFAULT_GENERATED_LESSON_FONT_SIZE = 38;
 const QUESTION_LABEL_X = 5;
 const QUESTION_LABEL_Y = 5;
 const QUESTION_LABEL_HEIGHT = 6;
@@ -361,7 +362,7 @@ function questionSlide(
       width: labelWidth,
       height: QUESTION_LABEL_HEIGHT,
     }, {
-      fontSize: 30,
+      fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
       questionSection: "stem",
     }),
   ];
@@ -372,7 +373,7 @@ function questionSlide(
       width: stemWidth,
       height: options?.length ? 24 : 42,
     }, {
-      fontSize: 30,
+      fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
       questionSection: "stem",
     }));
   }
@@ -391,7 +392,7 @@ function questionSlide(
         height: 12,
       },
       {
-        fontSize: 30,
+        fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
         questionSection: "options",
       },
     ));
@@ -403,7 +404,7 @@ function questionSlide(
       width: 42,
       height: 24,
     }, {
-      fontSize: 30,
+      fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
       questionSection: "answer",
     }));
   }
@@ -419,7 +420,7 @@ function questionSlide(
         height: 24,
       },
       {
-        fontSize: 30,
+        fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
         questionSection: "analysis",
       },
     ));
@@ -513,7 +514,7 @@ function knowledgeSlide(title: string, content: string): LessonSlide {
       width: 88,
       height: 88,
     }, {
-      fontSize: 30,
+      fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
     })] : [],
     relatedQuestionIds: [],
     askableStudentIds: [],
