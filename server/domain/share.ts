@@ -59,7 +59,7 @@ const DEFAULT_PLATFORM_SETTINGS: Record<PlatformResourceSettingType, string[]> =
   grade: ["初一", "初二", "初三", "高一", "高二", "高三"],
   schoolYear: ["2025-2026", "2024-2025", "2023-2024"],
   source: ["手动", "导入", "共享", "平台捐赠"],
-  questionType: ["单选", "多选", "判断", "填空", "解答"],
+  questionType: ["单选", "多选", "判断", "填空", "解答", "综合"],
   category: ["练习", "考试", "作业", "复习"],
 };
 

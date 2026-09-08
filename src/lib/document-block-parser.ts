@@ -277,7 +277,7 @@ function answerLetters(answer: string): string[] {
   return [...new Set(normalized)];
 }
 
-function inferQuestionType(
+function inferAtomicQuestionType(
   block: Partial<DocumentBlock>,
   sectionType: QuestionType | undefined,
   config: DocumentParseConfig,
@@ -298,6 +298,15 @@ function inferQuestionType(
   }
   if (sectionType && !["single", "multiple"].includes(sectionType)) return sectionType;
   return block.questionType || (text.length > 120 ? "essay" : "short");
+}
+
+function inferQuestionType(
+  block: Partial<DocumentBlock>,
+  sectionType: QuestionType | undefined,
+  config: DocumentParseConfig,
+): QuestionType {
+  return inferSharedStemSubQuestionType(block, sectionType, config)
+    || inferAtomicQuestionType(block, sectionType, config);
 }
 
 function isHeading(text: string, config: DocumentParseConfig): boolean {
@@ -540,6 +549,8 @@ function romanNumeralValue(value: string): number | undefined {
 
 function leadingNestedSubQuestionIndex(text: string): number | undefined {
   const trimmed = text.trim();
+  const extendedInquiry = /^延伸\s*探究\s*(?:第\s*)?[（(]?\s*([\d０-９]{1,3})\s*[）)]?/.exec(trimmed);
+  if (extendedInquiry) return Number(normalizeQuestionNumber(extendedInquiry[1]));
   const circled = /^([①-⑳])/.exec(trimmed);
   if (circled) return circled[1].codePointAt(0)! - 0x245f;
 
@@ -594,6 +605,100 @@ function topLevelQuestionRemainder(
   );
   const match = pattern.exec(text);
   return match ? { start: match[0].length, text: text.slice(match[0].length) } : null;
+}
+
+function scanExtendedInquiryMarkers(text: string): NestedSubQuestionMarker[] {
+  const pattern = /延伸\s*探究\s*(?:第\s*)?[（(]?\s*([\d０-９]{1,3})\s*[）)]?/g;
+  const markers: NestedSubQuestionMarker[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const index = Number(normalizeQuestionNumber(match[1]));
+    if (!Number.isInteger(index) || index <= 0) continue;
+    markers.push({ start: match.index, end: pattern.lastIndex, index });
+  }
+  return markers;
+}
+
+function scanGroupedSubQuestionMarkers(text: string): NestedSubQuestionMarker[] {
+  return [...scanNestedSubQuestionMarkers(text), ...scanExtendedInquiryMarkers(text)]
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+}
+
+function sharedStemSubQuestionMarkers(
+  text: string,
+  config: DocumentParseConfig,
+): NestedSubQuestionMarker[] {
+  const remainder = topLevelQuestionRemainder(text, config);
+  if (!remainder) return [];
+
+  const markers = scanGroupedSubQuestionMarkers(text);
+  const first = markers.find((marker) => marker.index === 1 && marker.start >= remainder.start);
+  if (!first || !text.slice(remainder.start, first.start).trim()) return [];
+
+  const selected = [first];
+  let expected = 2;
+  for (const marker of markers) {
+    if (marker.start <= first.start || marker.index !== expected) continue;
+    selected.push(marker);
+    expected += 1;
+  }
+  return selected;
+}
+
+function splitGroupedSubQuestionValues(value: string, count: number): string[] | null {
+  const marked = splitIndependentSubQuestionField(value, count);
+  if (marked) return marked;
+
+  const lines = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.length === count ? lines : null;
+}
+
+function inferSharedStemSubQuestionType(
+  block: Partial<DocumentBlock>,
+  sectionType: QuestionType | undefined,
+  config: DocumentParseConfig,
+): QuestionType | undefined {
+  const content = block.content?.trim() || "";
+  if (!content) return undefined;
+  const markers = sharedStemSubQuestionMarkers(content, config);
+  if (markers.length === 0) return undefined;
+
+  const answers = splitGroupedSubQuestionValues(block.answer || "", markers.length);
+  const childTypes = markers.map((marker, index) => {
+    const segment = content.slice(marker.start, markers[index + 1]?.start ?? content.length).trim();
+    const explicitType = detectSectionQuestionType(segment);
+    const inline = splitQuestionAndInlineOptions(
+      segment,
+      explicitType === "single"
+        || explicitType === "multiple"
+        || sectionType === "single"
+        || sectionType === "multiple",
+    );
+    const options = inline?.options
+      || (index === 0 ? block.options || [] : []);
+    const inferred = inferAtomicQuestionType(
+      {
+        content: inline?.stem || segment,
+        options,
+        answer: answers?.[index],
+        questionType: explicitType,
+      },
+      explicitType || sectionType,
+      config,
+    );
+    if (
+      inferred === "short"
+      && options.length === 0
+      && /(?:求|求出|求解|证明|计算|说明|论述|解答)/.test(inline?.stem || segment)
+    ) return "essay";
+    return inferred;
+  });
+
+  const uniqueTypes = [...new Set(childTypes)];
+  return uniqueTypes.length === 1 ? uniqueTypes[0] : "comprehensive";
 }
 
 function startsIndependentSubQuestionGroup(text: string, config: DocumentParseConfig): boolean {
@@ -683,7 +788,7 @@ function expandIndependentSubQuestionLines(content: string, config: DocumentPars
 
 function splitIndependentSubQuestionField(value: string, count: number): string[] | null {
   if (count < 2) return null;
-  const markers = scanNestedSubQuestionMarkers(value);
+  const markers = scanGroupedSubQuestionMarkers(value);
   const first = markers.find((marker) => marker.index === 1 && !value.slice(0, marker.start).trim());
   if (!first) return null;
 
