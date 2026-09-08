@@ -153,6 +153,10 @@
     font-weight: 700;
   }
 
+  .math-vector-zero {
+    font-style: normal;
+  }
+
   /* KaTeX's inline box sits slightly high beside the app's Chinese body fonts. */
   .question-answer-content .katex-formula:not(.katex-formula-block) > .katex {
     vertical-align: -0.08em;

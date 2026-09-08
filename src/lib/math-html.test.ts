@@ -70,6 +70,18 @@ describe("renderMathHtml", () => {
     expect(container.textContent).toBe("向量 a 与 b");
   });
 
+  it("restores the upright zero-vector marker escaped inside rich text", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '零向量 &lt;i class=&quot;math-vector math-vector-zero&quot;&gt;0&lt;/i&gt;',
+    );
+
+    const zero = container.querySelector("i.math-vector-zero");
+    expect(zero).toHaveTextContent("0");
+    expect(zero).toHaveClass("math-vector", "math-vector-zero");
+    expect(container.textContent).toBe("零向量 0");
+  });
+
   it("does not render formulas that are already KaTeX markup", () => {
     const existing = '<span class="katex-formula" data-latex="x"><span class="katex">$x$</span></span>';
     const container = document.createElement("div");

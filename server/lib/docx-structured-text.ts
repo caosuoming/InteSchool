@@ -249,7 +249,9 @@ function wordRunIsBold(element: Element): boolean {
 
 function mathVariableMarkup(content: string, bold = false): string {
   const isVector = bold && /^[A-Za-z0]$/.test(content);
-  const className = isVector ? "math-vector" : "math-variable";
+  const className = isVector
+    ? content === "0" ? "math-vector math-vector-zero" : "math-vector"
+    : "math-variable";
   return isVector || /^[A-Za-z]+$/.test(content)
     ? `<i class="${className}">${content}</i>`
     : content;
