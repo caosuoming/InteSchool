@@ -32,9 +32,10 @@ const typeLabels: Record<string, string> = {
   short: "填空题",
   conceptFill: "概念填空",
   essay: "解答题",
+  comprehensive: "综合题",
 };
 
-const preferredTypeOrder = ["single", "multiple", "judge", "short", "conceptFill", "essay"];
+const preferredTypeOrder = ["single", "multiple", "judge", "short", "conceptFill", "essay", "comprehensive"];
 
 interface QuestionGroup {
   type: string;

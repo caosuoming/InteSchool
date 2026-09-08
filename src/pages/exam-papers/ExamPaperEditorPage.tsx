@@ -142,7 +142,7 @@ function getDateRange(key: TimeRangeKey): DateRange | undefined {
 }
 
 const typeLabel: Record<string, string> = {
-  single: "单选", multiple: "多选", judge: "判断", short: "填空", essay: "解答",
+  single: "单选", multiple: "多选", judge: "判断", short: "填空", essay: "解答", comprehensive: "综合",
 };
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 const difficultyVariant = ["", "green", "green", "amber", "red", "red"];
@@ -158,13 +158,14 @@ interface QuestionGroup {
   }[];
 }
 
-const typeOrder = ["single", "multiple", "judge", "short", "essay"];
+const typeOrder = ["single", "multiple", "judge", "short", "essay", "comprehensive"];
 const typeLabels: Record<string, string> = {
   single: "一、单选题",
   multiple: "二、多选题",
   judge: "三、判断题",
   short: "四、填空题",
   essay: "五、解答题",
+  comprehensive: "六、综合题",
 };
 const sectionNumerals = ["一", "二", "三", "四", "五", "六", "七", "八"];
 const getGroupHeading = (type: string, index: number) =>
@@ -2823,7 +2824,7 @@ export default function ExamPaperEditorPage() {
             <div>
               <div className="text-xs font-medium text-ink-600 mb-2">题型与题量</div>
               <div className="grid grid-cols-5 gap-2">
-                {Object.entries(typeLabel).map(([key, label]) => (
+                {Object.entries(typeLabel).filter(([key]) => key !== "comprehensive").map(([key, label]) => (
                   <div key={key} className="p-2 border border-ink-100 rounded-lg text-center">
                     <div className="text-xs text-ink-500 mb-1">{label}</div>
                     <div className="flex items-center justify-center gap-1">

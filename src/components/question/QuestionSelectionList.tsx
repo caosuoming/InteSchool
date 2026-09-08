@@ -21,6 +21,7 @@ const questionTypeLabel: Record<string, string> = {
   short: "填空",
   essay: "解答",
   conceptFill: "概念填空",
+  comprehensive: "综合",
 };
 
 export function QuestionSelectionList({
