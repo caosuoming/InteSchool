@@ -94,6 +94,19 @@ const teacher: Teacher = {
   createdAt: "2026-08-02T00:00:00.000Z",
 };
 
+function localDateValue(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function offsetDateValue(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return localDateValue(date);
+}
+
 const createdHomework: ClassroomHomework = {
   id: "homework-1",
   teacherId: "teacher-1",
@@ -102,8 +115,8 @@ const createdHomework: ClassroomHomework = {
   subject: "数学",
   content: "完成课本第 42 页第 1—6 题",
   classIds: ["class-1"],
-  assignedDate: "2026-08-02",
-  publishAt: "2026-08-02T00:00:00.000Z",
+  assignedDate: localDateValue(),
+  publishAt: new Date(Date.now() - 60_000).toISOString(),
   createdAt: "2026-08-02T00:00:00.000Z",
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
@@ -257,6 +270,7 @@ describe("MyLessonsPage classroom publishing", () => {
     );
 
     await user.click(await screen.findByRole("tab", { name: "我的作业" }));
+    expect(screen.getByLabelText("作业日期")).toHaveAttribute("min", localDateValue());
     await user.click(screen.getByLabelText("发布班级下拉选择"));
     expect(await screen.findByRole("checkbox", { name: "高一 · 高一（1）班" })).toBeChecked();
 
@@ -271,6 +285,75 @@ describe("MyLessonsPage classroom publishing", () => {
           content: "完成课本第 42 页第 1—6 题",
           classIds: ["class-1"],
           publishAt: expect.any(String),
+        }),
+      );
+    });
+  });
+
+  it("allows arranging homework for a future date", async () => {
+    const user = userEvent.setup();
+    const futureDate = offsetDateValue(3);
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "我的作业" }));
+    fireEvent.change(screen.getByLabelText("作业日期"), { target: { value: futureDate } });
+    await user.type(screen.getByLabelText("作业内容"), "完成三天后的预习作业");
+    await user.click(screen.getByRole("button", { name: "发布作业" }));
+
+    await waitFor(() => {
+      expect(classroomHomeworkService.createHomework).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          assignedDate: futureDate,
+          content: "完成三天后的预习作业",
+        }),
+      );
+    });
+  });
+
+  it("keeps future homework out of today's summary and lets it be edited from the upcoming list", async () => {
+    const user = userEvent.setup();
+    const futureDate = offsetDateValue(2);
+    const futureHomework: ClassroomHomework = {
+      ...createdHomework,
+      id: "homework-future",
+      content: "完成后天的函数预习",
+      assignedDate: futureDate,
+    };
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([futureHomework, createdHomework]);
+    vi.mocked(classroomHomeworkService.updateHomework).mockResolvedValue(futureHomework);
+
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(createdHomework.content)).toBeInTheDocument();
+    expect(screen.queryByText(futureHomework.content)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "我的作业" }));
+    expect(await screen.findByText(futureHomework.content)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: `编辑作业 ${futureDate}` }));
+    expect(screen.getByLabelText("作业日期")).toHaveValue(futureDate);
+    expect(screen.getByLabelText("作业内容")).toHaveValue(futureHomework.content);
+    await user.clear(screen.getByLabelText("作业内容"));
+    await user.type(screen.getByLabelText("作业内容"), "完成后天的函数预习和例题");
+    await user.click(screen.getByRole("button", { name: "保存作业修改" }));
+
+    await waitFor(() => {
+      expect(classroomHomeworkService.updateHomework).toHaveBeenCalledWith(
+        "homework-future",
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          assignedDate: futureDate,
+          content: "完成后天的函数预习和例题",
         }),
       );
     });
@@ -400,7 +483,7 @@ describe("MyLessonsPage classroom publishing", () => {
     await user.click(await screen.findByRole("button", { name: "编辑作业" }));
     expect(screen.getByRole("tab", { name: "我的作业" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("作业内容")).toHaveValue(createdHomework.content);
-    expect(screen.getByText("原作业.pdf")).toBeInTheDocument();
+    expect(screen.getAllByText("原作业.pdf").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "保存作业修改" }));
 
     await waitFor(() => {

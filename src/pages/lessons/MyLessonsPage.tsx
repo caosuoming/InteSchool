@@ -199,7 +199,22 @@ export function MyLessonsPage() {
     new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
   ))[0], [notices]);
 
-  const currentHomework = useMemo(() => homeworks[0], [homeworks]);
+  const today = localDateValue();
+  const currentHomework = useMemo(
+    () => homeworks.find((homework) => homework.assignedDate === today),
+    [homeworks, today],
+  );
+  const upcomingHomeworks = useMemo(
+    () => homeworks
+      .filter((homework) => homework.assignedDate >= today)
+      .sort((left, right) => left.assignedDate.localeCompare(right.assignedDate)
+        || new Date(right.publishAt).getTime() - new Date(left.publishAt).getTime()),
+    [homeworks, today],
+  );
+  const pastHomeworks = useMemo(
+    () => homeworks.filter((homework) => homework.assignedDate < today),
+    [homeworks, today],
+  );
 
   const loadData = useCallback(async () => {
     if (!teacher?.schoolId) return;
@@ -464,12 +479,21 @@ export function MyLessonsPage() {
       toast.warning("请选择至少一个发布班级");
       return;
     }
+    if (homeworkDate < today) {
+      toast.warning("只能布置或修改今天及后续日期的作业");
+      return;
+    }
     const existingHomework = editingHomeworkId
       ? homeworks.find((item) => item.id === editingHomeworkId)
       : undefined;
-    const publishAt = publishMode === "now"
-      ? new Date(existingHomework?.publishAt || Date.now())
-      : new Date(scheduledAt);
+    let publishAt: Date;
+    if (publishMode === "scheduled") {
+      publishAt = new Date(scheduledAt);
+    } else if (existingHomework && new Date(existingHomework.publishAt).getTime() <= Date.now()) {
+      publishAt = new Date(existingHomework.publishAt);
+    } else {
+      publishAt = new Date();
+    }
     if (Number.isNaN(publishAt.getTime())) {
       toast.warning("请选择有效的发布时间");
       return;
@@ -805,8 +829,8 @@ export function MyLessonsPage() {
               <ClipboardCheck className="h-5 w-5" />
             </div>
             <div>
-              <div className="font-semibold text-ink-900">当前班级作业</div>
-              <div className="text-xs text-ink-400">最近一次发布或安排的作业</div>
+              <div className="font-semibold text-ink-900">今日班级作业</div>
+              <div className="text-xs text-ink-400">这里只显示作业日期为今天的内容</div>
             </div>
           </div>
           {currentHomework ? (
@@ -826,7 +850,7 @@ export function MyLessonsPage() {
             </>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
-              <div className="text-sm text-ink-500">尚未发布班级作业</div>
+              <div className="text-sm text-ink-500">今天尚未布置班级作业</div>
               <Button className="mt-3" size="sm" variant="outline" onClick={() => setActiveTab("homework")}>
                 <Plus className="h-3.5 w-3.5" />布置作业
               </Button>
@@ -987,9 +1011,11 @@ export function MyLessonsPage() {
           <div>
             <div className="flex items-center gap-2 text-ink-900 font-semibold">
               <ClipboardCheck className="w-5 h-5 text-gold-600" />
-              布置今天的作业
+              布置作业
             </div>
-            <p className="text-xs text-ink-500 mt-1">发布后，所选班级可从登录页进入“我要上课”查看。</p>
+            <p className="text-xs text-ink-500 mt-1">
+              可提前安排今天及后续日期的作业；教室一体机只会在作业所属日期当天显示。
+            </p>
           </div>
         </div>
 
@@ -1056,6 +1082,7 @@ export function MyLessonsPage() {
           <Input
             label="作业日期"
             type="date"
+            min={today}
             value={homeworkDate}
             onChange={(event) => setHomeworkDate(event.target.value)}
           />
@@ -1114,16 +1141,74 @@ export function MyLessonsPage() {
           </div>
         </div>
 
+        <div className="mt-5 border-t border-ink-100 pt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-ink-800">当天及后续作业</div>
+              <div className="mt-1 text-xs text-ink-400">今天和未来日期的作业可随时再次编辑。</div>
+            </div>
+            <Badge variant="ink">{upcomingHomeworks.length} 条</Badge>
+          </div>
+          {homeworkLoading ? (
+            <div className="py-4 text-xs text-ink-400">加载中...</div>
+          ) : upcomingHomeworks.length === 0 ? (
+            <div className="py-4 text-xs text-ink-400">尚未安排今天或后续日期的作业。</div>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {upcomingHomeworks.map((homework) => {
+                const scheduled = new Date(homework.publishAt).getTime() > Date.now();
+                const isToday = homework.assignedDate === today;
+                return (
+                  <div key={homework.id} className="flex gap-3 rounded-lg border border-ink-100 bg-mist/50 px-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
+                        <Badge variant={isToday ? "green" : "amber"}>{isToday ? "今天" : "已安排"}</Badge>
+                        {scheduled && <Badge variant="amber">待发布</Badge>}
+                        <span>{homework.assignedDate}</span>
+                        <span>{homework.classIds.map((id) => classNames.get(id) || id).join("、")}</span>
+                        <span>{new Date(homework.publishAt).toLocaleString("zh-CN", { hour12: false })}</span>
+                      </div>
+                      {homework.content && (
+                        <div className="mt-2 whitespace-pre-wrap text-sm text-ink-800">{homework.content}</div>
+                      )}
+                      <HomeworkAttachments attachments={homework.attachments} className="mt-3" />
+                    </div>
+                    <div className="flex flex-shrink-0 items-start gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-label={`编辑作业 ${homework.assignedDate}`}
+                        onClick={() => handleEditHomework(homework)}
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />编辑
+                      </Button>
+                      <button
+                        type="button"
+                        className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600"
+                        title="删除作业"
+                        onClick={() => void handleDeleteHomework(homework.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {historyOpen && (
           <div className="mt-5 pt-5 border-t border-ink-100">
             <div className="text-sm font-medium text-ink-800 mb-3">往期作业</div>
             {homeworkLoading ? (
               <div className="text-xs text-ink-400 py-4">加载中...</div>
-            ) : homeworks.length === 0 ? (
-              <div className="text-xs text-ink-400 py-4">尚未发布过作业。</div>
+            ) : pastHomeworks.length === 0 ? (
+              <div className="text-xs text-ink-400 py-4">暂无往期作业。</div>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {homeworks.map((homework) => {
+                {pastHomeworks.map((homework) => {
                   const scheduled = new Date(homework.publishAt).getTime() > Date.now();
                   return (
                     <div key={homework.id} className="rounded-lg border border-ink-100 bg-mist/50 px-3 py-3 flex gap-3">
