@@ -2893,7 +2893,7 @@ export interface Reflection {
 /** 学生互动记录类型 */
 export type InteractionType = "chat" | "attitude" | "status";
 
-/** 学生互动聊天记录中的图片附件 */
+/** 学生互动记录中的图片附件 */
 export interface StudentInteractionAttachment {
   id: string;
   name: string;
@@ -2912,7 +2912,7 @@ export interface StudentInteraction {
   type: InteractionType;
   /** 内容 */
   content: string;
-  /** 聊天记录中的图片附件 */
+  /** 记录中的图片附件 */
   attachments?: StudentInteractionAttachment[];
   /** 学习态度评分（1-5），type=attitude 时使用 */
   attitude?: number;

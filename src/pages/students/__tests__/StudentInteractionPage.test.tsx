@@ -4,9 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StudentInteractionPage } from "@/pages/students/StudentInteractionPage";
 import { classService } from "@/services/class";
 import { studentInteractionService } from "@/services/studentInteraction";
+import { homeworkRecordService } from "@/services/homeworkRecord";
+import { knowledgeService } from "@/services/knowledge";
+import { gradeService } from "@/services/grade";
 import { uploadFile } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type { SchoolClass, Student, StudentInteraction, Teacher } from "@/types";
+import type { GradeQueryData, SchoolClass, Student, StudentInteraction, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({
   classService: {
@@ -23,6 +26,24 @@ vi.mock("@/services/studentInteraction", () => ({
     setStudentFollowed: vi.fn(),
     createInteraction: vi.fn(),
     deleteInteraction: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/homeworkRecord", () => ({
+  homeworkRecordService: {
+    listByStudent: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/knowledge", () => ({
+  knowledgeService: {
+    listKnowledgePoints: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/grade", () => ({
+  gradeService: {
+    getQueryData: vi.fn(),
   },
 }));
 
@@ -106,6 +127,19 @@ const createdInteraction: StudentInteraction = {
   createdAt: "2026-08-03T10:00:00.000Z",
 };
 
+const emptyGradeQueryData: GradeQueryData = {
+  scope: "teacher",
+  scopeLabel: "任教班级",
+  subject: "数学",
+  roles: ["teacher"],
+  teachingClassIds: ["class-1", "class-2"],
+  homeroomClassIds: [],
+  fullClassIds: [],
+  grades: ["高一"],
+  classes: [],
+  exams: [],
+};
+
 describe("StudentInteractionPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -118,6 +152,9 @@ describe("StudentInteractionPage", () => {
     vi.mocked(studentInteractionService.setStudentFollowed).mockResolvedValue(undefined);
     vi.mocked(studentInteractionService.createInteraction).mockResolvedValue(createdInteraction);
     vi.mocked(studentInteractionService.deleteInteraction).mockResolvedValue(undefined);
+    vi.mocked(homeworkRecordService.listByStudent).mockResolvedValue([]);
+    vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([]);
+    vi.mocked(gradeService.getQueryData).mockResolvedValue(emptyGradeQueryData);
     vi.mocked(uploadFile).mockResolvedValue({
       id: "file-1",
       ownerId: "teacher-1",
@@ -246,6 +283,76 @@ describe("StudentInteractionPage", () => {
         }),
       );
     });
+  });
+
+  it.each([
+    ["学习态度", "记录学生学习态度的具体表现...", "attitude"],
+    ["学习状态", "记录学生学习状态的观察...", "status"],
+  ] as const)("uploads pasted images for %s records", async (tabLabel, placeholder, expectedType) => {
+    const user = userEvent.setup();
+    render(<StudentInteractionPage embedded />);
+
+    await user.click(await screen.findByRole("button", { name: tabLabel }));
+    const textarea = screen.getByPlaceholderText(placeholder);
+    const image = new File(["image"], "clipboard.png", { type: "image/png" });
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        items: [{ kind: "file", type: "image/png", getAsFile: () => image }],
+      },
+    });
+
+    expect(await screen.findByAltText("clipboard.png")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "添加记录" }));
+
+    await waitFor(() => {
+      expect(studentInteractionService.createInteraction).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          type: expectedType,
+          attachments: [expect.objectContaining({ id: "file-1" })],
+        }),
+      );
+    });
+  });
+
+  it("shows the two most recent homework records and subject exam scores beside the student name", async () => {
+    vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([
+      { id: "kp-1", schoolId: "school-1", teacherId: "teacher-1", parentId: null, name: "函数", order: 1, level: 0 },
+      { id: "kp-2", schoolId: "school-1", teacherId: "teacher-1", parentId: null, name: "数列", order: 2, level: 0 },
+      { id: "kp-3", schoolId: "school-1", teacherId: "teacher-1", parentId: null, name: "集合", order: 3, level: 0 },
+    ]);
+    vi.mocked(homeworkRecordService.listByStudent).mockResolvedValue([
+      { id: "hr-1", teacherId: "teacher-1", schoolId: "school-1", studentId: "student-1", knowledgePointId: "kp-1", status: "correct", createdAt: "2026-09-03T00:00:00.000Z", updatedAt: "2026-09-03T00:00:00.000Z" },
+      { id: "hr-2", teacherId: "teacher-1", schoolId: "school-1", studentId: "student-1", knowledgePointId: "kp-2", status: "partial", createdAt: "2026-09-02T00:00:00.000Z", updatedAt: "2026-09-02T00:00:00.000Z" },
+      { id: "hr-3", teacherId: "teacher-1", schoolId: "school-1", studentId: "student-1", knowledgePointId: "kp-3", status: "wrong", createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
+    ]);
+    const exam = (id: string, name: string, examDate: string, score: number) => ({
+      id, cohortKey: "2029", cohortLabel: "2029届高一", name, examDate, subjects: ["数学"],
+      subjectAverages: { 数学: 80 }, classSummaries: [], createdAt: `${examDate}T00:00:00.000Z`,
+      records: [{
+        id: `record-${id}`, studentId: "student-1", studentName: "甲同学", studentNo: "001", classId: "class-1", className: "高一（1）班",
+        scores: { 数学: score }, assignedScores: { 数学: score }, rawTotal: null, assignedTotal: null, gradeRank: 1, classRank: 1,
+      }],
+    });
+    vi.mocked(gradeService.getQueryData).mockResolvedValue({
+      ...emptyGradeQueryData,
+      exams: [
+        exam("exam-old", "第一次月考", "2026-08-01", 81),
+        exam("exam-new", "第三次月考", "2026-09-05", 93),
+        exam("exam-mid", "第二次月考", "2026-08-20", 88),
+      ],
+    });
+
+    render(<StudentInteractionPage embedded />);
+
+    expect(await screen.findByText("函数")).toBeInTheDocument();
+    expect(screen.getByText("数列")).toBeInTheDocument();
+    expect(screen.queryByText("集合")).not.toBeInTheDocument();
+    expect(screen.getByText("第三次月考")).toBeInTheDocument();
+    expect(screen.getByText("第二次月考")).toBeInTheDocument();
+    expect(screen.queryByText("第一次月考")).not.toBeInTheDocument();
+    expect(screen.getByText("最近考试成绩 · 数学")).toBeInTheDocument();
   });
 
   it("labels received records as anonymous and only allows deleting owned records", async () => {
