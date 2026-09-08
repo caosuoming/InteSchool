@@ -174,7 +174,7 @@ describe("LessonEditorPage preview query", () => {
 
     renderPage(`/my-lessons/${courseware.id}/edit`);
 
-    await screen.findByText(courseware.title);
+    expect(await screen.findByRole("textbox", { name: "课件名称" })).toHaveValue(courseware.title);
     expect(screen.getByRole("button", { name: "授课班级" })).toBeInTheDocument();
     expect(screen.getByText("草稿")).toBeInTheDocument();
 
@@ -200,8 +200,27 @@ describe("LessonEditorPage preview query", () => {
   it("keeps normal courseware navigation in edit mode without the preview query", async () => {
     renderPage(`/my-lessons/${courseware.id}/edit`);
 
-    expect(await screen.findByText(courseware.title)).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "课件名称" })).toHaveValue(courseware.title);
     expect(screen.queryByText("课件预览模式")).not.toBeInTheDocument();
+  });
+
+  it("edits the courseware name directly from the top-left toolbar", async () => {
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+
+    const titleInput = await screen.findByRole("textbox", { name: "课件名称" });
+    const saveButton = screen.getByRole("button", { name: "保存" });
+    fireEvent.change(titleInput, { target: { value: "函数课堂版" } });
+
+    expect(titleInput).toHaveValue("函数课堂版");
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(mocks.updateCourseware).toHaveBeenCalledWith(
+        courseware.id,
+        expect.objectContaining({ title: "函数课堂版" }),
+      );
+    });
   });
 
   it("pastes clipboard images directly onto the current slide as free elements", async () => {
@@ -244,7 +263,7 @@ describe("LessonEditorPage preview query", () => {
     ));
 
     renderPage(`/my-lessons/${courseware.id}/edit`);
-    await screen.findByText(courseware.title);
+    expect(await screen.findByRole("textbox", { name: "课件名称" })).toHaveValue(courseware.title);
 
     fireEvent.click(screen.getByRole("button", { name: "题目" }));
 

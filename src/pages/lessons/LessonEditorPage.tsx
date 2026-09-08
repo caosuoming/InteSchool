@@ -830,9 +830,28 @@ export function LessonEditorPage() {
           返回
         </Button>
         <div className="h-5 w-px bg-ink-200" />
-        <div className="font-serif font-semibold text-ink-900 truncate max-w-md">
-          {courseware?.title}
-        </div>
+        <input
+          aria-label="课件名称"
+          title="修改课件名称"
+          value={courseware?.title || ""}
+          disabled={!courseware}
+          maxLength={120}
+          onChange={(event) => {
+            const title = event.target.value;
+            setCourseware((current) => current ? { ...current, title } : current);
+          }}
+          onBlur={() => {
+            setCourseware((current) => {
+              if (!current) return current;
+              const title = current.title.trim() || "未命名课件";
+              return title === current.title ? current : { ...current, title };
+            });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          className="h-8 w-72 max-w-[32vw] rounded-md border border-transparent bg-transparent px-2 font-serif font-semibold text-ink-900 outline-none transition-colors hover:border-ink-200 hover:bg-white focus:border-gold-300 focus:bg-white focus:ring-2 focus:ring-gold-100 disabled:cursor-default"
+        />
         <Badge variant={courseware?.status === "published" ? "green" : "amber"}>
           {courseware?.status === "published" ? "已发布" : "草稿"}
         </Badge>
