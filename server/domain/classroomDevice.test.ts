@@ -8,6 +8,19 @@ const CREATED_AT = "2026-09-01T02:00:00.000Z";
 const TOKEN_1 = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-11111111";
 const TOKEN_2 = "ffffffff-1111-2222-3333-444444444444-22222222";
 
+function localDateValue(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function offsetDateValue(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return localDateValue(date);
+}
+
 function makeTeacher(
   id: string,
   role: "teacher" | "school_admin" | "platform_admin",
@@ -124,19 +137,34 @@ describe("classroomDeviceService", () => {
 
   it("binds a public classroom and lets the device switch between active classes in the same school", async () => {
     const state = makeState();
-    state.classroomHomeworks = [{
-      id: "homework-class-2",
-      teacherId: "subject",
-      teacherName: "subject",
-      schoolId: "school-1",
-      subject: "数学",
-      content: "二班作业",
-      classIds: ["class-2"],
-      assignedDate: new Date().toISOString().slice(0, 10),
-      publishAt: CREATED_AT,
-      createdAt: CREATED_AT,
-      updatedAt: CREATED_AT,
-    }] as any;
+    state.classroomHomeworks = [
+      {
+        id: "homework-class-2",
+        teacherId: "subject",
+        teacherName: "subject",
+        schoolId: "school-1",
+        subject: "数学",
+        content: "二班作业",
+        classIds: ["class-2"],
+        assignedDate: localDateValue(),
+        publishAt: CREATED_AT,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+      },
+      {
+        id: "homework-class-2-future",
+        teacherId: "subject",
+        teacherName: "subject",
+        schoolId: "school-1",
+        subject: "数学",
+        content: "二班明日作业",
+        classIds: ["class-2"],
+        assignedDate: offsetDateValue(1),
+        publishAt: CREATED_AT,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+      },
+    ] as any;
     await runWithState(state, async () => {
       const bound = await classroomDeviceService.bindDevice({
         schoolId: "school-1",
@@ -152,6 +180,7 @@ describe("classroomDeviceService", () => {
       const snapshot = await classroomDeviceService.getClassroomSnapshot(TOKEN_1, "class-2");
       expect(snapshot.classroom.id).toBe("class-2");
       expect(snapshot.homeworks).toEqual([expect.objectContaining({ content: "二班作业" })]);
+      expect(snapshot.homeworkHistory).toEqual([]);
       await expect(classroomDeviceService.getClassroomSnapshot(TOKEN_1, "class-3")).rejects.toThrow("不属于当前公共教室学校");
     });
   });
