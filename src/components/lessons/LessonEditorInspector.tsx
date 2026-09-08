@@ -19,6 +19,7 @@ import type {
   LessonSlideElement,
   LessonSlideTextRegion,
   Question,
+  SchoolClass,
   Student,
 } from "@/types";
 import { Badge } from "@/components/ui/Badge";
@@ -45,6 +46,8 @@ interface LessonEditorInspectorProps {
   selectedElement: LessonSlideElement | null;
   selectedTextRegion: LessonSlideTextRegion | null;
   students: Student[];
+  classes: SchoolClass[];
+  selectedClassIds: string[];
   relatedQuestions: Question[];
   relatedQuestionsById: Record<string, Question>;
   canDeleteSlide: boolean;
@@ -162,6 +165,8 @@ export function LessonEditorInspector({
   selectedElement,
   selectedTextRegion,
   students,
+  classes,
+  selectedClassIds,
   relatedQuestions,
   relatedQuestionsById,
   canDeleteSlide,
@@ -190,6 +195,7 @@ export function LessonEditorInspector({
   const [tab, setTab] = useState<LessonEditorInspectorTab>("content");
   const [animationPanel, setAnimationPanel] = useState<AnimationPanel>("element");
   const [associationPanel, setAssociationPanel] = useState<AssociationPanel>("students");
+  const [activeStudentClassId, setActiveStudentClassId] = useState("");
   const [questionDetail, setQuestionDetail] = useState<Question | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -224,6 +230,21 @@ export function LessonEditorInspector({
     return orderDifference || elements.indexOf(left) - elements.indexOf(right);
   });
   const animationOrders = [...new Set(orderedElements.map(animationOrderOf))];
+  const selectedClasses = selectedClassIds
+    .map((classId) => classes.find((item) => item.id === classId))
+    .filter((item): item is SchoolClass => Boolean(item));
+  const effectiveStudentClassId = selectedClassIds.includes(activeStudentClassId)
+    ? activeStudentClassId
+    : selectedClasses[0]?.id || "";
+  const visibleStudents = students.filter((student) => student.classId === effectiveStudentClassId);
+  const selectedStudentIds = new Set(slide.askableStudentIds || []);
+  const selectableStudentIds = new Set(
+    students
+      .filter((student) => selectedClassIds.includes(student.classId))
+      .map((student) => student.id),
+  );
+  const selectedStudentCount = [...selectedStudentIds]
+    .filter((studentId) => selectableStudentIds.has(studentId)).length;
 
   const updateSelectedAnimation = (patch: Partial<LessonSlideElement>) => {
     if (!selectedElement) return;
@@ -750,26 +771,66 @@ export function LessonEditorInspector({
             </div>
 
             {associationPanel === "students" && (
-              <div className="space-y-1.5">
-                <div className="pb-1 text-xs text-ink-500">已选 {(slide.askableStudentIds || []).length} 人</div>
-                {students.map((student) => {
-                  const selected = (slide.askableStudentIds || []).includes(student.id);
-                  return (
-                    <button
-                      key={student.id}
-                      type="button"
-                      onClick={() => onToggleStudent(student.id)}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm",
-                        selected ? "bg-gold-50 text-gold-800" : "text-ink-700 hover:bg-mist",
-                      )}
-                    >
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-mist text-[10px]">{student.name.slice(0, 1)}</span>
-                      <span className="flex-1">{student.name}</span>
-                      {selected && <Check className="h-3.5 w-3.5" />}
-                    </button>
-                  );
-                })}
+              <div className="space-y-2.5">
+                {selectedClasses.length === 0 ? (
+                  <div className="rounded-lg bg-mist px-3 py-5 text-center text-xs text-ink-400">
+                    请先选择授课班级
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="相关学生班级">
+                      {selectedClasses.map((item) => {
+                        const active = item.id === effectiveStudentClassId;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={active}
+                            title={`${item.grade} · ${item.name}`}
+                            onClick={() => setActiveStudentClassId(item.id)}
+                            className={cn(
+                              "rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+                              active
+                                ? "border-gold-300 bg-gold-50 text-gold-800"
+                                : "border-ink-100 text-ink-600 hover:border-ink-300 hover:bg-mist",
+                            )}
+                          >
+                            {item.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center justify-between pb-0.5 text-xs text-ink-500">
+                      <span>已选 {selectedStudentCount} 人</span>
+                      <span>{visibleStudents.length} 名学生</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {visibleStudents.length === 0 ? (
+                        <div className="rounded-lg bg-mist px-3 py-5 text-center text-xs text-ink-400">
+                          该班暂无学生
+                        </div>
+                      ) : visibleStudents.map((student) => {
+                        const selected = selectedStudentIds.has(student.id);
+                        return (
+                          <button
+                            key={student.id}
+                            type="button"
+                            onClick={() => onToggleStudent(student.id)}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm",
+                              selected ? "bg-gold-50 text-gold-800" : "text-ink-700 hover:bg-mist",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-mist text-[10px]">{student.name.slice(0, 1)}</span>
+                            <span className="flex-1">{student.name}</span>
+                            {selected && <Check className="h-3.5 w-3.5" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
