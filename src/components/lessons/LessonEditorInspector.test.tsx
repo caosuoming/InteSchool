@@ -211,8 +211,8 @@ describe("LessonEditorInspector", () => {
     } as Question;
     renderInspector({
       students: [
-        { id: "student-weak", name: "薄弱同学" } as Student,
-        { id: "student-followed", name: "关注同学" } as Student,
+        { id: "student-weak", name: "薄弱同学", classId: "class-1" } as Student,
+        { id: "student-followed", name: "关注同学", classId: "class-1" } as Student,
       ],
       followedStudentIds: new Set(["student-followed"]),
       studentWeaknessById: { "student-weak": 0.75 },
