@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ChevronUp,
   Camera,
+  Dices,
   Eraser,
   Eye,
   Link2,
@@ -887,6 +888,13 @@ export function PresentationMode({
   const [presentationFontSize, setPresentationFontSize] = useState(() => (
     readPresentationFontSize(preferenceOwnerId)
   ));
+  const [studentLottery, setStudentLottery] = useState<{
+    phase: "rolling" | "winner";
+    name: string;
+  } | null>(null);
+  const lotteryIntervalRef = useRef<number | null>(null);
+  const lotteryFinishTimeoutRef = useRef<number | null>(null);
+  const lotteryDismissTimeoutRef = useRef<number | null>(null);
 
   const currentSlide = slides[currentIndex];
   const currentSlideStateKey = currentSlide?.id || "__empty-slide__";
@@ -926,6 +934,51 @@ export function PresentationMode({
   const askableStudents = (currentSlide?.askableStudentIds || [])
     .map((id) => students.find((student) => student.id === id))
     .filter((student): student is { id: string; name: string } => Boolean(student));
+
+  const clearStudentLotteryTimers = useCallback(() => {
+    if (lotteryIntervalRef.current !== null) {
+      window.clearInterval(lotteryIntervalRef.current);
+      lotteryIntervalRef.current = null;
+    }
+    if (lotteryFinishTimeoutRef.current !== null) {
+      window.clearTimeout(lotteryFinishTimeoutRef.current);
+      lotteryFinishTimeoutRef.current = null;
+    }
+    if (lotteryDismissTimeoutRef.current !== null) {
+      window.clearTimeout(lotteryDismissTimeoutRef.current);
+      lotteryDismissTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startStudentLottery = useCallback(() => {
+    if (students.length === 0 || askableStudents.length === 0) return;
+    clearStudentLotteryTimers();
+
+    const showRandomClassStudent = () => {
+      const randomStudent = students[Math.floor(Math.random() * students.length)];
+      if (randomStudent) setStudentLottery({ phase: "rolling", name: randomStudent.name });
+    };
+
+    showRandomClassStudent();
+    lotteryIntervalRef.current = window.setInterval(showRandomClassStudent, 70);
+    lotteryFinishTimeoutRef.current = window.setTimeout(() => {
+      if (lotteryIntervalRef.current !== null) {
+        window.clearInterval(lotteryIntervalRef.current);
+        lotteryIntervalRef.current = null;
+      }
+      lotteryFinishTimeoutRef.current = null;
+      const winner = askableStudents[Math.floor(Math.random() * askableStudents.length)];
+      if (!winner) {
+        setStudentLottery(null);
+        return;
+      }
+      setStudentLottery({ phase: "winner", name: winner.name });
+      lotteryDismissTimeoutRef.current = window.setTimeout(() => {
+        setStudentLottery(null);
+        lotteryDismissTimeoutRef.current = null;
+      }, 2200);
+    }, 5000);
+  }, [askableStudents, clearStudentLotteryTimers, students]);
   const relatedQuestions = (currentSlide?.relatedQuestionIds || [])
     .map((id) => relatedQuestionsById[id])
     .filter((question): question is Question => Boolean(question));
@@ -984,6 +1037,13 @@ export function PresentationMode({
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
+
+  useEffect(() => () => clearStudentLotteryTimers(), [clearStudentLotteryTimers]);
+
+  useEffect(() => {
+    clearStudentLotteryTimers();
+    setStudentLottery(null);
+  }, [clearStudentLotteryTimers, currentSlide?.id]);
 
   useEffect(() => {
     localStorage.setItem(PRESENTATION_COLOR_PREFERENCES_KEY, JSON.stringify(colorPreferences));
@@ -1623,8 +1683,23 @@ export function PresentationMode({
     if (tab === "ask") {
       return (
         <div>
-          <h2 className="text-sm font-semibold text-ink-900">提问学生</h2>
-          <p className="mt-1 text-xs text-ink-400">选择本题预设的可提问学生。</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-ink-900">提问学生</h2>
+              <p className="mt-1 text-xs text-ink-400">选择本题预设的可提问学生。</p>
+            </div>
+            <button
+              type="button"
+              onClick={startStudentLottery}
+              disabled={students.length === 0 || askableStudents.length === 0 || studentLottery?.phase === "rolling"}
+              className="inline-flex h-8 flex-shrink-0 items-center gap-1 rounded-lg border border-gold-300 bg-gold-50 px-2.5 text-xs font-medium text-gold-800 transition-colors hover:bg-gold-100 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="摇号"
+              title={askableStudents.length === 0 ? "当前页面未预设候选学生" : "全班姓名滚动 5 秒后，从当前页面候选学生中抽取一人"}
+            >
+              <Dices className="h-3.5 w-3.5" />
+              摇号
+            </button>
+          </div>
           <div className="mt-3 max-h-80 space-y-1.5 overflow-y-auto">
             {askableStudents.length === 0 ? (
               <div className="rounded-lg bg-mist px-3 py-5 text-center text-xs text-ink-400">未预设学生</div>
@@ -1915,6 +1990,27 @@ export function PresentationMode({
         {renderSideRail("right")}
         {renderPageNavigation("left")}
         {renderPageNavigation("right")}
+
+        {studentLottery && (
+          <div
+            className="pointer-events-none absolute inset-0 z-[120] flex items-center justify-center bg-black/15"
+            data-testid="student-lottery-overlay"
+            role="status"
+            aria-live="assertive"
+          >
+            <div className={cn(
+              "min-w-64 rounded-2xl border px-10 py-7 text-center shadow-2xl backdrop-blur-sm",
+              studentLottery.phase === "winner"
+                ? "border-gold-300 bg-gold-400 text-ink-950"
+                : "border-white/70 bg-paper/95 text-ink-900",
+            )}>
+              <div className="text-xs font-medium tracking-[0.2em] opacity-60">
+                {studentLottery.phase === "winner" ? "抽中学生" : "正在摇号"}
+              </div>
+              <div className="mt-2 font-serif text-4xl font-bold tracking-wide">{studentLottery.name}</div>
+            </div>
+          </div>
+        )}
 
         {boards.map((board, index) => {
           const active = activeBoardId === board.id;

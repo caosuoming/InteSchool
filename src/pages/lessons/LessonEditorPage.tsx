@@ -603,9 +603,22 @@ export function LessonEditorPage() {
 
   const toggleClass = (classId: string) => {
     if (!courseware) return;
-    const next = courseware.classIds.includes(classId)
+    const removingClass = courseware.classIds.includes(classId);
+    const next = removingClass
       ? courseware.classIds.filter((id) => id !== classId)
       : [...courseware.classIds, classId];
+    if (removingClass) {
+      const removedStudentIds = new Set(
+        students.filter((student) => student.classId === classId).map((student) => student.id),
+      );
+      if (removedStudentIds.size > 0) {
+        setSlides((previous) => previous.map((slide) => ({
+          ...slide,
+          askableStudentIds: (slide.askableStudentIds || [])
+            .filter((studentId) => !removedStudentIds.has(studentId)),
+        })));
+      }
+    }
     setCourseware({ ...courseware, classIds: next });
   };
 
@@ -1155,6 +1168,8 @@ export function LessonEditorPage() {
                     selectedElement={selectedElement}
                     selectedTextRegion={selectedTextRegion}
                     students={rankedStudents}
+                    classes={classes}
+                    selectedClassIds={courseware.classIds}
                     followedStudentIds={followedStudentIds}
                     studentWeaknessById={studentWeaknessById}
                     currentQuestion={currentQuestion}

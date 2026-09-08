@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlide } from "@/types";
@@ -514,6 +514,44 @@ describe("PresentationMode", () => {
       />,
     );
     expect(screen.getByRole("combobox", { name: "课件字号" })).toHaveValue("38");
+  });
+
+
+  it("rolls through the whole class for five seconds and finishes on a slide candidate", async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      render(
+        <PresentationMode
+          slides={[{ ...questionSlide, askableStudentIds: ["candidate"] }]}
+          initialIndex={0}
+          students={[
+            { id: "classmate", name: "普通同学" },
+            { id: "candidate", name: "候选同学" },
+          ]}
+          relatedQuestionsById={{}}
+          onExit={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      const lotteryButton = screen.getByRole("button", { name: "摇号" });
+      expect(lotteryButton).toBeEnabled();
+      fireEvent.click(lotteryButton);
+
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("正在摇号");
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("普通同学");
+
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("抽中学生");
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("候选同学");
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("uses arrow-only mirrored navigation, text resizing, upward pen tips, fullscreen, and formal boards", async () => {

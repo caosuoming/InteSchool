@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { LessonSlide, LessonSlideElement, Question, Student } from "@/types";
+import type { LessonSlide, LessonSlideElement, Question, SchoolClass, Student } from "@/types";
 import { LessonEditorInspector } from "./LessonEditorInspector";
 
 const slide: LessonSlide = {
@@ -41,7 +41,9 @@ function renderInspector(overrides: Partial<ComponentProps<typeof LessonEditorIn
     elements: [element],
     selectedElement: null,
     selectedTextRegion: null,
-    students: [{ id: "student-1", name: "张同学" } as Student],
+    students: [{ id: "student-1", name: "张同学", classId: "class-1" } as Student],
+    classes: [{ id: "class-1", name: "高一（1）班", grade: "高一", type: "school" } as SchoolClass],
+    selectedClassIds: ["class-1"],
     followedStudentIds: new Set(),
     studentWeaknessById: {},
     currentQuestion: null,
@@ -157,6 +159,48 @@ describe("LessonEditorInspector", () => {
     expect(onLoadRelatedQuestions).toHaveBeenCalled();
   });
 
+  it("groups related students by the selected teaching classes", async () => {
+    const user = userEvent.setup();
+    const onToggleStudent = vi.fn();
+    renderInspector({
+      students: [
+        { id: "student-1", name: "张同学", classId: "class-1" } as Student,
+        { id: "student-2", name: "李同学", classId: "class-2" } as Student,
+        { id: "student-3", name: "未授课同学", classId: "class-3" } as Student,
+      ],
+      classes: [
+        { id: "class-1", name: "高一（1）班", grade: "高一", type: "school" } as SchoolClass,
+        { id: "class-2", name: "高一（2）班", grade: "高一", type: "school" } as SchoolClass,
+        { id: "class-3", name: "高一（3）班", grade: "高一", type: "school" } as SchoolClass,
+      ],
+      selectedClassIds: ["class-1", "class-2"],
+      onToggleStudent,
+    });
+
+    await user.click(screen.getByRole("button", { name: "关联" }));
+    expect(screen.getByRole("tab", { name: "高一（1）班" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "高一（2）班" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "高一（3）班" })).not.toBeInTheDocument();
+    expect(screen.getByText("张同学")).toBeInTheDocument();
+    expect(screen.queryByText("李同学")).not.toBeInTheDocument();
+    expect(screen.queryByText("未授课同学")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "高一（2）班" }));
+    expect(screen.queryByText("张同学")).not.toBeInTheDocument();
+    expect(screen.getByText("李同学")).toBeInTheDocument();
+    await user.click(screen.getByText("李同学"));
+    expect(onToggleStudent).toHaveBeenCalledWith("student-2");
+  });
+
+  it("asks for a teaching class before showing related students", async () => {
+    const user = userEvent.setup();
+    renderInspector({ selectedClassIds: [] });
+
+    await user.click(screen.getByRole("button", { name: "关联" }));
+    expect(screen.getByText("请先选择授课班级")).toBeInTheDocument();
+    expect(screen.queryByText("张同学")).not.toBeInTheDocument();
+  });
+
   it("shows followed students, knowledge weakness, and the question directory edit entry", async () => {
     const user = userEvent.setup();
     const onEditQuestionMetadata = vi.fn();
@@ -167,8 +211,8 @@ describe("LessonEditorInspector", () => {
     } as Question;
     renderInspector({
       students: [
-        { id: "student-weak", name: "薄弱同学" } as Student,
-        { id: "student-followed", name: "关注同学" } as Student,
+        { id: "student-weak", name: "薄弱同学", classId: "class-1" } as Student,
+        { id: "student-followed", name: "关注同学", classId: "class-1" } as Student,
       ],
       followedStudentIds: new Set(["student-followed"]),
       studentWeaknessById: { "student-weak": 0.75 },
