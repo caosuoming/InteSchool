@@ -5,6 +5,7 @@ import {
   useState,
   useEffect,
   useRef,
+  type ClipboardEvent as ReactClipboardEvent,
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -21,6 +22,8 @@ import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { basketService } from "@/services/basket";
 import { questionService } from "@/services/question";
 import { classService } from "@/services/class";
+import { analyticsService } from "@/services/analytics";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { uploadFile } from "@/services/api";
 import type {
   LessonCourseware,
@@ -44,7 +47,13 @@ import { getCoursewareEditorUrl } from "@/lib/courseware-online";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { LessonEditorInspector } from "@/components/lessons/LessonEditorInspector";
+import { QuickEditModal } from "@/components/question/QuickEditModal";
 import { createLessonQuestionSlide } from "@/lib/lesson-courseware-create";
+import {
+  getStudentKnowledgeWeakness,
+  rankLessonStudents,
+  rankRelatedQuestions,
+} from "@/lib/lesson-associations";
 
 const INSPECTOR_MIN_WIDTH = 220;
 const INSPECTOR_MAX_WIDTH = 420;
@@ -101,8 +110,11 @@ export function LessonEditorPage() {
   const [publishing, setPublishing] = useState(false);
 
   const [relatedQuestions, setRelatedQuestions] = useState<Question[]>([]);
+  const [relatedQuestionsLoading, setRelatedQuestionsLoading] = useState(false);
   // 所有相关题的缓存（id -> Question），供预览模式使用
   const [relatedQuestionsMap, setRelatedQuestionsMap] = useState<Record<string, Question>>({});
+  const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
+  const [questionMetadataOpen, setQuestionMetadataOpen] = useState(false);
   const [questionPickerOpen, setQuestionPickerOpen] = useState(false);
   const [basketQuestions, setBasketQuestions] = useState<Question[]>([]);
   const [basketQuestionsLoading, setBasketQuestionsLoading] = useState(false);
@@ -117,6 +129,8 @@ export function LessonEditorPage() {
   } | null>(null);
 
   const [students, setStudents] = useState<Student[]>([]);
+  const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
+  const [studentWeaknessById, setStudentWeaknessById] = useState<Record<string, number | null>>({});
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
@@ -197,16 +211,69 @@ export function LessonEditorPage() {
     Promise.all([
       classService.listMyStudents(teacher.schoolId, teacher.id),
       classService.listMyClasses(teacher.schoolId, teacher.id),
+      studentInteractionService.listFollowedStudentIds().catch(() => []),
     ])
-      .then(([studentItems, classItems]) => {
+      .then(([studentItems, classItems, followedIds]) => {
         setStudents(studentItems);
         setClasses(classItems.filter((item): item is SchoolClass => item.type === "school"));
+        setFollowedStudentIds(new Set(followedIds));
       })
       .catch((error) => toast.error("班级与学生列表加载失败", error instanceof Error ? error.message : undefined));
   }, [teacher]);
 
   const currentSlide = slides[currentIndex];
   const selectedElement = currentSlide?.elements?.find((item) => item.id === selectedElementId) || null;
+
+  useEffect(() => {
+    let cancelled = false;
+    setQuestionMetadataOpen(false);
+    setRelatedQuestions([]);
+    setStudentWeaknessById({});
+    setCurrentQuestion(null);
+
+    if (currentSlide?.type !== "question" || !currentSlide.questionId) {
+      return () => { cancelled = true; };
+    }
+
+    questionService.getQuestion(currentSlide.questionId)
+      .then((question) => {
+        if (!cancelled) setCurrentQuestion(question);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentQuestion(null);
+      });
+
+    return () => { cancelled = true; };
+  }, [currentSlide?.id, currentSlide?.questionId, currentSlide?.type]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const knowledgePointIds = currentQuestion?.knowledgePointIds || [];
+    if (!teacher?.schoolId || knowledgePointIds.length === 0 || students.length === 0) {
+      setStudentWeaknessById({});
+      return () => { cancelled = true; };
+    }
+
+    Promise.all(students.map(async (student) => {
+      try {
+        const mastery = await analyticsService.getKnowledgeMastery([student.id], teacher.schoolId!);
+        return [student.id, getStudentKnowledgeWeakness(mastery, knowledgePointIds)] as const;
+      } catch {
+        return [student.id, null] as const;
+      }
+    })).then((entries) => {
+      if (!cancelled) setStudentWeaknessById(Object.fromEntries(entries));
+    });
+
+    return () => { cancelled = true; };
+  }, [currentQuestion, students, teacher?.schoolId]);
+
+  const rankedStudents = rankLessonStudents(
+    students,
+    followedStudentIds,
+    studentWeaknessById,
+    currentSlide?.type === "question" && Boolean(currentQuestion?.knowledgePointIds?.length),
+  );
 
   useEffect(() => {
     setSelectedElementId(null);
@@ -339,8 +406,9 @@ export function LessonEditorPage() {
     setSelectedTextRegion(null);
   };
 
-  const addImageElement = async (file: File) => {
+  const addImageElement = async (file: File, offset = 0) => {
     if (!currentSlide) return;
+    const targetSlideId = currentSlide.id;
     try {
       const uploaded = await uploadFile(file);
       const element: LessonSlideElement = {
@@ -348,8 +416,8 @@ export function LessonEditorPage() {
         kind: "image",
         src: uploaded.url,
         alt: file.name,
-        x: 12,
-        y: 4,
+        x: Math.min(24, 12 + offset * 3),
+        y: Math.min(16, 4 + offset * 3),
         width: 36,
         height: 30,
         animation: "none",
@@ -357,12 +425,33 @@ export function LessonEditorPage() {
         actionAnimation: "none",
         exitAnimation: "none",
       };
-      updateCurrentElements([...(currentSlide.elements || []), element]);
+      setSlides((previous) => previous.map((slide) => (
+        slide.id === targetSlideId
+          ? { ...slide, elements: [...(slide.elements || []), element] }
+          : slide
+      )));
       setSelectedElementId(element.id);
       setSelectedTextRegion(null);
     } catch (error) {
       toast.error("图片上传失败", error instanceof Error ? error.message : undefined);
     }
+  };
+
+  const handlePaste = (event: ReactClipboardEvent<HTMLDivElement>) => {
+    if (!currentSlide || currentSlide.type === "courseware") return;
+
+    const clipboardFiles = Array.from(event.clipboardData.files || [])
+      .filter((file) => file.type.startsWith("image/"));
+    const imageFiles = clipboardFiles.length > 0
+      ? clipboardFiles
+      : Array.from(event.clipboardData.items || [])
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => Boolean(file));
+
+    if (imageFiles.length === 0) return;
+    event.preventDefault();
+    imageFiles.forEach((file, index) => void addImageElement(file, index));
   };
 
   const addLinkElement = () => {
@@ -581,16 +670,31 @@ export function LessonEditorPage() {
   };
 
   const loadRelatedQuestions = useCallback(async () => {
-    if (!teacher?.schoolId) return;
+    if (!teacher?.schoolId || currentSlide?.type !== "question" || !currentQuestion) {
+      setRelatedQuestions([]);
+      return;
+    }
+    const knowledgePointIds = currentQuestion.knowledgePointIds || [];
+    if (knowledgePointIds.length === 0) {
+      setRelatedQuestions([]);
+      return;
+    }
+    setRelatedQuestionsLoading(true);
     try {
       const qs = await questionService.listQuestions({
         schoolId: teacher.schoolId,
+        knowledgePointIds,
+        knowledgeLogic: "or",
+        excludeQuestionIds: [currentQuestion.id],
       });
-      setRelatedQuestions(qs.slice(0, 10));
+      setRelatedQuestions(rankRelatedQuestions(currentQuestion, qs).slice(0, 10));
     } catch (err) {
       console.error(err);
+      setRelatedQuestions([]);
+    } finally {
+      setRelatedQuestionsLoading(false);
     }
-  }, [teacher?.schoolId]);
+  }, [currentQuestion, currentSlide?.type, teacher?.schoolId]);
 
   const addRelatedQuestion = (q: Question) => {
     if (!currentSlide) return;
@@ -718,7 +822,7 @@ export function LessonEditorPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-4rem)]" onPaste={handlePaste}>
       {/* 顶部工具栏 */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-ink-200 bg-paper">
         <Button variant="ghost" size="sm" onClick={() => openPage("/my-lessons")}>
@@ -914,7 +1018,7 @@ export function LessonEditorPage() {
             <div className="flex-1 p-4 lg:p-6">
               <div className="mx-auto w-full max-w-[1120px]">
                 <div className="mb-3 text-xs text-ink-500">
-                  页面内容均为自由元素，可拖动或缩放；单击文本即可直接输入。
+                  页面内容均为自由元素，可拖动或缩放；单击文本即可直接输入，也可直接粘贴剪贴板图片。
                 </div>
 
                 {currentSlide.type === "courseware" ? (
@@ -1031,8 +1135,12 @@ export function LessonEditorPage() {
                     elements={visibleCurrentElements}
                     selectedElement={selectedElement}
                     selectedTextRegion={selectedTextRegion}
-                    students={students}
+                    students={rankedStudents}
+                    followedStudentIds={followedStudentIds}
+                    studentWeaknessById={studentWeaknessById}
+                    currentQuestion={currentQuestion}
                     relatedQuestions={relatedQuestions}
+                    relatedQuestionsLoading={relatedQuestionsLoading}
                     relatedQuestionsById={relatedQuestionsMap}
                     canDeleteSlide={slides.length > 1}
                     canMergeSlide={currentIndex < slides.length - 1}
@@ -1062,6 +1170,7 @@ export function LessonEditorPage() {
                     onLoadRelatedQuestions={loadRelatedQuestions}
                     onAddRelatedQuestion={addRelatedQuestion}
                     onRemoveRelatedQuestion={removeRelatedQuestion}
+                    onEditQuestionMetadata={() => setQuestionMetadataOpen(true)}
                   />
                 </div>
               )}
@@ -1168,6 +1277,18 @@ export function LessonEditorPage() {
           })}
         </div>
       </Modal>
+
+      <QuickEditModal
+        open={questionMetadataOpen}
+        onClose={() => setQuestionMetadataOpen(false)}
+        question={currentQuestion}
+        onSaved={(question) => {
+          setCurrentQuestion(question);
+          setRelatedQuestionsMap((questions) => (
+            questions[question.id] ? { ...questions, [question.id]: question } : questions
+          ));
+        }}
+      />
 
       {/* 公式编辑器弹窗 */}
       <Modal
