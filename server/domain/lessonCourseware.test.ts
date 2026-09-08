@@ -746,6 +746,7 @@ describe("courseware lesson flow", () => {
         title: "函数定义",
         content: "函数描述两个变量之间的对应关系。",
       },
+      { id: "group-2", type: "groupTitle", content: "题型一 函数图像" },
       {
         id: "question-1",
         type: "question",
@@ -785,14 +786,19 @@ describe("courseware lesson flow", () => {
         content: "函数描述两个变量之间的对应关系。",
         freeformLayout: true,
       });
-      expect(lesson.slides[1].elements).toEqual([
+      expect(lesson.slides[1].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: "text",
+          content: "一、选择题",
+          fontSize: 28,
+        }),
         expect.objectContaining({
           kind: "text",
           content: "函数描述两个变量之间的对应关系。",
           fontSize: 38,
           autoHeight: true,
         }),
-      ]);
+      ]));
       expect(lesson.slides[1].elements).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ content: "函数定义" }),
       ]));
@@ -800,6 +806,9 @@ describe("courseware lesson flow", () => {
         title: "1.",
         questionSnapshot: { stem: paper.questions[0].stem.replace(/<img[^>]+>/, "").trim() },
       });
+      expect(lesson.slides[2].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "题型一 函数图像", fontSize: 28 }),
+      ]));
       expect(lesson.slides[2].elements).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "text", content: "题目：（2017·课标 I·理，20）" }),
       ]));
@@ -866,7 +875,11 @@ describe("courseware lesson flow", () => {
         },
       });
       expect(lesson.slides[1].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "一、选择题", fontSize: 28 }),
         expect.objectContaining({ kind: "text", content: "1.", questionSection: "stem" }),
+      ]));
+      expect(lesson.slides[2].elements).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "一、选择题" }),
       ]));
       expect(lesson.slides[19]).toMatchObject({
         type: "question",
@@ -928,6 +941,9 @@ describe("courseware lesson flow", () => {
         content: "函数是两个集合之间的对应关系。",
         freeformLayout: true,
       });
+      expect(lesson.slides[1].elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "函数概念", fontSize: 28 }),
+      ]));
       expect(lesson.slides[2]).toMatchObject({
         type: "question",
         title: "例1",
