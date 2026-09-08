@@ -108,6 +108,7 @@ function state(): AppState {
     }],
     questions: [],
     answerRecords: [],
+    homeworkAttitudeRecords: [],
     homeworkKnowledgeRecords: [],
     homeworkRecordPreferences: [],
   } as AppState;
@@ -126,6 +127,40 @@ describe("homeworkRecordService", () => {
         .resolves.toEqual(["kp-1", "kp-2"]);
       await expect(homeworkRecordService.setPinnedKnowledgePointIds(["kp-other"], teacher))
         .rejects.toThrow("只能选择自己当前知识点目录中的知识点");
+    });
+  });
+
+  it("persists and clears homework-attitude keywords per accessible student", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", teacher)).resolves.toBeNull();
+
+      const created = await homeworkRecordService.setAttitudeKeywords({
+        studentId: "student-1",
+        keywords: ["按时完成", "粗心", "按时完成"],
+      }, teacher);
+      expect(created).toMatchObject({
+        teacherId: "teacher-1",
+        studentId: "student-1",
+        keywords: ["按时完成", "粗心"],
+      });
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", teacher))
+        .resolves.toMatchObject({ keywords: ["按时完成", "粗心"] });
+
+      await expect(homeworkRecordService.setAttitudeKeywords({
+        studentId: "student-1",
+        keywords: ["未知标签"],
+      } as any, teacher)).rejects.toThrow("作业态度关键词不正确");
+      await expect(homeworkRecordService.setAttitudeKeywords({
+        studentId: "student-2",
+        keywords: ["按时完成"],
+      }, teacher)).rejects.toThrow("只能记录自己任教班级或个人教学班的学生");
+
+      await expect(homeworkRecordService.setAttitudeKeywords({
+        studentId: "student-1",
+        keywords: [],
+      }, teacher)).resolves.toBeNull();
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", teacher)).resolves.toBeNull();
     });
   });
 

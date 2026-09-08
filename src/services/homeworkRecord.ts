@@ -1,5 +1,10 @@
 import { rpcCall } from "./api";
-import type { HomeworkKnowledgeRecord, HomeworkKnowledgeStatus } from "@/types";
+import type {
+  HomeworkAttitudeKeyword,
+  HomeworkAttitudeRecord,
+  HomeworkKnowledgeRecord,
+  HomeworkKnowledgeStatus,
+} from "@/types";
 
 export const homeworkRecordService = {
   async listPinnedKnowledgePointIds(): Promise<string[]> {
@@ -12,6 +17,17 @@ export const homeworkRecordService = {
 
   async listByStudent(studentId: string): Promise<HomeworkKnowledgeRecord[]> {
     return rpcCall("homeworkRecord", "listByStudent", [studentId]) as any;
+  },
+
+  async getAttitudeByStudent(studentId: string): Promise<HomeworkAttitudeRecord | null> {
+    return rpcCall("homeworkRecord", "getAttitudeByStudent", [studentId]) as any;
+  },
+
+  async setAttitudeKeywords(input: {
+    studentId: string;
+    keywords: HomeworkAttitudeKeyword[];
+  }): Promise<HomeworkAttitudeRecord | null> {
+    return rpcCall("homeworkRecord", "setAttitudeKeywords", [input]) as any;
   },
 
   async setRecord(input: {
