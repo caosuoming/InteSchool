@@ -364,7 +364,7 @@ export async function exportGradeExam(exam: GradeExam): Promise<void> {
   const valueCell = (value: string | number | null | undefined) => ({
     value: value ?? undefined,
     type: typeof value === "number" ? Number : String,
-    align: typeof value === "number" ? "right" as const : "left" as const,
+    align: "center" as const,
     alignVertical: "center" as const,
     height: 22,
     ...border,
@@ -536,10 +536,10 @@ function uniqueWorkbookSheetName(name: string, usedNames: Set<string>): string {
 function titleRow(title: string, columnCount: number, reportDate?: string): CombinedWorkbookRow {
   return Array.from({ length: columnCount }, (_, index) => {
     if (index === 0) {
-      return combinedWorkbookCell(title, { fontWeight: "bold", fontSize: 15, align: "left" });
+      return combinedWorkbookCell(title, { fontWeight: "bold", fontSize: 15 });
     }
     if (reportDate && index === columnCount - 1) {
-      return combinedWorkbookCell(reportDate.replace(/-/g, "."), { fontWeight: "bold", align: "right" });
+      return combinedWorkbookCell(reportDate.replace(/-/g, "."), { fontWeight: "bold" });
     }
     return combinedWorkbookCell(null);
   });
@@ -562,7 +562,6 @@ function classAverageScoreWorkbookCell(
   options: Record<string, unknown> = {},
 ): CombinedWorkbookCell {
   return combinedWorkbookCell(value, {
-    align: "right",
     ...(typeof value === "number" ? { format: "0.00" } : {}),
     ...options,
   });

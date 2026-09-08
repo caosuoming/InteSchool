@@ -174,6 +174,10 @@ describe("combined grade exports", () => {
       data: Array<Array<null | { value?: string | number; align?: string; columnSpan?: number; rowSpan?: number }>>;
     }>;
 
+    expect(sheets.every((sheet) => sheet.data.every((row) => row.every(
+      (cell) => cell === null || cell.align === "center",
+    )))).toBe(true);
+
     const tableOne = sheets.find((sheet) => sheet.sheet.startsWith("表一"))!;
     const firstCategoryRow = tableOne.data.slice(2).find((row) => row[0]?.rowSpan);
     expect(firstCategoryRow?.[0]?.rowSpan).toBeGreaterThan(1);
