@@ -223,10 +223,15 @@ const QUESTION_LABEL_X = 5;
 const QUESTION_LABEL_Y = 5;
 const QUESTION_LABEL_HEIGHT = 6;
 const QUESTION_CONTENT_RIGHT = 95;
+const QUESTION_FULL_WIDTH = QUESTION_CONTENT_RIGHT - QUESTION_LABEL_X;
+const QUESTION_ROW_STEM_Y = 13;
+const QUESTION_ROW_OPTIONS_Y = 38;
 const LEGACY_QUESTION_LABEL_WIDTH = 14;
 const LEGACY_QUESTION_LABEL_HEIGHT = 10;
 const LEGACY_QUESTION_STEM_X = 20;
 const LEGACY_QUESTION_STEM_WIDTH = 75;
+
+type QuestionLabelMode = "inline" | "row" | "hidden";
 
 function questionLabelLayout(label: string): {
   labelWidth: number;
@@ -287,9 +292,90 @@ function normalizeLegacyQuestionSlideLayout(slide: LessonSlide): LessonSlide {
 
 function normalizeLegacyCoursewareLayout(courseware: LessonCourseware): LessonCourseware {
   const slides = courseware.slides.map(normalizeLegacyQuestionSlideLayout);
-  return slides.some((slide, index) => slide !== courseware.slides[index])
+  const normalized = slides.some((slide, index) => slide !== courseware.slides[index])
     ? { ...courseware, slides }
     : courseware;
+  if (normalized.sourceType !== "lecture" || !normalized.sourceId) return normalized;
+
+  const lecture = db.read("lectures").find((item) => item.id === normalized.sourceId);
+  if (!lecture) return normalized;
+  const sourceQuestions = flattenLectureSections(lecture.sections)
+    .filter((section) => section.type === "question");
+  const remainingSourceQuestions = [...sourceQuestions];
+
+  const lectureSlides = normalized.slides.map((slide) => {
+    if (slide.type !== "question" || !slide.freeformLayout) return slide;
+
+    let sourceIndex = slide.questionId
+      ? remainingSourceQuestions.findIndex((section) => section.questionId === slide.questionId)
+      : -1;
+    if (sourceIndex < 0) sourceIndex = remainingSourceQuestions.length > 0 ? 0 : -1;
+    const sourceQuestion = sourceIndex >= 0
+      ? remainingSourceQuestions.splice(sourceIndex, 1)[0]
+      : undefined;
+    const sourceLabel = sourceQuestion?.customLabel?.trim();
+
+    const labelElement = slide.elements?.find((element) => (
+      element.kind === "text"
+      && element.questionSection === "stem"
+      && element.content === slide.title
+      && element.x === QUESTION_LABEL_X
+      && element.y === QUESTION_LABEL_Y
+    ));
+    const stemElement = slide.elements?.find((element) => (
+      element.kind === "text"
+      && element.questionSection === "stem"
+      && element.id !== labelElement?.id
+      && element.content === slide.questionSnapshot?.stem
+    ));
+    if (!labelElement) return slide;
+
+    if (sourceLabel) {
+      return {
+        ...slide,
+        elements: slide.elements?.map((element) => {
+          if (element.id === labelElement.id) {
+            return {
+              ...element,
+              x: QUESTION_LABEL_X,
+              y: QUESTION_LABEL_Y,
+              width: QUESTION_FULL_WIDTH,
+              height: QUESTION_LABEL_HEIGHT,
+            };
+          }
+          if (stemElement && element.id === stemElement.id) {
+            return {
+              ...element,
+              x: QUESTION_LABEL_X,
+              y: QUESTION_ROW_STEM_Y,
+              width: QUESTION_FULL_WIDTH,
+            };
+          }
+          return element;
+        }),
+      };
+    }
+
+    if (!/^\d+[.．、)]?$/.test(slide.title.trim())) return slide;
+    return {
+      ...slide,
+      title: "题目",
+      elements: slide.elements
+        ?.filter((element) => element.id !== labelElement.id)
+        .map((element) => stemElement && element.id === stemElement.id
+          ? {
+            ...element,
+            x: QUESTION_LABEL_X,
+            y: QUESTION_LABEL_Y,
+            width: QUESTION_FULL_WIDTH,
+          }
+          : element),
+    };
+  });
+
+  return lectureSlides.some((slide, index) => slide !== normalized.slides[index])
+    ? { ...normalized, slides: lectureSlides }
+    : normalized;
 }
 
 function extractFloatingImages(
@@ -334,6 +420,7 @@ function questionSlide(
   question: Pick<Question, "id" | "stem" | "type" | "options" | "answer" | "analysis">
     & Partial<Pick<Question, "summary" | "board" | "boardImages" | "links" | "explanationVideo">>,
   title: string,
+  labelMode: QuestionLabelMode = "inline",
 ): LessonSlide {
   const stem = extractFloatingImages(question.stem, "stem");
   let imageOffset = stem.elements.length;
@@ -354,25 +441,35 @@ function questionSlide(
     stem.elements.length + optionImageCount + answer.elements.length,
   );
   const { labelWidth, stemX, stemWidth } = questionLabelLayout(title);
-
-  const textElements: LessonSlideElement[] = [
-    createTextElement(title, {
-      x: QUESTION_LABEL_X,
-      y: QUESTION_LABEL_Y,
-      width: labelWidth,
-      height: QUESTION_LABEL_HEIGHT,
-    }, {
-      fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
-      questionSection: "stem",
-    }),
-  ];
-  if (stem.content) {
-    textElements.push(createTextElement(stem.content, {
+  const hasVisibleLabel = labelMode !== "hidden" && Boolean(title.trim());
+  const stemPosition = labelMode === "inline"
+    ? {
       x: stemX,
       y: QUESTION_LABEL_Y,
       width: stemWidth,
       height: options?.length ? 24 : 42,
+    }
+    : {
+      x: QUESTION_LABEL_X,
+      y: labelMode === "row" ? QUESTION_ROW_STEM_Y : QUESTION_LABEL_Y,
+      width: QUESTION_FULL_WIDTH,
+      height: options?.length ? (labelMode === "row" ? 18 : 24) : 42,
+    };
+  const optionsY = labelMode === "row" ? QUESTION_ROW_OPTIONS_Y : 34;
+
+  const textElements: LessonSlideElement[] = hasVisibleLabel
+    ? [createTextElement(title, {
+      x: QUESTION_LABEL_X,
+      y: QUESTION_LABEL_Y,
+      width: labelMode === "row" ? QUESTION_FULL_WIDTH : labelWidth,
+      height: QUESTION_LABEL_HEIGHT,
     }, {
+      fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
+      questionSection: "stem",
+    })]
+    : [];
+  if (stem.content) {
+    textElements.push(createTextElement(stem.content, stemPosition, {
       fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
       questionSection: "stem",
     }));
@@ -387,7 +484,7 @@ function questionSlide(
       content,
       {
         x: index % 2 === 0 ? 6 : 52,
-        y: 34 + Math.floor(index / 2) * 15,
+        y: optionsY + Math.floor(index / 2) * 15,
         width: 42,
         height: 12,
       },
@@ -605,9 +702,13 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
   });
 }
 
-function documentBlockSlides(blocks: LessonDocumentBlock[]): LessonSlide[] {
+function documentBlockSlides(
+  blocks: LessonDocumentBlock[],
+  options: { showQuestionNumbers?: boolean } = {},
+): LessonSlide[] {
   let questionNumber = 0;
   let knowledgeNumber = 0;
+  const showQuestionNumbers = options.showQuestionNumbers !== false;
   return blocks.flatMap((block) => {
     if (block.type === "knowledge") {
       knowledgeNumber += 1;
@@ -623,7 +724,7 @@ function documentBlockSlides(blocks: LessonDocumentBlock[]): LessonSlide[] {
       options: block.options,
       answer: block.answer || "",
       analysis: block.analysis || "",
-    }, `${questionNumber}.`)];
+    }, showQuestionNumbers ? `${questionNumber}.` : "题目", showQuestionNumbers ? "inline" : "hidden")];
   });
 }
 
@@ -1060,16 +1161,18 @@ export const lessonCoursewareService = {
       titleSlide(coverTitle, lecture.description || `${lecture.grade} · ${lecture.schoolYear}`),
     ];
 
-    let questionNumber = 0;
     flattenLectureSections(lecture.sections).forEach((sec) => {
       if (sec.type === "question") {
-        questionNumber += 1;
-        const questionLabel = sec.customLabel?.trim() || `${questionNumber}.`;
+        const questionLabel = sec.customLabel?.trim();
         const question = sec.questionId
           ? questions.find((item) => item.id === sec.questionId)
           : undefined;
         if (question) {
-          slides.push(questionSlide(question, questionLabel));
+          slides.push(questionSlide(
+            question,
+            questionLabel || "题目",
+            questionLabel ? "row" : "hidden",
+          ));
         } else {
           slides.push(questionSlide({
             id: sec.questionId || sec.id,
@@ -1077,13 +1180,15 @@ export const lessonCoursewareService = {
             type: "essay",
             answer: "",
             analysis: "",
-          }, questionLabel));
+          }, questionLabel || "题目", questionLabel ? "row" : "hidden"));
         }
       } else if (sec.type === "knowledge") {
         slides.push(knowledgeSlide(sec.title, sec.content));
       }
     });
-    if (slides.length === 1) slides.push(...documentBlockSlides(documentBlocks));
+    if (slides.length === 1) {
+      slides.push(...documentBlockSlides(documentBlocks, { showQuestionNumbers: false }));
+    }
 
     const libraryCoursewareId = genId("cw");
     const lesson = await this.createCourseware(teacherId, schoolId, {

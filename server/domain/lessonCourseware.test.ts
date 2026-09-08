@@ -733,6 +733,80 @@ describe("courseware lesson flow", () => {
     });
   });
 
+  it("normalizes existing lecture question labels and removes generated fallback numbers", async () => {
+    const question = sourceQuestion();
+    const lecture = sourceLecture();
+    lecture.sections[0].children.push({
+      id: "section-question-without-label",
+      title: "补充练习",
+      type: "question",
+      content: "补充题干",
+      children: [],
+    });
+    const state = createState();
+    state.questions = [question];
+    state.lectures = [lecture];
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromLecture(
+        "teacher-1",
+        "school-1",
+        lecture.id,
+      );
+      const storedLesson = (state.lessonCoursewares as LessonCourseware[])
+        .find((item) => item.id === lesson.id)!;
+      const labeledSlide = storedLesson.slides.find((slide) => slide.questionId === question.id)!;
+      const labeledElement = labeledSlide.elements!.find((element) =>
+        element.kind === "text" && element.content === "例1")!;
+      const labeledStem = labeledSlide.elements!.find((element) =>
+        element.kind === "text" && element.content === "<p>观察图像并选择答案。</p>")!;
+      Object.assign(labeledElement, { x: 5, y: 5, width: 5, height: 6 });
+      Object.assign(labeledStem, { x: 11, y: 5, width: 84, height: 24 });
+
+      const unlabeledSlide = storedLesson.slides.find((slide) =>
+        slide.type === "question" && slide.questionSnapshot?.stem === "补充题干")!;
+      unlabeledSlide.title = "2.";
+      const unlabeledStem = unlabeledSlide.elements!.find((element) =>
+        element.kind === "text" && element.content === "补充题干")!;
+      Object.assign(unlabeledStem, { x: 10, y: 5, width: 85, height: 42 });
+      unlabeledSlide.elements = [{
+        id: "legacy-number",
+        kind: "text",
+        content: "2.",
+        x: 5,
+        y: 5,
+        width: 4,
+        height: 6,
+        fontSize: 38,
+        autoHeight: true,
+        textAlign: "left",
+        questionSection: "stem",
+      }, ...(unlabeledSlide.elements || [])];
+
+      const loaded = await lessonCoursewareService.getCourseware(lesson.id);
+      const loadedLabeledSlide = loaded?.slides.find((slide) => slide.questionId === question.id);
+      expect(loadedLabeledSlide?.elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ content: "例1", x: 5, y: 5, width: 90, height: 6 }),
+        expect.objectContaining({
+          content: "<p>观察图像并选择答案。</p>",
+          x: 5,
+          y: 13,
+          width: 90,
+        }),
+      ]));
+
+      const loadedUnlabeledSlide = loaded?.slides.find((slide) =>
+        slide.type === "question" && slide.questionSnapshot?.stem === "补充题干");
+      expect(loadedUnlabeledSlide?.title).toBe("题目");
+      expect(loadedUnlabeledSlide?.elements).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ content: "2." }),
+      ]));
+      expect(loadedUnlabeledSlide?.elements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ content: "补充题干", x: 5, y: 5, width: 90 }),
+      ]));
+    });
+  });
+
   it("preserves question and knowledge block order from an extracted paper", async () => {
     const state = createState();
     const paper = sourceExamPaper();
@@ -943,11 +1017,18 @@ describe("courseware lesson flow", () => {
         expect.objectContaining({
           kind: "text",
           content: "例1",
+          x: 5,
+          y: 5,
+          width: 90,
+          height: 6,
           questionSection: "stem",
         }),
         expect.objectContaining({
           kind: "text",
           content: "<p>观察图像并选择答案。</p>",
+          x: 5,
+          y: 13,
+          width: 90,
           questionSection: "stem",
         }),
         expect.objectContaining({ kind: "image", src: "/api/files/question-image" }),
@@ -957,11 +1038,21 @@ describe("courseware lesson flow", () => {
       ]));
       expect(lesson.slides[3]).toMatchObject({
         type: "question",
-        title: "2.",
+        title: "题目",
         questionSnapshot: { stem: "补充题干" },
       });
       expect(lesson.slides[3].elements).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: "text", content: "2.", questionSection: "stem" }),
+        expect.objectContaining({
+          kind: "text",
+          content: "补充题干",
+          x: 5,
+          y: 5,
+          width: 90,
+          questionSection: "stem",
+        }),
+      ]));
+      expect(lesson.slides[3].elements).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "text", content: "2." }),
       ]));
       expect(lesson.slides[3].elements).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "text", content: "这段题目名称不应进入课件" }),
