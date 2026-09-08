@@ -29,7 +29,7 @@ export const COLLECTIONS = [
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
   "shareRecords", "examPublications", "lessonCoursewares", "reflections",
   "classroomHomeworks", "classroomNotices", "classroomDevices",
-  "studentInteractions", "studentInteractionFollows", "homeworkKnowledgeRecords", "homeworkRecordPreferences", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
+  "studentInteractions", "studentInteractionFollows", "homeworkAttitudeRecords", "homeworkKnowledgeRecords", "homeworkRecordPreferences", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
   "gradeExams", "gradePublications", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements", "examInvigilationProfiles", "teachingScheduleProfiles",
   "notifications", "parentAuthorizations", "parentAccounts",

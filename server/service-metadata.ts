@@ -1671,6 +1671,14 @@ export const serviceParameters = {
       "studentId",
       "teacher"
     ],
+    "getAttitudeByStudent": [
+      "studentId",
+      "teacher"
+    ],
+    "setAttitudeKeywords": [
+      "input",
+      "teacher"
+    ],
     "setRecord": [
       "input",
       "teacher"
