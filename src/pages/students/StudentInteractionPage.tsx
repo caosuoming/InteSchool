@@ -345,11 +345,11 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
 
       <ResizableSplitPane
         storageKey="inteschool:my-students-sidebar-width"
-        className="h-[calc(100vh-12rem)]"
-        sidebarClassName="h-full"
-        contentClassName="h-full"
+        className="h-[calc(100vh-12rem)] lg:h-auto lg:items-start"
+        sidebarClassName="h-full lg:h-auto"
+        contentClassName="h-full lg:sticky lg:top-6 lg:h-[calc(100vh-12rem)] lg:self-start"
         sidebar={
-          <Card className="h-full flex flex-col">
+          <Card className="h-full flex flex-col lg:h-auto lg:min-h-[calc(100vh-12rem)]">
             <div className="p-3 border-b border-ink-100">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
@@ -362,7 +362,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                 />
               </div>
             </div>
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto lg:overflow-visible">
               {loading ? (
                 <div className="p-6 text-center text-xs text-ink-400">
                   <div className="inline-block w-6 h-6 border-2 border-gold-400 border-t-transparent rounded-full animate-spin mb-2" />

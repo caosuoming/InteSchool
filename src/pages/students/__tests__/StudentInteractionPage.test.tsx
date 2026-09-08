@@ -130,6 +130,17 @@ describe("StudentInteractionPage", () => {
     });
   });
 
+  it("keeps the detail pane sticky while the desktop student list can extend with the page", async () => {
+    render(<StudentInteractionPage embedded />);
+
+    await screen.findByPlaceholderText("搜索学生...");
+    const stickyPane = document.querySelector('[class~="lg:sticky"]');
+    const desktopStudentList = document.querySelector('[class~="lg:overflow-visible"]');
+
+    expect(stickyPane).toHaveClass("lg:sticky", "lg:top-6", "lg:self-start");
+    expect(desktopStudentList).toBeInTheDocument();
+  });
+
   it("groups students by class and toggles groups from a collapsed state", async () => {
     const user = userEvent.setup();
     render(<StudentInteractionPage embedded />);

@@ -134,6 +134,17 @@ describe("StudentHomeworkRecordPage", () => {
     vi.mocked(homeworkRecordService.setPinnedKnowledgePointIds).mockImplementation(async (ids) => ids);
   });
 
+  it("keeps the homework pane sticky while the desktop student list can extend with the page", async () => {
+    render(<StudentHomeworkRecordPage />);
+
+    await screen.findByPlaceholderText("搜索学生...");
+    const stickyPane = document.querySelector('[class~="lg:sticky"]');
+    const desktopStudentList = document.querySelector('[class~="lg:overflow-visible"]');
+
+    expect(stickyPane).toHaveClass("lg:sticky", "lg:top-6", "lg:self-start");
+    expect(desktopStudentList).toBeInTheDocument();
+  });
+
   it("loads a pinned knowledge point for the selected student and saves status changes", async () => {
     const user = userEvent.setup();
     render(<StudentHomeworkRecordPage />);
