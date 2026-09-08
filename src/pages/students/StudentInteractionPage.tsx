@@ -9,8 +9,19 @@ import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { classService } from "@/services/class";
 import { studentInteractionService } from "@/services/studentInteraction";
+import { homeworkRecordService } from "@/services/homeworkRecord";
+import { knowledgeService } from "@/services/knowledge";
+import { gradeService } from "@/services/grade";
 import { uploadFile } from "@/services/api";
-import type { Student, StudentInteractionAttachment, StudentInteractionView, AnyClass } from "@/types";
+import type {
+  AnyClass,
+  GradeQueryData,
+  HomeworkKnowledgeRecord,
+  KnowledgePoint,
+  Student,
+  StudentInteractionAttachment,
+  StudentInteractionView,
+} from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
 import { Card } from "@/components/ui/Card";
@@ -40,6 +51,13 @@ const attitudeOptions = [
   { value: "1", label: "消极", icon: Frown, color: "text-red-600" },
 ];
 
+const homeworkStatusLabels: Record<string, string> = {
+  done: "完成",
+  correct: "做对",
+  partial: "部分正确",
+  wrong: "做错",
+};
+
 const statusTagOptions = [
   "听课专注",
   "主动提问",
@@ -64,6 +82,9 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [followPendingStudentIds, setFollowPendingStudentIds] = useState<Set<string>>(() => new Set());
   // 每个学生的最近互动时间
   const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
+  const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
+  const [gradeQueryData, setGradeQueryData] = useState<GradeQueryData | null>(null);
+  const [recentHomeworkRecords, setRecentHomeworkRecords] = useState<HomeworkKnowledgeRecord[]>([]);
 
   // 新建记录
   const [newType, setNewType] = useState<"chat" | "attitude" | "status">("chat");
@@ -116,6 +137,22 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     }
   }, [loadStudents, teacher]);
 
+  useEffect(() => {
+    if (!teacher?.schoolId || !teacher?.id) return;
+    let cancelled = false;
+    void Promise.allSettled([
+      knowledgeService.listKnowledgePoints(teacher.schoolId),
+      gradeService.getQueryData(),
+    ]).then(([knowledgeResult, gradeResult]) => {
+      if (cancelled) return;
+      setKnowledgePoints(knowledgeResult.status === "fulfilled" ? knowledgeResult.value : []);
+      setGradeQueryData(gradeResult.status === "fulfilled" ? gradeResult.value : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [teacher?.id, teacher?.schoolId]);
+
   const loadInteractions = useCallback(async () => {
     if (!selectedStudentId) return;
     try {
@@ -142,6 +179,24 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       loadInteractions();
     }
   }, [loadInteractions, selectedStudentId]);
+
+  useEffect(() => {
+    if (!selectedStudentId) {
+      setRecentHomeworkRecords([]);
+      return;
+    }
+    let cancelled = false;
+    void homeworkRecordService.listByStudent(selectedStudentId)
+      .then((records) => {
+        if (!cancelled) setRecentHomeworkRecords(records.slice(0, 2));
+      })
+      .catch(() => {
+        if (!cancelled) setRecentHomeworkRecords([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStudentId]);
 
   // 按最近互动时间排序：越久远（或从未互动）的越靠前
   const sortStudentsByInteraction = useCallback((list: Student[]): Student[] => {
@@ -203,6 +258,27 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   }, [myClasses]);
 
   const selectedStudent = allStudents.find((s) => s.id === selectedStudentId);
+  const knowledgePointMap = useMemo(
+    () => new Map(knowledgePoints.map((point) => [point.id, point] as const)),
+    [knowledgePoints],
+  );
+  const recentExamScores = useMemo(() => {
+    if (!selectedStudentId || !gradeQueryData?.subject) return [];
+    const subject = gradeQueryData.subject;
+    return gradeQueryData.exams
+      .flatMap((exam) => {
+        const record = exam.records.find((item) => item.studentId === selectedStudentId);
+        if (!record) return [];
+        const assigned = record.assignedScores[subject];
+        const raw = record.scores[subject];
+        const score = typeof assigned === "number" ? assigned : raw;
+        if (typeof score !== "number" || !Number.isFinite(score)) return [];
+        const timestamp = new Date(exam.examDate || exam.createdAt).getTime();
+        return [{ exam, score, timestamp: Number.isFinite(timestamp) ? timestamp : 0 }];
+      })
+      .sort((left, right) => right.timestamp - left.timestamp)
+      .slice(0, 2);
+  }, [gradeQueryData, selectedStudentId]);
 
   const handleToggleFollow = useCallback(async (studentId: string) => {
     if (followPendingStudentIds.has(studentId)) return;
@@ -234,7 +310,6 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   }, [followPendingStudentIds, followedStudentIds]);
 
   const handlePasteImages = async (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (newType !== "chat") return;
     const imageFiles = Array.from(event.clipboardData.items)
       .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
       .map((item) => item.getAsFile())
@@ -242,7 +317,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     if (imageFiles.length === 0) return;
     event.preventDefault();
     if (newAttachments.length + imageFiles.length > 6) {
-      toast.error("每条聊天记录最多上传 6 张图片");
+      toast.error("每条记录最多上传 6 张图片");
       return;
     }
     setUploadingImages(true);
@@ -284,8 +359,8 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
 
   const handleSubmit = async () => {
     if (!teacher || !selectedStudentId) return;
-    if (!newContent.trim() && (newType !== "chat" || newAttachments.length === 0)) {
-      toast.error(newType === "chat" ? "请输入内容或粘贴图片" : "请输入内容");
+    if (!newContent.trim() && newAttachments.length === 0) {
+      toast.error("请输入内容或粘贴图片");
       return;
     }
     if (uploadingImages) {
@@ -301,7 +376,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
           studentId: selectedStudentId,
           type: newType,
           content: newContent.trim(),
-          attachments: newType === "chat" ? newAttachments : undefined,
+          attachments: newAttachments.length > 0 ? newAttachments : undefined,
           attitude: newType === "attitude" ? parseInt(newAttitude) : undefined,
           statusTag: newType === "status" ? newStatusTag : undefined,
           shareWithHomeroom,
@@ -345,11 +420,11 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
 
       <ResizableSplitPane
         storageKey="inteschool:my-students-sidebar-width"
-        className="h-[calc(100vh-12rem)]"
-        sidebarClassName="h-full"
-        contentClassName="h-full"
+        className="h-[calc(100vh-12rem)] lg:h-auto lg:items-start"
+        sidebarClassName="h-full lg:h-auto"
+        contentClassName="h-full lg:sticky lg:top-6 lg:h-[calc(100vh-12rem)] lg:self-start"
         sidebar={
-          <Card className="h-full flex flex-col">
+          <Card className="h-full flex flex-col lg:h-auto lg:min-h-[calc(100vh-12rem)]">
             <div className="p-3 border-b border-ink-100">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
@@ -362,7 +437,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                 />
               </div>
             </div>
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto lg:overflow-visible">
               {loading ? (
                 <div className="p-6 text-center text-xs text-ink-400">
                   <div className="inline-block w-6 h-6 border-2 border-gold-400 border-t-transparent rounded-full animate-spin mb-2" />
@@ -432,6 +507,36 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                       学号：{selectedStudent.studentNo || "未设置"} · 班级：{selectedStudent.classId ? (classMap[selectedStudent.classId]?.name || "未知") : "未分班"}
                     </div>
                   </div>
+                  <div className="flex min-w-0 flex-wrap items-start gap-3">
+                    <div className="min-w-[150px] rounded-lg bg-mist/60 px-3 py-2">
+                      <div className="text-[11px] font-medium text-ink-500">最近作业记录</div>
+                      <div className="mt-1 space-y-1">
+                        {recentHomeworkRecords.length > 0 ? recentHomeworkRecords.map((record) => (
+                          <div key={record.id} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="max-w-[110px] truncate text-ink-700" title={knowledgePointMap.get(record.knowledgePointId)?.name || record.knowledgePointId}>
+                              {knowledgePointMap.get(record.knowledgePointId)?.name || "知识点"}
+                            </span>
+                            <span className="shrink-0 text-ink-500">{homeworkStatusLabels[record.status] || record.status}</span>
+                          </div>
+                        )) : (
+                          <div className="text-xs text-ink-400">暂无记录</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="min-w-[160px] rounded-lg bg-mist/60 px-3 py-2">
+                      <div className="text-[11px] font-medium text-ink-500">最近考试成绩{gradeQueryData?.subject ? ` · ${gradeQueryData.subject}` : ""}</div>
+                      <div className="mt-1 space-y-1">
+                        {recentExamScores.length > 0 ? recentExamScores.map(({ exam, score }) => (
+                          <div key={exam.id} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="max-w-[110px] truncate text-ink-700" title={exam.name}>{exam.name}</span>
+                            <span className="shrink-0 font-medium tabular-nums text-ink-800">{score}</span>
+                          </div>
+                        )) : (
+                          <div className="text-xs text-ink-400">暂无成绩</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                   <div className="flex items-center gap-3">
                     {latestAttitude && (
                       <div className="text-center">
@@ -467,10 +572,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                         聊天记录
                       </button>
                       <button
-                        onClick={() => {
-                          setNewType("attitude");
-                          setNewAttachments([]);
-                        }}
+                        onClick={() => setNewType("attitude")}
                         className={cn(
                           "px-3 py-1 text-xs rounded transition-colors flex items-center gap-1",
                           newType === "attitude" ? "bg-ink-900 text-paper" : "text-ink-600",
@@ -480,10 +582,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                         学习态度
                       </button>
                       <button
-                        onClick={() => {
-                          setNewType("status");
-                          setNewAttachments([]);
-                        }}
+                        onClick={() => setNewType("status")}
                         className={cn(
                           "px-3 py-1 text-xs rounded transition-colors flex items-center gap-1",
                           newType === "status" ? "bg-ink-900 text-paper" : "text-ink-600",
@@ -546,38 +645,36 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                     rows={3}
                   />
 
-                  {newType === "chat" && (
-                    <div className="space-y-2">
-                      <div className="text-[11px] text-ink-400">
-                        可直接在输入框粘贴截图或图片，最多 6 张
-                        {uploadingImages ? " · 正在上传..." : ""}
-                      </div>
-                      {newAttachments.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {newAttachments.map((attachment) => (
-                            <div
-                              key={attachment.id}
-                              className="group relative overflow-hidden rounded-md border border-ink-100 bg-mist"
-                            >
-                              <img
-                                src={attachment.url}
-                                alt={attachment.name}
-                                className="h-20 w-24 object-cover"
-                              />
-                              <button
-                                type="button"
-                                className="absolute right-1 top-1 rounded bg-ink-950/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-                                onClick={() => setNewAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-                                aria-label={`移除 ${attachment.name}`}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                  <div className="space-y-2">
+                    <div className="text-[11px] text-ink-400">
+                      可直接在输入框粘贴截图或图片，最多 6 张
+                      {uploadingImages ? " · 正在上传..." : ""}
                     </div>
-                  )}
+                    {newAttachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {newAttachments.map((attachment) => (
+                          <div
+                            key={attachment.id}
+                            className="group relative overflow-hidden rounded-md border border-ink-100 bg-mist"
+                          >
+                            <img
+                              src={attachment.url}
+                              alt={attachment.name}
+                              className="h-20 w-24 object-cover"
+                            />
+                            <button
+                              type="button"
+                              className="absolute right-1 top-1 rounded bg-ink-950/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                              onClick={() => setNewAttachments((current) => current.filter((item) => item.id !== attachment.id))}
+                              aria-label={`移除 ${attachment.name}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex items-center justify-between gap-4">
                     <label className="inline-flex items-start gap-2 text-xs text-ink-600 cursor-pointer">
@@ -599,7 +696,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                       size="sm"
                       onClick={handleSubmit}
                       loading={submitting}
-                      disabled={uploadingImages || (!newContent.trim() && (newType !== "chat" || newAttachments.length === 0))}
+                      disabled={uploadingImages || (!newContent.trim() && newAttachments.length === 0)}
                     >
                       <Plus className="w-4 h-4" />
                       添加记录

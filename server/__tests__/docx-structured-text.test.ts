@@ -158,7 +158,7 @@ describe("DOCX structure-aware text extraction", () => {
 
     await expect(extractDocxStructuredText(data)).resolves.toBe(
       '已知向量 <i class="math-vector">a</i> 与零向量 '
-        + '<i class="math-vector">0</i>，但粗体文本 ABC 不应被当作向量。',
+        + '<i class="math-vector math-vector-zero">0</i>，但粗体文本 ABC 不应被当作向量。',
     );
   });
 

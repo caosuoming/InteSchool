@@ -47,8 +47,8 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
 
   useEffect(() => {
     if (!open || !question) return;
-    setChapterIds([...question.chapterIds]);
-    setKnowledgePointIds([...question.knowledgePointIds]);
+    setChapterIds([...(question.chapterIds || [])]);
+    setKnowledgePointIds([...(question.knowledgePointIds || [])]);
     setRemarks([...(question.remarks || [])]);
     setActiveDirectoryTab("chapter");
     setNewRemarkContent("");

@@ -12,6 +12,11 @@ export interface TeachingScheduleSpreadsheetImport {
   assignments: TeachingScheduleTeacherAssignment[];
 }
 
+export interface TeachingScheduleTemplateCohort {
+  context: ExamArrangementContext;
+  config: TeachingScheduleConfig;
+}
+
 const META_HEADERS = new Set(["年级", "班级", "年级组长", "班主任", "合计"]);
 
 function text(value: TeachingScheduleSpreadsheetCell): string {
@@ -30,6 +35,12 @@ function safeNumber(value: TeachingScheduleSpreadsheetCell): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function isCurrentCohortGrade(value: string, context: ExamArrangementContext): boolean {
+  const candidate = normalized(value);
+  return [context.cohort.grade, context.cohort.label, context.cohort.key]
+    .some((item) => item && normalized(item) === candidate);
+}
+
 export function parseTeachingScheduleTable(
   rows: TeachingScheduleSpreadsheetCell[][],
   context: ExamArrangementContext,
@@ -37,6 +48,7 @@ export function parseTeachingScheduleTable(
   const headerIndex = rows.findIndex((row) => row.some((cell) => normalized(text(cell)) === "班级"));
   if (headerIndex < 0) throw new Error("模板缺少“班级”表头");
   const headers = rows[headerIndex].map((cell) => text(cell));
+  const gradeColumn = headers.findIndex((header) => normalized(header) === "年级");
   const classColumn = headers.findIndex((header) => normalized(header) === "班级");
   const subjectColumns = headers.flatMap((header, index) => {
     const name = header.trim();
@@ -46,7 +58,20 @@ export function parseTeachingScheduleTable(
   if (subjectColumns.length === 0) throw new Error("模板中没有学科列");
 
   const classByName = new Map(context.classes.map((item) => [normalized(item.name), item]));
-  const standardRow = rows.slice(headerIndex + 1).find((row) => normalized(text(row[classColumn])) === "标准");
+  let inheritedGrade = "";
+  const dataRows = rows.slice(headerIndex + 1).map((row, offset) => {
+    if (gradeColumn >= 0) {
+      const explicitGrade = text(row[gradeColumn]);
+      if (explicitGrade) inheritedGrade = explicitGrade;
+    }
+    return {
+      row,
+      rowNumber: headerIndex + offset + 2,
+      belongsToCurrentCohort: gradeColumn < 0 || !inheritedGrade || isCurrentCohortGrade(inheritedGrade, context),
+    };
+  });
+  const currentCohortRows = dataRows.filter((item) => item.belongsToCurrentCohort);
+  const standardRow = currentCohortRows.find(({ row }) => normalized(text(row[classColumn])) === "标准")?.row;
   const subjects = subjectColumns.map(({ index, subject }) => ({
     subject,
     weeklyPeriods: Math.max(0, Math.min(35, Math.round(standardRow ? safeNumber(standardRow[index]) : 0))),
@@ -54,13 +79,13 @@ export function parseTeachingScheduleTable(
   const assignments: TeachingScheduleTeacherAssignment[] = [];
   const seen = new Set<string>();
 
-  rows.slice(headerIndex + 1).forEach((row, offset) => {
+  currentCohortRows.forEach(({ row, rowNumber }) => {
     const className = text(row[classColumn]);
     if (!className || normalized(className) === "标准") return;
     const classItem = classByName.get(normalized(className));
     if (!classItem) {
       if (row.some((cell) => text(cell))) {
-        throw new Error(`第 ${headerIndex + offset + 2} 行班级“${className}”不属于当前年级`);
+        throw new Error(`第 ${rowNumber} 行班级“${className}”不属于当前年级`);
       }
       return;
     }
@@ -100,9 +125,9 @@ export async function readTeachingScheduleFile(
 }
 
 export async function downloadTeachingScheduleTemplate(
-  context: ExamArrangementContext,
-  config: TeachingScheduleConfig,
+  cohorts: TeachingScheduleTemplateCohort[],
 ): Promise<void> {
+  if (cohorts.length === 0) throw new Error("没有可导出的年级");
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
   const border = { borderStyle: "thin" as const, borderColor: "#8A98A8" };
   const header = (value: string) => ({
@@ -116,48 +141,58 @@ export async function downloadTeachingScheduleTemplate(
   });
   const stringCell = (value: string) => ({ value, type: String, align: "center" as const, wrap: true, ...border });
   const numberCell = (value: number) => ({ value, type: Number, align: "center" as const, ...border });
-  const subjects = config.subjects.map((item) => item.subject);
-  const assignmentsByCell = new Map(config.assignments.map((item) => [
-    `${item.classId}\u0000${item.subject}`,
-    item.teacherName,
-  ]));
-  const homeroomByClass = new Map<string, string>();
-  for (const teacher of context.teachers || []) {
-    for (const classId of teacher.homeroomClassIds || []) {
-      if (!homeroomByClass.has(classId)) homeroomByClass.set(classId, teacher.name);
-    }
-  }
-  const gradeLeaders = (context.teachers || [])
-    .filter((teacher) => teacher.roles?.includes("gradeLeader"))
-    .map((teacher) => teacher.name)
-    .join("、");
+  const subjects = [...new Set(cohorts.flatMap(({ config }) => config.subjects.map((item) => item.subject)))];
   const headerRow = ["年级", "班级", "年级组长", "班主任", ...subjects, "合计"];
-  const standardValues = config.subjects.map((item) => Math.max(0, Math.round(item.weeklyPeriods)));
-  const standardRow = [
-    stringCell(context.cohort.label),
-    stringCell("标准"),
-    stringCell(gradeLeaders),
-    stringCell(""),
-    ...standardValues.map(numberCell),
-    numberCell(standardValues.reduce((sum, value) => sum + value, 0)),
-  ];
-  const classRows = context.classes.map((classItem) => {
-    const subjectCells = subjects.map((subject) => stringCell(assignmentsByCell.get(`${classItem.id}\u0000${subject}`) || ""));
-    return [
-      stringCell(context.cohort.label),
-      stringCell(classItem.name),
+  const dataRows = cohorts.flatMap(({ context, config }) => {
+    const assignmentsByCell = new Map(config.assignments.map((item) => [
+      `${item.classId}\u0000${item.subject}`,
+      item.teacherName,
+    ]));
+    const periodsBySubject = new Map(config.subjects.map((item) => [
+      item.subject,
+      Math.max(0, Math.round(item.weeklyPeriods)),
+    ]));
+    const homeroomByClass = new Map<string, string>();
+    for (const teacher of context.teachers || []) {
+      for (const classId of teacher.homeroomClassIds || []) {
+        if (!homeroomByClass.has(classId)) homeroomByClass.set(classId, teacher.name);
+      }
+    }
+    const gradeLeaders = (context.teachers || [])
+      .filter((teacher) => teacher.roles?.includes("gradeLeader"))
+      .map((teacher) => teacher.name)
+      .join("、");
+    const gradeCell = {
+      ...stringCell(context.cohort.grade || context.cohort.label),
+      ...(context.classes.length > 0 ? { rowSpan: context.classes.length + 1 } : {}),
+    };
+    const standardValues = subjects.map((subject) => periodsBySubject.get(subject));
+    const standardRow = [
+      gradeCell,
+      stringCell("标准"),
       stringCell(gradeLeaders),
-      stringCell(homeroomByClass.get(classItem.id) || ""),
-      ...subjectCells,
       stringCell(""),
+      ...standardValues.map((value) => value === undefined ? stringCell("") : numberCell(value)),
+      numberCell(standardValues.reduce((sum, value) => sum + (value || 0), 0)),
     ];
+    const classRows = context.classes.map((classItem) => {
+      const subjectCells = subjects.map((subject) => stringCell(assignmentsByCell.get(`${classItem.id}\u0000${subject}`) || ""));
+      return [
+        null,
+        stringCell(classItem.name),
+        stringCell(gradeLeaders),
+        stringCell(homeroomByClass.get(classItem.id) || ""),
+        ...subjectCells,
+        stringCell(""),
+      ];
+    });
+    return [standardRow, ...classRows];
   });
-  const safeName = context.cohort.label.replace(/[\\/:*?"<>|]/g, "_");
 
   await writeXlsxFile([{
     sheet: "教师分工表",
-    data: [headerRow.map(header), standardRow, ...classRows],
+    data: [headerRow.map(header), ...dataRows],
     stickyRowsCount: 1,
     columns: headerRow.map((_, index) => ({ width: index < 4 ? 16 : 12 })),
-  }]).toFile(`${safeName}_教师分工表模板.xlsx`);
+  }]).toFile("教师分工表模板.xlsx");
 }

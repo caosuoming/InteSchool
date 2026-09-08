@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Download, History, Search, Send, SlidersHorizontal, Undo2 } from "lucide-react";
+import { Copy, Download, History, Printer, Search, Send, SlidersHorizontal, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Select } from "@/components/ui/Input";
@@ -17,6 +17,7 @@ interface GradeExamAdjustmentPanelProps {
   onExamUpdated: (exam: GradeExam) => void;
   onDownloadTablesOneToFive?: () => Promise<void>;
   onDownloadClassStatistics?: () => Promise<void>;
+  onPrintTablesOneToFive?: () => void;
   readOnly?: boolean;
 }
 
@@ -135,12 +136,13 @@ export function GradeExamAdjustmentPanel({
   onExamUpdated,
   onDownloadTablesOneToFive,
   onDownloadClassStatistics,
+  onPrintTablesOneToFive,
   readOnly = false,
 }: GradeExamAdjustmentPanelProps) {
   const [examName, setExamName] = useState(exam.name);
   const [examDate, setExamDate] = useState(exam.examDate || "");
   const [metadataSaving, setMetadataSaving] = useState(false);
-  const [selectedStudentId, setSelectedStudentId] = useState(exam.records[0]?.studentId || "");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
   const [savingScore, setSavingScore] = useState<string | null>(null);
   const [publicationSaving, setPublicationSaving] = useState(false);
@@ -158,10 +160,15 @@ export function GradeExamAdjustmentPanel({
   }, [exam.id, exam.name, exam.examDate, exam.publication?.publishToParents]);
 
   useEffect(() => {
-    if (!exam.records.some((record) => record.studentId === selectedStudentId)) {
-      setSelectedStudentId(exam.records[0]?.studentId || "");
+    if (selectedStudentId && !exam.records.some((record) => record.studentId === selectedStudentId)) {
+      setSelectedStudentId("");
     }
   }, [exam.records, selectedStudentId]);
+
+  useEffect(() => {
+    setSelectedStudentId("");
+    setStudentSearch("");
+  }, [exam.id]);
 
   const records = useMemo(
     () => [...exam.records].sort((left, right) =>
@@ -347,6 +354,11 @@ export function GradeExamAdjustmentPanel({
                 <Download className="h-4 w-4" />下载表六、各班成绩统计
               </Button>
             )}
+            {onPrintTablesOneToFive && (
+              <Button variant="outline" onClick={onPrintTablesOneToFive}>
+                <Printer className="h-4 w-4" />一键打印表一-表五
+              </Button>
+            )}
             <Button
               variant={published ? "outline" : "gold"}
               onClick={() => void (published ? unpublishResults() : publishResults())}
@@ -502,7 +514,7 @@ export function GradeExamAdjustmentPanel({
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-ink-200 py-8 text-center text-sm text-ink-400">
-            当前考试没有可修改的学生成绩
+            {records.length > 0 ? "请选择学生查看并微调成绩" : "当前考试没有可修改的学生成绩"}
           </div>
         )}
       </div>
@@ -523,8 +535,8 @@ export function GradeExamAdjustmentPanel({
                   <th className="px-4 py-2.5 text-left font-medium">学生</th>
                   <th className="px-4 py-2.5 text-left font-medium">科目</th>
                   <th className="px-4 py-2.5 text-left font-medium">口径</th>
-                  <th className="px-4 py-2.5 text-right font-medium">原值</th>
-                  <th className="px-4 py-2.5 text-right font-medium">新值</th>
+                  <th className="px-4 py-2.5 text-right font-medium">修改前成绩</th>
+                  <th className="px-4 py-2.5 text-right font-medium">修改后成绩</th>
                   <th className="px-4 py-2.5 text-left font-medium">修改人</th>
                 </tr>
               </thead>

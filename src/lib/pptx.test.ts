@@ -86,11 +86,19 @@ describe("PPTX slide parser", () => {
     </p:pic>
   </p:spTree></p:cSld>
 </p:sld>`);
+    zip.file("ppt/slides/_rels/slide1.xml.rels", `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/diagram.png"/>
+</Relationships>`);
+    zip.file("ppt/media/diagram.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
     const source = await zip.generateAsync({ type: "uint8array" });
+    let embeddedImage: Parameters<NonNullable<import("./pptx").PptxExtractionOptions["imageUrl"]>>[2];
 
     const [slide] = await extractPptxSlideOutlines(source, {
-      imageUrl: (slideNumber, relationshipId) =>
-        `/api/files/file-1/assets/ppt-slide-${slideNumber}-${relationshipId}`,
+      imageUrl: (slideNumber, relationshipId, image) => {
+        embeddedImage = image;
+        return `/api/files/file-1/assets/ppt-slide-${slideNumber}-${relationshipId}`;
+      },
     });
 
     expect(slide.elements).toHaveLength(2);
@@ -119,6 +127,12 @@ describe("PPTX slide parser", () => {
       width: 30,
       height: 50,
     });
+    expect(embeddedImage).toMatchObject({
+      contentType: "image/png",
+      fileName: "diagram.png",
+      packagePath: "ppt/media/diagram.png",
+    });
+    expect(Array.from(embeddedImage?.data || [])).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
 
   it("preserves native PPT tables as editable rich-text elements", async () => {

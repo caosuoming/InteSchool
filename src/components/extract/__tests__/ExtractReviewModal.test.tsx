@@ -169,7 +169,7 @@ describe("ExtractReviewModal", () => {
     }
 
     const questionTypeSelect = screen.getByLabelText("题型选择");
-    for (const label of ["单选题", "多选题", "判断题", "填空题", "解答题"]) {
+    for (const label of ["单选题", "多选题", "判断题", "填空题", "解答题", "综合题"]) {
       expect(within(questionTypeSelect).getByRole("option", { name: label })).toBeInTheDocument();
     }
 

@@ -20,6 +20,8 @@ vi.mock("@/services/homeworkRecord", () => ({
     listPinnedKnowledgePointIds: vi.fn(),
     setPinnedKnowledgePointIds: vi.fn(),
     listByStudent: vi.fn(),
+    getAttitudeByStudent: vi.fn(),
+    setAttitudeKeywords: vi.fn(),
     setRecord: vi.fn(),
   },
 }));
@@ -121,6 +123,24 @@ describe("StudentHomeworkRecordPage", () => {
       createdAt: "2026-09-05T08:00:00.000Z",
       updatedAt: "2026-09-05T08:00:00.000Z",
     }]);
+    vi.mocked(homeworkRecordService.getAttitudeByStudent).mockResolvedValue({
+      id: "attitude-1",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      studentId: "student-1",
+      keywords: ["按时完成"],
+      createdAt: "2026-09-05T08:00:00.000Z",
+      updatedAt: "2026-09-05T08:00:00.000Z",
+    });
+    vi.mocked(homeworkRecordService.setAttitudeKeywords).mockImplementation(async (input) => input.keywords.length > 0 ? ({
+      id: "attitude-1",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      studentId: input.studentId,
+      keywords: input.keywords,
+      createdAt: "2026-09-05T08:00:00.000Z",
+      updatedAt: "2026-09-05T08:01:00.000Z",
+    }) : null);
     vi.mocked(homeworkRecordService.setRecord).mockImplementation(async (input) => ({
       id: "record-1",
       teacherId: "teacher-1",
@@ -134,6 +154,17 @@ describe("StudentHomeworkRecordPage", () => {
     vi.mocked(homeworkRecordService.setPinnedKnowledgePointIds).mockImplementation(async (ids) => ids);
   });
 
+  it("keeps the homework pane sticky while the desktop student list can extend with the page", async () => {
+    render(<StudentHomeworkRecordPage />);
+
+    await screen.findByPlaceholderText("搜索学生...");
+    const stickyPane = document.querySelector('[class~="lg:sticky"]');
+    const desktopStudentList = document.querySelector('[class~="lg:overflow-visible"]');
+
+    expect(stickyPane).toHaveClass("lg:sticky", "lg:top-6", "lg:self-start");
+    expect(desktopStudentList).toBeInTheDocument();
+  });
+
   it("loads a pinned knowledge point for the selected student and saves status changes", async () => {
     const user = userEvent.setup();
     render(<StudentHomeworkRecordPage />);
@@ -145,6 +176,7 @@ describe("StudentHomeworkRecordPage", () => {
     await waitFor(() => {
       expect(done).toHaveAttribute("aria-pressed", "true");
     });
+    expect(done).toHaveClass("ring-2");
 
     const partial = screen.getByRole("button", { name: "半对" });
     await user.click(partial);
@@ -157,6 +189,30 @@ describe("StudentHomeworkRecordPage", () => {
       });
     });
     expect(partial).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("loads and persists student homework-attitude keywords with an obvious selected state", async () => {
+    const user = userEvent.setup();
+    render(<StudentHomeworkRecordPage />);
+
+    expect(await screen.findByText("作业态度")).toBeInTheDocument();
+    const onTime = screen.getByRole("button", { name: "按时完成" });
+    await waitFor(() => {
+      expect(onTime).toHaveAttribute("aria-pressed", "true");
+    });
+    expect(onTime).toHaveClass("ring-2");
+
+    const careless = screen.getByRole("button", { name: "粗心" });
+    await user.click(careless);
+
+    await waitFor(() => {
+      expect(homeworkRecordService.setAttitudeKeywords).toHaveBeenCalledWith({
+        studentId: "student-1",
+        keywords: ["按时完成", "粗心"],
+      });
+    });
+    expect(careless).toHaveAttribute("aria-pressed", "true");
+    expect(careless).toHaveClass("ring-2");
   });
 
   it("opens the knowledge directory picker and persists the pinned selection", async () => {

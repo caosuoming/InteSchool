@@ -22,6 +22,7 @@ const typeLabel: Record<string, string> = {
   judge: "判断",
   short: "填空",
   essay: "解答",
+  comprehensive: "综合",
 };
 
 export default function ImportPage() {

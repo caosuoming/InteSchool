@@ -421,7 +421,10 @@ function questionSlide(
     & Partial<Pick<Question, "summary" | "board" | "boardImages" | "links" | "explanationVideo">>,
   title: string,
   labelMode: QuestionLabelMode = "inline",
+  headings: readonly string[] = [],
 ): LessonSlide {
+  const slideHeadings = headings.map((heading) => heading.trim()).filter(Boolean);
+  const hasHeading = slideHeadings.length > 0;
   const stem = extractFloatingImages(question.stem, "stem");
   let imageOffset = stem.elements.length;
   const options = question.options?.map((option) => {
@@ -445,29 +448,43 @@ function questionSlide(
   const stemPosition = labelMode === "inline"
     ? {
       x: stemX,
-      y: QUESTION_LABEL_Y,
+      y: hasHeading ? 16 : QUESTION_LABEL_Y,
       width: stemWidth,
-      height: options?.length ? 24 : 42,
+      height: options?.length ? (hasHeading ? 18 : 24) : (hasHeading ? 40 : 42),
     }
     : {
       x: QUESTION_LABEL_X,
-      y: labelMode === "row" ? QUESTION_ROW_STEM_Y : QUESTION_LABEL_Y,
+      y: labelMode === "row"
+        ? (hasHeading ? 24 : QUESTION_ROW_STEM_Y)
+        : (hasHeading ? 16 : QUESTION_LABEL_Y),
       width: QUESTION_FULL_WIDTH,
-      height: options?.length ? (labelMode === "row" ? 18 : 24) : 42,
+      height: options?.length
+        ? (labelMode === "row" ? (hasHeading ? 14 : 18) : (hasHeading ? 18 : 24))
+        : (hasHeading ? 40 : 42),
     };
-  const optionsY = labelMode === "row" ? QUESTION_ROW_OPTIONS_Y : 34;
+  const optionsY = labelMode === "row"
+    ? (hasHeading ? 42 : QUESTION_ROW_OPTIONS_Y)
+    : (hasHeading ? 40 : 34);
 
-  const textElements: LessonSlideElement[] = hasVisibleLabel
-    ? [createTextElement(title, {
+  const textElements: LessonSlideElement[] = [
+    ...(hasHeading ? [createTextElement(slideHeadings.join("\n"), {
+      x: 5,
+      y: 3,
+      width: 90,
+      height: 10,
+    }, {
+      fontSize: 28,
+    })] : []),
+    ...(hasVisibleLabel ? [createTextElement(title, {
       x: QUESTION_LABEL_X,
-      y: QUESTION_LABEL_Y,
+      y: hasHeading ? 16 : QUESTION_LABEL_Y,
       width: labelMode === "row" ? QUESTION_FULL_WIDTH : labelWidth,
       height: QUESTION_LABEL_HEIGHT,
     }, {
       fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
       questionSection: "stem",
-    })]
-    : [];
+    })] : []),
+  ];
   if (stem.content) {
     textElements.push(createTextElement(stem.content, stemPosition, {
       fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
@@ -484,7 +501,7 @@ function questionSlide(
       content,
       {
         x: index % 2 === 0 ? 6 : 52,
-        y: optionsY + Math.floor(index / 2) * 15,
+        y: optionsY + Math.floor(index / 2) * (hasHeading ? 13 : 15),
         width: 42,
         height: 12,
       },
@@ -598,21 +615,37 @@ function titleSlide(title: string, subtitle: string): LessonSlide {
   };
 }
 
-function knowledgeSlide(title: string, content: string): LessonSlide {
+function knowledgeSlide(
+  title: string,
+  content: string,
+  headings: readonly string[] = [],
+): LessonSlide {
+  const slideHeadings = headings.map((heading) => heading.trim()).filter(Boolean);
+  const hasHeading = slideHeadings.length > 0;
   return {
     id: genId("slide"),
     type: "knowledge",
     title,
     content,
     freeformLayout: true,
-    elements: content ? [createTextElement(content, {
-      x: 6,
-      y: 6,
-      width: 88,
-      height: 88,
-    }, {
-      fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
-    })] : [],
+    elements: [
+      ...(hasHeading ? [createTextElement(slideHeadings.join("\n"), {
+        x: 6,
+        y: 4,
+        width: 88,
+        height: 10,
+      }, {
+        fontSize: 28,
+      })] : []),
+      ...(content ? [createTextElement(content, {
+        x: 6,
+        y: hasHeading ? 18 : 6,
+        width: 88,
+        height: hasHeading ? 76 : 88,
+      }, {
+        fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
+      })] : []),
+    ],
     relatedQuestionIds: [],
     askableStudentIds: [],
   };
@@ -630,14 +663,23 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
   let questionNumber = 0;
   let knowledgeNumber = 0;
   const usedQuestionIds = new Set<string>();
+  let pendingHeadings: string[] = [];
   const structuredSlides = (examPaper.contentBlocks || []).flatMap((block) => {
+    if (block.type === "groupTitle" || block.type === "heading") {
+      if (block.content.trim()) pendingHeadings.push(block.content.trim());
+      return [];
+    }
     if (block.type === "knowledge") {
       knowledgeNumber += 1;
-      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content)];
+      const headings = pendingHeadings;
+      pendingHeadings = [];
+      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content, headings)];
     }
     if (block.type !== "question") return [];
 
     questionNumber += 1;
+    const headings = pendingHeadings;
+    pendingHeadings = [];
     const sourceQuestion = examPaper.questions.find((question) =>
       question.id === block.examPaperQuestionId
       || question.questionId === block.questionId
@@ -660,7 +702,7 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
       boardImages: canonicalQuestion?.boardImages,
       links: canonicalQuestion?.links,
       explanationVideo: canonicalQuestion?.explanationVideo,
-    }, `${questionNumber}.`)];
+    }, `${questionNumber}.`, "inline", headings)];
   });
 
   if (structuredSlides.length > 0) {
@@ -709,14 +751,23 @@ function documentBlockSlides(
   let questionNumber = 0;
   let knowledgeNumber = 0;
   const showQuestionNumbers = options.showQuestionNumbers !== false;
+  let pendingHeadings: string[] = [];
   return blocks.flatMap((block) => {
+    if (block.type === "groupTitle") {
+      if (block.content.trim()) pendingHeadings.push(block.content.trim());
+      return [];
+    }
     if (block.type === "knowledge") {
       knowledgeNumber += 1;
-      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content)];
+      const headings = pendingHeadings;
+      pendingHeadings = [];
+      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content, headings)];
     }
     if (block.type !== "question") return [];
 
     questionNumber += 1;
+    const headings = pendingHeadings;
+    pendingHeadings = [];
     return [questionSlide({
       id: block.id,
       stem: block.content,
@@ -724,7 +775,7 @@ function documentBlockSlides(
       options: block.options,
       answer: block.answer || "",
       analysis: block.analysis || "",
-    }, showQuestionNumbers ? `${questionNumber}.` : "题目", showQuestionNumbers ? "inline" : "hidden")];
+    }, showQuestionNumbers ? `${questionNumber}.` : "题目", showQuestionNumbers ? "inline" : "hidden", headings)];
   });
 }
 
@@ -1161,8 +1212,21 @@ export const lessonCoursewareService = {
       titleSlide(coverTitle, lecture.description || `${lecture.grade} · ${lecture.schoolYear}`),
     ];
 
+    let pendingHeadings: string[] = [];
+    let sawChapter = false;
     flattenLectureSections(lecture.sections).forEach((sec) => {
+      if (sec.type === "chapter") {
+        const heading = sec.title.trim();
+        const isFirstChapter = !sawChapter;
+        sawChapter = true;
+        if (heading && !(isFirstChapter && heading === coverTitle.trim())) {
+          pendingHeadings.push(heading);
+        }
+        return;
+      }
       if (sec.type === "question") {
+        const headings = pendingHeadings;
+        pendingHeadings = [];
         const questionLabel = sec.customLabel?.trim();
         const question = sec.questionId
           ? questions.find((item) => item.id === sec.questionId)
@@ -1172,6 +1236,7 @@ export const lessonCoursewareService = {
             question,
             questionLabel || "题目",
             questionLabel ? "row" : "hidden",
+            headings,
           ));
         } else {
           slides.push(questionSlide({
@@ -1180,10 +1245,12 @@ export const lessonCoursewareService = {
             type: "essay",
             answer: "",
             analysis: "",
-          }, questionLabel || "题目", questionLabel ? "row" : "hidden"));
+          }, questionLabel || "题目", questionLabel ? "row" : "hidden", headings));
         }
       } else if (sec.type === "knowledge") {
-        slides.push(knowledgeSlide(sec.title, sec.content));
+        const headings = pendingHeadings;
+        pendingHeadings = [];
+        slides.push(knowledgeSlide(sec.title, sec.content, headings));
       }
     });
     if (slides.length === 1) {

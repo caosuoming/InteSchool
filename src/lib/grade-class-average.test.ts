@@ -182,7 +182,7 @@ describe("grade class average report", () => {
     expect(options.classCategories).toEqual({ "class-2": "实验班", "class-10": "实验班" });
   });
 
-  it("migrates the legacy auto-generated title but preserves custom titles", () => {
+  it("always derives the title and report date from the current exam", () => {
     const legacyTemplate: GradeStatisticsTemplate = {
       ...template,
       classAverageOptions: {
@@ -196,9 +196,12 @@ describe("grade class average report", () => {
       ...template,
       classAverageOptions: {
         title: "期末质量分析",
+        reportDate: "2025-12-31",
       },
     };
-    expect(buildGradeClassAverageReport(exam, customTemplate, context).title).toBe("期末质量分析");
+    const report = buildGradeClassAverageReport(exam, customTemplate, context);
+    expect(report.title).toBe("期末考试班级平均分统计表");
+    expect(report.reportDate).toBe("2026-01-27");
   });
 
   it("calculates class differences and student-weighted summaries", () => {

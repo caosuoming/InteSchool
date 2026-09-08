@@ -8,9 +8,13 @@ const mocks = vi.hoisted(() => ({
   updateCourseware: vi.fn(),
   publishCourseware: vi.fn(),
   getQuestion: vi.fn(),
+  listQuestions: vi.fn(),
   listBaskets: vi.fn(),
   listMyStudents: vi.fn(),
   listMyClasses: vi.fn(),
+  listFollowedStudentIds: vi.fn(),
+  getKnowledgeMastery: vi.fn(),
+  uploadFile: vi.fn(),
 }));
 
 const teacher = {
@@ -62,10 +66,22 @@ vi.mock("@/services/class", () => ({
   },
 }));
 vi.mock("@/services/question", () => ({
-  questionService: { getQuestion: mocks.getQuestion },
+  questionService: {
+    getQuestion: mocks.getQuestion,
+    listQuestions: mocks.listQuestions,
+  },
 }));
 vi.mock("@/services/basket", () => ({
   basketService: { listBaskets: mocks.listBaskets },
+}));
+vi.mock("@/services/studentInteraction", () => ({
+  studentInteractionService: { listFollowedStudentIds: mocks.listFollowedStudentIds },
+}));
+vi.mock("@/services/analytics", () => ({
+  analyticsService: { getKnowledgeMastery: mocks.getKnowledgeMastery },
+}));
+vi.mock("@/services/api", () => ({
+  uploadFile: mocks.uploadFile,
 }));
 vi.mock("./PresentationMode", () => ({
   PresentationMode: () => <div>课件预览模式</div>,
@@ -90,9 +106,13 @@ describe("LessonEditorPage preview query", () => {
     mocks.updateCourseware.mockImplementation(async (_id, patch) => ({ ...courseware, ...patch }));
     mocks.publishCourseware.mockImplementation(async () => ({ ...courseware, status: "published" }));
     mocks.getQuestion.mockResolvedValue(null);
+    mocks.listQuestions.mockResolvedValue([]);
     mocks.listBaskets.mockResolvedValue([]);
     mocks.listMyStudents.mockResolvedValue([]);
     mocks.listMyClasses.mockResolvedValue([]);
+    mocks.listFollowedStudentIds.mockResolvedValue([]);
+    mocks.getKnowledgeMastery.mockResolvedValue([]);
+    mocks.uploadFile.mockResolvedValue({ url: "/uploads/pasted.png" });
   });
 
   it("disables save while clean and can undo unsaved courseware changes", async () => {
@@ -201,6 +221,25 @@ describe("LessonEditorPage preview query", () => {
         expect.objectContaining({ title: "函数课堂版" }),
       );
     });
+  });
+
+  it("pastes clipboard images directly onto the current slide as free elements", async () => {
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    const hint = await screen.findByText(/也可直接粘贴剪贴板图片/);
+    const image = new File(["pasted-image"], "clipboard.png", { type: "image/png" });
+
+    fireEvent.paste(hint, {
+      clipboardData: {
+        files: [image],
+        items: [],
+      },
+    });
+
+    await waitFor(() => {
+      expect(mocks.uploadFile).toHaveBeenCalledWith(image);
+      expect(screen.getByAltText("clipboard.png")).toHaveAttribute("src", "/uploads/pasted.png");
+    });
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
   });
 
   it("inserts questions only from the teacher resource baskets", async () => {

@@ -1329,7 +1329,8 @@ export type BuiltInQuestionType =
   | "short"
   | "essay"
   | "judge"
-  | "conceptFill";
+  | "conceptFill"
+  | "comprehensive";
 
 /** 学校可在后台增加自定义题型；内置题型保留字面量提示。 */
 export type QuestionType = BuiltInQuestionType | (string & {});
@@ -1341,6 +1342,7 @@ export const DEFAULT_QUESTION_TYPES = [
   { value: "essay", label: "解答题" },
   { value: "judge", label: "判断题" },
   { value: "conceptFill", label: "概念填空" },
+  { value: "comprehensive", label: "综合题" },
 ] as const satisfies ReadonlyArray<{ value: BuiltInQuestionType; label: string }>;
 
 export type ResourceSemester = "上学期" | "下学期" | "寒假" | "暑假";
@@ -2893,7 +2895,7 @@ export interface Reflection {
 /** 学生互动记录类型 */
 export type InteractionType = "chat" | "attitude" | "status";
 
-/** 学生互动聊天记录中的图片附件 */
+/** 学生互动记录中的图片附件 */
 export interface StudentInteractionAttachment {
   id: string;
   name: string;
@@ -2912,7 +2914,7 @@ export interface StudentInteraction {
   type: InteractionType;
   /** 内容 */
   content: string;
-  /** 聊天记录中的图片附件 */
+  /** 记录中的图片附件 */
   attachments?: StudentInteractionAttachment[];
   /** 学习态度评分（1-5），type=attitude 时使用 */
   attitude?: number;
@@ -2932,6 +2934,32 @@ export interface StudentInteractionView extends Omit<StudentInteraction, "teache
 
 /** 作业记录页面对知识点的标记状态。 */
 export type HomeworkKnowledgeStatus = AnswerScore;
+
+/** 作业记录页面提供的作业态度候选关键词。 */
+export const HOMEWORK_ATTITUDE_KEYWORDS = [
+  "按时完成",
+  "独立完成",
+  "书写认真",
+  "步骤完整",
+  "主动订正",
+  "检查仔细",
+  "粗心",
+  "敷衍",
+  "拖欠",
+] as const;
+
+export type HomeworkAttitudeKeyword = (typeof HOMEWORK_ATTITUDE_KEYWORDS)[number];
+
+/** 教师针对单个学生保存的作业态度关键词。 */
+export interface HomeworkAttitudeRecord {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  studentId: string;
+  keywords: HomeworkAttitudeKeyword[];
+  createdAt: string;
+  updatedAt: string;
+}
 
 /** 教师针对单个学生、单个知识点保存的作业完成/正确情况。 */
 export interface HomeworkKnowledgeRecord {
