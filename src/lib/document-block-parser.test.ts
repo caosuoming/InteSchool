@@ -1114,6 +1114,32 @@ describe("document block parser", () => {
     ]);
   });
 
+  it("splits every sequential sub-question when a numbered question starts with （1）", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1.（1）第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "（2）第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+        "（3）第三小题 A. 子 B. 丑 C. 寅 D. 卯",
+        "（4）第四小题 A. 辰 B. 巳 C. 午 D. 未",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(4);
+    expect(blocks.map((block) => block.content)).toEqual([
+      "1.（1）第一小题",
+      "（2）第二小题",
+      "（3）第三小题",
+      "（4）第四小题",
+    ]);
+    expect(blocks.map((block) => block.options)).toEqual([
+      ["甲", "乙", "丙", "丁"],
+      ["戊", "己", "庚", "辛"],
+      ["子", "丑", "寅", "卯"],
+      ["辰", "巳", "午", "未"],
+    ]);
+  });
+
   it("splits screenshot-style sub-questions and distributes a shared multiline choice answer list", () => {
     const blocks = parseDocumentBlocks(
       [

@@ -1396,7 +1396,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       currentBlock.type === "question"
       && independentSubQuestionNextIndex !== undefined
       && leadingNestedSubQuestionIndex(line) === independentSubQuestionNextIndex
-      && !shouldContinueSequentialSubQuestion(line, currentBlock, currentQuestionField)
+      && (
+        currentQuestionField === "content"
+        || !shouldContinueSequentialSubQuestion(line, currentBlock, currentQuestionField)
+      )
     ) {
       submitCurrent();
       const inline = splitQuestionAndInlineOptions(
