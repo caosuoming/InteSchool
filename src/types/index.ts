@@ -2933,6 +2933,32 @@ export interface StudentInteractionView extends Omit<StudentInteraction, "teache
 /** 作业记录页面对知识点的标记状态。 */
 export type HomeworkKnowledgeStatus = AnswerScore;
 
+/** 作业记录页面提供的作业态度候选关键词。 */
+export const HOMEWORK_ATTITUDE_KEYWORDS = [
+  "按时完成",
+  "独立完成",
+  "书写认真",
+  "步骤完整",
+  "主动订正",
+  "检查仔细",
+  "粗心",
+  "敷衍",
+  "拖欠",
+] as const;
+
+export type HomeworkAttitudeKeyword = (typeof HOMEWORK_ATTITUDE_KEYWORDS)[number];
+
+/** 教师针对单个学生保存的作业态度关键词。 */
+export interface HomeworkAttitudeRecord {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  studentId: string;
+  keywords: HomeworkAttitudeKeyword[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** 教师针对单个学生、单个知识点保存的作业完成/正确情况。 */
 export interface HomeworkKnowledgeRecord {
   id: string;

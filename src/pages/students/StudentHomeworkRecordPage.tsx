@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
+  ClipboardCheck,
   GraduationCap,
   ListChecks,
   Pin,
@@ -17,8 +18,10 @@ import { toast } from "@/stores/ui";
 import { classService } from "@/services/class";
 import { homeworkRecordService } from "@/services/homeworkRecord";
 import { knowledgeService } from "@/services/knowledge";
+import { HOMEWORK_ATTITUDE_KEYWORDS } from "@/types";
 import type {
   AnyClass,
+  HomeworkAttitudeKeyword,
   HomeworkKnowledgeRecord,
   HomeworkKnowledgeStatus,
   KnowledgePoint,
@@ -44,25 +47,25 @@ const statusOptions: Array<{
     value: "done",
     label: "已做",
     icon: Check,
-    selectedClassName: "border-sky-300 bg-sky-50 text-sky-700",
+    selectedClassName: "border-sky-500 bg-sky-100 text-sky-900 ring-2 ring-sky-200 shadow-sm",
   },
   {
     value: "correct",
     label: "全对",
     icon: CheckCircle2,
-    selectedClassName: "border-emerald-300 bg-emerald-50 text-emerald-700",
+    selectedClassName: "border-emerald-500 bg-emerald-100 text-emerald-900 ring-2 ring-emerald-200 shadow-sm",
   },
   {
     value: "partial",
     label: "半对",
     icon: CircleDot,
-    selectedClassName: "border-amber-300 bg-amber-50 text-amber-700",
+    selectedClassName: "border-amber-500 bg-amber-100 text-amber-900 ring-2 ring-amber-200 shadow-sm",
   },
   {
     value: "wrong",
     label: "做错",
     icon: XCircle,
-    selectedClassName: "border-red-300 bg-red-50 text-red-700",
+    selectedClassName: "border-red-500 bg-red-100 text-red-900 ring-2 ring-red-200 shadow-sm",
   },
 ];
 
@@ -77,6 +80,8 @@ export function StudentHomeworkRecordPage() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
   const [keyword, setKeyword] = useState("");
+  const [attitudeKeywords, setAttitudeKeywords] = useState<HomeworkAttitudeKeyword[]>([]);
+  const [attitudePending, setAttitudePending] = useState(false);
   const [statusByKnowledgePointId, setStatusByKnowledgePointId] = useState<Record<string, HomeworkKnowledgeStatus>>({});
   const [pendingKnowledgePointIds, setPendingKnowledgePointIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -120,14 +125,19 @@ export function StudentHomeworkRecordPage() {
 
   useEffect(() => {
     if (!selectedStudentId) {
+      setAttitudeKeywords([]);
       setStatusByKnowledgePointId({});
       return;
     }
     let cancelled = false;
     setRecordLoading(true);
-    homeworkRecordService.listByStudent(selectedStudentId)
-      .then((records: HomeworkKnowledgeRecord[]) => {
+    Promise.all([
+      homeworkRecordService.listByStudent(selectedStudentId),
+      homeworkRecordService.getAttitudeByStudent(selectedStudentId),
+    ])
+      .then(([records, attitude]) => {
         if (cancelled) return;
+        setAttitudeKeywords(attitude?.keywords ?? []);
         setStatusByKnowledgePointId(Object.fromEntries(
           records.map((record) => [record.knowledgePointId, record.status]),
         ));
@@ -238,6 +248,27 @@ export function StudentHomeworkRecordPage() {
         next.delete(knowledgePointId);
         return next;
       });
+    }
+  };
+
+  const toggleAttitudeKeyword = async (attitudeKeyword: HomeworkAttitudeKeyword) => {
+    if (!selectedStudentId || attitudePending) return;
+    const previous = attitudeKeywords;
+    const next = previous.includes(attitudeKeyword)
+      ? previous.filter((item) => item !== attitudeKeyword)
+      : [...previous, attitudeKeyword];
+    setAttitudeKeywords(next);
+    setAttitudePending(true);
+    try {
+      await homeworkRecordService.setAttitudeKeywords({
+        studentId: selectedStudentId,
+        keywords: next,
+      });
+    } catch (error) {
+      setAttitudeKeywords(previous);
+      toast.error("保存作业态度失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setAttitudePending(false);
     }
   };
 
@@ -363,69 +394,128 @@ export function StudentHomeworkRecordPage() {
               <EmptyState
                 icon={<ListChecks className="w-10 h-10 text-ink-200" />}
                 title="请选择学生"
-                description="从左侧选择学生后即可记录作业完成与正确情况"
-              />
-            ) : pinnedKnowledgePoints.length === 0 ? (
-              <EmptyState
-                icon={<Pin className="w-10 h-10 text-ink-200" />}
-                title="还没有固定知识点"
-                description="从知识点目录勾选常用知识点，固定后即可逐个标记作业情况"
-                action={<Button variant="gold" size="sm" onClick={openPicker}>选择知识点</Button>}
+                description="从左侧选择学生后即可记录作业态度与知识点掌握情况"
               />
             ) : recordLoading ? (
               <div className="flex justify-center py-20"><Spinner size={24} /></div>
             ) : (
-              <div className="divide-y divide-ink-100">
-                {pinnedKnowledgePoints.map((point) => {
-                  const currentStatus = statusByKnowledgePointId[point.id];
-                  const pending = pendingKnowledgePointIds.has(point.id);
-                  const fullPath = knowledgePointPath(point.id);
-                  return (
-                    <div key={point.id} className="p-4 lg:p-5 flex flex-col xl:flex-row xl:items-center gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-ink-900">{point.name}</div>
-                        {fullPath && fullPath !== point.name && (
-                          <div className="mt-1 text-xs text-ink-400 truncate" title={fullPath}>{fullPath}</div>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={`${point.name}作业状态`}>
-                        {statusOptions.map((option) => {
-                          const Icon = option.icon;
-                          const selected = currentStatus === option.value;
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              aria-pressed={selected}
-                              disabled={pending}
-                              onClick={() => void setKnowledgeStatus(point.id, option.value)}
-                              className={cn(
-                                "inline-flex min-w-[76px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors disabled:cursor-wait disabled:opacity-60",
-                                selected
-                                  ? option.selectedClassName
-                                  : "border-ink-200 bg-paper text-ink-600 hover:border-ink-300 hover:bg-mist/60",
-                              )}
-                            >
-                              <Icon className="w-3.5 h-3.5" />
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          disabled={pending || !currentStatus}
-                          onClick={() => void setKnowledgeStatus(point.id, null)}
-                          className="inline-flex items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs text-ink-400 transition-colors hover:bg-mist hover:text-ink-700 disabled:cursor-default disabled:opacity-30"
-                          title="清除当前标记"
-                          aria-label={`清除${point.name}作业状态`}
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          清除
-                        </button>
-                      </div>
+              <div>
+                <section className="border-b border-gold-200 bg-gold-50/40 p-4 lg:p-5">
+                  <div className="flex items-start gap-2.5">
+                    <ClipboardCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-gold-600" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-ink-900">作业态度</h3>
+                      <p className="mt-0.5 text-xs text-ink-500">可多选候选关键词，已选 {attitudeKeywords.length} 项</p>
                     </div>
-                  );
-                })}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="作业态度关键词">
+                    {HOMEWORK_ATTITUDE_KEYWORDS.map((attitudeKeyword) => {
+                      const selected = attitudeKeywords.includes(attitudeKeyword);
+                      return (
+                        <button
+                          key={attitudeKeyword}
+                          type="button"
+                          aria-pressed={selected}
+                          disabled={attitudePending}
+                          onClick={() => void toggleAttitudeKeyword(attitudeKeyword)}
+                          className={cn(
+                            "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-60",
+                            selected
+                              ? "border-gold-500 bg-gold-100 text-gold-900 ring-2 ring-gold-200 shadow-gold"
+                              : "border-ink-200 bg-paper text-ink-600 hover:border-gold-300 hover:bg-gold-50",
+                          )}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "inline-flex h-4 w-4 items-center justify-center rounded-full border",
+                              selected
+                                ? "border-gold-600 bg-gold-600 text-white"
+                                : "border-ink-300 bg-paper",
+                            )}
+                          >
+                            {selected && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                          </span>
+                          {attitudeKeyword}
+                          {selected && (
+                            <span aria-hidden="true" className="rounded-full bg-paper/80 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-gold-700">已选</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section>
+                  <div className="border-b border-ink-100 px-4 py-3 lg:px-5">
+                    <h3 className="text-sm font-semibold text-ink-900">知识点掌握情况</h3>
+                    <p className="mt-0.5 text-xs text-ink-500">每个知识点选择一个最符合本次作业的状态</p>
+                  </div>
+                  {pinnedKnowledgePoints.length === 0 ? (
+                    <EmptyState
+                      icon={<Pin className="w-10 h-10 text-ink-200" />}
+                      title="还没有固定知识点"
+                      description="从知识点目录勾选常用知识点，固定后即可逐个标记作业情况"
+                      action={<Button variant="gold" size="sm" onClick={openPicker}>选择知识点</Button>}
+                    />
+                  ) : (
+                    <div className="divide-y divide-ink-100">
+                      {pinnedKnowledgePoints.map((point) => {
+                        const currentStatus = statusByKnowledgePointId[point.id];
+                        const pending = pendingKnowledgePointIds.has(point.id);
+                        const fullPath = knowledgePointPath(point.id);
+                        return (
+                          <div key={point.id} className="p-4 lg:p-5 flex flex-col xl:flex-row xl:items-center gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-ink-900">{point.name}</div>
+                              {fullPath && fullPath !== point.name && (
+                                <div className="mt-1 text-xs text-ink-400 truncate" title={fullPath}>{fullPath}</div>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2" role="group" aria-label={`${point.name}作业状态`}>
+                              {statusOptions.map((option) => {
+                                const Icon = option.icon;
+                                const selected = currentStatus === option.value;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    aria-pressed={selected}
+                                    disabled={pending}
+                                    onClick={() => void setKnowledgeStatus(point.id, option.value)}
+                                    className={cn(
+                                      "inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-all disabled:cursor-wait disabled:opacity-60",
+                                      selected
+                                        ? `${option.selectedClassName} font-semibold`
+                                        : "border-ink-200 bg-paper text-ink-600 hover:border-ink-300 hover:bg-mist/60",
+                                    )}
+                                  >
+                                    <Icon className="w-3.5 h-3.5" />
+                                    {option.label}
+                                    {selected && (
+                                      <span aria-hidden="true" className="rounded-full bg-paper/80 px-1.5 py-0.5 text-[9px] font-semibold leading-none">已选</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                              <button
+                                type="button"
+                                disabled={pending || !currentStatus}
+                                onClick={() => void setKnowledgeStatus(point.id, null)}
+                                className="inline-flex items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs text-ink-400 transition-colors hover:bg-mist hover:text-ink-700 disabled:cursor-default disabled:opacity-30"
+                                title="清除当前标记"
+                                aria-label={`清除${point.name}作业状态`}
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                清除
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
               </div>
             )}
           </Card>

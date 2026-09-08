@@ -1,10 +1,13 @@
 import type {
+  HomeworkAttitudeKeyword,
+  HomeworkAttitudeRecord,
   HomeworkKnowledgeRecord,
   HomeworkKnowledgeStatus,
   HomeworkRecordPreference,
   KnowledgePoint,
   Teacher,
 } from "../../src/types/index.js";
+import { HOMEWORK_ATTITUDE_KEYWORDS } from "../../src/types/index.js";
 import { delay, genId } from "../domain-shared.js";
 import { db } from "../runtime-db.js";
 import { classService } from "./class.js";
@@ -15,6 +18,8 @@ const VALID_STATUSES = new Set<HomeworkKnowledgeStatus>([
   "partial",
   "wrong",
 ]);
+
+const VALID_ATTITUDE_KEYWORDS = new Set<string>(HOMEWORK_ATTITUDE_KEYWORDS);
 
 async function requireStudentAccess(teacher: Teacher, studentId: string): Promise<void> {
   const students = await classService.listMyStudents(teacher.schoolId, teacher.id);
@@ -78,6 +83,61 @@ export const homeworkRecordService = {
     return ((db.read("homeworkKnowledgeRecords") || []) as HomeworkKnowledgeRecord[])
       .filter((item) => item.teacherId === teacher.id && item.studentId === studentId)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  },
+
+  async getAttitudeByStudent(studentId: string, teacher: Teacher): Promise<HomeworkAttitudeRecord | null> {
+    await delay(80);
+    await requireStudentAccess(teacher, studentId);
+    return ((db.read("homeworkAttitudeRecords") || []) as HomeworkAttitudeRecord[])
+      .find((item) => item.teacherId === teacher.id && item.studentId === studentId) || null;
+  },
+
+  async setAttitudeKeywords(
+    input: {
+      studentId: string;
+      keywords: HomeworkAttitudeKeyword[];
+    },
+    teacher: Teacher,
+  ): Promise<HomeworkAttitudeRecord | null> {
+    await delay(100);
+    const studentId = String(input?.studentId || "").trim();
+    if (!studentId) throw new Error("学生不能为空");
+    if (!Array.isArray(input?.keywords)) throw new Error("作业态度关键词格式不正确");
+    await requireStudentAccess(teacher, studentId);
+
+    const keywords = [...new Set(input.keywords.map((keyword) => String(keyword).trim()).filter(Boolean))];
+    if (keywords.some((keyword) => !VALID_ATTITUDE_KEYWORDS.has(keyword))) {
+      throw new Error("作业态度关键词不正确");
+    }
+
+    const items = (db.read("homeworkAttitudeRecords") || []) as HomeworkAttitudeRecord[];
+    const existing = items.find((item) => item.teacherId === teacher.id && item.studentId === studentId);
+    if (keywords.length === 0) {
+      if (existing) {
+        db.update("homeworkAttitudeRecords", (records: HomeworkAttitudeRecord[] = []) =>
+          records.filter((item) => item.id !== existing.id));
+      }
+      return null;
+    }
+    if (!teacher.schoolId) throw new Error("当前教师未加入学校");
+
+    const now = new Date().toISOString();
+    const typedKeywords = keywords as HomeworkAttitudeKeyword[];
+    const next: HomeworkAttitudeRecord = existing
+      ? { ...existing, keywords: typedKeywords, updatedAt: now }
+      : {
+          id: genId("har"),
+          teacherId: teacher.id,
+          schoolId: teacher.schoolId,
+          studentId,
+          keywords: typedKeywords,
+          createdAt: now,
+          updatedAt: now,
+        };
+    db.update("homeworkAttitudeRecords", (records: HomeworkAttitudeRecord[] = []) => existing
+      ? records.map((item) => item.id === existing.id ? next : item)
+      : [next, ...records]);
+    return next;
   },
 
   async setRecord(
