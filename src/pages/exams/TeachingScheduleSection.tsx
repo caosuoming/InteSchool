@@ -113,6 +113,7 @@ export function TeachingScheduleSection({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [newSubject, setNewSubject] = useState("");
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [highlightedTeacher, setHighlightedTeacher] = useState<string | null>(null);
@@ -237,10 +238,24 @@ export function TeachingScheduleSection({
 
   const handleDownloadTemplate = async () => {
     if (!context || !config) return;
+    setDownloadingTemplate(true);
     try {
-      await downloadTeachingScheduleTemplate(context, config);
+      const templateCohorts = await Promise.all(cohorts.map(async (cohort) => {
+        if (cohort.key === cohortKey) return { context, config };
+        const [nextContext, profile] = await Promise.all([
+          examArrangementService.getContext(schoolId, cohort.key),
+          examArrangementService.getTeachingScheduleProfile(schoolId, cohort.key),
+        ]);
+        return {
+          context: nextContext,
+          config: normalizeTeachingScheduleConfig(profile?.config || null, nextContext),
+        };
+      }));
+      await downloadTeachingScheduleTemplate(templateCohorts);
     } catch (error) {
       toast.error("下载教师分工表模板失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDownloadingTemplate(false);
     }
   };
 
@@ -495,7 +510,7 @@ export function TeachingScheduleSection({
             <p className="mt-1 text-xs text-ink-500">先下载模板批量填写，也可以直接在表格里修改任课教师；姓名与学校教师清单匹配时会自动关联教师账号。</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={handleDownloadTemplate}>
+            <Button variant="outline" size="sm" loading={downloadingTemplate} onClick={handleDownloadTemplate}>
               <Download className="h-3.5 w-3.5" />下载模板
             </Button>
             <Button variant="outline" size="sm" loading={importing} onClick={() => fileInputRef.current?.click()}>
