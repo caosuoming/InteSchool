@@ -334,7 +334,13 @@ function questionSlide(
   question: Pick<Question, "id" | "stem" | "type" | "options" | "answer" | "analysis">
     & Partial<Pick<Question, "summary" | "board" | "boardImages" | "links" | "explanationVideo">>,
   title: string,
+  headings: readonly string[] = [],
 ): LessonSlide {
+  const slideHeadings = headings.map((heading) => heading.trim()).filter(Boolean);
+  const hasHeading = slideHeadings.length > 0;
+  const stemY = hasHeading ? 16 : QUESTION_LABEL_Y;
+  const optionsY = hasHeading ? 40 : 34;
+  const optionRowGap = hasHeading ? 13 : 15;
   const stem = extractFloatingImages(question.stem, "stem");
   let imageOffset = stem.elements.length;
   const options = question.options?.map((option) => {
@@ -356,9 +362,17 @@ function questionSlide(
   const { labelWidth, stemX, stemWidth } = questionLabelLayout(title);
 
   const textElements: LessonSlideElement[] = [
+    ...(hasHeading ? [createTextElement(slideHeadings.join("\n"), {
+      x: 5,
+      y: 3,
+      width: 90,
+      height: 10,
+    }, {
+      fontSize: 28,
+    })] : []),
     createTextElement(title, {
       x: QUESTION_LABEL_X,
-      y: QUESTION_LABEL_Y,
+      y: stemY,
       width: labelWidth,
       height: QUESTION_LABEL_HEIGHT,
     }, {
@@ -369,9 +383,9 @@ function questionSlide(
   if (stem.content) {
     textElements.push(createTextElement(stem.content, {
       x: stemX,
-      y: QUESTION_LABEL_Y,
+      y: stemY,
       width: stemWidth,
-      height: options?.length ? 24 : 42,
+      height: options?.length ? (hasHeading ? 18 : 24) : (hasHeading ? 40 : 42),
     }, {
       fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
       questionSection: "stem",
@@ -387,7 +401,7 @@ function questionSlide(
       content,
       {
         x: index % 2 === 0 ? 6 : 52,
-        y: 34 + Math.floor(index / 2) * 15,
+        y: optionsY + Math.floor(index / 2) * optionRowGap,
         width: 42,
         height: 12,
       },
@@ -501,21 +515,37 @@ function titleSlide(title: string, subtitle: string): LessonSlide {
   };
 }
 
-function knowledgeSlide(title: string, content: string): LessonSlide {
+function knowledgeSlide(
+  title: string,
+  content: string,
+  headings: readonly string[] = [],
+): LessonSlide {
+  const slideHeadings = headings.map((heading) => heading.trim()).filter(Boolean);
+  const hasHeading = slideHeadings.length > 0;
   return {
     id: genId("slide"),
     type: "knowledge",
     title,
     content,
     freeformLayout: true,
-    elements: content ? [createTextElement(content, {
-      x: 6,
-      y: 6,
-      width: 88,
-      height: 88,
-    }, {
-      fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
-    })] : [],
+    elements: [
+      ...(hasHeading ? [createTextElement(slideHeadings.join("\n"), {
+        x: 6,
+        y: 4,
+        width: 88,
+        height: 10,
+      }, {
+        fontSize: 28,
+      })] : []),
+      ...(content ? [createTextElement(content, {
+        x: 6,
+        y: hasHeading ? 18 : 6,
+        width: 88,
+        height: hasHeading ? 76 : 88,
+      }, {
+        fontSize: DEFAULT_GENERATED_LESSON_FONT_SIZE,
+      })] : []),
+    ],
     relatedQuestionIds: [],
     askableStudentIds: [],
   };
@@ -533,14 +563,23 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
   let questionNumber = 0;
   let knowledgeNumber = 0;
   const usedQuestionIds = new Set<string>();
+  let pendingHeadings: string[] = [];
   const structuredSlides = (examPaper.contentBlocks || []).flatMap((block) => {
+    if (block.type === "groupTitle" || block.type === "heading") {
+      if (block.content.trim()) pendingHeadings.push(block.content.trim());
+      return [];
+    }
     if (block.type === "knowledge") {
       knowledgeNumber += 1;
-      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content)];
+      const headings = pendingHeadings;
+      pendingHeadings = [];
+      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content, headings)];
     }
     if (block.type !== "question") return [];
 
     questionNumber += 1;
+    const headings = pendingHeadings;
+    pendingHeadings = [];
     const sourceQuestion = examPaper.questions.find((question) =>
       question.id === block.examPaperQuestionId
       || question.questionId === block.questionId
@@ -563,7 +602,7 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
       boardImages: canonicalQuestion?.boardImages,
       links: canonicalQuestion?.links,
       explanationVideo: canonicalQuestion?.explanationVideo,
-    }, `${questionNumber}.`)];
+    }, `${questionNumber}.`, headings)];
   });
 
   if (structuredSlides.length > 0) {
@@ -608,14 +647,23 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
 function documentBlockSlides(blocks: LessonDocumentBlock[]): LessonSlide[] {
   let questionNumber = 0;
   let knowledgeNumber = 0;
+  let pendingHeadings: string[] = [];
   return blocks.flatMap((block) => {
+    if (block.type === "groupTitle") {
+      if (block.content.trim()) pendingHeadings.push(block.content.trim());
+      return [];
+    }
     if (block.type === "knowledge") {
       knowledgeNumber += 1;
-      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content)];
+      const headings = pendingHeadings;
+      pendingHeadings = [];
+      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content, headings)];
     }
     if (block.type !== "question") return [];
 
     questionNumber += 1;
+    const headings = pendingHeadings;
+    pendingHeadings = [];
     return [questionSlide({
       id: block.id,
       stem: block.content,
@@ -623,7 +671,7 @@ function documentBlockSlides(blocks: LessonDocumentBlock[]): LessonSlide[] {
       options: block.options,
       answer: block.answer || "",
       analysis: block.analysis || "",
-    }, `${questionNumber}.`)];
+    }, `${questionNumber}.`, headings)];
   });
 }
 
@@ -1061,15 +1109,28 @@ export const lessonCoursewareService = {
     ];
 
     let questionNumber = 0;
+    let pendingHeadings: string[] = [];
+    let sawChapter = false;
     flattenLectureSections(lecture.sections).forEach((sec) => {
+      if (sec.type === "chapter") {
+        const heading = sec.title.trim();
+        const isFirstChapter = !sawChapter;
+        sawChapter = true;
+        if (heading && !(isFirstChapter && heading === coverTitle.trim())) {
+          pendingHeadings.push(heading);
+        }
+        return;
+      }
       if (sec.type === "question") {
         questionNumber += 1;
+        const headings = pendingHeadings;
+        pendingHeadings = [];
         const questionLabel = sec.customLabel?.trim() || `${questionNumber}.`;
         const question = sec.questionId
           ? questions.find((item) => item.id === sec.questionId)
           : undefined;
         if (question) {
-          slides.push(questionSlide(question, questionLabel));
+          slides.push(questionSlide(question, questionLabel, headings));
         } else {
           slides.push(questionSlide({
             id: sec.questionId || sec.id,
@@ -1077,10 +1138,12 @@ export const lessonCoursewareService = {
             type: "essay",
             answer: "",
             analysis: "",
-          }, questionLabel));
+          }, questionLabel, headings));
         }
       } else if (sec.type === "knowledge") {
-        slides.push(knowledgeSlide(sec.title, sec.content));
+        const headings = pendingHeadings;
+        pendingHeadings = [];
+        slides.push(knowledgeSlide(sec.title, sec.content, headings));
       }
     });
     if (slides.length === 1) slides.push(...documentBlockSlides(documentBlocks));

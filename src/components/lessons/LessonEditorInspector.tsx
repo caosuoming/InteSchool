@@ -7,6 +7,7 @@ import {
   Image as ImageIcon,
   Link as LinkIcon,
   Plus,
+  Star,
   Trash2,
   Type,
   X,
@@ -48,7 +49,11 @@ interface LessonEditorInspectorProps {
   students: Student[];
   classes: SchoolClass[];
   selectedClassIds: string[];
+  followedStudentIds: ReadonlySet<string>;
+  studentWeaknessById: Readonly<Record<string, number | null | undefined>>;
+  currentQuestion: Question | null;
   relatedQuestions: Question[];
+  relatedQuestionsLoading: boolean;
   relatedQuestionsById: Record<string, Question>;
   canDeleteSlide: boolean;
   canMergeSlide: boolean;
@@ -72,6 +77,7 @@ interface LessonEditorInspectorProps {
   onLoadRelatedQuestions: () => void;
   onAddRelatedQuestion: (question: Question) => void;
   onRemoveRelatedQuestion: (questionId: string) => void;
+  onEditQuestionMetadata: () => void;
 }
 
 const QUESTION_TYPE_LABEL: Record<string, string> = {
@@ -80,6 +86,7 @@ const QUESTION_TYPE_LABEL: Record<string, string> = {
   judge: "判断",
   short: "填空",
   essay: "解答",
+  comprehensive: "综合",
 };
 
 const TEXT_REGION_LABEL: Record<LessonSlideTextRegion, string> = {
@@ -167,7 +174,11 @@ export function LessonEditorInspector({
   students,
   classes,
   selectedClassIds,
+  followedStudentIds,
+  studentWeaknessById,
+  currentQuestion,
   relatedQuestions,
+  relatedQuestionsLoading,
   relatedQuestionsById,
   canDeleteSlide,
   canMergeSlide,
@@ -191,6 +202,7 @@ export function LessonEditorInspector({
   onLoadRelatedQuestions,
   onAddRelatedQuestion,
   onRemoveRelatedQuestion,
+  onEditQuestionMetadata,
 }: LessonEditorInspectorProps) {
   const [tab, setTab] = useState<LessonEditorInspectorTab>("content");
   const [animationPanel, setAnimationPanel] = useState<AnimationPanel>("element");
@@ -778,6 +790,13 @@ export function LessonEditorInspector({
                   </div>
                 ) : (
                   <>
+                    <div className="space-y-1 text-xs text-ink-500">
+                      <div className="text-[11px] text-ink-400">
+                        {slide.type === "question" && currentQuestion?.knowledgePointIds?.length
+                          ? "按当前题目知识点薄弱度排序；金色五角星为“我的学生”中的关注学生"
+                          : "金色五角星为“我的学生”中的关注学生，关注学生优先显示"}
+                      </div>
+                    </div>
                     <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="相关学生班级">
                       {selectedClasses.map((item) => {
                         const active = item.id === effectiveStudentClassId;
@@ -812,6 +831,8 @@ export function LessonEditorInspector({
                         </div>
                       ) : visibleStudents.map((student) => {
                         const selected = selectedStudentIds.has(student.id);
+                        const followed = followedStudentIds.has(student.id);
+                        const weakness = studentWeaknessById[student.id];
                         return (
                           <button
                             key={student.id}
@@ -824,6 +845,18 @@ export function LessonEditorInspector({
                           >
                             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-mist text-[10px]">{student.name.slice(0, 1)}</span>
                             <span className="flex-1">{student.name}</span>
+                            {weakness !== null && weakness !== undefined && (
+                              <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] tabular-nums text-red-600">
+                                薄弱 {Math.round(weakness * 100)}%
+                              </span>
+                            )}
+                            {followed && (
+                              <Star
+                                aria-label="关注学生"
+                                className="h-3.5 w-3.5 text-gold-500"
+                                fill="currentColor"
+                              />
+                            )}
                             {selected && <Check className="h-3.5 w-3.5" />}
                           </button>
                         );
@@ -835,7 +868,39 @@ export function LessonEditorInspector({
             )}
 
             {associationPanel === "questions" && (
+              slide.type !== "question" ? (
+                <div className="py-6 text-center text-xs text-ink-400">
+                  <FileQuestion className="mx-auto mb-2 h-5 w-5" />
+                  仅题目页提供按知识点推荐的相关题
+                </div>
+              ) : (
               <div className="space-y-3">
+                <div className="rounded-lg border border-ink-100 bg-mist/40 p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[11px] font-medium text-ink-700">题目目录属性</div>
+                      <div className="mt-1 text-[10px] text-ink-500">
+                        {currentQuestion
+                          ? `章节课 ${currentQuestion.chapterIds?.length || 0} 项 · 知识点 ${currentQuestion.knowledgePointIds?.length || 0} 项`
+                          : "正在读取题目属性..."}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[11px]"
+                      onClick={onEditQuestionMetadata}
+                      disabled={!currentQuestion}
+                    >
+                      编辑章节课 / 知识点
+                    </Button>
+                  </div>
+                  {currentQuestion && (currentQuestion.knowledgePointIds?.length || 0) === 0 && (
+                    <div className="mt-2 text-[10px] leading-4 text-amber-700">
+                      当前题目尚未设置知识点；补充后会自动生成更准确的相关题推荐。
+                    </div>
+                  )}
+                </div>
                 {(slide.relatedQuestionIds || []).length > 0 && (
                   <div className="space-y-2">
                     <div className="text-[11px] font-medium text-ink-600">已关联题目</div>
@@ -867,6 +932,9 @@ export function LessonEditorInspector({
                 )}
                 <div className="space-y-2">
                   <div className="text-[11px] font-medium text-ink-600">推荐相关题</div>
+                  {relatedQuestionsLoading && (
+                    <div className="py-4 text-center text-xs text-ink-400">正在根据知识点查找相关题...</div>
+                  )}
                   {relatedQuestions.map((question) => {
                     const added = (slide.relatedQuestionIds || []).includes(question.id);
                     return (
@@ -890,13 +958,15 @@ export function LessonEditorInspector({
                       </div>
                     );
                   })}
-                  {relatedQuestions.length === 0 && (
+                  {!relatedQuestionsLoading && relatedQuestions.length === 0 && (
                     <div className="py-6 text-center text-xs text-ink-400">
-                      <FileQuestion className="mx-auto mb-2 h-5 w-5" />暂无推荐题目
+                      <FileQuestion className="mx-auto mb-2 h-5 w-5" />
+                      {currentQuestion?.knowledgePointIds?.length ? "暂无匹配知识点的推荐题目" : "请先为当前题目设置知识点"}
                     </div>
                   )}
                 </div>
               </div>
+              )
             )}
           </div>
         )}

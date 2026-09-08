@@ -44,7 +44,11 @@ function renderInspector(overrides: Partial<ComponentProps<typeof LessonEditorIn
     students: [{ id: "student-1", name: "张同学", classId: "class-1" } as Student],
     classes: [{ id: "class-1", name: "高一（1）班", grade: "高一", type: "school" } as SchoolClass],
     selectedClassIds: ["class-1"],
+    followedStudentIds: new Set(),
+    studentWeaknessById: {},
+    currentQuestion: null,
     relatedQuestions: [{ id: "question-2", stem: "相关题目", type: "single" } as Question],
+    relatedQuestionsLoading: false,
     relatedQuestionsById: {},
     canDeleteSlide: true,
     canMergeSlide: true,
@@ -68,6 +72,7 @@ function renderInspector(overrides: Partial<ComponentProps<typeof LessonEditorIn
     onLoadRelatedQuestions: vi.fn(),
     onAddRelatedQuestion: vi.fn(),
     onRemoveRelatedQuestion: vi.fn(),
+    onEditQuestionMetadata: vi.fn(),
     ...overrides,
   };
   render(<LessonEditorInspector {...props} />);
@@ -154,7 +159,6 @@ describe("LessonEditorInspector", () => {
     expect(onLoadRelatedQuestions).toHaveBeenCalled();
   });
 
-
   it("groups related students by the selected teaching classes", async () => {
     const user = userEvent.setup();
     const onToggleStudent = vi.fn();
@@ -195,6 +199,36 @@ describe("LessonEditorInspector", () => {
     await user.click(screen.getByRole("button", { name: "关联" }));
     expect(screen.getByText("请先选择授课班级")).toBeInTheDocument();
     expect(screen.queryByText("张同学")).not.toBeInTheDocument();
+  });
+
+  it("shows followed students, knowledge weakness, and the question directory edit entry", async () => {
+    const user = userEvent.setup();
+    const onEditQuestionMetadata = vi.fn();
+    const currentQuestion = {
+      id: "question-1",
+      chapterIds: ["chapter-1"],
+      knowledgePointIds: ["kp-1", "kp-2"],
+    } as Question;
+    renderInspector({
+      students: [
+        { id: "student-weak", name: "薄弱同学" } as Student,
+        { id: "student-followed", name: "关注同学" } as Student,
+      ],
+      followedStudentIds: new Set(["student-followed"]),
+      studentWeaknessById: { "student-weak": 0.75 },
+      currentQuestion,
+      onEditQuestionMetadata,
+    });
+
+    await user.click(screen.getByRole("button", { name: "关联" }));
+    expect(screen.getByText("薄弱 75%")).toBeInTheDocument();
+    expect(screen.getByLabelText("关注学生")).toBeInTheDocument();
+    expect(screen.getByText(/按当前题目知识点薄弱度排序/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "相关题" }));
+    expect(screen.getByText("章节课 1 项 · 知识点 2 项")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "编辑章节课 / 知识点" }));
+    expect(onEditQuestionMetadata).toHaveBeenCalledOnce();
   });
 
   it("renders related-question math and opens complete details including the answer", async () => {

@@ -1329,7 +1329,8 @@ export type BuiltInQuestionType =
   | "short"
   | "essay"
   | "judge"
-  | "conceptFill";
+  | "conceptFill"
+  | "comprehensive";
 
 /** 学校可在后台增加自定义题型；内置题型保留字面量提示。 */
 export type QuestionType = BuiltInQuestionType | (string & {});
@@ -1341,6 +1342,7 @@ export const DEFAULT_QUESTION_TYPES = [
   { value: "essay", label: "解答题" },
   { value: "judge", label: "判断题" },
   { value: "conceptFill", label: "概念填空" },
+  { value: "comprehensive", label: "综合题" },
 ] as const satisfies ReadonlyArray<{ value: BuiltInQuestionType; label: string }>;
 
 export type ResourceSemester = "上学期" | "下学期" | "寒假" | "暑假";
@@ -2893,7 +2895,7 @@ export interface Reflection {
 /** 学生互动记录类型 */
 export type InteractionType = "chat" | "attitude" | "status";
 
-/** 学生互动聊天记录中的图片附件 */
+/** 学生互动记录中的图片附件 */
 export interface StudentInteractionAttachment {
   id: string;
   name: string;
@@ -2912,7 +2914,7 @@ export interface StudentInteraction {
   type: InteractionType;
   /** 内容 */
   content: string;
-  /** 聊天记录中的图片附件 */
+  /** 记录中的图片附件 */
   attachments?: StudentInteractionAttachment[];
   /** 学习态度评分（1-5），type=attitude 时使用 */
   attitude?: number;

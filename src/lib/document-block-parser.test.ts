@@ -1114,6 +1114,32 @@ describe("document block parser", () => {
     ]);
   });
 
+  it("splits every sequential sub-question when a numbered question starts with （1）", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1.（1）第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "（2）第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+        "（3）第三小题 A. 子 B. 丑 C. 寅 D. 卯",
+        "（4）第四小题 A. 辰 B. 巳 C. 午 D. 未",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(4);
+    expect(blocks.map((block) => block.content)).toEqual([
+      "1.（1）第一小题",
+      "（2）第二小题",
+      "（3）第三小题",
+      "（4）第四小题",
+    ]);
+    expect(blocks.map((block) => block.options)).toEqual([
+      ["甲", "乙", "丙", "丁"],
+      ["戊", "己", "庚", "辛"],
+      ["子", "丑", "寅", "卯"],
+      ["辰", "巳", "午", "未"],
+    ]);
+  });
+
   it("splits screenshot-style sub-questions and distributes a shared multiline choice answer list", () => {
     const blocks = parseDocumentBlocks(
       [
@@ -1185,6 +1211,85 @@ describe("document block parser", () => {
       ].join("\n"),
       answer: "（1）-1；（2）a=0。",
     });
+  });
+
+  it("keeps shared-stem choice sub-questions as one single-choice question", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "2. 阅读材料并完成下面两个小题。",
+        "（1）第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "（2）第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+        "答案：（1）A （2）B",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      questionType: "single",
+      answer: "（1）A （2）B",
+    });
+    expect(blocks[0].content).toContain("2. 阅读材料并完成下面两个小题。");
+    expect(blocks[0].content).toContain("（1）第一小题");
+    expect(blocks[0].content).toContain("（2）第二小题");
+  });
+
+  it("classifies mixed shared-stem sub-question types as comprehensive", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "3. 阅读材料并完成下面两个小题。",
+        "（1）第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "（2）（多选）第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+        "答案：（1）A （2）BC",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      questionType: "comprehensive",
+      answer: "（1）A （2）BC",
+    });
+  });
+
+  it("treats 延伸探究 sub-questions after a shared stem as one comprehensive question", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例2 如图所示，已知正四面体 ABCD 的棱长为 1。",
+        "延伸探究1 BC 与 CD 的夹角等于（ ） A. 30° B. 60° C. 150° D. 120°",
+        "延伸探究2 计算该正四面体的体积。",
+        "答案：D",
+        "1/6",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      questionType: "comprehensive",
+      answer: "D\n1/6",
+    });
+    expect(blocks[0].content).toContain("延伸探究1");
+    expect(blocks[0].content).toContain("延伸探究2");
+  });
+
+  it("keeps all-single 延伸探究 sub-questions typed as single choice", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例3 阅读下面材料后完成延伸探究。",
+        "延伸探究1 第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "延伸探究2 第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+        "答案：A",
+        "B",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].questionType).toBe("single");
   });
 
   it("splits a trailing combined answer section across independent sub-questions", () => {

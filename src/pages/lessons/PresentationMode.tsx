@@ -225,6 +225,7 @@ const questionTypeLabel: Record<string, string> = {
   judge: "判断",
   short: "填空",
   essay: "解答",
+  comprehensive: "综合",
 };
 
 const PRESENTATION_COLOR_PREFERENCES_KEY = "inteschool-presentation-color-preferences";

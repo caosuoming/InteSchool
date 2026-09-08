@@ -94,7 +94,14 @@ const timeRangeOptions: { value: TimeRangeKey; label: string }[] = [
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
 const difficultyColor = ["", "text-emerald-600", "text-emerald-600", "text-amber-600", "text-red-600", "text-red-600"];
-const typeLabel: Record<string, string> = { single: "单选", multiple: "多选", judge: "判断", short: "填空", essay: "解答" };
+const typeLabel: Record<string, string> = {
+  single: "单选",
+  multiple: "多选",
+  judge: "判断",
+  short: "填空",
+  essay: "解答",
+  comprehensive: "综合",
+};
 
 function getDateRange(key: TimeRangeKey): DateRange | undefined {
   if (key === "all") return undefined;
