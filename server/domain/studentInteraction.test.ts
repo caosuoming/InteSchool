@@ -212,7 +212,7 @@ describe("student interaction scope", () => {
     });
   });
 
-  it("accepts validated image-only chats and rejects invalid attachments", async () => {
+  it("accepts validated image-only interactions and rejects invalid attachments", async () => {
     const appState = state();
     await runWithState(appState, async () => {
       await expect(studentInteractionService.createInteraction(
@@ -236,6 +236,31 @@ describe("student interaction scope", () => {
         attachments: [expect.objectContaining({ id: "file-1", mimeType: "image/png" })],
       });
 
+      for (const type of ["attitude", "status"] as const) {
+        await expect(studentInteractionService.createInteraction(
+          "teacher-1",
+          "school-1",
+          {
+            studentId: "student-1",
+            type,
+            content: "",
+            attachments: [{
+              id: `file-${type}`,
+              name: `${type}.png`,
+              url: `/api/files/file-${type}`,
+              mimeType: "image/png",
+              size: 64,
+            }],
+            attitude: type === "attitude" ? 4 : undefined,
+            statusTag: type === "status" ? "听课专注" : undefined,
+          },
+          teacher,
+        )).resolves.toMatchObject({
+          type,
+          attachments: [expect.objectContaining({ id: `file-${type}` })],
+        });
+      }
+
       await expect(studentInteractionService.createInteraction(
         "teacher-1",
         "school-1",
@@ -252,7 +277,7 @@ describe("student interaction scope", () => {
           }],
         },
         teacher,
-      )).rejects.toThrow("聊天记录只能上传图片");
+      )).rejects.toThrow("互动记录只能上传图片");
     });
   });
 
