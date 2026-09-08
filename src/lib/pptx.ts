@@ -12,8 +12,19 @@ export interface PptSlideOutline {
   elements?: PptSlideImportElement[];
 }
 
-interface PptxExtractionOptions {
-  imageUrl?: (slideNumber: number, relationshipId: string) => string | undefined;
+export interface PptxEmbeddedImage {
+  data: Uint8Array;
+  contentType: string;
+  fileName: string;
+  packagePath: string;
+}
+
+export interface PptxExtractionOptions {
+  imageUrl?: (
+    slideNumber: number,
+    relationshipId: string,
+    image: PptxEmbeddedImage | undefined,
+  ) => string | undefined | Promise<string | undefined>;
 }
 
 interface SlideSize {
@@ -47,10 +58,24 @@ const PPTX_SLIDE_PATH = /^ppt\/slides\/slide(\d+)\.xml$/;
 const PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main";
 const DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
 const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const MARKUP_COMPATIBILITY_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 const DEFAULT_SLIDE_SIZE: SlideSize = { width: 12_192_000, height: 6_858_000 };
 const MAX_SLIDES = 500;
+const PPT_IMAGE_MIME_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  svg: "image/svg+xml",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  emf: "image/emf",
+  wmf: "image/wmf",
+};
 
 function slideNumber(path: string): number {
   return Number(path.match(PPTX_SLIDE_PATH)?.[1] || 0);
@@ -74,6 +99,52 @@ function numericAttribute(element: Element | undefined, name: string): number | 
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function pptMediaPath(target: string): string | undefined {
+  const parts = ["ppt", "slides"];
+  for (const part of target.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  const path = parts.join("/");
+  return path.startsWith("ppt/media/") && !path.includes("../") ? path : undefined;
+}
+
+async function pptEmbeddedImage(
+  zip: JSZip,
+  slideNumberValue: number,
+  relationshipId: string,
+): Promise<PptxEmbeddedImage | undefined> {
+  const relationshipsXml = await zip
+    .file(`ppt/slides/_rels/slide${slideNumberValue}.xml.rels`)
+    ?.async("string");
+  if (!relationshipsXml) return undefined;
+
+  const relationships = new DOMParser().parseFromString(relationshipsXml, "application/xml");
+  if (relationships.querySelector("parsererror")) return undefined;
+  const entries = Array.from(relationships.getElementsByTagNameNS(PACKAGE_REL_NS, "Relationship"));
+  const relationship = entries.find((entry) => entry.getAttribute("Id") === relationshipId);
+  if (!relationship || relationship.getAttribute("TargetMode") === "External") return undefined;
+  if (!relationship.getAttribute("Type")?.endsWith("/image")) return undefined;
+
+  const packagePath = pptMediaPath(relationship.getAttribute("Target") || "");
+  if (!packagePath) return undefined;
+  const file = zip.file(packagePath);
+  if (!file) return undefined;
+  const extension = packagePath.split(".").pop()?.toLowerCase() || "";
+  const contentType = PPT_IMAGE_MIME_TYPES[extension];
+  if (!contentType) return undefined;
+  return {
+    data: await file.async("uint8array"),
+    contentType,
+    fileName: packagePath.split("/").pop() || `ppt-image.${extension}`,
+    packagePath,
+  };
 }
 
 async function presentationSlideSize(zip: JSZip): Promise<SlideSize> {
@@ -453,19 +524,21 @@ function extractTableElement(
   } as PptSlideImportElement;
 }
 
-function extractImageElement(
+async function extractImageElement(
   picture: Element,
+  zip: JSZip,
   slideSize: SlideSize,
   fallbackIndex: number,
   slideNumberValue: number,
   imageUrl: PptxExtractionOptions["imageUrl"],
-): PptSlideImportElement | null {
+): Promise<PptSlideImportElement | null> {
   const blip = firstDescendant(picture, DRAWING_NS, "blip");
   const relationshipId = blip?.getAttributeNS(OFFICE_REL_NS, "embed")
     || blip?.getAttribute("r:embed")
     || "";
   if (!relationshipId || !imageUrl) return null;
-  const src = imageUrl(slideNumberValue, relationshipId);
+  const image = await pptEmbeddedImage(zip, slideNumberValue, relationshipId);
+  const src = await imageUrl(slideNumberValue, relationshipId, image);
   if (!src) return null;
   const nonVisual = firstDescendant(picture, PRESENTATION_NS, "cNvPr");
   return {
@@ -476,12 +549,13 @@ function extractImageElement(
   };
 }
 
-function importElementsFromSlide(
+async function importElementsFromSlide(
   xml: string,
+  zip: JSZip,
   slideSize: SlideSize,
   slideNumberValue: number,
   options: PptxExtractionOptions,
-): PptSlideImportElement[] {
+): Promise<PptSlideImportElement[]> {
   const document = new DOMParser().parseFromString(xml, "application/xml");
   if (document.querySelector("parsererror")) return [];
   const slideTree = document.getElementsByTagNameNS(PRESENTATION_NS, "spTree")[0];
@@ -500,8 +574,9 @@ function importElementsFromSlide(
       continue;
     }
     if (child.localName === "pic") {
-      const image = extractImageElement(
+      const image = await extractImageElement(
         child,
+        zip,
         slideSize,
         fallbackIndex,
         slideNumberValue,
@@ -521,8 +596,9 @@ function importElementsFromSlide(
         continue;
       }
 
-      const image = extractImageElement(
+      const image = await extractImageElement(
         child,
+        zip,
         slideSize,
         fallbackIndex,
         slideNumberValue,
@@ -552,7 +628,7 @@ export async function extractPptxSlideOutlines(
     const xml = await zip.file(path)?.async("string") || "";
     const lines = textFromSlideXml(xml);
     const currentSlideNumber = slideNumber(path) || index + 1;
-    const elements = importElementsFromSlide(xml, slideSize, currentSlideNumber, options);
+    const elements = await importElementsFromSlide(xml, zip, slideSize, currentSlideNumber, options);
     return {
       title: lines[0] || `第 ${index + 1} 页`,
       content: lines.join("\n") || `原 PPT 第 ${index + 1} 页`,
@@ -591,7 +667,10 @@ function pptImageUrlFactory(courseware: Courseware): PptxExtractionOptions["imag
   };
 }
 
-export async function loadCoursewarePptSlides(courseware: Courseware): Promise<PptSlideOutline[]> {
+export async function loadCoursewarePptSlides(
+  courseware: Courseware,
+  options: PptxExtractionOptions = {},
+): Promise<PptSlideOutline[]> {
   if (courseware.type !== "ppt") return [];
   if (!courseware.fileName?.toLowerCase().endsWith(".pptx")) {
     return Array.from({ length: Math.max(courseware.pageCount || 1, 1) }, (_, index) => ({
@@ -604,7 +683,12 @@ export async function loadCoursewarePptSlides(courseware: Courseware): Promise<P
   if (!fileUrl) return [];
   const response = await fetch(fileUrl, { credentials: "same-origin" });
   if (!response.ok) throw new Error("PPT 文件读取失败");
-  return extractPptxSlideOutlines(await response.arrayBuffer(), {
-    imageUrl: pptImageUrlFactory(courseware),
-  });
+  const fallbackImageUrl = pptImageUrlFactory(courseware);
+  const imageUrl: PptxExtractionOptions["imageUrl"] = options.imageUrl
+    ? async (slideNumberValue, relationshipId, image) => (
+      await options.imageUrl?.(slideNumberValue, relationshipId, image)
+      || fallbackImageUrl?.(slideNumberValue, relationshipId, image)
+    )
+    : fallbackImageUrl;
+  return extractPptxSlideOutlines(await response.arrayBuffer(), { imageUrl });
 }

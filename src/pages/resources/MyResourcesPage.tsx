@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { lessonCoursewareService, loadEditableCoursewarePptSlides } from "@/services/lessonCourseware";
 import { extractStoredFile } from "@/services/api";
 import { questionService } from "@/services/question";
 import { prepService } from "@/services/prep";
@@ -100,7 +100,6 @@ import { parseDocumentBlocks, type DocumentBlock } from "@/lib/document-block-pa
 import { matchingResourceTypeIds } from "@/lib/resource-type-hierarchy";
 import { annotateTreeWithResourceCounts } from "@/lib/resource-tree-counts";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
-import { loadCoursewarePptSlides } from "@/lib/pptx";
 import { openCoursewareInWps } from "@/lib/wps";
 import {
   documentCategory,
@@ -668,7 +667,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       let pptSlides: Array<{ title: string; content: string }> = [];
       if (item.type === "ppt") {
         try {
-          pptSlides = await loadCoursewarePptSlides(item);
+          pptSlides = await loadEditableCoursewarePptSlides(item);
         } catch {
           toast.warning("PPT 页面内容读取失败，将按已记录页数创建编辑页");
         }

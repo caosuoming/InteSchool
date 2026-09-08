@@ -10,12 +10,11 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { coursewareService } from "@/services/courseware";
-import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { lessonCoursewareService, loadEditableCoursewarePptSlides } from "@/services/lessonCourseware";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import type { Courseware, CoursewareType } from "@/types";
 import { getCoursewareEditorUrl, getCoursewareFileUrl } from "@/lib/courseware-online";
-import { loadCoursewarePptSlides } from "@/lib/pptx";
 import { openCoursewareInWps } from "@/lib/wps";
 
 const typeLabel: Record<CoursewareType, string> = {
@@ -66,7 +65,7 @@ export default function CoursewarePreviewPage() {
       let pptSlides: Array<{ title: string; content: string }> = [];
       if (courseware.type === "ppt") {
         try {
-          pptSlides = await loadCoursewarePptSlides(courseware);
+          pptSlides = await loadEditableCoursewarePptSlides(courseware);
         } catch {
           toast.warning("PPT 页面内容读取失败，将按已记录页数创建编辑页");
         }
