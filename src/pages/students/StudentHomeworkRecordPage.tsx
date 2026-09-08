@@ -22,7 +22,6 @@ import { HOMEWORK_ATTITUDE_KEYWORDS } from "@/types";
 import type {
   AnyClass,
   HomeworkAttitudeKeyword,
-  HomeworkKnowledgeRecord,
   HomeworkKnowledgeStatus,
   KnowledgePoint,
   Student,
