@@ -25,7 +25,6 @@ import {
 import { exportGradeClassAverageReport } from "@/lib/grade-spreadsheet";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
@@ -225,18 +224,7 @@ export function GradeClassAverageTable({
 
       {adjusting && (
         <div className="space-y-4 border-b border-ink-100 bg-ink-50/40 p-5">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_13rem_auto] md:items-end">
-            <Input
-              label="表格标题"
-              value={resolvedOptions.title || ""}
-              onChange={(event) => updateOptions({ title: event.target.value })}
-            />
-            <Input
-              label="统计日期"
-              type="date"
-              value={resolvedOptions.reportDate || ""}
-              onChange={(event) => updateOptions({ reportDate: event.target.value })}
-            />
+          <div className="flex justify-end">
             <Button variant="ghost" size="sm" onClick={reset}>
               <RotateCcw className="h-3.5 w-3.5" />恢复默认
             </Button>
@@ -527,11 +515,11 @@ export function GradeClassAverageTable({
                         )}
                         <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-500">{row.studentCount} 人</td>
                         {report.subjects.map((subject) => (
-                          <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums text-ink-900">
+                          <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900">
                             {displayScore(row.subjectAverages[subject], row.subjectScoreModes[subject])}
                           </td>
                         ))}
-                        <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
+                        <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                           {displayScore(row.totalAverages, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                         </td>
                       </tr>
@@ -543,11 +531,11 @@ export function GradeClassAverageTable({
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-medium">分差</td>
                       <td className="border border-ink-300 px-3 py-2" />
                       {report.subjects.map((subject) => (
-                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right tabular-nums">
+                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center tabular-nums">
                           {displayScore(group.difference.subjectValues[subject], group.subjectScoreModes[subject])}
                         </td>
                       ))}
-                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums">
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
                         {displayScore(group.difference.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                       </td>
                     </tr>
@@ -559,11 +547,11 @@ export function GradeClassAverageTable({
                       </td>
                       <td className="border border-ink-300 px-3 py-2" />
                       {report.subjects.map((subject) => (
-                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-semibold tabular-nums">
+                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
                           {displayScore(group.average.subjectValues[subject], group.subjectScoreModes[subject])}
                         </td>
                       ))}
-                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums">
+                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums">
                         {displayScore(group.average.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                       </td>
                     </tr>
@@ -574,14 +562,14 @@ export function GradeClassAverageTable({
                 <tr className="bg-ink-100/70">
                   <td colSpan={3} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold text-ink-900">全校平均</td>
                   {report.subjects.map((subject) => (
-                    <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
+                    <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                       {displayScore(
                         report.overallAverage.subjectValues[subject],
                         report.overallSubjectScoreModes[subject],
                       )}
                     </td>
                   ))}
-                  <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-right font-bold tabular-nums text-ink-900">
+                  <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                     {displayScore(
                       report.overallAverage.totalValues,
                       report.options.totalScoreMode || effectiveTemplate.scoreMode,

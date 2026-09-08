@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildDefaultGradeSettings } from "@/lib/grade-statistics";
@@ -74,6 +74,14 @@ describe("GradeExamAdjustmentPanel", () => {
     vi.clearAllMocks();
   });
 
+  it("leaves student selection blank until a student is chosen", () => {
+    render(<Harness initial={buildExam()} />);
+
+    expect(screen.getByLabelText("选择学生")).toHaveValue("");
+    expect(screen.getByText("请选择学生查看并微调成绩")).toBeInTheDocument();
+    expect(screen.queryByLabelText("各科成绩")).not.toBeInTheDocument();
+  });
+
   it("edits exam metadata used by report headers", async () => {
     const user = userEvent.setup();
     const initial = buildExam();
@@ -113,6 +121,7 @@ describe("GradeExamAdjustmentPanel", () => {
     };
 
     render(<Harness initial={exam} />);
+    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: "student-1" } });
 
     const scoreRow = screen.getByLabelText("各科成绩");
     expect(scoreRow).toHaveClass("flex", "overflow-x-auto");
@@ -135,6 +144,7 @@ describe("GradeExamAdjustmentPanel", () => {
     };
 
     render(<Harness initial={exam} />);
+    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: "student-1" } });
 
     const chemistry = screen.getByLabelText("化学成绩");
     expect(within(chemistry).getByRole("spinbutton", { name: "原始分" })).toHaveValue(88);
@@ -179,6 +189,7 @@ describe("GradeExamAdjustmentPanel", () => {
     };
 
     render(<Harness initial={exam} />);
+    fireEvent.change(screen.getByLabelText("选择学生"), { target: { value: "student-1" } });
 
     expect(screen.getByLabelText("各科成绩").children).toHaveLength(6);
     expect(screen.queryByLabelText("政治成绩")).not.toBeInTheDocument();
@@ -215,6 +226,7 @@ describe("GradeExamAdjustmentPanel", () => {
     vi.mocked(gradeService.unpublishExamResults).mockResolvedValue(initial);
 
     render(<Harness initial={initial} />);
+    await user.selectOptions(screen.getByLabelText("选择学生"), "student-1");
     await user.click(screen.getByRole("button", { name: "发布" }));
 
     await waitFor(() => expect(gradeService.publishExamResults).toHaveBeenCalledWith("exam-1"));
@@ -229,10 +241,11 @@ describe("GradeExamAdjustmentPanel", () => {
     expect(screen.getByRole("textbox", { name: "考试名称" })).toBeEnabled();
   });
 
-  it("offers the combined report and class-statistics downloads in the publication area", async () => {
+  it("offers downloads and one-click printing in the publication area", async () => {
     const user = userEvent.setup();
     const downloadSummary = vi.fn().mockResolvedValue(undefined);
     const downloadClasses = vi.fn().mockResolvedValue(undefined);
+    const printSummary = vi.fn();
 
     render(
       <GradeExamAdjustmentPanel
@@ -240,6 +253,7 @@ describe("GradeExamAdjustmentPanel", () => {
         onExamUpdated={vi.fn()}
         onDownloadTablesOneToFive={downloadSummary}
         onDownloadClassStatistics={downloadClasses}
+        onPrintTablesOneToFive={printSummary}
       />,
     );
 
@@ -247,6 +261,8 @@ describe("GradeExamAdjustmentPanel", () => {
     await waitFor(() => expect(downloadSummary).toHaveBeenCalledTimes(1));
     await user.click(screen.getByRole("button", { name: "下载表六、各班成绩统计" }));
     await waitFor(() => expect(downloadClasses).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "一键打印表一-表五" }));
+    expect(printSummary).toHaveBeenCalledTimes(1);
   });
 
   it("searches students, saves a subject score adjustment, and shows modifier history", async () => {
@@ -292,5 +308,9 @@ describe("GradeExamAdjustmentPanel", () => {
     expect(await screen.findByText("年级组长")).toBeInTheDocument();
     expect(screen.getByText("修改记录")).toBeInTheDocument();
     expect(screen.getByText("原始分")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "修改前成绩" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "修改后成绩" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "90" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "88" })).toBeInTheDocument();
   });
 });

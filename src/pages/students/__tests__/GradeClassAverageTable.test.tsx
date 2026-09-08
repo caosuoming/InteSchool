@@ -155,6 +155,8 @@ describe("GradeClassAverageTable", () => {
     expect(screen.getAllByRole("cell", { name: "86.00" }).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "调整表格" }));
+    expect(screen.queryByRole("textbox", { name: "表格标题" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("统计日期")).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "高三(1)班数学赋分" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "数学批量设置" })).not.toBeInTheDocument();
 

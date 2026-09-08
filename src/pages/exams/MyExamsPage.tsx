@@ -438,6 +438,15 @@ function GradePreprocessing({
     });
   }, [classAverageTemplate, context, draft, selectedExam, teacherId, totalScoreSegmentTemplate]);
 
+  const printTablesOneToFive = useCallback(() => {
+    document.body.classList.add("grade-summary-printing");
+    try {
+      window.print();
+    } finally {
+      document.body.classList.remove("grade-summary-printing");
+    }
+  }, []);
+
   const downloadClassStatistics = useCallback(async () => {
     if (!selectedExam) throw new Error("请选择需要导出的考试");
     const report = buildGradeClassStatisticsReport(
@@ -503,7 +512,7 @@ function GradePreprocessing({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="grade-preprocessing space-y-4">
       <Card className="p-5">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)_auto] xl:items-end">
           <Select
@@ -628,20 +637,24 @@ function GradePreprocessing({
               onExamUpdated={handleExamUpdated}
               onDownloadTablesOneToFive={downloadTablesOneToFive}
               onDownloadClassStatistics={downloadClassStatistics}
+              onPrintTablesOneToFive={classAverageTemplate && totalScoreSegmentTemplate
+                ? printTablesOneToFive
+                : undefined}
               readOnly={readOnly}
             />
           )}
-          {selectedExam && classAverageTemplate && (
-            <GradeClassAverageTable
-              exam={selectedExam}
-              settings={draft}
-              template={classAverageTemplate}
-              context={context}
-              onChange={readOnly ? () => {} : setDraft}
-            />
-          )}
-          {selectedExam && totalScoreSegmentTemplate && (
-            <>
+          <div className="grade-summary-print-root space-y-4">
+            {selectedExam && classAverageTemplate && (
+              <GradeClassAverageTable
+                exam={selectedExam}
+                settings={draft}
+                template={classAverageTemplate}
+                context={context}
+                onChange={readOnly ? () => {} : setDraft}
+              />
+            )}
+            {selectedExam && totalScoreSegmentTemplate && (
+              <>
               <GradeTotalScoreSegmentTable
                 exam={selectedExam}
                 settings={draft}
@@ -678,8 +691,9 @@ function GradePreprocessing({
                 onChange={readOnly ? () => {} : setDraft}
                 onAutoSave={autoSaveSegmentSettings}
               />
-            </>
-          )}
+              </>
+            )}
+          </div>
           {selectedExam && (
             <GradeClassStatisticsTable
               exam={selectedExam}
@@ -803,7 +817,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
   };
 
   return (
-    <div>
+    <div className={cn(section === "grades" && "grade-summary-page")}>
       <PageHeader
         title="我的教务"
         description="统一管理考场布置、监考表、成绩统计和年级排课"

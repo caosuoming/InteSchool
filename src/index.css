@@ -375,7 +375,54 @@
     background: #fff;
   }
   body { background: white !important; }
+  body.grade-summary-printing .grade-summary-page > * {
+    display: none !important;
+  }
+  body.grade-summary-printing .grade-summary-page > .grade-preprocessing {
+    display: block !important;
+  }
+  body.grade-summary-printing .grade-preprocessing > * {
+    display: none !important;
+  }
+  body.grade-summary-printing .grade-preprocessing > .grade-summary-print-root {
+    display: block !important;
+  }
+  body.grade-summary-printing .grade-summary-print-root > .card-base {
+    display: block !important;
+    page: grade-summary;
+    break-after: page;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  body.grade-summary-printing .grade-summary-print-root > .card-base:last-child {
+    break-after: auto;
+  }
+  body.grade-summary-printing .grade-summary-print-root > .card-base > :not(:last-child) {
+    display: none !important;
+  }
+  body.grade-summary-printing .grade-summary-print-root .overflow-x-auto {
+    overflow: visible !important;
+  }
+  body.grade-summary-printing .grade-summary-print-root .min-w-max,
+  body.grade-summary-printing .grade-summary-print-root .w-max {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  body.grade-summary-printing .grade-summary-print-root table {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  body.grade-summary-printing .grade-summary-print-root input {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
   @page { margin: 12mm; }
+}
+
+@page grade-summary {
+  size: landscape;
+  margin: 8mm;
 }
 
 .print-only { display: none; }
