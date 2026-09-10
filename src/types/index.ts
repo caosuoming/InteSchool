@@ -136,6 +136,8 @@ export interface Teacher {
   currentAffiliationId: string | null;
   /** 教师在“我的上课”中维护的周课表。 */
   lessonSchedule?: TeacherLessonSchedule;
+  /** 教师按学期维护的教学计划与一体机自动采集的实际教学记录。 */
+  teachingPlan?: TeacherTeachingPlan;
   /** 可管理的平台资源学科；仅平台超级管理员可以授予或撤销。 */
   platformModeratorSubjects?: string[];
   /** 平台超级管理员针对该用户设置的容量/次数覆盖值。 */
@@ -2684,6 +2686,40 @@ export interface TeacherLessonSchedule {
   /** 旧课表可能缺失，读取时使用默认显示设置。 */
   displayOptions?: TeacherLessonScheduleDisplayOptions;
   updatedAt?: string;
+}
+
+/** 教学计划中的一条按日计划。 */
+export interface TeacherTeachingPlanEntry {
+  date: string;
+  note: string;
+  plan: string;
+}
+
+/** 一个学期的教学计划。 */
+export interface TeacherTeachingPlanSemester {
+  id: string;
+  startDate: string;
+  endDate: string;
+  entries: TeacherTeachingPlanEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 教室一体机连续展示课件达到阈值后生成的实际教学记录。 */
+export interface TeacherTeachingActualRecord {
+  date: string;
+  coursewareId: string;
+  coursewareTitle: string;
+  classId: string;
+  startedAt: string;
+  completedAt: string;
+}
+
+/** 教师教学计划；current 缺失时服务端会按当前日期生成默认学期范围。 */
+export interface TeacherTeachingPlan {
+  current?: TeacherTeachingPlanSemester;
+  history: TeacherTeachingPlanSemester[];
+  actualRecords: TeacherTeachingActualRecord[];
 }
 
 /** 上课课件 */

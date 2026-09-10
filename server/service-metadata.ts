@@ -986,6 +986,15 @@ export const serviceParameters = {
     ]
   },
   "lessonCourseware": {
+    "getTeachingPlan": [
+      "teacher"
+    ],
+    "saveTeachingPlan": [
+      "startDateInput",
+      "endDateInput",
+      "entries",
+      "teacher"
+    ],
     "getLessonSchedule": [
       "teacher"
     ],

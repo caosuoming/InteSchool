@@ -26,6 +26,8 @@ import type {
   TeacherLessonSchedulePeriod,
   TeacherLessonScheduleTimeRange,
   TeacherLessonScheduleWeekParity,
+  TeacherTeachingPlan,
+  TeacherTeachingPlanEntry,
 } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -34,6 +36,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
 import { TeacherTimetable } from "@/components/lessons/TeacherTimetable";
+import { TeachingPlanPanel } from "@/components/lessons/TeachingPlanPanel";
 import { openCoursewareInWps } from "@/lib/wps";
 import {
   defaultTeacherScheduleDisplayOptions,
@@ -151,7 +154,7 @@ function ClassMultiSelectDropdown({
   );
 }
 
-type LessonTab = "courseware" | "schedule" | "homework" | "notice";
+type LessonTab = "courseware" | "teachingPlan" | "schedule" | "homework" | "notice";
 
 export function MyLessonsPage() {
   const navigate = useNavigate();
@@ -200,6 +203,9 @@ export function MyLessonsPage() {
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleEditing, setScheduleEditing] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [teachingPlan, setTeachingPlan] = useState<TeacherTeachingPlan | null>(null);
+  const [teachingPlanLoading, setTeachingPlanLoading] = useState(true);
+  const [savingTeachingPlan, setSavingTeachingPlan] = useState(false);
   const homeworkDraftVersion = useRef(0);
 
   const classNames = useMemo(
@@ -335,6 +341,39 @@ export function MyLessonsPage() {
   useEffect(() => {
     void loadLessonSchedule();
   }, [loadLessonSchedule]);
+
+  const loadTeachingPlan = useCallback(async () => {
+    if (!teacher?.schoolId) return;
+    setTeachingPlanLoading(true);
+    try {
+      setTeachingPlan(await lessonCoursewareService.getTeachingPlan());
+    } catch (err) {
+      toast.error("教学计划加载失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setTeachingPlanLoading(false);
+    }
+  }, [teacher?.schoolId]);
+
+  useEffect(() => {
+    void loadTeachingPlan();
+  }, [loadTeachingPlan]);
+
+  const handleSaveTeachingPlan = async (
+    startDate: string,
+    endDate: string,
+    entries: TeacherTeachingPlanEntry[],
+  ) => {
+    setSavingTeachingPlan(true);
+    try {
+      const saved = await lessonCoursewareService.saveTeachingPlan(startDate, endDate, entries);
+      setTeachingPlan(saved);
+      toast.success("教学计划已保存");
+    } catch (err) {
+      toast.error("教学计划保存失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setSavingTeachingPlan(false);
+    }
+  };
 
   const updateScheduleSlot = (
     day: TeacherLessonScheduleDay,
@@ -882,9 +921,10 @@ export function MyLessonsPage() {
       </div>
 
       <Card className="mb-4 p-2">
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4" role="tablist" aria-label="我的上课内容">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5" role="tablist" aria-label="我的上课内容">
           {([
-            ["courseware", "我的课件", Presentation],
+            ["courseware", "上课课件", Presentation],
+            ["teachingPlan", "教学计划", CalendarClock],
             ["schedule", "我的课表", CalendarDays],
             ["homework", "我的作业", ClipboardCheck],
             ["notice", "班级通知", BellRing],
@@ -906,6 +946,15 @@ export function MyLessonsPage() {
           ))}
         </div>
       </Card>
+
+      {activeTab === "teachingPlan" && (
+        <TeachingPlanPanel
+          plan={teachingPlan}
+          loading={teachingPlanLoading}
+          saving={savingTeachingPlan}
+          onSave={handleSaveTeachingPlan}
+        />
+      )}
 
       {activeTab === "schedule" && (
         <TeacherTimetable

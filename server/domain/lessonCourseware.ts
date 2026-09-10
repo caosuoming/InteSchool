@@ -20,6 +20,9 @@ import type {
   TeacherLessonSchedulePeriod,
   TeacherLessonScheduleTimeRange,
   TeacherLessonScheduleWeekParity,
+  TeacherTeachingPlan,
+  TeacherTeachingPlanEntry,
+  TeacherTeachingPlanSemester,
 } from "../../src/types/index.js";
 import {
   TEACHER_SCHEDULE_COLUMN_KEYS,
@@ -958,7 +961,175 @@ function normalizeScheduleTimeRanges(
   return withDefaultTeacherScheduleTimeRanges([...normalized.values()]);
 }
 
+
+const DATE_VALUE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_TEACHING_PLAN_DAYS = 550;
+const MAX_TEACHING_PLAN_HISTORY = 12;
+
+function defaultTeachingPlanRange(now = new Date()): { startDate: string; endDate: string } {
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  if (month === 1) {
+    return {
+      startDate: `${year - 1}-08-01`,
+      endDate: `${year}-01-31`,
+    };
+  }
+  if (month >= 8) {
+    return {
+      startDate: `${year}-08-01`,
+      endDate: `${year + 1}-01-31`,
+    };
+  }
+  return {
+    startDate: `${year}-02-01`,
+    endDate: `${year}-07-31`,
+  };
+}
+
+function parseDateValue(value: string): Date | null {
+  if (!DATE_VALUE_PATTERN.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year
+    || date.getMonth() !== month - 1
+    || date.getDate() !== day
+  ) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function validateTeachingPlanRange(startDate: string, endDate: string): void {
+  const start = parseDateValue(startDate);
+  const end = parseDateValue(endDate);
+  if (!start || !end || start > end) throw new Error("教学计划学期起止日期不合法");
+  const days = Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  if (days > MAX_TEACHING_PLAN_DAYS) throw new Error("教学计划学期跨度不能超过 550 天");
+}
+
+function normalizeTeachingPlanEntries(
+  entries: TeacherTeachingPlanEntry[] | undefined,
+  startDate: string,
+  endDate: string,
+  strict: boolean,
+): TeacherTeachingPlanEntry[] {
+  const normalized = new Map<string, TeacherTeachingPlanEntry>();
+  for (const raw of Array.isArray(entries) ? entries : []) {
+    const date = String(raw?.date || "").trim();
+    const note = String(raw?.note || "").trim().slice(0, 500);
+    const plan = String(raw?.plan || "").trim().slice(0, 2000);
+    const valid = Boolean(parseDateValue(date)) && date >= startDate && date <= endDate;
+    if (!valid) {
+      if (strict) throw new Error("教学计划包含学期范围外的日期");
+      continue;
+    }
+    if (note || plan) normalized.set(date, { date, note, plan });
+  }
+  return [...normalized.values()].sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function normalizeTeachingPlanSemester(
+  semester: TeacherTeachingPlanSemester | undefined,
+): TeacherTeachingPlanSemester | undefined {
+  if (!semester) return undefined;
+  const startDate = String(semester.startDate || "");
+  const endDate = String(semester.endDate || "");
+  try {
+    validateTeachingPlanRange(startDate, endDate);
+  } catch {
+    return undefined;
+  }
+  return {
+    id: String(semester.id || genId("teaching-plan")),
+    startDate,
+    endDate,
+    entries: normalizeTeachingPlanEntries(semester.entries, startDate, endDate, false),
+    createdAt: String(semester.createdAt || new Date().toISOString()),
+    updatedAt: String(semester.updatedAt || semester.createdAt || new Date().toISOString()),
+  };
+}
+
+function normalizedTeachingPlan(teacher: Teacher, now = new Date()): TeacherTeachingPlan {
+  const stored = teacher.teachingPlan;
+  const current = normalizeTeachingPlanSemester(stored?.current);
+  const history = (stored?.history || [])
+    .map((item) => normalizeTeachingPlanSemester(item))
+    .filter((item): item is TeacherTeachingPlanSemester => Boolean(item))
+    .slice(0, MAX_TEACHING_PLAN_HISTORY);
+  const actualRecords = Array.isArray(stored?.actualRecords)
+    ? stored.actualRecords.filter((record) => (
+      Boolean(parseDateValue(String(record?.date || "")))
+      && typeof record?.coursewareId === "string"
+      && typeof record?.coursewareTitle === "string"
+      && typeof record?.classId === "string"
+      && typeof record?.startedAt === "string"
+      && typeof record?.completedAt === "string"
+    ))
+    : [];
+  if (current) return { current, history, actualRecords };
+  const range = defaultTeachingPlanRange(now);
+  const timestamp = now.toISOString();
+  return {
+    current: {
+      id: "default-current-semester",
+      ...range,
+      entries: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    history,
+    actualRecords,
+  };
+}
+
 export const lessonCoursewareService = {
+  async getTeachingPlan(teacher: Teacher): Promise<TeacherTeachingPlan> {
+    await delay(80);
+    return normalizedTeachingPlan(teacher);
+  },
+
+  async saveTeachingPlan(
+    startDateInput: string,
+    endDateInput: string,
+    entries: TeacherTeachingPlanEntry[],
+    teacher: Teacher,
+  ): Promise<TeacherTeachingPlan> {
+    await delay(150);
+    maybeThrowError();
+    if (!teacher.schoolId) throw new Error("请先完成学校认证");
+    const startDate = String(startDateInput || "").trim();
+    const endDate = String(endDateInput || "").trim();
+    validateTeachingPlanRange(startDate, endDate);
+    const normalizedEntries = normalizeTeachingPlanEntries(entries, startDate, endDate, true);
+    const now = new Date();
+    const timestamp = now.toISOString();
+    const existing = normalizedTeachingPlan(teacher, now);
+    const storedCurrent = normalizeTeachingPlanSemester(teacher.teachingPlan?.current);
+    const sameRange = storedCurrent?.startDate === startDate && storedCurrent?.endDate === endDate;
+    const current: TeacherTeachingPlanSemester = {
+      id: sameRange && storedCurrent ? storedCurrent.id : genId("teaching-plan"),
+      startDate,
+      endDate,
+      entries: normalizedEntries,
+      createdAt: sameRange && storedCurrent ? storedCurrent.createdAt : timestamp,
+      updatedAt: timestamp,
+    };
+    const history = sameRange || !storedCurrent
+      ? existing.history
+      : [storedCurrent, ...existing.history.filter((item) => item.id !== storedCurrent.id)]
+        .slice(0, MAX_TEACHING_PLAN_HISTORY);
+    const teachingPlan: TeacherTeachingPlan = {
+      current,
+      history,
+      actualRecords: existing.actualRecords,
+    };
+    db.update("teachers", (items: Teacher[]) => items.map((item) => (
+      item.id === teacher.id ? { ...item, teachingPlan } : item
+    )));
+    return teachingPlan;
+  },
+
   async getLessonSchedule(teacher: Teacher): Promise<TeacherLessonSchedule> {
     await delay(100);
     return {
