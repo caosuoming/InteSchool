@@ -863,7 +863,9 @@ export function PresentationMode({
   }>());
   const boardPinchRef = useRef<BoardPinchInteraction | null>(null);
   const suppressBoardTouchDrawingRef = useRef(false);
+  const activePageButtonRef = useRef<HTMLButtonElement | null>(null);
   const [currentIndex, setCurrentIndex] = useState(() => clamp(initialIndex, 0, Math.max(0, slides.length - 1)));
+  const [pagePickerOpen, setPagePickerOpen] = useState(false);
   const [tool, setTool] = useState<Tool>("select");
   const [drawingPresets, setDrawingPresets] = useState(INITIAL_DRAWING_PRESETS);
   const [presetMenuToolId, setPresetMenuToolId] = useState<DrawingToolId | null>(null);
@@ -1059,15 +1061,27 @@ export function PresentationMode({
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
-      if (target instanceof Element && target.closest("[data-presentation-popup-root]")) return;
-      setSidePanel(null);
-      setPresetMenuToolId(null);
-      setEraserSizeMenuOpen(false);
-      setColorSettingsOpen(false);
+      if (!(target instanceof Element) || !target.closest("[data-presentation-popup-root]")) {
+        setSidePanel(null);
+        setPresetMenuToolId(null);
+        setEraserSizeMenuOpen(false);
+        setColorSettingsOpen(false);
+      }
+      if (!(target instanceof Element) || !target.closest("[data-presentation-page-picker]")) {
+        setPagePickerOpen(false);
+      }
     };
     document.addEventListener("pointerdown", handlePointerDown, true);
     return () => document.removeEventListener("pointerdown", handlePointerDown, true);
   }, []);
+
+  useEffect(() => {
+    if (!pagePickerOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      activePageButtonRef.current?.scrollIntoView?.({ block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentIndex, pagePickerOpen]);
 
   useEffect(() => {
     setQuestionVisibility({ ...DEFAULT_PRESENTATION_QUESTION_VISIBILITY });
@@ -1076,6 +1090,7 @@ export function PresentationMode({
     setPresetMenuToolId(null);
     setEraserSizeMenuOpen(false);
     setColorSettingsOpen(false);
+    setPagePickerOpen(false);
   }, [currentIndex]);
 
   useEffect(() => {
@@ -1106,6 +1121,11 @@ export function PresentationMode({
     }
     setCurrentIndex((index) => Math.min(slides.length - 1, index + 1));
   }, [currentAnimationProgress, currentAnimationSteps.length, currentSlide, slides.length]);
+
+  const goToPage = useCallback((index: number) => {
+    setCurrentIndex(clamp(index, 0, Math.max(0, slides.length - 1)));
+    setPagePickerOpen(false);
+  }, [slides.length]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1837,6 +1857,50 @@ export function PresentationMode({
       >
         <ChevronLeft className="h-4 w-4" />
       </button>
+      {side === "right" && (
+        <div className="relative" data-presentation-page-picker>
+          <button
+            type="button"
+            onClick={() => setPagePickerOpen((open) => !open)}
+            aria-label={`当前第 ${currentIndex + 1} 页，选择页码`}
+            aria-haspopup="listbox"
+            aria-expanded={pagePickerOpen}
+            title={`第 ${currentIndex + 1} 页，共 ${slides.length} 页`}
+            className="flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-semibold tabular-nums transition-colors hover:bg-white/10"
+          >
+            {currentIndex + 1}
+          </button>
+          {pagePickerOpen && (
+            <div
+              role="listbox"
+              aria-label="选择页码"
+              className="absolute bottom-full left-1/2 mb-2 max-h-[26rem] w-14 -translate-x-1/2 touch-pan-y overflow-y-auto overscroll-contain rounded-xl border border-white/15 bg-ink-900/95 p-1 shadow-2xl backdrop-blur"
+            >
+              {slides.map((_, index) => {
+                const page = index + 1;
+                const active = index === currentIndex;
+                return (
+                  <button
+                    key={page}
+                    ref={active ? activePageButtonRef : undefined}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    aria-label={`第 ${page} 页`}
+                    onClick={() => goToPage(index)}
+                    className={cn(
+                      "flex h-8 w-full shrink-0 items-center justify-center rounded-lg text-xs font-medium tabular-nums transition-colors",
+                      active ? "bg-gold-400 text-ink-900" : "text-paper hover:bg-white/10",
+                    )}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       <button
         type="button"
         onClick={goNext}
