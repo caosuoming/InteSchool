@@ -5,6 +5,62 @@ import { examPaperService } from "./examPaper.js";
 import { lectureService } from "./lecture.js";
 
 describe("document resource metadata", () => {
+  it("tracks created answer sheets without copying the marker to new document copies", async () => {
+    const state: AppState = {
+      teachers: [],
+      currentTeacherId: null,
+      examPapers: [],
+      lectures: [],
+      reflections: [],
+    };
+
+    await runWithState(state, async () => {
+      const paper = await examPaperService.createPaper("teacher-1", "school-1", {
+        title: "函数测试",
+        chapterIds: ["chapter-1"],
+        knowledgePointIds: [],
+        grade: "高一",
+        schoolYear: "2026-2027",
+        duration: 60,
+        totalScore: 100,
+        questions: [],
+      });
+      const lecture = await lectureService.createLecture("teacher-1", "school-1", {
+        title: "函数讲义",
+        chapterIds: ["chapter-1"],
+        knowledgePointIds: [],
+        grade: "高一",
+        schoolYear: "2026-2027",
+        classIds: [],
+        studentIds: [],
+        sections: [],
+      });
+
+      const markedPaper = await examPaperService.markAnswerSheetCreated(paper.id);
+      const markedLecture = await lectureService.markAnswerSheetCreated(lecture.id);
+      expect(markedPaper).toMatchObject({ hasAnswerSheet: true });
+      expect(markedLecture).toMatchObject({ hasAnswerSheet: true });
+      expect(markedPaper?.answerSheetCreatedAt).toBeTruthy();
+      expect(markedLecture?.answerSheetCreatedAt).toBeTruthy();
+
+      const paperTimestamp = markedPaper!.answerSheetCreatedAt;
+      const lectureTimestamp = markedLecture!.answerSheetCreatedAt;
+      await expect(examPaperService.markAnswerSheetCreated(paper.id))
+        .resolves.toEqual(expect.objectContaining({ answerSheetCreatedAt: paperTimestamp }));
+      await expect(lectureService.markAnswerSheetCreated(lecture.id))
+        .resolves.toEqual(expect.objectContaining({ answerSheetCreatedAt: lectureTimestamp }));
+
+      const duplicatedPaper = await examPaperService.duplicatePaper(paper.id);
+      const duplicatedLecture = await lectureService.duplicateLecture(lecture.id);
+      const extractedPaper = await examPaperService.createExtractCopy(paper.id);
+      const extractedLecture = await lectureService.createExtractCopy(lecture.id);
+      for (const copy of [duplicatedPaper, duplicatedLecture, extractedPaper, extractedLecture]) {
+        expect(copy.hasAnswerSheet).toBeUndefined();
+        expect(copy.answerSheetCreatedAt).toBeUndefined();
+      }
+    });
+  });
+
   it("stores configured types and filters papers and lectures by type", async () => {
     const state: AppState = {
       teachers: [],

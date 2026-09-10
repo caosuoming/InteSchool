@@ -1527,6 +1527,10 @@ export interface ExamPaper {
   schoolSourceBackupIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
+  /** 是否已制作答题卡。 */
+  hasAnswerSheet?: boolean;
+  /** 首次制作答题卡的时间。 */
+  answerSheetCreatedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -2097,6 +2101,8 @@ export interface Lecture {
   hasPreview?: boolean;
   /** 是否有答题卡 */
   hasAnswerSheet?: boolean;
+  /** 首次制作答题卡的时间。 */
+  answerSheetCreatedAt?: string;
   /** 排版设置 */
   layoutSettings?: {
     paperSize: "A4" | "8K";

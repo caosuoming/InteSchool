@@ -52,6 +52,8 @@ export function sanitizeExamPaperPatch(
   delete safePatch.isExtractCopy;
   delete safePatch.sourceResourceId;
   delete safePatch.extractStatus;
+  delete safePatch.hasAnswerSheet;
+  delete safePatch.answerSheetCreatedAt;
   if (patch.questions) {
     if (!samePaperQuestionStructure(current.questions, patch.questions)) {
       throw new Error("上传原稿和拆解稿不能换题、删除题目或调整题目顺序");
@@ -101,6 +103,7 @@ export function sanitizeLecturePatch(
   delete safePatch.hasOrigin;
   delete safePatch.hasPreview;
   delete safePatch.hasAnswerSheet;
+  delete safePatch.answerSheetCreatedAt;
   delete safePatch.sections;
   delete safePatch.contentBlocks;
   return safePatch;
