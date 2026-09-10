@@ -2379,6 +2379,19 @@ describe("production backend", () => {
       },
     });
     expect(bindWithExistingLogin.statusCode).toBe(200);
+    expect(bindWithExistingLogin.json<{ result: Record<string, unknown> }>().result).toMatchObject({ publicClassroomNumber: 2 });
+
+    const publicClassroomNumbers = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      payload: {
+        service: "classroomDevice",
+        method: "listPublicClassroomNumbers",
+        args: [schoolId],
+      },
+    });
+    expect(publicClassroomNumbers.statusCode).toBe(200);
+    expect(publicClassroomNumbers.json<{ result: number[] }>().result).toEqual([1, 2]);
 
     const unknownService = await built.app.inject({
       method: "POST",

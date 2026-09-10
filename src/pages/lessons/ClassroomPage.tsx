@@ -60,6 +60,15 @@ interface HomeworkGroup {
   items: ClassroomHomework[];
 }
 
+function deviceClassroomLabel(snapshot: ClassroomDeviceSnapshot | null) {
+  const device = snapshot?.device;
+  if (!device) return "教室";
+  if (device.publicClassroom) {
+    return device.publicClassroomNumber ? `公共教室 ${device.publicClassroomNumber}号` : "公共教室";
+  }
+  return `${device.grade} · ${device.className}`;
+}
+
 function localDateValue(date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -585,7 +594,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         </div>
         <h1 className="mt-6 text-2xl font-semibold">{closed ? "教室页面已远程关闭" : scheduled ? "当前不在允许使用时间段" : "教室一体机已锁定"}</h1>
         <p className="mt-2 max-w-xl text-sm text-neutral-500">
-          {deviceSnapshot?.device.grade} · {deviceSnapshot?.device.className}。任课教师可在个人账号的“我的教室”中远程解锁。
+          {deviceClassroomLabel(deviceSnapshot)}。任课教师可在个人账号的“我的教室”中远程解锁。
         </p>
         {whitelist.length > 0 && (
           <div className="mt-8 w-full max-w-2xl rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-left">
