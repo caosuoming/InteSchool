@@ -12,6 +12,7 @@ export interface ClassroomHomeworkInput {
   attachments?: ClassroomHomeworkAttachment[];
   classIds: string[];
   assignedDate: string;
+  assignedEndDate?: string;
   publishAt: string;
 }
 
@@ -63,11 +64,16 @@ function allowedClassIds(teacher: {
   ]);
 }
 
+function assignedEndDate(item: Pick<ClassroomHomework, "assignedDate" | "assignedEndDate">): string {
+  return item.assignedEndDate || item.assignedDate;
+}
+
 function matchesFilter(item: ClassroomHomework, filter: ClassroomHomeworkFilter): boolean {
   if (filter.schoolId && item.schoolId !== filter.schoolId) return false;
   if (filter.teacherId && item.teacherId !== filter.teacherId) return false;
   if (filter.classId && !item.classIds.includes(filter.classId)) return false;
-  if (filter.assignedDate && item.assignedDate !== filter.assignedDate) return false;
+  if (filter.assignedDate
+    && (item.assignedDate > filter.assignedDate || assignedEndDate(item) < filter.assignedDate)) return false;
   if (filter.publishedOnly && new Date(item.publishAt).getTime() > Date.now()) return false;
   return true;
 }
@@ -78,6 +84,9 @@ function validateInput(input: ClassroomHomeworkInput): ClassroomHomeworkAttachme
   if (input.content.trim().length > 4000) throw new Error("作业内容不能超过 4000 字");
   if (input.classIds.length === 0) throw new Error("请选择至少一个发布班级");
   if (!DATE_PATTERN.test(input.assignedDate)) throw new Error("作业日期格式不正确");
+  const endDate = input.assignedEndDate || input.assignedDate;
+  if (!DATE_PATTERN.test(endDate)) throw new Error("作业结束日期格式不正确");
+  if (endDate < input.assignedDate) throw new Error("作业结束日期不能早于开始日期");
   const publishAt = new Date(input.publishAt);
   if (Number.isNaN(publishAt.getTime())) throw new Error("发布时间格式不正确");
   return attachments;
@@ -140,6 +149,7 @@ export const classroomHomeworkService = {
       attachments,
       classIds: uniqueClassIds,
       assignedDate: input.assignedDate,
+      assignedEndDate: input.assignedEndDate || input.assignedDate,
       publishAt: new Date(input.publishAt).toISOString(),
       createdAt: now,
       updatedAt: now,
@@ -196,6 +206,7 @@ export const classroomHomeworkService = {
       attachments,
       classIds: uniqueClassIds,
       assignedDate: input.assignedDate,
+      assignedEndDate: input.assignedEndDate || input.assignedDate,
       publishAt: new Date(input.publishAt).toISOString(),
       updatedAt: new Date().toISOString(),
     };

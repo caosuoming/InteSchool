@@ -76,6 +76,10 @@ function localDateValue(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+function getHomeworkEndDate(homework: Pick<ClassroomHomework, "assignedDate" | "assignedEndDate">): string {
+  return homework.assignedEndDate || homework.assignedDate;
+}
+
 function preferencesKey(classId: string): string {
   return `inteschool-classroom-preferences:${classId}`;
 }
@@ -540,7 +544,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
       });
       setHistoryHomeworks(
         data
-          .filter((item) => item.assignedDate < today)
+          .filter((item) => getHomeworkEndDate(item) < today)
           .sort((left, right) => right.assignedDate.localeCompare(left.assignedDate)
             || right.publishAt.localeCompare(left.publishAt)),
       );

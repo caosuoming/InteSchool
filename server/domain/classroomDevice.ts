@@ -312,8 +312,10 @@ function currentClassroomContent(
     ))
     .sort((a, b) => b.assignedDate.localeCompare(a.assignedDate)
       || new Date(b.publishAt).getTime() - new Date(a.publishAt).getTime());
-  const homeworks = allHomeworks.filter((item) => item.assignedDate === today);
-  const homeworkHistory = allHomeworks.filter((item) => item.assignedDate < today);
+  const homeworks = allHomeworks.filter((item) => (
+    item.assignedDate <= today && (item.assignedEndDate || item.assignedDate) >= today
+  ));
+  const homeworkHistory = allHomeworks.filter((item) => (item.assignedEndDate || item.assignedDate) < today);
   const notices = (db.read("classroomNotices") as ClassroomNotice[])
     .filter((item) => (
       item.schoolId === device.schoolId

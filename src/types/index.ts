@@ -2803,8 +2803,10 @@ export interface ClassroomHomework {
   content: string;
   attachments?: ClassroomHomeworkAttachment[];
   classIds: string[];
-  /** 作业归属日期，格式为 YYYY-MM-DD。 */
+  /** 作业展示开始日期，格式为 YYYY-MM-DD。 */
   assignedDate: string;
+  /** 作业展示结束日期，格式为 YYYY-MM-DD；旧数据缺省时视为与 assignedDate 相同。 */
+  assignedEndDate?: string;
   /** 到达该时间后才会在教室屏显示。 */
   publishAt: string;
   createdAt: string;
@@ -2815,6 +2817,7 @@ export interface ClassroomHomeworkFilter {
   schoolId?: string;
   teacherId?: string;
   classId?: string;
+  /** 返回展示周期包含该日期的作业。 */
   assignedDate?: string;
   /** 为 true 时仅返回已经到达发布时间的作业。 */
   publishedOnly?: boolean;

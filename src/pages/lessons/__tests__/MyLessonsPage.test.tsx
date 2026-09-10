@@ -334,7 +334,8 @@ describe("MyLessonsPage classroom publishing", () => {
     );
 
     await user.click(await screen.findByRole("tab", { name: "我的作业" }));
-    expect(screen.getByLabelText("作业日期")).toHaveAttribute("min", localDateValue());
+    expect(screen.getByLabelText("开始日期")).toHaveAttribute("min", localDateValue());
+    expect(screen.getByLabelText("结束日期")).toHaveValue(localDateValue());
     await user.click(screen.getByLabelText("发布班级下拉选择"));
     expect(await screen.findByRole("checkbox", { name: "高一 · 高一（1）班" })).toBeChecked();
 
@@ -364,7 +365,7 @@ describe("MyLessonsPage classroom publishing", () => {
     );
 
     await user.click(await screen.findByRole("tab", { name: "我的作业" }));
-    fireEvent.change(screen.getByLabelText("作业日期"), { target: { value: futureDate } });
+    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: futureDate } });
     await user.type(screen.getByLabelText("作业内容"), "完成三天后的预习作业");
     await user.click(screen.getByRole("button", { name: "发布作业" }));
 
@@ -374,7 +375,47 @@ describe("MyLessonsPage classroom publishing", () => {
         "school-1",
         expect.objectContaining({
           assignedDate: futureDate,
+          assignedEndDate: futureDate,
           content: "完成三天后的预习作业",
+        }),
+      );
+    });
+  });
+
+  it("publishes homework across a date range and keeps overlapping homework visible today", async () => {
+    const user = userEvent.setup();
+    const endDate = offsetDateValue(2);
+    const rangedHomework: ClassroomHomework = {
+      ...createdHomework,
+      id: "homework-range",
+      content: "连续三天完成阅读记录",
+      assignedEndDate: endDate,
+    };
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([createdHomework, rangedHomework]);
+
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    expect((await screen.findAllByText(createdHomework.content)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(rangedHomework.content)).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("tab", { name: "我的作业" }));
+    fireEvent.change(screen.getByLabelText("结束日期"), { target: { value: endDate } });
+    await user.clear(screen.getByLabelText("作业内容"));
+    await user.type(screen.getByLabelText("作业内容"), "连续三天完成阅读记录");
+    await user.click(screen.getByRole("button", { name: "发布作业" }));
+
+    await waitFor(() => {
+      expect(classroomHomeworkService.createHomework).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          assignedDate: localDateValue(),
+          assignedEndDate: endDate,
+          content: "连续三天完成阅读记录",
         }),
       );
     });
@@ -404,7 +445,8 @@ describe("MyLessonsPage classroom publishing", () => {
     await user.click(screen.getByRole("tab", { name: "我的作业" }));
     expect(await screen.findByText(futureHomework.content)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: `编辑作业 ${futureDate}` }));
-    expect(screen.getByLabelText("作业日期")).toHaveValue(futureDate);
+    expect(screen.getByLabelText("开始日期")).toHaveValue(futureDate);
+    expect(screen.getByLabelText("结束日期")).toHaveValue(futureDate);
     expect(screen.getByLabelText("作业内容")).toHaveValue(futureHomework.content);
     await user.clear(screen.getByLabelText("作业内容"));
     await user.type(screen.getByLabelText("作业内容"), "完成后天的函数预习和例题");
