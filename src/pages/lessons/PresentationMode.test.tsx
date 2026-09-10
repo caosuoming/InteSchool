@@ -516,6 +516,41 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("combobox", { name: "课件字号" })).toHaveValue("38");
   });
 
+  it("defaults to the whole class when the slide has no preset students", async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      render(
+        <PresentationMode
+          slides={[{ ...questionSlide, askableStudentIds: [] }]}
+          initialIndex={0}
+          students={[
+            { id: "student-a", name: "学生甲" },
+            { id: "student-b", name: "学生乙" },
+          ]}
+          relatedQuestionsById={{}}
+          onExit={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      const lotteryButton = screen.getByRole("button", { name: "摇号" });
+      expect(lotteryButton).toBeEnabled();
+      expect(screen.getByText("学生甲")).toBeInTheDocument();
+      expect(screen.getByText("学生乙")).toBeInTheDocument();
+
+      fireEvent.click(lotteryButton);
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("抽中学生");
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("学生乙");
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 
   it("rolls through the whole class for five seconds and finishes on a slide candidate", async () => {
     vi.useFakeTimers();
