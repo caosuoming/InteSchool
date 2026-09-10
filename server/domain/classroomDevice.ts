@@ -39,6 +39,7 @@ export interface ClassroomDeviceBindInput {
   schoolId: string;
   classId?: string;
   publicClassroom?: boolean;
+  publicClassroomNumber?: number;
   deviceToken: string;
   installationId: string;
   deviceName?: string;
@@ -62,6 +63,45 @@ const COURSEWARE_CREDIT_MS = 30 * 60_000;
 const COURSEWARE_HEARTBEAT_MAX_GAP_MS = 60_000;
 
 const EMPTY_ACCESS_POLICY: ClassroomDeviceAccessPolicy = { blacklist: [], whitelist: [] };
+
+function normalizedPublicClassroomNumber(value: unknown): number | undefined {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) return undefined;
+  return number;
+}
+
+function publicClassroomNumberMap(
+  devices: StoredClassroomDevice[],
+  schoolId: string,
+): Map<string, number> {
+  const publicDevices = devices
+    .filter((item) => item.publicClassroom && item.schoolId === schoolId)
+    .sort((a, b) => a.boundAt.localeCompare(b.boundAt) || a.id.localeCompare(b.id));
+  const numbers = new Map<string, number>();
+  const occupied = new Set<number>();
+
+  for (const device of publicDevices) {
+    const number = normalizedPublicClassroomNumber(device.publicClassroomNumber);
+    if (number === undefined || occupied.has(number)) continue;
+    numbers.set(device.id, number);
+    occupied.add(number);
+  }
+
+  let candidate = 1;
+  for (const device of publicDevices) {
+    if (numbers.has(device.id)) continue;
+    while (occupied.has(candidate)) candidate += 1;
+    numbers.set(device.id, candidate);
+    occupied.add(candidate);
+  }
+  return numbers;
+}
+
+function nextPublicClassroomNumber(occupied: Set<number>): number {
+  let candidate = 1;
+  while (occupied.has(candidate)) candidate += 1;
+  return candidate;
+}
 
 function activeAffiliation(teacher: Teacher): TeacherAffiliation | null {
   return teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
@@ -203,9 +243,13 @@ function publicDevice(
     ? "locked"
     : stored.controlState;
   const { deviceTokenHash: _deviceTokenHash, activeCoursewareSession: _activeCoursewareSession, ...safe } = stored;
+  const publicClassroomNumber = stored.publicClassroom
+    ? publicClassroomNumberMap(db.read("classroomDevices") as StoredClassroomDevice[], stored.schoolId).get(stored.id)
+    : undefined;
   return {
     ...safe,
     publicClassroom: Boolean(stored.publicClassroom),
+    ...(publicClassroomNumber !== undefined ? { publicClassroomNumber } : {}),
     allowedTimeRanges: stored.allowedTimeRanges || [],
     accessPolicy: stored.accessPolicy || EMPTY_ACCESS_POLICY,
     effectiveState,
@@ -389,6 +433,16 @@ function nextCoursewareSession(
 }
 
 export const classroomDeviceService = {
+  async listPublicClassroomNumbers(schoolIdInput: string): Promise<number[]> {
+    await delay(20);
+    const schoolId = String(schoolIdInput || "").trim();
+    if (!schoolId) throw new Error("请选择学校");
+    const schoolExists = (db.read("schools") as Array<{ id: string }>).some((item) => item.id === schoolId);
+    if (!schoolExists) throw new Error("学校不存在或已不可用");
+    const numbers = publicClassroomNumberMap(db.read("classroomDevices") as StoredClassroomDevice[], schoolId);
+    return [...numbers.values()].sort((a, b) => a - b);
+  },
+
   async getDeviceSession(deviceToken: string) {
     await delay(30);
     const device = findStoredByToken(deviceToken);
@@ -478,11 +532,27 @@ export const classroomDeviceService = {
       if (occupied) throw new Error("该班级教室已绑定其他一体机，请先在“我的教室”中解绑");
     }
 
+    const occupiedPublicNumbers = new Set(publicClassroomNumberMap(devices, bindingSchoolId).values());
+    let publicClassroomNumber: number | undefined;
+    if (publicClassroom) {
+      if (input.publicClassroomNumber !== undefined) {
+        publicClassroomNumber = normalizedPublicClassroomNumber(input.publicClassroomNumber);
+        if (publicClassroomNumber === undefined) throw new Error("公共教室编号必须为正整数");
+      } else {
+        publicClassroomNumber = nextPublicClassroomNumber(occupiedPublicNumbers);
+      }
+      if (occupiedPublicNumbers.has(publicClassroomNumber)) {
+        throw new Error(`公共教室 ${publicClassroomNumber} 号已绑定，请选择其他编号`);
+      }
+    }
+
     const now = new Date().toISOString();
     const classId = publicClassroom ? PUBLIC_CLASSROOM_ID : classroom.id;
     const className = publicClassroom ? "公共班级" : classroom.name;
     const grade = publicClassroom ? "公共教室" : classroom.grade;
-    const defaultDeviceName = publicClassroom ? "公共教室一体机" : `${classroom.grade}${classroom.name}一体机`;
+    const defaultDeviceName = publicClassroom
+      ? `公共教室 ${publicClassroomNumber} 号一体机`
+      : `${classroom.grade}${classroom.name}一体机`;
     const record: StoredClassroomDevice = {
       id: genId("classroom-device"),
       schoolId: bindingSchoolId,
@@ -491,6 +561,7 @@ export const classroomDeviceService = {
       className,
       grade,
       publicClassroom,
+      ...(publicClassroomNumber !== undefined ? { publicClassroomNumber } : {}),
       deviceName: String(input.deviceName || defaultDeviceName).trim().slice(0, 80) || defaultDeviceName,
       installationId,
       deviceTokenHash: tokenHash(token),

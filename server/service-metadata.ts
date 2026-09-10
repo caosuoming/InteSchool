@@ -40,6 +40,9 @@ export const serviceParameters = {
     ]
   },
   "classroomDevice": {
+    "listPublicClassroomNumbers": [
+      "schoolId"
+    ],
     "getDeviceSession": [
       "deviceToken"
     ],

@@ -11,6 +11,7 @@ export interface ClassroomDeviceBindInput {
   schoolId: string;
   classId?: string;
   publicClassroom?: boolean;
+  publicClassroomNumber?: number;
   deviceToken: string;
   installationId: string;
   deviceName?: string;
@@ -45,6 +46,10 @@ export function createClassroomDeviceToken(): string {
 }
 
 export const classroomDeviceService = {
+  async listPublicClassroomNumbers(schoolId: string): Promise<number[]> {
+    return rpcCall("classroomDevice", "listPublicClassroomNumbers", [schoolId]) as any;
+  },
+
   async getDeviceSession(deviceToken: string): Promise<ClassroomDeviceSession> {
     return rpcCall("classroomDevice", "getDeviceSession", [deviceToken]) as any;
   },

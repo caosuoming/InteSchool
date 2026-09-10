@@ -1518,6 +1518,27 @@ describe("production backend", () => {
     expect(studentsResponse.json<{ result: Array<{ id: string }> }>().result).toContainEqual(
       expect.objectContaining({ id: student.id }),
     );
+
+    const before = built.store.loadState();
+    const state = structuredClone(before);
+    const storedStudent = (state.students as Array<Record<string, unknown>>)
+      .find((item) => item.id === student.id);
+    expect(storedStudent).toBeDefined();
+    storedStudent!.schoolId = "sch-external";
+    await built.store.saveState(before, state);
+
+    const interactionsResponse = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers,
+      payload: {
+        service: "studentInteraction",
+        method: "listByStudent",
+        args: [student.id],
+      },
+    });
+    expect(interactionsResponse.statusCode, interactionsResponse.body).toBe(200);
+    expect(interactionsResponse.json()).toEqual({ result: [] });
   });
 
   it("allows a teacher to rename a personal class and edit its external student", async () => {
@@ -2379,6 +2400,19 @@ describe("production backend", () => {
       },
     });
     expect(bindWithExistingLogin.statusCode).toBe(200);
+    expect(bindWithExistingLogin.json<{ result: Record<string, unknown> }>().result).toMatchObject({ publicClassroomNumber: 2 });
+
+    const publicClassroomNumbers = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      payload: {
+        service: "classroomDevice",
+        method: "listPublicClassroomNumbers",
+        args: [schoolId],
+      },
+    });
+    expect(publicClassroomNumbers.statusCode).toBe(200);
+    expect(publicClassroomNumbers.json<{ result: number[] }>().result).toEqual([1, 2]);
 
     const unknownService = await built.app.inject({
       method: "POST",

@@ -169,10 +169,26 @@ describe("classroomDeviceService", () => {
       const bound = await classroomDeviceService.bindDevice({
         schoolId: "school-1",
         publicClassroom: true,
+        publicClassroomNumber: 1,
         deviceToken: TOKEN_1,
         installationId: "installation-public-one",
       });
-      expect(bound).toMatchObject({ publicClassroom: true, className: "公共班级", schoolId: "school-1" });
+      expect(bound).toMatchObject({
+        publicClassroom: true,
+        publicClassroomNumber: 1,
+        className: "公共班级",
+        schoolId: "school-1",
+        deviceName: "公共教室 1 号一体机",
+      });
+      await expect(classroomDeviceService.listPublicClassroomNumbers("school-1")).resolves.toEqual([1]);
+
+      await expect(classroomDeviceService.bindDevice({
+        schoolId: "school-1",
+        publicClassroom: true,
+        publicClassroomNumber: 1,
+        deviceToken: TOKEN_2,
+        installationId: "installation-public-two",
+      })).rejects.toThrow("公共教室 1 号已绑定");
 
       const session = await classroomDeviceService.getDeviceSession(TOKEN_1);
       expect(session.availableClassrooms.map((item) => item.id)).toEqual(["class-1", "class-2"]);
@@ -182,6 +198,29 @@ describe("classroomDeviceService", () => {
       expect(snapshot.homeworks).toEqual([expect.objectContaining({ content: "二班作业" })]);
       expect(snapshot.homeworkHistory).toEqual([]);
       await expect(classroomDeviceService.getClassroomSnapshot(TOKEN_1, "class-3")).rejects.toThrow("不属于当前公共教室学校");
+    });
+  });
+
+  it("supports multiple numbered public classrooms and auto-picks the first free number for legacy clients", async () => {
+    const state = makeState();
+    await runWithState(state, async () => {
+      const first = await classroomDeviceService.bindDevice({
+        schoolId: "school-1",
+        publicClassroom: true,
+        publicClassroomNumber: 2,
+        deviceToken: TOKEN_1,
+        installationId: "installation-public-two",
+      });
+      const second = await classroomDeviceService.bindDevice({
+        schoolId: "school-1",
+        publicClassroom: true,
+        deviceToken: TOKEN_2,
+        installationId: "installation-public-auto",
+      });
+
+      expect(first.publicClassroomNumber).toBe(2);
+      expect(second.publicClassroomNumber).toBe(1);
+      await expect(classroomDeviceService.listPublicClassroomNumbers("school-1")).resolves.toEqual([1, 2]);
     });
   });
 

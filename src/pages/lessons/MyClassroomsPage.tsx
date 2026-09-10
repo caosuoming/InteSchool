@@ -32,6 +32,13 @@ function online(device: ClassroomDevice) {
   return Boolean(device.lastSeenAt && Date.now() - new Date(device.lastSeenAt).getTime() < 45_000);
 }
 
+function classroomLabel(device: ClassroomDevice) {
+  if (device.publicClassroom) {
+    return device.publicClassroomNumber ? `公共教室 ${device.publicClassroomNumber}号` : "公共教室";
+  }
+  return `${device.grade} · ${device.className}`;
+}
+
 function newRange(): ClassroomDeviceTimeRange {
   return { id: `range-${Date.now()}`, weekdays: [1, 2, 3, 4, 5], start: "07:00", end: "18:00" };
 }
@@ -193,7 +200,7 @@ export default function MyClassroomsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-xs text-ink-400">{device.schoolName}</div>
-                      <h2 className="mt-1 font-serif text-lg font-semibold text-ink-900">{device.grade} · {device.className}</h2>
+                      <h2 className="mt-1 font-serif text-lg font-semibold text-ink-900">{classroomLabel(device)}</h2>
                       <div className="mt-1 text-xs text-ink-500">{device.deviceName}</div>
                     </div>
                     <div className="text-right text-xs">
@@ -215,7 +222,7 @@ export default function MyClassroomsPage() {
                     {device.permissions?.canClose && <Button size="sm" variant="outline" onClick={() => void mutate(device, "close")} disabled={busyId === device.id}><Power className="h-3.5 w-3.5" />关闭页面</Button>}
                     {device.permissions?.canEditSchedule && <Button size="sm" variant="ghost" onClick={() => openSchedule(device)}><Clock3 className="h-3.5 w-3.5" />使用时段</Button>}
                     {device.permissions?.canEditAccessPolicy && <Button size="sm" variant="ghost" onClick={() => openAccessPolicy(device)}><ShieldCheck className="h-3.5 w-3.5" />黑白名单</Button>}
-                    {device.permissions?.canUnbind && <Button size="sm" variant="ghost" onClick={() => window.confirm(`确认解绑 ${device.grade}${device.className} 的一体机？`) && void mutate(device, "unbind")}><Trash2 className="h-3.5 w-3.5" />解绑</Button>}
+                    {device.permissions?.canUnbind && <Button size="sm" variant="ghost" onClick={() => window.confirm(`确认解绑 ${classroomLabel(device)} 的一体机？`) && void mutate(device, "unbind")}><Trash2 className="h-3.5 w-3.5" />解绑</Button>}
                   </div>
                 </div>
 
