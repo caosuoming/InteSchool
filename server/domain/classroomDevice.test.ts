@@ -240,6 +240,66 @@ describe("classroomDeviceService", () => {
     });
   });
 
+  it("records actual teaching after a published courseware stays open on the classroom device for 30 minutes", async () => {
+    const state = makeState();
+    state.lessonCoursewares = [{
+      id: "lesson-1",
+      teacherId: "subject",
+      schoolId: "school-1",
+      title: "函数的单调性",
+      description: "",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      sourceType: "manual",
+      slides: [],
+      classIds: ["class-1"],
+      status: "published",
+      lifecycleStatus: "active",
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+    }] as any;
+
+    await runWithState(state, async () => {
+      await bindClassOne();
+      const first = await classroomDeviceService.reportHeartbeat(TOKEN_1, {
+        path: "/classroom-device",
+        title: "课件：函数的单调性",
+        coursewareId: "lesson-1",
+        classId: "class-1",
+      });
+      expect(first).not.toHaveProperty("activeCoursewareSession");
+
+      const storedDevice = (state.classroomDevices as Array<Record<string, any>>)[0];
+      storedDevice.activeCoursewareSession.startedAt = new Date(Date.now() - 31 * 60_000).toISOString();
+      storedDevice.activeCoursewareSession.lastSeenAt = new Date(Date.now() - 15_000).toISOString();
+
+      await classroomDeviceService.reportHeartbeat(TOKEN_1, {
+        path: "/classroom-device",
+        title: "课件：函数的单调性",
+        coursewareId: "lesson-1",
+        classId: "class-1",
+      });
+
+      const subject = state.teachers.find((item) => item.id === "subject") as any;
+      expect(subject.teachingPlan.actualRecords).toEqual([expect.objectContaining({
+        date: localDateValue(),
+        coursewareId: "lesson-1",
+        coursewareTitle: "函数的单调性",
+        classId: "class-1",
+      })]);
+
+      await classroomDeviceService.reportHeartbeat(TOKEN_1, {
+        path: "/classroom-device",
+        title: "课件：函数的单调性",
+        coursewareId: "lesson-1",
+        classId: "class-1",
+      });
+      expect(subject.teachingPlan.actualRecords).toHaveLength(1);
+    });
+  });
+
   it("lets only the school administrator update application and website black/white lists", async () => {
     const state = makeState();
     await runWithState(state, async () => {

@@ -13,6 +13,8 @@ import type {
   TeacherLessonScheduleDisplayOptions,
   TeacherLessonScheduleEntry,
   TeacherLessonScheduleTimeRange,
+  TeacherTeachingPlan,
+  TeacherTeachingPlanEntry,
 } from "@/types";
 
 
@@ -141,6 +143,18 @@ export interface LessonCoursewareInput {
 }
 
 export const lessonCoursewareService = {
+  async getTeachingPlan(): Promise<TeacherTeachingPlan> {
+    return rpcCall("lessonCourseware", "getTeachingPlan", []) as any;
+  },
+
+  async saveTeachingPlan(
+    startDate: string,
+    endDate: string,
+    entries: TeacherTeachingPlanEntry[],
+  ): Promise<TeacherTeachingPlan> {
+    return rpcCall("lessonCourseware", "saveTeachingPlan", [startDate, endDate, entries, undefined]) as any;
+  },
+
   async getLessonSchedule(): Promise<TeacherLessonSchedule> {
     return rpcCall("lessonCourseware", "getLessonSchedule", []) as any;
   },

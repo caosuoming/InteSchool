@@ -381,6 +381,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         const device = await classroomDeviceService.reportHeartbeat(token, {
           path: location.pathname,
           title,
+          ...(presenting ? { coursewareId: presenting.id, classId: selectedClassId } : {}),
           ...(screenshot ? { screenshot } : {}),
         });
         if (active) setDeviceSnapshot((current) => current ? { ...current, device } : current);
@@ -396,7 +397,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
       active = false;
       window.clearInterval(timer);
     };
-  }, [deviceMode, location.pathname, presenting, tab]);
+  }, [deviceMode, location.pathname, presenting, selectedClassId, tab]);
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));

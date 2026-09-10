@@ -1113,4 +1113,45 @@ describe("courseware lesson flow", () => {
       })).resolves.toEqual([expect.objectContaining({ id: lesson.id })]);
     });
   });
+  it("saves a semester teaching plan and archives the previous semester when the date range changes", async () => {
+    const state = createState();
+    await runWithState(state, async () => {
+      const initialTeacher = state.teachers[0] as unknown as Teacher;
+      const initial = await lessonCoursewareService.getTeachingPlan(initialTeacher);
+      expect(initial.current).toBeDefined();
+      expect(initial.current?.entries).toEqual([]);
+
+      const first = await lessonCoursewareService.saveTeachingPlan(
+        "2026-08-01",
+        "2027-01-31",
+        [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性" }],
+        initialTeacher,
+      );
+      expect(first.current).toMatchObject({
+        startDate: "2026-08-01",
+        endDate: "2027-01-31",
+        entries: [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性" }],
+      });
+      expect(first.history).toEqual([]);
+
+      const updatedTeacher = state.teachers[0] as unknown as Teacher;
+      const second = await lessonCoursewareService.saveTeachingPlan(
+        "2027-02-01",
+        "2027-07-15",
+        [{ date: "2027-02-02", note: "", plan: "新学期第一课" }],
+        updatedTeacher,
+      );
+      expect(second.current).toMatchObject({
+        startDate: "2027-02-01",
+        endDate: "2027-07-15",
+      });
+      expect(second.history).toHaveLength(1);
+      expect(second.history[0]).toMatchObject({
+        startDate: "2026-08-01",
+        endDate: "2027-01-31",
+        entries: [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性" }],
+      });
+    });
+  });
+
 });

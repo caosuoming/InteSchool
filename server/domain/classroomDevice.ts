@@ -15,12 +15,24 @@ import type {
   Student,
   Teacher,
   TeacherAffiliation,
+  TeacherTeachingActualRecord,
+  TeacherTeachingPlan,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 
+interface ClassroomCoursewareSession {
+  coursewareId: string;
+  classId: string;
+  teacherId: string;
+  startedAt: string;
+  lastSeenAt: string;
+  creditedAt?: string;
+}
+
 interface StoredClassroomDevice extends Omit<ClassroomDevice, "effectiveState" | "scheduleAllowsUse" | "permissions"> {
   deviceTokenHash: string;
+  activeCoursewareSession?: ClassroomCoursewareSession;
 }
 
 export interface ClassroomDeviceBindInput {
@@ -36,6 +48,8 @@ export interface ClassroomDeviceHeartbeatInput {
   path?: string;
   title?: string;
   screenshot?: string;
+  coursewareId?: string;
+  classId?: string;
 }
 
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
@@ -44,6 +58,8 @@ const MAX_SCREENSHOT_LENGTH = 350_000;
 const PUBLIC_CLASSROOM_ID = "__public_classroom__";
 const MAX_ACCESS_RULES = 100;
 const MAX_ACCESS_TARGET_LENGTH = 500;
+const COURSEWARE_CREDIT_MS = 30 * 60_000;
+const COURSEWARE_HEARTBEAT_MAX_GAP_MS = 60_000;
 
 const EMPTY_ACCESS_POLICY: ClassroomDeviceAccessPolicy = { blacklist: [], whitelist: [] };
 
@@ -186,7 +202,7 @@ function publicDevice(
   const effectiveState: ClassroomDeviceControlState = stored.controlState === "active" && !allowed
     ? "locked"
     : stored.controlState;
-  const { deviceTokenHash: _deviceTokenHash, ...safe } = stored;
+  const { deviceTokenHash: _deviceTokenHash, activeCoursewareSession: _activeCoursewareSession, ...safe } = stored;
   return {
     ...safe,
     publicClassroom: Boolean(stored.publicClassroom),
@@ -292,6 +308,86 @@ function classroomForDevice(device: StoredClassroomDevice, requestedClassId?: st
   return classroom;
 }
 
+
+function localDateValue(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function recordActualTeaching(
+  courseware: LessonCourseware,
+  classId: string,
+  startedAt: string,
+  completedAt: string,
+): void {
+  const date = localDateValue(new Date(startedAt));
+  db.update("teachers", (items: Teacher[]) => items.map((teacher) => {
+    if (teacher.id !== courseware.teacherId) return teacher;
+    const stored = teacher.teachingPlan;
+    const actualRecords = Array.isArray(stored?.actualRecords) ? stored.actualRecords : [];
+    if (actualRecords.some((record) => (
+      record.date === date
+      && record.coursewareId === courseware.id
+      && record.classId === classId
+    ))) return teacher;
+    const record: TeacherTeachingActualRecord = {
+      date,
+      coursewareId: courseware.id,
+      coursewareTitle: courseware.title,
+      classId,
+      startedAt,
+      completedAt,
+    };
+    const teachingPlan: TeacherTeachingPlan = {
+      ...(stored || {}),
+      history: stored?.history || [],
+      actualRecords: [...actualRecords, record],
+    };
+    return { ...teacher, teachingPlan };
+  }));
+}
+
+function nextCoursewareSession(
+  device: StoredClassroomDevice,
+  input: ClassroomDeviceHeartbeatInput,
+  now: Date,
+): ClassroomCoursewareSession | undefined {
+  const coursewareId = String(input.coursewareId || "").trim();
+  const classId = String(input.classId || "").trim();
+  if (!coursewareId || !classId) return undefined;
+  if (!availableClassroomsForDevice(device).some((item) => item.id === classId)) return undefined;
+  const courseware = (db.read("lessonCoursewares") as LessonCourseware[]).find((item) => (
+    item.id === coursewareId
+    && item.schoolId === device.schoolId
+    && item.classIds.includes(classId)
+    && item.status === "published"
+    && (item.lifecycleStatus || "active") === "active"
+  ));
+  if (!courseware) return undefined;
+  const nowIso = now.toISOString();
+  const previous = device.activeCoursewareSession;
+  const continues = previous?.coursewareId === courseware.id
+    && previous.classId === classId
+    && previous.teacherId === courseware.teacherId
+    && now.getTime() - new Date(previous.lastSeenAt).getTime() <= COURSEWARE_HEARTBEAT_MAX_GAP_MS;
+  const session: ClassroomCoursewareSession = continues
+    ? { ...previous, lastSeenAt: nowIso }
+    : {
+        coursewareId: courseware.id,
+        classId,
+        teacherId: courseware.teacherId,
+        startedAt: nowIso,
+        lastSeenAt: nowIso,
+      };
+  if (
+    !session.creditedAt
+    && now.getTime() - new Date(session.startedAt).getTime() >= COURSEWARE_CREDIT_MS
+  ) {
+    recordActualTeaching(courseware, classId, session.startedAt, nowIso);
+    session.creditedAt = nowIso;
+  }
+  return session;
+}
+
 export const classroomDeviceService = {
   async getDeviceSession(deviceToken: string) {
     await delay(30);
@@ -318,7 +414,9 @@ export const classroomDeviceService = {
 
   async reportHeartbeat(deviceToken: string, input: ClassroomDeviceHeartbeatInput = {}) {
     const device = findStoredByToken(deviceToken);
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const activeCoursewareSession = nextCoursewareSession(device, input, nowDate);
     const path = String(input.path || device.currentPage?.path || "/classroom").slice(0, 500);
     const title = String(input.title || device.currentPage?.title || "教室首页").slice(0, 200);
     const screenshot = typeof input.screenshot === "string"
@@ -333,9 +431,11 @@ export const classroomDeviceService = {
       updatedAt: now,
     };
     db.update("classroomDevices", (items: StoredClassroomDevice[]) => items.map((item) => (
-      item.id === device.id ? { ...item, lastSeenAt: now, currentPage, updatedAt: now } : item
+      item.id === device.id
+        ? { ...item, lastSeenAt: now, currentPage, activeCoursewareSession, updatedAt: now }
+        : item
     )));
-    const updated = { ...device, lastSeenAt: now, currentPage, updatedAt: now };
+    const updated = { ...device, lastSeenAt: now, currentPage, activeCoursewareSession, updatedAt: now };
     return publicDevice(updated);
   },
 

@@ -37,6 +37,8 @@ vi.mock("@/services/classroomNotice", () => ({
 
 vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
+    getTeachingPlan: vi.fn(),
+    saveTeachingPlan: vi.fn(),
     getLessonSchedule: vi.fn(),
     saveLessonSchedule: vi.fn(),
     listCoursewares: vi.fn(),
@@ -189,6 +191,37 @@ describe("MyLessonsPage classroom publishing", () => {
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(classroomNoticeService.createNotice).mockResolvedValue(activeNotice);
     vi.mocked(classroomNoticeService.updateNotice).mockResolvedValue(activeNotice);
+    vi.mocked(lessonCoursewareService.getTeachingPlan).mockResolvedValue({
+      current: {
+        id: "plan-current",
+        startDate: offsetDateValue(-1),
+        endDate: offsetDateValue(2),
+        entries: [{ date: offsetDateValue(-1), note: "昨天备注", plan: "昨天计划" }],
+        createdAt: "2026-08-02T00:00:00.000Z",
+        updatedAt: "2026-08-02T00:00:00.000Z",
+      },
+      history: [],
+      actualRecords: [{
+        date: localDateValue(),
+        coursewareId: "lesson-today",
+        coursewareTitle: "函数图像",
+        classId: "class-1",
+        startedAt: new Date(Date.now() - 31 * 60_000).toISOString(),
+        completedAt: new Date().toISOString(),
+      }],
+    });
+    vi.mocked(lessonCoursewareService.saveTeachingPlan).mockImplementation(async (startDate, endDate, entries) => ({
+      current: {
+        id: "plan-current",
+        startDate,
+        endDate,
+        entries,
+        createdAt: "2026-08-02T00:00:00.000Z",
+        updatedAt: new Date().toISOString(),
+      },
+      history: [],
+      actualRecords: [],
+    }));
     vi.mocked(lessonCoursewareService.getLessonSchedule).mockResolvedValue({
       entries: [],
       timeRanges: defaultTeacherScheduleTimeRanges(),
@@ -224,12 +257,30 @@ describe("MyLessonsPage classroom publishing", () => {
 
     const tabs = await screen.findAllByRole("tab");
     expect(tabs.map((tab) => tab.textContent)).toEqual([
-      "我的课件",
+      "上课课件",
+      "教学计划",
       "我的课表",
       "我的作业",
       "班级通知",
     ]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+
+    await user.click(screen.getByRole("tab", { name: "教学计划" }));
+    expect(await screen.findByRole("columnheader", { name: "实际教学" })).toBeInTheDocument();
+    expect(screen.getByText("函数图像")).toBeInTheDocument();
+    expect(screen.queryByText("昨天备注")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "展开之前日期" }));
+    expect(screen.getByText("昨天备注")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(`备注 ${localDateValue()}`), { target: { value: "课堂重点" } });
+    fireEvent.change(screen.getByLabelText(`教学计划 ${localDateValue()}`), { target: { value: "函数单调性" } });
+    await user.click(screen.getByRole("button", { name: "保存教学计划" }));
+    await waitFor(() => expect(lessonCoursewareService.saveTeachingPlan).toHaveBeenCalledWith(
+      offsetDateValue(-1),
+      offsetDateValue(2),
+      expect.arrayContaining([
+        { date: localDateValue(), note: "课堂重点", plan: "函数单调性" },
+      ]),
+    ));
 
     await user.click(screen.getByRole("tab", { name: "我的课表" }));
     expect(await screen.findByRole("columnheader", { name: "时间区间" })).toBeInTheDocument();
@@ -528,7 +579,7 @@ describe("MyLessonsPage classroom publishing", () => {
       </MemoryRouter>,
     );
 
-    await user.click(await screen.findByRole("tab", { name: "我的课件" }));
+    await user.click(await screen.findByRole("tab", { name: "上课课件" }));
     expect(await screen.findByRole("heading", { name: "已发布课件" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "待编辑课件" })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("搜索课件标题...")).not.toBeInTheDocument();
@@ -594,7 +645,7 @@ describe("MyLessonsPage classroom publishing", () => {
       </MemoryRouter>,
     );
 
-    await user.click(await screen.findByRole("tab", { name: "我的课件" }));
+    await user.click(await screen.findByRole("tab", { name: "上课课件" }));
     expect(await screen.findByText("已上课课件")).toBeInTheDocument();
     expect(screen.getByText("函数课件 completed-6")).toBeInTheDocument();
     expect(screen.queryByText("函数课件 completed-7")).not.toBeInTheDocument();

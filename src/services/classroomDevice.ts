@@ -20,6 +20,8 @@ export interface ClassroomDeviceHeartbeatInput {
   path?: string;
   title?: string;
   screenshot?: string;
+  coursewareId?: string;
+  classId?: string;
 }
 
 export const CLASSROOM_DEVICE_TOKEN_KEY = "inteschool-classroom-device-token";
