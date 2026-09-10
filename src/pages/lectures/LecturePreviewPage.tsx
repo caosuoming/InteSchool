@@ -143,7 +143,7 @@ export default function LecturePreviewPage() {
     { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
   const [expandedPreviewQuestionIds, setExpandedPreviewQuestionIds] = useState<Set<string>>(() => new Set());
-  const schoolId = lecture?.schoolId || teacher?.schoolId;
+  const schoolId = teacher?.schoolId || lecture?.schoolId;
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
   const { options: questionTypeOptions } = useQuestionTypeOptions(schoolId);
   const {
@@ -170,14 +170,10 @@ export default function LecturePreviewPage() {
           .filter((section) => section.type === "question" && section.questionId)
           .map((section) => section.questionId as string),
       ));
-      const [loadedClasses, availableClassList, classStudentGroups, loadedQuestions, records] = await Promise.all([
-        loadedLecture.classIds.length > 0
-          ? classService.getClassesByIds(loadedLecture.classIds)
+      const [availableClassList, loadedQuestions, records] = await Promise.all([
+        teacher?.schoolId
+          ? classService.listAllClasses(teacher.schoolId, teacher.id).catch(() => [])
           : Promise.resolve([]),
-        classService.listAllClasses(loadedLecture.schoolId, loadedLecture.teacherId),
-        Promise.all(
-          loadedLecture.classIds.map((classId) => classService.listStudentsByClass(classId)),
-        ),
         Promise.all(
           questionIds.map(async (questionId) => [
             questionId,
@@ -186,15 +182,19 @@ export default function LecturePreviewPage() {
         ),
         analyticsService.listAnswerRecordsByLecture(loadedLecture.id),
       ]);
+      const assignedClasses = availableClassList.filter((item) => loadedLecture.classIds.includes(item.id));
+      const classStudentGroups = await Promise.all(
+        assignedClasses.map((item) => classService.listStudentsByClass(item.id).catch(() => [])),
+      );
       const studentMap = new Map<string, Student>();
       classStudentGroups.flat().forEach((student) => studentMap.set(student.id, student));
 
       if (cancelled) return;
       setLecture(loadedLecture);
-      setClasses(loadedClasses);
+      setClasses(assignedClasses);
       setAvailableClasses(availableClassList);
       setStudents(Array.from(studentMap.values()));
-      setAudienceClassIds(loadedLecture.classIds);
+      setAudienceClassIds(assignedClasses.map((item) => item.id));
       setQuestions(Object.fromEntries(loadedQuestions));
       setAnswerRecords(records);
       setLoading(false);
@@ -203,10 +203,10 @@ export default function LecturePreviewPage() {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [id, navigate]);
+  }, [id, navigate, teacher?.id, teacher?.schoolId]);
 
   useEffect(() => {
-    if (!lecture?.schoolId) {
+    if (!schoolId) {
       setChapterTree(null);
       setKnowledgeTree(null);
       return;
@@ -214,8 +214,8 @@ export default function LecturePreviewPage() {
 
     let cancelled = false;
     Promise.all([
-      knowledgeService.getChapterTree(lecture.schoolId),
-      knowledgeService.getKnowledgeTree(lecture.schoolId),
+      knowledgeService.getChapterTree(schoolId),
+      knowledgeService.getKnowledgeTree(schoolId),
     ]).then(([nextChapterTree, nextKnowledgeTree]) => {
       if (cancelled) return;
       setChapterTree(nextChapterTree);
@@ -229,7 +229,7 @@ export default function LecturePreviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [lecture?.schoolId]);
+  }, [schoolId]);
 
   useEffect(() => {
     if (!lecture || !teacher || lecture.teacherId !== teacher.id || !teacher.schoolId) {
