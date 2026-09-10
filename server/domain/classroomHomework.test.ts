@@ -113,6 +113,49 @@ describe("classroomHomeworkService", () => {
     });
   });
 
+  it("returns homework on every date in its display range and preserves legacy single-day records", async () => {
+    const state = createState();
+    state.classroomHomeworks = [
+      homework({
+        id: "ranged",
+        assignedDate: "2026-08-02",
+        assignedEndDate: "2026-08-04",
+      }),
+      homework({
+        id: "legacy",
+        assignedDate: "2026-08-03",
+      }),
+    ];
+
+    await runWithState(state, async () => {
+      await expect(classroomHomeworkService.listHomeworks({ assignedDate: "2026-08-02" }))
+        .resolves.toEqual([expect.objectContaining({ id: "ranged" })]);
+      await expect(classroomHomeworkService.listHomeworks({ assignedDate: "2026-08-03" }))
+        .resolves.toEqual(expect.arrayContaining([
+          expect.objectContaining({ id: "ranged" }),
+          expect.objectContaining({ id: "legacy" }),
+        ]));
+      await expect(classroomHomeworkService.listHomeworks({ assignedDate: "2026-08-04" }))
+        .resolves.toEqual([expect.objectContaining({ id: "ranged" })]);
+      await expect(classroomHomeworkService.listHomeworks({ assignedDate: "2026-08-05" }))
+        .resolves.toEqual([]);
+    });
+  });
+
+  it("rejects a homework range whose end date is before its start date", async () => {
+    const state = createState();
+
+    await runWithState(state, async () => {
+      await expect(classroomHomeworkService.createHomework("teacher-1", "school-1", {
+        content: "连续作业",
+        classIds: ["class-1"],
+        assignedDate: "2026-08-04",
+        assignedEndDate: "2026-08-03",
+        publishAt: now,
+      })).rejects.toThrow("作业结束日期不能早于开始日期");
+    });
+  });
+
   it("publishes attachment-only homework and normalizes stored file metadata", async () => {
     const state = createState();
 

@@ -52,6 +52,22 @@ function localDateValue(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+function getHomeworkEndDate(homework: Pick<ClassroomHomework, "assignedDate" | "assignedEndDate">): string {
+  return homework.assignedEndDate || homework.assignedDate;
+}
+
+function homeworkCoversDate(
+  homework: Pick<ClassroomHomework, "assignedDate" | "assignedEndDate">,
+  date: string,
+): boolean {
+  return homework.assignedDate <= date && getHomeworkEndDate(homework) >= date;
+}
+
+function homeworkDateLabel(homework: Pick<ClassroomHomework, "assignedDate" | "assignedEndDate">): string {
+  const endDate = getHomeworkEndDate(homework);
+  return endDate === homework.assignedDate ? homework.assignedDate : `${homework.assignedDate} 至 ${endDate}`;
+}
+
 function localDateTimeValue(date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -173,6 +189,7 @@ export function MyLessonsPage() {
   const [homeworkContent, setHomeworkContent] = useState("");
   const [homeworkUploads, setHomeworkUploads] = useState<HomeworkUpload[]>([]);
   const [homeworkDate, setHomeworkDate] = useState(localDateValue);
+  const [homeworkEndDate, setHomeworkEndDate] = useState(localDateValue);
   const [publishMode, setPublishMode] = useState<"now" | "scheduled">("now");
   const [scheduledAt, setScheduledAt] = useState(() => localDateTimeValue(new Date(Date.now() + 30 * 60_000)));
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
@@ -218,19 +235,20 @@ export function MyLessonsPage() {
   ))[0], [notices]);
 
   const today = localDateValue();
-  const currentHomework = useMemo(
-    () => homeworks.find((homework) => homework.assignedDate === today),
+  const currentHomeworks = useMemo(
+    () => homeworks.filter((homework) => homeworkCoversDate(homework, today)),
     [homeworks, today],
   );
   const upcomingHomeworks = useMemo(
     () => homeworks
-      .filter((homework) => homework.assignedDate >= today)
+      .filter((homework) => getHomeworkEndDate(homework) >= today)
       .sort((left, right) => left.assignedDate.localeCompare(right.assignedDate)
+        || getHomeworkEndDate(left).localeCompare(getHomeworkEndDate(right))
         || new Date(right.publishAt).getTime() - new Date(left.publishAt).getTime()),
     [homeworks, today],
   );
   const pastHomeworks = useMemo(
-    () => homeworks.filter((homework) => homework.assignedDate < today),
+    () => homeworks.filter((homework) => getHomeworkEndDate(homework) < today),
     [homeworks, today],
   );
 
@@ -453,6 +471,7 @@ export function MyLessonsPage() {
     setHomeworkUploads([]);
     setHomeworkAttachments([]);
     setHomeworkDate(localDateValue());
+    setHomeworkEndDate(localDateValue());
     setPublishMode("now");
     setScheduledAt(localDateTimeValue(new Date(Date.now() + 30 * 60_000)));
     setSelectedClassIds(classes.map((item) => item.id));
@@ -475,6 +494,7 @@ export function MyLessonsPage() {
     setHomeworkUploads([]);
     setHomeworkAttachments(homework.attachments || []);
     setHomeworkDate(homework.assignedDate);
+    setHomeworkEndDate(getHomeworkEndDate(homework));
     setPublishMode(scheduled ? "scheduled" : "now");
     setScheduledAt(localDateTimeFromIso(homework.publishAt));
     setSelectedClassIds(homework.classIds);
@@ -540,13 +560,17 @@ export function MyLessonsPage() {
       toast.warning("请选择至少一个发布班级");
       return;
     }
-    if (homeworkDate < today) {
-      toast.warning("只能布置或修改今天及后续日期的作业");
-      return;
-    }
     const existingHomework = editingHomeworkId
       ? homeworks.find((item) => item.id === editingHomeworkId)
       : undefined;
+    if (homeworkDate < today && homeworkDate !== existingHomework?.assignedDate) {
+      toast.warning("新作业的开始日期不能早于今天");
+      return;
+    }
+    if (homeworkEndDate < homeworkDate) {
+      toast.warning("作业结束日期不能早于开始日期");
+      return;
+    }
     let publishAt: Date;
     if (publishMode === "scheduled") {
       publishAt = new Date(scheduledAt);
@@ -566,6 +590,7 @@ export function MyLessonsPage() {
         attachments: homeworkAttachments,
         classIds: selectedClassIds,
         assignedDate: homeworkDate,
+        assignedEndDate: homeworkEndDate,
         publishAt: publishAt.toISOString(),
       };
       if (editingHomeworkId) {
@@ -891,24 +916,28 @@ export function MyLessonsPage() {
             </div>
             <div>
               <div className="font-semibold text-ink-900">今日班级作业</div>
-              <div className="text-xs text-ink-400">这里只显示作业日期为今天的内容</div>
+              <div className="text-xs text-ink-400">显示所有展示周期包含今天的作业</div>
             </div>
           </div>
-          {currentHomework ? (
-            <>
-              <div className="mt-4 flex-1 whitespace-pre-wrap text-sm leading-6 text-ink-800">
-                {currentHomework.content || `包含 ${currentHomework.attachments?.length || 0} 个附件`}
-              </div>
-              <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-ink-100 pt-4">
-                <div className="text-xs text-ink-500">
-                  <div>{currentHomework.classIds.map((id) => classNames.get(id) || id).join("、")}</div>
-                  <div className="mt-1">作业日期 {currentHomework.assignedDate}</div>
+          {currentHomeworks.length > 0 ? (
+            <div className="mt-4 flex-1 space-y-3">
+              {currentHomeworks.map((homework) => (
+                <div key={homework.id} className="rounded-lg border border-ink-100 bg-mist/40 p-3">
+                  <div className="whitespace-pre-wrap text-sm leading-6 text-ink-800">
+                    {homework.content || `包含 ${homework.attachments?.length || 0} 个附件`}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-ink-100 pt-3">
+                    <div className="text-xs text-ink-500">
+                      <div>{homework.classIds.map((id) => classNames.get(id) || id).join("、")}</div>
+                      <div className="mt-1">展示日期 {homeworkDateLabel(homework)}</div>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => handleEditHomework(homework)}>
+                      <Edit3 className="h-3.5 w-3.5" />编辑作业
+                    </Button>
+                  </div>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => handleEditHomework(currentHomework)}>
-                  <Edit3 className="h-3.5 w-3.5" />编辑作业
-                </Button>
-              </div>
-            </>
+              ))}
+            </div>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
               <div className="text-sm text-ink-500">今天尚未布置班级作业</div>
@@ -1090,7 +1119,7 @@ export function MyLessonsPage() {
               布置作业
             </div>
             <p className="text-xs text-ink-500 mt-1">
-              可提前安排今天及后续日期的作业；教室一体机只会在作业所属日期当天显示。
+              可设置作业的开始和结束日期；作业会在该日期区间内每天显示。
             </p>
           </div>
         </div>
@@ -1147,7 +1176,7 @@ export function MyLessonsPage() {
           />
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(280px,1.3fr)_minmax(190px,0.85fr)_minmax(190px,0.85fr)]">
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(260px,1.2fr)_minmax(170px,0.8fr)_minmax(170px,0.8fr)_minmax(190px,0.9fr)]">
           <ClassMultiSelectDropdown
             label="发布班级"
             classes={classes}
@@ -1156,11 +1185,22 @@ export function MyLessonsPage() {
             onToggle={toggleHomeworkClass}
           />
           <Input
-            label="作业日期"
+            label="开始日期"
             type="date"
-            min={today}
+            min={editingHomeworkId ? undefined : today}
             value={homeworkDate}
-            onChange={(event) => setHomeworkDate(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setHomeworkDate(value);
+              setHomeworkEndDate((current) => current < value ? value : current);
+            }}
+          />
+          <Input
+            label="结束日期"
+            type="date"
+            min={homeworkDate || today}
+            value={homeworkEndDate}
+            onChange={(event) => setHomeworkEndDate(event.target.value)}
           />
           <div className="space-y-2">
             <Select
@@ -1233,14 +1273,14 @@ export function MyLessonsPage() {
             <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
               {upcomingHomeworks.map((homework) => {
                 const scheduled = new Date(homework.publishAt).getTime() > Date.now();
-                const isToday = homework.assignedDate === today;
+                const isToday = homeworkCoversDate(homework, today);
                 return (
                   <div key={homework.id} className="flex gap-3 rounded-lg border border-ink-100 bg-mist/50 px-3 py-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
                         <Badge variant={isToday ? "green" : "amber"}>{isToday ? "今天" : "已安排"}</Badge>
                         {scheduled && <Badge variant="amber">待发布</Badge>}
-                        <span>{homework.assignedDate}</span>
+                        <span>{homeworkDateLabel(homework)}</span>
                         <span>{homework.classIds.map((id) => classNames.get(id) || id).join("、")}</span>
                         <span>{new Date(homework.publishAt).toLocaleString("zh-CN", { hour12: false })}</span>
                       </div>
@@ -1291,7 +1331,7 @@ export function MyLessonsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap text-xs text-ink-500">
                           <Badge variant={scheduled ? "amber" : "green"}>{scheduled ? "待发布" : "已发布"}</Badge>
-                          <span>{homework.assignedDate}</span>
+                          <span>{homeworkDateLabel(homework)}</span>
                           <span>{homework.classIds.map((id) => classNames.get(id) || id).join("、")}</span>
                           <span>{new Date(homework.publishAt).toLocaleString("zh-CN", { hour12: false })}</span>
                         </div>

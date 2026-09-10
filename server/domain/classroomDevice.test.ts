@@ -152,6 +152,20 @@ describe("classroomDeviceService", () => {
         updatedAt: CREATED_AT,
       },
       {
+        id: "homework-class-2-range",
+        teacherId: "subject",
+        teacherName: "subject",
+        schoolId: "school-1",
+        subject: "数学",
+        content: "二班连续作业",
+        classIds: ["class-2"],
+        assignedDate: offsetDateValue(-1),
+        assignedEndDate: offsetDateValue(1),
+        publishAt: CREATED_AT,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+      },
+      {
         id: "homework-class-2-future",
         teacherId: "subject",
         teacherName: "subject",
@@ -195,7 +209,10 @@ describe("classroomDeviceService", () => {
 
       const snapshot = await classroomDeviceService.getClassroomSnapshot(TOKEN_1, "class-2");
       expect(snapshot.classroom.id).toBe("class-2");
-      expect(snapshot.homeworks).toEqual([expect.objectContaining({ content: "二班作业" })]);
+      expect(snapshot.homeworks).toEqual([
+        expect.objectContaining({ content: "二班作业" }),
+        expect.objectContaining({ content: "二班连续作业" }),
+      ]);
       expect(snapshot.homeworkHistory).toEqual([]);
       await expect(classroomDeviceService.getClassroomSnapshot(TOKEN_1, "class-3")).rejects.toThrow("不属于当前公共教室学校");
     });
