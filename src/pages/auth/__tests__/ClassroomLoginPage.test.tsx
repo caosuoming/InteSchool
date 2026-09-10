@@ -15,6 +15,7 @@ vi.mock("@/services/classroomDevice", async (importOriginal) => {
     ...actual,
     classroomDeviceService: {
       getDeviceSession: vi.fn(),
+      listPublicClassroomNumbers: vi.fn(),
       bindDevice: vi.fn(),
     },
   };
@@ -74,6 +75,7 @@ describe("ClassroomLoginPage device binding", () => {
         grade: "高二",
       },
     ]);
+    vi.mocked(classroomDeviceService.listPublicClassroomNumbers).mockResolvedValue([]);
   });
 
   it("sends an already-bound machine straight to the classroom without loading choices", async () => {
@@ -111,17 +113,21 @@ describe("ClassroomLoginPage device binding", () => {
 
   it("offers public classroom as a class choice and binds it to the selected school", async () => {
     vi.mocked(classroomDeviceService.bindDevice).mockResolvedValue({} as any);
+    vi.mocked(classroomDeviceService.listPublicClassroomNumbers).mockResolvedValue([1, 3]);
     const user = userEvent.setup();
     renderPage();
 
     await screen.findByRole("button", { name: "绑定" });
     await user.selectOptions(screen.getByLabelText("学校"), "school-1");
     await user.selectOptions(screen.getByLabelText("班级"), "__public_classroom__");
+    expect(await screen.findByText("已绑定公共教室：1号、3号。请选择一个未使用的编号。")).toBeInTheDocument();
+    expect(screen.getByLabelText("公共教室编号")).toHaveValue(2);
     await user.click(screen.getByRole("button", { name: "绑定" }));
 
     await waitFor(() => expect(classroomDeviceService.bindDevice).toHaveBeenCalledWith(expect.objectContaining({
       schoolId: "school-1",
       publicClassroom: true,
+      publicClassroomNumber: 2,
       deviceToken: expect.any(String),
       installationId: expect.any(String),
     })));

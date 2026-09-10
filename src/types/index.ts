@@ -427,6 +427,8 @@ export interface ClassroomDevice {
   grade: string;
   /** 公共班级设备可在本校所有有效班级间切换。 */
   publicClassroom?: boolean;
+  /** 公共教室编号；同一学校内唯一，用于区分多间公共教室。 */
+  publicClassroomNumber?: number;
   deviceName: string;
   installationId: string;
   boundByTeacherId: string;

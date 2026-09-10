@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, BookOpen, MonitorCheck, School as SchoolIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Input";
+import { Input, Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { classService } from "@/services/class";
 import {
@@ -27,6 +27,9 @@ export default function ClassroomLoginPage() {
   const [formError, setFormError] = useState("");
   const [checkingBinding, setCheckingBinding] = useState(true);
   const [binding, setBinding] = useState(false);
+  const [publicClassroomNumbers, setPublicClassroomNumbers] = useState<number[]>([]);
+  const [publicClassroomNumber, setPublicClassroomNumber] = useState("");
+  const [publicClassroomNumbersLoading, setPublicClassroomNumbersLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -92,6 +95,34 @@ export default function ClassroomLoginPage() {
     [schoolClasses, schoolId],
   );
 
+  useEffect(() => {
+    if (!schoolId || classId !== PUBLIC_CLASSROOM_VALUE) {
+      setPublicClassroomNumbers([]);
+      setPublicClassroomNumber("");
+      setPublicClassroomNumbersLoading(false);
+      return;
+    }
+
+    let active = true;
+    setPublicClassroomNumbersLoading(true);
+    classroomDeviceService.listPublicClassroomNumbers(schoolId)
+      .then((numbers) => {
+        if (!active) return;
+        const occupied = new Set(numbers);
+        let next = 1;
+        while (occupied.has(next)) next += 1;
+        setPublicClassroomNumbers(numbers);
+        setPublicClassroomNumber(String(next));
+      })
+      .catch((cause) => {
+        if (active) setFormError(cause instanceof Error ? cause.message : "公共教室绑定信息加载失败");
+      })
+      .finally(() => {
+        if (active) setPublicClassroomNumbersLoading(false);
+      });
+    return () => { active = false; };
+  }, [classId, schoolId]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setFormError("");
@@ -103,6 +134,17 @@ export default function ClassroomLoginPage() {
       setFormError("请选择班级或公共教室");
       return;
     }
+    const selectedPublicClassroomNumber = Number(publicClassroomNumber);
+    if (classId === PUBLIC_CLASSROOM_VALUE) {
+      if (!Number.isSafeInteger(selectedPublicClassroomNumber) || selectedPublicClassroomNumber <= 0) {
+        setFormError("公共教室编号必须为正整数");
+        return;
+      }
+      if (publicClassroomNumbers.includes(selectedPublicClassroomNumber)) {
+        setFormError(`公共教室 ${selectedPublicClassroomNumber} 号已绑定，请选择其他编号`);
+        return;
+      }
+    }
 
     setBinding(true);
     try {
@@ -110,7 +152,7 @@ export default function ClassroomLoginPage() {
       await classroomDeviceService.bindDevice({
         schoolId,
         ...(classId === PUBLIC_CLASSROOM_VALUE
-          ? { publicClassroom: true }
+          ? { publicClassroom: true, publicClassroomNumber: selectedPublicClassroomNumber }
           : { classId }),
         deviceToken,
         installationId: classroomInstallationId(),
@@ -190,6 +232,31 @@ export default function ClassroomLoginPage() {
             disabled={choiceLoading || !schoolId}
           />
 
+          {classId === PUBLIC_CLASSROOM_VALUE && (
+            <div className="space-y-2">
+              <Input
+                label="公共教室编号"
+                type="number"
+                min={1}
+                step={1}
+                value={publicClassroomNumber}
+                onChange={(event) => {
+                  setPublicClassroomNumber(event.target.value);
+                  setFormError("");
+                }}
+                disabled={publicClassroomNumbersLoading}
+                placeholder={publicClassroomNumbersLoading ? "正在查询已绑定教室…" : "请输入公共教室编号"}
+              />
+              {!publicClassroomNumbersLoading && (
+                <div className="text-xs text-ink-500">
+                  {publicClassroomNumbers.length > 0
+                    ? `已绑定公共教室：${publicClassroomNumbers.map((number) => `${number}号`).join("、")}。请选择一个未使用的编号。`
+                    : "该学校尚未绑定公共教室，可直接使用建议编号。"}
+                </div>
+              )}
+            </div>
+          )}
+
           {schoolId && !choiceLoading && schoolClasses.length === 0 && (
             <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
               该学校暂无可用班级，暂时无法绑定教室一体机。
@@ -203,7 +270,7 @@ export default function ClassroomLoginPage() {
             size="lg"
             className="w-full"
             loading={binding}
-            disabled={choiceLoading || !schoolId || !classId}
+            disabled={choiceLoading || publicClassroomNumbersLoading || !schoolId || !classId}
           >
             <MonitorCheck className="w-4 h-4" />绑定
           </Button>
