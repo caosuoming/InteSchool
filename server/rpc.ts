@@ -111,7 +111,6 @@ const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   schoolBackup: "schoolBackups",
   settings: "schoolSettings",
   share: "shareRecords",
-  studentInteraction: "studentInteractions",
 };
 
 const SHARE_RESOURCE_COLLECTIONS: Record<string, string> = {
