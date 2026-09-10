@@ -589,7 +589,7 @@ describe("PresentationMode", () => {
     }
   });
 
-  it("uses arrow-only mirrored navigation, text resizing, upward pen tips, fullscreen, and formal boards", async () => {
+  it("uses mirrored navigation, text resizing, upward pen tips, fullscreen, and formal boards", async () => {
     const user = userEvent.setup();
     const onExit = vi.fn();
     render(
@@ -705,6 +705,54 @@ describe("PresentationMode", () => {
 
     await user.click(screen.getByRole("button", { name: "右侧下课" }));
     expect(onExit).toHaveBeenCalledOnce();
+  });
+
+  it("shows the current page between the right navigation buttons and jumps from a scrollable page picker", async () => {
+    const user = userEvent.setup();
+    const pagedSlides: LessonSlide[] = Array.from({ length: 20 }, (_, index) => ({
+      id: `slide-${index + 1}`,
+      type: "knowledge",
+      title: `第 ${index + 1} 页`,
+      content: `第 ${index + 1} 页内容`,
+      freeformLayout: true,
+      elements: [{
+        id: `element-${index + 1}`,
+        kind: "text",
+        content: `第 ${index + 1} 页内容`,
+        x: 5,
+        y: 5,
+        width: 90,
+        height: 40,
+      }],
+    }));
+
+    render(
+      <PresentationMode
+        slides={pagedSlides}
+        initialIndex={9}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    const rightNavigation = screen.getByLabelText("右侧翻页控制");
+    const previousButton = within(rightNavigation).getByRole("button", { name: "右侧上一页" });
+    const nextButton = within(rightNavigation).getByRole("button", { name: "右侧下一页" });
+    const currentPageButton = within(rightNavigation).getByRole("button", { name: "当前第 10 页，选择页码" });
+    expect(previousButton.nextElementSibling).toContainElement(currentPageButton);
+    expect(previousButton.nextElementSibling?.nextElementSibling).toBe(nextButton);
+
+    await user.click(currentPageButton);
+    const pagePicker = screen.getByRole("listbox", { name: "选择页码" });
+    expect(pagePicker).toHaveClass("max-h-[26rem]", "touch-pan-y", "overflow-y-auto", "overscroll-contain");
+    expect(within(pagePicker).getAllByRole("option")).toHaveLength(20);
+    expect(within(pagePicker).getByRole("option", { name: "第 10 页" })).toHaveAttribute("aria-selected", "true");
+
+    await user.click(within(pagePicker).getByRole("option", { name: "第 17 页" }));
+    expect(screen.getByText("第 17 页内容")).toBeInTheDocument();
+    expect(within(rightNavigation).getByRole("button", { name: "当前第 17 页，选择页码" })).toBeInTheDocument();
+    expect(screen.queryByRole("listbox", { name: "选择页码" })).not.toBeInTheDocument();
   });
 
   it("fullscreens a board and saves one screenshot for every writing area", async () => {
