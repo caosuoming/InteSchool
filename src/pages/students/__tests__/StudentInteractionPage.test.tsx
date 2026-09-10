@@ -174,8 +174,22 @@ describe("StudentInteractionPage", () => {
     const stickyPane = document.querySelector('[class~="lg:sticky"]');
     const desktopStudentList = document.querySelector('[class~="lg:overflow-visible"]');
 
-    expect(stickyPane).toHaveClass("lg:sticky", "lg:top-6", "lg:self-start");
+    expect(stickyPane).toHaveClass(
+      "lg:sticky",
+      "lg:top-6",
+      "lg:h-[calc(100vh-3rem)]",
+      "lg:self-start",
+    );
     expect(desktopStudentList).toBeInTheDocument();
+  });
+
+  it("lets the interaction timeline use the remaining detail-pane height", async () => {
+    render(<StudentInteractionPage embedded />);
+
+    const timelineTitle = await screen.findByText(/互动记录时间线/);
+    const timelineCard = timelineTitle.parentElement;
+
+    expect(timelineCard).toHaveClass("flex-1", "min-h-0", "overflow-auto");
   });
 
   it("groups students by class and toggles groups from a collapsed state", async () => {

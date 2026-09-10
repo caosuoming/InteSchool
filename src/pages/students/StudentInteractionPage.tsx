@@ -394,7 +394,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
         storageKey="inteschool:my-students-sidebar-width"
         className="h-[calc(100vh-12rem)] lg:h-auto lg:items-start"
         sidebarClassName="h-full lg:h-auto"
-        contentClassName="h-full lg:sticky lg:top-6 lg:h-[calc(100vh-12rem)] lg:self-start"
+        contentClassName="h-full lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:self-start"
         sidebar={
           <StudentRosterSidebar
             groups={studentGroups}
@@ -627,7 +627,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
               </Card>
 
               {/* 互动时间线 */}
-              <Card className="flex-1 p-4 overflow-auto">
+              <Card className="flex-1 min-h-0 p-4 overflow-auto">
                 <div className="text-sm font-medium text-ink-700 mb-3 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-ink-400" />
                   互动记录时间线（{interactions.length} 条）
