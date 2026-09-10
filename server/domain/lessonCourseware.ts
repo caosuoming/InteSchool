@@ -15,13 +15,16 @@ import type {
   Teacher,
   TeacherAffiliation,
   TeacherLessonSchedule,
+  TeacherLessonScheduleDisplayOptions,
   TeacherLessonScheduleEntry,
   TeacherLessonSchedulePeriod,
   TeacherLessonScheduleTimeRange,
   TeacherLessonScheduleWeekParity,
 } from "../../src/types/index.js";
 import {
+  TEACHER_SCHEDULE_COLUMN_KEYS,
   TEACHER_SCHEDULE_SLOTS,
+  defaultTeacherScheduleDisplayOptions,
   teacherScheduleEntryParity,
   teacherScheduleSlotIndex,
   withDefaultTeacherScheduleTimeRanges,
@@ -887,6 +890,45 @@ function normalizeStoredScheduleEntries(
   return sortTeacherScheduleEntries([...normalized.values()]);
 }
 
+function normalizeScheduleDisplayOptions(
+  options: Partial<TeacherLessonScheduleDisplayOptions> | undefined,
+  strict: boolean,
+): TeacherLessonScheduleDisplayOptions {
+  const defaults = defaultTeacherScheduleDisplayOptions();
+  if (!options || typeof options !== "object") return defaults;
+
+  const normalizePeriods = (value: unknown): TeacherLessonSchedulePeriod[] => {
+    if (!Array.isArray(value)) {
+      if (strict && value !== undefined) throw new Error("课表显示设置不合法");
+      return [];
+    }
+    const periods = value.filter((period): period is TeacherLessonSchedulePeriod => (
+      typeof period === "number" && TEACHER_SCHEDULE_PERIODS.has(period as TeacherLessonSchedulePeriod)
+    ));
+    if (strict && periods.length !== value.length) throw new Error("课表显示设置不合法");
+    return [...new Set(periods)].sort((left, right) => teacherScheduleSlotIndex(left) - teacherScheduleSlotIndex(right));
+  };
+
+  const normalizeColumns = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      if (strict && value !== undefined) throw new Error("课表显示设置不合法");
+      return [];
+    }
+    const columns = value.filter((column): column is string => (
+      typeof column === "string" && TEACHER_SCHEDULE_COLUMN_KEYS.has(column)
+    ));
+    if (strict && columns.length !== value.length) throw new Error("课表显示设置不合法");
+    return [...new Set(columns)];
+  };
+
+  return {
+    hiddenPeriods: normalizePeriods(options.hiddenPeriods),
+    hiddenColumns: normalizeColumns(options.hiddenColumns),
+    boldAfterPeriods: normalizePeriods(options.boldAfterPeriods),
+    boldAfterColumns: normalizeColumns(options.boldAfterColumns),
+  };
+}
+
 function normalizeScheduleTimeRanges(
   timeRanges: readonly TeacherLessonScheduleTimeRange[] | undefined,
   strict: boolean,
@@ -922,6 +964,7 @@ export const lessonCoursewareService = {
     return {
       entries: normalizeStoredScheduleEntries(teacher.lessonSchedule?.entries),
       timeRanges: normalizeScheduleTimeRanges(teacher.lessonSchedule?.timeRanges, false),
+      displayOptions: normalizeScheduleDisplayOptions(teacher.lessonSchedule?.displayOptions, false),
       updatedAt: teacher.lessonSchedule?.updatedAt,
     };
   },
@@ -929,6 +972,7 @@ export const lessonCoursewareService = {
   async saveLessonSchedule(
     entries: TeacherLessonScheduleEntry[],
     timeRanges: TeacherLessonScheduleTimeRange[] | undefined,
+    displayOptions: TeacherLessonScheduleDisplayOptions | undefined,
     teacher: Teacher,
   ): Promise<TeacherLessonSchedule> {
     await delay(200);
@@ -970,6 +1014,7 @@ export const lessonCoursewareService = {
     const schedule: TeacherLessonSchedule = {
       entries: sortTeacherScheduleEntries([...uniqueEntries.values()]),
       timeRanges: normalizeScheduleTimeRanges(timeRanges, true),
+      displayOptions: normalizeScheduleDisplayOptions(displayOptions, true),
       updatedAt: new Date().toISOString(),
     };
     db.update("teachers", (items: Teacher[]) => items.map((item) => (
