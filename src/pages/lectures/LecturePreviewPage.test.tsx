@@ -470,6 +470,34 @@ describe("LecturePreviewPage", () => {
     expect(screen.getByRole("button", { name: "编辑第 1 题属性" })).toBeInTheDocument();
   });
 
+  it("keeps a personal extracted lecture readable after switching schools", async () => {
+    vi.mocked(lectureService.getLecture).mockResolvedValue({
+      ...lecture,
+      schoolId: "school-old",
+      classIds: ["old-class"],
+      isExtractCopy: true,
+      sourceResourceId: "lecture-source-1",
+    });
+    vi.mocked(classService.listAllClasses).mockImplementation(async (schoolId, teacherId) => {
+      if (schoolId === "school-old") throw new Error("无权访问其他学校的数据");
+      expect(schoolId).toBe(teacher.schoolId);
+      expect(teacherId).toBe(teacher.id);
+      return [];
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("预览：函数专题讲义_2026（拆解版）")).toBeInTheDocument();
+    expect(screen.queryByText("讲义加载失败")).not.toBeInTheDocument();
+    expect(classService.listAllClasses).toHaveBeenCalledWith(teacher.schoolId, teacher.id);
+    expect(classService.getClassesByIds).not.toHaveBeenCalled();
+    expect(classService.listStudentsByClass).not.toHaveBeenCalledWith("old-class");
+    await waitFor(() => {
+      expect(knowledgeService.getChapterTree).toHaveBeenCalledWith(teacher.schoolId);
+      expect(knowledgeService.getKnowledgeTree).toHaveBeenCalledWith(teacher.schoolId);
+    });
+  });
+
   it("keeps the source question label in an extracted lecture preview", async () => {
     vi.mocked(lectureService.getLecture).mockResolvedValue({
       ...lecture,
