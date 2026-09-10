@@ -931,9 +931,12 @@ export function PresentationMode({
       }
     : undefined;
 
-  const askableStudents = (currentSlide?.askableStudentIds || [])
-    .map((id) => students.find((student) => student.id === id))
-    .filter((student): student is { id: string; name: string } => Boolean(student));
+  const presetAskableStudentIds = currentSlide?.askableStudentIds || [];
+  const askableStudents = presetAskableStudentIds.length === 0
+    ? students
+    : presetAskableStudentIds
+        .map((id) => students.find((student) => student.id === id))
+        .filter((student): student is { id: string; name: string } => Boolean(student));
 
   const clearStudentLotteryTimers = useCallback(() => {
     if (lotteryIntervalRef.current !== null) {
@@ -1686,7 +1689,7 @@ export function PresentationMode({
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-ink-900">提问学生</h2>
-              <p className="mt-1 text-xs text-ink-400">选择本题预设的可提问学生。</p>
+              <p className="mt-1 text-xs text-ink-400">未预设时默认全班参与；预设后仅从相关学生中抽取。</p>
             </div>
             <button
               type="button"
@@ -1694,7 +1697,11 @@ export function PresentationMode({
               disabled={students.length === 0 || askableStudents.length === 0 || studentLottery?.phase === "rolling"}
               className="inline-flex h-8 flex-shrink-0 items-center gap-1 rounded-lg border border-gold-300 bg-gold-50 px-2.5 text-xs font-medium text-gold-800 transition-colors hover:bg-gold-100 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="摇号"
-              title={askableStudents.length === 0 ? "当前页面未预设候选学生" : "全班姓名滚动 5 秒后，从当前页面候选学生中抽取一人"}
+              title={askableStudents.length === 0
+                ? "当前页面预设学生不在当前班级"
+                : presetAskableStudentIds.length === 0
+                  ? "全班姓名滚动 5 秒后，从当前班级全体学生中抽取一人"
+                  : "全班姓名滚动 5 秒后，从当前页面候选学生中抽取一人"}
             >
               <Dices className="h-3.5 w-3.5" />
               摇号
