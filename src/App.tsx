@@ -97,6 +97,7 @@ export default function App() {
             <Route path="/my-resources/lectures" element={<MyResourcesPage initialTab="lecture" />} />
             <Route path="/my-resources/coursewares" element={<MyResourcesPage initialTab="courseware" />} />
             <Route path="/my-resources/materials" element={<MyResourcesPage initialTab="material" />} />
+            <Route path="/my-resources/answer-sheets" element={<MyResourcesPage initialTab="answerSheet" />} />
 
             {/* 上传资源 */}
             <Route path="/upload" element={<UploadPage />} />

@@ -20,7 +20,7 @@ export default function ExamPaperAnswerSheetPage() {
     }
 
     let cancelled = false;
-    examPaperService.getPaper(id).then((loadedPaper) => {
+    examPaperService.markAnswerSheetCreated(id).then((loadedPaper) => {
       if (cancelled) return;
       if (!loadedPaper) {
         toast.error("试卷不存在");

@@ -17,7 +17,7 @@ import { questionService } from "@/services/question";
 import { prepService } from "@/services/prep";
 import { resourceFolderService } from "@/services/resourceFolder";
 import { shareService } from "@/services/share";
-import type { Courseware, ExamPaper, LessonCourseware, Material, Question, Teacher, TreeNode } from "@/types";
+import type { Courseware, ExamPaper, Lecture, LessonCourseware, Material, Question, Teacher, TreeNode } from "@/types";
 
 const batchQuestion = vi.hoisted(() => ({
   id: "question-1",
@@ -301,6 +301,27 @@ const examPaperTwo: ExamPaper = {
   updatedAt: "2026-07-31T00:00:00.000Z",
 };
 
+const answerSheetLecture: Lecture = {
+  id: "lecture-answer-sheet",
+  teacherId: "teacher-1",
+  schoolId: "school-1",
+  title: "函数复习讲义",
+  chapterIds: ["chapter-existing"],
+  knowledgePointIds: [],
+  grade: "高一",
+  schoolYear: "2026-2027",
+  semester: "上学期",
+  classIds: [],
+  studentIds: [],
+  sections: [],
+  version: 1,
+  status: "draft",
+  hasAnswerSheet: true,
+  answerSheetCreatedAt: "2026-08-01T00:00:00.000Z",
+  createdAt: "2026-07-30T00:00:00.000Z",
+  updatedAt: "2026-08-01T00:00:00.000Z",
+};
+
 const completedLesson: LessonCourseware = {
   id: "lesson-1",
   teacherId: "teacher-1",
@@ -339,7 +360,7 @@ const knowledgeTree: TreeNode = {
   children: [],
 };
 
-function renderPage(initialTab: "question" | "material" | "courseware" | "examPaper" = "material") {
+function renderPage(initialTab: "question" | "material" | "courseware" | "examPaper" | "answerSheet" = "material") {
   return render(
     <MemoryRouter>
       <MyResourcesPage initialTab={initialTab} />
@@ -403,6 +424,28 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(classService.listMyClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([]);
     vi.mocked(analyticsService.listUsedDocumentIds).mockResolvedValue([]);
+  });
+
+  it("shows created answer sheets after the material tab with only the chapter directory", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([
+      { ...examPaper, hasAnswerSheet: true, answerSheetCreatedAt: "2026-08-02T00:00:00.000Z" },
+      examPaperTwo,
+    ]);
+    vi.mocked(lectureService.listLectures).mockResolvedValue([answerSheetLecture]);
+
+    renderPage("answerSheet");
+
+    expect(await screen.findByText("试卷：函数单元测验")).toBeInTheDocument();
+    expect(screen.getByText("讲义：函数复习讲义")).toBeInTheDocument();
+    expect(screen.queryByText("试卷：函数综合测验")).not.toBeInTheDocument();
+
+    const materialTab = screen.getByRole("button", { name: "素材库" });
+    const answerSheetTab = screen.getByRole("button", { name: "题卡库" });
+    expect(materialTab.compareDocumentPosition(answerSheetTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    expect(screen.getByTestId("searchable-tree-章节课目录")).toBeInTheDocument();
+    expect(screen.queryByTestId("searchable-tree-知识点目录")).not.toBeInTheDocument();
+    expect(knowledgeService.getKnowledgeTree).not.toHaveBeenCalled();
   });
 
   it("filters materials by the existing material types and places the type filter before grade", async () => {

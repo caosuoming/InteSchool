@@ -31,7 +31,7 @@ export default function LectureAnswerSheetPage() {
 
     let cancelled = false;
     const load = async () => {
-      const loadedLecture = await lectureService.getLecture(id);
+      const loadedLecture = await lectureService.markAnswerSheetCreated(id);
       if (!loadedLecture) {
         toast.error("讲义不存在");
         navigate("/my-resources");

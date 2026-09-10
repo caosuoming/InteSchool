@@ -45,6 +45,10 @@ export const lectureService = {
     return rpcCall("lecture", "getLecture", [id]) as any;
   },
 
+  async markAnswerSheetCreated(id: string): Promise<Lecture | null> {
+    return rpcCall("lecture", "markAnswerSheetCreated", [id]) as any;
+  },
+
   async listColumnTemplates(teacherId: string, schoolId: string): Promise<LectureColumnTemplate[]> {
     return rpcCall("lecture", "listColumnTemplates", [teacherId, schoolId]) as any;
   },

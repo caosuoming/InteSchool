@@ -108,11 +108,27 @@ import {
   type DocumentCategory,
 } from "@/lib/document-resource";
 
-type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "basket";
-type RenameableResourceType = Exclude<MyResourceTab, "question" | "basket">;
+type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "answerSheet" | "basket";
+type RenameableResourceType = Exclude<MyResourceTab, "question" | "answerSheet" | "basket">;
 type LeftTab = "chapter" | "knowledge";
 type SortKey = "updated" | "created" | "title";
-type ResourceListItem = Question | ExamPaper | Lecture | Courseware | Material;
+
+interface AnswerSheetLibraryItem {
+  id: string;
+  title: string;
+  sourceId: string;
+  sourceType: "examPaper" | "lecture";
+  sourceTitle: string;
+  chapterIds: string[];
+  knowledgePointIds: string[];
+  grade: string;
+  schoolYear: string;
+  semester?: ResourceSemester;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type ResourceListItem = Question | ExamPaper | Lecture | Courseware | Material | AnswerSheetLibraryItem;
 
 type ResourceListUnit =
   | { kind: "folder"; folder: ResourceFolder; items: ResourceListItem[] }
@@ -162,6 +178,7 @@ const tabConfig: { key: MyResourceTab; label: string; icon: typeof FileText; des
   { key: "lecture", label: "讲义库", icon: FileText, description: "管理和创建教学讲义" },
   { key: "courseware", label: "课件库", icon: Presentation, description: "管理课件资源，可在生成讲义时引用" },
   { key: "material", label: "素材库", icon: FileBox, description: "管理教学素材，可在生成讲义时引用" },
+  { key: "answerSheet", label: "题卡库", icon: Layout, description: "管理由试卷或讲义制作的答题卡" },
   { key: "basket", label: "资源篮", icon: ShoppingCart, description: "管理资源篮，快速将题目和素材生成讲义或试卷" },
 ];
 
@@ -867,7 +884,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       keyword,
       chapterIds: checkedChapters,
       chapterLogic,
-      knowledgePointIds: checkedKnowledge,
+      knowledgePointIds: activeTab === "answerSheet" ? [] : checkedKnowledge,
       knowledgeLogic,
       grade: selectedGrade || undefined,
       schoolYear: selectedYear || undefined,
@@ -960,7 +977,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   useEffect(() => {
     if (activeTab === "question") return;
     knowledgeService.getChapterTree(schoolId).then(setChapterTree);
-    knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
+    if (activeTab !== "answerSheet") {
+      knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
+    }
   }, [activeTab, schoolId]);
 
   useEffect(() => {
@@ -1428,7 +1447,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
-  const noTreeSelection = checkedChapters.length === 0 && checkedKnowledge.length === 0;
+  const noTreeSelection = checkedChapters.length === 0
+    && (activeTab === "answerSheet" || checkedKnowledge.length === 0);
   const resetDirectorySelections = useCallback(() => {
     setCheckedChapters([]);
     setCheckedKnowledge([]);
@@ -1446,6 +1466,41 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       .map(([value, label]) => ({ value, label })),
     [materials],
   );
+
+  const answerSheets = useMemo<AnswerSheetLibraryItem[]>(() => [
+    ...examPapers
+      .filter((paper) => paper.hasAnswerSheet)
+      .map((paper) => ({
+        id: `examPaper:${paper.id}`,
+        title: paper.title,
+        sourceId: paper.id,
+        sourceType: "examPaper" as const,
+        sourceTitle: paper.title,
+        chapterIds: paper.chapterIds,
+        knowledgePointIds: paper.knowledgePointIds,
+        grade: paper.grade,
+        schoolYear: paper.schoolYear,
+        semester: paper.semester,
+        createdAt: paper.answerSheetCreatedAt || paper.createdAt,
+        updatedAt: paper.updatedAt,
+      })),
+    ...lectures
+      .filter((lecture) => lecture.hasAnswerSheet)
+      .map((lecture) => ({
+        id: `lecture:${lecture.id}`,
+        title: lecture.title,
+        sourceId: lecture.id,
+        sourceType: "lecture" as const,
+        sourceTitle: lecture.title,
+        chapterIds: lecture.chapterIds,
+        knowledgePointIds: lecture.knowledgePointIds,
+        grade: lecture.grade,
+        schoolYear: lecture.schoolYear,
+        semester: lecture.semester,
+        createdAt: lecture.answerSheetCreatedAt || lecture.createdAt,
+        updatedAt: lecture.updatedAt,
+      })),
+  ], [examPapers, lectures]);
 
   // 排序
   const sortedData = useMemo<ResourceListItem[]>(() => {
@@ -1474,9 +1529,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       case "examPaper": return sortByKey(examPapers);
       case "courseware": return sortByKey(coursewares);
       case "material": return sortByKey(materials);
+      case "answerSheet": return sortByKey(answerSheets);
       case "basket": return [];
     }
-  }, [activeTab, lectures, examPapers, coursewares, materials, sortKey]);
+  }, [activeTab, lectures, examPapers, coursewares, materials, answerSheets, sortKey]);
 
   // 仅看未分类筛选
   const displayedData = useMemo(() => {
@@ -1484,6 +1540,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     if (onlyUncategorized && noTreeSelection) {
       result = result.filter((item) => {
         const chapterIds = (item as { chapterIds?: string[] }).chapterIds ?? [];
+        if (activeTab === "answerSheet") return chapterIds.length === 0;
         const knowledgePointIds = (item as { knowledgePointIds?: string[] }).knowledgePointIds ?? [];
         return chapterIds.length === 0 && knowledgePointIds.length === 0;
       });
@@ -1526,10 +1583,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         return coursewares;
       case "material":
         return materials;
+      case "answerSheet":
+        return answerSheets;
       default:
         return null;
     }
-  }, [activeTab, coursewares, examPapers, lectures, materials]);
+  }, [activeTab, answerSheets, coursewares, examPapers, lectures, materials]);
 
   const displayedChapterTree = useMemo(() => {
     if (!chapterTree || !directoryCountResources) return chapterTree;
@@ -1542,7 +1601,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [directoryCountResources, knowledgeTree]);
 
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
-  const activeResourceQuota = activeTab === "basket" ? null : quota?.resources[activeTab] || null;
+  const directoryLeftTab: LeftTab = activeTab === "answerSheet" ? "chapter" : leftTab;
+  const activeResourceQuota = activeTab === "basket" || activeTab === "answerSheet"
+    ? null
+    : quota?.resources[activeTab] || null;
   const hasCompletedLesson = (resourceType: "examPaper" | "lecture", resourceId: string) => (
     completedLessonSourceKeys.has(`${resourceType}:${resourceId}`)
   );
@@ -1577,6 +1639,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         return displayedData as Courseware[];
       case "material":
         return displayedData as Material[];
+      case "answerSheet":
+        return displayedData as AnswerSheetLibraryItem[];
       default:
         return [];
     }
@@ -1676,7 +1740,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         await loadResourceFolders();
       }
       toast.success("已删除");
-      if (activeTab !== "basket") {
+      if (activeTab !== "basket" && activeTab !== "answerSheet") {
         const key = batchResourceKey(activeTab, id);
         setResourceSelections((previous) => {
           const next = new Set(previous);
@@ -2504,7 +2568,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     <div>
       <PageHeader
         title="我的资源"
-        description="统一管理我的题库、试卷库、讲义库、课件库、素材库"
+        description="统一管理我的题库、试卷库、讲义库、课件库、素材库、题卡库"
         icon={<Library className="w-5 h-5" />}
       />
 
@@ -2963,10 +3027,15 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       <ResizableSidebarLayout
         storageKey="inteschool.my-resources.directory-width"
         defaultWidth={300}
-        separatorLabel="调整我的资源章节课与知识点目录宽度"
+        separatorLabel={activeTab === "answerSheet"
+          ? "调整我的资源章节课目录宽度"
+          : "调整我的资源章节课与知识点目录宽度"}
         sidebar={(
           <Card className="p-3 sticky top-4">
-            <div className="flex gap-1 mb-3 p-1 bg-mist rounded-md">
+            <div className={cn(
+              "flex gap-1 mb-3 p-1 bg-mist rounded-md",
+              activeTab === "answerSheet" && "hidden",
+            )}>
               <button
                 onClick={() => setLeftTab("chapter")}
                 aria-label="章节课"
@@ -3010,12 +3079,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 知识点
               </button>
             </div>
-            {(leftTab === "chapter" ? displayedChapterTree : displayedKnowledgeTree) ? (
-              leftTab === "chapter" ? (
+            {(directoryLeftTab === "chapter" ? displayedChapterTree : displayedKnowledgeTree) ? (
+              directoryLeftTab === "chapter" ? (
                 <SearchableTree
                   data={displayedChapterTree!}
                   title="章节课目录"
-                  showTitle={false}
+                  showTitle={activeTab === "answerSheet"}
                   accent="gold"
                   checkable
                   checkedIds={checkedChapters}
@@ -3059,7 +3128,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               <input
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                placeholder="搜索资源..."
+                placeholder={activeTab === "answerSheet" ? "搜索答题卡..." : "搜索资源..."}
                 className="w-full pl-9 pr-3 py-2 text-sm border border-ink-200 rounded-md bg-paper focus:outline-none focus:ring-2 focus:ring-gold-400/40 focus:border-gold-400"
               />
             </div>
@@ -3175,7 +3244,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       ? "bg-amber-100 border-amber-300 text-amber-800"
                       : "bg-paper border-ink-200 text-ink-600 hover:border-ink-300",
                   )}
-                  title="仅显示未关联任何章节/知识点的资源"
+                  title={activeTab === "answerSheet"
+                    ? "仅显示未关联任何章节课的答题卡"
+                    : "仅显示未关联任何章节/知识点的资源"}
                 >
                   <Filter className="w-3 h-3" />
                   仅看未分类
@@ -3237,13 +3308,41 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           ) : resourceListData.length === 0 ? (
             <EmptyState
               icon={<currentTab.icon className="w-10 h-10 text-ink-200" />}
-              title={`暂无${currentTab.label}资源`}
-              description={noTreeSelection && onlyUncategorized
-                ? "当前没有未分类资源"
-                : "点击右上角「上传资源」按钮添加资源"}
+              title={activeTab === "answerSheet" ? "暂无答题卡" : `暂无${currentTab.label}资源`}
+              description={activeTab === "answerSheet"
+                ? (noTreeSelection && onlyUncategorized
+                  ? "当前没有未分类答题卡"
+                  : "从试卷或讲义中制作答题卡后会自动收录到这里")
+                : (noTreeSelection && onlyUncategorized
+                  ? "当前没有未分类资源"
+                  : "点击右上角「上传资源」按钮添加资源")}
             />
           ) : (
             <div className="space-y-3">
+              {/* 题卡库 */}
+              {activeTab === "answerSheet" && (paginatedResourceData as AnswerSheetLibraryItem[]).map((item) => (
+                <ResourceCard
+                  key={item.id}
+                  title="答题卡"
+                  description={`${item.sourceType === "examPaper" ? "试卷" : "讲义"}：${item.sourceTitle}`}
+                  titleIcon={<Layout className="h-4 w-4 text-gold-600" />}
+                  titleActions={(
+                    <Badge variant={item.sourceType === "examPaper" ? "amber" : "teal"}>
+                      {item.sourceType === "examPaper" ? "试卷" : "讲义"}
+                    </Badge>
+                  )}
+                  meta={[
+                    { label: "年级", value: item.grade },
+                    { label: "学年", value: item.schoolYear },
+                    { label: "学期", value: item.semester || "上学期" },
+                  ]}
+                  updatedAt={item.updatedAt}
+                  onClick={() => openPage(item.sourceType === "examPaper"
+                    ? `/exam-papers/${item.sourceId}/answer-sheet`
+                    : `/lectures/${item.sourceId}/answer-sheet`)}
+                />
+              ))}
+
               {/* 讲义库 */}
               {activeTab === "lecture" && (paginatedResourceData as Lecture[]).map((item) => {
                 const extractCopies = allLectures.filter(

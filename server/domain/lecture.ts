@@ -138,6 +138,24 @@ export const lectureService = {
     return lecture ? withDerivedKnowledgePoints(lecture) : null;
   },
 
+  async markAnswerSheetCreated(id: string): Promise<Lecture | null> {
+    await delay(100);
+    let updated: Lecture | null = null;
+    const now = new Date().toISOString();
+    db.update("lectures", (list) => list.map((lecture) => {
+      if (lecture.id !== id) return lecture;
+      updated = lecture.hasAnswerSheet
+        ? lecture
+        : {
+          ...lecture,
+          hasAnswerSheet: true,
+          answerSheetCreatedAt: lecture.answerSheetCreatedAt || now,
+        };
+      return updated;
+    }));
+    return updated ? withDerivedKnowledgePoints(updated) : null;
+  },
+
   async listColumnTemplates(
     teacherId: string,
     schoolId: string,
@@ -306,6 +324,7 @@ export const lectureService = {
       hasOrigin: undefined,
       hasPreview: undefined,
       hasAnswerSheet: undefined,
+      answerSheetCreatedAt: undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -515,6 +534,8 @@ export const lectureService = {
       version: 1,
       versionType: "extract",
       hasOrigin: true,
+      hasAnswerSheet: undefined,
+      answerSheetCreatedAt: undefined,
       status: "draft",
       createdAt: now,
       updatedAt: now,
