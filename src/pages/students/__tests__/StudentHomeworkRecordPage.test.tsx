@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StudentHomeworkRecordPage } from "@/pages/students/StudentHomeworkRecordPage";
 import { classService } from "@/services/class";
 import { homeworkRecordService } from "@/services/homeworkRecord";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { knowledgeService } from "@/services/knowledge";
 import { useAuthStore } from "@/stores/auth";
 import type { KnowledgePoint, SchoolClass, Student, Teacher, TreeNode } from "@/types";
@@ -23,6 +24,14 @@ vi.mock("@/services/homeworkRecord", () => ({
     getAttitudeByStudent: vi.fn(),
     setAttitudeKeywords: vi.fn(),
     setRecord: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/studentInteraction", () => ({
+  studentInteractionService: {
+    listByTeacher: vi.fn(),
+    listFollowedStudentIds: vi.fn(),
+    setStudentFollowed: vi.fn(),
   },
 }));
 
@@ -110,6 +119,9 @@ describe("StudentHomeworkRecordPage", () => {
     useAuthStore.setState({ teacher, loading: false, error: null });
     vi.mocked(classService.listMyStudents).mockResolvedValue(students);
     vi.mocked(classService.listMyClasses).mockResolvedValue(classes);
+    vi.mocked(studentInteractionService.listByTeacher).mockResolvedValue([]);
+    vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue([]);
+    vi.mocked(studentInteractionService.setStudentFollowed).mockResolvedValue(undefined);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue(knowledgePoints);
     vi.mocked(homeworkRecordService.listPinnedKnowledgePointIds).mockResolvedValue(["kp-child"]);
@@ -137,6 +149,7 @@ describe("StudentHomeworkRecordPage", () => {
       teacherId: "teacher-1",
       schoolId: "school-1",
       studentId: input.studentId,
+      homeworkDate: input.homeworkDate,
       keywords: input.keywords,
       createdAt: "2026-09-05T08:00:00.000Z",
       updatedAt: "2026-09-05T08:01:00.000Z",
@@ -161,8 +174,27 @@ describe("StudentHomeworkRecordPage", () => {
     const stickyPane = document.querySelector('[class~="lg:sticky"]');
     const desktopStudentList = document.querySelector('[class~="lg:overflow-visible"]');
 
-    expect(stickyPane).toHaveClass("lg:sticky", "lg:top-6", "lg:self-start");
+    expect(stickyPane).toHaveClass("lg:sticky", "lg:top-6", "lg:h-[calc(100vh-1.5rem)]", "lg:self-start");
     expect(desktopStudentList).toBeInTheDocument();
+  });
+
+  it("uses the same collapsed, followable student roster as student interactions", async () => {
+    const user = userEvent.setup();
+    render(<StudentHomeworkRecordPage />);
+
+    const groupToggle = await screen.findByRole("button", { name: /高一（1）班/ });
+    expect(groupToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /^甲同学$/ })).not.toBeInTheDocument();
+
+    await user.click(groupToggle);
+    expect(screen.getByRole("button", { name: /^甲同学$/ })).toBeInTheDocument();
+    expect(screen.getByText("未互动")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "关注甲同学" }));
+    await waitFor(() => {
+      expect(studentInteractionService.setStudentFollowed).toHaveBeenCalledWith("student-1", true);
+    });
+    expect(screen.getByRole("button", { name: "取消关注甲同学" })).toBeInTheDocument();
   });
 
   it("loads a pinned knowledge point for the selected student and saves status changes", async () => {
@@ -191,12 +223,17 @@ describe("StudentHomeworkRecordPage", () => {
     expect(partial).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("loads and persists student homework-attitude keywords with an obvious selected state", async () => {
+  it("loads and persists student homework-attitude keywords for the selected homework date", async () => {
     const user = userEvent.setup();
     render(<StudentHomeworkRecordPage />);
 
     expect(await screen.findByText("作业态度")).toBeInTheDocument();
-    const onTime = screen.getByRole("button", { name: "按时完成" });
+    const homeworkDate = screen.getByLabelText("作业日期");
+    fireEvent.change(homeworkDate, { target: { value: "2026-09-06" } });
+    await waitFor(() => {
+      expect(homeworkRecordService.getAttitudeByStudent).toHaveBeenCalledWith("student-1", "2026-09-06");
+    });
+    const onTime = await screen.findByRole("button", { name: "按时完成" });
     await waitFor(() => {
       expect(onTime).toHaveAttribute("aria-pressed", "true");
     });
@@ -208,6 +245,7 @@ describe("StudentHomeworkRecordPage", () => {
     await waitFor(() => {
       expect(homeworkRecordService.setAttitudeKeywords).toHaveBeenCalledWith({
         studentId: "student-1",
+        homeworkDate: "2026-09-06",
         keywords: ["按时完成", "粗心"],
       });
     });

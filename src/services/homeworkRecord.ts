@@ -19,12 +19,13 @@ export const homeworkRecordService = {
     return rpcCall("homeworkRecord", "listByStudent", [studentId]) as any;
   },
 
-  async getAttitudeByStudent(studentId: string): Promise<HomeworkAttitudeRecord | null> {
-    return rpcCall("homeworkRecord", "getAttitudeByStudent", [studentId]) as any;
+  async getAttitudeByStudent(studentId: string, homeworkDate?: string): Promise<HomeworkAttitudeRecord | null> {
+    return rpcCall("homeworkRecord", "getAttitudeByStudent", [studentId, homeworkDate]) as any;
   },
 
   async setAttitudeKeywords(input: {
     studentId: string;
+    homeworkDate?: string;
     keywords: HomeworkAttitudeKeyword[];
   }): Promise<HomeworkAttitudeRecord | null> {
     return rpcCall("homeworkRecord", "setAttitudeKeywords", [input]) as any;

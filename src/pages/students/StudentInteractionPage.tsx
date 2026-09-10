@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState, useMemo, type ClipboardEvent } from "react";
 import {
-  MessagesSquare, Search, Trash2,
+  MessagesSquare, Trash2,
   Smile, Meh, Frown, Star, Plus,
   Clock, MessageCircle, TrendingUp,
-  GraduationCap, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -24,6 +23,8 @@ import type {
 } from "@/types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
+import { StudentRosterSidebar } from "./StudentRosterSidebar";
+import { buildStudentRosterGroups } from "./student-roster";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -198,49 +199,20 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     };
   }, [selectedStudentId]);
 
-  // 按最近互动时间排序：越久远（或从未互动）的越靠前
-  const sortStudentsByInteraction = useCallback((list: Student[]): Student[] => {
-    return [...list].sort((a, b) => {
-      const aFollowed = followedStudentIds.has(a.id);
-      const bFollowed = followedStudentIds.has(b.id);
-      if (aFollowed !== bFollowed) return aFollowed ? -1 : 1;
-      const ta = lastInteractionMap[a.id] ? new Date(lastInteractionMap[a.id]).getTime() : 0;
-      const tb = lastInteractionMap[b.id] ? new Date(lastInteractionMap[b.id]).getTime() : 0;
-      // 升序：越小（越久远或从未互动）越靠前
-      return ta - tb;
-    });
-  }, [followedStudentIds, lastInteractionMap]);
-
   const filteredStudents = useMemo(() => {
-    return keyword.trim()
-      ? allStudents.filter((s) => {
-          const kw = keyword.toLowerCase();
-          return s.name.toLowerCase().includes(kw) || (s.studentNo || "").toLowerCase().includes(kw);
-        })
-      : allStudents;
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (!normalizedKeyword) return allStudents;
+    return allStudents.filter((student) =>
+      student.name.toLowerCase().includes(normalizedKeyword)
+      || (student.studentNo || "").toLowerCase().includes(normalizedKeyword));
   }, [allStudents, keyword]);
 
-  const studentGroups = useMemo(() => {
-    const groupedStudentIds = new Set<string>();
-    const groups = myClasses.flatMap((classInfo) => {
-      const members = filteredStudents.filter((student) => {
-        if (classInfo.type === "school") return student.classId === classInfo.id;
-        return classInfo.studentIds.includes(student.id);
-      });
-      members.forEach((student) => groupedStudentIds.add(student.id));
-      const sortedMembers = sortStudentsByInteraction(members);
-      return sortedMembers.length > 0
-        ? [{ id: classInfo.id, name: classInfo.name, students: sortedMembers }]
-        : [];
-    });
-    const ungrouped = sortStudentsByInteraction(
-      filteredStudents.filter((student) => !groupedStudentIds.has(student.id)),
-    );
-    if (ungrouped.length > 0) {
-      groups.push({ id: "ungrouped", name: "其他学生", students: ungrouped });
-    }
-    return groups;
-  }, [filteredStudents, myClasses, sortStudentsByInteraction]);
+  const studentGroups = useMemo(() => buildStudentRosterGroups(
+    filteredStudents,
+    myClasses,
+    followedStudentIds,
+    lastInteractionMap,
+  ), [filteredStudents, followedStudentIds, lastInteractionMap, myClasses]);
 
   const toggleStudentGroup = useCallback((groupId: string) => {
     setExpandedGroupIds((current) => {
@@ -424,71 +396,20 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
         sidebarClassName="h-full lg:h-auto"
         contentClassName="h-full lg:sticky lg:top-6 lg:h-[calc(100vh-12rem)] lg:self-start"
         sidebar={
-          <Card className="h-full flex flex-col lg:h-auto lg:min-h-[calc(100vh-12rem)]">
-            <div className="p-3 border-b border-ink-100">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
-                <input
-                  type="text"
-                  value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
-                  placeholder="搜索学生..."
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-ink-200 bg-paper text-sm focus:outline-none focus:border-gold-400"
-                />
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto lg:overflow-visible">
-              {loading ? (
-                <div className="p-6 text-center text-xs text-ink-400">
-                  <div className="inline-block w-6 h-6 border-2 border-gold-400 border-t-transparent rounded-full animate-spin mb-2" />
-                  <div>加载中...</div>
-                </div>
-              ) : filteredStudents.length === 0 ? (
-                <div className="p-6 text-center text-xs text-ink-400">暂无学生</div>
-              ) : (
-                <div className="px-3 py-2 space-y-3">
-                  {studentGroups.map((group) => {
-                    const expanded = expandedGroupIds.has(group.id);
-                    const groupContentId = `student-group-${group.id}`;
-                    return (
-                      <section key={group.id}>
-                        <button
-                          type="button"
-                          aria-expanded={expanded}
-                          aria-controls={groupContentId}
-                          onClick={() => toggleStudentGroup(group.id)}
-                          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] font-semibold text-gold-700 tracking-wide transition-colors hover:bg-gold-400/10"
-                        >
-                          {expanded
-                            ? <ChevronDown className="w-3 h-3 flex-shrink-0" />
-                            : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
-                          <GraduationCap className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{group.name}</span>
-                          <span className="text-ink-400 font-normal">（{group.students.length}）</span>
-                        </button>
-                        {expanded && (
-                          <div id={groupContentId} className="mt-1 space-y-0.5">
-                            {group.students.map((student) => (
-                              <StudentListItem
-                                key={`${group.id}-${student.id}`}
-                                student={student}
-                                isSelected={selectedStudentId === student.id}
-                                isFollowed={followedStudentIds.has(student.id)}
-                                followPending={followPendingStudentIds.has(student.id)}
-                                lastInteraction={lastInteractionMap[student.id]}
-                                onClick={() => setSelectedStudentId(student.id)}
-                                onToggleFollow={() => void handleToggleFollow(student.id)}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </Card>
+          <StudentRosterSidebar
+            groups={studentGroups}
+            loading={loading}
+            keyword={keyword}
+            selectedStudentId={selectedStudentId}
+            expandedGroupIds={expandedGroupIds}
+            followedStudentIds={followedStudentIds}
+            followPendingStudentIds={followPendingStudentIds}
+            lastInteractionMap={lastInteractionMap}
+            onKeywordChange={setKeyword}
+            onToggleGroup={toggleStudentGroup}
+            onSelectStudent={setSelectedStudentId}
+            onToggleFollow={(studentId) => void handleToggleFollow(studentId)}
+          />
         }
       >
           {selectedStudent ? (
@@ -806,78 +727,6 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
             </Card>
           )}
       </ResizableSplitPane>
-    </div>
-  );
-}
-
-// 学生列表项
-function StudentListItem({
-  student,
-  isSelected,
-  isFollowed,
-  followPending,
-  lastInteraction,
-  onClick,
-  onToggleFollow,
-}: {
-  student: Student;
-  isSelected: boolean;
-  isFollowed: boolean;
-  followPending: boolean;
-  lastInteraction?: string;
-  onClick: () => void;
-  onToggleFollow: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-left transition-colors",
-        isSelected
-          ? "bg-gold-50 ring-1 ring-gold-300"
-          : "hover:bg-mist",
-      )}
-    >
-      <button
-        type="button"
-        onClick={onClick}
-        aria-label={student.name}
-        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-      >
-        <div className={cn(
-          "w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0",
-          isSelected ? "bg-gold-200 text-gold-800" : "bg-mist text-ink-600",
-        )}>
-          {student.name.slice(0, 1)}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm font-medium text-ink-900 truncate">{student.name}</span>
-          </div>
-          <div className="text-[10px] text-ink-400 flex items-center gap-1">
-            {lastInteraction ? (
-              <>
-                <Clock className="w-2.5 h-2.5" />
-                {timeAgo(lastInteraction)}
-              </>
-            ) : (
-              <span className="text-amber-500">未互动</span>
-            )}
-          </div>
-        </div>
-      </button>
-      <button
-        type="button"
-        onClick={onToggleFollow}
-        disabled={followPending}
-        aria-label={isFollowed ? `取消关注${student.name}` : `关注${student.name}`}
-        title={isFollowed ? "取消关注" : "关注"}
-        className={cn(
-          "flex-shrink-0 rounded p-1 transition-colors disabled:opacity-50",
-          isFollowed ? "text-gold-600" : "text-ink-300 hover:text-gold-500",
-        )}
-      >
-        <Star className={cn("h-4 w-4", isFollowed && "fill-current")} />
-      </button>
     </div>
   );
 }
