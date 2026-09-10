@@ -21,6 +21,7 @@ import type {
   LessonCourseware,
   SchoolClass,
   TeacherLessonScheduleDay,
+  TeacherLessonScheduleDisplayOptions,
   TeacherLessonScheduleEntry,
   TeacherLessonSchedulePeriod,
   TeacherLessonScheduleTimeRange,
@@ -34,7 +35,12 @@ import { Input, Select, Textarea } from "@/components/ui/Input";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
 import { TeacherTimetable } from "@/components/lessons/TeacherTimetable";
 import { openCoursewareInWps } from "@/lib/wps";
-import { defaultTeacherScheduleTimeRanges, withDefaultTeacherScheduleTimeRanges } from "@/lib/teacher-schedule";
+import {
+  defaultTeacherScheduleDisplayOptions,
+  defaultTeacherScheduleTimeRanges,
+  withDefaultTeacherScheduleDisplayOptions,
+  withDefaultTeacherScheduleTimeRanges,
+} from "@/lib/teacher-schedule";
 
 function localDateValue(date = new Date()): string {
   const year = date.getFullYear();
@@ -185,6 +191,12 @@ export function MyLessonsPage() {
   const [scheduleTimeRangeDraft, setScheduleTimeRangeDraft] = useState<TeacherLessonScheduleTimeRange[]>(
     defaultTeacherScheduleTimeRanges,
   );
+  const [scheduleDisplayOptions, setScheduleDisplayOptions] = useState<TeacherLessonScheduleDisplayOptions>(
+    defaultTeacherScheduleDisplayOptions,
+  );
+  const [scheduleDisplayOptionsDraft, setScheduleDisplayOptionsDraft] = useState<TeacherLessonScheduleDisplayOptions>(
+    defaultTeacherScheduleDisplayOptions,
+  );
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleEditing, setScheduleEditing] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -306,10 +318,13 @@ export function MyLessonsPage() {
     try {
       const schedule = await lessonCoursewareService.getLessonSchedule();
       const normalizedTimeRanges = withDefaultTeacherScheduleTimeRanges(schedule.timeRanges);
+      const normalizedDisplayOptions = withDefaultTeacherScheduleDisplayOptions(schedule.displayOptions);
       setLessonSchedule(schedule.entries);
       setScheduleDraft(schedule.entries);
       setScheduleTimeRanges(normalizedTimeRanges);
       setScheduleTimeRangeDraft(normalizedTimeRanges);
+      setScheduleDisplayOptions(normalizedDisplayOptions);
+      setScheduleDisplayOptionsDraft(normalizedDisplayOptions);
     } catch (err) {
       toast.error("课表加载失败", err instanceof Error ? err.message : undefined);
     } finally {
@@ -350,12 +365,19 @@ export function MyLessonsPage() {
   const handleSaveSchedule = async () => {
     setSavingSchedule(true);
     try {
-      const saved = await lessonCoursewareService.saveLessonSchedule(scheduleDraft, scheduleTimeRangeDraft);
+      const saved = await lessonCoursewareService.saveLessonSchedule(
+        scheduleDraft,
+        scheduleTimeRangeDraft,
+        scheduleDisplayOptionsDraft,
+      );
       const normalizedTimeRanges = withDefaultTeacherScheduleTimeRanges(saved.timeRanges);
+      const normalizedDisplayOptions = withDefaultTeacherScheduleDisplayOptions(saved.displayOptions);
       setLessonSchedule(saved.entries);
       setScheduleDraft(saved.entries);
       setScheduleTimeRanges(normalizedTimeRanges);
       setScheduleTimeRangeDraft(normalizedTimeRanges);
+      setScheduleDisplayOptions(normalizedDisplayOptions);
+      setScheduleDisplayOptionsDraft(normalizedDisplayOptions);
       setScheduleEditing(false);
       toast.success("课表已保存");
     } catch (err) {
@@ -893,22 +915,27 @@ export function MyLessonsPage() {
           draftEntries={scheduleDraft}
           timeRanges={scheduleTimeRanges}
           draftTimeRanges={scheduleTimeRangeDraft}
+          displayOptions={scheduleDisplayOptions}
+          draftDisplayOptions={scheduleDisplayOptionsDraft}
           loading={scheduleLoading}
           editing={scheduleEditing}
           saving={savingSchedule}
           onStartEditing={() => {
             setScheduleDraft(lessonSchedule);
             setScheduleTimeRangeDraft(scheduleTimeRanges);
+            setScheduleDisplayOptionsDraft(scheduleDisplayOptions);
             setScheduleEditing(true);
           }}
           onCancelEditing={() => {
             setScheduleDraft(lessonSchedule);
             setScheduleTimeRangeDraft(scheduleTimeRanges);
+            setScheduleDisplayOptionsDraft(scheduleDisplayOptions);
             setScheduleEditing(false);
           }}
           onSave={() => void handleSaveSchedule()}
           onSlotChange={updateScheduleSlot}
           onTimeRangeChange={updateScheduleTimeRange}
+          onDisplayOptionsChange={setScheduleDisplayOptionsDraft}
         />
       )}
 

@@ -19,6 +19,7 @@ import { BrandMark } from "@/components/brand/BrandMark";
 import { ExtractTaskCenter } from "@/components/extract/ExtractTaskCenter";
 import { useExtractTasksStore } from "@/stores/extractTasks";
 import { NotificationBell } from "@/components/layout/NotificationBell";
+import { LessonScheduleReminder } from "@/components/layout/LessonScheduleReminder";
 
 interface NavItem {
   path: string;
@@ -75,6 +76,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const affiliations = teacher ? getAffiliations().filter((item) => item.status === "active") : [];
   const currentAffiliation = teacher ? getCurrentAffiliation() : null;
+  const currentSchoolId = currentAffiliation ? currentAffiliation.schoolId : teacher?.schoolId || null;
   const isPersonalIdentity = !currentAffiliation?.schoolId;
   const canManageExams = teacher ? canManageSchoolExams(teacher, currentAffiliation) : false;
 
@@ -156,6 +158,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-mist flex">
+      <LessonScheduleReminder teacherId={teacher.id} schoolId={currentSchoolId} />
       {/* 侧栏 */}
       <aside
         className={cn(

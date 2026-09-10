@@ -492,7 +492,12 @@ describe("courseware lesson flow", () => {
         { day: 5, period: 12, classId: "class-1" },
         { day: 6, period: 1, weekParity: "odd", classId: "class-1" },
         { day: 6, period: 1, weekParity: "even", classId: "class-1" },
-      ], [{ period: 1, startTime: "08:00", endTime: "08:45" }], teacher);
+      ], [{ period: 1, startTime: "08:00", endTime: "08:45" }], {
+        hiddenPeriods: [-2],
+        hiddenColumns: ["7:even"],
+        boldAfterPeriods: [4],
+        boldAfterColumns: ["5:all"],
+      }, teacher);
 
       expect(schedule.entries).toEqual([
         { day: 1, period: -2, weekParity: "all", classId: "class-1" },
@@ -506,6 +511,12 @@ describe("courseware lesson flow", () => {
         period: 1,
         startTime: "08:00",
         endTime: "08:45",
+      });
+      expect(schedule.displayOptions).toEqual({
+        hiddenPeriods: [-2],
+        hiddenColumns: ["7:even"],
+        boldAfterPeriods: [4],
+        boldAfterColumns: ["5:all"],
       });
       expect(await lessonCoursewareService.getLessonSchedule(
         state.teachers[0] as unknown as Teacher,
@@ -527,25 +538,37 @@ describe("courseware lesson flow", () => {
         { day: 1, period: 1, weekParity: "all", classId: "class-1" },
       ]);
       expect(legacySchedule.timeRanges).toHaveLength(15);
+      expect(legacySchedule.displayOptions).toEqual({
+        hiddenPeriods: [],
+        hiddenColumns: [],
+        boldAfterPeriods: [],
+        boldAfterColumns: [],
+      });
 
       await expect(lessonCoursewareService.saveLessonSchedule([
         { day: 2, period: 3, classId: "class-other" },
-      ], undefined, teacher)).rejects.toThrow("课表中包含非本人任教班级");
+      ], undefined, undefined, teacher)).rejects.toThrow("课表中包含非本人任教班级");
       await expect(lessonCoursewareService.saveLessonSchedule([
         { day: 8 as 7, period: 1, classId: "class-1" },
-      ], undefined, teacher)).rejects.toThrow("课表星期设置不合法");
+      ], undefined, undefined, teacher)).rejects.toThrow("课表星期设置不合法");
       await expect(lessonCoursewareService.saveLessonSchedule([
         { day: 1, period: 13 as 12, classId: "class-1" },
-      ], undefined, teacher)).rejects.toThrow("课表节次设置不合法");
+      ], undefined, undefined, teacher)).rejects.toThrow("课表节次设置不合法");
       await expect(lessonCoursewareService.saveLessonSchedule([
         { day: 1, period: 1, weekParity: "odd", classId: "class-1" },
-      ], undefined, teacher)).rejects.toThrow("工作日课表不区分单双周");
+      ], undefined, undefined, teacher)).rejects.toThrow("工作日课表不区分单双周");
       await expect(lessonCoursewareService.saveLessonSchedule([
         { day: 6, period: 1, classId: "class-1" },
-      ], undefined, teacher)).rejects.toThrow("周末课表必须设置单周或双周");
+      ], undefined, undefined, teacher)).rejects.toThrow("周末课表必须设置单周或双周");
       await expect(lessonCoursewareService.saveLessonSchedule([], [
         { period: 1, startTime: "09:00", endTime: "08:00" },
-      ], teacher)).rejects.toThrow("课表时间区间设置不合法");
+      ], undefined, teacher)).rejects.toThrow("课表时间区间设置不合法");
+      await expect(lessonCoursewareService.saveLessonSchedule([], undefined, {
+        hiddenPeriods: [],
+        hiddenColumns: ["invalid"],
+        boldAfterPeriods: [],
+        boldAfterColumns: [],
+      }, teacher)).rejects.toThrow("课表显示设置不合法");
     });
   });
 

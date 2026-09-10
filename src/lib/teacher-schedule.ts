@@ -1,5 +1,6 @@
 import type {
   TeacherLessonScheduleDay,
+  TeacherLessonScheduleDisplayOptions,
   TeacherLessonScheduleEntry,
   TeacherLessonSchedulePeriod,
   TeacherLessonScheduleTimeRange,
@@ -69,6 +70,30 @@ export const TEACHER_SCHEDULE_COLUMNS = [
   ...TEACHER_SCHEDULE_WEEKEND_COLUMNS,
 ] as const satisfies ReadonlyArray<TeacherScheduleColumn>;
 
+export const TEACHER_SCHEDULE_COLUMN_KEYS = new Set<string>(
+  TEACHER_SCHEDULE_COLUMNS.map((column) => column.key),
+);
+
+export function defaultTeacherScheduleDisplayOptions(): TeacherLessonScheduleDisplayOptions {
+  return {
+    hiddenPeriods: [],
+    hiddenColumns: [],
+    boldAfterPeriods: [],
+    boldAfterColumns: [],
+  };
+}
+
+export function withDefaultTeacherScheduleDisplayOptions(
+  options: Partial<TeacherLessonScheduleDisplayOptions> | undefined,
+): TeacherLessonScheduleDisplayOptions {
+  return {
+    hiddenPeriods: Array.isArray(options?.hiddenPeriods) ? [...options.hiddenPeriods] : [],
+    hiddenColumns: Array.isArray(options?.hiddenColumns) ? [...options.hiddenColumns] : [],
+    boldAfterPeriods: Array.isArray(options?.boldAfterPeriods) ? [...options.boldAfterPeriods] : [],
+    boldAfterColumns: Array.isArray(options?.boldAfterColumns) ? [...options.boldAfterColumns] : [],
+  };
+}
+
 const SLOT_INDEX = new Map<TeacherLessonSchedulePeriod, number>(
   TEACHER_SCHEDULE_SLOTS.map((slot, index) => [slot.period, index]),
 );
@@ -118,6 +143,7 @@ export function withDefaultTeacherScheduleTimeRanges(
 export function buildTeacherScheduleColumnCells(
   entries: readonly TeacherLessonScheduleEntry[],
   column: Pick<TeacherScheduleColumn, "day" | "weekParity">,
+  slots: readonly Pick<TeacherScheduleSlotDefinition, "period">[] = TEACHER_SCHEDULE_SLOTS,
 ): TeacherScheduleRenderedCell[] {
   const byPeriod = new Map<TeacherLessonSchedulePeriod, TeacherLessonScheduleEntry>();
   for (const entry of entries) {
@@ -125,7 +151,7 @@ export function buildTeacherScheduleColumnCells(
     byPeriod.set(entry.period, entry);
   }
 
-  const cells: TeacherScheduleRenderedCell[] = TEACHER_SCHEDULE_SLOTS.map((slot) => ({
+  const cells: TeacherScheduleRenderedCell[] = slots.map((slot) => ({
     entry: byPeriod.get(slot.period),
     rowSpan: 1,
     hidden: false,

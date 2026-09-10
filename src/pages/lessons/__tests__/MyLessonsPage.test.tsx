@@ -193,9 +193,10 @@ describe("MyLessonsPage classroom publishing", () => {
       entries: [],
       timeRanges: defaultTeacherScheduleTimeRanges(),
     });
-    vi.mocked(lessonCoursewareService.saveLessonSchedule).mockImplementation(async (entries, timeRanges) => ({
+    vi.mocked(lessonCoursewareService.saveLessonSchedule).mockImplementation(async (entries, timeRanges, displayOptions) => ({
       entries,
       timeRanges,
+      displayOptions,
     }));
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
     vi.mocked(lessonCoursewareService.deleteCourseware).mockResolvedValue(undefined);
@@ -244,6 +245,10 @@ describe("MyLessonsPage classroom publishing", () => {
     fireEvent.change(screen.getByLabelText("第 1 节 开始时间"), {
       target: { value: "08:00" },
     });
+    await user.click(screen.getByRole("checkbox", { name: "早早读" }));
+    await user.click(screen.getByRole("checkbox", { name: "星期一" }));
+    await user.click(screen.getByRole("checkbox", { name: "第 4 节 后" }));
+    await user.click(screen.getByRole("checkbox", { name: "星期五 后" }));
     await user.click(screen.getByRole("button", { name: "保存课表" }));
 
     await waitFor(() => {
@@ -257,8 +262,16 @@ describe("MyLessonsPage classroom publishing", () => {
           { period: -2, startTime: "06:40", endTime: "07:10" },
           { period: 12, startTime: "21:05", endTime: "21:50" },
         ]),
+        {
+          hiddenPeriods: [-2],
+          hiddenColumns: ["1:all"],
+          boldAfterPeriods: [4],
+          boldAfterColumns: ["5:all"],
+        },
       );
     });
+    expect(screen.queryByRole("rowheader", { name: "早早读" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "星期一" })).not.toBeInTheDocument();
   });
 
   it("defaults to the teacher's class and publishes homework immediately", async () => {

@@ -2662,11 +2662,25 @@ export interface TeacherLessonScheduleTimeRange {
   endTime: string;
 }
 
+/** 教师课表的显示偏好。 */
+export interface TeacherLessonScheduleDisplayOptions {
+  /** 查看课表时隐藏的时段。 */
+  hiddenPeriods: TeacherLessonSchedulePeriod[];
+  /** 查看课表时隐藏的列，键格式与课表列定义一致，例如 1:all、6:odd。 */
+  hiddenColumns: string[];
+  /** 在指定时段之后使用加粗横向分隔线。 */
+  boldAfterPeriods: TeacherLessonSchedulePeriod[];
+  /** 在指定列之后使用加粗纵向分隔线。 */
+  boldAfterColumns: string[];
+}
+
 /** 教师个人周课表。 */
 export interface TeacherLessonSchedule {
   entries: TeacherLessonScheduleEntry[];
   /** 旧课表可能缺失，读取时会补齐默认作息。 */
   timeRanges?: TeacherLessonScheduleTimeRange[];
+  /** 旧课表可能缺失，读取时使用默认显示设置。 */
+  displayOptions?: TeacherLessonScheduleDisplayOptions;
   updatedAt?: string;
 }
 

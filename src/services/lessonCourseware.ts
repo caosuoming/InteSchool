@@ -10,6 +10,7 @@ import type {
   PptSlideImportElement,
   ResourceSemester,
   TeacherLessonSchedule,
+  TeacherLessonScheduleDisplayOptions,
   TeacherLessonScheduleEntry,
   TeacherLessonScheduleTimeRange,
 } from "@/types";
@@ -147,8 +148,9 @@ export const lessonCoursewareService = {
   async saveLessonSchedule(
     entries: TeacherLessonScheduleEntry[],
     timeRanges: TeacherLessonScheduleTimeRange[],
+    displayOptions: TeacherLessonScheduleDisplayOptions,
   ): Promise<TeacherLessonSchedule> {
-    return rpcCall("lessonCourseware", "saveLessonSchedule", [entries, timeRanges, undefined]) as any;
+    return rpcCall("lessonCourseware", "saveLessonSchedule", [entries, timeRanges, displayOptions, undefined]) as any;
   },
 
   async listCoursewares(filter: LessonCoursewareFilter = {}): Promise<LessonCourseware[]> {
