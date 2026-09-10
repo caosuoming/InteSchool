@@ -2,21 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
   CircleDot,
   ClipboardCheck,
-  GraduationCap,
+  CalendarDays,
   ListChecks,
   Pin,
   RotateCcw,
-  Search,
   XCircle,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { classService } from "@/services/class";
 import { homeworkRecordService } from "@/services/homeworkRecord";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { knowledgeService } from "@/services/knowledge";
 import { HOMEWORK_ATTITUDE_KEYWORDS } from "@/types";
 import type {
@@ -28,6 +26,8 @@ import type {
   TreeNode,
 } from "@/types";
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
+import { StudentRosterSidebar } from "./StudentRosterSidebar";
+import { buildStudentRosterGroups } from "./student-roster";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -77,8 +77,16 @@ export function StudentHomeworkRecordPage() {
   const [pinnedKnowledgePointIds, setPinnedKnowledgePointIds] = useState<string[]>([]);
   const [draftPinnedIds, setDraftPinnedIds] = useState<string[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set());
   const [keyword, setKeyword] = useState("");
+  const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
+  const [followPendingStudentIds, setFollowPendingStudentIds] = useState<Set<string>>(() => new Set());
+  const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
+  const [homeworkDate, setHomeworkDate] = useState(() => {
+    const today = new Date();
+    const local = new Date(today.getTime() - today.getTimezoneOffset() * 60_000);
+    return local.toISOString().slice(0, 10);
+  });
   const [attitudeKeywords, setAttitudeKeywords] = useState<HomeworkAttitudeKeyword[]>([]);
   const [attitudePending, setAttitudePending] = useState(false);
   const [statusByKnowledgePointId, setStatusByKnowledgePointId] = useState<Record<string, HomeworkKnowledgeStatus>>({});
@@ -92,20 +100,30 @@ export function StudentHomeworkRecordPage() {
     if (!teacher?.id || !teacher.schoolId) return;
     setLoading(true);
     try {
-      const [studentList, classList, tree, points] = await Promise.all([
+      const [studentList, classList, tree, points, pinnedIds, followedIds, teacherInteractions] = await Promise.all([
         classService.listMyStudents(teacher.schoolId, teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         knowledgeService.getKnowledgeTree(teacher.schoolId),
         knowledgeService.listKnowledgePoints(teacher.schoolId),
+        homeworkRecordService.listPinnedKnowledgePointIds(),
+        studentInteractionService.listFollowedStudentIds(),
+        studentInteractionService.listByTeacher(teacher.id),
       ]);
-      const pinnedIds = await homeworkRecordService.listPinnedKnowledgePointIds();
+      const nextLastInteractionMap: Record<string, string> = {};
+      teacherInteractions.forEach((interaction) => {
+        const existing = nextLastInteractionMap[interaction.studentId];
+        if (!existing || new Date(interaction.createdAt) > new Date(existing)) {
+          nextLastInteractionMap[interaction.studentId] = interaction.createdAt;
+        }
+      });
       setStudents(studentList);
       setClasses(classList);
       setKnowledgeTree(tree);
       setKnowledgePoints(points);
       setPinnedKnowledgePointIds(pinnedIds);
       setDraftPinnedIds(pinnedIds);
-      setExpandedGroupIds(new Set(classList.map((item) => item.id)));
+      setFollowedStudentIds(new Set(followedIds));
+      setLastInteractionMap(nextLastInteractionMap);
       setSelectedStudentId((current) => (
         current && studentList.some((student) => student.id === current)
           ? current
@@ -132,7 +150,7 @@ export function StudentHomeworkRecordPage() {
     setRecordLoading(true);
     Promise.all([
       homeworkRecordService.listByStudent(selectedStudentId),
-      homeworkRecordService.getAttitudeByStudent(selectedStudentId),
+      homeworkRecordService.getAttitudeByStudent(selectedStudentId, homeworkDate),
     ])
       .then(([records, attitude]) => {
         if (cancelled) return;
@@ -152,7 +170,7 @@ export function StudentHomeworkRecordPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedStudentId]);
+  }, [homeworkDate, selectedStudentId]);
 
   const filteredStudents = useMemo(() => {
     const normalized = keyword.trim().toLowerCase();
@@ -162,24 +180,21 @@ export function StudentHomeworkRecordPage() {
       || (student.studentNo || "").toLowerCase().includes(normalized));
   }, [keyword, students]);
 
-  const studentGroups = useMemo(() => {
-    const groupedIds = new Set<string>();
-    const groups = classes.flatMap((classInfo) => {
-      const members = filteredStudents.filter((student) => {
-        const included = classInfo.type === "school"
-          ? student.classId === classInfo.id
-          : classInfo.studentIds.includes(student.id);
-        if (included) groupedIds.add(student.id);
-        return included;
-      });
-      return members.length > 0
-        ? [{ id: classInfo.id, name: classInfo.name, students: members }]
-        : [];
+  const studentGroups = useMemo(() => buildStudentRosterGroups(
+    filteredStudents,
+    classes,
+    followedStudentIds,
+    lastInteractionMap,
+  ), [classes, filteredStudents, followedStudentIds, lastInteractionMap]);
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
     });
-    const ungrouped = filteredStudents.filter((student) => !groupedIds.has(student.id));
-    if (ungrouped.length > 0) groups.push({ id: "ungrouped", name: "其他学生", students: ungrouped });
-    return groups;
-  }, [classes, filteredStudents]);
+  };
 
   const selectedStudent = students.find((student) => student.id === selectedStudentId) ?? null;
   const knowledgePointMap = useMemo(
@@ -204,15 +219,6 @@ export function StudentHomeworkRecordPage() {
     }
     return path.join(" / ");
   }, [knowledgePointMap]);
-
-  const toggleGroup = (groupId: string) => {
-    setExpandedGroupIds((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
-  };
 
   const setKnowledgeStatus = async (
     knowledgePointId: string,
@@ -261,6 +267,7 @@ export function StudentHomeworkRecordPage() {
     try {
       await homeworkRecordService.setAttitudeKeywords({
         studentId: selectedStudentId,
+        homeworkDate,
         keywords: next,
       });
     } catch (error) {
@@ -268,6 +275,35 @@ export function StudentHomeworkRecordPage() {
       toast.error("保存作业态度失败", error instanceof Error ? error.message : undefined);
     } finally {
       setAttitudePending(false);
+    }
+  };
+
+  const toggleFollow = async (studentId: string) => {
+    if (followPendingStudentIds.has(studentId)) return;
+    const nextFollowed = !followedStudentIds.has(studentId);
+    setFollowPendingStudentIds((current) => new Set(current).add(studentId));
+    setFollowedStudentIds((current) => {
+      const next = new Set(current);
+      if (nextFollowed) next.add(studentId);
+      else next.delete(studentId);
+      return next;
+    });
+    try {
+      await studentInteractionService.setStudentFollowed(studentId, nextFollowed);
+    } catch (error) {
+      setFollowedStudentIds((current) => {
+        const next = new Set(current);
+        if (nextFollowed) next.delete(studentId);
+        else next.add(studentId);
+        return next;
+      });
+      toast.error("更新关注状态失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setFollowPendingStudentIds((current) => {
+        const next = new Set(current);
+        next.delete(studentId);
+        return next;
+      });
     }
   };
 
@@ -296,77 +332,25 @@ export function StudentHomeworkRecordPage() {
   return (
     <div>
       <ResizableSplitPane
-        storageKey="inteschool:homework-record-sidebar-width"
+        storageKey="inteschool:my-students-sidebar-width"
         className="h-[calc(100vh-12rem)] lg:h-auto lg:items-start"
         sidebarClassName="h-full lg:h-auto"
-        contentClassName="h-full lg:sticky lg:top-6 lg:h-[calc(100vh-12rem)] lg:self-start"
+        contentClassName="h-full lg:sticky lg:top-6 lg:h-[calc(100vh-1.5rem)] lg:self-start"
         sidebar={
-          <Card className="h-full flex flex-col lg:h-auto lg:min-h-[calc(100vh-12rem)]">
-            <div className="p-3 border-b border-ink-100">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
-                <input
-                  type="text"
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  placeholder="搜索学生..."
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-ink-200 bg-paper text-sm focus:outline-none focus:border-gold-400"
-                />
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto lg:overflow-visible">
-              {loading ? (
-                <div className="flex justify-center py-10"><Spinner size={20} /></div>
-              ) : filteredStudents.length === 0 ? (
-                <div className="p-6 text-center text-xs text-ink-400">暂无学生</div>
-              ) : (
-                <div className="px-3 py-2 space-y-3">
-                  {studentGroups.map((group) => {
-                    const expanded = expandedGroupIds.has(group.id);
-                    return (
-                      <section key={group.id}>
-                        <button
-                          type="button"
-                          aria-expanded={expanded}
-                          onClick={() => toggleGroup(group.id)}
-                          className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] font-semibold text-gold-700 tracking-wide transition-colors hover:bg-gold-400/10"
-                        >
-                          {expanded
-                            ? <ChevronDown className="w-3 h-3 flex-shrink-0" />
-                            : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
-                          <GraduationCap className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{group.name}</span>
-                          <span className="text-ink-400 font-normal">（{group.students.length}）</span>
-                        </button>
-                        {expanded && (
-                          <div className="mt-1 space-y-0.5">
-                            {group.students.map((student) => (
-                              <button
-                                key={`${group.id}-${student.id}`}
-                                type="button"
-                                onClick={() => setSelectedStudentId(student.id)}
-                                className={cn(
-                                  "w-full rounded-md px-2 py-2 text-left transition-colors",
-                                  selectedStudentId === student.id
-                                    ? "bg-gold-400/10 text-gold-800"
-                                    : "text-ink-700 hover:bg-mist",
-                                )}
-                              >
-                                <div className="text-sm font-medium truncate">{student.name}</div>
-                                {student.studentNo && (
-                                  <div className="mt-0.5 text-[10px] text-ink-400 truncate">学号 {student.studentNo}</div>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </Card>
+          <StudentRosterSidebar
+            groups={studentGroups}
+            loading={loading}
+            keyword={keyword}
+            selectedStudentId={selectedStudentId}
+            expandedGroupIds={expandedGroupIds}
+            followedStudentIds={followedStudentIds}
+            followPendingStudentIds={followPendingStudentIds}
+            lastInteractionMap={lastInteractionMap}
+            onKeywordChange={setKeyword}
+            onToggleGroup={toggleGroup}
+            onSelectStudent={setSelectedStudentId}
+            onToggleFollow={(studentId) => void toggleFollow(studentId)}
+          />
         }
       >
         <div className="h-full flex flex-col gap-4">
@@ -400,12 +384,28 @@ export function StudentHomeworkRecordPage() {
             ) : (
               <div>
                 <section className="border-b border-gold-200 bg-gold-50/40 p-4 lg:p-5">
-                  <div className="flex items-start gap-2.5">
-                    <ClipboardCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-gold-600" />
-                    <div>
-                      <h3 className="text-sm font-semibold text-ink-900">作业态度</h3>
-                      <p className="mt-0.5 text-xs text-ink-500">可多选候选关键词，已选 {attitudeKeywords.length} 项</p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <ClipboardCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-gold-600" />
+                      <div>
+                        <h3 className="text-sm font-semibold text-ink-900">作业态度</h3>
+                        <p className="mt-0.5 text-xs text-ink-500">可多选候选关键词，已选 {attitudeKeywords.length} 项</p>
+                      </div>
                     </div>
+                    <label className="flex items-center gap-2 text-xs font-medium text-ink-600">
+                      <CalendarDays className="h-4 w-4 text-gold-600" />
+                      <span>作业日期</span>
+                      <input
+                        type="date"
+                        aria-label="作业日期"
+                        value={homeworkDate}
+                        disabled={attitudePending}
+                        onChange={(event) => {
+                          if (event.target.value) setHomeworkDate(event.target.value);
+                        }}
+                        className="rounded-lg border border-ink-200 bg-paper px-2.5 py-1.5 text-xs text-ink-700 outline-none transition-colors focus:border-gold-400 disabled:opacity-60"
+                      />
+                    </label>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="作业态度关键词">
                     {HOMEWORK_ATTITUDE_KEYWORDS.map((attitudeKeyword) => {

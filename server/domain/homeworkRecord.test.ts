@@ -130,37 +130,62 @@ describe("homeworkRecordService", () => {
     });
   });
 
-  it("persists and clears homework-attitude keywords per accessible student", async () => {
+  it("persists and clears homework-attitude keywords by homework date", async () => {
     const appState = state();
     await runWithState(appState, async () => {
-      await expect(homeworkRecordService.getAttitudeByStudent("student-1", teacher)).resolves.toBeNull();
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-05", teacher))
+        .resolves.toBeNull();
 
       const created = await homeworkRecordService.setAttitudeKeywords({
         studentId: "student-1",
+        homeworkDate: "2026-09-05",
         keywords: ["按时完成", "粗心", "按时完成"],
       }, teacher);
       expect(created).toMatchObject({
         teacherId: "teacher-1",
         studentId: "student-1",
+        homeworkDate: "2026-09-05",
         keywords: ["按时完成", "粗心"],
       });
-      await expect(homeworkRecordService.getAttitudeByStudent("student-1", teacher))
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-05", teacher))
         .resolves.toMatchObject({ keywords: ["按时完成", "粗心"] });
+
+      const nextDate = await homeworkRecordService.setAttitudeKeywords({
+        studentId: "student-1",
+        homeworkDate: "2026-09-06",
+        keywords: ["独立完成"],
+      }, teacher);
+      expect(nextDate?.id).not.toBe(created?.id);
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-05", teacher))
+        .resolves.toMatchObject({ keywords: ["按时完成", "粗心"] });
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-06", teacher))
+        .resolves.toMatchObject({ keywords: ["独立完成"] });
 
       await expect(homeworkRecordService.setAttitudeKeywords({
         studentId: "student-1",
+        homeworkDate: "2026-02-30",
+        keywords: ["按时完成"],
+      }, teacher)).rejects.toThrow("作业日期格式不正确");
+      await expect(homeworkRecordService.setAttitudeKeywords({
+        studentId: "student-1",
+        homeworkDate: "2026-09-05",
         keywords: ["未知标签"],
       } as any, teacher)).rejects.toThrow("作业态度关键词不正确");
       await expect(homeworkRecordService.setAttitudeKeywords({
         studentId: "student-2",
+        homeworkDate: "2026-09-05",
         keywords: ["按时完成"],
       }, teacher)).rejects.toThrow("只能记录自己任教班级或个人教学班的学生");
 
       await expect(homeworkRecordService.setAttitudeKeywords({
         studentId: "student-1",
+        homeworkDate: "2026-09-05",
         keywords: [],
       }, teacher)).resolves.toBeNull();
-      await expect(homeworkRecordService.getAttitudeByStudent("student-1", teacher)).resolves.toBeNull();
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-05", teacher))
+        .resolves.toBeNull();
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-06", teacher))
+        .resolves.toMatchObject({ keywords: ["独立完成"] });
     });
   });
 

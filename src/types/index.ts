@@ -3011,6 +3011,8 @@ export interface HomeworkAttitudeRecord {
   teacherId: string;
   schoolId: string;
   studentId: string;
+  /** 作业日期；旧记录可能没有该字段。 */
+  homeworkDate?: string;
   keywords: HomeworkAttitudeKeyword[];
   createdAt: string;
   updatedAt: string;
