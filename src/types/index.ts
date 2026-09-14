@@ -2699,6 +2699,8 @@ export interface TeacherTeachingPlanEntry {
   date: string;
   note: string;
   plan: string;
+  /** 教师当天记录的教学心得；旧数据可能缺失。 */
+  teachingLog?: string;
 }
 
 /** 一个学期的教学计划。 */

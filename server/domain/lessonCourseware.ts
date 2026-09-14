@@ -1019,12 +1019,20 @@ function normalizeTeachingPlanEntries(
     const date = String(raw?.date || "").trim();
     const note = String(raw?.note || "").trim().slice(0, 500);
     const plan = String(raw?.plan || "").trim().slice(0, 2000);
+    const teachingLog = String(raw?.teachingLog || "").trim().slice(0, 2000);
     const valid = Boolean(parseDateValue(date)) && date >= startDate && date <= endDate;
     if (!valid) {
       if (strict) throw new Error("教学计划包含学期范围外的日期");
       continue;
     }
-    if (note || plan) normalized.set(date, { date, note, plan });
+    if (note || plan || teachingLog) {
+      normalized.set(date, {
+        date,
+        note,
+        plan,
+        ...(teachingLog ? { teachingLog } : {}),
+      });
+    }
   }
   return [...normalized.values()].sort((left, right) => left.date.localeCompare(right.date));
 }
