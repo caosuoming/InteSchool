@@ -30,6 +30,7 @@ import { StudentRosterSidebar } from "./StudentRosterSidebar";
 import { buildStudentRosterGroups } from "./student-roster";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Textarea } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
@@ -89,6 +90,9 @@ export function StudentHomeworkRecordPage() {
   });
   const [attitudeKeywords, setAttitudeKeywords] = useState<HomeworkAttitudeKeyword[]>([]);
   const [attitudePending, setAttitudePending] = useState(false);
+  const [evaluation, setEvaluation] = useState("");
+  const [savedEvaluation, setSavedEvaluation] = useState("");
+  const [evaluationPending, setEvaluationPending] = useState(false);
   const [statusByKnowledgePointId, setStatusByKnowledgePointId] = useState<Record<string, HomeworkKnowledgeStatus>>({});
   const [pendingKnowledgePointIds, setPendingKnowledgePointIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -143,6 +147,8 @@ export function StudentHomeworkRecordPage() {
   useEffect(() => {
     if (!selectedStudentId) {
       setAttitudeKeywords([]);
+      setEvaluation("");
+      setSavedEvaluation("");
       setStatusByKnowledgePointId({});
       return;
     }
@@ -155,6 +161,9 @@ export function StudentHomeworkRecordPage() {
       .then(([records, attitude]) => {
         if (cancelled) return;
         setAttitudeKeywords(attitude?.keywords ?? []);
+        const nextEvaluation = attitude?.evaluation ?? "";
+        setEvaluation(nextEvaluation);
+        setSavedEvaluation(nextEvaluation);
         setStatusByKnowledgePointId(Object.fromEntries(
           records.map((record) => [record.knowledgePointId, record.status]),
         ));
@@ -275,6 +284,27 @@ export function StudentHomeworkRecordPage() {
       toast.error("保存作业态度失败", error instanceof Error ? error.message : undefined);
     } finally {
       setAttitudePending(false);
+    }
+  };
+
+  const saveEvaluation = async () => {
+    if (!selectedStudentId || evaluationPending) return;
+    const nextEvaluation = evaluation.trim();
+    setEvaluationPending(true);
+    try {
+      const saved = await homeworkRecordService.setEvaluation({
+        studentId: selectedStudentId,
+        homeworkDate,
+        evaluation: nextEvaluation,
+      });
+      const normalized = saved?.evaluation ?? "";
+      setEvaluation(normalized);
+      setSavedEvaluation(normalized);
+      toast.success(normalized ? "作业评价已保存" : "作业评价已清除");
+    } catch (error) {
+      toast.error("保存作业评价失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setEvaluationPending(false);
     }
   };
 
@@ -399,7 +429,7 @@ export function StudentHomeworkRecordPage() {
                         type="date"
                         aria-label="作业日期"
                         value={homeworkDate}
-                        disabled={attitudePending}
+                        disabled={attitudePending || evaluationPending}
                         onChange={(event) => {
                           if (event.target.value) setHomeworkDate(event.target.value);
                         }}
@@ -442,6 +472,30 @@ export function StudentHomeworkRecordPage() {
                         </button>
                       );
                     })}
+                  </div>
+                  <div className="mt-4 border-t border-gold-200/70 pt-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <Textarea
+                        label="作业评价"
+                        value={evaluation}
+                        onChange={(event) => setEvaluation(event.target.value)}
+                        placeholder="填写本次作业的整体评价、改进建议等..."
+                        rows={3}
+                        disabled={evaluationPending}
+                        hint="保存后会同步显示在“师生互动”的互动记录时间线中"
+                        className="min-h-[88px] bg-paper"
+                      />
+                      <Button
+                        variant="gold"
+                        size="sm"
+                        className="sm:mb-[22px] sm:shrink-0"
+                        onClick={() => void saveEvaluation()}
+                        loading={evaluationPending}
+                        disabled={evaluationPending || evaluation.trim() === savedEvaluation.trim()}
+                      >
+                        保存评价
+                      </Button>
+                    </div>
                   </div>
                 </section>
 

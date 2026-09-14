@@ -32,6 +32,7 @@ vi.mock("@/services/studentInteraction", () => ({
 vi.mock("@/services/homeworkRecord", () => ({
   homeworkRecordService: {
     listByStudent: vi.fn(),
+    listAttitudesByStudent: vi.fn(),
   },
 }));
 
@@ -153,6 +154,7 @@ describe("StudentInteractionPage", () => {
     vi.mocked(studentInteractionService.createInteraction).mockResolvedValue(createdInteraction);
     vi.mocked(studentInteractionService.deleteInteraction).mockResolvedValue(undefined);
     vi.mocked(homeworkRecordService.listByStudent).mockResolvedValue([]);
+    vi.mocked(homeworkRecordService.listAttitudesByStudent).mockResolvedValue([]);
     vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([]);
     vi.mocked(gradeService.getQueryData).mockResolvedValue(emptyGradeQueryData);
     vi.mocked(uploadFile).mockResolvedValue({
@@ -367,6 +369,28 @@ describe("StudentInteractionPage", () => {
     expect(screen.getByText("第二次月考")).toBeInTheDocument();
     expect(screen.queryByText("第一次月考")).not.toBeInTheDocument();
     expect(screen.getByText("最近考试成绩 · 数学")).toBeInTheDocument();
+  });
+
+  it("shows homework attitude and evaluation in the interaction timeline", async () => {
+    vi.mocked(homeworkRecordService.listAttitudesByStudent).mockResolvedValue([{
+      id: "homework-feedback-1",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      studentId: "student-1",
+      homeworkDate: "2026-09-06",
+      keywords: ["按时完成", "书写认真"],
+      evaluation: "步骤完整，订正及时",
+      createdAt: "2026-09-06T08:00:00.000Z",
+      updatedAt: "2026-09-06T08:10:00.000Z",
+    }]);
+
+    render(<StudentInteractionPage embedded />);
+
+    expect(await screen.findByText("作业")).toBeInTheDocument();
+    expect(screen.getByText("按时完成、书写认真")).toBeInTheDocument();
+    expect(screen.getByText("步骤完整，订正及时")).toBeInTheDocument();
+    expect(screen.getByText(/互动记录时间线（1 条）/)).toBeInTheDocument();
+    expect(homeworkRecordService.listAttitudesByStudent).toHaveBeenCalledWith("student-1");
   });
 
   it("labels received records as anonymous and only allows deleting owned records", async () => {

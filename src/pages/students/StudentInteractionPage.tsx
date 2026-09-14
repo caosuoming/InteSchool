@@ -15,6 +15,7 @@ import { uploadFile } from "@/services/api";
 import type {
   AnyClass,
   GradeQueryData,
+  HomeworkAttitudeRecord,
   HomeworkKnowledgeRecord,
   KnowledgePoint,
   Student,
@@ -86,6 +87,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
   const [gradeQueryData, setGradeQueryData] = useState<GradeQueryData | null>(null);
   const [recentHomeworkRecords, setRecentHomeworkRecords] = useState<HomeworkKnowledgeRecord[]>([]);
+  const [homeworkFeedbackRecords, setHomeworkFeedbackRecords] = useState<HomeworkAttitudeRecord[]>([]);
 
   // 新建记录
   const [newType, setNewType] = useState<"chat" | "attitude" | "status">("chat");
@@ -157,8 +159,19 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const loadInteractions = useCallback(async () => {
     if (!selectedStudentId) return;
     try {
-      const list = await studentInteractionService.listByStudent(selectedStudentId);
+      const [interactionResult, homeworkResult] = await Promise.allSettled([
+        studentInteractionService.listByStudent(selectedStudentId),
+        homeworkRecordService.listAttitudesByStudent(selectedStudentId),
+      ]);
+      if (interactionResult.status === "rejected") throw interactionResult.reason;
+      const list = interactionResult.value;
       setInteractions(list);
+      if (homeworkResult.status === "fulfilled") {
+        setHomeworkFeedbackRecords(homeworkResult.value);
+      } else {
+        setHomeworkFeedbackRecords([]);
+        toast.error("加载作业评价失败", homeworkResult.reason instanceof Error ? homeworkResult.reason.message : undefined);
+      }
       // 更新该学生最近互动时间缓存
       if (list.length > 0) {
         setLastInteractionMap((prev) => {
@@ -171,6 +184,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
         });
       }
     } catch (err) {
+      setHomeworkFeedbackRecords([]);
       toast.error("加载互动记录失败");
     }
   }, [selectedStudentId]);
@@ -311,6 +325,24 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       setUploadingImages(false);
     }
   };
+
+  const timelineEntries = useMemo(() => [
+    ...interactions.map((interaction) => ({
+      kind: "interaction" as const,
+      id: interaction.id,
+      sortAt: interaction.createdAt,
+      interaction,
+    })),
+    ...homeworkFeedbackRecords.map((record) => ({
+      kind: "homework" as const,
+      id: record.id,
+      sortAt: record.homeworkDate ? `${record.homeworkDate}T12:00:00` : record.createdAt,
+      record,
+    })),
+  ].sort((left, right) => new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime()), [
+    homeworkFeedbackRecords,
+    interactions,
+  ]);
 
   // 最近态度
   const latestAttitude = useMemo(() => {
@@ -630,21 +662,54 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
               <Card className="flex-1 min-h-0 p-4 overflow-auto">
                 <div className="text-sm font-medium text-ink-700 mb-3 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-ink-400" />
-                  互动记录时间线（{interactions.length} 条）
+                  互动记录时间线（{timelineEntries.length} 条）
                 </div>
 
-                {interactions.length === 0 ? (
+                {timelineEntries.length === 0 ? (
                   <div className="py-8 text-center text-sm text-ink-400">
                     暂无互动记录，开始添加第一条吧
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {interactions.map((it) => {
+                    {timelineEntries.map((entry) => {
+                      if (entry.kind === "homework") {
+                        const record = entry.record;
+                        const homeworkDay = record.homeworkDate || record.createdAt.slice(0, 10);
+                        const dateLabel = new Date(`${homeworkDay}T00:00:00`).toLocaleDateString("zh-CN");
+                        return (
+                          <div
+                            key={`homework-${entry.id}`}
+                            className="relative pl-6 pb-3 border-l-2 border-ink-100 last:border-l-transparent"
+                          >
+                            <div className="absolute -left-2 top-0 w-3 h-3 rounded-full border-2 border-paper bg-amber-400" />
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="amber">作业</Badge>
+                              <span className="text-xs text-ink-500">作业日期 {dateLabel}</span>
+                            </div>
+                            <div className="text-sm text-ink-700 leading-relaxed bg-mist/40 p-2 rounded">
+                              {record.keywords.length > 0 && (
+                                <div>
+                                  <span className="font-medium text-ink-600">作业态度：</span>
+                                  {record.keywords.join("、")}
+                                </div>
+                              )}
+                              {record.evaluation && (
+                                <div className={cn(record.keywords.length > 0 && "mt-1.5")}>
+                                  <span className="font-medium text-ink-600">作业评价：</span>
+                                  <span className="whitespace-pre-wrap">{record.evaluation}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      const it = entry.interaction;
                       const opt = getAttitudeOption(it.attitude);
                       const AttIcon = opt?.icon;
                       return (
                         <div
-                          key={it.id}
+                          key={`interaction-${entry.id}`}
                           className="relative pl-6 pb-3 border-l-2 border-ink-100 last:border-l-transparent"
                         >
                           <div className={cn(

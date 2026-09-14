@@ -1689,7 +1689,15 @@ export const serviceParameters = {
       "homeworkDate",
       "teacher"
     ],
+    "listAttitudesByStudent": [
+      "studentId",
+      "teacher"
+    ],
     "setAttitudeKeywords": [
+      "input",
+      "teacher"
+    ],
+    "setEvaluation": [
       "input",
       "teacher"
     ],
