@@ -516,6 +516,24 @@ const imageMaterial: Material = {
   fileUrl: "/api/files/function-image",
 };
 
+const audioMaterial: Material = {
+  ...knowledgeMaterial,
+  id: "material-audio-1",
+  title: "函数讲解音频",
+  type: "audio",
+  content: "函数讲解.mp3",
+  fileUrl: "/api/files/function-audio.mp3",
+};
+
+const videoMaterial: Material = {
+  ...knowledgeMaterial,
+  id: "material-video-1",
+  title: "函数讲解视频",
+  type: "video",
+  content: "函数讲解.mp4",
+  fileUrl: "/api/files/function-video.mp4",
+};
+
 describe("material previews", () => {
   it("expands a knowledge block inline in the material library without opening a modal", () => {
     render(
@@ -570,6 +588,71 @@ describe("material previews", () => {
       "src",
       imageMaterial.fileUrl,
     );
+  });
+
+  it("previews audio directly from the material library", () => {
+    render(
+      <ResourceCard
+        title={audioMaterial.title}
+        meta={[]}
+        content={audioMaterial.content}
+        updatedAt={audioMaterial.updatedAt}
+        type={audioMaterial.type}
+        fileUrl={audioMaterial.fileUrl}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("预览音频"));
+
+    expect(screen.getByText("音频预览")).toBeInTheDocument();
+    expect(screen.getByTestId("material-audio-preview")).toHaveAttribute("src", audioMaterial.fileUrl);
+    expect(screen.getByTestId("material-audio-preview")).toHaveAttribute("controls");
+  });
+
+  it("previews video directly from the material library", () => {
+    render(
+      <ResourceCard
+        title={videoMaterial.title}
+        meta={[]}
+        content={videoMaterial.content}
+        updatedAt={videoMaterial.updatedAt}
+        type={videoMaterial.type}
+        fileUrl={videoMaterial.fileUrl}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("预览视频"));
+
+    expect(screen.getByText("视频预览")).toBeInTheDocument();
+    expect(screen.getByTestId("material-video-preview")).toHaveAttribute("src", videoMaterial.fileUrl);
+    expect(screen.getByTestId("material-video-preview")).toHaveAttribute("controls");
+  });
+
+  it("previews audio and video from resource basket material titles", () => {
+    const { rerender } = render(
+      <BasketMaterialListItem
+        material={audioMaterial}
+        selected={false}
+        onToggleSelection={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText(audioMaterial.title));
+    expect(screen.getByTestId("material-audio-preview")).toHaveAttribute("src", audioMaterial.fileUrl);
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    rerender(
+      <BasketMaterialListItem
+        material={videoMaterial}
+        selected={false}
+        onToggleSelection={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText(videoMaterial.title));
+    expect(screen.getByTestId("material-video-preview")).toHaveAttribute("src", videoMaterial.fileUrl);
   });
 
   it("expands a knowledge block inline in the resource basket without opening a modal", () => {
