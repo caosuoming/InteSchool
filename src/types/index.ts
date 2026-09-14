@@ -275,6 +275,10 @@ export type ClassType = "school" | "personal";
 export interface ClassTypeCategory {
   id: string;
   schoolId: string;
+  /** Personal system-setting owner. Legacy school-scoped records omit this field. */
+  teacherId?: string;
+  /** Legacy school-scoped IDs represented by this personal category. */
+  legacyIds?: string[];
   name: string;
   description?: string;
   color?: string;
@@ -289,6 +293,8 @@ export type ExamPaperFormat = "simple" | "gaokao";
 export interface ExamPaperType {
   id: string;
   schoolId: string;
+  /** Personal system-setting owner. Legacy school-scoped records omit this field. */
+  teacherId?: string;
   name: string;
   description?: string;
   /** 上级类型ID；为空时为一级类型。仅支持两级。 */
@@ -306,6 +312,8 @@ export type LectureFormat = "table" | "mixed";
 export interface LectureType {
   id: string;
   schoolId: string;
+  /** Personal system-setting owner. Legacy school-scoped records omit this field. */
+  teacherId?: string;
   name: string;
   description?: string;
   /** 上级类型ID；为空时为一级类型。仅支持两级。 */
@@ -1435,6 +1443,8 @@ export interface SimilarQuestionCandidate {
 export interface SchoolSetting {
   id: string;
   schoolId: string;
+  /** Personal system-setting owner. Legacy school-scoped records omit this field. */
+  teacherId?: string;
   type: "grade" | "schoolYear" | "source" | "questionType" | "category";
   name: string;
   value: string;

@@ -29,6 +29,7 @@ import type {
 } from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { findClassTypeByReference } from "@/lib/class-type";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
 type Tab = "school" | "personal";
@@ -560,7 +561,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                 <div className="space-y-1.5 max-h-[600px] overflow-y-auto">
                 {tab === "school"
                   ? schoolClasses.map((c) => {
-                      const ct = classTypes.find((t) => t.id === c.classTypeId);
+                      const ct = findClassTypeByReference(classTypes, c.classTypeId);
                       return (
                         <ClassListItem
                           key={c.id}
@@ -765,7 +766,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
                         <Badge variant="amber">已毕业</Badge>
                       )}
                       {selectedClass.type === "school" && (() => {
-            const ct = classTypes.find((c) => c.id === (selectedClass as SchoolClass).classTypeId);
+            const ct = findClassTypeByReference(classTypes, (selectedClass as SchoolClass).classTypeId);
             return ct ? (
               <span
                 className="text-xs px-2 py-0.5 rounded border"

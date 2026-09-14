@@ -43,7 +43,7 @@ import { toast } from "@/stores/ui";
 type SettingTab = "grade" | "schoolYear" | "source" | "questionType" | "category" | "classType" | "examPaperType" | "lectureType";
 
 const tabConfig: { key: SettingTab; label: string; description: string }[] = [
-  { key: "grade", label: "年级", description: "管理学校的年级设置，拖拽可调整排序" },
+  { key: "grade", label: "年级", description: "管理年级设置，拖拽可调整排序" },
   { key: "schoolYear", label: "学年", description: "管理学年设置，拖拽可调整排序" },
   { key: "source", label: "来源", description: "管理题目来源类型，拖拽可调整排序" },
   { key: "questionType", label: "题型", description: "管理题目类型，拖拽可调整排序" },
@@ -1129,7 +1129,7 @@ export function SettingsPage() {
       <div className="max-w-5xl mx-auto px-4 py-6">
         <PageHeader
           title="系统设置"
-          description="管理学校的年级、学年、来源、题型和题类等基础配置，支持拖拽或上下箭头排序"
+          description="管理个人的年级、学年、来源、题型和题类等基础配置，切换学校时保持一致"
           icon={<Settings className="w-5 h-5" />}
           action={
             <div className="flex items-center gap-2">
