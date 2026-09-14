@@ -361,6 +361,7 @@ describe("PresentationMode", () => {
 
     fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 100 });
     const clearsAfterPointerDown = clearRect.mock.calls.length;
+    const contextLookupsAfterPointerDown = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length;
     for (let index = 1; index <= 20; index += 1) {
       fireEvent.pointerMove(canvas, {
         pointerId: 1,
@@ -372,6 +373,7 @@ describe("PresentationMode", () => {
 
     expect(clearsAfterPointerDown).toBe(clearsBeforeStroke);
     expect(clearRect).toHaveBeenCalledTimes(clearsBeforeStroke);
+    expect(HTMLCanvasElement.prototype.getContext).toHaveBeenCalledTimes(contextLookupsAfterPointerDown);
     expect(stroke.mock.calls.length).toBeGreaterThanOrEqual(22);
     expect(bounds).toHaveBeenCalledTimes(1);
     expect(canvas).toHaveAttribute("data-recorded-stroke-count", "1");
@@ -671,6 +673,11 @@ describe("PresentationMode", () => {
     expect(firstBoard.querySelector('[data-board-divider="center"]')).toHaveClass("left-1/2");
     expect(screen.getByRole("button", { name: "移动板书 1" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /调整板书 1大小/ })).toHaveLength(8);
+    expect(firstBoard.querySelectorAll("[data-board-resize-arrow]")).toHaveLength(4);
+    expect(firstBoard.querySelector('[data-board-resize-arrow="nw"]')).toBeInTheDocument();
+    expect(firstBoard.querySelector('[data-board-resize-arrow="ne"]')).toBeInTheDocument();
+    expect(firstBoard.querySelector('[data-board-resize-arrow="sw"]')).toBeInTheDocument();
+    expect(firstBoard.querySelector('[data-board-resize-arrow="se"]')).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "清空当前板书" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "删除板书 1" })).not.toBeInTheDocument();
     const leftBoardControls = firstBoard.querySelector<HTMLElement>('[data-board-side-controls="left"]');
