@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { GripVertical, Maximize2 } from "lucide-react";
-import type { LessonSlideElement, LessonSlideTextElement } from "@/types";
+import type { LessonSlideElement, LessonSlideMediaElement, LessonSlideTextElement } from "@/types";
 import { cn } from "@/lib/utils";
 import { renderMathHtml, serializeMathHtml } from "@/lib/math-html";
 import { hasLessonElementAnimation } from "@/lib/lesson-animation";
@@ -24,6 +24,7 @@ interface LessonSlideCanvasProps {
   animationMode?: "default" | "step";
   allowTextEditing?: boolean;
   allowVerticalElementOverflow?: boolean;
+  enableScheduledMediaPlayback?: boolean;
   selectedElementId?: string | null;
   onSelectElement?: (id: string | null) => void;
   onElementsChange?: (elements: LessonSlideElement[]) => void;
@@ -43,6 +44,70 @@ type Interaction = {
 };
 
 const MIN_SIZE = 6;
+
+function scheduledPlaybackDelay(scheduledPlayAt: string | undefined, now = new Date()): number | null {
+  const match = scheduledPlayAt?.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+
+  const target = new Date(now);
+  target.setHours(hours, minutes, 0, 0);
+  // If the slide is opened during the scheduled minute, play immediately.
+  if (target.getTime() + 60_000 <= now.getTime()) return null;
+  return Math.max(0, target.getTime() - now.getTime());
+}
+
+function LessonMediaElement({
+  element,
+  scheduledPlaybackEnabled,
+}: {
+  element: LessonSlideMediaElement;
+  scheduledPlaybackEnabled: boolean;
+}) {
+  const mediaRef = useRef<HTMLMediaElement>(null);
+
+  useEffect(() => {
+    if (!scheduledPlaybackEnabled || !element.scheduledPlayAt) return;
+    const delay = scheduledPlaybackDelay(element.scheduledPlayAt);
+    if (delay === null) return;
+    const timer = window.setTimeout(() => {
+      void mediaRef.current?.play().catch(() => undefined);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [element.scheduledPlayAt, element.src, scheduledPlaybackEnabled]);
+
+  if (element.kind === "video") {
+    return (
+      <video
+        ref={(node) => { mediaRef.current = node; }}
+        src={element.src}
+        title={element.title || "视频素材"}
+        controls
+        preload="metadata"
+        className="h-full w-full rounded-md bg-black object-contain"
+      >
+        当前浏览器不支持视频播放。
+      </video>
+    );
+  }
+
+  return (
+    <div className="flex h-full w-full items-center rounded-md bg-white/90 px-3 shadow-sm">
+      <audio
+        ref={(node) => { mediaRef.current = node; }}
+        src={element.src}
+        title={element.title || "音频素材"}
+        controls
+        preload="metadata"
+        className="w-full"
+      >
+        当前浏览器不支持音频播放。
+      </audio>
+    </div>
+  );
+}
 
 function editableTextContent(editor: HTMLDivElement): string {
   return editor.innerHTML === "<br>"
@@ -147,6 +212,7 @@ export function LessonSlideCanvas({
   animationMode = "default",
   allowTextEditing = editable,
   allowVerticalElementOverflow = false,
+  enableScheduledMediaPlayback = false,
   selectedElementId,
   onSelectElement,
   onElementsChange,
@@ -344,7 +410,7 @@ export function LessonSlideCanvas({
               ? (event) => startInteraction(event, element, "move")
               : undefined}
             onClick={(event) => {
-              if (!editable || element.kind !== "text") return;
+              if (!editable || element.kind === "image") return;
               event.stopPropagation();
               onSelectElement?.(element.id);
             }}
@@ -372,6 +438,11 @@ export function LessonSlideCanvas({
                 alt={element.alt || "课件图片"}
                 draggable={false}
                 className="h-full w-full rounded-md object-contain"
+              />
+            ) : element.kind === "audio" || element.kind === "video" ? (
+              <LessonMediaElement
+                element={element}
+                scheduledPlaybackEnabled={enableScheduledMediaPlayback}
               />
             ) : (
               editable && allowTextEditing ? (
@@ -420,10 +491,10 @@ export function LessonSlideCanvas({
             )}
             {selected && (
               <>
-                {element.kind === "text" && (
+                {element.kind !== "image" && (
                   <div
                     className="absolute -left-2 -top-2 flex h-5 w-5 cursor-move items-center justify-center rounded bg-ink-800 text-paper shadow"
-                    title="拖动移动文本"
+                    title={element.kind === "text" ? "拖动移动文本" : "拖动移动素材"}
                     onPointerDown={(event) => startInteraction(event, element, "move")}
                     onPointerMove={moveInteraction}
                     onPointerUp={endInteraction}

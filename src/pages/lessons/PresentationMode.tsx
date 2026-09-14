@@ -2024,6 +2024,7 @@ export function PresentationMode({
                   animationMode="step"
                   allowTextEditing={false}
                   allowVerticalElementOverflow
+                  enableScheduledMediaPlayback
                   selectedElementId={selectedElementId}
                   onSelectElement={setSelectedElementId}
                   onElementsChange={updateVisibleElements}

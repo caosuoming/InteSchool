@@ -3,13 +3,16 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  FileBox,
   FileQuestion,
   Image as ImageIcon,
   Link as LinkIcon,
+  Music2,
   Plus,
   Star,
   Trash2,
   Type,
+  Video,
   X,
 } from "lucide-react";
 import type {
@@ -66,6 +69,7 @@ interface LessonEditorInspectorProps {
   onAddText: () => void;
   onAddImage: (file: File) => void;
   onAddLink: () => void;
+  onAddMaterial: () => void;
   onAddQuestion: () => void;
   onAddSlide: () => void;
   onSplitSlide: () => void;
@@ -105,13 +109,17 @@ const DEFAULT_TEXT_SIZE: Record<LessonSlideTextRegion, number> = {
 
 function elementLabel(element: LessonSlideElement, index: number): string {
   if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
-  if (element.href) return element.content || `链接 ${index + 1}`;
+  if (element.kind === "audio") return element.title || `音频 ${index + 1}`;
+  if (element.kind === "video") return element.title || `视频 ${index + 1}`;
+  if (element.kind === "text" && element.href) return element.content || `链接 ${index + 1}`;
   return element.content?.trim().slice(0, 18) || `文本 ${index + 1}`;
 }
 
 function elementPreviewText(element: LessonSlideElement, index: number): string {
   if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
-  if (element.href) return element.content || `链接 ${index + 1}`;
+  if (element.kind === "audio") return element.title || `音频 ${index + 1}`;
+  if (element.kind === "video") return element.title || `视频 ${index + 1}`;
+  if (element.kind === "text" && element.href) return element.content || `链接 ${index + 1}`;
   return element.content?.trim() || `文本 ${index + 1}`;
 }
 
@@ -191,6 +199,7 @@ export function LessonEditorInspector({
   onAddText,
   onAddImage,
   onAddLink,
+  onAddMaterial,
   onAddQuestion,
   onAddSlide,
   onSplitSlide,
@@ -358,6 +367,10 @@ export function LessonEditorInspector({
                   <LinkIcon className="h-4 w-4" />
                   超链接
                 </Button>
+                <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddMaterial} disabled={!canInsertElements}>
+                  <FileBox className="h-4 w-4" />
+                  素材
+                </Button>
                 <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddQuestion}>
                   <FileQuestion className="h-4 w-4" />
                   题目
@@ -422,7 +435,11 @@ export function LessonEditorInspector({
                         : "border-ink-100 text-ink-700 hover:border-ink-300",
                     )}
                   >
-                    {element.kind === "image" ? <ImageIcon className="h-3.5 w-3.5" /> : element.href ? <LinkIcon className="h-3.5 w-3.5" /> : <Type className="h-3.5 w-3.5" />}
+                    {element.kind === "image" ? <ImageIcon className="h-3.5 w-3.5" />
+                      : element.kind === "audio" ? <Music2 className="h-3.5 w-3.5" />
+                      : element.kind === "video" ? <Video className="h-3.5 w-3.5" />
+                      : element.href ? <LinkIcon className="h-3.5 w-3.5" />
+                      : <Type className="h-3.5 w-3.5" />}
                     {element.kind === "text" ? (
                       <MathHtml className="min-w-0 flex-1 truncate text-xs leading-5 [&_.katex-formula-block]:inline">
                         {elementPreviewText(element, index)}
@@ -462,8 +479,16 @@ export function LessonEditorInspector({
         {tab === "properties" && !selectedTextRegion && selectedElement && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg bg-mist px-3 py-2 text-sm font-medium text-ink-800">
-              {selectedElement.kind === "image" ? <ImageIcon className="h-4 w-4" /> : selectedElement.href ? <LinkIcon className="h-4 w-4" /> : <Type className="h-4 w-4" />}
-              {selectedElement.kind === "image" ? "图片元素" : selectedElement.href ? "超链接元素" : "文本元素"}
+              {selectedElement.kind === "image" ? <ImageIcon className="h-4 w-4" />
+                : selectedElement.kind === "audio" ? <Music2 className="h-4 w-4" />
+                : selectedElement.kind === "video" ? <Video className="h-4 w-4" />
+                : selectedElement.href ? <LinkIcon className="h-4 w-4" />
+                : <Type className="h-4 w-4" />}
+              {selectedElement.kind === "image" ? "图片元素"
+                : selectedElement.kind === "audio" ? "音频素材"
+                : selectedElement.kind === "video" ? "视频素材"
+                : selectedElement.href ? "超链接元素"
+                : "文本元素"}
             </div>
 
             {selectedElement.kind === "text" ? (
@@ -511,7 +536,7 @@ export function LessonEditorInspector({
                   </label>
                 </div>
               </>
-            ) : (
+            ) : selectedElement.kind === "image" ? (
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-ink-600">图片说明</label>
                 <Input
@@ -519,6 +544,27 @@ export function LessonEditorInspector({
                   onChange={(event) => onUpdateElement({ alt: event.target.value })}
                   placeholder="课件图片"
                 />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-ink-600">素材名称</label>
+                  <Input
+                    value={selectedElement.title || ""}
+                    onChange={(event) => onUpdateElement({ title: event.target.value })}
+                    placeholder={selectedElement.kind === "video" ? "视频素材" : "音频素材"}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-ink-600">预约播放时刻</label>
+                  <Input
+                    aria-label="预约播放时刻"
+                    type="time"
+                    value={selectedElement.scheduledPlayAt || ""}
+                    onChange={(event) => onUpdateElement({ scheduledPlayAt: event.target.value || undefined })}
+                  />
+                  <div className="mt-1 text-[11px] leading-5 text-ink-400">留空时仅手动播放；预览/上课到达该时刻后自动播放。</div>
+                </div>
               </div>
             )}
 
@@ -670,7 +716,10 @@ export function LessonEditorInspector({
                       onClick={() => selectElement(element.id)}
                       className="flex w-full items-center gap-2 rounded-lg border border-ink-100 px-2.5 py-2 text-left text-xs text-ink-700 hover:border-gold-300"
                     >
-                      {element.kind === "image" ? <ImageIcon className="h-3.5 w-3.5" /> : <Type className="h-3.5 w-3.5" />}
+                      {element.kind === "image" ? <ImageIcon className="h-3.5 w-3.5" />
+                        : element.kind === "audio" ? <Music2 className="h-3.5 w-3.5" />
+                        : element.kind === "video" ? <Video className="h-3.5 w-3.5" />
+                        : <Type className="h-3.5 w-3.5" />}
                       <span className="truncate">{elementLabel(element, index)}</span>
                     </button>
                   ))}

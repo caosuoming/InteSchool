@@ -61,6 +61,7 @@ function renderInspector(overrides: Partial<ComponentProps<typeof LessonEditorIn
     onAddText: vi.fn(),
     onAddImage: vi.fn(),
     onAddLink: vi.fn(),
+    onAddMaterial: vi.fn(),
     onAddQuestion: vi.fn(),
     onAddSlide: vi.fn(),
     onSplitSlide: vi.fn(),
@@ -93,6 +94,9 @@ describe("LessonEditorInspector", () => {
     await user.click(screen.getByRole("button", { name: "超链接" }));
     expect(props.onAddLink).toHaveBeenCalledOnce();
 
+    await user.click(screen.getByRole("button", { name: "素材" }));
+    expect(props.onAddMaterial).toHaveBeenCalledOnce();
+
     await user.click(screen.getByRole("button", { name: "题目" }));
     expect(props.onAddQuestion).toHaveBeenCalledOnce();
 
@@ -101,6 +105,32 @@ describe("LessonEditorInspector", () => {
     expect(fileInput).not.toBeNull();
     await user.upload(fileInput!, image);
     expect(props.onAddImage).toHaveBeenCalledWith(image);
+  });
+
+  it("configures scheduled playback for audio and video materials", async () => {
+    const user = userEvent.setup();
+    const mediaElement: LessonSlideElement = {
+      id: "media-1",
+      kind: "video",
+      src: "/api/files/video-1",
+      title: "函数演示",
+      x: 10,
+      y: 10,
+      width: 50,
+      height: 40,
+    };
+    const onUpdateElement = vi.fn();
+    renderInspector({
+      elements: [mediaElement],
+      selectedElement: mediaElement,
+      onUpdateElement,
+    });
+
+    await user.click(screen.getByRole("button", { name: "属性" }));
+    expect(screen.getByText("视频素材")).toBeInTheDocument();
+    const scheduledTime = screen.getByLabelText("预约播放时刻");
+    fireEvent.change(scheduledTime, { target: { value: "09:35" } });
+    expect(onUpdateElement).toHaveBeenCalledWith({ scheduledPlayAt: "09:35" });
   });
 
   it("updates the selected built-in text region font size", async () => {
