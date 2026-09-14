@@ -72,6 +72,20 @@ describe("extract text renderer", () => {
     expect(html).not.toContain("&lt;i");
   });
 
+  it.each([
+    '<i class="math-vector math-vector-zero">0</i>',
+    '&lt;i class=&quot;math-vector math-vector-zero&quot;&gt;0&lt;/i&gt;',
+  ])("preserves extracted zero-vector markers from %s", (zeroVector) => {
+    const html = renderExtractText(`零向量 ${zeroVector} 与任意向量共线`, [], false);
+    const container = asElement(html);
+    const zero = container.querySelector("i.math-vector-zero");
+
+    expect(zero).toHaveClass("math-vector", "math-vector-zero");
+    expect(zero).toHaveTextContent("0");
+    expect(container.textContent).toBe("零向量 0 与任意向量共线");
+    expect(html).not.toContain("&lt;i");
+  });
+
   it("renders safe markdown images and leaves unsafe sources as text", () => {
     const html = renderExtractText(
       "![示意图](https://example.com/figure.png)\n![危险](javascript:alert(1))",
