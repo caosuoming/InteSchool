@@ -1531,6 +1531,13 @@ export interface ExamPaper {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
+  answerSheetSettings?: {
+    paperSize: "A4" | "A3" | "8K";
+    mode: "blank" | "with-questions";
+    studentNumberDigits: number;
+    choiceLayout: "inline" | "concentrated";
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -2103,6 +2110,13 @@ export interface Lecture {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
+  answerSheetSettings?: {
+    paperSize: "A4" | "A3" | "8K";
+    mode: "blank" | "with-questions";
+    studentNumberDigits: number;
+    choiceLayout: "inline" | "concentrated";
+  };
   /** 排版设置 */
   layoutSettings?: {
     paperSize: "A4" | "8K";

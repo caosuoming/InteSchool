@@ -330,6 +330,14 @@ describe("LecturePreviewPage", () => {
     });
   });
 
+  it("renames the answer-sheet action after a card has been created", async () => {
+    vi.mocked(lectureService.getLecture).mockResolvedValue({ ...lecture, hasAnswerSheet: true });
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "预览答题卡" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "制作答题卡" })).not.toBeInTheDocument();
+  });
+
   it("renders a synchronized two-column preview with question metadata", async () => {
     const { container } = renderPage();
 

@@ -40,8 +40,11 @@ export const examPaperService = {
     return rpcCall("examPaper", "getPaper", [id]) as any;
   },
 
-  async markAnswerSheetCreated(id: string): Promise<ExamPaper | null> {
-    return rpcCall("examPaper", "markAnswerSheetCreated", [id]) as any;
+  async markAnswerSheetCreated(
+    id: string,
+    settings?: ExamPaper["answerSheetSettings"],
+  ): Promise<ExamPaper | null> {
+    return rpcCall("examPaper", "markAnswerSheetCreated", [id, settings]) as any;
   },
 
   async createPaper(teacherId: string, schoolId: string, input: ExamPaperInput): Promise<ExamPaper> {

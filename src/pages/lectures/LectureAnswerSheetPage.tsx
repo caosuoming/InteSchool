@@ -20,6 +20,7 @@ export default function LectureAnswerSheetPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [lecture, setLecture] = useState<Lecture | null>(null);
+  const [initialViewMode, setInitialViewMode] = useState<"edit" | "preview">("edit");
   const [questions, setQuestions] = useState<AnswerSheetQuestion[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,12 +32,18 @@ export default function LectureAnswerSheetPage() {
 
     let cancelled = false;
     const load = async () => {
-      const loadedLecture = await lectureService.markAnswerSheetCreated(id);
-      if (!loadedLecture) {
+      const existingLecture = await lectureService.getLecture(id);
+      if (!existingLecture) {
         toast.error("讲义不存在");
         navigate("/my-resources");
         return;
       }
+      const wasCreated = Boolean(existingLecture.hasAnswerSheet);
+      const loadedLecture = wasCreated
+        ? existingLecture
+        : await lectureService.markAnswerSheetCreated(id);
+      if (!loadedLecture) return;
+      setInitialViewMode(wasCreated ? "preview" : "edit");
 
       const questionSections = flattenQuestionSections(loadedLecture.sections);
       const loadedQuestions = await Promise.all(
@@ -89,6 +96,14 @@ export default function LectureAnswerSheetPage() {
       resourceId={lecture.id}
       resourceLabel="讲义"
       questions={questions}
+      initialSettings={lecture.answerSheetSettings}
+      initialViewMode={initialViewMode}
+      onSettingsChange={(settings) => {
+        setLecture((current) => current ? { ...current, answerSheetSettings: settings } : current);
+        void lectureService.markAnswerSheetCreated(lecture.id, settings).catch((error) => {
+          toast.error("保存答题卡设置失败", error instanceof Error ? error.message : undefined);
+        });
+      }}
       onBack={() => openPage(`/lectures/${lecture.id}/preview`)}
     />
   );

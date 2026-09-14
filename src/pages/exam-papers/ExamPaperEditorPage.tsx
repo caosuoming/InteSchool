@@ -1651,7 +1651,7 @@ export default function ExamPaperEditorPage() {
           {!prepTaskId && (
             <Button variant="outline" onClick={() => openPage(`/exam-papers/${id}/answer-sheet`)}>
               <Layout className="w-4 h-4" />
-              制作答题卡
+              {paper?.hasAnswerSheet ? "预览答题卡" : "制作答题卡"}
             </Button>
           )}
           {!prepTaskId && (

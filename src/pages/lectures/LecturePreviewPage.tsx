@@ -571,7 +571,7 @@ export default function LecturePreviewPage() {
             )}
             <Button variant="outline" onClick={() => openPage(`/lectures/${lecture.id}/answer-sheet`)}>
               <Layout className="w-4 h-4" />
-              制作答题卡
+              {lecture.hasAnswerSheet ? "预览答题卡" : "制作答题卡"}
             </Button>
             <Button
               variant="outline"

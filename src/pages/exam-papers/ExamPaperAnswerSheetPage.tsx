@@ -11,6 +11,7 @@ export default function ExamPaperAnswerSheetPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [paper, setPaper] = useState<ExamPaper | null>(null);
+  const [initialViewMode, setInitialViewMode] = useState<"edit" | "preview">("edit");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,15 +21,23 @@ export default function ExamPaperAnswerSheetPage() {
     }
 
     let cancelled = false;
-    examPaperService.markAnswerSheetCreated(id).then((loadedPaper) => {
-      if (cancelled) return;
-      if (!loadedPaper) {
+    const load = async () => {
+      const existingPaper = await examPaperService.getPaper(id);
+      if (!existingPaper) {
         toast.error("试卷不存在");
         navigate("/my-resources");
         return;
       }
+      const wasCreated = Boolean(existingPaper.hasAnswerSheet);
+      const loadedPaper = wasCreated
+        ? existingPaper
+        : await examPaperService.markAnswerSheetCreated(id);
+      if (cancelled || !loadedPaper) return;
+      setInitialViewMode(wasCreated ? "preview" : "edit");
       setPaper(loadedPaper);
-    }).catch((error) => {
+    };
+
+    load().catch((error) => {
       if (!cancelled) {
         toast.error("加载答题卡失败", error instanceof Error ? error.message : "无法读取试卷");
       }
@@ -60,6 +69,14 @@ export default function ExamPaperAnswerSheetPage() {
       resourceLabel="试卷"
       questions={paper.questions}
       totalScore={paper.totalScore}
+      initialSettings={paper.answerSheetSettings}
+      initialViewMode={initialViewMode}
+      onSettingsChange={(settings) => {
+        setPaper((current) => current ? { ...current, answerSheetSettings: settings } : current);
+        void examPaperService.markAnswerSheetCreated(paper.id, settings).catch((error) => {
+          toast.error("保存答题卡设置失败", error instanceof Error ? error.message : undefined);
+        });
+      }}
       onBack={() => openPage(`/exam-papers/${paper.id}/preview`)}
     />
   );
