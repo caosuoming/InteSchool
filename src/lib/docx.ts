@@ -1152,13 +1152,6 @@ export async function buildExamPaperDocxBlob(
         spacing: { after: 180 },
       }),
     );
-    if (mode !== "answers" && paper.description) {
-      children.push(await createRichParagraph(paper.description, {
-        color: "6B7280",
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 120 },
-      }));
-    }
     if (mode !== "answers") {
       children.push(createParagraph(
         `${paper.grade} · ${paper.schoolYear} · ${paper.semester || "上学期"} · ${paper.duration} 分钟 · 满分 ${paper.totalScore} 分`,
@@ -1359,13 +1352,6 @@ export async function buildLectureDocxBlob(
     alignment: AlignmentType.CENTER,
     spacing: { after: 360 },
   }));
-  if (mode !== "answers" && lecture.description) {
-    children.push(await createRichParagraph(lecture.description, {
-      color: "6B7280",
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 180 },
-    }));
-  }
   await appendLectureSections(
     children,
     lecture.sections,
@@ -1379,7 +1365,7 @@ export async function buildLectureDocxBlob(
   if (mode === "normal" || mode === "answers") {
     await appendSolutionSection(children, solutions, mode);
   }
-  if (children.length === 1 && !lecture.description) {
+  if (children.length === 1) {
     children.push(createParagraph("该讲义暂无可下载内容。"));
   }
 

@@ -172,6 +172,26 @@ describe("generateExamPaperDocx", () => {
     expect(answersXml).not.toContain("A、C 均满足条件。");
   });
 
+  it("omits paper descriptions from downloaded documents", async () => {
+    const paper: ExamPaper = {
+      ...structuredPaper,
+      description: "这段描述只用于资源信息，不应出现在下载文档中。",
+      contentBlocks: undefined,
+    };
+
+    const blob = await buildExamPaperDocxBlob(
+      paper,
+      { [linkedQuestion.id]: linkedQuestion },
+      { mode: "teacher" },
+    );
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml).toContain("函数/测试试卷");
+    expect(documentXml).toContain("高一 · 2026-2027 · 上学期 · 90 分钟 · 满分 5 分");
+    expect(documentXml).not.toContain("这段描述只用于资源信息，不应出现在下载文档中。");
+  });
+
   it("only marks multiple-choice questions in flat paper layout", async () => {
     const groupedPaper: ExamPaper = {
       ...structuredPaper,
@@ -730,6 +750,7 @@ describe("generateExamPaperDocx", () => {
 
     expect(documentXml).toContain("函数讲义");
     expect(documentXml).toContain("例1");
+    expect(documentXml).not.toContain("公式练习");
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:sSup>");
     expect(documentXml).toContain("Times New Roman");
