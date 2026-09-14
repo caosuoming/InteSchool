@@ -249,6 +249,7 @@ describe("MyLessonsPage classroom publishing", () => {
 
   it("orders the lesson tabs, defaults to courseware, and saves the weekly schedule", async () => {
     const user = userEvent.setup();
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([createdHomework]);
     render(
       <MemoryRouter>
         <MyLessonsPage />
@@ -267,20 +268,32 @@ describe("MyLessonsPage classroom publishing", () => {
 
     await user.click(screen.getByRole("tab", { name: "教学计划" }));
     expect(await screen.findByRole("columnheader", { name: "实际教学" })).toBeInTheDocument();
-    expect(screen.getByText("函数图像")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "作业" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "教学日志" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "拖动调整备注列宽" })).toBeInTheDocument();
+    const planTable = screen.getByRole("table", { name: "教学计划表" });
+    expect(within(planTable).getByText("函数图像")).toBeInTheDocument();
+    expect(within(planTable).getByText(createdHomework.content)).toBeInTheDocument();
+    const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][new Date(`${localDateValue()}T00:00:00`).getDay()];
+    expect(within(planTable).getByText(weekday)).toBeInTheDocument();
     expect(screen.queryByText("昨天备注")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "展开之前日期" }));
     expect(screen.getByText("昨天备注")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(`备注 ${localDateValue()}`), { target: { value: "课堂重点" } });
     fireEvent.change(screen.getByLabelText(`教学计划 ${localDateValue()}`), { target: { value: "函数单调性" } });
-    await user.click(screen.getByRole("button", { name: "保存教学计划" }));
+    fireEvent.change(screen.getByLabelText(`教学日志 ${localDateValue()}`), { target: { value: "学生对函数图像理解较好" } });
     await waitFor(() => expect(lessonCoursewareService.saveTeachingPlan).toHaveBeenCalledWith(
       offsetDateValue(-1),
       offsetDateValue(2),
       expect.arrayContaining([
-        { date: localDateValue(), note: "课堂重点", plan: "函数单调性" },
+        expect.objectContaining({
+          date: localDateValue(),
+          note: "课堂重点",
+          plan: "函数单调性",
+          teachingLog: "学生对函数图像理解较好",
+        }),
       ]),
-    ));
+    ), { timeout: 2500 });
 
     await user.click(screen.getByRole("tab", { name: "我的课表" }));
     expect(await screen.findByRole("columnheader", { name: "时间区间" })).toBeInTheDocument();

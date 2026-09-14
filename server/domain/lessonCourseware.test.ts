@@ -1124,13 +1124,13 @@ describe("courseware lesson flow", () => {
       const first = await lessonCoursewareService.saveTeachingPlan(
         "2026-08-01",
         "2027-01-31",
-        [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性" }],
+        [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性", teachingLog: "例题节奏合适" }],
         initialTeacher,
       );
       expect(first.current).toMatchObject({
         startDate: "2026-08-01",
         endDate: "2027-01-31",
-        entries: [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性" }],
+        entries: [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性", teachingLog: "例题节奏合适" }],
       });
       expect(first.history).toEqual([]);
 
@@ -1149,7 +1149,7 @@ describe("courseware lesson flow", () => {
       expect(second.history[0]).toMatchObject({
         startDate: "2026-08-01",
         endDate: "2027-01-31",
-        entries: [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性" }],
+        entries: [{ date: "2026-09-10", note: "月考前", plan: "函数的单调性", teachingLog: "例题节奏合适" }],
       });
     });
   });

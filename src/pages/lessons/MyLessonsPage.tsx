@@ -376,22 +376,23 @@ export function MyLessonsPage() {
     void loadTeachingPlan();
   }, [loadTeachingPlan]);
 
-  const handleSaveTeachingPlan = async (
+  const handleSaveTeachingPlan = useCallback(async (
     startDate: string,
     endDate: string,
     entries: TeacherTeachingPlanEntry[],
-  ) => {
+  ): Promise<boolean> => {
     setSavingTeachingPlan(true);
     try {
       const saved = await lessonCoursewareService.saveTeachingPlan(startDate, endDate, entries);
       setTeachingPlan(saved);
-      toast.success("教学计划已保存");
+      return true;
     } catch (err) {
-      toast.error("教学计划保存失败", err instanceof Error ? err.message : undefined);
+      toast.error("教学计划自动保存失败", err instanceof Error ? err.message : undefined);
+      return false;
     } finally {
       setSavingTeachingPlan(false);
     }
-  };
+  }, []);
 
   const updateScheduleSlot = (
     day: TeacherLessonScheduleDay,
@@ -979,6 +980,7 @@ export function MyLessonsPage() {
       {activeTab === "teachingPlan" && (
         <TeachingPlanPanel
           plan={teachingPlan}
+          homeworks={homeworks}
           loading={teachingPlanLoading}
           saving={savingTeachingPlan}
           onSave={handleSaveTeachingPlan}
