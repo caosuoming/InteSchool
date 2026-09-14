@@ -486,12 +486,12 @@ export default function QuestionBankPage({
   }, [mode, selectedStudentIds, dateRange]);
 
   const loadUsageResources = useCallback(async () => {
-    if (!teacher?.schoolId || usageResourcesLoaded || usageResourcesLoading) return;
+    if (!teacher?.id || usageResourcesLoaded || usageResourcesLoading) return;
     setUsageResourcesLoading(true);
     try {
       const [nextLectures, nextExamPapers] = await Promise.all([
-        lectureService.listLectures({ schoolId: teacher.schoolId }),
-        examPaperService.listPapers({ schoolId: teacher.schoolId }),
+        lectureService.listLectures({ teacherId: teacher.id }),
+        examPaperService.listPapers({ teacherId: teacher.id }),
       ]);
       setLectures(nextLectures);
       setExamPapers(nextExamPapers);
@@ -499,7 +499,7 @@ export default function QuestionBankPage({
     } finally {
       setUsageResourcesLoading(false);
     }
-  }, [teacher?.schoolId, usageResourcesLoaded, usageResourcesLoading]);
+  }, [teacher?.id, usageResourcesLoaded, usageResourcesLoading]);
 
   // 学情模式需要判断题目是否已在选中学生的讲义中使用；默认管理模式无需预取。
   useEffect(() => {
@@ -1119,6 +1119,10 @@ export default function QuestionBankPage({
                   showStudentAnswers={mode === "use" ? showStudentAnswers : showStudentAnswers}
                   isUsedBySelectedStudents={isQuestionUsedBySelectedStudents(q.id)}
                   lecturesUsingQuestion={getLecturesUsingQuestion(q.id)}
+                  examPapersUsingQuestion={getExamPapersUsingQuestion(q.id)}
+                  usageResourcesLoaded={usageResourcesLoaded}
+                  usageResourcesLoading={usageResourcesLoading}
+                  onLoadUsageResources={loadUsageResources}
                   onView={setDetailQuestion}
                   onEdit={mode === "manage" ? setEditingQuestion : undefined}
                   onAddToBasket={setAddToBasketFor}
@@ -1639,9 +1643,19 @@ export default function QuestionBankPage({
                     共 {usingResources.length} 个讲义/试卷使用了此题目：
                   </div>
                   {usingResources.map(({ type, resource }) => (
-                    <div
+                    <button
+                      type="button"
                       key={`${type}:${resource.id}`}
-                      className="flex items-center justify-between p-3 rounded-md border border-ink-200 hover:border-gold-300 hover:bg-gold-50/30 transition-all group"
+                      onClick={() => {
+                        setUsageDetailModal(null);
+                        openPage(
+                          type === "lecture"
+                            ? `/lectures/${resource.id}/preview`
+                            : `/exam-papers/${resource.id}/preview`,
+                        );
+                      }}
+                      className="flex w-full items-center justify-between p-3 rounded-md border border-ink-200 hover:border-gold-300 hover:bg-gold-50/30 transition-all group text-left"
+                      aria-label={`预览${type === "lecture" ? "讲义" : "试卷"}“${resource.title}”`}
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <div className="w-8 h-8 rounded-md bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0">
@@ -1665,22 +1679,11 @@ export default function QuestionBankPage({
                           </div>
                         </div>
                       </div>
-                      <button
-                        onClick={() => {
-                          setUsageDetailModal(null);
-                          openPage(
-                            type === "lecture"
-                              ? `/lectures/${resource.id}/preview`
-                              : `/exam-papers/${resource.id}/preview`,
-                          );
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-gold-700 hover:bg-gold-100 transition-colors flex-shrink-0 ml-3"
-                        title={`进入${type === "lecture" ? "讲义" : "试卷"}预览`}
-                      >
+                      <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-gold-700 group-hover:bg-gold-100 transition-colors flex-shrink-0 ml-3">
                         预览
                         <ExternalLink className="w-3 h-3" />
-                      </button>
-                    </div>
+                      </span>
+                    </button>
                   ))}
                 </div>
               );
@@ -1846,7 +1849,8 @@ function QuestionRow({
   question, schoolStat, mode, chapterMap, knowledgeMap, teacher,
   students, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
   defaultBasket, showChapter, showKnowledge, showRemark, showStudentAnswers,
-  isUsedBySelectedStudents, lecturesUsingQuestion,
+  isUsedBySelectedStudents, lecturesUsingQuestion, examPapersUsingQuestion,
+  usageResourcesLoaded, usageResourcesLoading, onLoadUsageResources,
   onView, onEdit, onAddToBasket, onQuickAddToDefault, onRemoveFromDefault, isInDefaultBasket,
   onShowUsageDetail, onNavigateToLecture,
   onQuickEdit, onShare, onAdapt, onInsertLinks, onExplanationVideo, onDelete, onShowRelated,
@@ -1879,6 +1883,10 @@ function QuestionRow({
   showStudentAnswers?: boolean;
   isUsedBySelectedStudents: boolean;
   lecturesUsingQuestion: Lecture[];
+  examPapersUsingQuestion: ExamPaper[];
+  usageResourcesLoaded: boolean;
+  usageResourcesLoading: boolean;
+  onLoadUsageResources: () => Promise<void>;
   onView: (q: Question) => void;
   onEdit?: (q: Question) => void;
   onAddToBasket: (q: Question) => void;
@@ -1914,6 +1922,12 @@ function QuestionRow({
   const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
   const hasChapter = chapterNames.length > 0;
   const hasPoint = pointNames.length > 0;
+  const usageResources = useMemo(() => [
+    ...lecturesUsingQuestion.map((resource) => ({ type: "讲义" as const, resource })),
+    ...examPapersUsingQuestion.map((resource) => ({ type: "试卷" as const, resource })),
+  ].sort((a, b) => (
+    new Date(b.resource.updatedAt).getTime() - new Date(a.resource.updatedAt).getTime()
+  )), [examPapersUsingQuestion, lecturesUsingQuestion]);
 
   // 选中学生的答题情况：取该题对应的答题记录，按学生维度展示
   const questionStudentAnswers = useMemo(() => {
@@ -2145,18 +2159,41 @@ function QuestionRow({
                   ) : null;
                 case "usage":
                   return (
-                    <button
-                      key="usage"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onShowUsageDetail(question);
-                      }}
-                      className="ml-auto text-xs text-ink-400 hover:text-gold-600 flex items-center gap-1 cursor-pointer transition-colors"
-                      title="点击查看使用此题目的试卷和讲义"
-                    >
-                      使用 {question.usageCount} 次
-                      <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", expanded && "rotate-180")} />
-                    </button>
+                    <div key="usage" className="relative ml-auto group/usage">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onShowUsageDetail(question);
+                        }}
+                        onMouseEnter={() => void onLoadUsageResources()}
+                        onFocus={() => void onLoadUsageResources()}
+                        className="text-xs text-ink-400 hover:text-gold-600 flex items-center gap-1 cursor-pointer transition-colors"
+                        aria-label={`使用 ${question.usageCount} 次，查看使用记录`}
+                      >
+                        使用 {question.usageCount} 次
+                        <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", expanded && "rotate-180")} />
+                      </button>
+                      <div
+                        role="tooltip"
+                        className="invisible absolute right-0 bottom-full z-30 mb-2 w-72 rounded-lg border border-ink-100 bg-paper p-2.5 text-left shadow-lg opacity-0 transition-opacity group-hover/usage:visible group-hover/usage:opacity-100 group-focus-within/usage:visible group-focus-within/usage:opacity-100"
+                      >
+                        <div className="mb-1.5 text-[11px] font-medium text-ink-500">引用此题目的文档</div>
+                        {usageResourcesLoading && !usageResourcesLoaded ? (
+                          <div className="py-2 text-xs text-ink-400">正在加载…</div>
+                        ) : usageResources.length === 0 ? (
+                          <div className="py-2 text-xs text-ink-400">暂无引用此题目的讲义或试卷</div>
+                        ) : (
+                          <div className="max-h-64 space-y-1 overflow-y-auto">
+                            {usageResources.map(({ type, resource }) => (
+                              <div key={`${type}:${resource.id}`} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-ink-700">
+                                <span className="flex-1 truncate">{resource.title}</span>
+                                <span className="flex-shrink-0 text-[10px] text-ink-400">{type}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   );
                 default:
                   return null;

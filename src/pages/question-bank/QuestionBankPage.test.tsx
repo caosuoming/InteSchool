@@ -10,8 +10,15 @@ import { classService } from "@/services/class";
 import { prepService } from "@/services/prep";
 import { quotaService } from "@/services/quota";
 import { analyticsService } from "@/services/analytics";
+import { lectureService } from "@/services/lecture";
+import { examPaperService } from "@/services/examPaper";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
-import type { Question, Teacher, TreeNode } from "@/types";
+import { openPage } from "@/lib/navigation";
+import type { ExamPaper, Lecture, Question, Teacher, TreeNode } from "@/types";
+
+vi.mock("@/lib/navigation", () => ({
+  openPage: vi.fn(),
+}));
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
   useSchoolResourceOptions: () => ({
@@ -159,6 +166,8 @@ describe("QuestionBankPage personal resource scope", () => {
     vi.mocked(prepService.getUsedQuestionIds).mockResolvedValue([]);
     vi.mocked(quotaService.getQuota).mockResolvedValue(null as never);
     vi.mocked(analyticsService.getSchoolQuestionStats).mockResolvedValue([]);
+    vi.mocked(lectureService.listLectures).mockResolvedValue([]);
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([]);
     useTagPrefsStore.setState({
       prefs: {
         order: ["type", "difficulty", "recommendation", "remark", "source", "category", "grade", "schoolYear", "usage"],
@@ -262,6 +271,84 @@ describe("QuestionBankPage personal resource scope", () => {
 
     expect(classService.listMyClasses).toHaveBeenCalledWith("school-2", "teacher-1");
     expect(classService.listMyStudents).toHaveBeenCalledWith("school-2", "teacher-1");
+  });
+
+  it("keeps usage documents across schools, shows them on hover, and opens their previews", async () => {
+    const question: Question = {
+      id: "question-used-across-schools",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      type: "short",
+      stem: "跨学校使用记录测试题",
+      answer: "42",
+      analysis: "",
+      chapterIds: [],
+      knowledgePointIds: [],
+      difficulty: 3,
+      recommendation: 3,
+      usageCount: 2,
+      remark: "",
+      isShared: false,
+      hiddenByExamIds: [],
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const oldSchoolLecture = {
+      id: "lecture-old-school",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      title: "旧学校函数讲义",
+      grade: "高一",
+      schoolYear: "2025-2026",
+      status: "published",
+      sections: [{
+        id: "section-question",
+        title: "例题",
+        type: "question",
+        content: "",
+        questionId: question.id,
+        children: [],
+      }],
+      updatedAt: "2026-09-10T00:00:00.000Z",
+    } as Lecture;
+    const currentSchoolPaper = {
+      id: "paper-current-school",
+      teacherId: "teacher-1",
+      schoolId: "school-2",
+      title: "当前学校月考试卷",
+      grade: "高一",
+      schoolYear: "2026-2027",
+      status: "draft",
+      questions: [{ id: "paper-question", questionId: question.id }],
+      updatedAt: "2026-09-11T00:00:00.000Z",
+    } as ExamPaper;
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [question], total: 1 });
+    vi.mocked(lectureService.listLectures).mockResolvedValue([oldSchoolLecture]);
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([currentSchoolPaper]);
+
+    render(
+      <MemoryRouter>
+        <QuestionBankPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("跨学校使用记录测试题")).toBeInTheDocument();
+    const usageButton = screen.getByRole("button", { name: "使用 2 次，查看使用记录" });
+    fireEvent.mouseEnter(usageButton);
+
+    await waitFor(() => {
+      expect(lectureService.listLectures).toHaveBeenCalledWith({ teacherId: "teacher-1" });
+      expect(examPaperService.listPapers).toHaveBeenCalledWith({ teacherId: "teacher-1" });
+    });
+    expect(lectureService.listLectures).not.toHaveBeenCalledWith({ schoolId: "school-2" });
+    expect(examPaperService.listPapers).not.toHaveBeenCalledWith({ schoolId: "school-2" });
+    expect(await screen.findByText("旧学校函数讲义")).toBeInTheDocument();
+    expect(screen.getByText("当前学校月考试卷")).toBeInTheDocument();
+
+    fireEvent.click(usageButton);
+    const lecturePreview = await screen.findByRole("button", { name: "预览讲义“旧学校函数讲义”" });
+    fireEvent.click(lecturePreview);
+    expect(openPage).toHaveBeenCalledWith("/lectures/lecture-old-school/preview");
   });
 
   it("shows active-school score rate, refreshes it after a school switch, and hides it with difficulty", async () => {
