@@ -4689,12 +4689,16 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
   const [titleDraft, setTitleDraft] = useState(title);
   const [savingTitle, setSavingTitle] = useState(false);
   const isImage = type === "image";
+  const isAudio = type === "audio";
+  const isVideo = type === "video";
+  const isMediaPreviewable = isImage || isAudio || isVideo;
   const isKnowledgeBlock = type === "knowledgeBlock";
   const handlePreviewOpen = () => setPreviewOpen(true);
+  const previewLabel = isImage ? "预览图片" : isAudio ? "预览音频" : "预览视频";
   const toggleKnowledge = () => setKnowledgeExpanded((expanded) => !expanded);
   const primaryClick = isKnowledgeBlock
     ? toggleKnowledge
-    : onClick || (isImage ? handlePreviewOpen : undefined);
+    : onClick || (isMediaPreviewable ? handlePreviewOpen : undefined);
   const reflectionCount = reflections?.length || 0;
   const latestReflection = reflections?.[0];
   const actionButtonPadding = compactActions ? "p-1" : "p-1.5";
@@ -4722,11 +4726,11 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
       disabled: renaming || savingTitle,
       tone: "gold" as const,
     }] : []),
-    ...((isImage || isKnowledgeBlock) ? [{
+    ...((isMediaPreviewable || isKnowledgeBlock) ? [{
       key: "preview",
-      label: isImage ? "预览图片" : knowledgeExpanded ? "收起知识块" : "展开知识块",
+      label: isMediaPreviewable ? previewLabel : knowledgeExpanded ? "收起知识块" : "展开知识块",
       icon: <Eye />,
-      onClick: isImage ? handlePreviewOpen : toggleKnowledge,
+      onClick: isMediaPreviewable ? handlePreviewOpen : toggleKnowledge,
       tone: "gold" as const,
     }] : []),
     ...(onShare ? [{
@@ -4987,11 +4991,11 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
                 <Pencil className={actionIconSize} />
               </button>
             )}
-            {(isImage || isKnowledgeBlock) && (
+            {(isMediaPreviewable || isKnowledgeBlock) && (
               <button
-                onClick={isImage ? handlePreviewOpen : toggleKnowledge}
+                onClick={isMediaPreviewable ? handlePreviewOpen : toggleKnowledge}
                 className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600")}
-                title={isImage ? "预览图片" : knowledgeExpanded ? "收起知识块" : "展开知识块"}
+                title={isMediaPreviewable ? previewLabel : knowledgeExpanded ? "收起知识块" : "展开知识块"}
               >
                 <Eye className={actionIconSize} />
               </button>
@@ -5128,7 +5132,7 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
         )}
       </div>
 
-      {isImage && (
+      {isMediaPreviewable && (
         <MaterialPreviewModal
           open={previewOpen}
           onClose={() => setPreviewOpen(false)}
@@ -5158,10 +5162,13 @@ export function BasketMaterialListItem({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const isImage = material.type === "image";
+  const isAudio = material.type === "audio";
+  const isVideo = material.type === "video";
+  const isMediaPreviewable = isImage || isAudio || isVideo;
   const isKnowledgeBlock = material.type === "knowledgeBlock";
   const openPreview = () => setPreviewOpen(true);
   const toggleKnowledge = () => setKnowledgeExpanded((expanded) => !expanded);
-  const primaryClick = isKnowledgeBlock ? toggleKnowledge : isImage ? openPreview : undefined;
+  const primaryClick = isKnowledgeBlock ? toggleKnowledge : isMediaPreviewable ? openPreview : undefined;
 
   return (
     <>
@@ -5200,7 +5207,7 @@ export function BasketMaterialListItem({
           <div
             className={cn(
               "text-sm font-medium text-ink-800",
-              (isImage || isKnowledgeBlock) && "cursor-pointer hover:text-gold-700",
+              (isMediaPreviewable || isKnowledgeBlock) && "cursor-pointer hover:text-gold-700",
             )}
             onClick={primaryClick}
           >
@@ -5235,7 +5242,7 @@ export function BasketMaterialListItem({
         </button>
       </div>
 
-      {isImage && (
+      {isMediaPreviewable && (
         <MaterialPreviewModal
           open={previewOpen}
           onClose={() => setPreviewOpen(false)}

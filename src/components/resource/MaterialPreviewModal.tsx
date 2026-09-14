@@ -22,13 +22,22 @@ export function MaterialPreviewModal({
   fileUrl,
 }: MaterialPreviewModalProps) {
   const isImage = type === "image";
+  const isAudio = type === "audio";
+  const isVideo = type === "video";
+  const previewDescription = isImage
+    ? "图片预览"
+    : isAudio
+      ? "音频预览"
+      : isVideo
+        ? "视频预览"
+        : "知识块完整内容";
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={title}
-      description={isImage ? "图片预览" : "知识块完整内容"}
+      description={previewDescription}
       size="lg"
       footer={<Button variant="ghost" onClick={onClose}>关闭</Button>}
     >
@@ -43,6 +52,38 @@ export function MaterialPreviewModal({
           </div>
         ) : (
           <div className="py-12 text-center text-sm text-ink-400">暂无可预览的图片</div>
+        )
+      ) : isVideo ? (
+        fileUrl ? (
+          <div className="overflow-hidden rounded-lg border border-ink-100 bg-black">
+            <video
+              data-testid="material-video-preview"
+              src={fileUrl}
+              controls
+              preload="metadata"
+              className="max-h-[70vh] w-full"
+            >
+              您的浏览器不支持视频播放。
+            </video>
+          </div>
+        ) : (
+          <div className="py-12 text-center text-sm text-ink-400">暂无可预览的视频</div>
+        )
+      ) : isAudio ? (
+        fileUrl ? (
+          <div className="flex items-center justify-center rounded-lg border border-ink-100 bg-mist/40 px-4 py-10">
+            <audio
+              data-testid="material-audio-preview"
+              src={fileUrl}
+              controls
+              preload="metadata"
+              className="w-full max-w-xl"
+            >
+              您的浏览器不支持音频播放。
+            </audio>
+          </div>
+        ) : (
+          <div className="py-12 text-center text-sm text-ink-400">暂无可预览的音频</div>
         )
       ) : (
         <div
