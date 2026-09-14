@@ -28,7 +28,6 @@ export function isPublicRpcCall(service: string, method: string): boolean {
   return PUBLIC_CALLS.has(`${service}.${method}`);
 }
 
-const ADMIN_SERVICE_MUTATIONS = new Set(["settings"]);
 const EXAM_MANAGER_MUTATIONS = new Set([
   "importExam",
   "saveCohortTemplateProfile",
@@ -78,6 +77,10 @@ const MUTATING_READ_PREFIX_CALLS = new Set([
   "knowledge.getChapterTree",
   "knowledge.getKnowledgeTree",
   "knowledge.listDirectoryCatalogs",
+  "settings.listSettings",
+  "settings.listClassTypes",
+  "settings.listExamPaperTypes",
+  "settings.listLectureTypes",
 ]);
 const PERSONAL_DIRECTORY_SCOPE_ARG_INDEX: Partial<Record<string, number>> = {
   listChapters: 0,
@@ -88,6 +91,34 @@ const PERSONAL_DIRECTORY_SCOPE_ARG_INDEX: Partial<Record<string, number>> = {
   addChapter: 0,
   addKnowledgePoint: 0,
 };
+const PERSONAL_SETTINGS_SCOPE_ARG_INDEX: Partial<Record<string, number>> = {
+  listSettings: 0,
+  createSetting: 0,
+  listClassTypes: 0,
+  createClassType: 0,
+  listExamPaperTypes: 0,
+  createExamPaperType: 0,
+  listLectureTypes: 0,
+  createLectureType: 0,
+};
+const PERSONAL_SETTINGS_ID_MUTATIONS = new Set([
+  "updateSetting",
+  "deleteSetting",
+  "toggleSetting",
+  "batchUpdateSortOrder",
+  "updateClassType",
+  "deleteClassType",
+  "toggleClassType",
+  "batchUpdateClassTypeSortOrder",
+  "updateExamPaperType",
+  "deleteExamPaperType",
+  "toggleExamPaperType",
+  "batchUpdateExamPaperTypeSortOrder",
+  "updateLectureType",
+  "deleteLectureType",
+  "toggleLectureType",
+  "batchUpdateLectureTypeSortOrder",
+]);
 
 const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   ai: "documents",
@@ -439,13 +470,19 @@ function authorize(
   const personalDirectoryScopeIndex = service === "knowledge"
     ? PERSONAL_DIRECTORY_SCOPE_ARG_INDEX[method]
     : undefined;
+  const personalSettingsScopeIndex = service === "settings"
+    ? PERSONAL_SETTINGS_SCOPE_ARG_INDEX[method]
+    : undefined;
   if (personalDirectoryScopeIndex !== undefined) {
     normalizedArgs[personalDirectoryScopeIndex] = teacher.id;
+  }
+  if (personalSettingsScopeIndex !== undefined) {
+    normalizedArgs[personalSettingsScopeIndex] = teacher.id;
   }
 
   params.forEach((name, index) => {
     const value = normalizedArgs[index];
-    if (personalDirectoryScopeIndex === index) return;
+    if (personalDirectoryScopeIndex === index || personalSettingsScopeIndex === index) return;
     if (name === "teacher") {
       normalizedArgs[index] = teacher;
       return;
@@ -477,6 +514,10 @@ function authorize(
     validateEmbeddedIdentity(value, teacher, admin, name);
   });
 
+  if (service === "settings" && PERSONAL_SETTINGS_ID_MUTATIONS.has(method)) {
+    normalizedArgs.push(teacher.id);
+  }
+
   if (service !== "school" && service !== "help" && service !== "knowledge" && !teacher.schoolId) {
     throw new Error("请先完成学校认证");
   }
@@ -505,9 +546,6 @@ function authorize(
     };
   }
 
-  if (ADMIN_SERVICE_MUTATIONS.has(service) && !isReadOnly(service, method) && !admin) {
-    throw new Error("该操作需要学校管理员权限");
-  }
   if (service === "organization" && !isReadOnly(service, method) && !canMutateOrganization(state, teacher, method, normalizedArgs)) {
     throw new Error("无权执行该组织或教师权限操作");
   }

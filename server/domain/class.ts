@@ -1,6 +1,6 @@
 import type {
   SchoolClass, PersonalClass, PersonalClassStudentCandidate, Student, AnyClass, ClassroomChoice, Teacher,
-  StudentArchiveOverview, StudentArchiveRecord, StudentArchiveStatus,
+  ClassTypeCategory, StudentArchiveOverview, StudentArchiveRecord, StudentArchiveStatus,
   StudentArchiveStatusInput, StudentContactInfo,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
@@ -26,6 +26,49 @@ function updateSchoolClassStudentCount(classId: string, delta: number): void {
         : schoolClass,
     ),
   );
+}
+
+function materializeSchoolClassTypeId(
+  schoolId: string,
+  classTypeId: string | null | undefined,
+): string | null | undefined {
+  if (!classTypeId) return classTypeId;
+  const types = (db.read("classTypeCategories") || []) as ClassTypeCategory[];
+  const selected = types.find((item) => item.id === classTypeId);
+  if (!selected || (!selected.teacherId && selected.schoolId === schoolId)) return classTypeId;
+
+  const normalizedName = selected.name.trim().toLocaleLowerCase();
+  let schoolType = types.find((item) =>
+    !item.teacherId
+    && item.schoolId === schoolId
+    && item.name.trim().toLocaleLowerCase() === normalizedName,
+  );
+  if (!schoolType) {
+    const maxOrder = types
+      .filter((item) => !item.teacherId && item.schoolId === schoolId)
+      .reduce((max, item) => Math.max(max, item.sortOrder), 0);
+    schoolType = {
+      id: genId("ct"),
+      schoolId,
+      name: selected.name,
+      description: selected.description,
+      color: selected.color,
+      sortOrder: maxOrder + 1,
+      enabled: selected.enabled,
+      createdAt: new Date().toISOString(),
+    };
+    db.update("classTypeCategories", (items) => [...items, schoolType]);
+  }
+
+  if (selected.teacherId && !selected.legacyIds?.includes(schoolType.id)) {
+    const schoolTypeId = schoolType.id;
+    db.update("classTypeCategories", (items: ClassTypeCategory[]) =>
+      items.map((item) => item.id === selected.id
+        ? { ...item, legacyIds: [...(item.legacyIds || []), schoolTypeId] }
+        : item),
+    );
+  }
+  return schoolType.id;
 }
 
 function requireActiveStudent(studentId: string): Student {
@@ -161,6 +204,7 @@ export const classService = {
     await delay(400);
     maybeThrowError();
     const gradeYear = options?.gradeYear;
+    const classTypeId = materializeSchoolClassTypeId(schoolId, options?.classTypeId);
     const newClass: SchoolClass = {
       id: genId("cls"),
       type: "school",
@@ -170,7 +214,7 @@ export const classService = {
       grade,
       gradeYear,
       gradYear: gradeYear ? gradeYear + 3 : undefined,
-      classTypeId: options?.classTypeId,
+      classTypeId,
       studentCount: 0,
       status: "active",
       createdBy: teacherId,
@@ -637,14 +681,17 @@ export const classService = {
     maybeThrowError();
     const current = db.read("schoolClasses").find((item) => item.id === classId);
     if (current?.status === "graduated") throw new Error("已毕业班级不能再修改");
+    const normalizedPatch = patch.classTypeId === undefined || !current
+      ? patch
+      : { ...patch, classTypeId: materializeSchoolClassTypeId(current.schoolId, patch.classTypeId) };
     let updated: SchoolClass | null = null;
     db.update("schoolClasses", (list) =>
       list.map((c) => {
         if (c.id !== classId) return c;
-        const gradeYear = patch.gradeYear !== undefined ? patch.gradeYear : c.gradeYear;
+        const gradeYear = normalizedPatch.gradeYear !== undefined ? normalizedPatch.gradeYear : c.gradeYear;
         updated = {
           ...c,
-          ...patch,
+          ...normalizedPatch,
           gradeYear,
           gradYear: gradeYear ? gradeYear + 3 : c.gradYear,
         };
@@ -653,8 +700,8 @@ export const classService = {
     );
 
     // 如果班级年级变更，同步该班所有学生的年级
-    if (patch.grade && updated) {
-      const newGrade = patch.grade;
+    if (normalizedPatch.grade && updated) {
+      const newGrade = normalizedPatch.grade;
       db.update("students", (list) =>
         list.map((s) =>
           s.classId === classId && s.grade !== newGrade

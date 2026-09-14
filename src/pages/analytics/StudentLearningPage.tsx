@@ -17,6 +17,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { SchoolClass, PersonalClass, Student, AnyClass, ClassTypeCategory, Chapter, KnowledgePoint, Question } from "@/types";
 import { cn } from "@/lib/utils";
+import { findClassTypeByReference } from "@/lib/class-type";
 import {
   knowledgePointDisplayName,
   knowledgePointFullPath,
@@ -384,7 +385,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
     const isClassSelected = selection?.type === "class" && selection.classId === cls.id;
     const students = studentsByClass[cls.id] || [];
     const ct = !isPersonal
-      ? classTypes.find((t) => t.id === (cls as SchoolClass).classTypeId)
+      ? findClassTypeByReference(classTypes, (cls as SchoolClass).classTypeId)
       : null;
 
     return (
@@ -537,7 +538,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                     </h2>
                     {selection.type === "class" && (() => {
                       const sc = schoolClasses.find((c) => c.id === selection.classId);
-                      const ct = sc ? classTypes.find((t) => t.id === sc.classTypeId) : null;
+                      const ct = sc ? findClassTypeByReference(classTypes, sc.classTypeId) : null;
                       if (!ct) return null;
                       return (
                         <span

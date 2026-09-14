@@ -32,6 +32,7 @@ import {
   readStudentRosterFile,
 } from "@/lib/student-roster-spreadsheet";
 import { cn } from "@/lib/utils";
+import { classTypeMatchesReference, classTypeReferenceMap } from "@/lib/class-type";
 import { authService } from "@/services/auth";
 import { classService } from "@/services/class";
 import { settingsService } from "@/services/settings";
@@ -308,7 +309,7 @@ export default function SchoolRosterPage() {
     [students],
   );
   const classTypeById = useMemo(
-    () => new Map(classTypes.map((item) => [item.id, item])),
+    () => classTypeReferenceMap(classTypes),
     [classTypes],
   );
   const classTeacherDetails = useMemo(() => {
@@ -1264,7 +1265,7 @@ export default function SchoolRosterPage() {
               onChange={(event) => setEditClassTypeId(event.target.value)}
               placeholder="未设置班型"
               options={classTypes
-                .filter((item) => item.enabled || item.id === editingClass?.classTypeId)
+                .filter((item) => item.enabled || classTypeMatchesReference(item, editingClass?.classTypeId))
                 .map((item) => ({ value: item.id, label: item.name }))}
             />
           </div>
