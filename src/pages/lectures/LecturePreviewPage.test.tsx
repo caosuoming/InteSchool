@@ -322,6 +322,7 @@ describe("LecturePreviewPage", () => {
     await waitFor(() => {
       expect(lectureService.updateLecture).toHaveBeenCalledWith(lecture.id, {
         title: "函数专题讲义（修订）",
+        description: "函数性质与典型例题",
         grade: "高二",
         schoolYear: "2027-2028",
         semester: "下学期",

@@ -64,6 +64,10 @@ import {
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { DocumentFormatIcon } from "@/components/resource/DocumentFormatIcon";
+import {
+  DocumentMetadataModal,
+  type DocumentMetadataValue,
+} from "@/components/resource/DocumentMetadataModal";
 import { MaterialImageThumbnail, MaterialPreviewModal } from "@/components/resource/MaterialPreviewModal";
 import {
   ConfigurableResourceActions,
@@ -112,6 +116,11 @@ type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "mate
 type RenameableResourceType = Exclude<MyResourceTab, "question" | "answerSheet" | "basket">;
 type LeftTab = "chapter" | "knowledge";
 type SortKey = "updated" | "created" | "title";
+
+type DocumentMetadataTarget =
+  | { resourceType: "examPaper"; resource: ExamPaper }
+  | { resourceType: "lecture"; resource: Lecture }
+  | { resourceType: "courseware"; resource: Courseware };
 
 interface AnswerSheetLibraryItem {
   id: string;
@@ -599,6 +608,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   } | null>(null);
   const [folderMoveId, setFolderMoveId] = useState("");
   const [knowledgeVideoTarget, setKnowledgeVideoTarget] = useState<Material | null>(null);
+  const [documentMetadataTarget, setDocumentMetadataTarget] = useState<DocumentMetadataTarget | null>(null);
+  const [savingDocumentMetadata, setSavingDocumentMetadata] = useState(false);
 
   // 所有试卷/讲义（含拆解副本），用于查找源资源的拆解副本
   const [allExamPapers, setAllExamPapers] = useState<ExamPaper[]>([]);
@@ -1782,6 +1793,32 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     } catch (error) {
       toast.error("修改名称失败", error instanceof Error ? error.message : undefined);
       throw error;
+    }
+  };
+
+  const handleSaveDocumentMetadata = async (value: DocumentMetadataValue) => {
+    if (!documentMetadataTarget) return;
+    setSavingDocumentMetadata(true);
+    try {
+      const { resourceType, resource } = documentMetadataTarget;
+      if (resourceType === "lecture") {
+        const updated = await lectureService.updateLecture(resource.id, value);
+        setLectures((items) => items.map((item) => item.id === updated.id ? updated : item));
+        setAllLectures((items) => items.map((item) => item.id === updated.id ? updated : item));
+      } else if (resourceType === "examPaper") {
+        const updated = await examPaperService.updatePaper(resource.id, value);
+        setExamPapers((items) => items.map((item) => item.id === updated.id ? updated : item));
+        setAllExamPapers((items) => items.map((item) => item.id === updated.id ? updated : item));
+      } else {
+        const updated = await coursewareService.updateCourseware(resource.id, value);
+        setCoursewares((items) => items.map((item) => item.id === updated.id ? updated : item));
+      }
+      setDocumentMetadataTarget(null);
+      toast.success("文档属性已更新");
+    } catch (error) {
+      toast.error("更新文档属性失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSavingDocumentMetadata(false);
     }
   };
 
@@ -3362,6 +3399,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       key={mainLecture.id}
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
+                      remark={mainLecture.description}
                       description={documentResourceUsageSummary(mainLecture, resourceAudienceClasses, usedDocumentIds)}
                       titleIcon={item.originalFileUrl ? (
                         <DocumentFormatIcon
@@ -3418,7 +3456,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         resourceTitle: mainLecture.title,
                       })}
                       onDelete={() => handleDelete(mainLecture.id)}
-                      onRename={(title) => handleRenameResource("lecture", mainLecture.id, title)}
+                      onEditProperties={() => setDocumentMetadataTarget({ resourceType: "lecture", resource: mainLecture })}
                       onViewReflections={() => setViewingReflections({ title: mainLecture.title, list: reflectionsMap[mainLecture.id] || [] })}
                       onDuplicate={() => openDuplicate("lecture", mainLecture.id, mainLecture.title)}
                       additionalActions={folderActionsFor("lecture", item.id, mainLecture.title)}
@@ -3502,6 +3540,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                         {...batchSelectionCardProps("examPaper", copy.id)}
                         title={copy.title}
+                        remark={copy.description}
                         description={documentResourceUsageSummary(copy, resourceAudienceClasses, usedDocumentIds)}
                         titleActions={hasCompletedLesson("examPaper", copy.id)
                           || hasCompletedLesson("examPaper", item.id)
@@ -3525,7 +3564,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           resourceTitle: copy.title,
                         })}
                         onDelete={() => handleDelete(copy.id)}
-                        onRename={(title) => handleRenameResource("examPaper", copy.id, title)}
+                        onEditProperties={() => setDocumentMetadataTarget({ resourceType: "examPaper", resource: copy })}
                         onViewReflections={() => setViewingReflections({ title: copy.title, list: reflectionsMap[copy.id] || [] })}
                         onDuplicate={() => openDuplicate("examPaper", copy.id, copy.title)}
                         additionalActions={[
@@ -3568,6 +3607,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                           {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
+                          remark={item.description}
                           description={documentResourceUsageSummary(item, resourceAudienceClasses, usedDocumentIds)}
                           titleIcon={item.originalFileUrl ? (
                             <DocumentFormatIcon
@@ -3626,7 +3666,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             resourceTitle: item.title,
                           })}
                           onDelete={() => handleDelete(item.id)}
-                          onRename={(title) => handleRenameResource("examPaper", item.id, title)}
+                          onEditProperties={() => setDocumentMetadataTarget({ resourceType: "examPaper", resource: item })}
                           onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                           onDuplicate={() => openDuplicate("examPaper", item.id, item.title)}
                           showAddToLesson
@@ -3714,7 +3754,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   <ResourceCard
                   {...batchSelectionCardProps("courseware", item.id)}
                   title={item.title}
-                  description={item.description}
+                  remark={item.description}
                   meta={[
                     { label: "类型", value: coursewareTypeLabel[item.type] },
                     { label: "年级", value: `${item.grade} · ${item.schoolYear} · ${item.semester || "上学期"}` },
@@ -3785,7 +3825,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   }}
                   onShare={() => handleOpenShare("courseware", item.id, item.title)}
                   onDelete={() => handleDelete(item.id)}
-                  onRename={(title) => handleRenameResource("courseware", item.id, title)}
+                  onEditProperties={() => setDocumentMetadataTarget({ resourceType: "courseware", resource: item })}
                   onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                   onDuplicate={() => openDuplicate("courseware", item.id, item.title)}
                   additionalActions={folderActionsFor("courseware", item.id, item.title)}
@@ -3865,6 +3905,34 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           )}
         </div>
       </ResizableSidebarLayout>
+      )}
+
+      {documentMetadataTarget && (
+        <DocumentMetadataModal
+          key={`${documentMetadataTarget.resourceType}:${documentMetadataTarget.resource.id}`}
+          open
+          onClose={() => setDocumentMetadataTarget(null)}
+          onSave={handleSaveDocumentMetadata}
+          loading={savingDocumentMetadata}
+          resourceLabel={documentMetadataTarget.resourceType === "examPaper"
+            ? "试卷"
+            : documentMetadataTarget.resourceType === "lecture"
+              ? "讲义"
+              : "课件"}
+          value={{
+            title: documentMetadataTarget.resource.title,
+            description: documentMetadataTarget.resource.description || "",
+            grade: documentMetadataTarget.resource.grade,
+            schoolYear: documentMetadataTarget.resource.schoolYear,
+            semester: documentMetadataTarget.resource.semester || "上学期",
+            chapterIds: documentMetadataTarget.resource.chapterIds,
+          }}
+          gradeOptions={gradeOptions}
+          schoolYearOptions={schoolYearOptions}
+          semesterOptions={semesterOptions}
+          chapterTree={chapterTree}
+          onChapterTreeChange={setChapterTree}
+        />
       )}
 
       <QuestionVideoModal
@@ -4648,11 +4716,13 @@ interface ResourceCardProps {
   titleActions?: React.ReactNode;
   primaryActions?: React.ReactNode;
   description?: string;
+  remark?: string;
   meta: { label: string; value: string }[];
   content?: string;
   updatedAt: string;
   onClick?: () => void;
   onRename?: (title: string) => void | Promise<void>;
+  onEditProperties?: () => void;
   onShare?: () => void;
   onDelete?: () => void;
   onAddToLesson?: () => void;
@@ -4682,7 +4752,7 @@ interface ResourceCardProps {
   additionalActions?: ConfigurableResourceAction[];
 }
 
-export function ResourceCard({ title, titleIcon, titleActions, primaryActions, description, meta, content, updatedAt, onClick, onRename, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
+export function ResourceCard({ title, titleIcon, titleActions, primaryActions, description, remark, meta, content, updatedAt, onClick, onRename, onEditProperties, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -4714,7 +4784,14 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
       icon: <Eye />,
       onClick,
     }] : []),
-    ...(onRename ? [{
+    ...(onEditProperties ? [{
+      key: "rename",
+      label: "修改属性",
+      ariaLabel: `修改属性：${title}`,
+      icon: <Pencil />,
+      onClick: onEditProperties,
+      tone: "gold" as const,
+    }] : onRename ? [{
       key: "rename",
       label: "修改名称",
       ariaLabel: `修改名称：${title}`,
@@ -4912,6 +4989,11 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
                 </div>
               )}
             </div>
+            {remark?.trim() && (
+              <div data-testid="resource-card-remark" className="mb-1 text-xs text-ink-600 line-clamp-2">
+                <span className="text-ink-400">备注：</span>{remark.trim()}
+              </div>
+            )}
             {description && (
               <div className="text-xs text-ink-500 mb-2 line-clamp-1">{description}</div>
             )}
@@ -4980,7 +5062,16 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
                 <Eye className={actionIconSize} />
               </button>
             )}
-            {onRename && (
+            {onEditProperties ? (
+              <button
+                onClick={onEditProperties}
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-700")}
+                title="修改属性"
+                aria-label={`修改属性：${title}`}
+              >
+                <Pencil className={actionIconSize} />
+              </button>
+            ) : onRename && (
               <button
                 onClick={beginRename}
                 disabled={renaming || savingTitle}

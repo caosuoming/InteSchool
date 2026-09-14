@@ -609,6 +609,7 @@ export default function LecturePreviewPage() {
           resourceLabel="讲义"
           value={{
             title: lecture.title,
+            description: lecture.description || "",
             grade: lecture.grade,
             schoolYear: lecture.schoolYear,
             semester: lecture.semester || "上学期",

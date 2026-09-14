@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Input, Select } from "@/components/ui/Input";
+import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { includeCurrentOption } from "@/hooks/useSchoolResourceOptions";
@@ -8,6 +8,7 @@ import type { ResourceSemester, TreeNode } from "@/types";
 
 export interface DocumentMetadataValue {
   title: string;
+  description: string;
   grade: string;
   schoolYear: string;
   semester: ResourceSemester;
@@ -19,7 +20,7 @@ interface DocumentMetadataModalProps {
   onClose: () => void;
   onSave: (value: DocumentMetadataValue) => Promise<void>;
   value: DocumentMetadataValue;
-  resourceLabel: "试卷" | "讲义";
+  resourceLabel: "试卷" | "讲义" | "课件";
   gradeOptions: { value: string; label: string }[];
   schoolYearOptions: { value: string; label: string }[];
   semesterOptions: { value: string; label: string }[];
@@ -50,7 +51,7 @@ export function DocumentMetadataModal({
       setTitleError("文档名不能为空");
       return;
     }
-    await onSave({ ...draft, title });
+    await onSave({ ...draft, title, description: draft.description.trim() });
   };
 
   return (
@@ -59,7 +60,7 @@ export function DocumentMetadataModal({
       onClose={onClose}
       size="lg"
       title={`编辑${resourceLabel}属性`}
-      description="修改文档名、适用学段和所属章节课目录。"
+      description="修改文档名、备注、适用学段和所属章节课目录。"
       footer={(
         <div className="flex w-full justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onClose} disabled={loading}>取消</Button>
@@ -78,6 +79,13 @@ export function DocumentMetadataModal({
             setDraft((current) => ({ ...current, title: event.target.value }));
             if (titleError) setTitleError("");
           }}
+        />
+        <Textarea
+          label="备注"
+          value={draft.description}
+          rows={3}
+          placeholder="可填写文档用途、内容说明等备注"
+          onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
         />
         <div className="grid gap-3 sm:grid-cols-3">
           <Select

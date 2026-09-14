@@ -1969,6 +1969,7 @@ export default function ExamPaperEditorPage() {
             resourceLabel="试卷"
             value={{
               title,
+              description: paper.description || "",
               grade,
               schoolYear,
               semester,
