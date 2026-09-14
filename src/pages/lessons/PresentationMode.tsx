@@ -19,6 +19,8 @@ import {
   Maximize2,
   Minimize2,
   Move,
+  MoveDiagonal,
+  MoveDiagonal2,
   MousePointer2,
   NotebookPen,
   Palette,
@@ -250,14 +252,14 @@ const DEFAULT_PRESENTATION_QUESTION_VISIBILITY: LessonQuestionContentVisibility 
 };
 
 const BOARD_RESIZE_HANDLES: BoardResizeHandle[] = [
-  { direction: "n", label: "上边", className: "left-4 right-4 top-0 h-2 cursor-ns-resize" },
-  { direction: "ne", label: "右上角", className: "right-0 top-0 h-4 w-4 cursor-nesw-resize", corner: true },
-  { direction: "e", label: "右边", className: "bottom-4 right-0 top-4 w-2 cursor-ew-resize" },
-  { direction: "se", label: "右下角", className: "bottom-0 right-0 h-4 w-4 cursor-nwse-resize", corner: true },
-  { direction: "s", label: "下边", className: "bottom-0 left-4 right-4 h-2 cursor-ns-resize" },
-  { direction: "sw", label: "左下角", className: "bottom-0 left-0 h-4 w-4 cursor-nesw-resize", corner: true },
-  { direction: "w", label: "左边", className: "bottom-4 left-0 top-4 w-2 cursor-ew-resize" },
-  { direction: "nw", label: "左上角", className: "left-0 top-0 h-4 w-4 cursor-nwse-resize", corner: true },
+  { direction: "n", label: "上边", className: "left-6 right-6 top-0 h-2 cursor-ns-resize" },
+  { direction: "ne", label: "右上角", className: "right-0 top-0 h-6 w-6 cursor-nesw-resize", corner: true },
+  { direction: "e", label: "右边", className: "bottom-6 right-0 top-6 w-2 cursor-ew-resize" },
+  { direction: "se", label: "右下角", className: "bottom-0 right-0 h-6 w-6 cursor-nwse-resize", corner: true },
+  { direction: "s", label: "下边", className: "bottom-0 left-6 right-6 h-2 cursor-ns-resize" },
+  { direction: "sw", label: "左下角", className: "bottom-0 left-0 h-6 w-6 cursor-nesw-resize", corner: true },
+  { direction: "w", label: "左边", className: "bottom-6 left-0 top-6 w-2 cursor-ew-resize" },
+  { direction: "nw", label: "左上角", className: "left-0 top-0 h-6 w-6 cursor-nwse-resize", corner: true },
 ];
 
 const PRESENTATION_ELEMENT_PREFIX = "presentation-built-in";
@@ -582,17 +584,37 @@ function WritableCanvas({
   const highlighterCanvasRef = useRef<HTMLCanvasElement>(null);
   const inkCanvasRef = useRef<HTMLCanvasElement>(null);
   const interactionCanvasRef = useRef<HTMLCanvasElement>(null);
+  const highlighterContextRef = useRef<CanvasRenderingContext2D | null>(null);
+  const inkContextRef = useRef<CanvasRenderingContext2D | null>(null);
   const strokesRef = useRef<DrawingStroke[]>(strokes || []);
   const activeStrokeRef = useRef<DrawingStroke | null>(null);
   const drawingBoundsRef = useRef<DOMRect | null>(null);
   const previousClearTokenRef = useRef(clearToken);
 
+  const getHighlighterContext = useCallback(() => {
+    const canvas = highlighterCanvasRef.current;
+    if (!canvas) return null;
+    if (!highlighterContextRef.current) {
+      highlighterContextRef.current = canvas.getContext("2d", { desynchronized: true });
+    }
+    return highlighterContextRef.current;
+  }, []);
+
+  const getInkContext = useCallback(() => {
+    const canvas = inkCanvasRef.current;
+    if (!canvas) return null;
+    if (!inkContextRef.current) {
+      inkContextRef.current = canvas.getContext("2d", { desynchronized: true });
+    }
+    return inkContextRef.current;
+  }, []);
+
   const redraw = useCallback(() => {
     const highlighterCanvas = highlighterCanvasRef.current;
     const inkCanvas = inkCanvasRef.current;
     if (!highlighterCanvas || !inkCanvas) return;
-    const highlighterContext = highlighterCanvas.getContext("2d");
-    const inkContext = inkCanvas.getContext("2d");
+    const highlighterContext = getHighlighterContext();
+    const inkContext = getInkContext();
     if (!highlighterContext || !inkContext) return;
 
     highlighterContext.clearRect(0, 0, highlighterCanvas.width, highlighterCanvas.height);
@@ -613,7 +635,7 @@ function WritableCanvas({
         drawRecordedStroke(inkContext, stroke, inkCanvas.width, inkCanvas.height);
       }
     }
-  }, []);
+  }, [getHighlighterContext, getInkContext]);
 
   const drawStrokeFragment = useCallback((stroke: DrawingStroke, firstNewPointIndex: number) => {
     const firstPointIndex = Math.max(0, firstNewPointIndex - 1);
@@ -626,18 +648,18 @@ function WritableCanvas({
     const highlighterCanvas = highlighterCanvasRef.current;
     const inkCanvas = inkCanvasRef.current;
     if (stroke.kind === "highlighter" || stroke.kind === "eraser") {
-      const context = highlighterCanvas?.getContext("2d");
+      const context = getHighlighterContext();
       if (context && highlighterCanvas) {
         drawRecordedStroke(context, fragment, highlighterCanvas.width, highlighterCanvas.height);
       }
     }
     if (stroke.kind === "pen" || stroke.kind === "eraser") {
-      const context = inkCanvas?.getContext("2d");
+      const context = getInkContext();
       if (context && inkCanvas) {
         drawRecordedStroke(context, fragment, inkCanvas.width, inkCanvas.height);
       }
     }
-  }, []);
+  }, [getHighlighterContext, getInkContext]);
 
   const resizeCanvases = useCallback(() => {
     const interactionCanvas = interactionCanvasRef.current;
@@ -694,7 +716,7 @@ function WritableCanvas({
     redraw();
   }, [cancelToken, redraw]);
 
-  const pointFromClientPosition = (clientX: number, clientY: number): DrawingPoint => {
+  const pointFromClientPosition = useCallback((clientX: number, clientY: number): DrawingPoint => {
     const canvas = interactionCanvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = drawingBoundsRef.current || canvas.getBoundingClientRect();
@@ -703,15 +725,14 @@ function WritableCanvas({
       x: rect.width > 0 ? clamp((clientX - rect.left) / rect.width, 0, 1) : 0,
       y: rect.height > 0 ? clamp((clientY - rect.top) / rect.height, 0, 1) : 0,
     };
-  };
+  }, []);
 
-  const pointsFromMoveEvent = (event: ReactPointerEvent<HTMLCanvasElement>): DrawingPoint[] => {
-    const nativeEvent = event.nativeEvent;
-    const coalescedEvents = nativeEvent.getCoalescedEvents?.() || [];
-    const samples = coalescedEvents.length > 0 ? [...coalescedEvents] : [nativeEvent];
+  const pointsFromMoveEvent = useCallback((event: PointerEvent): DrawingPoint[] => {
+    const coalescedEvents = event.getCoalescedEvents?.() || [];
+    const samples = coalescedEvents.length > 0 ? [...coalescedEvents] : [event];
     const lastSample = samples[samples.length - 1];
-    if (lastSample.clientX !== nativeEvent.clientX || lastSample.clientY !== nativeEvent.clientY) {
-      samples.push(nativeEvent);
+    if (lastSample.clientX !== event.clientX || lastSample.clientY !== event.clientY) {
+      samples.push(event);
     }
 
     const points: DrawingPoint[] = [];
@@ -721,7 +742,7 @@ function WritableCanvas({
       if (!previous || previous.x !== point.x || previous.y !== point.y) points.push(point);
     }
     return points;
-  };
+  }, [pointFromClientPosition]);
 
   const startDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (tool === "none" || tool === "select") return;
@@ -738,10 +759,10 @@ function WritableCanvas({
     drawStrokeFragment(stroke, 0);
   };
 
-  const continueDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+  const continueDrawing = useCallback((event: PointerEvent) => {
     const stroke = activeStrokeRef.current;
-    if (!stroke || tool === "none" || tool === "select") return;
-    event.preventDefault();
+    if (!stroke) return;
+    if (event.cancelable) event.preventDefault();
     const firstNewPointIndex = stroke.points.length;
     const points = pointsFromMoveEvent(event);
     if (points.length === 0) return;
@@ -750,7 +771,16 @@ function WritableCanvas({
     if (points.length === 0) return;
     stroke.points.push(...points);
     drawStrokeFragment(stroke, firstNewPointIndex);
-  };
+  }, [drawStrokeFragment, pointsFromMoveEvent]);
+
+  useEffect(() => {
+    const canvas = interactionCanvasRef.current;
+    if (!canvas) return;
+    const eventName = "onpointerrawupdate" in window ? "pointerrawupdate" : "pointermove";
+    const onMove = (event: Event) => continueDrawing(event as PointerEvent);
+    canvas.addEventListener(eventName, onMove, { passive: false });
+    return () => canvas.removeEventListener(eventName, onMove);
+  }, [continueDrawing]);
 
   const stopDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const stroke = activeStrokeRef.current;
@@ -800,7 +830,6 @@ function WritableCanvas({
             : "pointer-events-auto cursor-crosshair",
         )}
         onPointerDown={startDrawing}
-        onPointerMove={continueDrawing}
         onPointerUp={stopDrawing}
         onPointerCancel={stopDrawing}
         onPointerLeave={stopDrawing}
@@ -2229,7 +2258,15 @@ export function PresentationMode({
                   onPointerCancel={endBoardInteraction}
                 >
                   {handle.corner && (
-                    <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-paper bg-gold-400 shadow" />
+                    <span
+                      data-board-resize-arrow={handle.direction}
+                      className="pointer-events-none absolute left-1/2 top-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-white/80 bg-ink-900/80 text-gold-300 shadow-md backdrop-blur-sm"
+                      aria-hidden="true"
+                    >
+                      {handle.direction === "ne" || handle.direction === "sw"
+                        ? <MoveDiagonal className="h-3.5 w-3.5" strokeWidth={2.5} />
+                        : <MoveDiagonal2 className="h-3.5 w-3.5" strokeWidth={2.5} />}
+                    </span>
                   )}
                 </button>
               ))}
