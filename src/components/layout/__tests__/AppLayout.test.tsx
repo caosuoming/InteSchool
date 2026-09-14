@@ -71,6 +71,25 @@ describe("AppLayout", () => {
     expect(screen.queryByText("个人教学班")).not.toBeInTheDocument();
   });
 
+  it("shows 我的教学 and orders 我的学生 before 我的教室", () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <AppLayout>
+          <div>页面内容</div>
+        </AppLayout>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "我的教学" })).toHaveAttribute("href", "/my-lessons");
+    expect(screen.queryByRole("link", { name: "我的上课" })).not.toBeInTheDocument();
+
+    const nav = container.querySelector("nav");
+    expect(nav).not.toBeNull();
+    const labels = Array.from(nav!.children).map((item) => item.textContent?.trim());
+    expect(labels.indexOf("我的学生")).toBe(labels.indexOf("我的教学") + 1);
+    expect(labels.indexOf("我的教室")).toBe(labels.indexOf("我的学生") + 1);
+  });
+
   it("shows the three exam sections in the requested order", () => {
     const managerAffiliation: TeacherAffiliation = {
       ...affiliation,
