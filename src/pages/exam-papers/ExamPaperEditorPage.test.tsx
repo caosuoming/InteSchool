@@ -340,6 +340,7 @@ describe("ExamPaperEditorPage preview", () => {
     await waitFor(() => {
       expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, {
         title: "函数单元检测卷",
+        description: "",
         grade: "高二",
         schoolYear: "2027-2028",
         semester: "下学期",

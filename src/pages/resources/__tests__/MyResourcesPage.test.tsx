@@ -339,6 +339,28 @@ describe("ResourceCard", () => {
     await waitFor(() => expect(screen.queryByRole("textbox", { name: "修改文档名称：原试卷名称" })).not.toBeInTheDocument());
   });
 
+  it("opens document properties instead of inline rename and shows the remark below the title", () => {
+    const onEditProperties = vi.fn();
+
+    render(
+      <ResourceCard
+        title="函数单元测试卷"
+        remark="用于第二次月考复习"
+        meta={[]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+        onEditProperties={onEditProperties}
+        configurableActions
+        alwaysShowActions
+      />,
+    );
+
+    expect(screen.getByTestId("resource-card-remark")).toHaveTextContent("备注：用于第二次月考复习");
+    expect(screen.queryByRole("button", { name: "修改名称：函数单元测试卷" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "修改属性：函数单元测试卷" }));
+    expect(onEditProperties).toHaveBeenCalledOnce();
+  });
+
   it("renders document metadata below the main row at full card width", () => {
     render(
       <ResourceCard
