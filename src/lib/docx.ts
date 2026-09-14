@@ -91,7 +91,7 @@ function applyOmmlRunStyle(root: Element, style: DocumentTextStyle): void {
     const runProperties = document.createElementNS(WORD_NS, "w:rPr");
     const fonts = document.createElementNS(WORD_NS, "w:rFonts");
     for (const attribute of ["ascii", "hAnsi", "eastAsia", "cs"]) {
-      fonts.setAttributeNS(WORD_NS, `w:${attribute}`, "Cambria Math");
+      fonts.setAttributeNS(WORD_NS, `w:${attribute}`, "Times New Roman");
     }
     runProperties.appendChild(fonts);
     if (style.bold) appendWordProperty(document, runProperties, "b");

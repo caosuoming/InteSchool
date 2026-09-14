@@ -372,7 +372,8 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:sSup>");
     expect(documentXml).toContain("<m:f>");
-    expect(documentXml).toContain("Cambria Math");
+    expect(documentXml).toContain("Times New Roman");
+    expect(documentXml).not.toContain("Cambria Math");
     expect(documentXml).toMatch(/<w:sz w:val="24"\s*\/>/);
     expect(documentXml).toMatch(/<w:position w:val="0"\s*\/>/);
     expect(documentXml).not.toContain("$f(x)");
@@ -731,6 +732,8 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).toContain("例1");
     expect(documentXml).toContain("<m:oMath");
     expect(documentXml).toContain("<m:sSup>");
+    expect(documentXml).toContain("Times New Roman");
+    expect(documentXml).not.toContain("Cambria Math");
     expect(documentXml).not.toContain("\\begin{cases}");
     const xml = new DOMParser().parseFromString(documentXml, "application/xml");
     expect(Array.from(xml.getElementsByTagName("m:d")).filter((item) =>
