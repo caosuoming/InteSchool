@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
-  ChevronLeft, ChevronRight, Plus, Trash2, Send, Save, RotateCcw,
+  ChevronLeft, ChevronRight, Plus, Trash2, Send, Save, RotateCcw, Undo2,
   FileQuestion, Blocks, Check,
   Play, School, ExternalLink,
   GripVertical, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
@@ -723,6 +723,20 @@ export function LessonEditorPage() {
     }
   };
 
+  const handleUnpublish = async () => {
+    if (!courseware) return;
+    setPublishing(true);
+    try {
+      await lessonCoursewareService.unpublishCourseware(courseware.id);
+      toast.success("已撤回发布", "课件已从“我要上课”页面撤回，可修改后重新发布");
+      await loadCourseware();
+    } catch (err) {
+      toast.error("撤回发布失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const toggleClass = (classId: string) => {
     if (!courseware) return;
     const removingClass = courseware.classIds.includes(classId);
@@ -1024,9 +1038,16 @@ export function LessonEditorPage() {
           <Play className="w-4 h-4" />
           预览上课
         </Button>
-        <Button variant="gold" size="sm" onClick={handlePublish} loading={publishing}>
-          <Send className="w-4 h-4" />
-          发布到上课
+        <Button
+          variant={courseware?.status === "published" ? "outline" : "gold"}
+          size="sm"
+          onClick={() => void (courseware?.status === "published" ? handleUnpublish() : handlePublish())}
+          loading={publishing}
+        >
+          {courseware?.status === "published"
+            ? <Undo2 className="w-4 h-4" />
+            : <Send className="w-4 h-4" />}
+          {courseware?.status === "published" ? "撤回发布" : "发布到上课"}
         </Button>
       </div>
 

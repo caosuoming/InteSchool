@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getCourseware: vi.fn(),
   updateCourseware: vi.fn(),
   publishCourseware: vi.fn(),
+  unpublishCourseware: vi.fn(),
   getQuestion: vi.fn(),
   listQuestions: vi.fn(),
   listBaskets: vi.fn(),
@@ -58,6 +59,7 @@ vi.mock("@/services/lessonCourseware", () => ({
     getCourseware: mocks.getCourseware,
     updateCourseware: mocks.updateCourseware,
     publishCourseware: mocks.publishCourseware,
+    unpublishCourseware: mocks.unpublishCourseware,
   },
 }));
 vi.mock("@/services/class", () => ({
@@ -109,6 +111,7 @@ describe("LessonEditorPage preview query", () => {
     mocks.getCourseware.mockResolvedValue(courseware);
     mocks.updateCourseware.mockImplementation(async (_id, patch) => ({ ...courseware, ...patch }));
     mocks.publishCourseware.mockImplementation(async () => ({ ...courseware, status: "published" }));
+    mocks.unpublishCourseware.mockImplementation(async () => ({ ...courseware, status: "draft" }));
     mocks.getQuestion.mockResolvedValue(null);
     mocks.listQuestions.mockResolvedValue([]);
     mocks.listBaskets.mockResolvedValue([]);
@@ -199,6 +202,51 @@ describe("LessonEditorPage preview query", () => {
         }),
       );
       expect(mocks.publishCourseware).toHaveBeenCalledWith(courseware.id);
+    });
+  });
+
+  it("replaces publish with unpublish for published courseware and allows publishing again after withdrawal", async () => {
+    let storedCourseware: LessonCourseware = {
+      ...courseware,
+      classIds: ["class-1"],
+      status: "published",
+      publishedAt: "2026-09-14T12:00:00.000Z",
+    };
+    mocks.getCourseware.mockImplementation(async () => storedCourseware);
+    mocks.updateCourseware.mockImplementation(async (_id, patch) => {
+      storedCourseware = { ...storedCourseware, ...patch };
+      return storedCourseware;
+    });
+    mocks.unpublishCourseware.mockImplementation(async () => {
+      storedCourseware = { ...storedCourseware, status: "draft", publishedAt: undefined };
+      return storedCourseware;
+    });
+    mocks.publishCourseware.mockImplementation(async () => {
+      storedCourseware = {
+        ...storedCourseware,
+        status: "published",
+        publishedAt: "2026-09-14T12:05:00.000Z",
+      };
+      return storedCourseware;
+    });
+
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+
+    const unpublishButton = await screen.findByRole("button", { name: "撤回发布" });
+    expect(screen.queryByRole("button", { name: "发布到上课" })).not.toBeInTheDocument();
+
+    fireEvent.click(unpublishButton);
+
+    await waitFor(() => {
+      expect(mocks.unpublishCourseware).toHaveBeenCalledWith(courseware.id);
+      expect(screen.getByRole("button", { name: "发布到上课" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "发布到上课" }));
+
+    await waitFor(() => {
+      expect(mocks.publishCourseware).toHaveBeenCalledWith(courseware.id);
+      expect(screen.getByRole("button", { name: "撤回发布" })).toBeInTheDocument();
     });
   });
 
