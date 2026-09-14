@@ -115,6 +115,24 @@ export const homeworkRecordService = {
     return records.find((item) => homeworkDateOf(item) === normalizedDate) || null;
   },
 
+  async listAttitudesByStudent(
+    studentId: string,
+    teacher: Teacher,
+  ): Promise<HomeworkAttitudeRecord[]> {
+    await delay(80);
+    await requireStudentAccess(teacher, studentId);
+    return ((db.read("homeworkAttitudeRecords") || []) as HomeworkAttitudeRecord[])
+      .filter((item) => (
+        item.teacherId === teacher.id
+        && item.studentId === studentId
+        && (item.keywords.length > 0 || Boolean(item.evaluation?.trim()))
+      ))
+      .sort((a, b) => {
+        const dateOrder = homeworkDateOf(b).localeCompare(homeworkDateOf(a));
+        return dateOrder || b.updatedAt.localeCompare(a.updatedAt);
+      });
+  },
+
   async setAttitudeKeywords(
     input: {
       studentId: string;
@@ -141,7 +159,7 @@ export const homeworkRecordService = {
       && item.studentId === studentId
       && (homeworkDate ? homeworkDateOf(item) === homeworkDate : !item.homeworkDate),
     );
-    if (keywords.length === 0) {
+    if (keywords.length === 0 && !existing?.evaluation?.trim()) {
       if (existing) {
         db.update("homeworkAttitudeRecords", (records: HomeworkAttitudeRecord[] = []) =>
           records.filter((item) => item.id !== existing.id));
@@ -166,6 +184,62 @@ export const homeworkRecordService = {
           studentId,
           ...(homeworkDate ? { homeworkDate } : {}),
           keywords: typedKeywords,
+          createdAt: now,
+          updatedAt: now,
+        };
+    db.update("homeworkAttitudeRecords", (records: HomeworkAttitudeRecord[] = []) => existing
+      ? records.map((item) => item.id === existing.id ? next : item)
+      : [next, ...records]);
+    return next;
+  },
+
+  async setEvaluation(
+    input: {
+      studentId: string;
+      homeworkDate?: string;
+      evaluation: string;
+    },
+    teacher: Teacher,
+  ): Promise<HomeworkAttitudeRecord | null> {
+    await delay(100);
+    const studentId = String(input?.studentId || "").trim();
+    if (!studentId) throw new Error("学生不能为空");
+    if (typeof input?.evaluation !== "string") throw new Error("作业评价格式不正确");
+    await requireStudentAccess(teacher, studentId);
+
+    const homeworkDate = normalizeHomeworkDate(input.homeworkDate);
+    const evaluation = input.evaluation.trim();
+    const items = (db.read("homeworkAttitudeRecords") || []) as HomeworkAttitudeRecord[];
+    const existing = items.find((item) =>
+      item.teacherId === teacher.id
+      && item.studentId === studentId
+      && (homeworkDate ? homeworkDateOf(item) === homeworkDate : !item.homeworkDate),
+    );
+    if (!evaluation && (!existing || existing.keywords.length === 0)) {
+      if (existing) {
+        db.update("homeworkAttitudeRecords", (records: HomeworkAttitudeRecord[] = []) =>
+          records.filter((item) => item.id !== existing.id));
+      }
+      return null;
+    }
+    if (!teacher.schoolId) throw new Error("当前教师未加入学校");
+
+    const now = new Date().toISOString();
+    const next: HomeworkAttitudeRecord = existing
+      ? {
+          ...existing,
+          ...(homeworkDate ? { homeworkDate } : {}),
+          evaluation: evaluation || undefined,
+          updatedAt: now,
+        }
+      : {
+          id: genId("har"),
+          teacherId: teacher.id,
+          schoolId: teacher.schoolId,
+          studentId,
+          ...(homeworkDate ? { homeworkDate } : {}),
+          keywords: [],
+          evaluation,
           createdAt: now,
           updatedAt: now,
         };

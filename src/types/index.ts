@@ -3020,6 +3020,8 @@ export interface HomeworkAttitudeRecord {
   /** 作业日期；旧记录可能没有该字段。 */
   homeworkDate?: string;
   keywords: HomeworkAttitudeKeyword[];
+  /** 教师对本次作业的文字评价。 */
+  evaluation?: string;
   createdAt: string;
   updatedAt: string;
 }

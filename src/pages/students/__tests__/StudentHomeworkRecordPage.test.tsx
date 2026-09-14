@@ -23,6 +23,7 @@ vi.mock("@/services/homeworkRecord", () => ({
     listByStudent: vi.fn(),
     getAttitudeByStudent: vi.fn(),
     setAttitudeKeywords: vi.fn(),
+    setEvaluation: vi.fn(),
     setRecord: vi.fn(),
   },
 }));
@@ -141,6 +142,7 @@ describe("StudentHomeworkRecordPage", () => {
       schoolId: "school-1",
       studentId: "student-1",
       keywords: ["按时完成"],
+      evaluation: "注意订正错题",
       createdAt: "2026-09-05T08:00:00.000Z",
       updatedAt: "2026-09-05T08:00:00.000Z",
     });
@@ -154,6 +156,17 @@ describe("StudentHomeworkRecordPage", () => {
       createdAt: "2026-09-05T08:00:00.000Z",
       updatedAt: "2026-09-05T08:01:00.000Z",
     }) : null);
+    vi.mocked(homeworkRecordService.setEvaluation).mockImplementation(async (input) => ({
+      id: "attitude-1",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      studentId: input.studentId,
+      homeworkDate: input.homeworkDate,
+      keywords: ["按时完成"],
+      evaluation: input.evaluation || undefined,
+      createdAt: "2026-09-05T08:00:00.000Z",
+      updatedAt: "2026-09-05T08:01:00.000Z",
+    }));
     vi.mocked(homeworkRecordService.setRecord).mockImplementation(async (input) => ({
       id: "record-1",
       teacherId: "teacher-1",
@@ -251,6 +264,20 @@ describe("StudentHomeworkRecordPage", () => {
     });
     expect(careless).toHaveAttribute("aria-pressed", "true");
     expect(careless).toHaveClass("ring-2");
+
+    const evaluation = screen.getByRole("textbox", { name: "作业评价" });
+    expect(evaluation).toHaveValue("注意订正错题");
+    await user.clear(evaluation);
+    await user.type(evaluation, "步骤清晰，继续保持");
+    await user.click(screen.getByRole("button", { name: "保存评价" }));
+
+    await waitFor(() => {
+      expect(homeworkRecordService.setEvaluation).toHaveBeenCalledWith({
+        studentId: "student-1",
+        homeworkDate: "2026-09-06",
+        evaluation: "步骤清晰，继续保持",
+      });
+    });
   });
 
   it("opens the knowledge directory picker and persists the pinned selection", async () => {

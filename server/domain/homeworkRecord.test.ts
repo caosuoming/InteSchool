@@ -189,6 +189,66 @@ describe("homeworkRecordService", () => {
     });
   });
 
+  it("persists homework evaluation alongside attitude keywords and lists dated feedback", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const evaluationOnly = await homeworkRecordService.setEvaluation({
+        studentId: "student-1",
+        homeworkDate: "2026-09-05",
+        evaluation: "  步骤清晰，继续保持  ",
+      }, teacher);
+      expect(evaluationOnly).toMatchObject({
+        homeworkDate: "2026-09-05",
+        keywords: [],
+        evaluation: "步骤清晰，继续保持",
+      });
+
+      await homeworkRecordService.setAttitudeKeywords({
+        studentId: "student-1",
+        homeworkDate: "2026-09-05",
+        keywords: ["书写认真"],
+      }, teacher);
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-05", teacher))
+        .resolves.toMatchObject({ keywords: ["书写认真"], evaluation: "步骤清晰，继续保持" });
+
+      await expect(homeworkRecordService.setEvaluation({
+        studentId: "student-1",
+        homeworkDate: "2026-09-05",
+        evaluation: "",
+      }, teacher)).resolves.toMatchObject({ keywords: ["书写认真"], evaluation: undefined });
+
+      await homeworkRecordService.setEvaluation({
+        studentId: "student-1",
+        homeworkDate: "2026-09-05",
+        evaluation: "注意订正",
+      }, teacher);
+      await expect(homeworkRecordService.setAttitudeKeywords({
+        studentId: "student-1",
+        homeworkDate: "2026-09-05",
+        keywords: [],
+      }, teacher)).resolves.toMatchObject({ keywords: [], evaluation: "注意订正" });
+
+      await homeworkRecordService.setEvaluation({
+        studentId: "student-1",
+        homeworkDate: "2026-09-06",
+        evaluation: "第二天评价",
+      }, teacher);
+      await expect(homeworkRecordService.listAttitudesByStudent("student-1", teacher))
+        .resolves.toMatchObject([
+          { homeworkDate: "2026-09-06", evaluation: "第二天评价" },
+          { homeworkDate: "2026-09-05", evaluation: "注意订正" },
+        ]);
+
+      await expect(homeworkRecordService.setEvaluation({
+        studentId: "student-1",
+        homeworkDate: "2026-09-05",
+        evaluation: "",
+      }, teacher)).resolves.toBeNull();
+      await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-05", teacher))
+        .resolves.toBeNull();
+    });
+  });
+
   it("creates, updates and clears one status per student and knowledge point", async () => {
     const appState = state();
     await runWithState(appState, async () => {
