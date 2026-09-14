@@ -17,7 +17,6 @@ import { knowledgeService } from "@/services/knowledge";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
 import { analyticsService, type DateRange, type SchoolQuestionStat } from "@/services/analytics";
-import { prepService } from "@/services/prep";
 import { lectureService } from "@/services/lecture";
 import { examPaperService } from "@/services/examPaper";
 import { quotaService } from "@/services/quota";
@@ -243,9 +242,6 @@ export default function QuestionBankPage({
   } | null>(null);
   const [replaceSaving, setReplaceSaving] = useState(false);
 
-  // 已选用题目列表
-  const [usedQuestionIds, setUsedQuestionIds] = useState<string[]>([]);
-
   // 讲义/试卷体积较大，仅在学情模式或查看使用记录时按需加载。
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [examPapers, setExamPapers] = useState<ExamPaper[]>([]);
@@ -256,14 +252,6 @@ export default function QuestionBankPage({
   const [usageDetailModal, setUsageDetailModal] = useState<{
     open: boolean;
     question: Question;
-  } | null>(null);
-
-  // 查重弹窗
-  const [duplicateModal, setDuplicateModal] = useState<{
-    open: boolean;
-    question: Question;
-    similarQuestions: Question[];
-    targetStudentIds: string[];
   } | null>(null);
 
   // 分页状态
@@ -497,12 +485,6 @@ export default function QuestionBankPage({
       });
   }, [mode, selectedStudentIds, dateRange]);
 
-  // 加载已选用题目列表
-  useEffect(() => {
-    if (!teacher) return;
-    prepService.getUsedQuestionIds(teacher.id).then(setUsedQuestionIds);
-  }, [teacher]);
-
   const loadUsageResources = useCallback(async () => {
     if (!teacher?.schoolId || usageResourcesLoaded || usageResourcesLoading) return;
     setUsageResourcesLoading(true);
@@ -657,74 +639,6 @@ export default function QuestionBankPage({
   };
 
   const defaultBasket = useMemo(() => baskets.find((b) => b.isDefault), [baskets]);
-
-  const handleCheckDuplicateAndAdd = async (question: Question, basketId: string, studentIds: string[] = []) => {
-    if (!teacher) return;
-
-    const { isDuplicate, similarQuestions } = await prepService.checkDuplicateQuestion(
-      question.stem,
-      teacher.id,
-      question.id,
-    );
-
-    if (isDuplicate) {
-      setDuplicateModal({
-        open: true,
-        question,
-        similarQuestions,
-        targetStudentIds: studentIds,
-      });
-      return;
-    }
-
-    await basketService.addQuestion(basketId, question.id);
-    if (studentIds.length > 0) {
-      await prepService.addQuestionReference(question.id, teacher.id, studentIds);
-      setUsedQuestionIds((prev) => [...new Set([...prev, question.id])]);
-    }
-    toast.success("已加入试题篮");
-    setAddToBasketFor(null);
-    if (teacher) {
-      const bs = await basketService.listBaskets(teacher.id);
-      setBaskets(bs.map((b) => ({ id: b.id, name: b.name, isDefault: b.isDefault, questionIds: b.questionIds })));
-    }
-  };
-
-  const handleMergeQuestion = async (targetQuestionId: string) => {
-    if (!duplicateModal) return;
-
-    try {
-      await prepService.mergeQuestions(targetQuestionId, duplicateModal.question.id);
-      toast.success("题目已合并");
-      loadQuestions();
-      prepService.getUsedQuestionIds(teacher!.id).then(setUsedQuestionIds);
-    } catch (e: any) {
-      toast.error("合并失败", e?.message);
-    }
-    setDuplicateModal(null);
-  };
-
-  const handleAddAsNew = async () => {
-    if (!duplicateModal || !teacher) return;
-
-    try {
-      const { id: _, ...questionInput } = duplicateModal.question;
-      const newQuestion = await questionService.createQuestion(
-        teacher.id,
-        teacher.schoolId!,
-        questionInput
-      );
-      if (duplicateModal.targetStudentIds.length > 0) {
-        await prepService.addQuestionReference(newQuestion.id, teacher.id, duplicateModal.targetStudentIds);
-        setUsedQuestionIds((prev) => [...new Set([...prev, newQuestion.id])]);
-      }
-      toast.success("题目已新增");
-      loadQuestions();
-    } catch (e: any) {
-      toast.error("新增失败", e?.message);
-    }
-    setDuplicateModal(null);
-  };
 
   const handleDeleteQuestion = async (question: Question) => {
     if (!confirm(`确定要删除这道题目吗？\n\n${question.stem.slice(0, 50)}...`)) return;
@@ -1356,7 +1270,7 @@ export default function QuestionBankPage({
             baskets.map((b) => (
               <button
                 key={b.id}
-                onClick={() => addToBasketFor && handleCheckDuplicateAndAdd(addToBasketFor, b.id, selectedStudentIds)}
+                onClick={() => addToBasketFor && handleAddToBasket(b.id, addToBasketFor)}
                 className="w-full text-left p-3 rounded-md border border-ink-100 hover:border-gold-300 hover:bg-gold-50/30 transition-colors"
               >
                 <div className="text-sm font-medium text-ink-900">{b.name}</div>
@@ -1775,64 +1689,6 @@ export default function QuestionBankPage({
         )}
       </Modal>
 
-      {/* 查重弹窗 */}
-      <Modal
-        open={Boolean(duplicateModal?.open)}
-        onClose={() => setDuplicateModal(null)}
-        size="lg"
-        title="检测到相似题目"
-        description="该题目与您题库中已有题目相似，请选择处理方式"
-      >
-        {duplicateModal && (
-          <div className="space-y-4">
-            {/* 新题目预览 */}
-            <div className="p-3 rounded-md bg-gold-50/50 border border-gold-200">
-              <div className="text-xs font-medium text-gold-800 mb-1">待添加题目</div>
-              <div className="text-sm text-ink-900">{duplicateModal.question.stem}</div>
-            </div>
-
-            {/* 相似题目列表 */}
-            <div>
-              <div className="text-xs font-medium text-ink-500 mb-2">您题库中的相似题目：</div>
-              <div className="space-y-2">
-                {duplicateModal.similarQuestions.map((sq) => (
-                  <div
-                    key={sq.id}
-                    className="p-3 rounded-md border border-ink-200 hover:border-gold-300 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="text-sm text-ink-900">{sq.stem}</div>
-                        <div className="text-xs text-ink-500 mt-1">
-                          使用次数：{sq.usageCount} · 难度：{difficultyLabel[sq.difficulty]}
-                        </div>
-                      </div>
-                      <Button
-                        variant="gold"
-                        size="sm"
-                        onClick={() => handleMergeQuestion(sq.id)}
-                        className="ml-3"
-                      >
-                        合并到此题
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 操作按钮 */}
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setDuplicateModal(null)}>
-                取消
-              </Button>
-              <Button variant="gold" onClick={handleAddAsNew}>
-                作为新题添加
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }
