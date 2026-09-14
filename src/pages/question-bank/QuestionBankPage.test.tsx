@@ -76,6 +76,7 @@ vi.mock("@/services/knowledge", () => ({
 vi.mock("@/services/basket", () => ({
   basketService: {
     listBaskets: vi.fn(),
+    addQuestion: vi.fn(),
   },
 }));
 
@@ -96,6 +97,7 @@ vi.mock("@/services/analytics", () => ({
 vi.mock("@/services/prep", () => ({
   prepService: {
     getUsedQuestionIds: vi.fn(),
+    checkDuplicateQuestion: vi.fn(),
   },
 }));
 
@@ -163,6 +165,68 @@ describe("QuestionBankPage personal resource scope", () => {
         hidden: ["source", "category", "grade", "schoolYear"],
       },
     });
+  });
+
+  it("adds a question to another basket without checking for similar questions", async () => {
+    const question: Question = {
+      id: "question-1",
+      teacherId: "teacher-1",
+      schoolId: "school-2",
+      type: "short",
+      stem: "无需查重的测试题",
+      answer: "42",
+      analysis: "",
+      chapterIds: [],
+      knowledgePointIds: [],
+      difficulty: 3,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      hiddenByExamIds: [],
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [question], total: 1 });
+    vi.mocked(basketService.listBaskets).mockResolvedValue([
+      {
+        id: "basket-default",
+        teacherId: "teacher-1",
+        name: "默认资源篮",
+        isDefault: true,
+        questionIds: [],
+        materialIds: [],
+        classIds: [],
+        studentIds: [],
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      },
+      {
+        id: "basket-other",
+        teacherId: "teacher-1",
+        name: "其他资源篮",
+        isDefault: false,
+        questionIds: [],
+        materialIds: [],
+        classIds: [],
+        studentIds: [],
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <QuestionBankPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("无需查重的测试题")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("选择其他资源篮"));
+    fireEvent.click(screen.getByRole("button", { name: /其他资源篮.*点击加入此篮/ }));
+
+    await waitFor(() => expect(basketService.addQuestion).toHaveBeenCalledWith("basket-other", "question-1"));
+    expect(prepService.checkDuplicateQuestion).not.toHaveBeenCalled();
   });
 
   it("keeps the chapter and knowledge directory trees read-only", async () => {
