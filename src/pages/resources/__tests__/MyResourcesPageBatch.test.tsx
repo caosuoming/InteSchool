@@ -537,11 +537,11 @@ describe("MyResourcesPage batch actions", () => {
     });
   });
 
-  it("lazy-loads the chapter tree and appends a shared chapter without replacing question chapters", async () => {
+  it("replaces existing question chapters when applying a unified chapter change", async () => {
     vi.mocked(questionService.getQuestion).mockResolvedValue(batchQuestion);
     vi.mocked(questionService.updateQuestion).mockResolvedValue({
       ...batchQuestion,
-      chapterIds: ["chapter-existing", "chapter-new"],
+      chapterIds: ["chapter-new"],
     });
 
     renderPage("question");
@@ -553,12 +553,14 @@ describe("MyResourcesPage batch actions", () => {
     await waitFor(() => {
       expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("school-1");
     });
+    expect(screen.getByRole("heading", { name: "统一修改章节课" })).toBeInTheDocument();
+    expect(screen.getByText("所选章节课会替换 1 个资源原有的章节课关联。")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "选择章节课" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认修改" }));
 
     await waitFor(() => {
       expect(questionService.updateQuestion).toHaveBeenCalledWith("question-1", {
-        chapterIds: ["chapter-existing", "chapter-new"],
+        chapterIds: ["chapter-new"],
       });
     });
   });
@@ -766,7 +768,7 @@ describe("MyResourcesPage batch actions", () => {
     expect(screen.getByRole("option", { name: "批量分享" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "批量删除" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "捐赠到平台" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "新增统一章节课" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "统一修改章节课" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "新增统一知识点" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "取消批量选择" }));
@@ -803,18 +805,18 @@ describe("MyResourcesPage batch actions", () => {
     expect(screen.queryByLabelText("知识点目录已有勾选")).not.toBeInTheDocument();
   });
 
-  it("appends a shared chapter without removing existing chapter ids", async () => {
+  it("replaces existing chapter ids for selected resources", async () => {
     renderPage();
     fireEvent.click(await screen.findByTitle("选择资源"));
     fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
       target: { value: "chapter" },
     });
     fireEvent.click(screen.getByRole("button", { name: "选择章节课" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认修改" }));
 
     await waitFor(() => {
       expect(materialService.updateMaterial).toHaveBeenCalledWith("material-1", {
-        chapterIds: ["chapter-existing", "chapter-new"],
+        chapterIds: ["chapter-new"],
       });
     });
   });

@@ -2242,7 +2242,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const handleApplyBatchDirectory = async () => {
     if (!batchDirectoryMode || batchDirectoryIds.length === 0) {
-      toast.warning(batchDirectoryMode === "chapter" ? "请选择要新增的章节课" : "请选择要新增的知识点");
+      toast.warning(batchDirectoryMode === "chapter" ? "请选择修改后的章节课" : "请选择要新增的知识点");
       return;
     }
 
@@ -2254,8 +2254,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         if (!resource) throw new Error(`资源不存在：${ref.resourceId}`);
 
         if (batchDirectoryMode === "chapter") {
-          const chapterIds = appendUniqueIds(resource.chapterIds, batchDirectoryIds);
-          return updateBatchResource(ref, { chapterIds });
+          return updateBatchResource(ref, { chapterIds: [...batchDirectoryIds] });
         }
         const knowledgePointIds = appendUniqueIds(resource.knowledgePointIds, batchDirectoryIds);
         return updateBatchResource(ref, { knowledgePointIds });
@@ -2266,8 +2265,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       await refreshResourceViews();
 
       if (succeededCount > 0) {
-        const label = batchDirectoryMode === "chapter" ? "章节课" : "知识点";
-        toast.success(`已新增统一${label}`, `已更新 ${succeededCount} 个资源，原有关联保持不变`);
+        if (batchDirectoryMode === "chapter") {
+          toast.success("已统一修改章节课", `已更新 ${succeededCount} 个资源，原章节课关联已替换`);
+        } else {
+          toast.success("已新增统一知识点", `已更新 ${succeededCount} 个资源，原有关联保持不变`);
+        }
         setBatchDirectoryMode(null);
         setBatchDirectoryIds([]);
       }
@@ -3911,7 +3913,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <option value="delete">批量删除</option>
             <option value="donate">捐赠到平台</option>
             {resourceSelections.size >= 2 && <option value="folder">创建专辑</option>}
-            <option value="chapter">新增统一章节课</option>
+            <option value="chapter">统一修改章节课</option>
             <option value="knowledge">新增统一知识点</option>
           </select>
         </div>
@@ -3969,8 +3971,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           setBatchDirectoryMode(null);
           setBatchDirectoryIds([]);
         }}
-        title={batchDirectoryMode === "chapter" ? "新增统一章节课" : "新增统一知识点"}
-        description={`所选目录会追加到 ${resourceSelections.size} 个资源，原有关联不会被覆盖。`}
+        title={batchDirectoryMode === "chapter" ? "统一修改章节课" : "新增统一知识点"}
+        description={batchDirectoryMode === "chapter"
+          ? `所选章节课会替换 ${resourceSelections.size} 个资源原有的章节课关联。`
+          : `所选目录会追加到 ${resourceSelections.size} 个资源，原有关联不会被覆盖。`}
         size="md"
         footer={
           <div className="flex justify-end gap-2">
@@ -3990,7 +3994,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               loading={batchWorking}
               disabled={batchDirectoryIds.length === 0}
             >
-              确认新增
+              {batchDirectoryMode === "chapter" ? "确认修改" : "确认新增"}
             </Button>
           </div>
         }
