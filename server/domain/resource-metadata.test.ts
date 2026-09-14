@@ -36,10 +36,16 @@ describe("document resource metadata", () => {
         sections: [],
       });
 
-      const markedPaper = await examPaperService.markAnswerSheetCreated(paper.id);
-      const markedLecture = await lectureService.markAnswerSheetCreated(lecture.id);
-      expect(markedPaper).toMatchObject({ hasAnswerSheet: true });
-      expect(markedLecture).toMatchObject({ hasAnswerSheet: true });
+      const settings = {
+        paperSize: "A3" as const,
+        mode: "with-questions" as const,
+        studentNumberDigits: 8,
+        choiceLayout: "concentrated" as const,
+      };
+      const markedPaper = await examPaperService.markAnswerSheetCreated(paper.id, settings);
+      const markedLecture = await lectureService.markAnswerSheetCreated(lecture.id, settings);
+      expect(markedPaper).toMatchObject({ hasAnswerSheet: true, answerSheetSettings: settings });
+      expect(markedLecture).toMatchObject({ hasAnswerSheet: true, answerSheetSettings: settings });
       expect(markedPaper?.answerSheetCreatedAt).toBeTruthy();
       expect(markedLecture?.answerSheetCreatedAt).toBeTruthy();
 
@@ -57,6 +63,7 @@ describe("document resource metadata", () => {
       for (const copy of [duplicatedPaper, duplicatedLecture, extractedPaper, extractedLecture]) {
         expect(copy.hasAnswerSheet).toBeUndefined();
         expect(copy.answerSheetCreatedAt).toBeUndefined();
+        expect(copy.answerSheetSettings).toBeUndefined();
       }
     });
   });

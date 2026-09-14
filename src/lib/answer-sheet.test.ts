@@ -13,7 +13,8 @@ describe("answer-sheet helpers", () => {
       .toBe("intes://answer-sheet/v1/lecture/lecture%2F123");
   });
 
-  it("normalizes the configurable student-number digit count", () => {
+  it("defaults to an 8-digit student number and normalizes the configurable digit count", () => {
+    expect(DEFAULT_STUDENT_NUMBER_DIGITS).toBe(8);
     expect(normalizeStudentNumberDigits(0)).toBe(1);
     expect(normalizeStudentNumberDigits(7.4)).toBe(7);
     expect(normalizeStudentNumberDigits(99)).toBe(12);

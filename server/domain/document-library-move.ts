@@ -169,6 +169,7 @@ function paperToLecture(paper: ExamPaper, root: ExamPaper, now: string): Lecture
     hasOrigin: paper.isExtractCopy ? Boolean(root.originalFileUrl) : undefined,
     hasAnswerSheet: paper.hasAnswerSheet,
     answerSheetCreatedAt: paper.answerSheetCreatedAt,
+    answerSheetSettings: paper.answerSheetSettings,
     createdAt: paper.createdAt,
     updatedAt: now,
   };
@@ -212,6 +213,7 @@ function lectureToPaper(lecture: Lecture, now: string): ExamPaper {
     extractStatus: lecture.extractStatus,
     hasAnswerSheet: lecture.hasAnswerSheet,
     answerSheetCreatedAt: lecture.answerSheetCreatedAt,
+    answerSheetSettings: lecture.answerSheetSettings,
     createdAt: lecture.createdAt,
     updatedAt: now,
   };

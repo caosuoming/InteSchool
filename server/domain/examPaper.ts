@@ -89,19 +89,21 @@ export const examPaperService = {
     return paper ? withDerivedKnowledgePoints(paper) : null;
   },
 
-  async markAnswerSheetCreated(id: string): Promise<ExamPaper | null> {
+  async markAnswerSheetCreated(
+    id: string,
+    settings?: ExamPaper["answerSheetSettings"],
+  ): Promise<ExamPaper | null> {
     await delay(100);
     let updated: ExamPaper | null = null;
     const now = new Date().toISOString();
     db.update("examPapers", (list) => list.map((paper) => {
       if (paper.id !== id) return paper;
-      updated = paper.hasAnswerSheet
-        ? paper
-        : {
-          ...paper,
-          hasAnswerSheet: true,
-          answerSheetCreatedAt: paper.answerSheetCreatedAt || now,
-        };
+      updated = {
+        ...paper,
+        hasAnswerSheet: true,
+        answerSheetCreatedAt: paper.answerSheetCreatedAt || now,
+        ...(settings ? { answerSheetSettings: settings } : {}),
+      };
       return updated;
     }));
     return updated ? withDerivedKnowledgePoints(updated) : null;
@@ -211,6 +213,7 @@ export const examPaperService = {
       extractStatus: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetSettings: undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -334,6 +337,7 @@ export const examPaperService = {
       originalFileSize: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetSettings: undefined,
       status: "draft",
       createdAt: now,
       updatedAt: now,

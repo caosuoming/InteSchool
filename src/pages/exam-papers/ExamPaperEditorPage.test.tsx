@@ -640,6 +640,15 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(preview).queryByText("解析：")).not.toBeInTheDocument();
   });
 
+  it("renames the answer-sheet action after a card has been created", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, hasAnswerSheet: true });
+    renderPage();
+
+    const toolbar = await screen.findByRole("toolbar", { name: "试卷预览操作" });
+    expect(within(toolbar).getByRole("button", { name: "预览答题卡" })).toBeInTheDocument();
+    expect(within(toolbar).queryByRole("button", { name: "制作答题卡" })).not.toBeInTheDocument();
+  });
+
   it("places preview controls on a second row below the page header", async () => {
     renderPage();
 

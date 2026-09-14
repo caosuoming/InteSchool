@@ -3638,7 +3638,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             ...folderActionsFor("examPaper", item.id, item.title),
                             {
                               key: "answerSheet",
-                              label: "制作答题卡",
+                              label: item.hasAnswerSheet ? "预览答题卡" : "制作答题卡",
                               icon: <Layout />,
                               onClick: () => openPage(`/exam-papers/${item.id}/answer-sheet`),
                               tone: "gold",
