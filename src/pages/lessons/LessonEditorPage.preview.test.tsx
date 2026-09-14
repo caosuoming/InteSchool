@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Basket, LessonCourseware, Question, Teacher } from "@/types";
+import type { Basket, LessonCourseware, Material, Question, Teacher } from "@/types";
 
 const mocks = vi.hoisted(() => ({
   getCourseware: vi.fn(),
@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getQuestion: vi.fn(),
   listQuestions: vi.fn(),
   listBaskets: vi.fn(),
+  getMaterial: vi.fn(),
   listMyStudents: vi.fn(),
   listMyClasses: vi.fn(),
   listFollowedStudentIds: vi.fn(),
@@ -74,6 +75,9 @@ vi.mock("@/services/question", () => ({
 vi.mock("@/services/basket", () => ({
   basketService: { listBaskets: mocks.listBaskets },
 }));
+vi.mock("@/services/material", () => ({
+  materialService: { getMaterial: mocks.getMaterial },
+}));
 vi.mock("@/services/studentInteraction", () => ({
   studentInteractionService: { listFollowedStudentIds: mocks.listFollowedStudentIds },
 }));
@@ -108,6 +112,7 @@ describe("LessonEditorPage preview query", () => {
     mocks.getQuestion.mockResolvedValue(null);
     mocks.listQuestions.mockResolvedValue([]);
     mocks.listBaskets.mockResolvedValue([]);
+    mocks.getMaterial.mockResolvedValue(null);
     mocks.listMyStudents.mockResolvedValue([]);
     mocks.listMyClasses.mockResolvedValue([]);
     mocks.listFollowedStudentIds.mockResolvedValue([]);
@@ -274,5 +279,85 @@ describe("LessonEditorPage preview query", () => {
 
     expect(await screen.findByText("第 2 页，共 2 页")).toBeInTheDocument();
     expect(document.querySelector(".katex")).not.toBeNull();
+  });
+
+  it("inserts basket materials onto the current slide and stores scheduled media playback", async () => {
+    const materials = [
+      {
+        id: "material-image",
+        type: "image",
+        title: "函数图像",
+        content: "",
+        fileUrl: "/api/files/function-image",
+      },
+      {
+        id: "material-knowledge",
+        type: "knowledgeBlock",
+        title: "单调性知识块",
+        content: "函数在区间内保持增减趋势。",
+      },
+      {
+        id: "material-audio",
+        type: "audio",
+        title: "课堂提示音",
+        content: "",
+        fileUrl: "/api/files/class-audio",
+      },
+      {
+        id: "material-video",
+        type: "video",
+        title: "函数变化演示",
+        content: "",
+        fileUrl: "/api/files/function-video",
+      },
+    ] as Material[];
+    mocks.listBaskets.mockResolvedValue([{
+      id: "basket-1",
+      teacherId: teacher.id,
+      name: "默认资源篮",
+      questionIds: [],
+      materialIds: materials.map((material) => material.id),
+    } as Basket]);
+    mocks.getMaterial.mockImplementation(async (materialId: string) => (
+      materials.find((material) => material.id === materialId) || null
+    ));
+
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    expect(await screen.findByRole("textbox", { name: "课件名称" })).toHaveValue(courseware.title);
+
+    for (const material of materials) {
+      fireEvent.click(screen.getByRole("button", { name: "素材" }));
+      expect(await screen.findByRole("heading", { name: "从资源篮插入素材" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: `插入素材：${material.title}` }));
+    }
+
+    expect(screen.getByAltText("函数图像")).toHaveAttribute("src", "/api/files/function-image");
+    expect(screen.getAllByText(/单调性知识块/).length).toBeGreaterThan(0);
+    expect(document.querySelector('audio[src="/api/files/class-audio"]')).not.toBeNull();
+    expect(document.querySelector('video[src="/api/files/function-video"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "属性" }));
+    const scheduledTime = screen.getByLabelText("预约播放时刻");
+    fireEvent.change(scheduledTime, { target: { value: "09:35" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(mocks.updateCourseware).toHaveBeenCalledWith(
+        courseware.id,
+        expect.objectContaining({
+          slides: expect.arrayContaining([
+            expect.objectContaining({
+              elements: expect.arrayContaining([
+                expect.objectContaining({
+                  kind: "video",
+                  materialId: "material-video",
+                  scheduledPlayAt: "09:35",
+                }),
+              ]),
+            }),
+          ]),
+        }),
+      );
+    });
   });
 });

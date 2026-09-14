@@ -20,6 +20,7 @@ import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { basketService } from "@/services/basket";
+import { materialService } from "@/services/material";
 import { questionService } from "@/services/question";
 import { classService } from "@/services/class";
 import { analyticsService } from "@/services/analytics";
@@ -30,6 +31,8 @@ import type {
   LessonSlide,
   LessonSlideElement,
   LessonSlideTextRegion,
+  Material,
+  MaterialType,
   Question,
   Student,
   SchoolClass,
@@ -61,6 +64,16 @@ const INSPECTOR_DEFAULT_WIDTH = 248;
 const SLIDE_NAV_MIN_WIDTH = 144;
 const SLIDE_NAV_MAX_WIDTH = 320;
 const SLIDE_NAV_DEFAULT_WIDTH = 176;
+
+const MATERIAL_TYPE_LABEL: Record<MaterialType, string> = {
+  text: "文本",
+  image: "图片",
+  audio: "音频",
+  video: "视频",
+  link: "链接",
+  file: "文件",
+  knowledgeBlock: "知识块",
+};
 
 function getPresentationReferenceSize() {
   const screenWidth = window.screen?.width || window.innerWidth;
@@ -118,6 +131,9 @@ export function LessonEditorPage() {
   const [questionPickerOpen, setQuestionPickerOpen] = useState(false);
   const [basketQuestions, setBasketQuestions] = useState<Question[]>([]);
   const [basketQuestionsLoading, setBasketQuestionsLoading] = useState(false);
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [basketMaterials, setBasketMaterials] = useState<Material[]>([]);
+  const [basketMaterialsLoading, setBasketMaterialsLoading] = useState(false);
 
   // 预览模式
   const [previewMode, setPreviewMode] = useState(() => searchParams.get("preview") === "1");
@@ -511,6 +527,112 @@ export function LessonEditorPage() {
     setSelectedTextRegion(null);
     setQuestionPickerOpen(false);
     toast.success("已插入题目");
+  };
+
+  const openMaterialPicker = async () => {
+    if (!teacher) return;
+    setMaterialPickerOpen(true);
+    setBasketMaterialsLoading(true);
+    try {
+      const baskets = await basketService.listBaskets(teacher.id);
+      const materialIds = Array.from(new Set(
+        baskets.flatMap((basket) => basket.materialIds || []),
+      ));
+      const materials = await Promise.all(
+        materialIds.map((materialId) => materialService.getMaterial(materialId)),
+      );
+      setBasketMaterials(materials.filter((material): material is Material => Boolean(material)));
+    } catch (error) {
+      toast.error("资源篮素材加载失败", error instanceof Error ? error.message : undefined);
+      setBasketMaterials([]);
+    } finally {
+      setBasketMaterialsLoading(false);
+    }
+  };
+
+  const insertMaterialFromBasket = (material: Material) => {
+    if (!currentSlide || currentSlide.type === "courseware") return;
+    let element: LessonSlideElement | null = null;
+
+    if (material.type === "image") {
+      if (!material.fileUrl) {
+        toast.error("图片素材缺少可用文件");
+        return;
+      }
+      element = {
+        id: genId("element"),
+        kind: "image",
+        src: material.fileUrl,
+        alt: material.title,
+        materialId: material.id,
+        x: 12,
+        y: 8,
+        width: 42,
+        height: 42,
+        animation: "none",
+        enterAnimation: "none",
+        actionAnimation: "none",
+        exitAnimation: "none",
+      };
+    } else if (material.type === "audio" || material.type === "video") {
+      if (!material.fileUrl) {
+        toast.error(`${MATERIAL_TYPE_LABEL[material.type]}素材缺少可用文件`);
+        return;
+      }
+      element = {
+        id: genId("element"),
+        kind: material.type,
+        src: material.fileUrl,
+        title: material.title,
+        materialId: material.id,
+        x: 12,
+        y: 8,
+        width: material.type === "video" ? 50 : 46,
+        height: material.type === "video" ? 48 : 16,
+        animation: "none",
+        enterAnimation: "none",
+        actionAnimation: "none",
+        exitAnimation: "none",
+      };
+    } else {
+      const href = material.type === "link"
+        ? (material.fileUrl || material.content)
+        : material.type === "file"
+          ? material.fileUrl
+          : undefined;
+      const content = material.type === "knowledgeBlock"
+        ? `${material.title}${material.content ? `\n${material.content}` : ""}`
+        : material.content || material.title;
+      element = {
+        id: genId("element"),
+        kind: "text",
+        content: material.type === "file" ? material.title : content,
+        ...(href ? { href } : undefined),
+        x: 12,
+        y: 8,
+        width: 52,
+        height: material.type === "knowledgeBlock" ? 34 : 20,
+        autoHeight: material.type === "knowledgeBlock" || material.type === "text",
+        fontSize: material.type === "knowledgeBlock" ? 22 : 20,
+        textAlign: "left",
+        animation: "none",
+        enterAnimation: "none",
+        actionAnimation: "none",
+        exitAnimation: "none",
+      };
+    }
+
+    if (!element) return;
+    const targetSlideId = currentSlide.id;
+    setSlides((previous) => previous.map((slide) => (
+      slide.id === targetSlideId
+        ? { ...slide, elements: [...(slide.elements || []), element] }
+        : slide
+    )));
+    setSelectedElementId(element.id);
+    setSelectedTextRegion(null);
+    setMaterialPickerOpen(false);
+    toast.success(`已插入${MATERIAL_TYPE_LABEL[material.type]}素材`);
   };
 
   const updateSelectedElement = (patch: Partial<LessonSlideElement>) => {
@@ -1193,6 +1315,7 @@ export function LessonEditorPage() {
                     onAddText={addTextElement}
                     onAddImage={addImageElement}
                     onAddLink={addLinkElement}
+                    onAddMaterial={openMaterialPicker}
                     onAddQuestion={openQuestionPicker}
                     onAddSlide={addNewSlide}
                     onSplitSlide={splitSlide}
@@ -1222,6 +1345,50 @@ export function LessonEditorPage() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={materialPickerOpen}
+        onClose={() => setMaterialPickerOpen(false)}
+        title="从资源篮插入素材"
+        description="显示当前教师所有资源篮中的素材。图片、知识块、音频、视频等会插入当前页；音视频插入后可在属性中设置预约播放时刻。"
+        size="lg"
+        footer={null}
+      >
+        {basketMaterialsLoading ? (
+          <div className="py-10 text-center text-sm text-ink-500">正在加载资源篮素材...</div>
+        ) : basketMaterials.length === 0 ? (
+          <div className="py-10 text-center text-sm text-ink-500">资源篮中暂无素材</div>
+        ) : (
+          <div className="max-h-[60vh] space-y-2 overflow-auto pr-1">
+            {basketMaterials.map((material) => (
+              <div key={material.id} className="rounded-lg border border-ink-100 p-3">
+                <div className="flex items-start gap-3">
+                  {material.type === "image" && material.fileUrl ? (
+                    <img src={material.fileUrl} alt="" className="h-14 w-20 shrink-0 rounded object-cover" />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-sm font-medium text-ink-800">{material.title}</div>
+                      <Badge variant="ink">{MATERIAL_TYPE_LABEL[material.type]}</Badge>
+                    </div>
+                    {material.content && material.type !== "image" && (
+                      <div className="mt-1 line-clamp-2 text-xs leading-5 text-ink-500">{material.content}</div>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="gold"
+                    aria-label={`插入素材：${material.title}`}
+                    onClick={() => insertMaterialFromBasket(material)}
+                  >
+                    <Plus className="h-3.5 w-3.5" />插入
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={questionPickerOpen}

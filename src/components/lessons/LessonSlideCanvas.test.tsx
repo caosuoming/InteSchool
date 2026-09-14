@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlideElement } from "@/types";
@@ -127,6 +127,43 @@ describe("LessonSlideCanvas", () => {
       animation: "lessonElementRise 460ms cubic-bezier(0.16, 1, 0.3, 1) both",
       animationDelay: "160ms",
     });
+  });
+
+  it("plays scheduled media at the configured time in presentation mode", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-14T09:34:30"));
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+
+    try {
+      render(
+        <LessonSlideCanvas
+          elements={[{
+            id: "video-1",
+            kind: "video",
+            src: "/api/files/video-1",
+            title: "函数演示",
+            scheduledPlayAt: "09:35",
+            x: 10,
+            y: 10,
+            width: 50,
+            height: 40,
+          }]}
+          editable
+          allowTextEditing={false}
+          enableScheduledMediaPlayback
+        >
+          <div />
+        </LessonSlideCanvas>,
+      );
+
+      expect(screen.getByTitle("函数演示")).toBeInTheDocument();
+      expect(play).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(play).toHaveBeenCalledOnce();
+    } finally {
+      play.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("applies imported PPT text formatting without adding a text-box background", () => {

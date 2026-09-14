@@ -2576,10 +2576,31 @@ export interface LessonSlideImageElement extends LessonSlideElementBase {
   kind: "image";
   src: string;
   alt?: string;
+  /** 素材来自资源篮时保留来源，便于后续追溯。 */
+  materialId?: string;
 }
 
+interface LessonSlideMediaElementBase extends LessonSlideElementBase {
+  src: string;
+  title?: string;
+  /** 素材来自资源篮时保留来源，便于后续追溯。 */
+  materialId?: string;
+  /** 预约自动播放的本地时刻，格式 HH:mm；为空时仅手动播放。 */
+  scheduledPlayAt?: string;
+}
+
+export interface LessonSlideAudioElement extends LessonSlideMediaElementBase {
+  kind: "audio";
+}
+
+export interface LessonSlideVideoElement extends LessonSlideMediaElementBase {
+  kind: "video";
+}
+
+export type LessonSlideMediaElement = LessonSlideAudioElement | LessonSlideVideoElement;
+
 /** 可在课件画布中自由移动、缩放的元素。 */
-export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement;
+export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement;
 
 /** 导入外部课件时尚未分配本地 ID 的自由画布元素。 */
 export type PptSlideImportElement =
