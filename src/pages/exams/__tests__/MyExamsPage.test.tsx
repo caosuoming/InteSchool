@@ -105,12 +105,17 @@ describe("MyExamsPage", () => {
     });
     vi.mocked(quotaService.getQuota).mockResolvedValue({
       teacherId: "teacher-1",
+      creditBalance: 0,
+      creditSettings: {
+        donationCredits: { question: 1, examPaper: 1, lecture: 1, courseware: 1, material: 1 },
+        capacityPerCredit: { question: 10, examPaper: 10, lecture: 10, courseware: 10, material: 10 },
+      },
       resources: {
-        question: { key: "question", used: 0, baseCapacity: 10_000, effectiveDonations: 0, donationBonus: 0, capacity: 10_000, remaining: 10_000 },
-        examPaper: { key: "examPaper", used: 0, baseCapacity: 1_000, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
-        lecture: { key: "lecture", used: 0, baseCapacity: 1_000, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
-        courseware: { key: "courseware", used: 0, baseCapacity: 1_000, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
-        material: { key: "material", used: 0, baseCapacity: 1_000, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
+        question: { key: "question", used: 0, baseCapacity: 10_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 10_000, remaining: 10_000 },
+        examPaper: { key: "examPaper", used: 0, baseCapacity: 1_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
+        lecture: { key: "lecture", used: 0, baseCapacity: 1_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
+        courseware: { key: "courseware", used: 0, baseCapacity: 1_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
+        material: { key: "material", used: 0, baseCapacity: 1_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
       },
       exam: {
         examRoom: { key: "examRoom", remaining: 50 },

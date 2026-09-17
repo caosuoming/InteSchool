@@ -33,7 +33,7 @@ import type {
   ResourceSemester,
 } from "../../src/types/index.js";
 import { examPaperKnowledgePointIds, lectureKnowledgePointIds } from "./document-knowledge.js";
-import { assertResourceCapacity, recordDonationDownload } from "./quota.js";
+import { assertResourceCapacity, awardDonationCredits, recordDonationDownload } from "./quota.js";
 
 type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
 type DonationPatch = Partial<{
@@ -977,6 +977,7 @@ export const shareService = {
           createdAt: now,
         };
         db.update("shareRecords", (list) => [...list, contribution]);
+        awardDonationCredits(teacherId, contribution.sourceResourceId || contribution.resourceId, contribution.resourceType);
         created.push(contribution);
         continue;
       }
@@ -1001,6 +1002,7 @@ export const shareService = {
         createdAt: now,
       };
       db.update("shareRecords", (list) => [...list, record]);
+      awardDonationCredits(teacherId, record.sourceResourceId || record.resourceId, record.resourceType);
       created.push(record);
       existingRecords.push(record);
     }

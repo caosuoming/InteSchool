@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
-import type { Question, ShareRecord, Teacher } from "../../src/types/index.js";
+import type { Question, Teacher } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import {
   assertResourceCapacity,
+  awardDonationCredits,
   buildQuotaSnapshot,
   consumeExamUsageInternal,
+  DEFAULT_CREDIT_SETTINGS,
   quotaService,
-  recordDonationDownload,
 } from "./quota.js";
 
 const now = "2026-08-15T08:00:00.000Z";
@@ -60,23 +61,6 @@ function question(id: string, teacherId: string): Question {
   };
 }
 
-function donation(id: string, fromTeacherId: string): ShareRecord {
-  return {
-    id,
-    fromTeacherId,
-    fromSchoolId: "school-a",
-    scope: "public",
-    kind: "donation",
-    resourceType: "question",
-    resourceId: `platform-${id}`,
-    sourceResourceId: `source-${id}`,
-    resourceTitle: "平台题目",
-    resourceSnapshot: question(`snapshot-${id}`, fromTeacherId),
-    status: "pending",
-    createdAt: now,
-  };
-}
-
 function state(overrides: Record<string, unknown> = {}): AppState {
   return {
     teachers: [teacher("user-a"), teacher("admin", "platform_admin")],
@@ -87,6 +71,8 @@ function state(overrides: Record<string, unknown> = {}): AppState {
     coursewares: [],
     materials: [],
     shareRecords: [],
+    creditTransactions: [],
+    platformCreditSettings: [],
     ...overrides,
   } as unknown as AppState;
 }
@@ -107,32 +93,49 @@ describe("user quota service", () => {
     });
   });
 
-  it("counts only retained donations downloaded by five distinct other users", () => {
-    const kept = donation("kept", "user-a");
-    const merged = {
-      ...donation("merged", "user-a"),
-      mergedIntoDonationId: "other-primary",
-      downloadedByTeacherIds: ["u1", "u2", "u3", "u4", "u5"],
-    };
-    const appState = state({ shareRecords: [kept, merged] });
-
+  it("awards donation credits exactly once per donation record", () => {
+    const appState = state();
     runWithState(appState, () => {
-      recordDonationDownload("kept", "user-a");
-      recordDonationDownload("kept", "u1");
-      recordDonationDownload("kept", "u1");
-      recordDonationDownload("kept", "u2");
-      recordDonationDownload("kept", "u3");
-      recordDonationDownload("kept", "u4");
-      expect(buildQuotaSnapshot("user-a").resources.question.effectiveDonations).toBe(0);
+      expect(awardDonationCredits("user-a", "donation-1", "question")).toBe(1);
+      expect(awardDonationCredits("user-a", "donation-1", "question")).toBe(1);
+      const snapshot = buildQuotaSnapshot("user-a");
+      expect(snapshot.creditBalance).toBe(1);
+      expect(snapshot.resources.question.creditCapacityBonus).toBe(0);
+      expect(snapshot.resources.question.capacity).toBe(10_000);
+      expect((appState.creditTransactions as unknown[])).toHaveLength(1);
+    });
+  });
 
-      recordDonationDownload("kept", "u5");
-      const status = buildQuotaSnapshot("user-a").resources.question;
-      expect(status.effectiveDonations).toBe(1);
-      expect(status.donationBonus).toBe(10);
-      expect(status.capacity).toBe(10_010);
-      expect((appState.shareRecords as ShareRecord[])[0].downloadedByTeacherIds).toEqual([
-        "u1", "u2", "u3", "u4", "u5",
-      ]);
+  it("supports configurable donation rewards, admin gifts, and permanent credit redemption", async () => {
+    const user = teacher("user-a");
+    const normal = teacher("user-b");
+    const admin = teacher("admin", "platform_admin");
+    const appState = state({ teachers: [user, normal, admin] });
+
+    await runWithState(appState, async () => {
+      const settings = {
+        donationCredits: { ...DEFAULT_CREDIT_SETTINGS.donationCredits, question: 3 },
+        capacityPerCredit: { ...DEFAULT_CREDIT_SETTINGS.capacityPerCredit, question: 25 },
+      };
+      await expect(quotaService.updateCreditSettings(settings, normal)).rejects.toThrow(/仅平台超级管理员/);
+      await quotaService.updateCreditSettings(settings, admin);
+
+      let snapshot = await quotaService.grantCredits("user-a", 5, admin);
+      expect(snapshot.creditBalance).toBe(5);
+      expect(awardDonationCredits("user-a", "donation-2", "question")).toBe(3);
+
+      snapshot = await quotaService.redeemCredits("question", 2, user);
+      expect(snapshot.creditBalance).toBe(6);
+      expect(snapshot.resources.question.creditCapacityBonus).toBe(50);
+      expect(snapshot.resources.question.capacity).toBe(10_050);
+
+      await quotaService.updateCreditSettings({
+        ...settings,
+        capacityPerCredit: { ...settings.capacityPerCredit, question: 100 },
+      }, admin);
+      const afterRuleChange = buildQuotaSnapshot("user-a");
+      expect(afterRuleChange.resources.question.creditCapacityBonus).toBe(50);
+      expect(afterRuleChange.resources.question.capacity).toBe(10_050);
     });
   });
 

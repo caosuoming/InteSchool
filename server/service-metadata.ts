@@ -1372,6 +1372,21 @@ export const serviceParameters = {
       "patch",
       "teacher"
     ],
+    "getCreditSettings": [],
+    "updateCreditSettings": [
+      "settings",
+      "teacher"
+    ],
+    "grantCredits": [
+      "targetTeacherId",
+      "amount",
+      "teacher"
+    ],
+    "redeemCredits": [
+      "resourceType",
+      "credits",
+      "teacher"
+    ],
     "consumeExamUsage": [
       "teacherId",
       "feature"

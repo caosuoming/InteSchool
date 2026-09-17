@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Building2, Copy, Gauge, KeyRound, ShieldCheck, UserCog, Users } from "lucide-react";
+import { Building2, Coins, Copy, Gauge, KeyRound, ShieldCheck, UserCog, Users } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Input, Modal, Select } from "@/components/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { authService } from "@/services/auth";
@@ -10,6 +10,7 @@ import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import type {
   ExamUsageQuotaKey,
+  PlatformCreditSettings,
   ResourceQuotaKey,
   School,
   Teacher,
@@ -69,6 +70,10 @@ export default function AccountManagementPage() {
   const [quotaDraft, setQuotaDraft] = useState<UserQuotaOverrides>({});
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [quotaSaving, setQuotaSaving] = useState(false);
+  const [grantAmount, setGrantAmount] = useState(0);
+  const [grantSaving, setGrantSaving] = useState(false);
+  const [creditSettingsDraft, setCreditSettingsDraft] = useState<PlatformCreditSettings | null>(null);
+  const [creditSettingsSaving, setCreditSettingsSaving] = useState(false);
 
   const schoolId = isPlatformAdmin ? selectedSchoolId : currentSchoolId;
 
@@ -104,6 +109,20 @@ export default function AccountManagementPage() {
   }, [schoolId]);
 
   useEffect(() => { void loadTeachers(); }, [loadTeachers]);
+
+  useEffect(() => {
+    if (!isPlatformAdmin) {
+      setCreditSettingsDraft(null);
+      return;
+    }
+    let cancelled = false;
+    void quotaService.getCreditSettings().then((settings) => {
+      if (!cancelled) setCreditSettingsDraft(settings);
+    }).catch((error) => {
+      if (!cancelled) toast.error("积分规则加载失败", error instanceof Error ? error.message : undefined);
+    });
+    return () => { cancelled = true; };
+  }, [isPlatformAdmin]);
 
   const sortedTeachers = useMemo(() => [...teachers].sort((left, right) => {
     const leftRole = affiliationFor(left, schoolId)?.role || "teacher";
@@ -180,6 +199,7 @@ export default function AccountManagementPage() {
   const openQuota = async (target: Teacher) => {
     setQuotaTarget(target);
     setQuotaSnapshot(null);
+    setGrantAmount(0);
     setQuotaLoading(true);
     try {
       const snapshot = await quotaService.getQuota(target.id);
@@ -212,6 +232,35 @@ export default function AccountManagementPage() {
       toast.error("使用量更新失败", error instanceof Error ? error.message : undefined);
     } finally {
       setQuotaSaving(false);
+    }
+  };
+
+  const grantCredits = async () => {
+    if (!quotaTarget || grantAmount < 1) return;
+    setGrantSaving(true);
+    try {
+      const snapshot = await quotaService.grantCredits(quotaTarget.id, grantAmount);
+      setQuotaSnapshot(snapshot);
+      setGrantAmount(0);
+      toast.success(`已赠送 ${grantAmount} 积分`);
+    } catch (error) {
+      toast.error("积分赠送失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setGrantSaving(false);
+    }
+  };
+
+  const saveCreditSettings = async () => {
+    if (!creditSettingsDraft) return;
+    setCreditSettingsSaving(true);
+    try {
+      const settings = await quotaService.updateCreditSettings(creditSettingsDraft);
+      setCreditSettingsDraft(settings);
+      toast.success("积分换算规则已更新");
+    } catch (error) {
+      toast.error("积分规则更新失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setCreditSettingsSaving(false);
     }
   };
 
@@ -253,6 +302,70 @@ export default function AccountManagementPage() {
           </div>
         </div>
       </Card>
+
+      {isPlatformAdmin && (
+        <Card className="mb-5 p-5">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Coins className="h-5 w-5 text-gold-600" />
+                <h2 className="font-serif font-semibold text-ink-900">积分换算规则</h2>
+              </div>
+              <p className="mt-1 text-xs text-ink-500">规则修改只影响之后发生的捐赠与兑换，已经兑换到资源库的容量不会追溯变化。</p>
+            </div>
+            <Button
+              type="button"
+              variant="gold"
+              loading={creditSettingsSaving}
+              disabled={!creditSettingsDraft}
+              onClick={() => void saveCreditSettings()}
+            >
+              保存规则
+            </Button>
+          </div>
+          {!creditSettingsDraft ? (
+            <div className="py-6 text-center text-sm text-ink-400">加载积分规则中...</div>
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-5">
+              {RESOURCE_QUOTA_FIELDS.map(([key, label]) => (
+                <div key={key} className="rounded-lg border border-ink-100 bg-ink-50 p-3">
+                  <div className="mb-3 text-sm font-medium text-ink-900">{label}</div>
+                  <div className="space-y-3">
+                    <Input
+                      label="每份捐赠奖励积分"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={creditSettingsDraft.donationCredits[key]}
+                      onChange={(event) => setCreditSettingsDraft((current) => current ? ({
+                        ...current,
+                        donationCredits: {
+                          ...current.donationCredits,
+                          [key]: Math.max(0, Math.trunc(Number(event.target.value) || 0)),
+                        },
+                      }) : current)}
+                    />
+                    <Input
+                      label="每积分兑换容量"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={creditSettingsDraft.capacityPerCredit[key]}
+                      onChange={(event) => setCreditSettingsDraft((current) => current ? ({
+                        ...current,
+                        capacityPerCredit: {
+                          ...current.capacityPerCredit,
+                          [key]: Math.max(0, Math.trunc(Number(event.target.value) || 0)),
+                        },
+                      }) : current)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
@@ -317,7 +430,7 @@ export default function AccountManagementPage() {
                       )}
                       {isPlatformAdmin && (
                         <Button type="button" variant="outline" onClick={() => void openQuota(teacher)}>
-                          <Gauge className="h-4 w-4" />使用量
+                          <Gauge className="h-4 w-4" />积分与用量
                         </Button>
                       )}
                       {!canReset && isPlatformTarget && !isPlatformAdmin && (
@@ -381,13 +494,13 @@ export default function AccountManagementPage() {
 
       <Modal
         open={Boolean(quotaTarget)}
-        onClose={() => !quotaSaving && setQuotaTarget(null)}
-        title={`设置 ${quotaTarget?.name || "用户"} 的使用量`}
-        description="资源库填写基础容量；有效捐赠产生的扩容会在基础容量上继续叠加。考试功能填写当前剩余可使用次数。"
+        onClose={() => !quotaSaving && !grantSaving && setQuotaTarget(null)}
+        title={`设置 ${quotaTarget?.name || "用户"} 的积分与使用量`}
+        description="可直接赠送积分或调整基础容量；用户通过积分兑换获得的扩容会永久叠加在基础容量上。考试功能填写当前剩余可使用次数。"
         size="lg"
         footer={(
           <>
-            <Button type="button" variant="ghost" disabled={quotaSaving} onClick={() => setQuotaTarget(null)}>取消</Button>
+            <Button type="button" variant="ghost" disabled={quotaSaving || grantSaving} onClick={() => setQuotaTarget(null)}>取消</Button>
             <Button type="button" variant="gold" loading={quotaSaving} disabled={quotaLoading || !quotaSnapshot} onClick={() => void saveQuota()}>保存使用量</Button>
           </>
         )}
@@ -397,9 +510,31 @@ export default function AccountManagementPage() {
         ) : (
           <div className="space-y-6">
             <section>
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="font-medium text-ink-900">积分余额</h3>
+                  <p className="mt-1 text-xs text-ink-500">当前余额 <strong className="text-ink-900">{quotaSnapshot.creditBalance}</strong> 分。赠送积分会立即计入用户余额。</p>
+                </div>
+                <div className="flex items-end gap-2">
+                  <Input
+                    label="赠送积分"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={grantAmount || ""}
+                    onChange={(event) => setGrantAmount(Math.max(0, Math.trunc(Number(event.target.value) || 0)))}
+                    className="w-36"
+                  />
+                  <Button type="button" variant="outline" loading={grantSaving} disabled={grantAmount < 1} onClick={() => void grantCredits()}>
+                    <Coins className="h-4 w-4" />赠送
+                  </Button>
+                </div>
+              </div>
+            </section>
+            <section className="border-t border-ink-100 pt-5">
               <div className="mb-3">
                 <h3 className="font-medium text-ink-900">个人资源库基础容量</h3>
-                <p className="mt-1 text-xs text-ink-500">每个有效捐赠额外增加 10 道题或 10 份对应资源；有效捐赠需保留在平台且至少被 5 个其他用户创建过副本。</p>
+                <p className="mt-1 text-xs text-ink-500">这里调整的是平台直接配置的基础容量；积分兑换获得的容量单独累计，不会因这里的调整而丢失。</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {RESOURCE_QUOTA_FIELDS.map(([key, label]) => {
@@ -419,7 +554,7 @@ export default function AccountManagementPage() {
                           [key]: Math.max(0, Math.trunc(Number(event.target.value) || 0)),
                         },
                       }))}
-                      hint={`已用 ${status.used}；有效捐赠 ${status.effectiveDonations}，扩容 +${status.donationBonus}；当前总容量 ${status.capacity}`}
+                      hint={`已用 ${status.used}；积分兑换扩容 +${status.creditCapacityBonus}；当前总容量 ${status.capacity}`}
                     />
                   );
                 })}

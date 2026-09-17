@@ -1047,8 +1047,8 @@ export default function QuestionBankPage({
               {quota && (
                 <span className="ml-2 text-xs text-ink-500">
                   · 我的题库容量 {quota.resources.question.used}/{quota.resources.question.capacity}
-                  {quota.resources.question.donationBonus > 0
-                    ? `（有效捐赠扩容 +${quota.resources.question.donationBonus}）`
+                  {quota.resources.question.creditCapacityBonus > 0
+                    ? `（积分兑换扩容 +${quota.resources.question.creditCapacityBonus}）`
                     : ""}
                 </span>
               )}
