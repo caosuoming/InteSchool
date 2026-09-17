@@ -753,6 +753,45 @@ describe("MyResourcesPage batch actions", () => {
     });
   });
 
+  it("donates the extracted document version when an album source has been extracted", async () => {
+    const extractedPaper: ExamPaper = {
+      ...examPaper,
+      id: "paper-1-extract",
+      title: "函数单元测验（拆解版）",
+      isExtractCopy: true,
+      sourceResourceId: examPaper.id,
+      extractStatus: "done",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+    };
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([examPaper, extractedPaper, examPaperTwo]);
+    vi.mocked(resourceFolderService.listFolders).mockResolvedValue([{
+      id: "album-extracted",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      resourceType: "examPaper",
+      name: "函数资料",
+      resourceIds: [examPaper.id, examPaperTwo.id],
+      pinned: false,
+      createdAt: "2026-08-10T00:00:00.000Z",
+      updatedAt: "2026-08-10T00:00:00.000Z",
+    }]);
+
+    renderPage("examPaper");
+
+    fireEvent.click(await screen.findByTitle("捐赠专辑（含全部文档）"));
+
+    await waitFor(() => {
+      expect(donationService.checkDonation).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        [
+          { resourceType: "examPaper", resourceId: extractedPaper.id, albumId: "album-extracted" },
+          { resourceType: "examPaper", resourceId: examPaperTwo.id, albumId: "album-extracted" },
+        ],
+      );
+    });
+  });
+
   it("shows the floating panel only after selecting a resource", async () => {
     renderPage();
 

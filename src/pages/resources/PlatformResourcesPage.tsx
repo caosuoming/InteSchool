@@ -33,6 +33,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
 import { donationService } from "@/services/donation";
+import { resourceFolderService } from "@/services/resourceFolder";
 import { uploadFile } from "@/services/api";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -489,6 +490,8 @@ export default function PlatformResourcesPage() {
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [ownContributionIds, setOwnContributionIds] = useState<Set<string>>(new Set());
+  const [batchSelection, setBatchSelection] = useState<Set<string>>(new Set());
+  const [batchSaving, setBatchSaving] = useState(false);
   const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
   const [expandedAlbumKeys, setExpandedAlbumKeys] = useState<Set<string>>(new Set());
   const [previewItem, setPreviewItem] = useState<PlatformResourceItem | null>(null);
@@ -843,6 +846,123 @@ export default function PlatformResourcesPage() {
         next.delete(item.shareId);
         return next;
       });
+    }
+  };
+
+  const batchResourceSelectionKey = (shareId: string) => `resource:${shareId}`;
+  const batchAlbumSelectionKey = (groupKey: string) => `album:${groupKey}`;
+  const canBatchSaveItem = (item: PlatformResourceItem) =>
+    item.resourceType !== "question" && !ownContributionIds.has(item.shareId);
+
+  const toggleBatchResource = (item: PlatformResourceItem) => {
+    if (!canBatchSaveItem(item)) return;
+    const key = batchResourceSelectionKey(item.shareId);
+    setBatchSelection((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleBatchAlbum = (group: PlatformAlbumGroup) => {
+    if (!group.items.some(canBatchSaveItem)) return;
+    const key = batchAlbumSelectionKey(group.key);
+    setBatchSelection((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const handleBatchSaveToMyResources = async () => {
+    if (!teacher || batchSelection.size === 0) return;
+    const selectedAlbums = platformAlbumGroups.filter((group) =>
+      batchSelection.has(batchAlbumSelectionKey(group.key)),
+    );
+    const selectedItems = items.filter((item) =>
+      batchSelection.has(batchResourceSelectionKey(item.shareId)),
+    );
+    const itemsToSave = new Map<string, PlatformResourceItem>();
+    selectedItems.filter(canBatchSaveItem).forEach((item) => itemsToSave.set(item.shareId, item));
+    selectedAlbums.forEach((group) => group.items
+      .filter(canBatchSaveItem)
+      .forEach((item) => itemsToSave.set(item.shareId, item)));
+
+    if (itemsToSave.size === 0) {
+      toast.warning("所选平台资源不能另存");
+      setBatchSelection(new Set());
+      return;
+    }
+
+    setBatchSaving(true);
+    const personalResourceIds = new Map<string, string>();
+    let createdCount = 0;
+    let failedCount = 0;
+    try {
+      for (const item of itemsToSave.values()) {
+        setAddingIds((current) => new Set(current).add(item.shareId));
+        try {
+          const check = await donationService.checkSaveAsOwnResource(item.shareId, teacher.id, schoolId);
+          if (!check.canSave) {
+            if (check.alreadySaved && check.existingResourceId) {
+              personalResourceIds.set(item.shareId, check.existingResourceId);
+              setSavedIds((current) => new Set(current).add(item.shareId));
+            } else {
+              failedCount += 1;
+            }
+            continue;
+          }
+          if (check.conflict) {
+            failedCount += 1;
+            continue;
+          }
+          const result = await donationService.saveAsOwnResource(item.shareId, teacher.id, schoolId);
+          personalResourceIds.set(item.shareId, result.resourceId);
+          setSavedIds((current) => new Set(current).add(item.shareId));
+          createdCount += 1;
+        } catch {
+          failedCount += 1;
+        } finally {
+          setAddingIds((current) => {
+            const next = new Set(current);
+            next.delete(item.shareId);
+            return next;
+          });
+        }
+      }
+
+      let albumCount = 0;
+      for (const group of selectedAlbums) {
+        const resourceIds = group.items
+          .map((item) => personalResourceIds.get(item.shareId))
+          .filter((id): id is string => Boolean(id));
+        if (resourceIds.length !== group.items.length) continue;
+        try {
+          await resourceFolderService.createFolder(
+            teacher.id,
+            schoolId,
+            group.album.resourceType,
+            group.album.name,
+            resourceIds,
+          );
+          albumCount += 1;
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      if (createdCount > 0 || albumCount > 0) {
+        toast.success(
+          "批量另存完成",
+          `新增 ${createdCount} 个文档${albumCount > 0 ? `，重建 ${albumCount} 个专辑` : ""}`,
+        );
+      }
+      if (failedCount > 0) toast.warning("部分资源未能另存", `${failedCount} 项需要单独处理`);
+      setBatchSelection(new Set());
+    } finally {
+      setBatchSaving(false);
     }
   };
 
@@ -1468,6 +1588,14 @@ export default function PlatformResourcesPage() {
                       className="overflow-hidden rounded-lg border border-amber-200 bg-paper"
                     >
                       <div className="flex flex-wrap items-center gap-2 bg-amber-50/70 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择专辑另存：${group.album.name}`}
+                          checked={batchSelection.has(batchAlbumSelectionKey(group.key))}
+                          disabled={!group.items.some(canBatchSaveItem)}
+                          onChange={() => toggleBatchAlbum(group)}
+                          className="h-4 w-4 accent-amber-600 disabled:opacity-40"
+                        />
                         <button
                           type="button"
                           onClick={() => togglePlatformAlbum(group.key)}
@@ -1552,6 +1680,15 @@ export default function PlatformResourcesPage() {
                             const ResourceIcon = resourceTypeIcon[item.resourceType];
                             return (
                               <div key={item.shareId} className="flex items-center gap-2 px-4 py-2.5">
+                                {canBatchSaveItem(item) && (
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`选择文档另存：${item.title}`}
+                                    checked={batchSelection.has(batchResourceSelectionKey(item.shareId))}
+                                    onChange={() => toggleBatchResource(item)}
+                                    className="h-4 w-4 flex-none accent-amber-600"
+                                  />
+                                )}
                                 <ResourceIcon
                                   aria-label={`${resourceTypeLabel[item.resourceType]}标识`}
                                   className="h-4 w-4 flex-none text-ink-500"
@@ -1610,6 +1747,14 @@ export default function PlatformResourcesPage() {
                       className="overflow-hidden rounded-lg border border-amber-200 bg-paper"
                     >
                       <div className="flex flex-wrap items-center gap-2 bg-amber-50/70 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择专辑另存：${group.album.name}`}
+                          checked={batchSelection.has(batchAlbumSelectionKey(group.key))}
+                          disabled={!group.items.some(canBatchSaveItem)}
+                          onChange={() => toggleBatchAlbum(group)}
+                          className="h-4 w-4 accent-amber-600 disabled:opacity-40"
+                        />
                         <button
                           type="button"
                           onClick={() => togglePlatformAlbum(group.key)}
@@ -1650,6 +1795,15 @@ export default function PlatformResourcesPage() {
                             const ResourceIcon = resourceTypeIcon[item.resourceType];
                             return (
                               <div key={item.shareId} className="flex items-center gap-2 px-4 py-2.5">
+                                {canBatchSaveItem(item) && (
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`选择文档另存：${item.title}`}
+                                    checked={batchSelection.has(batchResourceSelectionKey(item.shareId))}
+                                    onChange={() => toggleBatchResource(item)}
+                                    className="h-4 w-4 flex-none accent-amber-600"
+                                  />
+                                )}
                                 <ResourceIcon
                                   aria-label={`${resourceTypeLabel[item.resourceType]}标识`}
                                   className="h-4 w-4 flex-none text-ink-500"
@@ -1688,6 +1842,15 @@ export default function PlatformResourcesPage() {
                 return (
                   <div key={item.shareId} className="card-base p-4 hover:shadow-cardHover transition-all group">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
+                      {canBatchSaveItem(item) && (
+                        <input
+                          type="checkbox"
+                          aria-label={`选择文档另存：${item.title}`}
+                          checked={batchSelection.has(batchResourceSelectionKey(item.shareId))}
+                          onChange={() => toggleBatchResource(item)}
+                          className="h-4 w-4 flex-none accent-amber-600"
+                        />
+                      )}
                       <span className="tag-gold">{resourceTypeLabel[item.resourceType]}</span>
                       {item.donationAlbum && (
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
@@ -1811,6 +1974,32 @@ export default function PlatformResourcesPage() {
           )}
         </div>
       </div>
+
+      {batchSelection.size > 0 && (
+        <div
+          role="region"
+          aria-label="平台资源批量操作"
+          className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-200 bg-paper px-4 py-3 shadow-xl"
+        >
+          <span className="text-sm font-medium text-ink-700">已选择 {batchSelection.size} 项</span>
+          <Button
+            variant="gold"
+            size="sm"
+            loading={batchSaving}
+            onClick={() => void handleBatchSaveToMyResources()}
+          >
+            批量另存到我的资源
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={batchSaving}
+            onClick={() => setBatchSelection(new Set())}
+          >
+            取消选择
+          </Button>
+        </div>
+      )}
 
       <PlatformResourcePreviewModal
         resource={previewResource}

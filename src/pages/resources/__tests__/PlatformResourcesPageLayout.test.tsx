@@ -6,6 +6,7 @@ import PlatformResourcesPage from "@/pages/resources/PlatformResourcesPage";
 import { useAuthStore } from "@/stores/auth";
 import { shareService } from "@/services/share";
 import { donationService } from "@/services/donation";
+import { resourceFolderService } from "@/services/resourceFolder";
 import type { ExamPaper, Material, Question, ShareRecord, Teacher, TreeNode } from "@/types";
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
@@ -57,6 +58,12 @@ vi.mock("@/services/donation", () => ({
   donationService: {
     checkSaveAsOwnResource: vi.fn(),
     saveAsOwnResource: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/resourceFolder", () => ({
+  resourceFolderService: {
+    createFolder: vi.fn(),
   },
 }));
 
@@ -344,6 +351,66 @@ describe("PlatformResourcesPage layout and filters", () => {
     await user.click(screen.getByRole("button", { name: "展开专辑：函数专题" }));
     expect(await screen.findByText("函数专题试卷")).toBeInTheDocument();
     expect(screen.getByLabelText("试卷标识")).toBeInTheDocument();
+  });
+
+  it("batch-saves a selected platform album and rebuilds it in personal resources", async () => {
+    const user = userEvent.setup();
+    const secondPaper: ExamPaper = {
+      ...albumPaper,
+      id: "paper-album-2",
+      title: "函数专题试卷二",
+    };
+    const firstDonation = donationRecord("donation-album-1", "teacher-other", "examPaper", albumPaper);
+    const secondDonation = donationRecord("donation-album-2", "teacher-other", "examPaper", secondPaper);
+    for (const donation of [firstDonation, secondDonation]) {
+      donation.donationAlbum = {
+        id: "album-batch",
+        name: "函数专题",
+        resourceType: "examPaper",
+        libraryLabel: "试卷库",
+      };
+    }
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([firstDonation, secondDonation]);
+    vi.mocked(donationService.checkSaveAsOwnResource).mockImplementation(async (donationId) => ({
+      donationId,
+      resourceType: "examPaper",
+      canSave: true,
+      alreadySaved: false,
+    }));
+    vi.mocked(donationService.saveAsOwnResource).mockImplementation(async (donationId) => ({
+      resourceType: "examPaper",
+      resourceId: donationId === "donation-album-1" ? "paper-copy-1" : "paper-copy-2",
+      merged: false,
+    }));
+    vi.mocked(resourceFolderService.createFolder).mockResolvedValue({
+      id: "folder-copy",
+      teacherId: "teacher-self",
+      schoolId: "school-1",
+      resourceType: "examPaper",
+      name: "函数专题",
+      resourceIds: ["paper-copy-1", "paper-copy-2"],
+      pinned: false,
+      createdAt: "2026-08-02T00:00:00.000Z",
+      updatedAt: "2026-08-02T00:00:00.000Z",
+    });
+
+    renderPage();
+
+    await user.click(await screen.findByLabelText("选择专辑另存：函数专题"));
+    expect(screen.getByRole("region", { name: "平台资源批量操作" })).toHaveTextContent("已选择 1 项");
+    await user.click(screen.getByRole("button", { name: "批量另存到我的资源" }));
+
+    await waitFor(() => {
+      expect(donationService.saveAsOwnResource).toHaveBeenCalledTimes(2);
+      expect(resourceFolderService.createFolder).toHaveBeenCalledWith(
+        "teacher-self",
+        "school-1",
+        "examPaper",
+        "函数专题",
+        ["paper-copy-1", "paper-copy-2"],
+      );
+    });
+    expect(screen.queryByRole("region", { name: "平台资源批量操作" })).not.toBeInTheDocument();
   });
 
   it("mixes unpinned albums with standalone resources by platform order", async () => {

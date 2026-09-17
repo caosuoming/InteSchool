@@ -3,6 +3,8 @@ import type {
   DonationDecision,
   DonationItem,
   DonorStatus,
+  ExamPaper,
+  Lecture,
   PlatformAttributeOption,
   PlatformAttributeOptionType,
   PlatformDonation,
@@ -82,6 +84,70 @@ function ownedQuestion(teacherId: string, resourceId: string): Question {
   return question;
 }
 
+function lectureQuestionIds(sections: Lecture["sections"]): string[] {
+  return sections.flatMap((section) => [
+    ...(section.questionId ? [section.questionId] : []),
+    ...lectureQuestionIds(section.children || []),
+  ]);
+}
+
+function documentQuestionIds(
+  teacherId: string,
+  item: DonationItem,
+): string[] {
+  if (item.resourceType !== "examPaper" && item.resourceType !== "lecture") return [];
+
+  const documents = db.read(resourceCollections[item.resourceType]) as Array<ExamPaper | Lecture>;
+  const selected = documents.find((document) =>
+    document.id === item.resourceId && document.teacherId === teacherId,
+  );
+  if (!selected) return [];
+
+  const related = selected.isExtractCopy
+    ? [selected]
+    : documents.filter((document) =>
+      document.teacherId === teacherId
+      && document.isExtractCopy
+      && document.sourceResourceId === selected.id,
+    );
+  if (related.length === 0) return [];
+  const questionIds = related.flatMap((document) => {
+    const blockIds = (document.contentBlocks || [])
+      .flatMap((block) => block.type === "question" && block.questionId ? [block.questionId] : []);
+    if (item.resourceType === "examPaper") {
+      return [
+        ...(document as ExamPaper).questions.flatMap((question) => question.questionId ? [question.questionId] : []),
+        ...blockIds,
+      ];
+    }
+    return [
+      ...lectureQuestionIds((document as Lecture).sections),
+      ...blockIds,
+    ];
+  });
+  const ownedQuestionIds = new Set((db.read("questions") as Question[])
+    .filter((question) => question.teacherId === teacherId)
+    .map((question) => question.id));
+  return [...new Set(questionIds)].filter((questionId) => ownedQuestionIds.has(questionId));
+}
+
+function expandDonationItems(teacherId: string, items: DonationItem[]): DonationItem[] {
+  const expanded = new Map<string, DonationItem>();
+  const add = (item: DonationItem) => {
+    const key = `${item.resourceType}:${item.resourceId}`;
+    const existing = expanded.get(key);
+    if (!existing || (!existing.albumId && item.albumId)) expanded.set(key, item);
+  };
+
+  for (const item of items) {
+    add(item);
+    for (const questionId of documentQuestionIds(teacherId, item)) {
+      add({ resourceType: "question", resourceId: questionId });
+    }
+  }
+  return [...expanded.values()];
+}
+
 const settingTypeMap: Partial<Record<PlatformAttributeOptionType, "grade" | "schoolYear" | "questionType">> = {
   grade: "grade",
   schoolYear: "schoolYear",
@@ -119,7 +185,8 @@ export const donationService = {
     _schoolId: string,
     items: DonationItem[],
   ): Promise<DonationCheckResult> {
-    const previews = await shareService.checkDonationCandidates(teacherId, items);
+    const expandedItems = expandDonationItems(teacherId, items);
+    const previews = await shareService.checkDonationCandidates(teacherId, expandedItems);
     const alreadyDonated = previews
       .filter((preview) => preview.alreadyDonated)
       .map((preview) => ({ resourceType: preview.resourceType, resourceId: preview.resourceId }));
@@ -144,15 +211,16 @@ export const donationService = {
     items: DonationItem[],
     decisions: DonationDecision[] = [],
   ): Promise<{ created: PlatformDonation[]; skipped: DonationItem[] }> {
+    const expandedItems = expandDonationItems(teacherId, items);
     const decisionsById = new Map(decisions.map((decision) => [decision.sourceResourceId, decision]));
-    const previews = await shareService.checkDonationCandidates(teacherId, items);
-    const albumItemKeys = new Set(items
+    const previews = await shareService.checkDonationCandidates(teacherId, expandedItems);
+    const albumItemKeys = new Set(expandedItems
       .filter((item) => item.albumId)
       .map((item) => `${item.resourceType}:${item.resourceId}`));
     const skipped = previews
       .filter((preview) => preview.alreadyDonated && !albumItemKeys.has(`${preview.resourceType}:${preview.resourceId}`))
       .map((preview) => ({ resourceType: preview.resourceType, resourceId: preview.resourceId }));
-    const requests = items
+    const requests = expandedItems
       .filter((item) => !skipped.some((entry) => entry.resourceType === item.resourceType && entry.resourceId === item.resourceId))
       .map((item) => {
         const decision = decisionsById.get(item.resourceId);
