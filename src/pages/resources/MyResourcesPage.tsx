@@ -3928,10 +3928,23 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             schoolYear: documentMetadataTarget.resource.schoolYear,
             semester: documentMetadataTarget.resource.semester || "上学期",
             chapterIds: documentMetadataTarget.resource.chapterIds,
+            ...(documentMetadataTarget.resourceType !== "courseware"
+              ? { typeId: documentMetadataTarget.resource.typeId || "" }
+              : {}),
           }}
           gradeOptions={gradeOptions}
           schoolYearOptions={schoolYearOptions}
           semesterOptions={semesterOptions}
+          documentTypeLabel={documentMetadataTarget.resourceType === "examPaper"
+            ? "试卷类型"
+            : documentMetadataTarget.resourceType === "lecture"
+              ? "讲义类型"
+              : undefined}
+          documentTypeOptions={documentMetadataTarget.resourceType === "examPaper"
+            ? examPaperTypeOptions
+            : documentMetadataTarget.resourceType === "lecture"
+              ? lectureTypeOptions
+              : undefined}
           chapterTree={chapterTree}
           onChapterTreeChange={setChapterTree}
         />

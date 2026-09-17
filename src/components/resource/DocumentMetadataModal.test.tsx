@@ -45,4 +45,66 @@ describe("DocumentMetadataModal", () => {
       chapterIds: ["chapter-1"],
     }));
   });
+
+  it.each([
+    {
+      resourceLabel: "试卷" as const,
+      documentTypeLabel: "试卷类型" as const,
+      initialTypeId: "weekly",
+      nextTypeId: "monthly",
+      options: [
+        { value: "weekly", label: "周练" },
+        { value: "monthly", label: "月考" },
+      ],
+    },
+    {
+      resourceLabel: "讲义" as const,
+      documentTypeLabel: "讲义类型" as const,
+      initialTypeId: "lesson-plan",
+      nextTypeId: "tutorial",
+      options: [
+        { value: "lesson-plan", label: "教案" },
+        { value: "tutorial", label: "辅导训练" },
+      ],
+    },
+  ])("edits $documentTypeLabel for $resourceLabel metadata", async ({
+    resourceLabel,
+    documentTypeLabel,
+    initialTypeId,
+    nextTypeId,
+    options,
+  }) => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <DocumentMetadataModal
+        open
+        onClose={vi.fn()}
+        onSave={onSave}
+        resourceLabel={resourceLabel}
+        value={{
+          title: `原${resourceLabel}名`,
+          description: "",
+          grade: "高一",
+          schoolYear: "2026-2027",
+          semester: "上学期",
+          chapterIds: [],
+          typeId: initialTypeId,
+        }}
+        gradeOptions={[{ value: "高一", label: "高一" }]}
+        schoolYearOptions={[{ value: "2026-2027", label: "2026-2027" }]}
+        semesterOptions={[{ value: "上学期", label: "上学期" }]}
+        documentTypeLabel={documentTypeLabel}
+        documentTypeOptions={options}
+        chapterTree={null}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(documentTypeLabel), { target: { value: nextTypeId } });
+    fireEvent.click(screen.getByRole("button", { name: "保存文档属性" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      typeId: nextTypeId,
+    })));
+  });
 });
