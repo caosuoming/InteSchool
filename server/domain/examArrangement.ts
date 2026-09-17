@@ -7,7 +7,9 @@ import type {
   GradeExam,
   GradeImportContext,
   TeachingScheduleConfig,
+  TeachingScheduleContext,
   TeachingScheduleProfile,
+  TeachingScheduleSemester,
   Teacher,
 } from "../../src/types/index.js";
 import { generateExamAssignments } from "../../src/lib/exam-arrangement.js";
@@ -72,9 +74,20 @@ function readTeachingScheduleProfiles(): TeachingScheduleProfile[] {
   return Array.isArray(value) ? value as TeachingScheduleProfile[] : [];
 }
 
-function teachingScheduleProfileFor(schoolId: string, cohortKey: string): TeachingScheduleProfile | null {
+function teachingScheduleProfileFor(
+  schoolId: string,
+  schoolYear: string,
+  semester: TeachingScheduleSemester,
+): TeachingScheduleProfile | null {
   return readTeachingScheduleProfiles()
-    .find((item) => item.schoolId === schoolId && item.cohortKey === cohortKey) || null;
+    .find((item) => item.schoolId === schoolId && item.schoolYear === schoolYear && item.semester === semester) || null;
+}
+
+function validateTeachingScheduleTerm(schoolYear: string, semester: TeachingScheduleSemester): void {
+  if (!/^\d{4}-\d{4}$/.test(schoolYear)) throw new Error("学年格式不正确");
+  const [start, end] = schoolYear.split("-").map(Number);
+  if (end !== start + 1) throw new Error("学年格式不正确");
+  if (semester !== "上学期" && semester !== "下学期") throw new Error("学期格式不正确");
 }
 
 function invigilationProfileFor(schoolId: string, cohortKey: string): ExamInvigilationProfile | null {
@@ -138,6 +151,32 @@ export const examArrangementService = {
     };
   },
 
+  async getTeachingScheduleContext(schoolId: string): Promise<TeachingScheduleContext> {
+    const cohorts = await gradeService.listCohorts(schoolId);
+    if (cohorts.length === 0) throw new Error("学校尚未创建可排课年级");
+    const contexts = await Promise.all(cohorts.map((cohort) => gradeService.getImportContext(schoolId, cohort.key)));
+    const classes = contexts.flatMap((context) => context.classes);
+    const students = contexts.flatMap((context) => context.students);
+    const classIds = classes.map((item) => item.id);
+    const classCohortKeys = Object.fromEntries(contexts.flatMap((context) => (
+      context.classes.map((classItem) => [classItem.id, context.cohort.key])
+    )));
+    return {
+      cohort: {
+        key: `school:${schoolId}`,
+        label: "全校",
+        grade: "全校",
+        classIds,
+        studentCount: students.length,
+      },
+      cohorts,
+      classCohortKeys,
+      classes,
+      students,
+      teachers: contexts[0]?.teachers || [],
+    };
+  },
+
   async getInvigilationProfile(schoolId: string, cohortKey: string): Promise<ExamInvigilationProfile | null> {
     await delay(80);
     await gradeService.getImportContext(schoolId, cohortKey);
@@ -145,10 +184,15 @@ export const examArrangementService = {
     return profile ? structuredClone(profile) : null;
   },
 
-  async getTeachingScheduleProfile(schoolId: string, cohortKey: string): Promise<TeachingScheduleProfile | null> {
+  async getTeachingScheduleProfile(
+    schoolId: string,
+    schoolYear: string,
+    semester: TeachingScheduleSemester,
+  ): Promise<TeachingScheduleProfile | null> {
     await delay(80);
-    await gradeService.getImportContext(schoolId, cohortKey);
-    const profile = teachingScheduleProfileFor(schoolId, cohortKey);
+    validateTeachingScheduleTerm(schoolYear, semester);
+    await this.getTeachingScheduleContext(schoolId);
+    const profile = teachingScheduleProfileFor(schoolId, schoolYear, semester);
     return profile ? structuredClone(profile) : null;
   },
 
@@ -344,12 +388,14 @@ export const examArrangementService = {
   async saveTeachingScheduleProfile(
     schoolId: string,
     teacherId: string,
-    cohortKey: string,
+    schoolYear: string,
+    semester: TeachingScheduleSemester,
     config: TeachingScheduleConfig,
   ): Promise<TeachingScheduleProfile> {
     await delay(120);
     maybeThrowError();
-    const context = toArrangementContext(await gradeService.getImportContext(schoolId, cohortKey));
+    validateTeachingScheduleTerm(schoolYear, semester);
+    const context = await this.getTeachingScheduleContext(schoolId);
     const normalized = normalizeTeachingScheduleConfig(config, context);
     const subjectNames = new Set(normalized.subjects.map((item) => item.subject));
     const assignmentByCell = new Map<string, (typeof normalized.assignments)[number]>();
@@ -379,13 +425,13 @@ export const examArrangementService = {
       occupiedTeachers.add(occupiedKey);
     }
 
-    const existing = teachingScheduleProfileFor(schoolId, cohortKey);
+    const existing = teachingScheduleProfileFor(schoolId, schoolYear, semester);
     const now = new Date().toISOString();
     const profile: TeachingScheduleProfile = {
       id: existing?.id || genId("teaching-schedule"),
       schoolId,
-      cohortKey: context.cohort.key,
-      cohortLabel: context.cohort.label,
+      schoolYear,
+      semester,
       config: normalized,
       updatedBy: teacherId,
       createdAt: existing?.createdAt || now,

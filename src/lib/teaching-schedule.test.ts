@@ -43,6 +43,27 @@ describe("teaching schedule", () => {
     }
   });
 
+  it("uses each class cohort's weekly-period standard in one school-wide timetable", () => {
+    const config = baseConfig();
+    config.assignments = [
+      { id: "a1", classId: "class-1", cohortKey: "grad-2027", subject: "数学", teacherName: "张老师", teacherId: "teacher-math" },
+      { id: "a2", classId: "class-2", cohortKey: "grad-2028", subject: "数学", teacherName: "李老师", teacherId: "teacher-math-2" },
+    ];
+    config.subjects = [{
+      subject: "数学",
+      weeklyPeriods: 6,
+      weeklyPeriodsByCohort: { "grad-2027": 6, "grad-2028": 4 },
+    }];
+
+    const result = generateTeachingSchedule(config);
+    expect(Object.keys(result.slots).filter((key) => key.startsWith("class-1:"))).toHaveLength(6);
+    expect(Object.keys(result.slots).filter((key) => key.startsWith("class-2:"))).toHaveLength(4);
+    expect(buildTeachingScheduleTeacherStats(config)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ teacherId: "teacher-math", targetPeriods: 6 }),
+      expect.objectContaining({ teacherId: "teacher-math-2", targetPeriods: 4 }),
+    ]));
+  });
+
   it("honors required and forbidden half-day constraints", () => {
     const config = baseConfig();
     config.assignments = config.assignments.filter((item) => item.classId === "class-1" && item.subject === "数学");

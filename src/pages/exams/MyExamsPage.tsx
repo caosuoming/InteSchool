@@ -820,7 +820,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
     <div className={cn(section === "grades" && "grade-summary-page")}>
       <PageHeader
         title="我的教务"
-        description="统一管理考场布置、监考表、成绩统计和年级排课"
+        description="统一管理考场布置、监考表、成绩统计和全校排课"
         icon={<ClipboardList className="h-5 w-5" />}
       />
       <ExamSectionTabs section={section} quota={quota} />
@@ -854,10 +854,8 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
       ) : (
         <TeachingScheduleSection
           schoolId={schoolId}
+          schoolName={affiliation?.schoolName || "学校"}
           teacherId={teacher.id}
-          cohorts={cohorts}
-          cohortKey={cohortKey}
-          onCohortChange={changeCohort}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import type {
   ExamArrangementContext,
   TeachingScheduleConfig,
+  TeachingScheduleContext,
   TeachingScheduleHalfDay,
   TeachingScheduleSlotAssignment,
   TeachingScheduleSubjectRequirement,
@@ -54,6 +55,25 @@ export function teachingScheduleSlotKey(classId: string, day: number, period: nu
   return `${classId}:${day}:${period}`;
 }
 
+function scheduleContext(context: ExamArrangementContext): TeachingScheduleContext | null {
+  return "classCohortKeys" in context && "cohorts" in context
+    ? context as TeachingScheduleContext
+    : null;
+}
+
+export function teachingScheduleWeeklyPeriods(
+  config: TeachingScheduleConfig,
+  subject: string,
+  cohortKey?: string,
+): number {
+  const item = config.subjects.find((candidate) => candidate.subject === subject);
+  if (!item) return 0;
+  if (cohortKey && item.weeklyPeriodsByCohort && cohortKey in item.weeklyPeriodsByCohort) {
+    return item.weeklyPeriodsByCohort[cohortKey] || 0;
+  }
+  return item.weeklyPeriods || 0;
+}
+
 export function parseTeachingScheduleSlotKey(key: string): { classId: string; day: number; period: number } | null {
   const match = /^(.*):(\d+):(\d+)$/.exec(key);
   if (!match) return null;
@@ -74,6 +94,7 @@ export function teachingScheduleSubjectRequirement(
 }
 
 export function buildDefaultTeachingScheduleConfig(context: ExamArrangementContext): TeachingScheduleConfig {
+  const schoolContext = scheduleContext(context);
   const rosterSubjects = [...new Set((context.teachers || []).map((teacher) => teacher.subject.trim()).filter(Boolean))];
   const subjectNames = rosterSubjects.length > 0 ? rosterSubjects : [...TEACHING_SCHEDULE_DEFAULT_SUBJECTS];
   const assignments: TeachingScheduleTeacherAssignment[] = [];
@@ -85,6 +106,7 @@ export function buildDefaultTeachingScheduleConfig(context: ExamArrangementConte
       assignments.push({
         id: `roster:${teacher.id}:${classId}:${teacher.subject}`,
         classId,
+        ...(schoolContext?.classCohortKeys[classId] ? { cohortKey: schoolContext.classCohortKeys[classId] } : {}),
         subject: teacher.subject,
         teacherName: teacher.name,
         teacherId: teacher.id,
@@ -94,7 +116,13 @@ export function buildDefaultTeachingScheduleConfig(context: ExamArrangementConte
 
   return {
     assignments,
-    subjects: subjectNames.map((subject) => ({ subject, weeklyPeriods: 0 })),
+    subjects: subjectNames.map((subject) => ({
+      subject,
+      weeklyPeriods: 0,
+      ...(schoolContext ? {
+        weeklyPeriodsByCohort: Object.fromEntries(schoolContext.cohorts.map((cohort) => [cohort.key, 0])),
+      } : {}),
+    })),
     subjectRequirements: {},
     teacherNotes: {},
     slots: {},
@@ -113,9 +141,11 @@ function normalizedAssignment(
     teacher.id === assignment.teacherId
     || (normalizedName(teacher.name) === normalizedName(teacherName) && teacher.subject === subject)
   ));
+  const cohortKey = scheduleContext(context)?.classCohortKeys[assignment.classId] || assignment.cohortKey;
   return {
     ...assignment,
     classId: assignment.classId,
+    ...(cohortKey ? { cohortKey } : {}),
     subject,
     teacherName,
     ...(rosterMatch?.id ? { teacherId: rosterMatch.id } : assignment.teacherId ? { teacherId: assignment.teacherId } : {}),
@@ -128,12 +158,20 @@ export function normalizeTeachingScheduleConfig(
 ): TeachingScheduleConfig {
   if (!config) return buildDefaultTeachingScheduleConfig(context);
   const defaultConfig = buildDefaultTeachingScheduleConfig(context);
+  const schoolContext = scheduleContext(context);
   const seenSubjects = new Set<string>();
   const subjects = (config.subjects || []).flatMap((item) => {
     const subject = item.subject.trim();
     if (!subject || seenSubjects.has(subject)) return [];
     seenSubjects.add(subject);
-    return [{ subject, weeklyPeriods: Math.max(0, Math.min(35, Math.round(Number(item.weeklyPeriods) || 0))) }];
+    const weeklyPeriods = Math.max(0, Math.min(35, Math.round(Number(item.weeklyPeriods) || 0)));
+    const weeklyPeriodsByCohort = schoolContext
+      ? Object.fromEntries(schoolContext.cohorts.map((cohort) => {
+        const value = item.weeklyPeriodsByCohort?.[cohort.key];
+        return [cohort.key, Math.max(0, Math.min(35, Math.round(Number(value ?? weeklyPeriods) || 0)))];
+      }))
+      : item.weeklyPeriodsByCohort;
+    return [{ subject, weeklyPeriods, ...(weeklyPeriodsByCohort ? { weeklyPeriodsByCohort } : {}) }];
   });
   if (subjects.length === 0) subjects.push(...defaultConfig.subjects);
 
@@ -143,7 +181,13 @@ export function normalizeTeachingScheduleConfig(
   const subjectSet = new Set(subjects.map((item) => item.subject));
   for (const assignment of assignments) {
     if (!subjectSet.has(assignment.subject)) {
-      subjects.push({ subject: assignment.subject, weeklyPeriods: 0 });
+      subjects.push({
+        subject: assignment.subject,
+        weeklyPeriods: 0,
+        ...(schoolContext ? {
+          weeklyPeriodsByCohort: Object.fromEntries(schoolContext.cohorts.map((cohort) => [cohort.key, 0])),
+        } : {}),
+      });
       subjectSet.add(assignment.subject);
     }
   }
@@ -286,23 +330,13 @@ function candidateSlots(
 
 export function generateTeachingSchedule(config: TeachingScheduleConfig): TeachingScheduleGenerationResult {
   const slots: Record<string, TeachingScheduleSlotAssignment> = {};
-  const hours = new Map(config.subjects.map((item) => [item.subject, Math.max(0, Math.round(item.weeklyPeriods))]));
-  for (const [subject, weeklyPeriods] of hours) {
-    const requiredCount = TEACHING_SCHEDULE_WEEKDAYS.reduce((count, day) => count
-      + (["morning", "afternoon"] as const).filter((halfDay) => (
-        teachingScheduleSubjectRequirement(config, subject, day, halfDay) === "required"
-      )).length, 0);
-    if (requiredCount > weeklyPeriods) {
-      throw new Error(`“${subject}”每周只有 ${weeklyPeriods} 节，但配置三要求至少覆盖 ${requiredCount} 个半天`);
-    }
-  }
   const assignmentByClassSubject = new Map<string, TeachingScheduleTeacherAssignment>();
   for (const assignment of config.assignments) {
     const key = `${assignment.classId}\u0000${assignment.subject}`;
     if (!assignmentByClassSubject.has(key) && assignment.teacherName.trim()) assignmentByClassSubject.set(key, assignment);
   }
   const demands: Demand[] = [...assignmentByClassSubject.values()].flatMap((assignment) => {
-    const count = hours.get(assignment.subject) || 0;
+    const count = teachingScheduleWeeklyPeriods(config, assignment.subject, assignment.cohortKey);
     return count > 0 ? [{
       classId: assignment.classId,
       subject: assignment.subject,
@@ -326,6 +360,9 @@ export function generateTeachingSchedule(config: TeachingScheduleConfig): Teachi
         .filter((halfDay) => teachingScheduleSubjectRequirement(config, demand.subject, day, halfDay) === "required")
         .map((halfDay) => teachingScheduleRequirementKey(day, halfDay))
     ));
+    if (requiredKeys.length > demand.count) {
+      throw new Error(`“${demand.subject}”每周只有 ${demand.count} 节，但配置三要求至少覆盖 ${requiredKeys.length} 个半天`);
+    }
     for (const requirementKey of requiredKeys) {
       if (remaining <= 0) break;
       const candidate = candidateSlots(config, demand, slots, requirementKey)[0];
@@ -376,7 +413,6 @@ export function generateTeachingSchedule(config: TeachingScheduleConfig): Teachi
 }
 
 export function buildTeachingScheduleTeacherStats(config: TeachingScheduleConfig): TeachingScheduleTeacherStat[] {
-  const subjectHours = new Map(config.subjects.map((item) => [item.subject, item.weeklyPeriods]));
   const byTeacher = new Map<string, TeachingScheduleTeacherStat>();
   for (const assignment of config.assignments) {
     const key = teachingScheduleTeacherKey(assignment.teacherId, assignment.teacherName);
@@ -389,7 +425,7 @@ export function buildTeachingScheduleTeacherStats(config: TeachingScheduleConfig
       currentPeriods: 0,
     };
     if (!current.subjects.includes(assignment.subject)) current.subjects.push(assignment.subject);
-    current.targetPeriods += subjectHours.get(assignment.subject) || 0;
+    current.targetPeriods += teachingScheduleWeeklyPeriods(config, assignment.subject, assignment.cohortKey);
     byTeacher.set(key, current);
   }
   for (const slot of Object.values(config.slots)) {

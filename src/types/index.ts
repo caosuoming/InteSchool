@@ -842,10 +842,20 @@ export interface ExamArrangementContext {
 
 export type TeachingScheduleHalfDay = "morning" | "afternoon";
 export type TeachingScheduleSubjectRequirement = "required" | "forbidden" | "any";
+export type TeachingScheduleSemester = "上学期" | "下学期";
+
+/** 排课按学校和学年学期统一管理；年级仅用于区分班级及其标准课时。 */
+export interface TeachingScheduleContext extends ExamArrangementContext {
+  cohorts: GradeCohort[];
+  /** 班级所属届别，用于读取对应年级的标准课时。 */
+  classCohortKeys: Record<string, string>;
+}
 
 export interface TeachingScheduleTeacherAssignment {
   id: string;
   classId: string;
+  /** 班级所属届别；旧数据可由 classId 自动补齐。 */
+  cohortKey?: string;
   subject: string;
   teacherName: string;
   /** 能与学校教师清单匹配时保存稳定 ID；Excel 中的临时姓名允许暂时没有 ID。 */
@@ -854,8 +864,10 @@ export interface TeachingScheduleTeacherAssignment {
 
 export interface TeachingScheduleSubjectConfig {
   subject: string;
-  /** 每个班每周安排的标准课时数。 */
+  /** 旧版统一标准课时；新数据以 weeklyPeriodsByCohort 为准。 */
   weeklyPeriods: number;
+  /** 各届年级每个班每周安排的标准课时数。 */
+  weeklyPeriodsByCohort?: Record<string, number>;
 }
 
 export interface TeachingScheduleSlotAssignment {
@@ -879,8 +891,13 @@ export interface TeachingScheduleConfig {
 export interface TeachingScheduleProfile {
   id: string;
   schoolId: string;
-  cohortKey: string;
-  cohortLabel: string;
+  /** 排课配置所属学年，例如 2026-2027。 */
+  schoolYear: string;
+  semester: TeachingScheduleSemester;
+  /** @deprecated 旧版按年级保存时使用。 */
+  cohortKey?: string;
+  /** @deprecated 旧版按年级保存时使用。 */
+  cohortLabel?: string;
   config: TeachingScheduleConfig;
   updatedBy: string;
   createdAt: string;

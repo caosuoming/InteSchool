@@ -7,7 +7,9 @@ import type {
   ExamInvigilationProfile,
   GradeCohort,
   TeachingScheduleConfig,
+  TeachingScheduleContext,
   TeachingScheduleProfile,
+  TeachingScheduleSemester,
 } from "@/types";
 
 export const examArrangementService = {
@@ -19,12 +21,20 @@ export const examArrangementService = {
     return rpcCall("examArrangement", "getContext", [schoolId, cohortKey]) as Promise<ExamArrangementContext>;
   },
 
+  async getTeachingScheduleContext(schoolId: string): Promise<TeachingScheduleContext> {
+    return rpcCall("examArrangement", "getTeachingScheduleContext", [schoolId]) as Promise<TeachingScheduleContext>;
+  },
+
   async getInvigilationProfile(schoolId: string, cohortKey: string): Promise<ExamInvigilationProfile | null> {
     return rpcCall("examArrangement", "getInvigilationProfile", [schoolId, cohortKey]) as Promise<ExamInvigilationProfile | null>;
   },
 
-  async getTeachingScheduleProfile(schoolId: string, cohortKey: string): Promise<TeachingScheduleProfile | null> {
-    return rpcCall("examArrangement", "getTeachingScheduleProfile", [schoolId, cohortKey]) as Promise<TeachingScheduleProfile | null>;
+  async getTeachingScheduleProfile(
+    schoolId: string,
+    schoolYear: string,
+    semester: TeachingScheduleSemester,
+  ): Promise<TeachingScheduleProfile | null> {
+    return rpcCall("examArrangement", "getTeachingScheduleProfile", [schoolId, schoolYear, semester]) as Promise<TeachingScheduleProfile | null>;
   },
 
   async listArrangements(schoolId: string, cohortKey?: string): Promise<ExamArrangement[]> {
@@ -50,13 +60,15 @@ export const examArrangementService = {
   async saveTeachingScheduleProfile(
     schoolId: string,
     teacherId: string,
-    cohortKey: string,
+    schoolYear: string,
+    semester: TeachingScheduleSemester,
     config: TeachingScheduleConfig,
   ): Promise<TeachingScheduleProfile> {
     return rpcCall("examArrangement", "saveTeachingScheduleProfile", [
       schoolId,
       teacherId,
-      cohortKey,
+      schoolYear,
+      semester,
       config,
     ]) as Promise<TeachingScheduleProfile>;
   },

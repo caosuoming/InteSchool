@@ -12,9 +12,9 @@ import {
   X,
 } from "lucide-react";
 import type {
-  ExamArrangementContext,
-  GradeCohort,
   TeachingScheduleConfig,
+  TeachingScheduleContext,
+  TeachingScheduleSemester,
   TeachingScheduleSlotAssignment,
   TeachingScheduleSubjectRequirement,
 } from "@/types";
@@ -40,6 +40,7 @@ import {
   teachingScheduleSlotKey,
   teachingScheduleSubjectRequirement,
   teachingScheduleTeacherKey,
+  teachingScheduleWeeklyPeriods,
 } from "@/lib/teaching-schedule";
 import {
   downloadTeachingScheduleTemplate,
@@ -93,22 +94,40 @@ function countClassSubjectSlots(config: TeachingScheduleConfig, classId: string,
   )).length;
 }
 
+function currentTeachingScheduleTerm(now = new Date()): { schoolYear: string; semester: TeachingScheduleSemester } {
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const startYear = month >= 8 ? year : year - 1;
+  return {
+    schoolYear: `${startYear}-${startYear + 1}`,
+    semester: month >= 8 || month === 1 ? "上学期" : "下学期",
+  };
+}
+
+function teachingScheduleSchoolYears(current: string): string[] {
+  const start = Number(current.split("-")[0]);
+  if (!Number.isFinite(start)) return [current];
+  return Array.from({ length: 7 }, (_, index) => {
+    const year = start + 2 - index;
+    return `${year}-${year + 1}`;
+  });
+}
+
 interface TeachingScheduleSectionProps {
   schoolId: string;
+  schoolName: string;
   teacherId: string;
-  cohorts: GradeCohort[];
-  cohortKey: string;
-  onCohortChange: (value: string) => void;
 }
 
 export function TeachingScheduleSection({
   schoolId,
+  schoolName,
   teacherId,
-  cohorts,
-  cohortKey,
-  onCohortChange,
 }: TeachingScheduleSectionProps) {
-  const [context, setContext] = useState<ExamArrangementContext | null>(null);
+  const initialTerm = useMemo(() => currentTeachingScheduleTerm(), []);
+  const [schoolYear, setSchoolYear] = useState(initialTerm.schoolYear);
+  const [semester, setSemester] = useState<TeachingScheduleSemester>(initialTerm.semester);
+  const [context, setContext] = useState<TeachingScheduleContext | null>(null);
   const [config, setConfig] = useState<TeachingScheduleConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -125,16 +144,11 @@ export function TeachingScheduleSection({
   const dragRef = useRef<{ pointerId: number; dx: number; dy: number } | null>(null);
 
   useEffect(() => {
-    if (!cohortKey) {
-      setContext(null);
-      setConfig(null);
-      return;
-    }
     let active = true;
     setLoading(true);
     Promise.all([
-      examArrangementService.getContext(schoolId, cohortKey),
-      examArrangementService.getTeachingScheduleProfile(schoolId, cohortKey),
+      examArrangementService.getTeachingScheduleContext(schoolId),
+      examArrangementService.getTeachingScheduleProfile(schoolId, schoolYear, semester),
     ])
       .then(([nextContext, profile]) => {
         if (!active) return;
@@ -153,7 +167,7 @@ export function TeachingScheduleSection({
     return () => {
       active = false;
     };
-  }, [cohortKey, schoolId]);
+  }, [schoolId, schoolYear, semester]);
 
   useEffect(() => {
     const target = timetableRef.current;
@@ -206,9 +220,9 @@ export function TeachingScheduleSection({
     if (!config || !context) return;
     setSaving(true);
     try {
-      const saved = await examArrangementService.saveTeachingScheduleProfile(schoolId, teacherId, cohortKey, config);
+      const saved = await examArrangementService.saveTeachingScheduleProfile(schoolId, teacherId, schoolYear, semester, config);
       setConfig(normalizeTeachingScheduleConfig(saved.config, context));
-      toast.success("排课配置已保存", `${context.cohort.label}的教师分工、课时要求和课表已保存。`);
+      toast.success("排课配置已保存", `${schoolYear}学年${semester}的教师分工、课时要求和课表已保存。`);
     } catch (error) {
       toast.error("保存排课配置失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -240,18 +254,7 @@ export function TeachingScheduleSection({
     if (!context || !config) return;
     setDownloadingTemplate(true);
     try {
-      const templateCohorts = await Promise.all(cohorts.map(async (cohort) => {
-        if (cohort.key === cohortKey) return { context, config };
-        const [nextContext, profile] = await Promise.all([
-          examArrangementService.getContext(schoolId, cohort.key),
-          examArrangementService.getTeachingScheduleProfile(schoolId, cohort.key),
-        ]);
-        return {
-          context: nextContext,
-          config: normalizeTeachingScheduleConfig(profile?.config || null, nextContext),
-        };
-      }));
-      await downloadTeachingScheduleTemplate(templateCohorts);
+      await downloadTeachingScheduleTemplate(context, config, { schoolName, schoolYear, semester });
     } catch (error) {
       toast.error("下载教师分工表模板失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -300,6 +303,7 @@ export function TeachingScheduleSection({
       const assignment = {
         id: index >= 0 ? next.assignments[index].id : `manual:${classId}:${subject}`,
         classId,
+        ...(context.classCohortKeys[classId] ? { cohortKey: context.classCohortKeys[classId] } : {}),
         subject,
         teacherName: cleanName,
         ...(rosterMatch ? { teacherId: rosterMatch.id } : {}),
@@ -326,7 +330,11 @@ export function TeachingScheduleSection({
       return;
     }
     updateConfig((next) => {
-      next.subjects.push({ subject, weeklyPeriods: 0 });
+      next.subjects.push({
+        subject,
+        weeklyPeriods: 0,
+        weeklyPeriodsByCohort: Object.fromEntries(context?.cohorts.map((cohort) => [cohort.key, 0]) || []),
+      });
       next.subjectRequirements[subject] = {};
     });
     setNewSubject("");
@@ -366,8 +374,9 @@ export function TeachingScheduleSection({
       return;
     }
     const assignment = [...candidates].sort((left, right) => {
-      const leftTarget = config.subjects.find((item) => item.subject === left.subject)?.weeklyPeriods || 0;
-      const rightTarget = config.subjects.find((item) => item.subject === right.subject)?.weeklyPeriods || 0;
+      const cohortKey = context?.classCohortKeys[parsed.classId];
+      const leftTarget = teachingScheduleWeeklyPeriods(config, left.subject, cohortKey);
+      const rightTarget = teachingScheduleWeeklyPeriods(config, right.subject, cohortKey);
       const leftRemaining = leftTarget - countClassSubjectSlots(config, parsed.classId, left.subject);
       const rightRemaining = rightTarget - countClassSubjectSlots(config, parsed.classId, right.subject);
       return rightRemaining - leftRemaining || left.subject.localeCompare(right.subject, "zh-CN");
@@ -483,13 +492,23 @@ export function TeachingScheduleSection({
     <div className="space-y-5">
       <Card>
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-[260px] flex-1">
+          <div className="grid min-w-[320px] flex-1 gap-3 sm:grid-cols-2">
             <Select
-              label="所属年级"
-              aria-label="选择排课年级"
-              value={cohortKey}
-              onChange={(event) => onCohortChange(event.target.value)}
-              options={cohorts.map((item) => ({ value: item.key, label: `${item.label}（${item.studentCount} 人）` }))}
+              label="学年"
+              aria-label="选择排课学年"
+              value={schoolYear}
+              onChange={(event) => setSchoolYear(event.target.value)}
+              options={teachingScheduleSchoolYears(schoolYear).map((item) => ({ value: item, label: `${item}学年` }))}
+            />
+            <Select
+              label="学期"
+              aria-label="选择排课学期"
+              value={semester}
+              onChange={(event) => setSemester(event.target.value as TeachingScheduleSemester)}
+              options={[
+                { value: "上学期", label: "秋学期（上学期）" },
+                { value: "下学期", label: "春学期（下学期）" },
+              ]}
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -555,7 +574,7 @@ export function TeachingScheduleSection({
                   })}
                 </tr>
               ))}
-              {classes.length === 0 && <tr><td colSpan={subjects.length + 1} className="py-8 text-center text-xs text-ink-400">当前年级暂无班级</td></tr>}
+              {classes.length === 0 && <tr><td colSpan={subjects.length + 1} className="py-8 text-center text-xs text-ink-400">当前学校暂无班级</td></tr>}
             </tbody>
           </table>
         </div>
@@ -574,26 +593,31 @@ export function TeachingScheduleSection({
           <p className="mt-1 text-xs text-ink-500">设置每个班一周该学科的标准课时数；Excel 模板中的“标准”行也会写入这里。</p>
         </div>
         <div className="overflow-x-auto rounded-xl border border-ink-100">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead><tr className="bg-ink-50 text-left text-xs text-ink-600"><th className="px-3 py-2">学科</th><th className="w-48 px-3 py-2">每周课时</th><th className="w-24 px-3 py-2 text-right">操作</th></tr></thead>
+          <table className="w-full min-w-[720px] text-sm">
+            <thead><tr className="bg-ink-50 text-left text-xs text-ink-600"><th className="px-3 py-2">学科</th>{context.cohorts.map((cohort) => <th key={cohort.key} className="min-w-36 px-3 py-2 text-center">{cohort.label}</th>)}<th className="w-24 px-3 py-2 text-right">操作</th></tr></thead>
             <tbody>
               {subjects.map((item) => (
                 <tr key={item.subject} className="border-t border-ink-50">
                   <td className="px-3 py-2 font-medium text-ink-800">{item.subject}</td>
-                  <td className="px-3 py-2">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={35}
-                      aria-label={`${item.subject}每周课时`}
-                      value={item.weeklyPeriods}
-                      onChange={(event) => updateConfig((next) => {
-                        const target = next.subjects.find((subject) => subject.subject === item.subject);
-                        if (target) target.weeklyPeriods = Math.max(0, Math.min(35, Number(event.target.value) || 0));
-                      })}
-                      className="py-1.5"
-                    />
-                  </td>
+                  {context.cohorts.map((cohort) => (
+                    <td key={cohort.key} className="px-3 py-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={35}
+                        aria-label={`${cohort.label}${item.subject}每周课时`}
+                        value={teachingScheduleWeeklyPeriods(config, item.subject, cohort.key)}
+                        onChange={(event) => updateConfig((next) => {
+                          const target = next.subjects.find((subject) => subject.subject === item.subject);
+                          if (!target) return;
+                          const value = Math.max(0, Math.min(35, Number(event.target.value) || 0));
+                          target.weeklyPeriodsByCohort ||= {};
+                          target.weeklyPeriodsByCohort[cohort.key] = value;
+                        })}
+                        className="py-1.5 text-center"
+                      />
+                    </td>
+                  ))}
                   <td className="px-3 py-2 text-right">
                     <Button variant="ghost" size="icon" aria-label={`删除学科 ${item.subject}`} onClick={() => removeSubject(item.subject)}>
                       <Trash2 className="h-4 w-4" />
@@ -802,7 +826,7 @@ export function TeachingScheduleSection({
                     }))}
                   </tr>
                 ))}
-                {classes.length === 0 && <tr><td colSpan={36} className="py-10 text-center text-xs text-ink-400">当前年级暂无班级</td></tr>}
+                {classes.length === 0 && <tr><td colSpan={36} className="py-10 text-center text-xs text-ink-400">当前学校暂无班级</td></tr>}
               </tbody>
             </table>
           </div>

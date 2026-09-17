@@ -143,13 +143,17 @@ export const serviceParameters = {
       "schoolId",
       "cohortKey"
     ],
+    "getTeachingScheduleContext": [
+      "schoolId"
+    ],
     "getInvigilationProfile": [
       "schoolId",
       "cohortKey"
     ],
     "getTeachingScheduleProfile": [
       "schoolId",
-      "cohortKey"
+      "schoolYear",
+      "semester"
     ],
     "listArrangements": [
       "schoolId",
@@ -170,7 +174,8 @@ export const serviceParameters = {
     "saveTeachingScheduleProfile": [
       "schoolId",
       "teacherId",
-      "cohortKey",
+      "schoolYear",
+      "semester",
       "config"
     ],
     "deleteInvigilationConfig": [

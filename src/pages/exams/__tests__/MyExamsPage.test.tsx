@@ -13,6 +13,7 @@ vi.mock("@/services/examArrangement", () => ({
   examArrangementService: {
     listArrangements: vi.fn(),
     getContext: vi.fn(),
+    getTeachingScheduleContext: vi.fn(),
     getInvigilationProfile: vi.fn(),
     getTeachingScheduleProfile: vi.fn(),
     saveInvigilationConfig: vi.fn(),
@@ -97,6 +98,20 @@ describe("MyExamsPage", () => {
     vi.mocked(examArrangementService.listArrangements).mockResolvedValue([]);
     vi.mocked(examArrangementService.getInvigilationProfile).mockResolvedValue(null);
     vi.mocked(examArrangementService.getTeachingScheduleProfile).mockResolvedValue(null);
+    vi.mocked(examArrangementService.getTeachingScheduleContext).mockResolvedValue({
+      cohort: {
+        key: "school:school-1",
+        label: "全校",
+        grade: "全校",
+        classIds: [],
+        studentCount: 0,
+      },
+      cohorts: [cohort],
+      classCohortKeys: {},
+      classes: [],
+      students: [],
+      teachers: [],
+    });
     vi.mocked(examArrangementService.getContext).mockResolvedValue({
       cohort,
       classes: [],
@@ -162,6 +177,9 @@ describe("MyExamsPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "配置一、教师分工表" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("选择排课年级")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("选择排课学年")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择排课学期")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "配置二、年级学科课时" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "配置三、学科配置要求" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "配置四、教师要求" })).toBeInTheDocument();
