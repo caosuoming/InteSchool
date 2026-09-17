@@ -3,13 +3,21 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProfilePage from "@/pages/profile/ProfilePage";
 import { authService } from "@/services/auth";
+import { quotaService } from "@/services/quota";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore } from "@/stores/settings";
-import type { Teacher, TeacherAffiliation } from "@/types";
+import type { Teacher, TeacherAffiliation, UserQuotaSnapshot } from "@/types";
 
 vi.mock("@/services/auth", () => ({
   authService: {
     getMySchoolAdminApplications: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/quota", () => ({
+  quotaService: {
+    getQuota: vi.fn(),
+    redeemCredits: vi.fn(),
   },
 }));
 
@@ -50,6 +58,27 @@ const affiliation: TeacherAffiliation = {
   joinedAt: "2026-08-01T00:00:00.000Z",
 };
 
+const quotaSnapshot: UserQuotaSnapshot = {
+  teacherId: "teacher-1",
+  creditBalance: 5,
+  creditSettings: {
+    donationCredits: { question: 1, examPaper: 1, lecture: 1, courseware: 1, material: 1 },
+    capacityPerCredit: { question: 10, examPaper: 10, lecture: 10, courseware: 10, material: 10 },
+  },
+  resources: {
+    question: { key: "question", used: 2, baseCapacity: 10_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 10_000, remaining: 9_998 },
+    examPaper: { key: "examPaper", used: 0, baseCapacity: 1_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
+    lecture: { key: "lecture", used: 0, baseCapacity: 1_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
+    courseware: { key: "courseware", used: 0, baseCapacity: 1_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
+    material: { key: "material", used: 0, baseCapacity: 1_000, creditCapacityBonus: 0, effectiveDonations: 0, donationBonus: 0, capacity: 1_000, remaining: 1_000 },
+  },
+  exam: {
+    examRoom: { key: "examRoom", remaining: 50 },
+    invigilation: { key: "invigilation", remaining: 50 },
+    gradeStatistics: { key: "gradeStatistics", remaining: 50 },
+  },
+};
+
 const teacher: Teacher = {
   id: "teacher-1",
   email: "teacher@example.com",
@@ -82,6 +111,21 @@ describe("ProfilePage", () => {
       refresh: vi.fn(),
     });
     vi.mocked(authService.getMySchoolAdminApplications).mockResolvedValue([]);
+    vi.mocked(quotaService.getQuota).mockResolvedValue(quotaSnapshot);
+    vi.mocked(quotaService.redeemCredits).mockImplementation(async (resourceType, credits) => ({
+      ...quotaSnapshot,
+      creditBalance: quotaSnapshot.creditBalance - credits,
+      resources: {
+        ...quotaSnapshot.resources,
+        [resourceType]: {
+          ...quotaSnapshot.resources[resourceType],
+          creditCapacityBonus: credits * quotaSnapshot.creditSettings.capacityPerCredit[resourceType],
+          donationBonus: credits * quotaSnapshot.creditSettings.capacityPerCredit[resourceType],
+          capacity: quotaSnapshot.resources[resourceType].capacity + credits * quotaSnapshot.creditSettings.capacityPerCredit[resourceType],
+          remaining: quotaSnapshot.resources[resourceType].remaining + credits * quotaSnapshot.creditSettings.capacityPerCredit[resourceType],
+        },
+      },
+    }));
     useSettingsStore.setState({ uiScale: "middle", appearanceMode: "light" });
   });
 
@@ -121,5 +165,23 @@ describe("ProfilePage", () => {
     await waitFor(() => {
       expect(authService.getMySchoolAdminApplications).toHaveBeenCalledOnce();
     });
+  });
+
+  it("lets the current user redeem credits for a specific resource library", async () => {
+    render(
+      <MemoryRouter>
+        <ProfilePage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("积分与资源容量")).toBeInTheDocument();
+    await screen.findAllByText("捐赠 1 份：+1 积分");
+    const redeemInputs = screen.getAllByLabelText("兑换积分");
+    fireEvent.change(redeemInputs[0], { target: { value: "2" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "兑换" })[0]);
+
+    await waitFor(() => expect(quotaService.redeemCredits).toHaveBeenCalledWith("question", 2));
+    expect(screen.getByText("积分余额").parentElement).toHaveTextContent("3");
+    expect(screen.getByText("已通过积分扩容：+20")).toBeInTheDocument();
   });
 });

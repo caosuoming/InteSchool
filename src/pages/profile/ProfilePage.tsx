@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { BookOpen, Building2, FolderOpen, HardDrive, KeyRound, Leaf, Mail, Moon, Palette, RefreshCw, School, ShieldCheck, Sun, Type } from "lucide-react";
+import { BookOpen, Building2, Coins, FolderOpen, HardDrive, KeyRound, Leaf, Mail, Moon, Palette, RefreshCw, School, ShieldCheck, Sun, Type } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
 import { authService } from "@/services/auth";
+import { quotaService } from "@/services/quota";
 import {
   ensureLocalBackupPermission,
   getLocalBackupSnapshot,
@@ -27,7 +28,15 @@ import {
   type UiScale,
 } from "@/stores/settings";
 import { toast } from "@/stores/ui";
-import type { SchoolAdminApplication } from "@/types";
+import type { ResourceQuotaKey, SchoolAdminApplication, UserQuotaSnapshot } from "@/types";
+
+const RESOURCE_QUOTA_FIELDS: Array<[ResourceQuotaKey, string]> = [
+  ["question", "题库"],
+  ["examPaper", "试卷库"],
+  ["lecture", "讲义库"],
+  ["courseware", "课件库"],
+  ["material", "素材库"],
+];
 
 const appearanceModeIcon: Record<AppearanceMode, typeof Sun> = {
   light: Sun,
@@ -63,6 +72,9 @@ export default function ProfilePage() {
   const [adminReason, setAdminReason] = useState("");
   const [adminApplications, setAdminApplications] = useState<SchoolAdminApplication[]>([]);
   const [submittingAdmin, setSubmittingAdmin] = useState(false);
+  const [quotaSnapshot, setQuotaSnapshot] = useState<UserQuotaSnapshot | null>(null);
+  const [redeemCredits, setRedeemCredits] = useState<Partial<Record<ResourceQuotaKey, number>>>({});
+  const [redeemingResource, setRedeemingResource] = useState<ResourceQuotaKey | null>(null);
   const backupContext = teacher
     ? { teacherId: teacher.id, schoolId: affiliation?.schoolId || null }
     : null;
@@ -91,6 +103,27 @@ export default function ProfilePage() {
     }
     void authService.getMySchoolAdminApplications().then(setAdminApplications);
   }, [affiliation?.schoolId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadQuota = () => {
+      void quotaService.getQuota(teacher?.id || "").then((snapshot) => {
+        if (!cancelled) setQuotaSnapshot(snapshot);
+      }).catch((error) => {
+        if (!cancelled) toast.error("积分与容量加载失败", error instanceof Error ? error.message : undefined);
+      });
+    };
+    if (!teacher?.id) {
+      setQuotaSnapshot(null);
+      return;
+    }
+    loadQuota();
+    window.addEventListener("inteschool:quota-updated", loadQuota);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("inteschool:quota-updated", loadQuota);
+    };
+  }, [teacher?.id]);
 
   useEffect(() => {
     if (!backupKey) return;
@@ -221,6 +254,31 @@ export default function ProfilePage() {
     }
   };
 
+  const handleRedeemCredits = async (resourceType: ResourceQuotaKey) => {
+    if (!quotaSnapshot) return;
+    const amount = Math.max(0, Math.trunc(redeemCredits[resourceType] || 0));
+    if (amount < 1) {
+      toast.error("请输入要兑换的积分数量");
+      return;
+    }
+    if (amount > quotaSnapshot.creditBalance) {
+      toast.error(`积分不足，当前只有 ${quotaSnapshot.creditBalance} 分`);
+      return;
+    }
+    setRedeemingResource(resourceType);
+    try {
+      const snapshot = await quotaService.redeemCredits(resourceType, amount);
+      setQuotaSnapshot(snapshot);
+      setRedeemCredits((current) => ({ ...current, [resourceType]: 0 }));
+      const label = RESOURCE_QUOTA_FIELDS.find(([key]) => key === resourceType)?.[1] || "资源库";
+      toast.success(`已为${label}兑换 ${amount * snapshot.creditSettings.capacityPerCredit[resourceType]} 容量`);
+    } catch (error) {
+      toast.error("积分兑换失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setRedeemingResource(null);
+    }
+  };
+
   const activeRole = affiliation?.role || teacher.role;
   const latestApplication = adminApplications[0];
 
@@ -238,6 +296,71 @@ export default function ProfilePage() {
           <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><School className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">当前单位</div><div className="font-medium">{affiliation?.schoolName || "个人身份"}</div></div></div>
           <div className="rounded-lg bg-ink-50 p-4 flex gap-2"><ShieldCheck className="w-4 h-4 text-gold-600" /><div><div className="text-ink-500">权限</div><div className="font-medium">{activeRole}</div></div></div>
         </div>
+      </Card>
+
+      <Card className="p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Coins className="h-5 w-5 text-gold-600" />
+              <h2 className="font-serif text-lg font-semibold">积分与资源容量</h2>
+            </div>
+            <p className="mt-1 text-sm text-ink-500">向平台捐赠资源可获得积分；积分可兑换对应资源库的永久容量。</p>
+          </div>
+          <div className="rounded-lg border border-gold-200 bg-gold-50 px-4 py-2 text-right">
+            <div className="text-xs text-gold-700">积分余额</div>
+            <div className="text-xl font-semibold text-ink-900">{quotaSnapshot?.creditBalance ?? "—"}</div>
+          </div>
+        </div>
+        {!quotaSnapshot ? (
+          <div className="py-5 text-center text-sm text-ink-400">加载积分与容量中...</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {RESOURCE_QUOTA_FIELDS.map(([key, label]) => {
+              const status = quotaSnapshot.resources[key];
+              const donationCredits = quotaSnapshot.creditSettings.donationCredits[key];
+              const capacityPerCredit = quotaSnapshot.creditSettings.capacityPerCredit[key];
+              const amount = redeemCredits[key] || 0;
+              return (
+                <div key={key} className="rounded-lg border border-ink-100 bg-ink-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-medium text-ink-900">{label}</div>
+                    <div className="text-xs text-ink-500">{status.used} / {status.capacity}</div>
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-ink-500">
+                    <div>捐赠 1 份：+{donationCredits} 积分</div>
+                    <div>1 积分：+{capacityPerCredit} 容量</div>
+                    {status.creditCapacityBonus > 0 && <div>已通过积分扩容：+{status.creditCapacityBonus}</div>}
+                  </div>
+                  <div className="mt-3 flex items-end gap-2">
+                    <Input
+                      label="兑换积分"
+                      type="number"
+                      min={1}
+                      max={quotaSnapshot.creditBalance}
+                      step={1}
+                      value={amount || ""}
+                      onChange={(event) => setRedeemCredits((current) => ({
+                        ...current,
+                        [key]: Math.max(0, Math.trunc(Number(event.target.value) || 0)),
+                      }))}
+                      placeholder="积分数"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      loading={redeemingResource === key}
+                      disabled={amount < 1 || amount > quotaSnapshot.creditBalance}
+                      onClick={() => void handleRedeemCredits(key)}
+                    >
+                      兑换
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       <Card className="p-6">

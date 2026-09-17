@@ -3341,8 +3341,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 summaryExtra={activeResourceQuota ? (
                   <span className="text-xs text-ink-500">
                     容量 {activeResourceQuota.used}/{activeResourceQuota.capacity}
-                    {activeResourceQuota.donationBonus > 0
-                      ? `（有效捐赠扩容 +${activeResourceQuota.donationBonus}）`
+                    {activeResourceQuota.creditCapacityBonus > 0
+                      ? `（积分兑换扩容 +${activeResourceQuota.creditCapacityBonus}）`
                       : ""}
                   </span>
                 ) : undefined}
@@ -3908,8 +3908,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 summaryExtra={activeResourceQuota ? (
                   <span className="text-xs text-ink-500">
                     容量 {activeResourceQuota.used}/{activeResourceQuota.capacity}
-                    {activeResourceQuota.donationBonus > 0
-                      ? `（有效捐赠扩容 +${activeResourceQuota.donationBonus}）`
+                    {activeResourceQuota.creditCapacityBonus > 0
+                      ? `（积分兑换扩容 +${activeResourceQuota.creditCapacityBonus}）`
                       : ""}
                   </span>
                 ) : undefined}
