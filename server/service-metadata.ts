@@ -54,6 +54,9 @@ export const serviceParameters = {
       "deviceToken",
       "input"
     ],
+    "clearInstallationBinding": [
+      "installationId"
+    ],
     "bindDevice": [
       "input"
     ],

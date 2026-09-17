@@ -17,6 +17,7 @@ const PUBLIC_CALLS = new Set([
   "school.getSchool",
   "class.listClassroomChoices",
   "classroomDevice.listPublicClassroomNumbers",
+  "classroomDevice.clearInstallationBinding",
   "classroomDevice.bindDevice",
   "classroomDevice.getDeviceSession",
   "classroomDevice.getClassroomSnapshot",

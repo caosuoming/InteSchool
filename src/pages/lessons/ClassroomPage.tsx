@@ -33,6 +33,7 @@ import { SUBJECT_OPTIONS } from "@/lib/education";
 import { cn } from "@/lib/utils";
 import { classService } from "@/services/class";
 import { CLASSROOM_DEVICE_TOKEN_KEY, classroomDeviceService } from "@/services/classroomDevice";
+import { ApiError } from "@/services/api";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
@@ -357,8 +358,12 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
       setNotices(noticeData);
     } catch (error) {
       if (deviceMode) {
-        localStorage.removeItem(CLASSROOM_DEVICE_TOKEN_KEY);
-        navigate("/classroom-login", { replace: true });
+        if (error instanceof ApiError && error.status === 404) {
+          localStorage.removeItem(CLASSROOM_DEVICE_TOKEN_KEY);
+          navigate("/classroom-login", { replace: true });
+        } else if (!silent) {
+          toast.error("教室内容加载失败", error instanceof Error ? error.message : undefined);
+        }
       } else if (!silent) {
         toast.error("教室内容加载失败", error instanceof Error ? error.message : undefined);
       }

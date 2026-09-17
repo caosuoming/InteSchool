@@ -8,10 +8,12 @@ import { Spinner } from "@/components/ui/Spinner";
 import { classService } from "@/services/class";
 import {
   CLASSROOM_DEVICE_TOKEN_KEY,
+  CLASSROOM_INSTALLATION_ID_KEY,
   classroomDeviceService,
   classroomInstallationId,
   createClassroomDeviceToken,
 } from "@/services/classroomDevice";
+import { ApiError } from "@/services/api";
 import { schoolService } from "@/services/school";
 import type { ClassroomChoice, School } from "@/types";
 
@@ -34,18 +36,37 @@ export default function ClassroomLoginPage() {
   useEffect(() => {
     let active = true;
     const token = localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY);
-    if (!token) {
-      setCheckingBinding(false);
-      return () => { active = false; };
-    }
-    classroomDeviceService.getDeviceSession(token)
-      .then(() => {
-        if (active) navigate("/classroom-device", { replace: true });
-      })
-      .catch(() => {
-        localStorage.removeItem(CLASSROOM_DEVICE_TOKEN_KEY);
-        if (active) setCheckingBinding(false);
-      });
+    const installationId = localStorage.getItem(CLASSROOM_INSTALLATION_ID_KEY);
+
+    const prepareBinding = async () => {
+      if (token) {
+        try {
+          await classroomDeviceService.getDeviceSession(token);
+          if (active) navigate("/classroom-device", { replace: true });
+          return;
+        } catch (cause) {
+          if (!(cause instanceof ApiError) || cause.status !== 404) {
+            if (active) {
+              setFormError(cause instanceof Error ? cause.message : "教室一体机识别失败，请稍后重试");
+              setCheckingBinding(false);
+            }
+            return;
+          }
+          localStorage.removeItem(CLASSROOM_DEVICE_TOKEN_KEY);
+        }
+      }
+
+      if (installationId) {
+        try {
+          await classroomDeviceService.clearInstallationBinding(installationId);
+        } catch (cause) {
+          if (active) setFormError(cause instanceof Error ? cause.message : "旧的一体机绑定自动清理失败");
+        }
+      }
+      if (active) setCheckingBinding(false);
+    };
+
+    void prepareBinding();
     return () => { active = false; };
   }, [navigate]);
 

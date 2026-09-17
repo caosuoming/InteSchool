@@ -135,11 +135,29 @@ function normalizeToken(token: string): string {
   return value;
 }
 
+function normalizeInstallationId(value: unknown): string {
+  const installationId = String(value || "").trim();
+  if (installationId.length < 8 || installationId.length > 160) throw new Error("设备安装标识无效");
+  return installationId;
+}
+
+function deviceBindingNotFoundError(): Error & { statusCode: number } {
+  const error = new Error("教室一体机尚未绑定或已解绑") as Error & { statusCode: number };
+  error.statusCode = 404;
+  return error;
+}
+
 function findStoredByToken(token: string): StoredClassroomDevice {
-  const hashed = tokenHash(normalizeToken(token));
+  let normalized: string;
+  try {
+    normalized = normalizeToken(token);
+  } catch {
+    throw deviceBindingNotFoundError();
+  }
+  const hashed = tokenHash(normalized);
   const device = (db.read("classroomDevices") as StoredClassroomDevice[])
     .find((item) => item.deviceTokenHash === hashed);
-  if (!device) throw new Error("教室一体机尚未绑定或已解绑");
+  if (!device) throw deviceBindingNotFoundError();
   return device;
 }
 
@@ -495,6 +513,18 @@ export const classroomDeviceService = {
     return publicDevice(updated);
   },
 
+  async clearInstallationBinding(installationIdInput: string): Promise<boolean> {
+    await delay(30);
+    const installationId = normalizeInstallationId(installationIdInput);
+    const devices = db.read("classroomDevices") as StoredClassroomDevice[];
+    const exists = devices.some((item) => item.installationId === installationId);
+    if (!exists) return false;
+    db.update("classroomDevices", (items: StoredClassroomDevice[]) => (
+      items.filter((item) => item.installationId !== installationId)
+    ));
+    return true;
+  },
+
   async bindDevice(input: ClassroomDeviceBindInput): Promise<ClassroomDevice> {
     await delay(80);
     maybeThrowError();
@@ -521,8 +551,7 @@ export const classroomDeviceService = {
     }
 
     const token = normalizeToken(input.deviceToken);
-    const installationId = String(input.installationId || "").trim();
-    if (installationId.length < 8 || installationId.length > 160) throw new Error("设备安装标识无效");
+    const installationId = normalizeInstallationId(input.installationId);
     const devices = db.read("classroomDevices") as StoredClassroomDevice[];
     const existing = devices.find((item) => item.installationId === installationId);
     if (existing) throw new Error("本机已绑定，请联系学校管理员解绑后重新绑定");

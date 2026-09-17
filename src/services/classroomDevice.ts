@@ -62,6 +62,10 @@ export const classroomDeviceService = {
     return rpcCall("classroomDevice", "reportHeartbeat", [deviceToken, input]) as any;
   },
 
+  async clearInstallationBinding(installationId: string): Promise<boolean> {
+    return rpcCall("classroomDevice", "clearInstallationBinding", [installationId]) as any;
+  },
+
   async bindDevice(input: ClassroomDeviceBindInput): Promise<ClassroomDevice> {
     return rpcCall("classroomDevice", "bindDevice", [input]) as any;
   },

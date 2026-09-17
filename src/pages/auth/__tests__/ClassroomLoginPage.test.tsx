@@ -4,7 +4,12 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ClassroomLoginPage from "@/pages/auth/ClassroomLoginPage";
 import { classService } from "@/services/class";
-import { CLASSROOM_DEVICE_TOKEN_KEY, classroomDeviceService } from "@/services/classroomDevice";
+import {
+  CLASSROOM_DEVICE_TOKEN_KEY,
+  CLASSROOM_INSTALLATION_ID_KEY,
+  classroomDeviceService,
+} from "@/services/classroomDevice";
+import { ApiError } from "@/services/api";
 import { schoolService } from "@/services/school";
 
 vi.mock("@/services/class", () => ({ classService: { listClassroomChoices: vi.fn() } }));
@@ -15,6 +20,7 @@ vi.mock("@/services/classroomDevice", async (importOriginal) => {
     ...actual,
     classroomDeviceService: {
       getDeviceSession: vi.fn(),
+      clearInstallationBinding: vi.fn(),
       listPublicClassroomNumbers: vi.fn(),
       bindDevice: vi.fn(),
     },
@@ -75,6 +81,7 @@ describe("ClassroomLoginPage device binding", () => {
         grade: "高二",
       },
     ]);
+    vi.mocked(classroomDeviceService.clearInstallationBinding).mockResolvedValue(false);
     vi.mocked(classroomDeviceService.listPublicClassroomNumbers).mockResolvedValue([]);
   });
 
@@ -86,6 +93,39 @@ describe("ClassroomLoginPage device binding", () => {
     expect(await screen.findByText("设备教室首页")).toBeInTheDocument();
     expect(schoolService.listSchools).not.toHaveBeenCalled();
     expect(classService.listClassroomChoices).not.toHaveBeenCalled();
+  });
+
+  it("clears a stranded binding for the same installation before showing manual binding choices", async () => {
+    localStorage.setItem(CLASSROOM_INSTALLATION_ID_KEY, "installation-stale-one");
+    vi.mocked(classroomDeviceService.clearInstallationBinding).mockResolvedValue(true);
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "绑定" })).toBeInTheDocument();
+    expect(classroomDeviceService.clearInstallationBinding).toHaveBeenCalledWith("installation-stale-one");
+  });
+
+  it("removes an invalid token and clears its stranded installation binding", async () => {
+    localStorage.setItem(CLASSROOM_DEVICE_TOKEN_KEY, "invalid-device-token-value-1234567890");
+    localStorage.setItem(CLASSROOM_INSTALLATION_ID_KEY, "installation-stale-two");
+    vi.mocked(classroomDeviceService.getDeviceSession).mockRejectedValue(new ApiError("教室一体机尚未绑定或已解绑", 404));
+    vi.mocked(classroomDeviceService.clearInstallationBinding).mockResolvedValue(true);
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "绑定" })).toBeInTheDocument();
+    expect(localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY)).toBeNull();
+    expect(classroomDeviceService.clearInstallationBinding).toHaveBeenCalledWith("installation-stale-two");
+  });
+
+  it("keeps the device token when session recognition fails transiently", async () => {
+    const token = "existing-device-token-value-1234567890";
+    localStorage.setItem(CLASSROOM_DEVICE_TOKEN_KEY, token);
+    localStorage.setItem(CLASSROOM_INSTALLATION_ID_KEY, "installation-active-one");
+    vi.mocked(classroomDeviceService.getDeviceSession).mockRejectedValue(new ApiError("服务器内部错误", 500));
+    renderPage();
+
+    expect(await screen.findByText("服务器内部错误")).toBeInTheDocument();
+    expect(localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY)).toBe(token);
+    expect(classroomDeviceService.clearInstallationBinding).not.toHaveBeenCalled();
   });
 
   it("binds the selected school and class without asking for teacher credentials", async () => {
