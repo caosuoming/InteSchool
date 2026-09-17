@@ -73,6 +73,18 @@ export interface ExamPaperInput {
   originalFileSize?: number;
 }
 
+function referencedQuestionIds(questions: readonly ExamPaperQuestion[]): string[] {
+  return questions.flatMap((question) => question.questionId ? [question.questionId] : []);
+}
+
+function newlyReferencedQuestionIds(
+  previousQuestions: readonly ExamPaperQuestion[],
+  nextQuestions: readonly ExamPaperQuestion[],
+): string[] {
+  const previousIds = new Set(referencedQuestionIds(previousQuestions));
+  return referencedQuestionIds(nextQuestions).filter((questionId) => !previousIds.has(questionId));
+}
+
 export const examPaperService = {
   async listPapers(filter: ResourceFilter = {}): Promise<ExamPaper[]> {
     await delay(300);
@@ -147,6 +159,7 @@ export const examPaperService = {
       updatedAt: now,
     };
     db.update("examPapers", (list) => [paper, ...list]);
+    recordQuestionUsage(referencedQuestionIds(paper.questions));
     return withDerivedKnowledgePoints(paper);
   },
 
@@ -154,11 +167,15 @@ export const examPaperService = {
     await delay(300);
     maybeThrowError();
     let updated: ExamPaper | null = null;
+    let addedQuestionIds: string[] = [];
     db.update("examPapers", (list) =>
       list.map((p) => {
         if (p.id === id) {
           const safePatch = sanitizeExamPaperPatch(p, patch);
           delete safePatch.knowledgePointIds;
+          if (safePatch.questions) {
+            addedQuestionIds = newlyReferencedQuestionIds(p.questions, safePatch.questions);
+          }
           updated = {
             ...p,
             ...safePatch,
@@ -170,6 +187,7 @@ export const examPaperService = {
       }),
     );
     if (!updated) throw new Error("试卷不存在");
+    recordQuestionUsage(addedQuestionIds);
     return withDerivedKnowledgePoints(updated);
   },
 
@@ -218,6 +236,7 @@ export const examPaperService = {
       updatedAt: now,
     };
     db.update("examPapers", (list) => [duplicated, ...list]);
+    recordQuestionUsage(referencedQuestionIds(duplicated.questions));
     // 复制关联反思
     await reflectionService.copyToTarget(
       source.teacherId,
@@ -349,9 +368,7 @@ export const examPaperService = {
         ? { ...paper, extractStatus: "done", updatedAt: now }
         : paper
     )));
-    recordQuestionUsage(
-      copiedQuestions.flatMap((question) => question.questionId ? [question.questionId] : []),
-    );
+    recordQuestionUsage(referencedQuestionIds(copiedQuestions));
     return withDerivedKnowledgePoints(copy);
   },
 
