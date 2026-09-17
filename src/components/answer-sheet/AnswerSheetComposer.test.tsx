@@ -66,7 +66,7 @@ describe("AnswerSheetComposer", () => {
     expect(paper().style.width).toBe("420mm");
   });
 
-  it("supports inline and concentrated choice fill areas when stems are included", () => {
+  it("supports inline and concentrated choice fill areas while keeping choice options visible", () => {
     renderComposer();
 
     fireEvent.click(screen.getByLabelText("附题干"));
@@ -78,20 +78,42 @@ describe("AnswerSheetComposer", () => {
     });
     expect(screen.getByTestId("concentrated-choice-area")).toBeInTheDocument();
     expect(screen.queryByTestId("inline-choice-question")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("concentrated-choice-question")).toHaveLength(2);
     expect(screen.getByText("选择题填涂区")).toBeInTheDocument();
+    expect(screen.getAllByText("4").length).toBeGreaterThan(0);
   });
 
-  it("can open an existing card directly in preview mode", () => {
+  it("keeps the title, identity area, and QR code in the first column of a merged wide preview", () => {
     const { container } = renderComposer({
       initialViewMode: "preview",
-      initialSettings: { paperSize: "A3" },
+      initialSettings: { paperSize: "A3", widePaperColumns: 3 },
     });
 
     expect(screen.getByRole("heading", { name: "预览答题卡" })).toBeInTheDocument();
     expect(screen.queryByLabelText("纸张")).not.toBeInTheDocument();
     const paper = container.querySelector<HTMLElement>(".answer-sheet-paper")!;
-    expect(paper).toHaveAttribute("data-paper-columns", "2");
+    expect(paper).toHaveAttribute("data-paper-columns", "3");
     expect(paper.style.width).toBe("420mm");
+    expect(paper.querySelector("main")?.style.columnCount).toBe("3");
+
+    const firstColumnHeader = screen.getByTestId("answer-sheet-first-column-header");
+    expect(firstColumnHeader.style.width).toContain("calc(");
+    expect(firstColumnHeader.style.width).not.toBe("100%");
+    expect(firstColumnHeader).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
+    expect(firstColumnHeader).toContainElement(screen.getByLabelText("姓名签名填写区"));
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveAttribute("data-signature-history-limit", "10");
+  });
+
+  it("renders one resizable answer box with a score cell and lets the teacher choose dashed borders", () => {
+    renderComposer();
+
+    const initialBoxes = screen.getAllByTestId("answer-box");
+    expect(initialBoxes.length).toBeGreaterThan(0);
+    expect(initialBoxes[0].style.resize).toBe("both");
+    expect(screen.getByLabelText("第3题评分框")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("答题框边线"), { target: { value: "dashed" } });
+    expect(screen.getAllByTestId("answer-box")[0]).toHaveAttribute("data-answer-box-style", "dashed");
   });
 
   it("loads saved settings and reports subsequent changes", () => {

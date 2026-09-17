@@ -4,12 +4,16 @@ export type AnswerSheetResourceType = "exam-paper" | "lecture";
 export type AnswerSheetPaperSize = "A4" | "A3" | "8K";
 export type AnswerSheetMode = "blank" | "with-questions";
 export type AnswerSheetChoiceLayout = "inline" | "concentrated";
+export type AnswerSheetWideColumns = 2 | 3;
+export type AnswerSheetBoxStyle = "solid" | "dashed";
 
 export interface AnswerSheetSettings {
   paperSize: AnswerSheetPaperSize;
   mode: AnswerSheetMode;
   studentNumberDigits: number;
   choiceLayout: AnswerSheetChoiceLayout;
+  widePaperColumns: AnswerSheetWideColumns;
+  answerBoxStyle: AnswerSheetBoxStyle;
 }
 
 export interface AnswerSheetQuestion {
@@ -29,6 +33,8 @@ export const DEFAULT_ANSWER_SHEET_SETTINGS: AnswerSheetSettings = {
   mode: "blank",
   studentNumberDigits: DEFAULT_STUDENT_NUMBER_DIGITS,
   choiceLayout: "inline",
+  widePaperColumns: 2,
+  answerBoxStyle: "solid",
 };
 
 export function normalizeStudentNumberDigits(value: number): number {
