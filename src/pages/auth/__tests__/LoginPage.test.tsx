@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/pages/auth/LoginPage";
 import { authService } from "@/services/auth";
+import { schoolService } from "@/services/school";
 
 const authState = vi.hoisted(() => ({
   teacher: null,
@@ -20,7 +21,13 @@ vi.mock("@/stores/auth", () => ({
 
 vi.mock("@/services/auth", () => ({
   authService: {
-    getRegistrationContext: vi.fn(),
+    getIdentityContext: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/school", () => ({
+  schoolService: {
+    searchSchools: vi.fn(),
   },
 }));
 
@@ -45,6 +52,8 @@ describe("LoginPage", () => {
     authState.error = null;
     authState.login.mockResolvedValue(false);
     authState.register.mockResolvedValue(false);
+    vi.mocked(authService.getIdentityContext).mockResolvedValue({ phone: "13800138000", teacher: true, parent: false });
+    vi.mocked(schoolService.searchSchools).mockResolvedValue([]);
   });
 
   it("accepts a phone identifier and shows both quick login entries", async () => {
@@ -73,27 +82,25 @@ describe("LoginPage", () => {
 
   it("submits requested roles for an existing school and shows the pending-review state", async () => {
     const user = userEvent.setup();
-    vi.mocked(authService.getRegistrationContext).mockResolvedValue({
-      authorization: { kind: "guarantee", schoolId: "school-1", schoolName: "测试中学" },
-      schools: [{
-        id: "school-1",
-        name: "测试中学",
-        code: "TEST",
-        logo: "测",
-        description: "",
-        teacherCount: 1,
-        studentCount: 0,
-        city: "南京",
-      }],
-    });
+    vi.mocked(schoolService.searchSchools).mockResolvedValue([{
+      id: "school-1",
+      name: "测试中学",
+      code: "TEST",
+      logo: "测",
+      description: "",
+      teacherCount: 1,
+      studentCount: 0,
+      city: "南京",
+    }]);
     authState.register.mockResolvedValue("pending");
     renderLogin();
 
     await user.click(screen.getByRole("button", { name: "立即注册" }));
     await user.type(screen.getByLabelText("姓名"), "王老师");
     await user.type(screen.getByLabelText("手机号"), "13800138000");
-    await user.click(screen.getByRole("button", { name: "核验手机号授权" }));
-    expect(await screen.findByText(/已核验：授权学校为 测试中学/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText("所在学校"), "测试");
+    await user.click(await screen.findByRole("button", { name: /测试中学/ }));
+    expect(screen.getByText(/已选择：测试中学/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("checkbox", { name: "高一" }));
     await user.click(screen.getByRole("checkbox", { name: "年级组长" }));
@@ -107,6 +114,32 @@ describe("LoginPage", () => {
       teachingGrades: ["高一"],
       roles: ["teacher", "gradeLeader"],
       requestSchoolAdmin: true,
+    }));
+    expect(await screen.findByText(/注册申请已提交/)).toBeInTheDocument();
+  });
+
+  it("submits a school-creation request together with the new teacher registration", async () => {
+    const user = userEvent.setup();
+    authState.register.mockResolvedValue("pending");
+    renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "立即注册" }));
+    await user.type(screen.getByLabelText("姓名"), "新校教师");
+    await user.type(screen.getByLabelText("手机号"), "13900139000");
+    await user.type(screen.getByLabelText("所在学校"), "南京新校");
+    await user.click(screen.getByRole("button", { name: /没有我的学校，申请新增/ }));
+    await user.type(screen.getByLabelText("学校代码"), "NJNEW");
+    await user.type(screen.getByLabelText("所在城市"), "南京");
+    await user.click(screen.getByRole("checkbox", { name: "高一" }));
+    await user.click(screen.getByRole("checkbox", { name: "年级组长" }));
+    await user.type(screen.getByLabelText("密码"), "StrongPass123");
+    await user.click(screen.getByRole("button", { name: "提交注册申请" }));
+
+    expect(authState.register).toHaveBeenCalledWith(expect.objectContaining({
+      phone: "13900139000",
+      newSchool: expect.objectContaining({ name: "南京新校", code: "NJNEW", city: "南京" }),
+      teachingGrades: ["高一"],
+      roles: ["teacher", "gradeLeader"],
     }));
     expect(await screen.findByText(/注册申请已提交/)).toBeInTheDocument();
   });

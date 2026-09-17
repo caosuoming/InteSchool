@@ -43,7 +43,7 @@ export default function SchoolCreationApplicationsPage() {
     <div>
       <PageHeader
         title="新增学校审核"
-        description="审核用户提交的新学校申请；通过后学校会立即进入可搜索列表"
+        description="审核用户提交的新学校申请；注册时同步提交的申请通过后，申请人会直接加入该学校"
         icon={<Building2 className="w-5 h-5" />}
       />
 

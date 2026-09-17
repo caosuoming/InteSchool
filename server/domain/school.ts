@@ -7,6 +7,7 @@ import type { TeacherRecord } from "../types.js";
 import { db } from "../runtime-db.js";
 import { delay } from "../domain-shared.js";
 import { createNotification, platformAdminTeacherIds } from "./notification.js";
+import { isTeacherRole, normalizeTeacherRoles } from "../../src/lib/teacher-roles.js";
 
 interface SchoolCreationInput {
   name: string;
@@ -141,10 +142,23 @@ export const schoolService = {
     if (!application) throw new Error("学校新增申请不存在");
     if (application.status !== "pending") throw new Error("该申请已处理");
 
+    const reviewedAt = new Date().toISOString();
+    const linkedApplications = db.read("applications") as Array<Record<string, unknown>>;
+    const linkedApplication = linkedApplications.find((item) =>
+      item.registrationApplication === true
+      && item.teacherId === application.requesterId
+      && typeof application.schoolId === "string"
+      && item.schoolId === application.schoolId
+      && item.status === "pending"
+      && (application.registrationApplicationId === undefined
+        || item.id === application.registrationApplicationId));
+    let joinedRequester = false;
+
     if (approved) {
       assertNoSchoolConflict(application);
+      const schoolId = application.schoolId || randomUUID();
       const school: School = {
-        id: randomUUID(),
+        id: schoolId,
         name: application.name,
         code: application.code,
         logo: application.name.charAt(0) || "校",
@@ -155,19 +169,90 @@ export const schoolService = {
       };
       (db.read("schools") as School[]).push(school);
       application.schoolId = school.id;
+
+      const requester = (db.read("teachers") as TeacherRecord[]).find((item) => item.id === application.requesterId);
+      if (requester && linkedApplication) {
+        const schoolAffiliation = requester.affiliations.find((item) => item.schoolId === school.id);
+        if (schoolAffiliation && typeof schoolAffiliation.id === "string") {
+          const requestedRoles = normalizeTeacherRoles(
+            Array.isArray(linkedApplication.roles)
+              ? linkedApplication.roles.filter(isTeacherRole)
+              : ["teacher"],
+          );
+          const role = linkedApplication.requestSchoolAdmin === true ? "school_admin" : "teacher";
+          const subject = typeof linkedApplication.subject === "string" ? linkedApplication.subject : requester.subject;
+          const subjects = Array.isArray(linkedApplication.subjects)
+            ? linkedApplication.subjects.filter((item): item is string => typeof item === "string")
+            : [subject];
+          const teachingGrades = Array.isArray(linkedApplication.teachingGrades)
+            ? linkedApplication.teachingGrades.filter((grade): grade is string => typeof grade === "string")
+            : [];
+          const teachingClassIds = Array.isArray(linkedApplication.teachingClassIds)
+            ? linkedApplication.teachingClassIds.filter((classId): classId is string => typeof classId === "string")
+            : [];
+          const employeeNo = typeof linkedApplication.employeeNo === "string" ? linkedApplication.employeeNo : "";
+          const position = typeof linkedApplication.position === "string" ? linkedApplication.position : "";
+          requester.affiliations = requester.affiliations.map((item) => item.id === schoolAffiliation.id
+            ? {
+              ...item,
+              schoolName: school.name,
+              subject,
+              subjects,
+              teachingGrades,
+              teachingClassIds,
+              employeeNo,
+              position,
+              status: "active",
+              role,
+              roles: requestedRoles,
+              isCurrent: true,
+            }
+            : { ...item, isCurrent: false });
+          requester.schoolId = school.id;
+          requester.subject = subject;
+          requester.subjects = subjects;
+          requester.teachingGrades = teachingGrades;
+          requester.teachingClassIds = teachingClassIds;
+          requester.employeeNo = employeeNo;
+          requester.position = position;
+          requester.status = "active";
+          requester.role = role;
+          requester.roles = requestedRoles;
+          requester.currentAffiliationId = schoolAffiliation.id;
+          school.teacherCount = 1;
+          linkedApplication.status = "approved";
+          linkedApplication.awaitingSchoolCreation = false;
+          linkedApplication.reviewedAt = reviewedAt;
+          linkedApplication.reviewedBy = teacher.id;
+          joinedRequester = true;
+        }
+      }
+    } else if (linkedApplication) {
+      linkedApplication.status = "rejected";
+      linkedApplication.awaitingSchoolCreation = false;
+      linkedApplication.reviewedAt = reviewedAt;
+      linkedApplication.reviewedBy = teacher.id;
+      const requester = (db.read("teachers") as TeacherRecord[]).find((item) => item.id === application.requesterId);
+      if (requester && application.schoolId) {
+        requester.affiliations = requester.affiliations.map((item) => item.schoolId === application.schoolId
+          ? { ...item, status: "rejected", isCurrent: false }
+          : item);
+      }
     }
 
     application.status = approved ? "approved" : "rejected";
-    application.reviewedAt = new Date().toISOString();
+    application.reviewedAt = reviewedAt;
     application.reviewedBy = teacher.id;
     createNotification({
       recipientTeacherId: application.requesterId,
       type: "approval",
       title: approved ? "新增学校申请已通过" : "新增学校申请未通过",
       content: approved
-        ? `“${application.name}”已创建，可以继续提交学校认证。`
+        ? joinedRequester
+          ? `“${application.name}”已创建，您的学校身份也已通过，可以直接进入该学校。`
+          : `“${application.name}”已创建，可以继续提交学校认证。`
         : `“${application.name}”的新增学校申请未通过。`,
-      actionUrl: "/school-auth",
+      actionUrl: approved && joinedRequester ? "/dashboard" : "/school-auth",
     });
     return application;
   },
