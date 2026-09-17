@@ -520,7 +520,7 @@ describe("production backend", () => {
     expect(statuses[10]).toBe(429);
   });
 
-  it("requires a one-time phone authorization and lets administrators manage school access", async () => {
+  it("allows self-service signup while still tracking administrator registration preauthorizations", async () => {
     const unauthorizedPhone = nextPhone();
     const unauthorized = await built.app.inject({
       method: "POST",
@@ -534,10 +534,8 @@ describe("production backend", () => {
         subject: "数学",
       },
     });
-    expect(unauthorized.statusCode).toBe(403);
-    expect(unauthorized.json()).toEqual({
-      error: "该手机号尚未获得注册授权，请联系学校管理员或现有教师担保",
-    });
+    expect(unauthorized.statusCode).toBe(202);
+    expect(unauthorized.json()).toMatchObject({ pending: true });
 
     const admin = await login(built.app);
     const authorizedPhone = nextPhone();
@@ -599,7 +597,7 @@ describe("production backend", () => {
     expect(reused.json()).toEqual({ error: "该手机号已注册" });
   });
 
-  it("lets teachers guarantee registrations but reserves administrator preauthorization for admins", async () => {
+  it("lets teachers manage optional registration guarantees but reserves administrator preauthorization for admins", async () => {
     await built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
     const teacher = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
 
@@ -646,7 +644,7 @@ describe("production backend", () => {
     });
     expect(revoked.statusCode).toBe(200);
 
-    const blockedAfterRevoke = await built.app.inject({
+    const registeredAfterRevoke = await built.app.inject({
       method: "POST",
       url: "/api/auth/register",
       payload: {
@@ -658,7 +656,7 @@ describe("production backend", () => {
         subject: "数学",
       },
     });
-    expect(blockedAfterRevoke.statusCode).toBe(403);
+    expect(registeredAfterRevoke.statusCode).toBe(202);
   });
 
   it("lets teachers request new roles in backend settings and lets only their school administrator approve them", async () => {
@@ -748,34 +746,8 @@ describe("production backend", () => {
     expect(JSON.stringify(current.json())).not.toContain(password);
   });
 
-  it("requires approval for existing-school registration, grants requested roles, and keeps new-school creation direct", async () => {
+  it("lets new users choose a school without preauthorization and queues school membership for review", async () => {
     const phone = nextPhone();
-    await authorizeRegistration(phone, { schoolId: "sch-1" });
-
-    const context = await built.app.inject({
-      method: "GET",
-      url: `/api/auth/registration-context?phone=${phone}`,
-    });
-    expect(context.statusCode).toBe(200);
-    expect(context.json()).toMatchObject({
-      authorization: { schoolId: "sch-1", schoolName: expect.any(String) },
-      schools: expect.arrayContaining([expect.objectContaining({ id: "sch-1" })]),
-    });
-
-    const wrongSchool = await built.app.inject({
-      method: "POST",
-      url: "/api/auth/register",
-      payload: {
-        email: "wrong-school@example.com",
-        password: "StrongPass123",
-        name: "错误学校",
-        phone,
-        schoolId: "sch-2",
-        subject: "物理",
-      },
-    });
-    expect(wrongSchool.statusCode).toBe(403);
-    expect(wrongSchool.json()).toEqual({ error: "该手机号的注册授权不属于所选学校" });
 
     const registered = await built.app.inject({
       method: "POST",
@@ -907,7 +879,6 @@ describe("production backend", () => {
     expect(duplicateApplication.json()).toEqual({ error: "已加入该学校，无需重复申请" });
 
     const newSchoolPhone = nextPhone();
-    await authorizeRegistration(newSchoolPhone, { schoolId: "sch-1" });
     const created = await built.app.inject({
       method: "POST",
       url: "/api/auth/register",
@@ -918,11 +889,34 @@ describe("production backend", () => {
         phone: newSchoolPhone,
         newSchool: { name: "南京测试新校", code: "NJTST", city: "南京", description: "测试学校" },
         subject: "化学",
+        teachingGrades: ["高一"],
+        roles: ["teacher", "gradeLeader"],
       },
     });
-    expect(created.statusCode).toBe(200);
-    expect(built.store.loadState().schools).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "南京测试新校", code: "NJTST", teacherCount: 1 }),
+    expect(created.statusCode).toBe(202);
+    expect(created.json()).toMatchObject({ teacher: null, csrfToken: null, pending: true });
+    const afterNewSchoolRegistration = built.store.loadState();
+    expect(afterNewSchoolRegistration.schools).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "南京测试新校" }),
+    ]));
+    const creationApplication = (afterNewSchoolRegistration.schoolCreationApplications as Array<Record<string, unknown>>)
+      .find((item) => item.name === "南京测试新校");
+    expect(creationApplication).toMatchObject({
+      code: "NJTST",
+      status: "pending",
+      schoolId: expect.any(String),
+      registrationApplicationId: expect.any(String),
+    });
+    expect(afterNewSchoolRegistration.applications).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: creationApplication?.registrationApplicationId,
+        schoolId: creationApplication?.schoolId,
+        teacherName: "新校教师",
+        roles: ["teacher", "gradeLeader"],
+        registrationApplication: true,
+        awaitingSchoolCreation: true,
+        status: "pending",
+      }),
     ]));
   });
 

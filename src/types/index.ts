@@ -275,7 +275,10 @@ export interface SchoolCreationApplication {
   createdAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
+  /** 注册时预留的学校 ID；审核通过后使用同一 ID 创建学校。 */
   schoolId?: string;
+  /** 新用户注册时同步创建的学校身份申请。 */
+  registrationApplicationId?: string;
 }
 
 export interface SchoolApplication {

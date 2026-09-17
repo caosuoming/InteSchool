@@ -482,12 +482,6 @@ export async function registerAuthRoutes(
       error.statusCode = 409;
       throw error;
     }
-    const authorization = await store.getAvailableRegistrationAuthorization(input.phone);
-    if (!authorization) {
-      const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
-      error.statusCode = 403;
-      throw error;
-    }
 
     const state = store.loadState();
     const now = new Date().toISOString();
@@ -496,54 +490,39 @@ export async function registerAuthRoutes(
     const personalAffiliationId = randomUUID();
     let schoolId: string;
     let schoolName: string;
-    let newSchool: {
-      id: string;
-      name: string;
-      code: string;
-      logo: string;
-      description: string;
-      teacherCount: number;
-      studentCount: number;
-      city: string;
-    } | undefined;
 
     if (input.newSchool) {
+      const normalizedName = input.newSchool.name.toLowerCase();
+      const normalizedCode = input.newSchool.code.toLowerCase();
+      const schoolConflict = (state.schools as Array<{ name: string; code: string }>).some((school) =>
+        school.name.trim().toLowerCase() === normalizedName
+        || school.code.trim().toLowerCase() === normalizedCode);
+      if (schoolConflict) throw new Error("学校名称或代码已存在，请搜索并选择该学校");
+      const pendingConflict = (state.schoolCreationApplications as Array<Record<string, unknown>>).some((application) =>
+        application.status === "pending"
+        && (String(application.name || "").trim().toLowerCase() === normalizedName
+          || String(application.code || "").trim().toLowerCase() === normalizedCode));
+      if (pendingConflict) throw new Error("该学校已有待审核申请，请等待平台管理员处理");
       schoolId = randomUUID();
       schoolName = input.newSchool.name;
-      newSchool = {
-        id: schoolId,
-        name: schoolName,
-        code: input.newSchool.code.toUpperCase(),
-        logo: schoolName.charAt(0) || "校",
-        description: input.newSchool.description || "由教师注册时创建",
-        teacherCount: 1,
-        studentCount: 0,
-        city: input.newSchool.city,
-      };
     } else {
       schoolId = input.schoolId!;
-      if (schoolId !== authorization.schoolId) {
-        const error = new Error("该手机号的注册授权不属于所选学校") as Error & { statusCode: number };
-        error.statusCode = 403;
-        throw error;
-      }
       const school = (state.schools as Array<{ id: string; name: string }>).find((item) => item.id === schoolId);
       if (!school) throw new Error("学校不存在");
       schoolName = school.name;
     }
     validateTeachingClassIds(state, schoolId, input.teachingClassIds);
 
-    const requiresReview = !input.newSchool;
     const teacher: TeacherRecord = {
       id: teacherId,
       email: input.email?.toLowerCase() || "",
       name: input.name,
       nickname: "",
       avatar: input.name.charAt(0),
-      schoolId: requiresReview ? null : schoolId,
+      schoolId: null,
       subject: input.subject,
-      teachingGrades: requiresReview ? [] : input.teachingGrades,
-      teachingClassIds: input.teachingClassIds,
+      teachingGrades: [],
+      teachingClassIds: [],
       status: "active",
       role: "teacher",
       roles: ["teacher"],
@@ -557,13 +536,13 @@ export async function registerAuthRoutes(
           schoolName,
           subject: input.subject,
           teachingGrades: input.teachingGrades,
-          teachingClassIds: input.teachingClassIds,
-          status: requiresReview ? "pending" : "active",
+          teachingClassIds: [],
+          status: "pending",
           role: "teacher",
-          roles: ["teacher"],
+          roles: input.roles,
           subjectGroupIds: [],
           prepGroupIds: [],
-          isCurrent: !requiresReview,
+          isCurrent: false,
           joinedAt: now,
         },
         {
@@ -579,51 +558,68 @@ export async function registerAuthRoutes(
           roles: ["teacher"],
           subjectGroupIds: [],
           prepGroupIds: [],
-          isCurrent: requiresReview,
+          isCurrent: true,
           joinedAt: now,
         },
       ],
-      currentAffiliationId: requiresReview ? personalAffiliationId : schoolAffiliationId,
+      currentAffiliationId: personalAffiliationId,
       createdAt: now,
     };
-    await store.createAuthorizedAccount(teacher, input.password, input.phone, { newSchool });
-    if (requiresReview) {
-      await withSerializedState(store, (latestState) => {
-        const applications = latestState.applications as Array<Record<string, unknown>>;
-        applications.push({
+    await store.createAuthorizedAccount(teacher, input.password, input.phone, { requireAuthorization: false });
+    await withSerializedState(store, (latestState) => {
+      const applicationId = randomUUID();
+      const applications = latestState.applications as Array<Record<string, unknown>>;
+      applications.push({
+        id: applicationId,
+        teacherId,
+        teacherName: input.name,
+        schoolId,
+        schoolName,
+        employeeNo: "",
+        subject: input.subject,
+        subjects: [input.subject],
+        teachingGrades: input.teachingGrades,
+        teachingClassIds: [],
+        position: "",
+        roles: input.roles,
+        proofFileId: null,
+        proofFileName: "",
+        requestSchoolAdmin: input.requestSchoolAdmin,
+        registrationApplication: true,
+        awaitingSchoolCreation: Boolean(input.newSchool),
+        status: "pending",
+        createdAt: now,
+      });
+      if (input.newSchool) {
+        const schoolCreationApplications = latestState.schoolCreationApplications as Array<Record<string, unknown>>;
+        schoolCreationApplications.push({
           id: randomUUID(),
-          teacherId,
-          teacherName: input.name,
+          requesterId: teacherId,
+          requesterName: input.name,
+          name: input.newSchool.name,
+          code: input.newSchool.code.toUpperCase(),
+          city: input.newSchool.city,
+          description: input.newSchool.description || "由新用户注册时申请新增",
           schoolId,
-          schoolName,
-          employeeNo: "",
-          subject: input.subject,
-          subjects: [input.subject],
-          teachingGrades: input.teachingGrades,
-          teachingClassIds: [],
-          position: "",
-          roles: input.roles,
-          proofFileId: null,
-          proofFileName: "",
-          requestSchoolAdmin: input.requestSchoolAdmin,
-          registrationApplication: true,
+          registrationApplicationId: applicationId,
           status: "pending",
           createdAt: now,
         });
+        notifyPlatformReviewers(latestState, teacherId, {
+          title: "新的学校新增申请",
+          content: `${input.name} 注册时申请新增“${schoolName}”，通过后将自动加入该学校。`,
+          actionUrl: "/admin/school-creation-applications",
+        });
+      } else {
         notifySchoolReviewers(latestState, schoolId, teacherId, {
           title: "新教师注册待审核",
           content: `${input.name} 已注册并申请加入 ${schoolName}，请及时审核。`,
           actionUrl: "/admin/teacher-school-applications",
         });
-      });
-      reply.code(202);
-      return { teacher: null, csrfToken: null, pending: true };
-    }
-    const user = await store.authenticate(input.phone, input.password);
-    if (!user) throw new Error("账号创建失败");
-    const { token, session } = await store.createSession(user);
-    setSessionCookie(reply, token, config);
-    return { teacher: publicTeacher(teacher), csrfToken: session.csrfToken };
+      }
+    });
+    reply.code(202);
+    return { teacher: null, csrfToken: null, pending: true };
   });
 
   app.post("/api/auth/login", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (request, reply) => {
@@ -1110,7 +1106,9 @@ export async function registerAuthRoutes(
     const platformAdmin = activeRole(teacher) === "platform_admin";
     const schools = state.schools as Array<{ id: string; name: string }>;
     return (state.applications as Array<Record<string, unknown>>)
-      .filter((item) => item.status === "pending" && (platformAdmin || item.schoolId === teacher.schoolId))
+      .filter((item) => item.status === "pending"
+        && item.awaitingSchoolCreation !== true
+        && (platformAdmin || item.schoolId === teacher.schoolId))
       .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
       .map((item) => ({
         ...item,
@@ -1138,6 +1136,9 @@ export async function registerAuthRoutes(
         throw new Error("申请记录不存在");
       }
       if (application.status !== "pending") throw new Error("申请记录不存在或已处理");
+      if (application.awaitingSchoolCreation === true) {
+        throw new Error("请先审核对应的新建学校申请");
+      }
       application.status = approved ? "approved" : "rejected";
       application.reviewedAt = new Date().toISOString();
       application.reviewedBy = reviewer.id;

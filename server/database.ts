@@ -850,6 +850,7 @@ export class DatabaseStore {
     password: string,
     phone: string,
     options: {
+      requireAuthorization?: boolean;
       newSchool?: {
         id: string;
         name: string;
@@ -878,7 +879,7 @@ export class DatabaseStore {
         FOR UPDATE
       `, [phone]);
       const authorizationId = authorizationResult.rows[0]?.id;
-      if (!authorizationId) {
+      if (!authorizationId && options.requireAuthorization !== false) {
         const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
         error.statusCode = 403;
         throw error;
@@ -920,15 +921,17 @@ export class DatabaseStore {
         INSERT INTO users(id, teacher_id, email, phone, password_hash, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
       `, [userId, clean.id, clean.email?.trim() ? normalizeEmail(clean.email) : null, phone, hashPassword(password), now, now]);
-      const consumed = await client.query(`
-        UPDATE registration_authorizations
-        SET consumed_by_teacher_id = $1, consumed_at = $2
-        WHERE id = $3 AND consumed_at IS NULL AND revoked_at IS NULL
-      `, [teacher.id, now, authorizationId]);
-      if (consumed.rowCount !== 1) {
-        const error = new Error("注册授权已被使用，请联系学校管理员重新添加") as Error & { statusCode: number };
-        error.statusCode = 409;
-        throw error;
+      if (authorizationId) {
+        const consumed = await client.query(`
+          UPDATE registration_authorizations
+          SET consumed_by_teacher_id = $1, consumed_at = $2
+          WHERE id = $3 AND consumed_at IS NULL AND revoked_at IS NULL
+        `, [teacher.id, now, authorizationId]);
+        if (consumed.rowCount !== 1) {
+          const error = new Error("注册授权已被使用，请联系学校管理员重新添加") as Error & { statusCode: number };
+          error.statusCode = 409;
+          throw error;
+        }
       }
       });
     } catch (error) {

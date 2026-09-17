@@ -46,6 +46,7 @@ function state(): AppState {
     teachers: [teacher("applicant"), teacher("admin", "platform_admin")],
     currentTeacherId: null,
     schools: [existingSchool],
+    applications: [],
     schoolCreationApplications: [],
     notifications: [],
   };
@@ -148,6 +149,115 @@ describe("school creation applications", () => {
         false,
         teacher("admin", "platform_admin"),
       )).rejects.toThrow("已处理");
+    });
+  });
+
+  it("automatically joins the requester when approving a school submitted during registration", async () => {
+    const appState = state();
+    const applicant = appState.teachers.find((item) => item.id === "applicant")!;
+    applicant.affiliations = [
+      {
+        id: "pending-school-affiliation",
+        teacherId: applicant.id,
+        schoolId: "school-pending",
+        schoolName: "注册新校",
+        subject: "数学",
+        teachingGrades: ["高一"],
+        teachingClassIds: [],
+        status: "pending",
+        role: "teacher",
+        roles: ["teacher", "gradeLeader"],
+        subjectGroupIds: [],
+        prepGroupIds: [],
+        isCurrent: false,
+        joinedAt: "2026-09-17T00:00:00.000Z",
+      },
+      {
+        id: "personal-affiliation",
+        teacherId: applicant.id,
+        schoolId: null,
+        schoolName: null,
+        subject: "数学",
+        status: "active",
+        role: "teacher",
+        roles: ["teacher"],
+        subjectGroupIds: [],
+        prepGroupIds: [],
+        isCurrent: true,
+        joinedAt: "2026-09-17T00:00:00.000Z",
+      },
+    ];
+    applicant.currentAffiliationId = "personal-affiliation";
+    appState.applications = [{
+      id: "membership-application",
+      teacherId: applicant.id,
+      schoolId: "school-pending",
+      schoolName: "注册新校",
+      subject: "数学",
+      teachingGrades: ["高一"],
+      roles: ["teacher", "gradeLeader"],
+      requestSchoolAdmin: false,
+      registrationApplication: true,
+      awaitingSchoolCreation: true,
+      status: "pending",
+      createdAt: "2026-09-17T00:00:00.000Z",
+    }];
+    appState.schoolCreationApplications = [{
+      id: "creation-application",
+      requesterId: applicant.id,
+      requesterName: applicant.name,
+      name: "注册新校",
+      code: "REGNEW",
+      city: "南京",
+      description: "注册时申请",
+      schoolId: "school-pending",
+      registrationApplicationId: "membership-application",
+      status: "pending",
+      createdAt: "2026-09-17T00:00:00.000Z",
+    }];
+
+    await runWithState(appState, async () => {
+      const reviewed = await schoolService.reviewSchoolCreationApplication(
+        "creation-application",
+        true,
+        teacher("admin", "platform_admin"),
+      );
+
+      expect(reviewed).toMatchObject({ status: "approved", schoolId: "school-pending" });
+      expect(appState.schools).toContainEqual(expect.objectContaining({
+        id: "school-pending",
+        name: "注册新校",
+        teacherCount: 1,
+      }));
+      expect(applicant).toMatchObject({
+        schoolId: "school-pending",
+        subject: "数学",
+        teachingGrades: ["高一"],
+        roles: ["teacher", "gradeLeader"],
+        currentAffiliationId: "pending-school-affiliation",
+      });
+      expect(applicant.affiliations).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: "pending-school-affiliation",
+          status: "active",
+          isCurrent: true,
+          roles: ["teacher", "gradeLeader"],
+        }),
+        expect.objectContaining({ id: "personal-affiliation", isCurrent: false }),
+      ]));
+      expect(appState.applications).toEqual([
+        expect.objectContaining({
+          id: "membership-application",
+          status: "approved",
+          awaitingSchoolCreation: false,
+          reviewedBy: "admin",
+        }),
+      ]);
+      expect(appState.notifications as AppNotification[]).toContainEqual(expect.objectContaining({
+        recipientTeacherId: applicant.id,
+        title: "新增学校申请已通过",
+        actionUrl: "/dashboard",
+      }));
     });
   });
 });

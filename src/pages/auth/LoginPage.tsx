@@ -1,14 +1,15 @@
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, BookOpen, GraduationCap, Lock, Mail, School, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
+import { ArrowLeft, BookOpen, GraduationCap, Lock, Mail, Plus, School, Search, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 import { authService } from "@/services/auth";
 import { parentService } from "@/services/parent";
+import { schoolService } from "@/services/school";
 import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
 import { TEACHER_ROLES } from "@/lib/teacher-roles";
 import { useAuthStore } from "@/stores/auth";
-import type { RegistrationContext, TeacherRole } from "@/types";
+import type { School as SchoolRecord, TeacherRole } from "@/types";
 import { BrandMark } from "@/components/brand/BrandMark";
 import { roleLabels } from "@/services/organization";
 
@@ -35,15 +36,15 @@ export default function LoginPage({
   const [teachingGrades, setTeachingGrades] = useState<string[]>([]);
   const [roles, setRoles] = useState<TeacherRole[]>(["teacher"]);
   const [requestSchoolAdmin, setRequestSchoolAdmin] = useState(false);
-  const [context, setContext] = useState<RegistrationContext | null>(null);
-  const [checkingPhone, setCheckingPhone] = useState(false);
+  const [schoolQuery, setSchoolQuery] = useState("");
+  const [schoolResults, setSchoolResults] = useState<SchoolRecord[]>([]);
+  const [schoolSearching, setSchoolSearching] = useState(false);
+  const [selectedSchool, setSelectedSchool] = useState<SchoolRecord | null>(null);
   const [createSchool, setCreateSchool] = useState(false);
-  const [schoolId, setSchoolId] = useState("");
   const [schoolName, setSchoolName] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
   const [schoolCity, setSchoolCity] = useState("");
   const [schoolDescription, setSchoolDescription] = useState("");
-  const [phoneError, setPhoneError] = useState("");
   const [showRecoveryHelp, setShowRecoveryHelp] = useState(false);
   const [registrationPending, setRegistrationPending] = useState(false);
   const [identityOptions, setIdentityOptions] = useState<{ teacher: boolean; parent: boolean } | null>(null);
@@ -56,22 +57,33 @@ export default function LoginPage({
     if (teacher) navigate(teacher.schoolId ? destination : "/school-auth");
   }, [destination, teacher, navigate]);
 
-  const checkAuthorization = async () => {
-    if (!phone.trim()) return;
-    setCheckingPhone(true);
-    setPhoneError("");
-    try {
-      const result = await authService.getRegistrationContext(phone);
-      setContext(result);
-      setSchoolId(result.authorization.schoolId);
-    } catch (cause) {
-      setContext(null);
-      setSchoolId("");
-      setPhoneError(cause instanceof Error ? cause.message : "无法核验注册授权");
-    } finally {
-      setCheckingPhone(false);
+  useEffect(() => {
+    if (mode !== "register" || createSchool) return;
+    const keyword = schoolQuery.trim();
+    if (!keyword) {
+      setSchoolResults([]);
+      setSchoolSearching(false);
+      return;
     }
-  };
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setSchoolSearching(true);
+      void schoolService.searchSchools(keyword)
+        .then((schools) => {
+          if (!cancelled) setSchoolResults(schools.slice(0, 8));
+        })
+        .catch(() => {
+          if (!cancelled) setSchoolResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSchoolSearching(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [createSchool, mode, schoolQuery]);
 
   const checkLoginIdentity = async (): Promise<{ teacher: boolean; parent: boolean } | null> => {
     const normalized = identifier.trim().replace(/[\s()-]/g, "").replace(/^\+86/, "");
@@ -123,10 +135,7 @@ export default function LoginPage({
       await login(identifier, password);
       return;
     }
-    if (!context) {
-      await checkAuthorization();
-      return;
-    }
+    if (!createSchool && !selectedSchool) return;
     const result = await register({
       email,
       password,
@@ -138,7 +147,7 @@ export default function LoginPage({
       requestSchoolAdmin,
       ...(createSchool
         ? { newSchool: { name: schoolName, code: schoolCode, city: schoolCity, description: schoolDescription } }
-        : { schoolId }),
+        : { schoolId: selectedSchool!.id }),
     });
     if (result === "pending") {
       setRegistrationPending(true);
@@ -196,7 +205,7 @@ export default function LoginPage({
             </h2>
             <p className="text-sm text-ink-500 mt-1">
               {mode === "register"
-                ? "手机号须已获学校授权或教师担保"
+                ? "搜索并选择所在学校；没有匹配学校时可同时申请新增"
                 : collectiveEntry
                   ? "使用备课组内任一教师账号登录"
                   : "登录后继续教学工作"}
@@ -212,77 +221,118 @@ export default function LoginPage({
             {mode === "register" && (
               <>
                 <Input label="姓名" value={name} onChange={(event) => setName(event.target.value)} required placeholder="请输入真实姓名" />
-                <div className="space-y-2">
-                  <Input label="手机号" type="tel" value={phone} onChange={(event) => { setPhone(event.target.value); setContext(null); }} required placeholder="请输入已获授权的手机号" />
-                  <Button type="button" variant="outline" size="sm" loading={checkingPhone} onClick={checkAuthorization}>核验手机号授权</Button>
-                  {phoneError && <p className="text-xs text-red-600">{phoneError}</p>}
-                  {context && <p className="text-xs text-emerald-700">已核验：授权学校为 {context.authorization.schoolName}</p>}
-                </div>
-                {context && (
-                  <>
-                    <Select
-                      label="所在学校"
-                      value={createSchool ? "__new__" : schoolId}
-                      onChange={(event) => {
-                        const isNew = event.target.value === "__new__";
-                        setCreateSchool(isNew);
-                        if (!isNew) setSchoolId(event.target.value);
-                      }}
-                      options={[
-                        ...context.schools.map((school) => ({ value: school.id, label: school.id === context.authorization.schoolId ? `${school.name}（已授权）` : `${school.name}（需该校授权）` })),
-                        { value: "__new__", label: "列表中没有，创建新学校" },
-                      ]}
-                    />
-                    {!createSchool && schoolId !== context.authorization.schoolId && (
-                      <p className="text-xs text-amber-700">当前手机号仅可加入已授权学校；选择其他学校会被拒绝。</p>
-                    )}
-                    {createSchool && (
-                      <div className="grid sm:grid-cols-2 gap-3 rounded-lg border border-ink-200 bg-white p-4">
-                        <Input label="学校名称" value={schoolName} onChange={(event) => setSchoolName(event.target.value)} required />
-                        <Input label="学校代码" value={schoolCode} onChange={(event) => setSchoolCode(event.target.value)} required placeholder="如 NJUHS" />
-                        <Input label="所在城市" value={schoolCity} onChange={(event) => setSchoolCity(event.target.value)} required />
-                        <Textarea label="学校简介（可选）" value={schoolDescription} onChange={(event) => setSchoolDescription(event.target.value)} />
+                <Input label="手机号" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required placeholder="请输入手机号" />
+
+                {!createSchool ? (
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-ink-700" htmlFor="registration-school-search">所在学校</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+                      <input
+                        id="registration-school-search"
+                        className="input-base pl-10"
+                        value={schoolQuery}
+                        onChange={(event) => {
+                          setSchoolQuery(event.target.value);
+                          setSelectedSchool(null);
+                        }}
+                        placeholder="搜索学校名称、代码或城市"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {selectedSchool ? (
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                        已选择：{selectedSchool.name} · {selectedSchool.city}
                       </div>
+                    ) : schoolSearching ? (
+                      <p className="text-xs text-ink-400">正在搜索学校...</p>
+                    ) : schoolQuery.trim() && schoolResults.length > 0 ? (
+                      <div className="max-h-48 overflow-y-auto rounded-lg border border-ink-200 bg-white p-1">
+                        {schoolResults.map((school) => (
+                          <button
+                            key={school.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedSchool(school);
+                              setSchoolQuery(school.name);
+                            }}
+                            className="w-full rounded-md px-3 py-2 text-left hover:bg-ink-50"
+                          >
+                            <div className="text-sm font-medium text-ink-900">{school.name}</div>
+                            <div className="mt-0.5 text-xs text-ink-400">{school.city} · {school.code}</div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : schoolQuery.trim() ? (
+                      <p className="text-xs text-ink-500">没有找到匹配学校，可申请新增。</p>
+                    ) : (
+                      <p className="text-xs text-ink-400">输入学校名称、代码或城市后选择搜索结果。</p>
                     )}
-                    <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
-                    {!createSchool && (
-                      <>
-                        <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
-                          <legend className="px-1 text-sm font-medium text-ink-700">任教年级</legend>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {GRADE_OPTIONS.map((grade) => (
-                              <label key={grade} className="inline-flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
-                                <input type="checkbox" checked={teachingGrades.includes(grade)} onChange={() => toggleGrade(grade)} />
-                                {grade}
-                              </label>
-                            ))}
-                          </div>
-                        </fieldset>
-                        <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
-                          <legend className="px-1 text-sm font-medium text-ink-700">职务与权限申请</legend>
-                          <p className="mb-3 text-xs text-ink-500">勾选实际担任的职务；审核通过后获得相应权限。</p>
-                          <div className="flex flex-wrap gap-2">
-                            {TEACHER_ROLES.map((role) => (
-                              <label key={role} className="inline-flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
-                                <input
-                                  type="checkbox"
-                                  checked={roles.includes(role)}
-                                  disabled={role === "teacher"}
-                                  onChange={() => toggleRole(role)}
-                                />
-                                {roleLabels[role]}
-                              </label>
-                            ))}
-                          </div>
-                          <label className="mt-3 inline-flex items-center gap-2 text-sm text-ink-700">
-                            <input type="checkbox" checked={requestSchoolAdmin} onChange={(event) => setRequestSchoolAdmin(event.target.checked)} />
-                            同时申请学校管理员权限（仅平台超级管理员可授予）
-                          </label>
-                        </fieldset>
-                      </>
-                    )}
-                  </>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCreateSchool(true);
+                        setSelectedSchool(null);
+                        setSchoolName(schoolQuery.trim());
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      没有我的学校，申请新增
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3 rounded-lg border border-ink-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-ink-800">申请新增学校</div>
+                        <p className="mt-0.5 text-xs text-ink-500">注册时会同时提交学校新增申请和您的学校身份申请。</p>
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setCreateSchool(false)}>返回搜索</Button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Input label="学校名称" value={schoolName} onChange={(event) => setSchoolName(event.target.value)} required />
+                      <Input label="学校代码" value={schoolCode} onChange={(event) => setSchoolCode(event.target.value)} required placeholder="如 NJUHS" />
+                      <Input label="所在城市" value={schoolCity} onChange={(event) => setSchoolCity(event.target.value)} required />
+                      <Textarea label="学校简介（可选）" value={schoolDescription} onChange={(event) => setSchoolDescription(event.target.value)} />
+                    </div>
+                  </div>
                 )}
+
+                <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
+                <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
+                  <legend className="px-1 text-sm font-medium text-ink-700">任教年级</legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {GRADE_OPTIONS.map((grade) => (
+                      <label key={grade} className="inline-flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
+                        <input type="checkbox" checked={teachingGrades.includes(grade)} onChange={() => toggleGrade(grade)} />
+                        {grade}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
+                  <legend className="px-1 text-sm font-medium text-ink-700">职务与权限申请</legend>
+                  <p className="mb-3 text-xs text-ink-500">勾选实际担任的职务；审核通过后获得相应权限。</p>
+                  <div className="flex flex-wrap gap-2">
+                    {TEACHER_ROLES.map((role) => (
+                      <label key={role} className="inline-flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={roles.includes(role)}
+                          disabled={role === "teacher"}
+                          onChange={() => toggleRole(role)}
+                        />
+                        {roleLabels[role]}
+                      </label>
+                    ))}
+                  </div>
+                  <label className="mt-3 inline-flex items-center gap-2 text-sm text-ink-700">
+                    <input type="checkbox" checked={requestSchoolAdmin} onChange={(event) => setRequestSchoolAdmin(event.target.checked)} />
+                    同时申请学校管理员权限（仅平台超级管理员可授予）
+                  </label>
+                </fieldset>
               </>
             )}
 
@@ -331,9 +381,16 @@ export default function LoginPage({
             )}
             <div className="relative"><Lock className="absolute left-3 top-9 w-4 h-4 text-ink-400" /><Input label="密码" type="password" minLength={mode === "register" ? 10 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} required className="pl-10" /></div>
             {(error || parentLoginError) && <div className="px-3 py-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700">{parentLoginError || error}</div>}
-            <Button type="submit" variant="gold" size="lg" loading={loading || parentLoggingIn} className="w-full" disabled={mode === "register" && !context}>
+            <Button
+              type="submit"
+              variant="gold"
+              size="lg"
+              loading={loading || parentLoggingIn}
+              className="w-full"
+              disabled={mode === "register" && !createSchool && !selectedSchool}
+            >
               {mode === "register"
-                ? createSchool ? "注册并进入学校" : "提交注册申请"
+                ? "提交注册申请"
                 : collectiveEntry ? "登录并进入集体研讨" : "登录"}
             </Button>
           </form>
@@ -385,7 +442,7 @@ export default function LoginPage({
               )}
             </div>
           )}
-          <div className="mt-5 flex items-center justify-center gap-2 text-xs text-ink-400"><School className="w-3.5 h-3.5" /><Smartphone className="w-3.5 h-3.5" /><UserIcon className="w-3.5 h-3.5" /><GraduationCap className="w-3.5 h-3.5" />学校授权信息仅用于注册校验</div>
+          <div className="mt-5 flex items-center justify-center gap-2 text-xs text-ink-400"><School className="w-3.5 h-3.5" /><Smartphone className="w-3.5 h-3.5" /><UserIcon className="w-3.5 h-3.5" /><GraduationCap className="w-3.5 h-3.5" />学校身份需经对应管理员审核</div>
         </div>
       </div>
     </div>
