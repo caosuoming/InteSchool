@@ -1594,6 +1594,8 @@ export interface ExamPaper {
     mode: "blank" | "with-questions";
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
+    widePaperColumns?: 2 | 3;
+    answerBoxStyle?: "solid" | "dashed";
   };
   createdAt: string;
   updatedAt: string;
@@ -2193,6 +2195,8 @@ export interface Lecture {
     mode: "blank" | "with-questions";
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
+    widePaperColumns?: 2 | 3;
+    answerBoxStyle?: "solid" | "dashed";
   };
   /** 排版设置 */
   layoutSettings?: {
