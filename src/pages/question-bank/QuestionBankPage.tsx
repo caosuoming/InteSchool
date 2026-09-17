@@ -756,6 +756,18 @@ export default function QuestionBankPage({
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
+  const currentPageFullySelected = paginatedQuestions.length > 0
+    && paginatedQuestions.every((question) => selectedQuestionIds?.has(question.id));
+
+  const handleSelectCurrentPage = () => {
+    if (!onToggleSelection) return;
+    paginatedQuestions.forEach((question) => {
+      if (!selectedQuestionIds?.has(question.id)) {
+        onToggleSelection(question);
+      }
+    });
+  };
+
   // 获取当前显示的树
   const displayTree = leftTab === "chapter" ? chapterTree : knowledgeTree;
   const displayCheckedIds = leftTab === "chapter" ? checkedChapters : checkedKnowledge;
@@ -1068,6 +1080,22 @@ export default function QuestionBankPage({
               pageSize={pageSize}
               pageSizeOptions={pageSizeOptions}
               itemLabel="题"
+              navigationExtra={onToggleSelection ? (
+                <button
+                  type="button"
+                  onClick={handleSelectCurrentPage}
+                  disabled={currentPageFullySelected}
+                  className={cn(
+                    "mr-1 flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors",
+                    currentPageFullySelected
+                      ? "cursor-default text-gold-600"
+                      : "text-ink-600 hover:bg-ink-100 hover:text-ink-900",
+                  )}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  本页全选
+                </button>
+              ) : undefined}
               onPageChange={handlePageChange}
               onPageSizeChange={(size) => {
                 setPageSize(size);
