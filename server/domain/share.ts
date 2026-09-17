@@ -12,6 +12,7 @@ import type {
   DonationPrivileges,
   DonationRequest,
   ExamPaper,
+  ExtractedDocumentBlock,
   KnowledgePoint,
   Lecture,
   LectureSection,
@@ -36,7 +37,7 @@ import type {
   ResourceSemester,
 } from "../../src/types/index.js";
 import { examPaperKnowledgePointIds, lectureKnowledgePointIds } from "./document-knowledge.js";
-import { assertResourceCapacity, recordDonationDownload } from "./quota.js";
+import { assertResourceCapacity, awardDonationCredits, recordDonationDownload } from "./quota.js";
 import { resourceFolderService } from "./resourceFolder.js";
 
 type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
@@ -150,7 +151,6 @@ const albumLibraryLabels: Record<ResourceFolder["resourceType"], DonationAlbumSn
 
 function validateDonationAlbums(
   teacherId: string,
-  schoolId: string,
   requests: DonationRequest[],
 ): Map<string, DonationAlbumSnapshot> {
   const albumIds = [...new Set(requests.map((request) => request.albumId).filter((id): id is string => Boolean(id)))];
@@ -160,14 +160,25 @@ function validateDonationAlbums(
   const snapshots = new Map<string, DonationAlbumSnapshot>();
   for (const albumId of albumIds) {
     const folder = folders.find((item) => item.id === albumId);
-    if (!folder || folder.teacherId !== teacherId || folder.schoolId !== schoolId) {
+    if (!folder || folder.teacherId !== teacherId) {
       throw new Error("待捐赠专辑不存在或无权访问");
     }
     const albumRequests = requests.filter((request) => request.albumId === albumId);
     if (albumRequests.some((request) => request.resourceType !== folder.resourceType)) {
       throw new Error("专辑中的文档类型与资源库不一致");
     }
-    const requestedIds = new Set(albumRequests.map((request) => request.resourceId));
+    const requestedIds = new Set(albumRequests.map((request) => {
+      if (request.resourceType !== "examPaper" && request.resourceType !== "lecture") {
+        return request.resourceId;
+      }
+      const collection = RESOURCE_COLLECTIONS[request.resourceType];
+      const resource = (db.read(collection) as Array<ExamPaper | Lecture>).find((item) =>
+        item.id === request.resourceId && item.teacherId === teacherId,
+      );
+      return resource?.isExtractCopy && resource.sourceResourceId
+        ? resource.sourceResourceId
+        : request.resourceId;
+    }));
     const folderIds = new Set(folder.resourceIds);
     if (
       requestedIds.size !== folderIds.size
@@ -191,12 +202,11 @@ function findOwnedResource(
   type: ShareableResourceType,
   id: string,
   teacherId: string,
-  schoolId: string,
 ): ShareableResource {
   const collection = RESOURCE_COLLECTIONS[type];
   const resource = (db.read(collection) as ShareableResource[]).find((item) => item.id === id);
   if (!resource) throw new Error("捐赠资源不存在");
-  if (resource.teacherId !== teacherId || resource.schoolId !== schoolId) {
+  if (resource.teacherId !== teacherId) {
     throw new Error("无权捐赠不属于自己的资源");
   }
   if (resource.platformSourceDonationIds?.length) {
@@ -550,14 +560,15 @@ function checkPlatformSave(
 
   const owned = (db.read(RESOURCE_COLLECTIONS[donation.resourceType]) as ShareableResource[])
     .filter((item) => item.teacherId === teacherId && item.schoolId === schoolId);
-  const alreadySaved = Boolean(savedResourceForDonation(donation, teacherId, schoolId));
-  if (alreadySaved) {
+  const existingResource = savedResourceForDonation(donation, teacherId, schoolId);
+  if (existingResource) {
     return {
       donationId: donation.id,
       resourceType: donation.resourceType,
       canSave: false,
       reason: "该平台资源的副本已创建",
       alreadySaved: true,
+      existingResourceId: existingResource.id,
     };
   }
 
@@ -810,7 +821,13 @@ function copyEmbeddedQuestionsToTeacher(
       isShared: false,
       sourceType: "shared",
       platformSourceDonationIds: [
-        ...new Set([...(source.platformSourceDonationIds || []), share.id]),
+        ...new Set([
+          ...(source.platformSourceDonationIds || []),
+          share.id,
+          ...(platformQuestionDonationForSource(share, source.id)?.id
+            ? [platformQuestionDonationForSource(share, source.id)!.id]
+            : []),
+        ]),
       ],
       hiddenByExamIds: [],
       createdAt: now,
@@ -969,6 +986,108 @@ function copySnapshotToTeacher(
   return { newResourceId, resourceType: share.resourceType };
 }
 
+function lectureSnapshotQuestionIds(sections: Lecture["sections"]): string[] {
+  return sections.flatMap((section) => [
+    ...(section.questionId ? [section.questionId] : []),
+    ...lectureSnapshotQuestionIds(section.children || []),
+  ]);
+}
+
+function linkedQuestionIdsFromSnapshot(
+  resourceType: ShareableResourceType,
+  snapshot: ShareableResource,
+): string[] {
+  if (resourceType !== "examPaper" && resourceType !== "lecture") return [];
+  const document = snapshot as ExamPaper | Lecture;
+  const blockIds = (document.contentBlocks || [])
+    .flatMap((block) => block.type === "question" && block.questionId ? [block.questionId] : []);
+  const ids = resourceType === "examPaper"
+    ? [
+      ...(snapshot as ExamPaper).questions.flatMap((question) => question.questionId ? [question.questionId] : []),
+      ...blockIds,
+    ]
+    : [
+      ...lectureSnapshotQuestionIds((snapshot as Lecture).sections),
+      ...blockIds,
+    ];
+  return [...new Set(ids)];
+}
+
+function platformQuestionDonationForSource(
+  documentDonation: ShareRecord,
+  sourceQuestionId: string,
+): ShareRecord | undefined {
+  const contribution = contributionDonations().find((item) =>
+    item.fromTeacherId === documentDonation.fromTeacherId
+    && item.resourceType === "question"
+    && item.sourceResourceId === sourceQuestionId,
+  );
+  if (!contribution) return undefined;
+  const primaryId = contribution.mergedIntoDonationId || contribution.id;
+  return primaryDonations().find((item) => item.id === primaryId && item.resourceType === "question");
+}
+
+function remapDocumentQuestionIds(
+  donation: ShareRecord,
+  copiedResourceId: string,
+  teacherId: string,
+  schoolId: string,
+): void {
+  if (
+    (donation.resourceType !== "examPaper" && donation.resourceType !== "lecture")
+    || !donation.resourceSnapshot
+  ) return;
+
+  const sourceQuestionIds = linkedQuestionIdsFromSnapshot(donation.resourceType, donation.resourceSnapshot);
+  if (sourceQuestionIds.length === 0) return;
+  const questionIdMap = new Map<string, string>();
+
+  for (const sourceQuestionId of sourceQuestionIds) {
+    const questionDonation = platformQuestionDonationForSource(donation, sourceQuestionId);
+    if (!questionDonation) continue;
+    let ownedQuestion = (db.read("questions") as Question[]).find((question) =>
+      question.teacherId === teacherId
+      && question.platformSourceDonationIds?.includes(questionDonation.id),
+    );
+    if (!ownedQuestion) {
+      const copiedQuestion = copySnapshotToTeacher(questionDonation, teacherId, schoolId);
+      ownedQuestion = (db.read("questions") as Question[]).find((question) => question.id === copiedQuestion.newResourceId);
+    }
+    if (!ownedQuestion) continue;
+    questionIdMap.set(sourceQuestionId, ownedQuestion.id);
+    recordDonationDownload(questionDonation.id, teacherId);
+  }
+
+  if (questionIdMap.size === 0) return;
+  const remapBlocks = (blocks: ExtractedDocumentBlock[] | undefined) => blocks?.map((block) => ({
+    ...block,
+    questionId: block.questionId ? questionIdMap.get(block.questionId) || block.questionId : undefined,
+  }));
+
+  if (donation.resourceType === "examPaper") {
+    db.update("examPapers", (papers: ExamPaper[]) => papers.map((paper) => paper.id !== copiedResourceId ? paper : {
+      ...paper,
+      questions: paper.questions.map((question) => ({
+        ...question,
+        questionId: question.questionId ? questionIdMap.get(question.questionId) || question.questionId : undefined,
+      })),
+      contentBlocks: remapBlocks(paper.contentBlocks),
+    }));
+    return;
+  }
+
+  const remapSections = (sections: Lecture["sections"]): Lecture["sections"] => sections.map((section) => ({
+    ...section,
+    questionId: section.questionId ? questionIdMap.get(section.questionId) || section.questionId : undefined,
+    children: remapSections(section.children || []),
+  }));
+  db.update("lectures", (lectures: Lecture[]) => lectures.map((lecture) => lecture.id !== copiedResourceId ? lecture : {
+    ...lecture,
+    sections: remapSections(lecture.sections),
+    contentBlocks: remapBlocks(lecture.contentBlocks),
+  }));
+}
+
 /** 资源分享与平台捐赠服务。 */
 export const shareService = {
   async createShare(params: {
@@ -1045,7 +1164,7 @@ export const shareService = {
     const records = contributionDonations();
     const contributors = new Map(contributorRanking().map((item) => [item.teacherId, item.nickname]));
     return requests.map((request) => {
-      const resource = findOwnedResource(request.resourceType, request.resourceId, teacherId, teacher.schoolId!);
+      const resource = findOwnedResource(request.resourceType, request.resourceId, teacherId);
       const alreadyDonated = records.some((item) =>
         item.fromTeacherId === teacherId
         && item.resourceType === request.resourceType
@@ -1087,10 +1206,10 @@ export const shareService = {
     const now = new Date().toISOString();
     const existingRecords = contributionDonations();
     const created: ShareRecord[] = [];
-    const albumSnapshots = validateDonationAlbums(teacherId, schoolId, requests);
+    const albumSnapshots = validateDonationAlbums(teacherId, requests);
 
     for (const request of requests) {
-      const resource = findOwnedResource(request.resourceType, request.resourceId, teacherId, schoolId);
+      const resource = findOwnedResource(request.resourceType, request.resourceId, teacherId);
       const donationAlbum = request.albumId ? albumSnapshots.get(request.albumId) : undefined;
       const duplicateDonation = existingRecords.find((item) =>
         item.fromTeacherId === teacherId
@@ -1163,6 +1282,7 @@ export const shareService = {
           createdAt: now,
         };
         db.update("shareRecords", (list) => [...list, contribution]);
+        awardDonationCredits(teacherId, contribution.sourceResourceId || contribution.resourceId, contribution.resourceType);
         created.push(contribution);
         continue;
       }
@@ -1189,6 +1309,7 @@ export const shareService = {
         createdAt: now,
       };
       db.update("shareRecords", (list) => [...list, record]);
+      awardDonationCredits(teacherId, record.sourceResourceId || record.resourceId, record.resourceType);
       created.push(record);
       existingRecords.push(record);
     }
@@ -1404,6 +1525,7 @@ export const shareService = {
     }
 
     const copied = copySnapshotToTeacher(donation, teacherId, schoolId);
+    remapDocumentQuestionIds(donation, copied.newResourceId, teacherId, schoolId);
     recordDonationDownload(donation.id, teacherId);
     return {
       resourceType: copied.resourceType,

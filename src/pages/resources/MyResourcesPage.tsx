@@ -2347,6 +2347,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       resourceId,
     }));
 
+  const donationFolderRefs = (folder: ResourceFolder): BatchResourceRef[] =>
+    folder.resourceIds.map((resourceId) => {
+      const candidates = folder.resourceType === "examPaper"
+        ? allExamPapers
+        : folder.resourceType === "lecture"
+          ? allLectures
+          : [];
+      const extractCopy = candidates
+        .filter((item) => item.teacherId === teacher?.id && item.isExtractCopy && item.sourceResourceId === resourceId)
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+      return {
+        resourceType: folder.resourceType,
+        resourceId: extractCopy?.id || resourceId,
+      };
+    });
+
   const openCreateFolderFromSelection = () => {
     const refs = selectedResourceRefs();
     if (refs.length < 2) {
@@ -2590,7 +2606,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             onRename={(name) => handleRenameFolder(folder, name)}
             onTogglePin={() => void handleToggleFolderPin(folder)}
             onShare={() => void handleBatchShare(folderRefs(folder))}
-            onDonate={() => void handlePrepareDonation(folderRefs(folder), folder.id)}
+            onDonate={() => void handlePrepareDonation(donationFolderRefs(folder), folder.id)}
             onDelete={() => void handleDeleteFolder(folder)}
           />
         )}
@@ -3325,8 +3341,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 summaryExtra={activeResourceQuota ? (
                   <span className="text-xs text-ink-500">
                     容量 {activeResourceQuota.used}/{activeResourceQuota.capacity}
-                    {activeResourceQuota.donationBonus > 0
-                      ? `（有效捐赠扩容 +${activeResourceQuota.donationBonus}）`
+                    {activeResourceQuota.creditCapacityBonus > 0
+                      ? `（积分兑换扩容 +${activeResourceQuota.creditCapacityBonus}）`
                       : ""}
                   </span>
                 ) : undefined}
@@ -3892,8 +3908,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 summaryExtra={activeResourceQuota ? (
                   <span className="text-xs text-ink-500">
                     容量 {activeResourceQuota.used}/{activeResourceQuota.capacity}
-                    {activeResourceQuota.donationBonus > 0
-                      ? `（有效捐赠扩容 +${activeResourceQuota.donationBonus}）`
+                    {activeResourceQuota.creditCapacityBonus > 0
+                      ? `（积分兑换扩容 +${activeResourceQuota.creditCapacityBonus}）`
                       : ""}
                   </span>
                 ) : undefined}
@@ -3928,10 +3944,23 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             schoolYear: documentMetadataTarget.resource.schoolYear,
             semester: documentMetadataTarget.resource.semester || "上学期",
             chapterIds: documentMetadataTarget.resource.chapterIds,
+            ...(documentMetadataTarget.resourceType !== "courseware"
+              ? { typeId: documentMetadataTarget.resource.typeId || "" }
+              : {}),
           }}
           gradeOptions={gradeOptions}
           schoolYearOptions={schoolYearOptions}
           semesterOptions={semesterOptions}
+          documentTypeLabel={documentMetadataTarget.resourceType === "examPaper"
+            ? "试卷类型"
+            : documentMetadataTarget.resourceType === "lecture"
+              ? "讲义类型"
+              : undefined}
+          documentTypeOptions={documentMetadataTarget.resourceType === "examPaper"
+            ? examPaperTypeOptions
+            : documentMetadataTarget.resourceType === "lecture"
+              ? lectureTypeOptions
+              : undefined}
           chapterTree={chapterTree}
           onChapterTreeChange={setChapterTree}
         />

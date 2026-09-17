@@ -9,6 +9,7 @@ interface PaginationBarProps {
   pageSizeOptions: number[];
   itemLabel: string;
   summaryExtra?: ReactNode;
+  navigationExtra?: ReactNode;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
 }
@@ -50,6 +51,7 @@ export function PaginationBar({
   pageSizeOptions,
   itemLabel,
   summaryExtra,
+  navigationExtra,
   onPageChange,
   onPageSizeChange,
 }: PaginationBarProps) {
@@ -79,6 +81,7 @@ export function PaginationBar({
       </div>
 
       <div className="flex flex-wrap items-center gap-1">
+        {navigationExtra}
         <button
           type="button"
           onClick={() => onPageChange(currentPage - 1)}

@@ -50,17 +50,44 @@ export type ResourceQuotaKey = "question" | "examPaper" | "lecture" | "coursewar
 export type ExamUsageQuotaKey = "examRoom" | "invigilation" | "gradeStatistics";
 
 export interface UserQuotaOverrides {
-  /** 资源库基础容量；有效捐赠带来的扩容在此基础上动态叠加。 */
+  /** 平台管理员直接设置的资源库基础容量。 */
   resourceBaseCapacities?: Partial<Record<ResourceQuotaKey, number>>;
   /** “我的考试”各功能剩余可使用次数。 */
   examRemainingUses?: Partial<Record<ExamUsageQuotaKey, number>>;
+}
+
+export interface PlatformCreditSettings {
+  /** 每捐赠 1 份对应资源获得的积分；0 表示该类资源暂不奖励积分。 */
+  donationCredits: Record<ResourceQuotaKey, number>;
+  /** 每消耗 1 积分可永久增加的对应资源库容量。 */
+  capacityPerCredit: Record<ResourceQuotaKey, number>;
+}
+
+export type CreditTransactionKind = "donation" | "admin_grant" | "redemption";
+
+export interface CreditTransaction {
+  id: string;
+  teacherId: string;
+  amount: number;
+  kind: CreditTransactionKind;
+  resourceType?: ResourceQuotaKey;
+  /** 原始个人资源 ID；同一用户重复捐赠同一资源时不会重复奖励积分。 */
+  sourceId?: string;
+  /** 兑换发生时实际获得的容量，规则之后调整也不会追溯改变。 */
+  capacityGranted?: number;
+  createdByTeacherId?: string;
+  createdAt: string;
 }
 
 export interface ResourceQuotaStatus {
   key: ResourceQuotaKey;
   used: number;
   baseCapacity: number;
+  /** 通过积分兑换获得的永久扩容。 */
+  creditCapacityBonus: number;
+  /** @deprecated 兼容旧客户端；积分制启用后固定为 0。 */
   effectiveDonations: number;
+  /** @deprecated 兼容旧客户端；等同 creditCapacityBonus。 */
   donationBonus: number;
   capacity: number;
   remaining: number;
@@ -73,6 +100,9 @@ export interface ExamUsageQuotaStatus {
 
 export interface UserQuotaSnapshot {
   teacherId: string;
+  /** 当前可用于兑换资源容量的积分余额。 */
+  creditBalance: number;
+  creditSettings: PlatformCreditSettings;
   resources: Record<ResourceQuotaKey, ResourceQuotaStatus>;
   exam: Record<ExamUsageQuotaKey, ExamUsageQuotaStatus>;
 }
@@ -1834,7 +1864,7 @@ export interface ShareRecord {
   platformOrder?: number;
   /** 合并贡献指向的主捐赠记录；该记录只计贡献，不重复展示资源 */
   mergedIntoDonationId?: string;
-  /** 已将该平台资源创建为个人副本的不同用户，用于判定有效捐赠。 */
+  /** 已将该平台资源创建为个人副本的不同用户，用于下载去重与统计。 */
   downloadedByTeacherIds?: string[];
   /** 专辑捐赠时保存专辑名称、来源资源库等信息。 */
   donationAlbum?: DonationAlbumSnapshot;
@@ -1920,6 +1950,8 @@ export interface PlatformSaveCheckResult {
   canSave: boolean;
   reason?: string;
   alreadySaved: boolean;
+  /** 已另存时对应的个人资源 ID，供批量另存/专辑重建复用。 */
+  existingResourceId?: string;
   conflict?: PlatformSaveConflict;
 }
 

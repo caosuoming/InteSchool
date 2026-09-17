@@ -352,6 +352,44 @@ describe("PlatformResourcesPage layout and filters", () => {
     expect(screen.getByLabelText("试卷标识")).toBeInTheDocument();
   });
 
+  it("batch-saves a selected platform album and rebuilds it in personal resources", async () => {
+    const user = userEvent.setup();
+    const secondPaper: ExamPaper = {
+      ...albumPaper,
+      id: "paper-album-2",
+      title: "函数专题试卷二",
+    };
+    const firstDonation = donationRecord("donation-album-1", "teacher-other", "examPaper", albumPaper);
+    const secondDonation = donationRecord("donation-album-2", "teacher-other", "examPaper", secondPaper);
+    for (const donation of [firstDonation, secondDonation]) {
+      donation.donationAlbum = {
+        id: "album-batch",
+        name: "函数专题",
+        resourceType: "examPaper",
+        libraryLabel: "试卷库",
+      };
+    }
+    vi.mocked(shareService.listPublicDonations).mockResolvedValue([firstDonation, secondDonation]);
+    vi.mocked(donationService.saveAlbumAsOwnResources).mockResolvedValue({
+      albumKey: "数学:album-batch",
+      folderId: "folder-copy",
+      resourceIds: ["paper-copy-1", "paper-copy-2"],
+      alreadySaved: false,
+    });
+
+    renderPage();
+
+    await user.click(await screen.findByLabelText("选择专辑：函数专题"));
+    await user.click(screen.getByRole("button", { name: "批量创建副本（1）" }));
+
+    await waitFor(() => expect(donationService.saveAlbumAsOwnResources).toHaveBeenCalledWith(
+      "数学",
+      "album-batch",
+      "teacher-self",
+      "school-1",
+    ));
+  });
+
   it("mixes unpinned albums with standalone resources by platform order", async () => {
     const albumDonation = donationRecord("donation-album", "teacher-other", "examPaper", albumPaper);
     albumDonation.platformOrder = 2;

@@ -273,6 +273,52 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(classService.listMyStudents).toHaveBeenCalledWith("school-2", "teacher-1");
   });
 
+  it("selects every unselected question on the current page without clearing existing selections", async () => {
+    const question1: Question = {
+      id: "question-page-1",
+      teacherId: "teacher-1",
+      schoolId: "school-2",
+      type: "short",
+      stem: "本页已选题",
+      answer: "1",
+      analysis: "",
+      chapterIds: [],
+      knowledgePointIds: [],
+      difficulty: 3,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      hiddenByExamIds: [],
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const question2: Question = {
+      ...question1,
+      id: "question-page-2",
+      stem: "本页未选题",
+    };
+    const onToggleSelection = vi.fn();
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({
+      items: [question1, question2],
+      total: 42,
+    });
+
+    render(
+      <MemoryRouter>
+        <QuestionBankPage
+          selectedQuestionIds={new Set([question1.id])}
+          onToggleSelection={onToggleSelection}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "本页全选" }));
+
+    expect(onToggleSelection).toHaveBeenCalledTimes(1);
+    expect(onToggleSelection).toHaveBeenCalledWith(question2);
+  });
+
   it("keeps usage documents across schools, shows them on hover, and opens their previews", async () => {
     const question: Question = {
       id: "question-used-across-schools",

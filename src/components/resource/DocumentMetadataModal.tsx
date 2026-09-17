@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { SearchableTree } from "@/components/tree/SearchableTree";
+import { includeCurrentDocumentType, type DocumentTypeOption } from "@/hooks/useDocumentTypeOptions";
 import { includeCurrentOption } from "@/hooks/useSchoolResourceOptions";
 import type { ResourceSemester, TreeNode } from "@/types";
 
@@ -13,6 +14,7 @@ export interface DocumentMetadataValue {
   schoolYear: string;
   semester: ResourceSemester;
   chapterIds: string[];
+  typeId?: string;
 }
 
 interface DocumentMetadataModalProps {
@@ -24,6 +26,8 @@ interface DocumentMetadataModalProps {
   gradeOptions: { value: string; label: string }[];
   schoolYearOptions: { value: string; label: string }[];
   semesterOptions: { value: string; label: string }[];
+  documentTypeLabel?: "试卷类型" | "讲义类型";
+  documentTypeOptions?: DocumentTypeOption[];
   chapterTree: TreeNode | null;
   onChapterTreeChange?: (tree: TreeNode) => void;
   loading?: boolean;
@@ -38,6 +42,8 @@ export function DocumentMetadataModal({
   gradeOptions,
   schoolYearOptions,
   semesterOptions,
+  documentTypeLabel,
+  documentTypeOptions = [],
   chapterTree,
   onChapterTreeChange,
   loading = false,
@@ -87,6 +93,17 @@ export function DocumentMetadataModal({
           placeholder="可填写文档用途、内容说明等备注"
           onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
         />
+        {documentTypeLabel && (
+          <Select
+            label={documentTypeLabel}
+            value={draft.typeId || ""}
+            options={[
+              { value: "", label: "未指定" },
+              ...includeCurrentDocumentType(documentTypeOptions, draft.typeId),
+            ]}
+            onChange={(event) => setDraft((current) => ({ ...current, typeId: event.target.value }))}
+          />
+        )}
         <div className="grid gap-3 sm:grid-cols-3">
           <Select
             label="年级"

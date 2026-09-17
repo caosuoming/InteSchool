@@ -1,13 +1,16 @@
 import type {
+  CreditTransaction,
   ExamUsageQuotaKey,
+  PlatformCreditSettings,
   ResourceQuotaKey,
   ResourceQuotaStatus,
+  ShareRecord,
   Teacher,
   UserQuotaOverrides,
   UserQuotaSnapshot,
-  ShareRecord,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
+import { genId } from "../domain-shared.js";
 
 export const DEFAULT_RESOURCE_CAPACITIES: Record<ResourceQuotaKey, number> = {
   question: 10_000,
@@ -18,8 +21,31 @@ export const DEFAULT_RESOURCE_CAPACITIES: Record<ResourceQuotaKey, number> = {
 };
 
 export const DEFAULT_EXAM_REMAINING_USES = 50;
-export const EFFECTIVE_DONATION_DOWNLOAD_THRESHOLD = 5;
-export const EFFECTIVE_DONATION_CAPACITY_BONUS = 10;
+
+const RESOURCE_KEYS: ResourceQuotaKey[] = [
+  "question",
+  "examPaper",
+  "lecture",
+  "courseware",
+  "material",
+];
+
+export const DEFAULT_CREDIT_SETTINGS: PlatformCreditSettings = {
+  donationCredits: {
+    question: 1,
+    examPaper: 1,
+    lecture: 1,
+    courseware: 1,
+    material: 1,
+  },
+  capacityPerCredit: {
+    question: 10,
+    examPaper: 10,
+    lecture: 10,
+    courseware: 10,
+    material: 10,
+  },
+};
 
 const RESOURCE_COLLECTIONS: Record<ResourceQuotaKey, string> = {
   question: "questions",
@@ -71,23 +97,95 @@ function normalizedNonNegativeInteger(value: unknown, label: string): number {
   return value;
 }
 
-function effectiveDonationCount(teacherId: string, resourceType: ResourceQuotaKey): number {
-  const records = db.read("shareRecords");
-  if (!Array.isArray(records)) return 0;
-  return (records as ShareRecord[]).filter((record) => {
-    if (
-      record.kind !== "donation"
-      || record.fromTeacherId !== teacherId
-      || record.resourceType !== resourceType
-      || record.mergedIntoDonationId
-      || record.status !== "pending"
-      || !record.resourceSnapshot
-    ) return false;
-    const downloaders = new Set(
-      (record.downloadedByTeacherIds || []).filter((id) => id && id !== teacherId),
-    );
-    return downloaders.size >= EFFECTIVE_DONATION_DOWNLOAD_THRESHOLD;
-  }).length;
+function normalizedPositiveInteger(value: unknown, label: string): number {
+  const normalized = normalizedNonNegativeInteger(value, label);
+  if (normalized < 1) throw new Error(`${label}必须大于 0`);
+  return normalized;
+}
+
+function creditTransactions(): CreditTransaction[] {
+  const value = db.read("creditTransactions");
+  return Array.isArray(value) ? value as CreditTransaction[] : [];
+}
+
+function normalizeCreditSettings(value: unknown): PlatformCreditSettings {
+  const record = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Partial<PlatformCreditSettings>
+    : {};
+  const donationCredits = { ...DEFAULT_CREDIT_SETTINGS.donationCredits };
+  const capacityPerCredit = { ...DEFAULT_CREDIT_SETTINGS.capacityPerCredit };
+  for (const key of RESOURCE_KEYS) {
+    const donation = record.donationCredits?.[key];
+    if (typeof donation === "number" && Number.isInteger(donation) && donation >= 0) {
+      donationCredits[key] = donation;
+    }
+    const capacity = record.capacityPerCredit?.[key];
+    if (typeof capacity === "number" && Number.isInteger(capacity) && capacity > 0) {
+      capacityPerCredit[key] = capacity;
+    }
+  }
+  return { donationCredits, capacityPerCredit };
+}
+
+export function getCreditSettingsInternal(): PlatformCreditSettings {
+  const records = db.read("platformCreditSettings");
+  if (!Array.isArray(records)) return structuredClone(DEFAULT_CREDIT_SETTINGS);
+  const record = records.find((item: { id?: string }) => item?.id === "platform-credit-settings") as
+    | ({ donationCredits?: PlatformCreditSettings["donationCredits"]; capacityPerCredit?: PlatformCreditSettings["capacityPerCredit"] })
+    | undefined;
+  return normalizeCreditSettings(record);
+}
+
+export function getCreditBalance(teacherId: string): number {
+  return creditTransactions()
+    .filter((transaction) => transaction.teacherId === teacherId)
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+}
+
+function redeemedCapacity(teacherId: string, resourceType: ResourceQuotaKey): number {
+  return creditTransactions()
+    .filter((transaction) => (
+      transaction.teacherId === teacherId
+      && transaction.kind === "redemption"
+      && transaction.resourceType === resourceType
+    ))
+    .reduce((sum, transaction) => sum + (transaction.capacityGranted || 0), 0);
+}
+
+function appendCreditTransaction(transaction: Omit<CreditTransaction, "id" | "createdAt">): CreditTransaction {
+  const created: CreditTransaction = {
+    id: genId("credit"),
+    createdAt: new Date().toISOString(),
+    ...transaction,
+  };
+  db.update("creditTransactions", (items: CreditTransaction[] | undefined) => [...(items || []), created]);
+  return created;
+}
+
+export function awardDonationCredits(
+  teacherId: string,
+  sourceResourceId: string,
+  resourceType: ResourceQuotaKey,
+): number {
+  teacherById(teacherId);
+  const existing = creditTransactions().find((transaction) => (
+    transaction.kind === "donation"
+    && transaction.teacherId === teacherId
+    && transaction.resourceType === resourceType
+    && transaction.sourceId === sourceResourceId
+  ));
+  if (existing) return existing.amount;
+
+  const amount = getCreditSettingsInternal().donationCredits[resourceType];
+  if (amount <= 0) return 0;
+  appendCreditTransaction({
+    teacherId,
+    amount,
+    kind: "donation",
+    resourceType,
+    sourceId: sourceResourceId,
+  });
+  return amount;
 }
 
 function resourceStatusForTeacherId(
@@ -101,15 +199,15 @@ function resourceStatusForTeacherId(
     : 0;
   const configured = teacher?.quotaOverrides?.resourceBaseCapacities?.[key];
   const baseCapacity = configured === undefined ? DEFAULT_RESOURCE_CAPACITIES[key] : configured;
-  const effectiveDonations = effectiveDonationCount(teacherId, key);
-  const donationBonus = effectiveDonations * EFFECTIVE_DONATION_CAPACITY_BONUS;
-  const capacity = baseCapacity + donationBonus;
+  const creditCapacityBonus = redeemedCapacity(teacherId, key);
+  const capacity = baseCapacity + creditCapacityBonus;
   return {
     key,
     used,
     baseCapacity,
-    effectiveDonations,
-    donationBonus,
+    creditCapacityBonus,
+    effectiveDonations: 0,
+    donationBonus: creditCapacityBonus,
     capacity,
     remaining: Math.max(0, capacity - used),
   };
@@ -120,6 +218,8 @@ export function buildQuotaSnapshot(teacherId: string): UserQuotaSnapshot {
   const examRemaining = teacher.quotaOverrides?.examRemainingUses || {};
   return {
     teacherId,
+    creditBalance: getCreditBalance(teacherId),
+    creditSettings: getCreditSettingsInternal(),
     resources: {
       question: resourceStatusForTeacherId(teacherId, "question", teacher),
       examPaper: resourceStatusForTeacherId(teacherId, "examPaper", teacher),
@@ -159,12 +259,12 @@ export function assertResourceCapacity(
   if (status.used + requested <= status.capacity) return;
   throw new Error(
     `${RESOURCE_LABELS[resourceType]}容量不足（已使用 ${status.used}/${status.capacity}，本次需新增 ${requested}）`
-    + "，可通过有效捐赠扩容或联系平台超级管理员调整",
+    + "，可使用积分兑换扩容或联系平台超级管理员调整",
   );
 }
 
 export function recordDonationDownload(donationId: string, downloaderTeacherId: string): void {
-  db.update("shareRecords", (records: ShareRecord[]) => records.map((record) => {
+  db.update("shareRecords", (records: ShareRecord[] | undefined) => (records || []).map((record) => {
     if (
       record.id !== donationId
       || record.kind !== "donation"
@@ -225,6 +325,22 @@ function validateQuotaPatch(patch: UserQuotaOverrides): UserQuotaOverrides {
   return { resourceBaseCapacities, examRemainingUses };
 }
 
+function validateCreditSettings(settings: PlatformCreditSettings): PlatformCreditSettings {
+  const donationCredits = { ...DEFAULT_CREDIT_SETTINGS.donationCredits };
+  const capacityPerCredit = { ...DEFAULT_CREDIT_SETTINGS.capacityPerCredit };
+  for (const key of RESOURCE_KEYS) {
+    donationCredits[key] = normalizedNonNegativeInteger(
+      settings?.donationCredits?.[key],
+      `${RESOURCE_LABELS[key]}捐赠奖励积分`,
+    );
+    capacityPerCredit[key] = normalizedPositiveInteger(
+      settings?.capacityPerCredit?.[key],
+      `${RESOURCE_LABELS[key]}每积分兑换容量`,
+    );
+  }
+  return { donationCredits, capacityPerCredit };
+}
+
 export const quotaService = {
   async getQuota(targetTeacherId: string, teacher: Teacher): Promise<UserQuotaSnapshot> {
     if (targetTeacherId !== teacher.id && !isPlatformAdmin(teacher)) {
@@ -259,6 +375,58 @@ export const quotaService = {
         : item
     )));
     return buildQuotaSnapshot(targetTeacherId);
+  },
+
+  async getCreditSettings(): Promise<PlatformCreditSettings> {
+    return getCreditSettingsInternal();
+  },
+
+  async updateCreditSettings(
+    settings: PlatformCreditSettings,
+    teacher: Teacher,
+  ): Promise<PlatformCreditSettings> {
+    if (!isPlatformAdmin(teacher)) throw new Error("仅平台超级管理员可以调整积分规则");
+    const validated = validateCreditSettings(settings);
+    db.write("platformCreditSettings", [{ id: "platform-credit-settings", ...validated }]);
+    return validated;
+  },
+
+  async grantCredits(
+    targetTeacherId: string,
+    amount: number,
+    teacher: Teacher,
+  ): Promise<UserQuotaSnapshot> {
+    if (!isPlatformAdmin(teacher)) throw new Error("仅平台超级管理员可以赠送积分");
+    teacherById(targetTeacherId);
+    const normalized = normalizedPositiveInteger(amount, "赠送积分");
+    appendCreditTransaction({
+      teacherId: targetTeacherId,
+      amount: normalized,
+      kind: "admin_grant",
+      createdByTeacherId: teacher.id,
+    });
+    return buildQuotaSnapshot(targetTeacherId);
+  },
+
+  async redeemCredits(
+    resourceType: ResourceQuotaKey,
+    credits: number,
+    teacher: Teacher,
+  ): Promise<UserQuotaSnapshot> {
+    if (!RESOURCE_KEYS.includes(resourceType)) throw new Error("未知资源库类型");
+    teacherById(teacher.id);
+    const normalized = normalizedPositiveInteger(credits, "兑换积分");
+    const balance = getCreditBalance(teacher.id);
+    if (normalized > balance) throw new Error(`积分不足（当前 ${balance} 分）`);
+    const capacityGranted = normalized * getCreditSettingsInternal().capacityPerCredit[resourceType];
+    appendCreditTransaction({
+      teacherId: teacher.id,
+      amount: -normalized,
+      kind: "redemption",
+      resourceType,
+      capacityGranted,
+    });
+    return buildQuotaSnapshot(teacher.id);
   },
 
   async consumeExamUsage(

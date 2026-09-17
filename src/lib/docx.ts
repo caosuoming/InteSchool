@@ -182,6 +182,16 @@ function escapeOmmlTextContent(omml: string): string {
   );
 }
 
+function normalizeMathMlForWord(mathml: string): string {
+  return mathml.replace(
+    /<(mn|mo)\b([^>]*)>/g,
+    (tag, elementName: string, attributes: string) => {
+      if (/\bfontstyle\s*=/.test(attributes)) return tag;
+      return `<${elementName}${attributes} fontstyle="normal">`;
+    },
+  );
+}
+
 function latexToOmml(latex: string, style: DocumentTextStyle = {}): ParagraphChild | null {
   try {
     const rendered = katex.renderToString(normalizeAdjacentLatexScripts(latex), {
@@ -191,7 +201,7 @@ function latexToOmml(latex: string, style: DocumentTextStyle = {}): ParagraphChi
     const mathml = rendered.match(/<math\b[\s\S]*?<\/math>/i)?.[0]
       ?.replace(/<annotation\b[\s\S]*?<\/annotation>/gi, "");
     if (!mathml) return null;
-    const omml = escapeOmmlTextContent(mml2omml(mathml));
+    const omml = escapeOmmlTextContent(mml2omml(normalizeMathMlForWord(mathml)));
     const xml = new DOMParser().parseFromString(omml, "application/xml");
     if (xml.getElementsByTagName("parsererror").length > 0) return null;
     normalizeExportOmml(xml.documentElement);
