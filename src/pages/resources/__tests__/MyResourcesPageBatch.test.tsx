@@ -360,7 +360,7 @@ const knowledgeTree: TreeNode = {
   children: [],
 };
 
-function renderPage(initialTab: "question" | "material" | "courseware" | "examPaper" | "answerSheet" = "material") {
+function renderPage(initialTab: "question" | "material" | "courseware" | "examPaper" | "lecture" | "answerSheet" = "material") {
   return render(
     <MemoryRouter>
       <MyResourcesPage initialTab={initialTab} />
@@ -585,6 +585,85 @@ describe("MyResourcesPage batch actions", () => {
       expect(call?.[0]).toMatchObject({ teacherId: "teacher-1" });
       expect(call?.[0]).not.toHaveProperty("schoolId");
     }
+  });
+
+  it("filters the exam-paper library to issued documents with no recorded answers", async () => {
+    const pendingPaper: ExamPaper = {
+      ...examPaper,
+      id: "paper-pending",
+      title: "待做试卷",
+      classIds: ["class-1"],
+      studentIds: [],
+    };
+    const usedPaper: ExamPaper = {
+      ...examPaperTwo,
+      id: "paper-used",
+      title: "已做试卷",
+      classIds: ["class-1"],
+      studentIds: [],
+    };
+    const unassignedPaper: ExamPaper = {
+      ...examPaper,
+      id: "paper-unassigned",
+      title: "未布置试卷",
+      classIds: [],
+      studentIds: [],
+    };
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([pendingPaper, usedPaper, unassignedPaper]);
+    vi.mocked(analyticsService.listUsedDocumentIds).mockResolvedValue([usedPaper.id]);
+
+    renderPage("examPaper");
+
+    expect(await screen.findByText(pendingPaper.title)).toBeInTheDocument();
+    expect(screen.getByText(usedPaper.title)).toBeInTheDocument();
+    expect(screen.getByText(unassignedPaper.title)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "仅看未做" }));
+
+    expect(screen.getByText(pendingPaper.title)).toBeInTheDocument();
+    expect(screen.queryByText(usedPaper.title)).not.toBeInTheDocument();
+    expect(screen.queryByText(unassignedPaper.title)).not.toBeInTheDocument();
+  });
+
+  it("filters the lecture library to issued documents with no recorded answers", async () => {
+    const pendingLecture: Lecture = {
+      ...answerSheetLecture,
+      id: "lecture-pending",
+      title: "待做讲义",
+      chapterIds: [],
+      classIds: ["class-1"],
+      studentIds: [],
+      hasAnswerSheet: false,
+    };
+    const usedLecture: Lecture = {
+      ...pendingLecture,
+      id: "lecture-used",
+      title: "已做讲义",
+    };
+    const unassignedLecture: Lecture = {
+      ...pendingLecture,
+      id: "lecture-unassigned",
+      title: "未布置讲义",
+      classIds: [],
+    };
+    vi.mocked(lectureService.listLectures).mockResolvedValue([
+      pendingLecture,
+      usedLecture,
+      unassignedLecture,
+    ]);
+    vi.mocked(analyticsService.listUsedDocumentIds).mockResolvedValue([usedLecture.id]);
+
+    renderPage("lecture");
+
+    expect(await screen.findByText(pendingLecture.title)).toBeInTheDocument();
+    expect(screen.getByText(usedLecture.title)).toBeInTheDocument();
+    expect(screen.getByText(unassignedLecture.title)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "仅看未做" }));
+
+    expect(screen.getByText(pendingLecture.title)).toBeInTheDocument();
+    expect(screen.queryByText(usedLecture.title)).not.toBeInTheDocument();
+    expect(screen.queryByText(unassignedLecture.title)).not.toBeInTheDocument();
   });
 
   it("marks an exam paper when its linked lesson has been completed", async () => {

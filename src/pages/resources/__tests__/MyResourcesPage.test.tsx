@@ -9,7 +9,7 @@ import {
   QuestionListItem,
   ResourceCard,
 } from "@/pages/resources/MyResourcesPage";
-import { documentResourceUsageSummary } from "@/lib/document-resource-usage";
+import { documentResourceUsageSummary, isIssuedUnusedDocumentResource } from "@/lib/document-resource-usage";
 import type { AnyClass, Material, Question } from "@/types";
 
 vi.mock("@/components/ui/MathHtml", () => ({
@@ -20,6 +20,36 @@ vi.mock("@/components/ui/MathHtml", () => ({
 vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
   default: () => <div>题库</div>,
 }));
+
+describe("isIssuedUnusedDocumentResource", () => {
+  it("matches documents with an audience and no answer records", () => {
+    expect(isIssuedUnusedDocumentResource(
+      { id: "paper-pending", classIds: ["class-1"], studentIds: [] },
+      new Set(),
+    )).toBe(true);
+  });
+
+  it("excludes documents that have already been used", () => {
+    expect(isIssuedUnusedDocumentResource(
+      { id: "paper-used", classIds: ["class-1"], studentIds: [] },
+      new Set(["paper-used"]),
+    )).toBe(false);
+  });
+
+  it("excludes documents that have not been issued to anyone", () => {
+    expect(isIssuedUnusedDocumentResource(
+      { id: "paper-unassigned", classIds: [], studentIds: [] },
+      new Set(),
+    )).toBe(false);
+  });
+
+  it("supports legacy direct-student audiences", () => {
+    expect(isIssuedUnusedDocumentResource(
+      { id: "lecture-legacy", classIds: [], studentIds: ["student-1"] },
+      new Set(),
+    )).toBe(true);
+  });
+});
 
 describe("documentResourceUsageSummary", () => {
   const classes: AnyClass[] = [
