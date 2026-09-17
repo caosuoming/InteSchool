@@ -597,6 +597,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [resourceFolders, setResourceFolders] = useState<ResourceFolder[]>([]);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(new Set());
   const knownFolderIdsRef = useRef<Set<string>>(new Set());
+  const resourceLoadIdRef = useRef(0);
   const [folderWorking, setFolderWorking] = useState(false);
   const [folderCreateType, setFolderCreateType] = useState<ResourceFolderType | null>(null);
   const [folderCreateResourceIds, setFolderCreateResourceIds] = useState<string[]>([]);
@@ -886,7 +887,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [loadResourceFolders]);
 
   const loadAll = useCallback(async () => {
-    if (activeTab === "question") {
+    const loadId = ++resourceLoadIdRef.current;
+    if (activeTab === "question" || activeTab === "basket") {
       setLoading(false);
       return;
     }
@@ -901,74 +903,116 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       schoolYear: selectedYear || undefined,
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
     };
+    const ownedFilter = { ...baseFilter, teacherId: teacher?.id };
     try {
-      const [lecData, examData, cwData, matData, completedLessons, quotaSnapshot] = await Promise.all([
-        lectureService.listLectures({ ...baseFilter, teacherId: teacher?.id }),
-        examPaperService.listPapers({ ...baseFilter, teacherId: teacher?.id }),
-        coursewareService.listCoursewares({ ...baseFilter, teacherId: teacher?.id }),
-        materialService.listMaterials({ ...baseFilter, teacherId: teacher?.id }),
-        teacher?.id
-          ? lessonCoursewareService.listCoursewares({
-            teacherId: teacher.id,
-            schoolId,
-            lifecycleStatus: "completed",
+      let primaryLectures: Lecture[] = [];
+      let primaryExamPapers: ExamPaper[] = [];
+      let primaryCoursewares: Courseware[] = [];
+      let primaryMaterials: Material[] = [];
+
+      if (activeTab === "lecture") {
+        primaryLectures = await lectureService.listLectures(ownedFilter);
+      } else if (activeTab === "examPaper") {
+        primaryExamPapers = await examPaperService.listPapers(ownedFilter);
+      } else if (activeTab === "courseware") {
+        primaryCoursewares = await coursewareService.listCoursewares(ownedFilter);
+      } else if (activeTab === "material") {
+        primaryMaterials = await materialService.listMaterials(ownedFilter);
+      } else if (activeTab === "answerSheet") {
+        [primaryLectures, primaryExamPapers] = await Promise.all([
+          lectureService.listLectures(ownedFilter),
+          examPaperService.listPapers(ownedFilter),
+        ]);
+      }
+
+      if (resourceLoadIdRef.current !== loadId) return;
+
+      if (activeTab === "lecture" || activeTab === "answerSheet") {
+        const safeLectures = primaryLectures || [];
+        setLectures(safeLectures);
+        setAllLectures(safeLectures);
+      }
+      if (activeTab === "examPaper" || activeTab === "answerSheet") {
+        const safeExamPapers = primaryExamPapers || [];
+        setExamPapers(safeExamPapers);
+        setAllExamPapers(safeExamPapers);
+      }
+      if (activeTab === "courseware") setCoursewares(primaryCoursewares || []);
+      if (activeTab === "material") setMaterials(primaryMaterials || []);
+      setLoading(false);
+
+      if (activeTab !== "answerSheet" && teacher?.id) {
+        void quotaService.getQuota(teacher.id)
+          .then((snapshot) => {
+            if (resourceLoadIdRef.current === loadId) setQuota(snapshot);
           })
-          : Promise.resolve([]),
-        teacher?.id ? quotaService.getQuota(teacher.id).catch(() => null) : Promise.resolve(null),
-      ]);
-      const safeLectures = lecData || [];
-      const safeExamPapers = examData || [];
-      const safeCoursewares = cwData || [];
-      const safeMaterials = matData || [];
-      const documentIds = [
-        ...safeLectures.map((item) => item.id),
-        ...safeExamPapers.map((item) => item.id),
-      ];
-      const [nextResourceAudienceClasses, nextUsedDocumentIds] = teacher?.id
-        ? await Promise.all([
+          .catch(() => undefined);
+      }
+
+      const primaryDocuments = activeTab === "lecture"
+        ? primaryLectures
+        : activeTab === "examPaper"
+          ? primaryExamPapers
+          : [];
+      if (primaryDocuments.length > 0 && teacher?.id) {
+        setResourceAudienceClasses([]);
+        setUsedDocumentIds(new Set());
+        setCompletedLessonSourceKeys(new Set());
+        const documentIds = primaryDocuments.map((item) => item.id);
+        void Promise.all([
           classService.listAllClasses(schoolId, teacher.id).catch(() => []),
           analyticsService.listUsedDocumentIds(documentIds).catch(() => []),
-        ])
-        : [[], []] as [AnyClass[], string[]];
-      setLectures(safeLectures);
-      setExamPapers(safeExamPapers);
-      setCoursewares(safeCoursewares);
-      setMaterials(safeMaterials);
-      setResourceAudienceClasses(nextResourceAudienceClasses);
-      setUsedDocumentIds(new Set(nextUsedDocumentIds));
-      setQuota(quotaSnapshot);
-      // 保存完整列表（含拆解副本），用于查找源资源的拆解副本
-      setAllExamPapers(safeExamPapers);
-      setAllLectures(safeLectures);
-      setCompletedLessonSourceKeys(new Set(
-        (completedLessons || [])
-          .filter((lesson) => lesson.sourceId && ["examPaper", "lecture"].includes(lesson.sourceType))
-          .map((lesson) => `${lesson.sourceType}:${lesson.sourceId}`),
-      ));
-      // 加载试卷/讲义/课件的课后反思（仅按 targetId 关联）
-      const reflectionTargets: string[] = [
-        ...safeExamPapers.map((r) => r.id),
-        ...safeLectures.map((r) => r.id),
-        ...safeCoursewares.map((r) => r.id),
-      ];
-      if (reflectionTargets.length > 0 && teacher) {
-        const teacherRefs = await reflectionService.listByTeacher(teacher.id);
-        const map: Record<string, Reflection[]> = {};
-        (teacherRefs || []).forEach((r) => {
-          if (reflectionTargets.includes(r.targetId)) {
-            if (!map[r.targetId]) map[r.targetId] = [];
-            map[r.targetId].push(r);
-          }
+        ]).then(([nextClasses, nextUsedDocumentIds]) => {
+          if (resourceLoadIdRef.current !== loadId) return;
+          setResourceAudienceClasses(nextClasses);
+          setUsedDocumentIds(new Set(nextUsedDocumentIds));
         });
-        setReflectionsMap(map);
-      } else {
+        void lessonCoursewareService.listCoursewares({
+          teacherId: teacher.id,
+          schoolId,
+          lifecycleStatus: "completed",
+        }).then((completedLessons) => {
+          if (resourceLoadIdRef.current !== loadId) return;
+          setCompletedLessonSourceKeys(new Set(
+            (completedLessons || [])
+              .filter((lesson) => lesson.sourceId && ["examPaper", "lecture"].includes(lesson.sourceType))
+              .map((lesson) => `${lesson.sourceType}:${lesson.sourceId}`),
+          ));
+        }).catch(() => undefined);
+        void coursewareService.listCoursewares(ownedFilter).then((nextCoursewares) => {
+          if (resourceLoadIdRef.current === loadId) setCoursewares(nextCoursewares || []);
+        }).catch(() => undefined);
+      }
+
+      const reflectionTargets = activeTab === "lecture"
+        ? primaryLectures.map((item) => item.id)
+        : activeTab === "examPaper"
+          ? primaryExamPapers.map((item) => item.id)
+          : activeTab === "courseware"
+            ? primaryCoursewares.map((item) => item.id)
+            : [];
+      if (reflectionTargets.length > 0 && teacher?.id) {
+        const targetSet = new Set(reflectionTargets);
+        void Promise.resolve(reflectionService.listByTeacher(teacher.id)).then((teacherRefs) => {
+          if (resourceLoadIdRef.current !== loadId) return;
+          const map: Record<string, Reflection[]> = {};
+          (teacherRefs || []).forEach((reflection) => {
+            if (!targetSet.has(reflection.targetId)) return;
+            if (!map[reflection.targetId]) map[reflection.targetId] = [];
+            map[reflection.targetId].push(reflection);
+          });
+          setReflectionsMap(map);
+        }).catch(() => {
+          if (resourceLoadIdRef.current === loadId) setReflectionsMap({});
+        });
+      } else if (activeTab !== "answerSheet") {
         setReflectionsMap({});
       }
     } catch (e) {
+      if (resourceLoadIdRef.current !== loadId) return;
       console.error("加载资源失败", e);
       setResourceAudienceClasses([]);
       setUsedDocumentIds(new Set());
-    } finally {
       setLoading(false);
     }
   }, [

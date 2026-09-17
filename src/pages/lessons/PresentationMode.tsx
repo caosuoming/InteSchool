@@ -589,6 +589,8 @@ function WritableCanvas({
   const strokesRef = useRef<DrawingStroke[]>(strokes || []);
   const activeStrokeRef = useRef<DrawingStroke | null>(null);
   const drawingBoundsRef = useRef<DOMRect | null>(null);
+  const pendingDrawStartRef = useRef<number | null>(null);
+  const drawFrameRef = useRef<number | null>(null);
   const previousClearTokenRef = useRef(clearToken);
 
   const getHighlighterContext = useCallback(() => {
@@ -661,6 +663,41 @@ function WritableCanvas({
     }
   }, [getHighlighterContext, getInkContext]);
 
+  const flushPendingStrokeDraw = useCallback(() => {
+    if (drawFrameRef.current !== null) {
+      window.cancelAnimationFrame(drawFrameRef.current);
+      drawFrameRef.current = null;
+    }
+    const firstNewPointIndex = pendingDrawStartRef.current;
+    pendingDrawStartRef.current = null;
+    const stroke = activeStrokeRef.current;
+    if (stroke && firstNewPointIndex !== null) {
+      drawStrokeFragment(stroke, firstNewPointIndex);
+    }
+  }, [drawStrokeFragment]);
+
+  const scheduleStrokeDraw = useCallback((firstNewPointIndex: number) => {
+    pendingDrawStartRef.current = pendingDrawStartRef.current === null
+      ? firstNewPointIndex
+      : Math.min(pendingDrawStartRef.current, firstNewPointIndex);
+    if (drawFrameRef.current !== null) return;
+    drawFrameRef.current = window.requestAnimationFrame(() => {
+      drawFrameRef.current = null;
+      const pendingStart = pendingDrawStartRef.current;
+      pendingDrawStartRef.current = null;
+      const stroke = activeStrokeRef.current;
+      if (stroke && pendingStart !== null) {
+        drawStrokeFragment(stroke, pendingStart);
+      }
+    });
+  }, [drawStrokeFragment]);
+
+  const cancelPendingStrokeDraw = useCallback(() => {
+    if (drawFrameRef.current !== null) window.cancelAnimationFrame(drawFrameRef.current);
+    drawFrameRef.current = null;
+    pendingDrawStartRef.current = null;
+  }, []);
+
   const resizeCanvases = useCallback(() => {
     const interactionCanvas = interactionCanvasRef.current;
     const parent = interactionCanvas?.parentElement;
@@ -676,8 +713,9 @@ function WritableCanvas({
       if (canvas.width !== width) canvas.width = width;
       if (canvas.height !== height) canvas.height = height;
     }
+    cancelPendingStrokeDraw();
     redraw();
-  }, [redraw]);
+  }, [cancelPendingStrokeDraw, redraw]);
 
   useEffect(() => {
     resizeCanvases();
@@ -696,25 +734,32 @@ function WritableCanvas({
   useEffect(() => {
     if (previousClearTokenRef.current === clearToken) return;
     previousClearTokenRef.current = clearToken;
+    cancelPendingStrokeDraw();
     strokesRef.current = [];
     activeStrokeRef.current = null;
     onStrokesChange?.([]);
     redraw();
-  }, [clearToken, onStrokesChange, redraw]);
+  }, [cancelPendingStrokeDraw, clearToken, onStrokesChange, redraw]);
 
   useEffect(() => {
     if (!strokes || strokes === strokesRef.current) return;
+    cancelPendingStrokeDraw();
     strokesRef.current = strokes;
     activeStrokeRef.current = null;
     drawingBoundsRef.current = null;
     redraw();
-  }, [redraw, strokes]);
+  }, [cancelPendingStrokeDraw, redraw, strokes]);
 
   useEffect(() => {
+    cancelPendingStrokeDraw();
     activeStrokeRef.current = null;
     drawingBoundsRef.current = null;
     redraw();
-  }, [cancelToken, redraw]);
+  }, [cancelPendingStrokeDraw, cancelToken, redraw]);
+
+  useEffect(() => () => {
+    if (drawFrameRef.current !== null) window.cancelAnimationFrame(drawFrameRef.current);
+  }, []);
 
   const pointFromClientPosition = useCallback((clientX: number, clientY: number): DrawingPoint => {
     const canvas = interactionCanvasRef.current;
@@ -770,8 +815,8 @@ function WritableCanvas({
     if (previous && previous.x === points[0].x && previous.y === points[0].y) points.shift();
     if (points.length === 0) return;
     stroke.points.push(...points);
-    drawStrokeFragment(stroke, firstNewPointIndex);
-  }, [drawStrokeFragment, pointsFromMoveEvent]);
+    scheduleStrokeDraw(firstNewPointIndex);
+  }, [pointsFromMoveEvent, scheduleStrokeDraw]);
 
   useEffect(() => {
     const canvas = interactionCanvasRef.current;
@@ -791,9 +836,12 @@ function WritableCanvas({
         if (!lastPoint || lastPoint.x !== finalPoint.x || lastPoint.y !== finalPoint.y) {
           const firstNewPointIndex = stroke.points.length;
           stroke.points.push(finalPoint);
-          drawStrokeFragment(stroke, firstNewPointIndex);
+          pendingDrawStartRef.current = pendingDrawStartRef.current === null
+            ? firstNewPointIndex
+            : Math.min(pendingDrawStartRef.current, firstNewPointIndex);
         }
       }
+      flushPendingStrokeDraw();
       const nextStrokes = [...strokesRef.current, stroke];
       strokesRef.current = nextStrokes;
       activeStrokeRef.current = null;

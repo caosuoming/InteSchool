@@ -2,8 +2,22 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Question, QuestionFilter } from "../src/types/index.js";
 import type { AppState } from "./types.js";
 
+export type QuestionSortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
+
+export interface QuestionPage {
+  items: Question[];
+  total: number;
+}
+
 interface DatabaseQueryBackend {
   searchQuestions?(filter?: QuestionFilter): Promise<Question[]>;
+  searchQuestionPage?(
+    filter: QuestionFilter,
+    page: number,
+    pageSize: number,
+    sortKey: QuestionSortKey,
+    teacherId: string,
+  ): Promise<QuestionPage>;
 }
 
 interface RuntimeDatabaseContext {
@@ -63,5 +77,17 @@ export const db = {
   async searchQuestions(filter: QuestionFilter = {}): Promise<Question[] | null> {
     const backend = currentContext().backend;
     return backend?.searchQuestions ? backend.searchQuestions(filter) : null;
+  },
+  async searchQuestionPage(
+    filter: QuestionFilter,
+    page: number,
+    pageSize: number,
+    sortKey: QuestionSortKey,
+    teacherId: string,
+  ): Promise<QuestionPage | null> {
+    const backend = currentContext().backend;
+    return backend?.searchQuestionPage
+      ? backend.searchQuestionPage(filter, page, pageSize, sortKey, teacherId)
+      : null;
   },
 };

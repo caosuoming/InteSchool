@@ -565,7 +565,7 @@ describe("MyResourcesPage batch actions", () => {
     });
   });
 
-  it("loads personal resource libraries by teacher without restricting them to the active school", async () => {
+  it("loads only the active personal resource library without restricting it to the active school", async () => {
     useAuthStore.setState((state) => ({
       ...state,
       teacher: { ...state.teacher!, schoolId: "school-2" } as Teacher,
@@ -576,15 +576,13 @@ describe("MyResourcesPage batch actions", () => {
     expect(material.schoolId).toBe("school-1");
     expect(await screen.findByText(material.title)).toBeInTheDocument();
 
-    for (const call of [
-      vi.mocked(lectureService.listLectures).mock.calls[0],
-      vi.mocked(examPaperService.listPapers).mock.calls[0],
-      vi.mocked(coursewareService.listCoursewares).mock.calls[0],
-      vi.mocked(materialService.listMaterials).mock.calls[0],
-    ]) {
-      expect(call?.[0]).toMatchObject({ teacherId: "teacher-1" });
-      expect(call?.[0]).not.toHaveProperty("schoolId");
-    }
+    expect(materialService.listMaterials).toHaveBeenCalled();
+    expect(vi.mocked(materialService.listMaterials).mock.calls[0]?.[0]).toMatchObject({ teacherId: "teacher-1" });
+    expect(vi.mocked(materialService.listMaterials).mock.calls[0]?.[0]).not.toHaveProperty("schoolId");
+    expect(lectureService.listLectures).not.toHaveBeenCalled();
+    expect(examPaperService.listPapers).not.toHaveBeenCalled();
+    expect(coursewareService.listCoursewares).not.toHaveBeenCalled();
+    expect(lessonCoursewareService.listCoursewares).not.toHaveBeenCalled();
   });
 
   it("marks an exam paper when its linked lesson has been completed", async () => {
