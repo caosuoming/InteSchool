@@ -1,6 +1,18 @@
 import { classAudienceLabel } from "@/lib/class-audience";
 import type { AnyClass, ExamPaper, Lecture } from "@/types";
 
+type DocumentUsageResource = Pick<Lecture, "id" | "classIds" | "studentIds">
+  | Pick<ExamPaper, "id" | "classIds" | "studentIds">;
+
+export function isIssuedUnusedDocumentResource(
+  resource: DocumentUsageResource,
+  usedDocumentIds: ReadonlySet<string>,
+): boolean {
+  const hasAudience = (resource.classIds?.length || 0) > 0
+    || (resource.studentIds?.length || 0) > 0;
+  return hasAudience && !usedDocumentIds.has(resource.id);
+}
+
 export function documentResourceUsageSummary(
   resource: Pick<Lecture, "id" | "classIds"> | Pick<ExamPaper, "id" | "classIds">,
   classes: AnyClass[],

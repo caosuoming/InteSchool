@@ -86,7 +86,7 @@ import {
   resolveBasketAudienceStudentIds,
   treeNameMap,
 } from "@/lib/basket-audience";
-import { documentResourceUsageSummary } from "@/lib/document-resource-usage";
+import { documentResourceUsageSummary, isIssuedUnusedDocumentResource } from "@/lib/document-resource-usage";
 import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import { createBlankLessonCourseware } from "@/lib/lesson-courseware-create";
 import {
@@ -579,6 +579,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [resourcePage, setResourcePage] = useState(1);
   const [resourcePageSize, setResourcePageSize] = useState(20);
   const [onlyUncategorized, setOnlyUncategorized] = useState(false);
+  const [onlyPendingDocuments, setOnlyPendingDocuments] = useState(false);
   const [selectedGrade, setSelectedGrade] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
   const [selectedSemester, setSelectedSemester] = useState("");
@@ -1545,10 +1546,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   }, [activeTab, lectures, examPapers, coursewares, materials, answerSheets, sortKey]);
 
-  // 仅看未分类筛选
+  // 非试卷/讲义库保留“仅看未分类”；试卷/讲义的“仅看未做”在同源分组后处理。
   const displayedData = useMemo(() => {
     let result = sortedData;
-    if (onlyUncategorized && noTreeSelection) {
+    if (onlyUncategorized && noTreeSelection && activeTab !== "examPaper" && activeTab !== "lecture") {
       result = result.filter((item) => {
         const chapterIds = (item as { chapterIds?: string[] }).chapterIds ?? [];
         if (activeTab === "answerSheet") return chapterIds.length === 0;
@@ -1625,19 +1626,52 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     () => (activeTab === "examPaper"
       ? (displayedData as ExamPaper[])
         .filter((paper) => !paper.isExtractCopy)
+        .filter((paper) => {
+          if (!onlyPendingDocuments || !noTreeSelection) return true;
+          const extractCopies = allExamPapers.filter(
+            (copy) => copy.isExtractCopy && copy.sourceResourceId === paper.id,
+          );
+          const visibleDocuments = extractCopies.length > 0 ? extractCopies : [paper];
+          return visibleDocuments.some((document) => (
+            isIssuedUnusedDocumentResource(document, usedDocumentIds)
+          ));
+        })
         .filter((paper) => !selectedDocumentCategory
           || documentCategory(paper, allExamPapers) === selectedDocumentCategory)
       : []),
-    [activeTab, allExamPapers, displayedData, selectedDocumentCategory],
+    [
+      activeTab,
+      allExamPapers,
+      displayedData,
+      noTreeSelection,
+      onlyPendingDocuments,
+      selectedDocumentCategory,
+      usedDocumentIds,
+    ],
   );
   const lecturesFiltered = useMemo(
     () => (activeTab === "lecture"
       ? (displayedData as Lecture[])
         .filter((lecture) => !lecture.isExtractCopy)
+        .filter((lecture) => {
+          if (!onlyPendingDocuments || !noTreeSelection) return true;
+          const extractCopy = allLectures.find(
+            (copy) => copy.isExtractCopy && copy.sourceResourceId === lecture.id,
+          );
+          return isIssuedUnusedDocumentResource(extractCopy || lecture, usedDocumentIds);
+        })
         .filter((lecture) => !selectedDocumentCategory
           || documentCategory(lecture, allLectures) === selectedDocumentCategory)
       : []),
-    [activeTab, allLectures, displayedData, selectedDocumentCategory],
+    [
+      activeTab,
+      allLectures,
+      displayedData,
+      noTreeSelection,
+      onlyPendingDocuments,
+      selectedDocumentCategory,
+      usedDocumentIds,
+    ],
   );
 
   const baseResourceListData = useMemo<ResourceListItem[]>(() => {
@@ -1713,6 +1747,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     checkedKnowledge,
     keyword,
     onlyUncategorized,
+    onlyPendingDocuments,
     resourcePageSize,
     selectedExamPaperTypeId,
     selectedDocumentCategory,
@@ -3292,19 +3327,29 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               />
               {noTreeSelection && (
                 <button
-                  onClick={() => setOnlyUncategorized((v) => !v)}
+                  onClick={() => {
+                    if (activeTab === "examPaper" || activeTab === "lecture") {
+                      setOnlyPendingDocuments((value) => !value);
+                    } else {
+                      setOnlyUncategorized((value) => !value);
+                    }
+                  }}
                   className={cn(
                     "px-2.5 py-1 rounded text-xs border transition-all flex items-center gap-1",
-                    onlyUncategorized
+                    (activeTab === "examPaper" || activeTab === "lecture"
+                      ? onlyPendingDocuments
+                      : onlyUncategorized)
                       ? "bg-amber-100 border-amber-300 text-amber-800"
                       : "bg-paper border-ink-200 text-ink-600 hover:border-ink-300",
                   )}
-                  title={activeTab === "answerSheet"
-                    ? "仅显示未关联任何章节课的答题卡"
-                    : "仅显示未关联任何章节/知识点的资源"}
+                  title={activeTab === "examPaper" || activeTab === "lecture"
+                    ? "仅显示已设置适用对象且尚未录入答题情况的文档"
+                    : activeTab === "answerSheet"
+                      ? "仅显示未关联任何章节课的答题卡"
+                      : "仅显示未关联任何章节/知识点的资源"}
                 >
                   <Filter className="w-3 h-3" />
-                  仅看未分类
+                  {activeTab === "examPaper" || activeTab === "lecture" ? "仅看未做" : "仅看未分类"}
                 </button>
               )}
               <ArrowUpDown className="w-3.5 h-3.5 text-ink-400" />
@@ -3368,9 +3413,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 ? (noTreeSelection && onlyUncategorized
                   ? "当前没有未分类答题卡"
                   : "从试卷或讲义中制作答题卡后会自动收录到这里")
-                : (noTreeSelection && onlyUncategorized
-                  ? "当前没有未分类资源"
-                  : "点击右上角「上传资源」按钮添加资源")}
+                : (activeTab === "examPaper" || activeTab === "lecture")
+                  ? (noTreeSelection && onlyPendingDocuments
+                    ? "当前没有已出未做的文档"
+                    : "点击右上角「上传资源」按钮添加资源")
+                  : (noTreeSelection && onlyUncategorized
+                    ? "当前没有未分类资源"
+                    : "点击右上角「上传资源」按钮添加资源")}
             />
           ) : (
             <div className="space-y-3">
