@@ -227,6 +227,16 @@ export const serviceParameters = {
       "teacherId",
       "schoolId"
     ],
+    "getSaveStatus": [
+      "teacherId",
+      "schoolId"
+    ],
+    "saveAlbumAsOwnResources": [
+      "subject",
+      "albumId",
+      "teacherId",
+      "schoolId"
+    ],
     "saveAsOwnResource": [
       "donationId",
       "teacherId",

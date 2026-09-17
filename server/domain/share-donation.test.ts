@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
-import type { Chapter, Courseware, ExamPaper, KnowledgePoint, Lecture, Material, Question, ShareRecord } from "../../src/types/index.js";
+import type { Chapter, Courseware, ExamPaper, KnowledgePoint, Lecture, Material, Question, ResourceFolder, ShareRecord } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { shareService } from "./share.js";
 
@@ -412,6 +412,196 @@ describe("platform resource donations", () => {
         });
       expect((appState.materials as Material[]).find((item) => item.teacherId === "teacher-c")?.title)
         .toBe("函数素材（副本）");
+    });
+  });
+
+  it("copies embedded questions with decomposed documents and reuses similar owned questions", async () => {
+    const appState = state();
+    const existing = question("q-c-existing", "teacher-c", "school-c", "", "", {
+      analysis: "接收者已有解析",
+      summary: "接收者已有总结",
+      chapterIds: [],
+      knowledgePointIds: [],
+    });
+    const second = question("q-b-second", "teacher-b", "school-b", "ch-b", "kp-b", {
+      stem: "已知 g(x)=x³，求 g'(x)。",
+      options: undefined,
+      answer: "3x²",
+      analysis: "使用幂函数求导公式。",
+      type: "short",
+    });
+    (appState.questions as Question[]).push(existing, second);
+    (appState.examPapers as ExamPaper[]).push({
+      id: "paper-extract-b",
+      teacherId: "teacher-b",
+      schoolId: "school-b",
+      title: "拆解函数试卷",
+      chapterIds: ["ch-b"],
+      knowledgePointIds: ["kp-b"],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期",
+      duration: 60,
+      totalScore: 10,
+      questions: [
+        {
+          id: "epq-b-1",
+          questionId: "q-b",
+          stem: "函数 f(x)=x² 的导数是什么？",
+          options: ["2x", "x", "x²", "2"],
+          answer: "A",
+          analysis: "平台原解析",
+          score: 5,
+          type: "single",
+        },
+        {
+          id: "epq-b-2",
+          questionId: "q-b-second",
+          stem: second.stem,
+          answer: second.answer,
+          analysis: second.analysis,
+          score: 5,
+          type: "short",
+        },
+      ],
+      contentBlocks: [
+        { id: "block-b-1", type: "question", content: "函数 f(x)=x² 的导数是什么？", questionId: "q-b", examPaperQuestionId: "epq-b-1" },
+        { id: "block-b-2", type: "question", content: second.stem, questionId: "q-b-second", examPaperQuestionId: "epq-b-2" },
+      ],
+      isExtractCopy: true,
+      sourceResourceId: "paper-origin-b",
+      extractStatus: "done",
+      status: "draft",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await runWithState(appState, async () => {
+      const [donation] = await shareService.donateResources("teacher-b", "school-b", [
+        { resourceType: "examPaper", resourceId: "paper-extract-b" },
+      ]);
+      expect(donation.embeddedQuestionSnapshots?.map((item) => item.id).sort())
+        .toEqual(["q-b", "q-b-second"]);
+
+      appState.questions = (appState.questions as Question[])
+        .filter((item) => item.teacherId !== "teacher-b");
+
+      const result = await shareService.saveDonationAsOwnResource(
+        donation.id,
+        "teacher-c",
+        "school-c",
+      );
+      const copied = (appState.examPapers as ExamPaper[]).find((item) => item.id === result.resourceId)!;
+      expect(copied.teacherId).toBe("teacher-c");
+      expect(copied.questions[0].questionId).toBe("q-c-existing");
+      expect(copied.questions[1].questionId).toBeTruthy();
+      expect(copied.questions[1].questionId).not.toBe("q-b-second");
+      expect(copied.contentBlocks?.map((block) => block.questionId)).toEqual(
+        copied.questions.map((item) => item.questionId),
+      );
+
+      const copiedQuestion = (appState.questions as Question[]).find((item) =>
+        item.id === copied.questions[1].questionId,
+      );
+      expect(copiedQuestion).toMatchObject({
+        teacherId: "teacher-c",
+        schoolId: "school-c",
+        stem: `${second.stem}（副本）`,
+        platformSourceDonationIds: [donation.id],
+      });
+      expect((appState.questions as Question[]).find((item) => item.id === "q-c-existing")?.platformSourceDonationIds)
+        .toBeUndefined();
+    });
+  });
+
+  it("copies a complete platform album once and reports saved resource and album status", async () => {
+    const appState = state();
+    const base = {
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期" as const,
+      duration: 60,
+      totalScore: 100,
+      questions: [],
+      status: "draft" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    (appState.examPapers as ExamPaper[]).push(
+      { ...base, id: "paper-platform-album-1", title: "平台专题一" },
+      { ...base, id: "paper-platform-album-2", title: "平台专题二" },
+    );
+    appState.resourceFolders = [{
+      id: "platform-album-source",
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      resourceType: "examPaper",
+      name: "平台函数专题",
+      resourceIds: ["paper-platform-album-1", "paper-platform-album-2"],
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    }];
+
+    await runWithState(appState, async () => {
+      const donations = await shareService.donateResources("teacher-a", "school-a", [
+        { resourceType: "examPaper", resourceId: "paper-platform-album-1", albumId: "platform-album-source" },
+        { resourceType: "examPaper", resourceId: "paper-platform-album-2", albumId: "platform-album-source" },
+      ]);
+      expect(await shareService.listPlatformSaveStatus("teacher-c", "school-c")).toEqual({
+        savedDonationIds: [],
+        savedAlbumKeys: [],
+      });
+
+      const beforeCount = (appState.examPapers as ExamPaper[]).filter((item) => item.teacherId === "teacher-c").length;
+      const first = await shareService.saveDonationAlbumAsOwnResources(
+        "数学",
+        "platform-album-source",
+        "teacher-c",
+        "school-c",
+      );
+      expect(first).toMatchObject({
+        albumKey: "数学:platform-album-source",
+        alreadySaved: false,
+      });
+      expect(first.resourceIds).toHaveLength(2);
+      expect(((appState.resourceFolders || []) as ResourceFolder[]).find((folder) => folder.id === first.folderId)).toMatchObject({
+        teacherId: "teacher-c",
+        schoolId: "school-c",
+        resourceType: "examPaper",
+        name: "平台函数专题（副本）",
+        platformSourceAlbumId: "platform-album-source",
+        platformSourceSubject: "数学",
+      });
+      expect(await shareService.listPlatformSaveStatus("teacher-c", "school-c")).toEqual({
+        savedDonationIds: expect.arrayContaining(donations.map((item) => item.id)),
+        savedAlbumKeys: ["数学:platform-album-source"],
+      });
+
+      const second = await shareService.saveDonationAlbumAsOwnResources(
+        "数学",
+        "platform-album-source",
+        "teacher-c",
+        "school-c",
+      );
+      expect(second).toEqual({ ...first, alreadySaved: true });
+      expect((appState.examPapers as ExamPaper[]).filter((item) => item.teacherId === "teacher-c")).toHaveLength(beforeCount + 2);
+
+      const donorBefore = (appState.examPapers as ExamPaper[]).filter((item) => item.teacherId === "teacher-a").length;
+      const ownAlbumCopy = await shareService.saveDonationAlbumAsOwnResources(
+        "数学",
+        "platform-album-source",
+        "teacher-a",
+        "school-a",
+      );
+      expect(ownAlbumCopy.resourceIds).not.toEqual(["paper-platform-album-1", "paper-platform-album-2"]);
+      expect((appState.examPapers as ExamPaper[]).filter((item) => item.teacherId === "teacher-a")).toHaveLength(donorBefore + 2);
+      expect(((appState.resourceFolders || []) as ResourceFolder[]).find((folder) => folder.id === "platform-album-source")?.resourceIds)
+        .toEqual(["paper-platform-album-1", "paper-platform-album-2"]);
     });
   });
 

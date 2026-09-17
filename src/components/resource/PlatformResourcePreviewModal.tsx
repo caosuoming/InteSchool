@@ -68,7 +68,7 @@ export function PlatformResourcePreviewModal({
               disabled={saved}
             >
               <Copy className="h-3.5 w-3.5" />
-              {saved ? "已另存" : "另存"}
+              {saved ? "已建副本" : "另存"}
             </Button>
           )}
         </div>

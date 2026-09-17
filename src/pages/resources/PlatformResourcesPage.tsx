@@ -116,6 +116,12 @@ type PlatformDisplayEntry =
   | { kind: "album"; group: PlatformAlbumGroup }
   | { kind: "resource"; item: PlatformResourceItem };
 
+function platformDisplayEntryKey(entry: PlatformDisplayEntry): string {
+  return entry.kind === "album"
+    ? `album:${entry.group.key}`
+    : `resource:${entry.item.shareId}`;
+}
+
 function platformAlbumUpdatedAt(group: PlatformAlbumGroup): string {
   return group.items.reduce((latest, item) => item.updatedAt > latest ? item.updatedAt : latest, "");
 }
@@ -488,6 +494,10 @@ export default function PlatformResourcesPage() {
   const [filters, setFilters] = useState<PlatformResourceFilters>(emptyFilters);
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [addingAlbumKeys, setAddingAlbumKeys] = useState<Set<string>>(new Set());
+  const [savedAlbumKeys, setSavedAlbumKeys] = useState<Set<string>>(new Set());
+  const [selectedEntryKeys, setSelectedEntryKeys] = useState<Set<string>>(new Set());
+  const [batchSaving, setBatchSaving] = useState(false);
   const [ownContributionIds, setOwnContributionIds] = useState<Set<string>>(new Set());
   const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(new Set());
   const [expandedAlbumKeys, setExpandedAlbumKeys] = useState<Set<string>>(new Set());
@@ -526,7 +536,7 @@ export default function PlatformResourcesPage() {
     }
     setLoading(true);
     try {
-      const [donations, myDonations, contributorList, myPrivileges, chapterData, knowledgeData, correctionList] = await Promise.all([
+      const [donations, myDonations, contributorList, myPrivileges, chapterData, knowledgeData, correctionList, saveStatus] = await Promise.all([
         shareService.listPublicDonations(teacher.id),
         shareService.listDonationStatus(teacher.id),
         shareService.listDonationContributors(teacher.id),
@@ -534,6 +544,7 @@ export default function PlatformResourcesPage() {
         shareService.getPlatformDirectoryTree("chapter", teacher.id),
         shareService.getPlatformDirectoryTree("knowledge", teacher.id),
         shareService.listDonationCorrections(teacher.id),
+        donationService.getSaveStatus(teacher.id, schoolId),
       ]);
       const nextItems = donations.map(snapshotToItem).filter((item): item is PlatformResourceItem => Boolean(item));
       setItems(nextItems);
@@ -543,6 +554,8 @@ export default function PlatformResourcesPage() {
       setChapterTree(chapterData);
       setKnowledgeTree(knowledgeData);
       setCorrections(correctionList);
+      setSavedIds(new Set(saveStatus.savedDonationIds));
+      setSavedAlbumKeys(new Set(saveStatus.savedAlbumKeys));
       if (!platformAdmin) setSelectedSubject(teacherSubject);
     } catch (error) {
       console.error("加载平台资源失败", error);
@@ -550,7 +563,7 @@ export default function PlatformResourcesPage() {
     } finally {
       setLoading(false);
     }
-  }, [platformAdmin, teacher, teacherSubject]);
+  }, [platformAdmin, schoolId, teacher, teacherSubject]);
 
   useEffect(() => {
     void loadAll();
@@ -757,6 +770,52 @@ export default function PlatformResourcesPage() {
     return entries.sort((left, right) => comparePlatformDisplayEntries(left, right, sortKey));
   }, [displayedItems, platformAlbumGroups, sortKey, typeFilter]);
 
+  const pageEntries = useMemo<PlatformDisplayEntry[]>(() => (
+    typeFilter === "album"
+      ? platformAlbumGroups.map((group) => ({ kind: "album" as const, group }))
+      : mixedPlatformEntries
+  ), [mixedPlatformEntries, platformAlbumGroups, typeFilter]);
+
+  const pageSelectableKeys = useMemo(() => pageEntries
+    .filter((entry) => entry.kind === "album"
+      ? !savedAlbumKeys.has(entry.group.key)
+      : !ownContributionIds.has(entry.item.shareId) && !savedIds.has(entry.item.shareId))
+    .map(platformDisplayEntryKey), [pageEntries, ownContributionIds, savedAlbumKeys, savedIds]);
+
+  const allPageSelected = pageSelectableKeys.length > 0
+    && pageSelectableKeys.every((key) => selectedEntryKeys.has(key));
+  const selectedPageCount = pageEntries.reduce(
+    (count, entry) => count + (selectedEntryKeys.has(platformDisplayEntryKey(entry)) ? 1 : 0),
+    0,
+  );
+
+  useEffect(() => {
+    const visibleKeys = new Set(pageEntries.map(platformDisplayEntryKey));
+    setSelectedEntryKeys((current) => {
+      const next = new Set([...current].filter((key) => visibleKeys.has(key)));
+      if (next.size === current.size && [...next].every((key) => current.has(key))) return current;
+      return next;
+    });
+  }, [pageEntries]);
+
+  const toggleEntrySelection = (key: string) => {
+    setSelectedEntryKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const togglePageSelection = () => {
+    setSelectedEntryKeys((current) => {
+      const next = new Set(current);
+      if (allPageSelected) pageSelectableKeys.forEach((key) => next.delete(key));
+      else pageSelectableKeys.forEach((key) => next.add(key));
+      return next;
+    });
+  };
+
   const updateFilter = (key: keyof PlatformResourceFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
   };
@@ -843,6 +902,90 @@ export default function PlatformResourcesPage() {
         next.delete(item.shareId);
         return next;
       });
+    }
+  };
+
+  const saveAlbumToMyResources = async (group: PlatformAlbumGroup, notify = true): Promise<boolean> => {
+    if (!teacher) return false;
+    setAddingAlbumKeys((current) => new Set(current).add(group.key));
+    try {
+      await donationService.saveAlbumAsOwnResources(group.subject, group.album.id, teacher.id, schoolId);
+      setSavedAlbumKeys((current) => new Set(current).add(group.key));
+      setSavedIds((current) => {
+        const next = new Set(current);
+        group.items.forEach((item) => {
+          if (!ownContributionIds.has(item.shareId)) next.add(item.shareId);
+        });
+        return next;
+      });
+      if (notify) toast.success("专辑副本已创建", group.album.name);
+      return true;
+    } catch (error: any) {
+      if (notify) toast.error("创建专辑副本失败", error?.message);
+      return false;
+    } finally {
+      setAddingAlbumKeys((current) => {
+        const next = new Set(current);
+        next.delete(group.key);
+        return next;
+      });
+    }
+  };
+
+  const handleBatchSave = async () => {
+    if (!teacher || selectedEntryKeys.size === 0) return;
+    setBatchSaving(true);
+    let savedCount = 0;
+    let conflictCount = 0;
+    let failedCount = 0;
+    const remaining = new Set<string>();
+    try {
+      for (const entry of pageEntries) {
+        const key = platformDisplayEntryKey(entry);
+        if (!selectedEntryKeys.has(key)) continue;
+        if (entry.kind === "album") {
+          if (savedAlbumKeys.has(entry.group.key)) continue;
+          const saved = await saveAlbumToMyResources(entry.group, false);
+          if (saved) savedCount += 1;
+          else {
+            failedCount += 1;
+            remaining.add(key);
+          }
+          continue;
+        }
+
+        const item = entry.item;
+        if (ownContributionIds.has(item.shareId) || savedIds.has(item.shareId)) continue;
+        try {
+          const check = await donationService.checkSaveAsOwnResource(item.shareId, teacher.id, schoolId);
+          if (!check.canSave) {
+            if (check.alreadySaved) {
+              setSavedIds((current) => new Set(current).add(item.shareId));
+            } else {
+              failedCount += 1;
+              remaining.add(key);
+            }
+            continue;
+          }
+          if (check.conflict) {
+            conflictCount += 1;
+            remaining.add(key);
+            continue;
+          }
+          await donationService.saveAsOwnResource(item.shareId, teacher.id, schoolId);
+          setSavedIds((current) => new Set(current).add(item.shareId));
+          savedCount += 1;
+        } catch {
+          failedCount += 1;
+          remaining.add(key);
+        }
+      }
+      setSelectedEntryKeys(remaining);
+      if (savedCount > 0) toast.success(`已创建 ${savedCount} 项副本`);
+      if (conflictCount > 0) toast.warning(`${conflictCount} 道相似题目需要单独处理查重后再创建副本`);
+      if (failedCount > 0) toast.error(`${failedCount} 项副本创建失败，请重试`);
+    } finally {
+      setBatchSaving(false);
     }
   };
 
@@ -1348,9 +1491,35 @@ export default function PlatformResourcesPage() {
                 </button>
               );
             })}
-            <span className="ml-auto text-xs text-ink-400">
-              共 {typeFilter === "album" ? platformAlbumGroups.length : mixedPlatformEntries.length} 项
-            </span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <label className={cn(
+                "flex items-center gap-1.5 text-xs text-ink-600",
+                pageSelectableKeys.length === 0 && "cursor-not-allowed opacity-50",
+              )}>
+                <input
+                  type="checkbox"
+                  aria-label="本页全选"
+                  checked={allPageSelected}
+                  disabled={pageSelectableKeys.length === 0 || batchSaving}
+                  onChange={togglePageSelection}
+                  className="h-3.5 w-3.5 rounded border-ink-300 accent-amber-500"
+                />
+                本页全选
+              </label>
+              <Button
+                variant="gold"
+                size="sm"
+                loading={batchSaving}
+                disabled={selectedPageCount === 0}
+                onClick={() => void handleBatchSave()}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                批量创建副本{selectedPageCount > 0 ? `（${selectedPageCount}）` : ""}
+              </Button>
+              <span className="text-xs text-ink-400">
+                共 {typeFilter === "album" ? platformAlbumGroups.length : mixedPlatformEntries.length} 项
+              </span>
+            </div>
           </div>
 
           <div className="mb-4 rounded-lg border border-ink-100 bg-mist/30 p-3">
@@ -1468,6 +1637,14 @@ export default function PlatformResourcesPage() {
                       className="overflow-hidden rounded-lg border border-amber-200 bg-paper"
                     >
                       <div className="flex flex-wrap items-center gap-2 bg-amber-50/70 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择专辑：${group.album.name}`}
+                          checked={selectedEntryKeys.has(`album:${group.key}`)}
+                          disabled={savedAlbumKeys.has(group.key) || batchSaving}
+                          onChange={() => toggleEntrySelection(`album:${group.key}`)}
+                          className="h-3.5 w-3.5 flex-none rounded border-ink-300 accent-amber-500"
+                        />
                         <button
                           type="button"
                           onClick={() => togglePlatformAlbum(group.key)}
@@ -1488,8 +1665,19 @@ export default function PlatformResourcesPage() {
                         <span className="text-xs text-ink-500">{group.album.libraryLabel} · {group.items.length} 个文档</span>
                         <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">{group.subject}</span>
                         {group.album.pinned && <Pin className="h-3.5 w-3.5 text-amber-700" aria-label="已置顶" />}
+                        <Button
+                          variant="gold"
+                          size="sm"
+                          className="ml-auto"
+                          loading={addingAlbumKeys.has(group.key)}
+                          disabled={savedAlbumKeys.has(group.key) || batchSaving}
+                          onClick={() => void saveAlbumToMyResources(group)}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          {savedAlbumKeys.has(group.key) ? "已建副本" : "创建副本"}
+                        </Button>
                         {canManageAlbum && (
-                          <div className="ml-auto flex flex-wrap items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1536,7 +1724,7 @@ export default function PlatformResourcesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className={cn(!canManageAlbum && "ml-auto", "text-red-600 hover:bg-red-50 hover:text-red-700")}
+                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
                             loading={albumWorkingKey === group.key}
                             disabled={albumWorkingKey !== null && albumWorkingKey !== group.key}
                             onClick={() => void deletePlatformAlbum(group)}
@@ -1568,6 +1756,20 @@ export default function PlatformResourcesPage() {
                                   <span className="min-w-0 flex-1 truncate text-sm text-ink-800">{item.title}</span>
                                 )}
                                 <span className="text-xs text-ink-400">{timeAgo(item.updatedAt)}</span>
+                                <Button
+                                  variant="gold"
+                                  size="sm"
+                                  loading={addingIds.has(item.shareId)}
+                                  disabled={ownContributionIds.has(item.shareId) || savedIds.has(item.shareId) || batchSaving}
+                                  onClick={() => void handleAddToMyResources(item)}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                  {ownContributionIds.has(item.shareId)
+                                    ? "本人捐赠"
+                                    : savedIds.has(item.shareId)
+                                      ? "已建副本"
+                                      : "创建副本"}
+                                </Button>
                                 {canManageAlbum && (
                                   <Button
                                     variant="ghost"
@@ -1610,6 +1812,14 @@ export default function PlatformResourcesPage() {
                       className="overflow-hidden rounded-lg border border-amber-200 bg-paper"
                     >
                       <div className="flex flex-wrap items-center gap-2 bg-amber-50/70 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择专辑：${group.album.name}`}
+                          checked={selectedEntryKeys.has(`album:${group.key}`)}
+                          disabled={savedAlbumKeys.has(group.key) || batchSaving}
+                          onChange={() => toggleEntrySelection(`album:${group.key}`)}
+                          className="h-3.5 w-3.5 flex-none rounded border-ink-300 accent-amber-500"
+                        />
                         <button
                           type="button"
                           onClick={() => togglePlatformAlbum(group.key)}
@@ -1630,11 +1840,22 @@ export default function PlatformResourcesPage() {
                         <span className="text-xs text-ink-500">{group.album.libraryLabel} · {group.items.length} 个文档</span>
                         <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">{group.subject}</span>
                         {group.album.pinned && <Pin className="h-3.5 w-3.5 text-amber-700" aria-label="已置顶" />}
+                        <Button
+                          variant="gold"
+                          size="sm"
+                          className="ml-auto"
+                          loading={addingAlbumKeys.has(group.key)}
+                          disabled={savedAlbumKeys.has(group.key) || batchSaving}
+                          onClick={() => void saveAlbumToMyResources(group)}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          {savedAlbumKeys.has(group.key) ? "已建副本" : "创建副本"}
+                        </Button>
                         {canDeleteAlbum && (
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="ml-auto text-red-600 hover:bg-red-50 hover:text-red-700"
+                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
                             loading={albumWorkingKey === group.key}
                             disabled={albumWorkingKey !== null && albumWorkingKey !== group.key}
                             onClick={() => void deletePlatformAlbum(group)}
@@ -1666,6 +1887,20 @@ export default function PlatformResourcesPage() {
                                   <span className="min-w-0 flex-1 truncate text-sm text-ink-800">{item.title}</span>
                                 )}
                                 <span className="text-xs text-ink-400">{timeAgo(item.updatedAt)}</span>
+                                <Button
+                                  variant="gold"
+                                  size="sm"
+                                  loading={addingIds.has(item.shareId)}
+                                  disabled={ownContributionIds.has(item.shareId) || savedIds.has(item.shareId) || batchSaving}
+                                  onClick={() => void handleAddToMyResources(item)}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                  {ownContributionIds.has(item.shareId)
+                                    ? "本人捐赠"
+                                    : savedIds.has(item.shareId)
+                                      ? "已建副本"
+                                      : "创建副本"}
+                                </Button>
                               </div>
                             );
                           })}
@@ -1688,6 +1923,14 @@ export default function PlatformResourcesPage() {
                 return (
                   <div key={item.shareId} className="card-base p-4 hover:shadow-cardHover transition-all group">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <input
+                        type="checkbox"
+                        aria-label={`选择资源：${item.title}`}
+                        checked={selectedEntryKeys.has(`resource:${item.shareId}`)}
+                        disabled={ownContributionIds.has(item.shareId) || savedIds.has(item.shareId) || batchSaving}
+                        onChange={() => toggleEntrySelection(`resource:${item.shareId}`)}
+                        className="h-3.5 w-3.5 flex-none rounded border-ink-300 accent-amber-500"
+                      />
                       <span className="tag-gold">{resourceTypeLabel[item.resourceType]}</span>
                       {item.donationAlbum && (
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
@@ -1750,14 +1993,14 @@ export default function PlatformResourcesPage() {
                           variant="gold"
                           size="sm"
                           loading={addingIds.has(item.shareId)}
-                          disabled={ownContributionIds.has(item.shareId) || savedIds.has(item.shareId)}
+                          disabled={ownContributionIds.has(item.shareId) || savedIds.has(item.shareId) || batchSaving}
                           onClick={() => handleAddToMyResources(item)}
                         >
                           <Plus className="w-3.5 h-3.5" />
                           {ownContributionIds.has(item.shareId)
                             ? "本人捐赠"
                             : savedIds.has(item.shareId)
-                              ? "已创建"
+                              ? "已建副本"
                               : "创建副本"}
                         </Button>
                       </div>
