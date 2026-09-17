@@ -399,6 +399,35 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).not.toContain("$f(x)");
   });
 
+  it("keeps digits, parentheses, and numeric scripts upright in exported Office math", async () => {
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: "计算 $(x_2+1)^3+a_{12}$。",
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: "计算 $(x_2+1)^3+a_{12}$。",
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    const xml = new DOMParser().parseFromString(documentXml, "application/xml");
+    const mathRuns = Array.from(xml.getElementsByTagName("m:r"));
+    const styleOf = (run: Element) => run.getElementsByTagName("m:sty")[0]?.getAttribute("m:val");
+
+    const uprightRuns = mathRuns.filter((run) => /[\d()]/.test(run.textContent || ""));
+    expect(uprightRuns.length).toBeGreaterThan(0);
+    expect(uprightRuns.every((run) => styleOf(run) === "p")).toBe(true);
+
+    const variableRuns = mathRuns.filter((run) => ["x", "a"].includes(run.textContent || ""));
+    expect(variableRuns.length).toBeGreaterThan(0);
+    expect(variableRuns.every((run) => styleOf(run) !== "p")).toBe(true);
+  });
+
   it("exports summation limits above and below with the summand attached", async () => {
     const formulaPaper: ExamPaper = {
       ...structuredPaper,
