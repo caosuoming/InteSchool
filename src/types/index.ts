@@ -1711,6 +1711,10 @@ export interface ResourceFolder {
   name: string;
   resourceIds: string[];
   pinned: boolean;
+  /** 从平台专辑创建副本时记录平台专辑 ID，用于阻止重复创建。 */
+  platformSourceAlbumId?: string;
+  /** 平台专辑所属学科；与 album ID 一起唯一标识平台专辑。 */
+  platformSourceSubject?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1867,6 +1871,8 @@ export interface ShareRecord {
   resourceTitle: string;
   /** 捐赠资源快照 */
   resourceSnapshot?: Question | ExamPaper | Lecture | Courseware | Material;
+  /** 文档中引用的题目快照；保证拆解文档另存时不依赖捐赠者后续题库状态。 */
+  embeddedQuestionSnapshots?: Question[];
   /** 捐赠时同步的章节与知识点路径 */
   directorySnapshot?: DonationDirectorySnapshot;
   /** 捐赠时所属学科；平台资源按该字段隔离和管理。 */
@@ -1981,6 +1987,18 @@ export interface PlatformSaveResult {
   resourceType: ShareableResourceType;
   resourceId: string;
   merged: boolean;
+}
+
+export interface PlatformSaveStatus {
+  savedDonationIds: string[];
+  savedAlbumKeys: string[];
+}
+
+export interface PlatformAlbumSaveResult {
+  albumKey: string;
+  folderId: string;
+  resourceIds: string[];
+  alreadySaved: boolean;
 }
 
 export interface DonorStatus {

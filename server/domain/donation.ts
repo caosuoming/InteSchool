@@ -7,11 +7,13 @@ import type {
   Lecture,
   PlatformAttributeOption,
   PlatformAttributeOptionType,
+  PlatformAlbumSaveResult,
   PlatformDonation,
   PlatformResourceSnapshot,
   PlatformSaveCheckResult,
   PlatformSaveDecision,
   PlatformSaveResult,
+  PlatformSaveStatus,
   Question,
   ShareRecord,
   ShareableResourceType,
@@ -260,6 +262,19 @@ export const donationService = {
     schoolId: string,
   ): Promise<PlatformSaveCheckResult> {
     return shareService.checkSaveAsOwnResource(donationId, teacherId, schoolId);
+  },
+
+  async getSaveStatus(teacherId: string, schoolId: string): Promise<PlatformSaveStatus> {
+    return shareService.listPlatformSaveStatus(teacherId, schoolId);
+  },
+
+  async saveAlbumAsOwnResources(
+    subject: string,
+    albumId: string,
+    teacherId: string,
+    schoolId: string,
+  ): Promise<PlatformAlbumSaveResult> {
+    return shareService.saveDonationAlbumAsOwnResources(subject, albumId, teacherId, schoolId);
   },
 
   async saveAsOwnResource(

@@ -4,12 +4,14 @@ import type {
   DonationDecision,
   DonationItem,
   DonorStatus,
+  PlatformAlbumSaveResult,
   PlatformAttributeOption,
   PlatformAttributeOptionType,
   PlatformDonation,
   PlatformSaveCheckResult,
   PlatformSaveDecision,
   PlatformSaveResult,
+  PlatformSaveStatus,
   TreeNode,
 } from "@/types";
 
@@ -53,6 +55,19 @@ export const donationService = {
     schoolId: string,
   ): Promise<PlatformSaveCheckResult> {
     return rpcCall("donation", "checkSaveAsOwnResource", [donationId, teacherId, schoolId]) as any;
+  },
+
+  async getSaveStatus(teacherId: string, schoolId: string): Promise<PlatformSaveStatus> {
+    return rpcCall("donation", "getSaveStatus", [teacherId, schoolId]) as any;
+  },
+
+  async saveAlbumAsOwnResources(
+    subject: string,
+    albumId: string,
+    teacherId: string,
+    schoolId: string,
+  ): Promise<PlatformAlbumSaveResult> {
+    return rpcCall("donation", "saveAlbumAsOwnResources", [subject, albumId, teacherId, schoolId]) as any;
   },
 
   async saveAsOwnResource(
