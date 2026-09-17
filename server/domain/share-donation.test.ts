@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
 import type { Chapter, Courseware, ExamPaper, KnowledgePoint, Lecture, Material, Question, ShareRecord } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
+import { donationService } from "./donation.js";
 import { shareService } from "./share.js";
 
 const now = "2026-07-29T09:00:00.000Z";
@@ -106,6 +107,110 @@ function state(): AppState {
 }
 
 describe("platform resource donations", () => {
+  it("donates personal resources after a school change and includes questions from an extracted lecture", async () => {
+    const appState = state();
+    const donor = appState.teachers.find((item) => item.id === "teacher-a")!;
+    donor.schoolId = "school-new";
+
+    const lectureBase = {
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      description: "",
+      chapterIds: ["ch-a"],
+      knowledgePointIds: ["kp-a"],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期" as const,
+      classIds: [],
+      studentIds: [],
+      version: 1,
+      status: "draft" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    (appState.lectures as Lecture[]).push(
+      {
+        ...lectureBase,
+        id: "lecture-source",
+        title: "函数讲义",
+        sections: [],
+        extractStatus: "done",
+      },
+      {
+        ...lectureBase,
+        id: "lecture-extract",
+        title: "函数讲义（拆解版）",
+        isExtractCopy: true,
+        sourceResourceId: "lecture-source",
+        extractStatus: "done",
+        sections: [{
+          id: "section-question",
+          title: "例题",
+          type: "question",
+          content: "",
+          questionId: "q-a",
+          children: [],
+        }],
+        contentBlocks: [{
+          id: "block-question",
+          type: "question",
+          content: "函数 f(x)=x² 的导数是什么？",
+          questionId: "q-a",
+        }],
+      },
+    );
+    appState.resourceFolders = [{
+      id: "lecture-album",
+      teacherId: "teacher-a",
+      schoolId: "school-a",
+      resourceType: "lecture",
+      name: "函数讲义专辑",
+      resourceIds: ["lecture-source"],
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    }];
+
+    await runWithState(appState, async () => {
+      const items = [{
+        resourceType: "lecture" as const,
+        resourceId: "lecture-extract",
+        albumId: "lecture-album",
+      }];
+
+      const check = await donationService.checkDonation("teacher-a", "school-new", items);
+      expect(check.alreadyDonated).toEqual([]);
+
+      const result = await donationService.donateResources("teacher-a", "school-new", items);
+      expect(result.created.map((item) => item.resourceType)).toEqual(expect.arrayContaining(["lecture", "question"]));
+      const lectureDonation = result.created.find((item) => item.resourceType === "lecture")!;
+      expect(lectureDonation.donationAlbum).toMatchObject({
+        id: "lecture-album",
+        name: "函数讲义专辑",
+        libraryLabel: "讲义库",
+      });
+
+      const saved = await shareService.saveDonationAsOwnResource(
+        lectureDonation.id,
+        "teacher-c",
+        "school-c",
+      );
+      const copiedLecture = (appState.lectures as Lecture[]).find((item) => item.id === saved.resourceId)!;
+      const copiedQuestion = (appState.questions as Question[]).find((item) =>
+        item.teacherId === "teacher-c" && item.platformSourceDonationIds?.length,
+      )!;
+      expect(copiedQuestion).toBeTruthy();
+      expect(copiedLecture.sections[0].questionId).toBe(copiedQuestion.id);
+      expect(copiedLecture.sections[0].questionId).not.toBe("q-a");
+      expect(copiedLecture.contentBlocks?.[0].questionId).toBe(copiedQuestion.id);
+
+      await expect(shareService.checkDonationCandidates("teacher-a", [{
+        resourceType: "question",
+        resourceId: "q-b",
+      }])).rejects.toThrow("无权捐赠不属于自己的资源");
+    });
+  });
+
   it("donates a complete album with its source library note and reuses existing donations", async () => {
     const appState = state();
     const base = {

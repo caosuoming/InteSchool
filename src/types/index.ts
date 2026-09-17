@@ -1914,6 +1914,8 @@ export interface PlatformSaveCheckResult {
   canSave: boolean;
   reason?: string;
   alreadySaved: boolean;
+  /** 已另存时对应的个人资源 ID，供批量另存/专辑重建复用。 */
+  existingResourceId?: string;
   conflict?: PlatformSaveConflict;
 }
 

@@ -2347,6 +2347,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       resourceId,
     }));
 
+  const donationFolderRefs = (folder: ResourceFolder): BatchResourceRef[] =>
+    folder.resourceIds.map((resourceId) => {
+      const candidates = folder.resourceType === "examPaper"
+        ? allExamPapers
+        : folder.resourceType === "lecture"
+          ? allLectures
+          : [];
+      const extractCopy = candidates
+        .filter((item) => item.teacherId === teacher?.id && item.isExtractCopy && item.sourceResourceId === resourceId)
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+      return {
+        resourceType: folder.resourceType,
+        resourceId: extractCopy?.id || resourceId,
+      };
+    });
+
   const openCreateFolderFromSelection = () => {
     const refs = selectedResourceRefs();
     if (refs.length < 2) {
@@ -2590,7 +2606,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             onRename={(name) => handleRenameFolder(folder, name)}
             onTogglePin={() => void handleToggleFolderPin(folder)}
             onShare={() => void handleBatchShare(folderRefs(folder))}
-            onDonate={() => void handlePrepareDonation(folderRefs(folder), folder.id)}
+            onDonate={() => void handlePrepareDonation(donationFolderRefs(folder), folder.id)}
             onDelete={() => void handleDeleteFolder(folder)}
           />
         )}
