@@ -146,6 +146,7 @@ export function LessonEditorPage() {
 
   const [students, setStudents] = useState<Student[]>([]);
   const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
+  const [ignoredStudentIds, setIgnoredStudentIds] = useState<Set<string>>(() => new Set());
   const [studentWeaknessById, setStudentWeaknessById] = useState<Record<string, number | null>>({});
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [classModalOpen, setClassModalOpen] = useState(false);
@@ -228,11 +229,13 @@ export function LessonEditorPage() {
       classService.listMyStudents(teacher.schoolId, teacher.id),
       classService.listMyClasses(teacher.schoolId, teacher.id),
       studentInteractionService.listFollowedStudentIds().catch(() => []),
+      studentInteractionService.listIgnoredStudentIds().catch(() => []),
     ])
-      .then(([studentItems, classItems, followedIds]) => {
+      .then(([studentItems, classItems, followedIds, ignoredIds]) => {
         setStudents(studentItems);
         setClasses(classItems.filter((item): item is SchoolClass => item.type === "school"));
         setFollowedStudentIds(new Set(followedIds));
+        setIgnoredStudentIds(new Set(ignoredIds));
       })
       .catch((error) => toast.error("班级与学生列表加载失败", error instanceof Error ? error.message : undefined));
   }, [teacher]);
@@ -1540,6 +1543,8 @@ export function LessonEditorPage() {
           slides={slides}
           initialIndex={currentIndex}
           students={students}
+          followedStudentIds={followedStudentIds}
+          ignoredStudentIds={ignoredStudentIds}
           relatedQuestionsById={relatedQuestionsMap}
           preferenceOwnerId={teacher?.id}
           onExit={closePreview}

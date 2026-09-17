@@ -10,12 +10,16 @@ export function buildStudentRosterGroups(
   students: Student[],
   classes: AnyClass[],
   followedStudentIds: ReadonlySet<string>,
+  ignoredStudentIds: ReadonlySet<string>,
   lastInteractionMap: Readonly<Record<string, string>>,
 ): StudentRosterGroup[] {
   const sortStudents = (items: Student[]) => [...items].sort((a, b) => {
     const aFollowed = followedStudentIds.has(a.id);
     const bFollowed = followedStudentIds.has(b.id);
     if (aFollowed !== bFollowed) return aFollowed ? -1 : 1;
+    const aIgnored = ignoredStudentIds.has(a.id);
+    const bIgnored = ignoredStudentIds.has(b.id);
+    if (aIgnored !== bIgnored) return aIgnored ? 1 : -1;
     const aTime = lastInteractionMap[a.id] ? new Date(lastInteractionMap[a.id]).getTime() : 0;
     const bTime = lastInteractionMap[b.id] ? new Date(lastInteractionMap[b.id]).getTime() : 0;
     return aTime - bTime;

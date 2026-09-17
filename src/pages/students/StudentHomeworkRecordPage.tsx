@@ -81,7 +81,9 @@ export function StudentHomeworkRecordPage() {
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set());
   const [keyword, setKeyword] = useState("");
   const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
+  const [ignoredStudentIds, setIgnoredStudentIds] = useState<Set<string>>(() => new Set());
   const [followPendingStudentIds, setFollowPendingStudentIds] = useState<Set<string>>(() => new Set());
+  const [ignorePendingStudentIds, setIgnorePendingStudentIds] = useState<Set<string>>(() => new Set());
   const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
   const [homeworkDate, setHomeworkDate] = useState(() => {
     const today = new Date();
@@ -104,13 +106,14 @@ export function StudentHomeworkRecordPage() {
     if (!teacher?.id || !teacher.schoolId) return;
     setLoading(true);
     try {
-      const [studentList, classList, tree, points, pinnedIds, followedIds, teacherInteractions] = await Promise.all([
+      const [studentList, classList, tree, points, pinnedIds, followedIds, ignoredIds, teacherInteractions] = await Promise.all([
         classService.listMyStudents(teacher.schoolId, teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         knowledgeService.getKnowledgeTree(teacher.schoolId),
         knowledgeService.listKnowledgePoints(teacher.schoolId),
         homeworkRecordService.listPinnedKnowledgePointIds(),
         studentInteractionService.listFollowedStudentIds(),
+        studentInteractionService.listIgnoredStudentIds(),
         studentInteractionService.listByTeacher(teacher.id),
       ]);
       const nextLastInteractionMap: Record<string, string> = {};
@@ -127,6 +130,7 @@ export function StudentHomeworkRecordPage() {
       setPinnedKnowledgePointIds(pinnedIds);
       setDraftPinnedIds(pinnedIds);
       setFollowedStudentIds(new Set(followedIds));
+      setIgnoredStudentIds(new Set(ignoredIds));
       setLastInteractionMap(nextLastInteractionMap);
       setSelectedStudentId((current) => (
         current && studentList.some((student) => student.id === current)
@@ -193,8 +197,9 @@ export function StudentHomeworkRecordPage() {
     filteredStudents,
     classes,
     followedStudentIds,
+    ignoredStudentIds,
     lastInteractionMap,
-  ), [classes, filteredStudents, followedStudentIds, lastInteractionMap]);
+  ), [classes, filteredStudents, followedStudentIds, ignoredStudentIds, lastInteractionMap]);
 
   const toggleGroup = (groupId: string) => {
     setExpandedGroupIds((current) => {
@@ -309,8 +314,10 @@ export function StudentHomeworkRecordPage() {
   };
 
   const toggleFollow = async (studentId: string) => {
-    if (followPendingStudentIds.has(studentId)) return;
-    const nextFollowed = !followedStudentIds.has(studentId);
+    if (followPendingStudentIds.has(studentId) || ignorePendingStudentIds.has(studentId)) return;
+    const wasFollowed = followedStudentIds.has(studentId);
+    const wasIgnored = ignoredStudentIds.has(studentId);
+    const nextFollowed = !wasFollowed;
     setFollowPendingStudentIds((current) => new Set(current).add(studentId));
     setFollowedStudentIds((current) => {
       const next = new Set(current);
@@ -318,18 +325,75 @@ export function StudentHomeworkRecordPage() {
       else next.delete(studentId);
       return next;
     });
+    if (nextFollowed) {
+      setIgnoredStudentIds((current) => {
+        const next = new Set(current);
+        next.delete(studentId);
+        return next;
+      });
+    }
     try {
       await studentInteractionService.setStudentFollowed(studentId, nextFollowed);
     } catch (error) {
       setFollowedStudentIds((current) => {
         const next = new Set(current);
-        if (nextFollowed) next.delete(studentId);
-        else next.add(studentId);
+        if (wasFollowed) next.add(studentId);
+        else next.delete(studentId);
+        return next;
+      });
+      setIgnoredStudentIds((current) => {
+        const next = new Set(current);
+        if (wasIgnored) next.add(studentId);
+        else next.delete(studentId);
         return next;
       });
       toast.error("更新关注状态失败", error instanceof Error ? error.message : undefined);
     } finally {
       setFollowPendingStudentIds((current) => {
+        const next = new Set(current);
+        next.delete(studentId);
+        return next;
+      });
+    }
+  };
+
+  const toggleIgnore = async (studentId: string) => {
+    if (followPendingStudentIds.has(studentId) || ignorePendingStudentIds.has(studentId)) return;
+    const wasFollowed = followedStudentIds.has(studentId);
+    const wasIgnored = ignoredStudentIds.has(studentId);
+    const nextIgnored = !wasIgnored;
+    setIgnorePendingStudentIds((current) => new Set(current).add(studentId));
+    setIgnoredStudentIds((current) => {
+      const next = new Set(current);
+      if (nextIgnored) next.add(studentId);
+      else next.delete(studentId);
+      return next;
+    });
+    if (nextIgnored) {
+      setFollowedStudentIds((current) => {
+        const next = new Set(current);
+        next.delete(studentId);
+        return next;
+      });
+    }
+    try {
+      await studentInteractionService.setStudentIgnored(studentId, nextIgnored);
+    } catch (error) {
+      setFollowedStudentIds((current) => {
+        const next = new Set(current);
+        if (wasFollowed) next.add(studentId);
+        else next.delete(studentId);
+        return next;
+      });
+      setIgnoredStudentIds((current) => {
+        const next = new Set(current);
+        if (wasIgnored) next.add(studentId);
+        else next.delete(studentId);
+        return next;
+      });
+      toast.error("更新不关注状态失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setIgnorePendingStudentIds((current) => {
         const next = new Set(current);
         next.delete(studentId);
         return next;
@@ -374,12 +438,15 @@ export function StudentHomeworkRecordPage() {
             selectedStudentId={selectedStudentId}
             expandedGroupIds={expandedGroupIds}
             followedStudentIds={followedStudentIds}
+            ignoredStudentIds={ignoredStudentIds}
             followPendingStudentIds={followPendingStudentIds}
+            ignorePendingStudentIds={ignorePendingStudentIds}
             lastInteractionMap={lastInteractionMap}
             onKeywordChange={setKeyword}
             onToggleGroup={toggleGroup}
             onSelectStudent={setSelectedStudentId}
             onToggleFollow={(studentId) => void toggleFollow(studentId)}
+            onToggleIgnore={(studentId) => void toggleIgnore(studentId)}
           />
         }
       >

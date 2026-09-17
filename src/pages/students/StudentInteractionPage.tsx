@@ -81,7 +81,9 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [keyword, setKeyword] = useState("");
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set());
   const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
+  const [ignoredStudentIds, setIgnoredStudentIds] = useState<Set<string>>(() => new Set());
   const [followPendingStudentIds, setFollowPendingStudentIds] = useState<Set<string>>(() => new Set());
+  const [ignorePendingStudentIds, setIgnorePendingStudentIds] = useState<Set<string>>(() => new Set());
   // 每个学生的最近互动时间
   const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
   const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
@@ -103,14 +105,16 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     if (!teacher?.schoolId || !teacher?.id) return;
     setLoading(true);
     try {
-      const [all, classes, followed] = await Promise.all([
+      const [all, classes, followed, ignored] = await Promise.all([
         classService.listMyStudents(teacher.schoolId, teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         studentInteractionService.listFollowedStudentIds(),
+        studentInteractionService.listIgnoredStudentIds(),
       ]);
       setAllStudents(all);
       setMyClasses(classes);
       setFollowedStudentIds(new Set(followed));
+      setIgnoredStudentIds(new Set(ignored));
       // 加载所有学生的最近互动时间
       const teacherInteractions = await studentInteractionService.listByTeacher(teacher.id);
       const lastMap: Record<string, string> = {};
@@ -225,8 +229,9 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     filteredStudents,
     myClasses,
     followedStudentIds,
+    ignoredStudentIds,
     lastInteractionMap,
-  ), [filteredStudents, followedStudentIds, lastInteractionMap, myClasses]);
+  ), [filteredStudents, followedStudentIds, ignoredStudentIds, lastInteractionMap, myClasses]);
 
   const toggleStudentGroup = useCallback((groupId: string) => {
     setExpandedGroupIds((current) => {
@@ -267,8 +272,10 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   }, [gradeQueryData, selectedStudentId]);
 
   const handleToggleFollow = useCallback(async (studentId: string) => {
-    if (followPendingStudentIds.has(studentId)) return;
-    const nextFollowed = !followedStudentIds.has(studentId);
+    if (followPendingStudentIds.has(studentId) || ignorePendingStudentIds.has(studentId)) return;
+    const wasFollowed = followedStudentIds.has(studentId);
+    const wasIgnored = ignoredStudentIds.has(studentId);
+    const nextFollowed = !wasFollowed;
     setFollowPendingStudentIds((current) => new Set(current).add(studentId));
     setFollowedStudentIds((current) => {
       const next = new Set(current);
@@ -276,13 +283,26 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       else next.delete(studentId);
       return next;
     });
+    if (nextFollowed) {
+      setIgnoredStudentIds((current) => {
+        const next = new Set(current);
+        next.delete(studentId);
+        return next;
+      });
+    }
     try {
       await studentInteractionService.setStudentFollowed(studentId, nextFollowed);
     } catch (err) {
       setFollowedStudentIds((current) => {
         const next = new Set(current);
-        if (nextFollowed) next.delete(studentId);
-        else next.add(studentId);
+        if (wasFollowed) next.add(studentId);
+        else next.delete(studentId);
+        return next;
+      });
+      setIgnoredStudentIds((current) => {
+        const next = new Set(current);
+        if (wasIgnored) next.add(studentId);
+        else next.delete(studentId);
         return next;
       });
       toast.error("更新关注状态失败", err instanceof Error ? err.message : undefined);
@@ -293,7 +313,51 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
         return next;
       });
     }
-  }, [followPendingStudentIds, followedStudentIds]);
+  }, [followPendingStudentIds, followedStudentIds, ignorePendingStudentIds, ignoredStudentIds]);
+
+  const handleToggleIgnore = useCallback(async (studentId: string) => {
+    if (followPendingStudentIds.has(studentId) || ignorePendingStudentIds.has(studentId)) return;
+    const wasFollowed = followedStudentIds.has(studentId);
+    const wasIgnored = ignoredStudentIds.has(studentId);
+    const nextIgnored = !wasIgnored;
+    setIgnorePendingStudentIds((current) => new Set(current).add(studentId));
+    setIgnoredStudentIds((current) => {
+      const next = new Set(current);
+      if (nextIgnored) next.add(studentId);
+      else next.delete(studentId);
+      return next;
+    });
+    if (nextIgnored) {
+      setFollowedStudentIds((current) => {
+        const next = new Set(current);
+        next.delete(studentId);
+        return next;
+      });
+    }
+    try {
+      await studentInteractionService.setStudentIgnored(studentId, nextIgnored);
+    } catch (err) {
+      setFollowedStudentIds((current) => {
+        const next = new Set(current);
+        if (wasFollowed) next.add(studentId);
+        else next.delete(studentId);
+        return next;
+      });
+      setIgnoredStudentIds((current) => {
+        const next = new Set(current);
+        if (wasIgnored) next.add(studentId);
+        else next.delete(studentId);
+        return next;
+      });
+      toast.error("更新不关注状态失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setIgnorePendingStudentIds((current) => {
+        const next = new Set(current);
+        next.delete(studentId);
+        return next;
+      });
+    }
+  }, [followPendingStudentIds, followedStudentIds, ignorePendingStudentIds, ignoredStudentIds]);
 
   const handlePasteImages = async (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const imageFiles = Array.from(event.clipboardData.items)
@@ -435,12 +499,15 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
             selectedStudentId={selectedStudentId}
             expandedGroupIds={expandedGroupIds}
             followedStudentIds={followedStudentIds}
+            ignoredStudentIds={ignoredStudentIds}
             followPendingStudentIds={followPendingStudentIds}
+            ignorePendingStudentIds={ignorePendingStudentIds}
             lastInteractionMap={lastInteractionMap}
             onKeywordChange={setKeyword}
             onToggleGroup={toggleStudentGroup}
             onSelectStudent={setSelectedStudentId}
             onToggleFollow={(studentId) => void handleToggleFollow(studentId)}
+            onToggleIgnore={(studentId) => void handleToggleIgnore(studentId)}
           />
         }
       >

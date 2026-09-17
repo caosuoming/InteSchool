@@ -89,6 +89,8 @@ function makeState(): AppState {
     classroomNotices: [],
     lessonCoursewares: [],
     students: [],
+    studentInteractionFollows: [],
+    studentInteractionIgnores: [],
   };
 }
 

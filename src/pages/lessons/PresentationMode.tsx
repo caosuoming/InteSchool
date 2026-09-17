@@ -35,6 +35,7 @@ import {
 import type { LessonSlide, LessonSlideElement, Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { getMaximumContrastTextColor, normalizeHexColor } from "@/lib/color-contrast";
+import { eligibleLotteryStudents, pickWeightedLotteryStudent, studentLotteryDurationMs } from "@/lib/student-lottery";
 import {
   getLessonElementAnimationOrder,
   hasLessonElementAnimation,
@@ -55,6 +56,8 @@ interface PresentationModeProps {
   slides: LessonSlide[];
   initialIndex: number;
   students: { id: string; name: string }[];
+  followedStudentIds?: ReadonlySet<string>;
+  ignoredStudentIds?: ReadonlySet<string>;
   relatedQuestionsById: Record<string, Question>;
   preferenceOwnerId?: string;
   onExit: () => void;
@@ -104,6 +107,7 @@ interface DrawingStroke {
 }
 
 const HIGHLIGHTER_ALPHA = 0.45;
+const EMPTY_STUDENT_ID_SET: ReadonlySet<string> = new Set<string>();
 
 interface BoardWritingArea {
   id: string;
@@ -877,6 +881,8 @@ export function PresentationMode({
   slides,
   initialIndex,
   students,
+  followedStudentIds = EMPTY_STUDENT_ID_SET,
+  ignoredStudentIds = EMPTY_STUDENT_ID_SET,
   relatedQuestionsById,
   preferenceOwnerId,
   onExit,
@@ -963,11 +969,8 @@ export function PresentationMode({
     : undefined;
 
   const presetAskableStudentIds = currentSlide?.askableStudentIds || [];
-  const askableStudents = presetAskableStudentIds.length === 0
-    ? students
-    : presetAskableStudentIds
-        .map((id) => students.find((student) => student.id === id))
-        .filter((student): student is { id: string; name: string } => Boolean(student));
+  const eligibleStudents = eligibleLotteryStudents(students, ignoredStudentIds);
+  const askableStudents = eligibleLotteryStudents(students, ignoredStudentIds, presetAskableStudentIds);
 
   const clearStudentLotteryTimers = useCallback(() => {
     if (lotteryIntervalRef.current !== null) {
@@ -985,11 +988,11 @@ export function PresentationMode({
   }, []);
 
   const startStudentLottery = useCallback(() => {
-    if (students.length === 0 || askableStudents.length === 0) return;
+    if (eligibleStudents.length === 0 || askableStudents.length === 0) return;
     clearStudentLotteryTimers();
 
     const showRandomClassStudent = () => {
-      const randomStudent = students[Math.floor(Math.random() * students.length)];
+      const randomStudent = eligibleStudents[Math.floor(Math.random() * eligibleStudents.length)];
       if (randomStudent) setStudentLottery({ phase: "rolling", name: randomStudent.name });
     };
 
@@ -1001,7 +1004,7 @@ export function PresentationMode({
         lotteryIntervalRef.current = null;
       }
       lotteryFinishTimeoutRef.current = null;
-      const winner = askableStudents[Math.floor(Math.random() * askableStudents.length)];
+      const winner = pickWeightedLotteryStudent(askableStudents, followedStudentIds);
       if (!winner) {
         setStudentLottery(null);
         return;
@@ -1011,8 +1014,8 @@ export function PresentationMode({
         setStudentLottery(null);
         lotteryDismissTimeoutRef.current = null;
       }, 2200);
-    }, 5000);
-  }, [askableStudents, clearStudentLotteryTimers, students]);
+    }, studentLotteryDurationMs());
+  }, [askableStudents, clearStudentLotteryTimers, eligibleStudents, followedStudentIds]);
   const relatedQuestions = (currentSlide?.relatedQuestionIds || [])
     .map((id) => relatedQuestionsById[id])
     .filter((question): question is Question => Boolean(question));
@@ -1738,19 +1741,19 @@ export function PresentationMode({
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-ink-900">提问学生</h2>
-              <p className="mt-1 text-xs text-ink-400">未预设时默认全班参与；预设后仅从相关学生中抽取。</p>
+              <p className="mt-1 text-xs text-ink-400">不关注学生不参与；关注学生抽中权重为普通学生的 2 倍。</p>
             </div>
             <button
               type="button"
               onClick={startStudentLottery}
-              disabled={students.length === 0 || askableStudents.length === 0 || studentLottery?.phase === "rolling"}
+              disabled={askableStudents.length === 0 || studentLottery?.phase === "rolling"}
               className="inline-flex h-8 flex-shrink-0 items-center gap-1 rounded-lg border border-gold-300 bg-gold-50 px-2.5 text-xs font-medium text-gold-800 transition-colors hover:bg-gold-100 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="摇号"
               title={askableStudents.length === 0
-                ? "当前页面预设学生不在当前班级"
+                ? "当前没有可参与摇号的学生"
                 : presetAskableStudentIds.length === 0
-                  ? "全班姓名滚动 5 秒后，从当前班级全体学生中抽取一人"
-                  : "全班姓名滚动 5 秒后，从当前页面候选学生中抽取一人"}
+                  ? "随机滚动 3–5 秒后，从当前班级可参与学生中抽取一人"
+                  : "随机滚动 3–5 秒后，从当前页面可参与候选学生中抽取一人"}
             >
               <Dices className="h-3.5 w-3.5" />
               摇号
@@ -1758,7 +1761,7 @@ export function PresentationMode({
           </div>
           <div className="mt-3 max-h-80 space-y-1.5 overflow-y-auto">
             {askableStudents.length === 0 ? (
-              <div className="rounded-lg bg-mist px-3 py-5 text-center text-xs text-ink-400">未预设学生</div>
+              <div className="rounded-lg bg-mist px-3 py-5 text-center text-xs text-ink-400">暂无可参与摇号的学生</div>
             ) : askableStudents.map((student) => (
               <button
                 key={student.id}

@@ -34,6 +34,14 @@ export const studentInteractionService = {
     return rpcCall("studentInteraction", "setStudentFollowed", [studentId, followed]) as any;
   },
 
+  async listIgnoredStudentIds(): Promise<string[]> {
+    return rpcCall("studentInteraction", "listIgnoredStudentIds", []) as any;
+  },
+
+  async setStudentIgnored(studentId: string, ignored: boolean): Promise<void> {
+    return rpcCall("studentInteraction", "setStudentIgnored", [studentId, ignored]) as any;
+  },
+
   async createInteraction(teacherId: string, schoolId: string, input: InteractionInput): Promise<StudentInteraction> {
     return rpcCall("studentInteraction", "createInteraction", [teacherId, schoolId, input]) as any;
   },

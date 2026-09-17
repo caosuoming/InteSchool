@@ -3288,6 +3288,7 @@
   "reflections": [],
   "studentInteractions": [],
   "studentInteractionFollows": [],
+  "studentInteractionIgnores": [],
   "schoolBackups": [
     {
       "id": "sbk-seed-1",

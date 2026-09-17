@@ -101,6 +101,7 @@ function state(): AppState {
       { id: "student-personal", name: "个人班学生", studentNo: "003", classId: "personal-1", schoolId: "school-1", grade: "高一", status: "active" },
     ],
     studentInteractionFollows: [],
+    studentInteractionIgnores: [],
     studentInteractions: [
       {
         id: "interaction-own",
@@ -197,14 +198,24 @@ describe("student interaction scope", () => {
     });
   });
 
-  it("persists per-teacher followed students and rejects following inaccessible students", async () => {
+  it("persists mutually exclusive follow/ignore markers and rejects inaccessible students", async () => {
     const appState = state();
     await runWithState(appState, async () => {
       await expect(studentInteractionService.listFollowedStudentIds(teacher)).resolves.toEqual([]);
+      await expect(studentInteractionService.listIgnoredStudentIds(teacher)).resolves.toEqual([]);
+
       await expect(studentInteractionService.setStudentFollowed("student-1", true, teacher)).resolves.toBeUndefined();
       await expect(studentInteractionService.listFollowedStudentIds(teacher)).resolves.toEqual(["student-1"]);
 
-      await expect(studentInteractionService.setStudentFollowed("student-2", true, teacher))
+      await expect(studentInteractionService.setStudentIgnored("student-1", true, teacher)).resolves.toBeUndefined();
+      await expect(studentInteractionService.listFollowedStudentIds(teacher)).resolves.toEqual([]);
+      await expect(studentInteractionService.listIgnoredStudentIds(teacher)).resolves.toEqual(["student-1"]);
+
+      await expect(studentInteractionService.setStudentFollowed("student-1", true, teacher)).resolves.toBeUndefined();
+      await expect(studentInteractionService.listFollowedStudentIds(teacher)).resolves.toEqual(["student-1"]);
+      await expect(studentInteractionService.listIgnoredStudentIds(teacher)).resolves.toEqual([]);
+
+      await expect(studentInteractionService.setStudentIgnored("student-2", true, teacher))
         .rejects.toThrow("只能访问自己任教班级或个人教学班的学生");
 
       await expect(studentInteractionService.setStudentFollowed("student-1", false, teacher)).resolves.toBeUndefined();

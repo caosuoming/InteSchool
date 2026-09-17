@@ -4,6 +4,7 @@ import {
   Clock,
   GraduationCap,
   Search,
+  EyeOff,
   Star,
 } from "lucide-react";
 import type { StudentRosterGroup } from "./student-roster";
@@ -30,12 +31,15 @@ export function StudentRosterSidebar({
   selectedStudentId,
   expandedGroupIds,
   followedStudentIds,
+  ignoredStudentIds,
   followPendingStudentIds,
+  ignorePendingStudentIds,
   lastInteractionMap,
   onKeywordChange,
   onToggleGroup,
   onSelectStudent,
   onToggleFollow,
+  onToggleIgnore,
 }: {
   groups: StudentRosterGroup[];
   loading: boolean;
@@ -43,12 +47,15 @@ export function StudentRosterSidebar({
   selectedStudentId: string | null;
   expandedGroupIds: ReadonlySet<string>;
   followedStudentIds: ReadonlySet<string>;
+  ignoredStudentIds: ReadonlySet<string>;
   followPendingStudentIds: ReadonlySet<string>;
+  ignorePendingStudentIds: ReadonlySet<string>;
   lastInteractionMap: Readonly<Record<string, string>>;
   onKeywordChange: (value: string) => void;
   onToggleGroup: (groupId: string) => void;
   onSelectStudent: (studentId: string) => void;
   onToggleFollow: (studentId: string) => void;
+  onToggleIgnore: (studentId: string) => void;
 }) {
   return (
     <Card className="h-full flex flex-col lg:h-auto lg:min-h-[calc(100vh-12rem)]">
@@ -98,12 +105,14 @@ export function StudentRosterSidebar({
                       {group.students.map((student) => {
                         const selected = selectedStudentId === student.id;
                         const followed = followedStudentIds.has(student.id);
+                        const ignored = ignoredStudentIds.has(student.id);
                         return (
                           <div
                             key={`${group.id}-${student.id}`}
                             className={cn(
                               "w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-left transition-colors",
                               selected ? "bg-gold-50 ring-1 ring-gold-300" : "hover:bg-mist",
+                              ignored && "opacity-65",
                             )}
                           >
                             <button
@@ -137,7 +146,7 @@ export function StudentRosterSidebar({
                             <button
                               type="button"
                               onClick={() => onToggleFollow(student.id)}
-                              disabled={followPendingStudentIds.has(student.id)}
+                              disabled={followPendingStudentIds.has(student.id) || ignorePendingStudentIds.has(student.id)}
                               aria-label={followed ? `取消关注${student.name}` : `关注${student.name}`}
                               title={followed ? "取消关注" : "关注"}
                               className={cn(
@@ -146,6 +155,19 @@ export function StudentRosterSidebar({
                               )}
                             >
                               <Star className={cn("h-4 w-4", followed && "fill-current")} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onToggleIgnore(student.id)}
+                              disabled={followPendingStudentIds.has(student.id) || ignorePendingStudentIds.has(student.id)}
+                              aria-label={ignored ? `取消不关注${student.name}` : `标记${student.name}为不关注`}
+                              title={ignored ? "取消不关注" : "不关注"}
+                              className={cn(
+                                "flex-shrink-0 rounded p-1 transition-colors disabled:opacity-50",
+                                ignored ? "text-ink-600" : "text-ink-300 hover:text-ink-600",
+                              )}
+                            >
+                              <EyeOff className="h-4 w-4" />
                             </button>
                           </div>
                         );

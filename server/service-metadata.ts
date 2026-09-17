@@ -1753,6 +1753,14 @@ export const serviceParameters = {
       "followed",
       "teacher"
     ],
+    "listIgnoredStudentIds": [
+      "teacher"
+    ],
+    "setStudentIgnored": [
+      "studentId",
+      "ignored",
+      "teacher"
+    ],
     "createInteraction": [
       "teacherId",
       "schoolId",
