@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ClassroomPage from "@/pages/lessons/ClassroomPage";
 import { CLASSROOM_DEVICE_TOKEN_KEY, classroomDeviceService } from "@/services/classroomDevice";
+import { ApiError } from "@/services/api";
 import type { ClassroomDeviceSnapshot } from "@/types";
 
 vi.mock("html2canvas", () => ({ default: vi.fn().mockRejectedValue(new Error("capture unavailable in test")) }));
@@ -110,6 +111,24 @@ describe("ClassroomPage device mode", () => {
     expect(screen.getByTitle("高一 · 高一（1）班")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "退出教室" })).not.toBeInTheDocument();
     await waitFor(() => expect(classroomDeviceService.reportHeartbeat).toHaveBeenCalled());
+  });
+
+  it("keeps the device session during a transient snapshot failure", async () => {
+    const token = localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY);
+    vi.mocked(classroomDeviceService.getClassroomSnapshot).mockRejectedValue(new ApiError("服务器内部错误", 500));
+    renderDevicePage();
+
+    await waitFor(() => expect(classroomDeviceService.getClassroomSnapshot).toHaveBeenCalled());
+    expect(localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY)).toBe(token);
+    expect(screen.queryByText("绑定页")).not.toBeInTheDocument();
+  });
+
+  it("returns to binding only when the server confirms the device binding is gone", async () => {
+    vi.mocked(classroomDeviceService.getClassroomSnapshot).mockRejectedValue(new ApiError("教室一体机尚未绑定或已解绑", 404));
+    renderDevicePage();
+
+    expect(await screen.findByText("绑定页")).toBeInTheDocument();
+    expect(localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY)).toBeNull();
   });
 
   it("interrupts the classroom UI with the remote lock screen", async () => {

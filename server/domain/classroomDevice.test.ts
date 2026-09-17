@@ -135,6 +135,25 @@ describe("classroomDeviceService", () => {
     });
   });
 
+  it("lets the same browser installation clear a stranded binding before rebinding", async () => {
+    const state = makeState();
+    await runWithState(state, async () => {
+      await bindClassOne();
+
+      await expect(classroomDeviceService.clearInstallationBinding("installation-class-one")).resolves.toBe(true);
+      await expect(classroomDeviceService.getDeviceSession(TOKEN_1)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(classroomDeviceService.getDeviceSession("broken-token")).rejects.toMatchObject({ statusCode: 404 });
+      await expect(classroomDeviceService.clearInstallationBinding("installation-class-one")).resolves.toBe(false);
+
+      await expect(classroomDeviceService.bindDevice({
+        schoolId: "school-1",
+        classId: "class-2",
+        deviceToken: TOKEN_2,
+        installationId: "installation-class-one",
+      })).resolves.toMatchObject({ classId: "class-2" });
+    });
+  });
+
   it("binds a public classroom and lets the device switch between active classes in the same school", async () => {
     const state = makeState();
     state.classroomHomeworks = [
