@@ -10,7 +10,7 @@ import type {
   SimilarQuestionCandidate,
 } from "../../src/types/index.js";
 import type { TeacherRecord } from "../types.js";
-import { db, computeDuplicateHash } from "../runtime-db.js";
+import { db, computeDuplicateHash, type QuestionSortKey } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { knowledgeService } from "./knowledge.js";
 import { assertResourceCapacity } from "./quota.js";
@@ -166,8 +166,6 @@ function matchFilter(q: Question, filter: QuestionFilter): boolean {
   return true;
 }
 
-type QuestionSortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
-
 function sortQuestions(questions: Question[], sortKey: QuestionSortKey): Question[] {
   const sorted = [...questions];
   switch (sortKey) {
@@ -209,6 +207,9 @@ export const questionService = {
     sortKey: QuestionSortKey = "newest",
     teacher: TeacherRecord,
   ): Promise<{ items: Question[]; total: number }> {
+    const indexed = await db.searchQuestionPage(filter, page, pageSize, sortKey, teacher.id);
+    if (indexed) return indexed;
+
     const data = await this.listQuestions(filter);
     const visible = data.filter((question) => question.teacherId === teacher.id || question.isShared);
     const sorted = sortQuestions(visible, sortKey);

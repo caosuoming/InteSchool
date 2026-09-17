@@ -321,7 +321,7 @@ describe("PresentationMode", () => {
     expect(screen.getByLabelText("板书 1书写区 1")).toHaveAttribute("data-recorded-stroke-count", "1");
   });
 
-  it("draws handwriting incrementally without repainting the full canvas on pointer moves", async () => {
+  it("batches high-frequency handwriting updates per animation frame without repainting the full canvas", async () => {
     const clearRect = vi.fn();
     const stroke = vi.fn();
     vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue({
@@ -339,6 +339,14 @@ describe("PresentationMode", () => {
       lineWidth: 1,
       strokeStyle: "#000000",
     } as unknown as CanvasRenderingContext2D);
+    let pendingFrame: FrameRequestCallback | null = null;
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      pendingFrame = callback;
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {
+      pendingFrame = null;
+    });
 
     const user = userEvent.setup();
     render(
@@ -360,7 +368,7 @@ describe("PresentationMode", () => {
     const clearsBeforeStroke = clearRect.mock.calls.length;
 
     fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 100 });
-    const clearsAfterPointerDown = clearRect.mock.calls.length;
+    const strokesAfterPointerDown = stroke.mock.calls.length;
     const contextLookupsAfterPointerDown = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length;
     for (let index = 1; index <= 20; index += 1) {
       fireEvent.pointerMove(canvas, {
@@ -369,12 +377,17 @@ describe("PresentationMode", () => {
         clientY: 100 + index * 4,
       });
     }
+
+    expect(requestFrame).toHaveBeenCalledTimes(1);
+    expect(stroke).toHaveBeenCalledTimes(strokesAfterPointerDown);
+    act(() => pendingFrame?.(16));
+    expect(stroke).toHaveBeenCalledTimes(strokesAfterPointerDown + 1);
+
     fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 310, clientY: 184 });
 
-    expect(clearsAfterPointerDown).toBe(clearsBeforeStroke);
     expect(clearRect).toHaveBeenCalledTimes(clearsBeforeStroke);
     expect(HTMLCanvasElement.prototype.getContext).toHaveBeenCalledTimes(contextLookupsAfterPointerDown);
-    expect(stroke.mock.calls.length).toBeGreaterThanOrEqual(22);
+    expect(stroke.mock.calls.length).toBeLessThanOrEqual(strokesAfterPointerDown + 2);
     expect(bounds).toHaveBeenCalledTimes(1);
     expect(canvas).toHaveAttribute("data-recorded-stroke-count", "1");
   });

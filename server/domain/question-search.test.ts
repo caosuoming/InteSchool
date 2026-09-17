@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Question } from "../../src/types/index.js";
 import type { AppState } from "../types.js";
 import type { TeacherRecord } from "../types.js";
@@ -118,5 +118,35 @@ describe("question pagination", () => {
       expect(result.total).toBe(3);
       expect(result.items.map((item) => item.id)).toEqual(["shared"]);
     });
+  });
+
+  it("delegates pagination to the database backend when available", async () => {
+    const teacher = { id: "teacher-1", schoolId: "school-1" } as TeacherRecord;
+    const backendPage = {
+      items: [question("db-page", { usageCount: 7 })],
+      total: 73,
+    };
+    const searchQuestions = vi.fn().mockRejectedValue(new Error("full search should not run"));
+    const searchQuestionPage = vi.fn().mockResolvedValue(backendPage);
+
+    await runWithState(state([]), async () => {
+      const result = await questionService.listQuestionPage(
+        { teacherId: teacher.id, keyword: "函数" },
+        3,
+        20,
+        "recentUse",
+        teacher,
+      );
+      expect(result).toEqual(backendPage);
+    }, { searchQuestions, searchQuestionPage });
+
+    expect(searchQuestionPage).toHaveBeenCalledWith(
+      { teacherId: teacher.id, keyword: "函数" },
+      3,
+      20,
+      "recentUse",
+      teacher.id,
+    );
+    expect(searchQuestions).not.toHaveBeenCalled();
   });
 });

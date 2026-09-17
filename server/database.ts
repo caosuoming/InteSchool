@@ -16,6 +16,7 @@ import type {
   TeacherRecord,
 } from "./types.js";
 import type { ServerConfig } from "./config.js";
+import type { QuestionSortKey } from "./runtime-db.js";
 import { hashPassword, verifyPassword } from "./lib/password.js";
 import { createSqlClient, type SqlClient, type SqlConnection } from "./sql-client.js";
 
@@ -118,6 +119,48 @@ function isUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && (error as { code?: unknown }).code === "23505");
 }
 
+function questionSearchWhere(filter: QuestionFilter): { clauses: string[]; params: unknown[] } {
+  const clauses = ["collection = 'questions'"];
+  const params: unknown[] = [];
+  const add = (sql: string, value: unknown) => {
+    params.push(value);
+    clauses.push(sql.replace("__PARAM__", `$${params.length}`));
+  };
+
+  if (filter.keyword?.trim()) {
+    const fields = filter.searchFields?.length ? filter.searchFields : ["stem", "analysis", "summary", "remark"];
+    const expressions = fields.map((field) => {
+      if (field === "remark") return `(coalesce(data_json->>'remark','') || ' ' || coalesce((data_json->'remarks')::text,''))`;
+      return `coalesce(data_json->>'${field}','')`;
+    });
+    add(`lower(${expressions.join(" || ' ' || ")}) LIKE __PARAM__`, `%${filter.keyword.trim().toLowerCase()}%`);
+  }
+  if (filter.ids?.length) add("id = ANY(__PARAM__::text[])", filter.ids);
+  if (filter.noChapter) clauses.push("jsonb_array_length(coalesce(data_json->'chapterIds', '[]'::jsonb)) = 0");
+  if (filter.chapterIds?.length) {
+    if ((filter.chapterLogic || "or") === "and") add("coalesce(data_json->'chapterIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.chapterIds));
+    else add("coalesce(data_json->'chapterIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.chapterIds);
+  }
+  if (filter.noKnowledge) clauses.push("jsonb_array_length(coalesce(data_json->'knowledgePointIds', '[]'::jsonb)) = 0");
+  if (filter.knowledgePointIds?.length) {
+    if ((filter.knowledgeLogic || "or") === "and") add("coalesce(data_json->'knowledgePointIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.knowledgePointIds));
+    else add("coalesce(data_json->'knowledgePointIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.knowledgePointIds);
+  }
+  if (filter.difficulty?.length) add("(data_json->>'difficulty')::int = ANY(__PARAM__::int[])", filter.difficulty);
+  if (filter.recommendation?.length) add("(data_json->>'recommendation')::int = ANY(__PARAM__::int[])", filter.recommendation);
+  if (filter.type?.length) add("data_json->>'type' = ANY(__PARAM__::text[])", filter.type);
+  if (filter.teacherId) add("owner_id = __PARAM__", filter.teacherId);
+  if (filter.schoolId) add("school_id = __PARAM__", filter.schoolId);
+  if (filter.grade) add("data_json->>'grade' = __PARAM__", filter.grade);
+  if (filter.schoolYear) add("data_json->>'schoolYear' = __PARAM__", filter.schoolYear);
+  if (filter.semester) add("coalesce(data_json->>'semester', '上学期') = __PARAM__", filter.semester);
+  if (filter.sourceType?.length) add("data_json->>'sourceType' = ANY(__PARAM__::text[])", filter.sourceType);
+  if (filter.category?.length) add("data_json->>'category' = ANY(__PARAM__::text[])", filter.category);
+  if (filter.excludeQuestionIds?.length) add("NOT (id = ANY(__PARAM__::text[]))", filter.excludeQuestionIds);
+
+  return { clauses, params };
+}
+
 export class DuplicateAccountError extends Error {}
 
 export class DatabaseStore {
@@ -190,6 +233,11 @@ export class DatabaseStore {
     await this.sql.query(`
       CREATE INDEX IF NOT EXISTS idx_questions_school_teacher
         ON app_records(school_id, owner_id)
+        WHERE collection = 'questions'
+    `);
+    await this.sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_questions_owner_created
+        ON app_records(owner_id, created_at DESC, id)
         WHERE collection = 'questions'
     `);
     await this.sql.query(`
@@ -1328,50 +1376,53 @@ export class DatabaseStore {
   }
 
   async searchQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
-    const clauses = ["collection = 'questions'"];
-    const params: unknown[] = [];
-    const add = (sql: string, value: unknown) => {
-      params.push(value);
-      clauses.push(sql.replace("__PARAM__", `$${params.length}`));
-    };
-
-    if (filter.keyword?.trim()) {
-      const fields = filter.searchFields?.length ? filter.searchFields : ["stem", "analysis", "summary", "remark"];
-      const expressions = fields.map((field) => {
-        if (field === "remark") return `(coalesce(data_json->>'remark','') || ' ' || coalesce((data_json->'remarks')::text,''))`;
-        return `coalesce(data_json->>'${field}','')`;
-      });
-      add(`lower(${expressions.join(" || ' ' || ")}) LIKE __PARAM__`, `%${filter.keyword.trim().toLowerCase()}%`);
-    }
-    if (filter.ids?.length) add("id = ANY(__PARAM__::text[])", filter.ids);
-    if (filter.noChapter) clauses.push("jsonb_array_length(coalesce(data_json->'chapterIds', '[]'::jsonb)) = 0");
-    if (filter.chapterIds?.length) {
-      if ((filter.chapterLogic || "or") === "and") add("coalesce(data_json->'chapterIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.chapterIds));
-      else add("coalesce(data_json->'chapterIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.chapterIds);
-    }
-    if (filter.noKnowledge) clauses.push("jsonb_array_length(coalesce(data_json->'knowledgePointIds', '[]'::jsonb)) = 0");
-    if (filter.knowledgePointIds?.length) {
-      if ((filter.knowledgeLogic || "or") === "and") add("coalesce(data_json->'knowledgePointIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.knowledgePointIds));
-      else add("coalesce(data_json->'knowledgePointIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.knowledgePointIds);
-    }
-    if (filter.difficulty?.length) add("(data_json->>'difficulty')::int = ANY(__PARAM__::int[])", filter.difficulty);
-    if (filter.recommendation?.length) add("(data_json->>'recommendation')::int = ANY(__PARAM__::int[])", filter.recommendation);
-    if (filter.type?.length) add("data_json->>'type' = ANY(__PARAM__::text[])", filter.type);
-    if (filter.teacherId) add("owner_id = __PARAM__", filter.teacherId);
-    if (filter.schoolId) add("school_id = __PARAM__", filter.schoolId);
-    if (filter.grade) add("data_json->>'grade' = __PARAM__", filter.grade);
-    if (filter.schoolYear) add("data_json->>'schoolYear' = __PARAM__", filter.schoolYear);
-    if (filter.semester) add("coalesce(data_json->>'semester', '上学期') = __PARAM__", filter.semester);
-    if (filter.sourceType?.length) add("data_json->>'sourceType' = ANY(__PARAM__::text[])", filter.sourceType);
-    if (filter.category?.length) add("data_json->>'category' = ANY(__PARAM__::text[])", filter.category);
-    if (filter.excludeQuestionIds?.length) add("NOT (id = ANY(__PARAM__::text[]))", filter.excludeQuestionIds);
-
+    const { clauses, params } = questionSearchWhere(filter);
     const result = await this.sql.query<{ data_json: unknown }>(`
       SELECT data_json FROM app_records
       WHERE ${clauses.join(" AND ")}
       ORDER BY created_at DESC, id
     `, params);
     return result.rows.map((row) => jsonValue<Question>(row.data_json));
+  }
+
+  async searchQuestionPage(
+    filter: QuestionFilter,
+    page: number,
+    pageSize: number,
+    sortKey: QuestionSortKey,
+    teacherId: string,
+  ): Promise<{ items: Question[]; total: number }> {
+    const { clauses, params } = questionSearchWhere(filter);
+    params.push(teacherId);
+    clauses.push(`(owner_id = $${params.length} OR coalesce((data_json->>'isShared')::boolean, false))`);
+
+    const countResult = await this.sql.query<{ total: string | number }>(`
+      SELECT count(*) AS total FROM app_records
+      WHERE ${clauses.join(" AND ")}
+    `, params);
+    const total = Number(countResult.rows[0]?.total || 0);
+    const safePageSize = Math.max(1, Math.min(200, Math.floor(pageSize) || 20));
+    const totalPages = Math.max(1, Math.ceil(total / safePageSize));
+    const safePage = Math.max(1, Math.min(totalPages, Math.floor(page) || 1));
+    const offset = (safePage - 1) * safePageSize;
+    const orderBy = sortKey === "usage" || sortKey === "weakness"
+      ? "coalesce((data_json->>'usageCount')::int, 0) DESC, created_at DESC, id"
+      : sortKey === "recentUse"
+        ? "NULLIF(data_json->>'lastUsedAt', '')::timestamptz DESC NULLS LAST, coalesce((data_json->>'usageCount')::int, 0) DESC, created_at DESC, id"
+        : sortKey === "recommendation"
+          ? "coalesce((data_json->>'recommendation')::int, 0) DESC, coalesce((data_json->>'usageCount')::int, 0) DESC, created_at DESC, id"
+          : "created_at DESC, id";
+    const pageParams = [...params, safePageSize, offset];
+    const result = await this.sql.query<{ data_json: unknown }>(`
+      SELECT data_json FROM app_records
+      WHERE ${clauses.join(" AND ")}
+      ORDER BY ${orderBy}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `, pageParams);
+    return {
+      items: result.rows.map((row) => jsonValue<Question>(row.data_json)),
+      total,
+    };
   }
 
   async hasLegacySqlite(path: string): Promise<boolean> {

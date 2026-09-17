@@ -1238,6 +1238,29 @@ describe("production backend", () => {
     expect(built.store.getTeacherById("tch-1")?.nickname).toBe("立方课堂新版");
   });
 
+  it("paginates the personal question bank through the database query path", async () => {
+    const session = await login(built.app);
+    const response = await built.app.inject({
+      method: "POST",
+      url: "/api/rpc",
+      headers: {
+        cookie: session.cookie,
+        "x-inteschool-csrf": session.csrfToken,
+      },
+      payload: {
+        service: "question",
+        method: "listQuestionPage",
+        args: [{ teacherId: "tch-1" }, 1, 1, "newest", null],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const result = response.json<{ result: { items: Array<{ teacherId: string }>; total: number } }>().result;
+    expect(result.total).toBeGreaterThan(0);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.teacherId).toBe("tch-1");
+  });
+
   it("requires CSRF and prevents teacher identity spoofing", async () => {
     const session = await login(built.app);
     const withoutCsrf = await built.app.inject({
