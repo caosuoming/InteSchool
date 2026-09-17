@@ -28,6 +28,14 @@ interface StudentInteractionFollow {
   createdAt: string;
 }
 
+interface StudentInteractionIgnore {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  studentId: string;
+  createdAt: string;
+}
+
 const MAX_INTERACTION_ATTACHMENTS = 6;
 
 function normalizeAttachments(
@@ -150,6 +158,9 @@ export const studentInteractionService = {
     const exists = current.some((follow) => follow.teacherId === teacher.id && follow.studentId === studentId);
     if (followed && !exists) {
       if (!teacher.schoolId) throw new Error("当前教师未加入学校");
+      db.update("studentInteractionIgnores", (list: StudentInteractionIgnore[] = []) => list.filter((ignore) => (
+        ignore.teacherId !== teacher.id || ignore.studentId !== studentId
+      )));
       const record: StudentInteractionFollow = {
         id: genId("sif"),
         teacherId: teacher.id,
@@ -161,6 +172,39 @@ export const studentInteractionService = {
     } else if (!followed && exists) {
       db.update("studentInteractionFollows", (list: StudentInteractionFollow[] = []) => list.filter((follow) => (
         follow.teacherId !== teacher.id || follow.studentId !== studentId
+      )));
+    }
+  },
+
+  async listIgnoredStudentIds(teacher: Teacher): Promise<string[]> {
+    const accessibleStudents = await classService.listMyStudents(teacher.schoolId, teacher.id);
+    const accessibleIds = new Set(accessibleStudents.map((student) => student.id));
+    const ignores = (db.read("studentInteractionIgnores") || []) as StudentInteractionIgnore[];
+    return ignores
+      .filter((ignore) => ignore.teacherId === teacher.id && accessibleIds.has(ignore.studentId))
+      .map((ignore) => ignore.studentId);
+  },
+
+  async setStudentIgnored(studentId: string, ignored: boolean, teacher: Teacher): Promise<void> {
+    await requireStudentAccess(teacher, studentId);
+    const current = (db.read("studentInteractionIgnores") || []) as StudentInteractionIgnore[];
+    const exists = current.some((ignore) => ignore.teacherId === teacher.id && ignore.studentId === studentId);
+    if (ignored && !exists) {
+      if (!teacher.schoolId) throw new Error("当前教师未加入学校");
+      db.update("studentInteractionFollows", (list: StudentInteractionFollow[] = []) => list.filter((follow) => (
+        follow.teacherId !== teacher.id || follow.studentId !== studentId
+      )));
+      const record: StudentInteractionIgnore = {
+        id: genId("sii"),
+        teacherId: teacher.id,
+        schoolId: teacher.schoolId,
+        studentId,
+        createdAt: new Date().toISOString(),
+      };
+      db.update("studentInteractionIgnores", (list: StudentInteractionIgnore[] = []) => [record, ...list]);
+    } else if (!ignored && exists) {
+      db.update("studentInteractionIgnores", (list: StudentInteractionIgnore[] = []) => list.filter((ignore) => (
+        ignore.teacherId !== teacher.id || ignore.studentId !== studentId
       )));
     }
   },

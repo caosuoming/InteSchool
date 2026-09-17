@@ -7,6 +7,7 @@ import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { extractStoredFile } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { ClassroomHomework, ClassroomNotice, LessonCourseware, Teacher } from "@/types";
@@ -33,6 +34,13 @@ vi.mock("@/services/classroomNotice", () => ({
 vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
     listCoursewares: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/studentInteraction", () => ({
+  studentInteractionService: {
+    listFollowedStudentIds: vi.fn(),
+    listIgnoredStudentIds: vi.fn(),
   },
 }));
 
@@ -215,6 +223,8 @@ describe("ClassroomPage", () => {
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([mathHomework]);
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([lesson]);
+    vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue([]);
+    vi.mocked(studentInteractionService.listIgnoredStudentIds).mockResolvedValue([]);
     vi.mocked(extractStoredFile).mockResolvedValue({
       text: "函数定义",
       html: "<p>函数定义</p>",

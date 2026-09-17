@@ -33,6 +33,8 @@ vi.mock("@/services/studentInteraction", () => ({
     listByTeacher: vi.fn(),
     listFollowedStudentIds: vi.fn(),
     setStudentFollowed: vi.fn(),
+    listIgnoredStudentIds: vi.fn(),
+    setStudentIgnored: vi.fn(),
   },
 }));
 
@@ -123,6 +125,8 @@ describe("StudentHomeworkRecordPage", () => {
     vi.mocked(studentInteractionService.listByTeacher).mockResolvedValue([]);
     vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue([]);
     vi.mocked(studentInteractionService.setStudentFollowed).mockResolvedValue(undefined);
+    vi.mocked(studentInteractionService.listIgnoredStudentIds).mockResolvedValue([]);
+    vi.mocked(studentInteractionService.setStudentIgnored).mockResolvedValue(undefined);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue(knowledgePoints);
     vi.mocked(homeworkRecordService.listPinnedKnowledgePointIds).mockResolvedValue(["kp-child"]);
@@ -208,6 +212,21 @@ describe("StudentHomeworkRecordPage", () => {
       expect(studentInteractionService.setStudentFollowed).toHaveBeenCalledWith("student-1", true);
     });
     expect(screen.getByRole("button", { name: "取消关注甲同学" })).toBeInTheDocument();
+  });
+
+  it("supports the ignored-student marker in the shared roster", async () => {
+    const user = userEvent.setup();
+    vi.mocked(studentInteractionService.listIgnoredStudentIds).mockResolvedValue(["student-1"]);
+    render(<StudentHomeworkRecordPage />);
+
+    const groupToggle = await screen.findByRole("button", { name: /高一（1）班/ });
+    await user.click(groupToggle);
+    expect(screen.getByRole("button", { name: "取消不关注甲同学" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "取消不关注甲同学" }));
+    await waitFor(() => {
+      expect(studentInteractionService.setStudentIgnored).toHaveBeenCalledWith("student-1", false);
+    });
   });
 
   it("loads a pinned knowledge point for the selected student and saves status changes", async () => {

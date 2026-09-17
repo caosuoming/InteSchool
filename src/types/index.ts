@@ -499,6 +499,10 @@ export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {
   homeworkHistory: ClassroomHomework[];
   notices: ClassroomNotice[];
   students: Array<Pick<Student, "id" | "name">>;
+  studentAttentionByTeacherId?: Record<string, {
+    followedStudentIds: string[];
+    ignoredStudentIds: string[];
+  }>;
 }
 
 export type StudentStatus = "active" | "suspended" | "graduated" | "transferred" | "deleted";

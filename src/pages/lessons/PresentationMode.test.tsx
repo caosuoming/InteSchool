@@ -554,7 +554,7 @@ describe("PresentationMode", () => {
     }
   });
 
-  it("rolls through the whole class for five seconds and finishes on a slide candidate", async () => {
+  it("rolls for a randomized duration and finishes on a slide candidate", async () => {
     vi.useFakeTimers();
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
@@ -585,6 +585,42 @@ describe("PresentationMode", () => {
 
       expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("抽中学生");
       expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("候选同学");
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps ignored students out of both the rolling display and winner pool", async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      render(
+        <PresentationMode
+          slides={[{ ...questionSlide, askableStudentIds: [] }]}
+          initialIndex={0}
+          students={[
+            { id: "followed", name: "关注同学" },
+            { id: "normal", name: "普通同学" },
+            { id: "ignored", name: "不关注同学" },
+          ]}
+          followedStudentIds={new Set(["followed"])}
+          ignoredStudentIds={new Set(["ignored"])}
+          relatedQuestionsById={{}}
+          onExit={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      expect(screen.queryByText("不关注同学")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "摇号" }));
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("普通同学");
+
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("普通同学");
+      expect(screen.getByTestId("student-lottery-overlay")).not.toHaveTextContent("不关注同学");
     } finally {
       random.mockRestore();
       vi.useRealTimers();

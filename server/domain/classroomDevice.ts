@@ -345,7 +345,23 @@ function currentClassroomContent(
   const students = (db.read("students") as Student[])
     .filter((item) => item.schoolId === device.schoolId && item.classId === classId && item.status === "active")
     .map((item) => ({ id: item.id, name: item.name }));
-  return { lessons, homeworks, homeworkHistory, notices, students };
+  const studentIds = new Set(students.map((student) => student.id));
+  const teacherIds = new Set(lessons.map((lesson) => lesson.teacherId));
+  const followedByTeacherId = new Map<string, string[]>();
+  const ignoredByTeacherId = new Map<string, string[]>();
+  for (const follow of db.read("studentInteractionFollows") as Array<{ teacherId: string; studentId: string }>) {
+    if (!teacherIds.has(follow.teacherId) || !studentIds.has(follow.studentId)) continue;
+    followedByTeacherId.set(follow.teacherId, [...(followedByTeacherId.get(follow.teacherId) || []), follow.studentId]);
+  }
+  for (const ignore of db.read("studentInteractionIgnores") as Array<{ teacherId: string; studentId: string }>) {
+    if (!teacherIds.has(ignore.teacherId) || !studentIds.has(ignore.studentId)) continue;
+    ignoredByTeacherId.set(ignore.teacherId, [...(ignoredByTeacherId.get(ignore.teacherId) || []), ignore.studentId]);
+  }
+  const studentAttentionByTeacherId = Object.fromEntries([...teacherIds].map((teacherId) => [teacherId, {
+    followedStudentIds: followedByTeacherId.get(teacherId) || [],
+    ignoredStudentIds: ignoredByTeacherId.get(teacherId) || [],
+  }]));
+  return { lessons, homeworks, homeworkHistory, notices, students, studentAttentionByTeacherId };
 }
 
 function availableClassroomsForDevice(device: StoredClassroomDevice): SchoolClass[] {

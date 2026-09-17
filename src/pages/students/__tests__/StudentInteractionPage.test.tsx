@@ -24,6 +24,8 @@ vi.mock("@/services/studentInteraction", () => ({
     listByTeacher: vi.fn(),
     listFollowedStudentIds: vi.fn(),
     setStudentFollowed: vi.fn(),
+    listIgnoredStudentIds: vi.fn(),
+    setStudentIgnored: vi.fn(),
     createInteraction: vi.fn(),
     deleteInteraction: vi.fn(),
   },
@@ -151,6 +153,8 @@ describe("StudentInteractionPage", () => {
     vi.mocked(studentInteractionService.listByStudent).mockResolvedValue([]);
     vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue([]);
     vi.mocked(studentInteractionService.setStudentFollowed).mockResolvedValue(undefined);
+    vi.mocked(studentInteractionService.listIgnoredStudentIds).mockResolvedValue([]);
+    vi.mocked(studentInteractionService.setStudentIgnored).mockResolvedValue(undefined);
     vi.mocked(studentInteractionService.createInteraction).mockResolvedValue(createdInteraction);
     vi.mocked(studentInteractionService.deleteInteraction).mockResolvedValue(undefined);
     vi.mocked(homeworkRecordService.listByStudent).mockResolvedValue([]);
@@ -264,6 +268,24 @@ describe("StudentInteractionPage", () => {
       expect(studentInteractionService.setStudentFollowed).toHaveBeenCalledWith("student-1", true);
     });
     expect(screen.getByRole("button", { name: "取消关注甲同学" })).toBeInTheDocument();
+  });
+
+  it("marks students as ignored and makes follow/ignore mutually exclusive", async () => {
+    const user = userEvent.setup();
+    vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue(["student-1"]);
+    render(<StudentInteractionPage embedded />);
+
+    const classOneToggle = await screen.findByRole("button", { name: /高一（1）班/ });
+    await user.click(classOneToggle);
+
+    expect(screen.getByRole("button", { name: "取消关注甲同学" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "标记甲同学为不关注" }));
+
+    await waitFor(() => {
+      expect(studentInteractionService.setStudentIgnored).toHaveBeenCalledWith("student-1", true);
+    });
+    expect(screen.getByRole("button", { name: "取消不关注甲同学" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "关注甲同学" })).toBeInTheDocument();
   });
 
   it("uploads pasted chat images and submits an image-only interaction", async () => {

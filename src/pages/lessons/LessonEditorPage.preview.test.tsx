@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   listMyStudents: vi.fn(),
   listMyClasses: vi.fn(),
   listFollowedStudentIds: vi.fn(),
+  listIgnoredStudentIds: vi.fn(),
   getKnowledgeMastery: vi.fn(),
   uploadFile: vi.fn(),
 }));
@@ -81,7 +82,10 @@ vi.mock("@/services/material", () => ({
   materialService: { getMaterial: mocks.getMaterial },
 }));
 vi.mock("@/services/studentInteraction", () => ({
-  studentInteractionService: { listFollowedStudentIds: mocks.listFollowedStudentIds },
+  studentInteractionService: {
+    listFollowedStudentIds: mocks.listFollowedStudentIds,
+    listIgnoredStudentIds: mocks.listIgnoredStudentIds,
+  },
 }));
 vi.mock("@/services/analytics", () => ({
   analyticsService: { getKnowledgeMastery: mocks.getKnowledgeMastery },
@@ -119,6 +123,7 @@ describe("LessonEditorPage preview query", () => {
     mocks.listMyStudents.mockResolvedValue([]);
     mocks.listMyClasses.mockResolvedValue([]);
     mocks.listFollowedStudentIds.mockResolvedValue([]);
+    mocks.listIgnoredStudentIds.mockResolvedValue([]);
     mocks.getKnowledgeMastery.mockResolvedValue([]);
     mocks.uploadFile.mockResolvedValue({ url: "/uploads/pasted.png" });
   });

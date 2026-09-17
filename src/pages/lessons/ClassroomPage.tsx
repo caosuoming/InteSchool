@@ -37,6 +37,7 @@ import { ApiError } from "@/services/api";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import type { ClassroomDeviceSnapshot, ClassroomHomework, ClassroomNotice, LessonCourseware, SchoolClass, Student } from "@/types";
@@ -265,6 +266,8 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
   const [notices, setNotices] = useState<ClassroomNotice[]>([]);
   const [historyHomeworks, setHistoryHomeworks] = useState<ClassroomHomework[]>([]);
   const [students, setStudents] = useState<Array<Pick<Student, "id" | "name">>>([]);
+  const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
+  const [ignoredStudentIds, setIgnoredStudentIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -333,7 +336,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         setStudents([]);
         return;
       }
-      const [lessonData, studentData, homeworkData, noticeData] = await Promise.all([
+      const [lessonData, studentData, homeworkData, noticeData, followedIds, ignoredIds] = await Promise.all([
         lessonCoursewareService.listCoursewares({
           schoolId: teacher.schoolId,
           classId: selectedClassId,
@@ -351,11 +354,15 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
           classId: selectedClassId,
           activeOnly: true,
         }),
+        studentInteractionService.listFollowedStudentIds().catch(() => []),
+        studentInteractionService.listIgnoredStudentIds().catch(() => []),
       ]);
       setLessons(lessonData);
       setStudents(studentData);
       setHomeworks(homeworkData);
       setNotices(noticeData);
+      setFollowedStudentIds(new Set(followedIds));
+      setIgnoredStudentIds(new Set(ignoredIds));
     } catch (error) {
       if (deviceMode) {
         if (error instanceof ApiError && error.status === 404) {
@@ -641,11 +648,22 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
   }
 
   if (presenting) {
+    const deviceAttention = deviceMode
+      ? deviceSnapshot?.studentAttentionByTeacherId?.[presenting.teacherId]
+      : undefined;
+    const presentationFollowedStudentIds = deviceAttention
+      ? new Set(deviceAttention.followedStudentIds)
+      : followedStudentIds;
+    const presentationIgnoredStudentIds = deviceAttention
+      ? new Set(deviceAttention.ignoredStudentIds)
+      : ignoredStudentIds;
     return (
       <PresentationMode
         slides={presenting.slides}
         initialIndex={0}
         students={students}
+        followedStudentIds={presentationFollowedStudentIds}
+        ignoredStudentIds={presentationIgnoredStudentIds}
         relatedQuestionsById={{}}
         preferenceOwnerId={presenting.teacherId}
         onExit={() => setPresenting(null)}
