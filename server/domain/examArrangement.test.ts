@@ -37,10 +37,10 @@ describe("exam arrangement service", () => {
       id: "class-2",
       type: "school",
       schoolId: "school-1",
-      name: "高三（2）班",
-      grade: "高三",
-      gradeYear: 2023,
-      gradYear: 2026,
+      name: "高二（1）班",
+      grade: "高二",
+      gradeYear: 2024,
+      gradYear: 2027,
       studentCount: 0,
       createdBy: "teacher-1",
       createdAt: "2025-09-01T00:00:00.000Z",
@@ -64,19 +64,21 @@ describe("exam arrangement service", () => {
       const saved = await examArrangementService.saveTeachingScheduleProfile(
         "school-1",
         "teacher-1",
-        "grad-2026",
+        "2026-2027",
+        "上学期",
         baseConfig,
       );
-      expect(saved.cohortLabel).toContain("高三");
+      expect(saved).toMatchObject({ schoolYear: "2026-2027", semester: "上学期" });
       expect(saved.config.teacherNotes).toEqual({ "name:张老师": "周三下午教研" });
       expect((appState.teachingScheduleProfiles as any[])).toHaveLength(1);
-      await expect(examArrangementService.getTeachingScheduleProfile("school-1", "grad-2026"))
+      await expect(examArrangementService.getTeachingScheduleProfile("school-1", "2026-2027", "上学期"))
         .resolves.toMatchObject({ id: saved.id, updatedBy: "teacher-1" });
 
       await expect(examArrangementService.saveTeachingScheduleProfile(
         "school-1",
         "teacher-1",
-        "grad-2026",
+        "2026-2027",
+        "上学期",
         {
           ...baseConfig,
           slots: {
@@ -89,7 +91,8 @@ describe("exam arrangement service", () => {
       await expect(examArrangementService.saveTeachingScheduleProfile(
         "school-1",
         "teacher-1",
-        "grad-2026",
+        "2026-2027",
+        "上学期",
         {
           ...baseConfig,
           subjectRequirements: { 数学: { "1-morning": "forbidden" } },
