@@ -203,34 +203,50 @@ function getOptionColor(index: number): string {
  */
 function removeKeywords(text: string, keywords: string[]): string {
   if (!text) return text;
-  
+
+  const numeralSource = "[\\d一二三四五六七八九十百零〇两]+";
+  const explicitQuestionNumberPattern = new RegExp(
+    `^[\\s]*第[\\s]*${numeralSource}[\\s]*题[\\s]*[:：、.．-]?[\\s]*`,
+  );
+  const keywordPatterns = [...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean))]
+    .filter((keyword) => keyword !== "第")
+    .sort((left, right) => right.length - left.length)
+    .map((keyword) => {
+      const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const selfDelimited = /[:：、.．-]$/.test(keyword) || /^[【［[].*[】］\]]$/.test(keyword);
+      if (selfDelimited) {
+        return new RegExp(`^[\\s]*${escaped}[\\s]*`);
+      }
+      return new RegExp(
+        `^[\\s]*${escaped}(?:(?:[\\s]*题)?[\\s]*${numeralSource}[、．.）)]?[\\s]*[:：、.．-]?[\\s]*|[\\s]*题[\\s]*[:：、.．-]?[\\s]*|[\\s]*[:：、.．-][\\s]*|[\\s]+(?=\\S)|[\\s]*$)`,
+      );
+    });
+
   // 将文本按换行符分割，逐行处理
   const lines = text.split(/(\r?\n)/);
-  
+
   const processedLines = lines.map((line) => {
     // 如果是换行符本身，直接返回
     if (line === "\n" || line === "\r\n") {
       return line;
     }
-    
-    let processedLine = line;
-    
-    // 只移除行首的关键字及其后的编号
-    if (keywords.length > 0) {
-      const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-      const lineStartKeywordPattern = new RegExp(
-        `^[\\s]*(${escapedKeywords.join("|")})(?:[\\s]*题)?([\\s]*[\\d一二三四五六七八九十]+[、．.．）)]?)?[\\s]*[:：、.．-]?[\\s]*`,
-        "g"
-      );
-      processedLine = processedLine.replace(lineStartKeywordPattern, "");
+
+    let processedLine = line.replace(explicitQuestionNumberPattern, "");
+
+    // 关键字只有在明显充当结构标签时才移除。比如“第一象限”中的“第一”
+    // 属于正文，不能因为“第”配置成题目关键字就在入库时被删除。
+    for (const keywordPattern of keywordPatterns) {
+      if (!keywordPattern.test(processedLine)) continue;
+      processedLine = processedLine.replace(keywordPattern, "");
+      break;
     }
-    
+
     // 移除行首的数字编号（如 "1."、"一、" 等）
     processedLine = processedLine.replace(/^[\d一二三四五六七八九十]+[、．.．）)]\s*/, "");
-    
+
     return processedLine;
   });
-  
+
   // 合并处理后的行并去除首尾空白
   return processedLines.join("").trim();
 }
