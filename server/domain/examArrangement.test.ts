@@ -111,7 +111,15 @@ describe("exam arrangement service", () => {
         mode: "combination" as const,
         subjects: ["物理", "化学"],
         rooms: [{ id: "room-1", name: "第一考场", capacity: 2 }],
-        groupRoomIds: { "combined:物理|化学": ["room-1"] },
+        groupRoomIds: {
+          "combined:物理|化学": ["room-1"],
+          "combined:物理": ["room-1"],
+        },
+        groupRoomCapacities: {
+          "combined:物理|化学": { "room-1": 1 },
+          "combined:物理": { "room-1": 1 },
+        },
+        splitRoomIdsBySession: { combined: ["room-1"] },
         classRules: [{
           classId: "class-1",
           defaultSubjects: ["物理", "化学"],
@@ -125,7 +133,10 @@ describe("exam arrangement service", () => {
 
       const saved = await examArrangementService.saveArrangement("school-1", "teacher-1", input);
       expect(saved.assignments).toHaveLength(2);
-      expect(saved.groupRoomIds).toEqual({ "combined:物理|化学": ["room-1"] });
+      expect(saved.groupRoomIds).toEqual(input.groupRoomIds);
+      expect(saved.groupRoomCapacities).toEqual(input.groupRoomCapacities);
+      expect(saved.splitRoomIdsBySession).toEqual(input.splitRoomIdsBySession);
+      expect(new Set(saved.assignments.map((assignment) => assignment.roomNumber))).toEqual(new Set(["第一考场混1", "第一考场混2"]));
       expect(await examArrangementService.listArrangements("school-1", "grad-2026")).toEqual([saved]);
 
       const updated = await examArrangementService.saveArrangement("school-1", "teacher-1", {

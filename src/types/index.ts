@@ -787,6 +787,8 @@ export interface ExamSeatAssignment {
   subjectLabel: string;
   /** 同一 sessionKey 内考场容量不能重复使用。 */
   sessionKey: string;
+  /** 拆分混合考场时指向实体考场；未拆分时省略。 */
+  physicalRoomId?: string;
   roomId: string;
   roomName: string;
   roomNumber?: string;
@@ -816,6 +818,10 @@ export interface ExamArrangementInput {
   rooms: ExamRoomConfig[];
   /** 每个实际考试组合允许使用的考场 ID，未配置时默认使用全部考场。 */
   groupRoomIds?: Record<string, string[]>;
+  /** 每个实际考试组合在各实体考场最多布置的人数；未配置的考场沿用实体考场容量。 */
+  groupRoomCapacities?: Record<string, Record<string, number>>;
+  /** 每个场次中需要按实际考试组合拆成“混1/混2…”的实体考场 ID。 */
+  splitRoomIdsBySession?: Record<string, string[]>;
   classRules: ExamClassRoomRule[];
   studentSubjects: ExamStudentSubjectSelection[];
 }

@@ -45,13 +45,15 @@ function readArrangements(): ExamArrangement[] {
       simultaneousSubjectGroups: structuredClone(item.simultaneousSubjectGroups || []),
       seatOrder: item.seatOrder || "random",
       groupRoomIds: structuredClone(item.groupRoomIds || {}),
+      groupRoomCapacities: structuredClone(item.groupRoomCapacities || {}),
+      splitRoomIdsBySession: structuredClone(item.splitRoomIdsBySession || {}),
       rooms,
       studentSubjects: item.studentSubjects.map((selection) => ({
         ...selection,
         absent: Boolean(selection.absent),
       })),
       assignments: item.assignments.map((assignment) => {
-        const room = roomMap.get(assignment.roomId);
+        const room = roomMap.get(assignment.physicalRoomId || assignment.roomId);
         return {
           ...assignment,
           roomName: assignment.roomNumber || assignment.roomName,
@@ -221,6 +223,8 @@ export const examArrangementService = {
       simultaneousSubjectGroups: structuredClone(input.simultaneousSubjectGroups || []),
       seatOrder: input.seatOrder || "random",
       groupRoomIds: structuredClone(input.groupRoomIds || {}),
+      groupRoomCapacities: structuredClone(input.groupRoomCapacities || {}),
+      splitRoomIdsBySession: structuredClone(input.splitRoomIdsBySession || {}),
       rooms: input.rooms.map((room) => ({
         ...room,
         name: room.number || room.name,
@@ -260,6 +264,8 @@ export const examArrangementService = {
       simultaneousSubjectGroups: structuredClone(preparedInput.simultaneousSubjectGroups),
       seatOrder: preparedInput.seatOrder,
       groupRoomIds: structuredClone(preparedInput.groupRoomIds),
+      groupRoomCapacities: structuredClone(preparedInput.groupRoomCapacities),
+      splitRoomIdsBySession: structuredClone(preparedInput.splitRoomIdsBySession),
       rooms: structuredClone(preparedInput.rooms),
       classRules: structuredClone(preparedInput.classRules),
       studentSubjects: structuredClone(preparedInput.studentSubjects),

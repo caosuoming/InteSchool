@@ -299,14 +299,23 @@ export function buildExamInvigilationTable(
     };
   });
 
-  const rawRooms = arrangement.rooms
-    .filter((room) => usedRoomIds.has(room.id))
-    .map((room) => ({
-      roomId: room.id,
-      roomNumber: room.number || room.name,
-      roomLocation: room.location || room.name,
-      studentCount: Math.max(0, ...rowInputs.map((row) => row.roomStudents.get(room.id)?.size || 0)),
-    }));
+  const roomDetails = new Map<string, { roomNumber: string; roomLocation: string }>();
+  const configuredRooms = new Map(arrangement.rooms.map((room) => [room.id, room]));
+  for (const assignment of arrangement.assignments) {
+    if (!usedRoomIds.has(assignment.roomId) || roomDetails.has(assignment.roomId)) continue;
+    const physicalRoom = configuredRooms.get(assignment.physicalRoomId || assignment.roomId);
+    roomDetails.set(assignment.roomId, {
+      roomNumber: assignment.physicalRoomId
+        ? assignment.roomNumber || assignment.roomName
+        : physicalRoom?.number || physicalRoom?.name || assignment.roomNumber || assignment.roomName,
+      roomLocation: physicalRoom?.location || assignment.roomLocation || assignment.roomName,
+    });
+  }
+  const rawRooms = [...roomDetails.entries()].map(([roomId, details]) => ({
+    roomId,
+    ...details,
+    studentCount: Math.max(0, ...rowInputs.map((row) => row.roomStudents.get(roomId)?.size || 0)),
+  }));
   const groupedRooms = groupRoomsByLocation(rawRooms);
   const rooms = groupedRooms.rooms;
 
