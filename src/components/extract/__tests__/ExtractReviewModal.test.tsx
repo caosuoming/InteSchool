@@ -322,6 +322,77 @@ describe("ExtractReviewModal", () => {
     expect(mocks.confirmExtract.mock.calls[0][2].questions[0].stem).toBe("（本小题12分）示例题目");
   });
 
+  it("preserves semantic keyword text while removing real structural labels", async () => {
+    const user = userEvent.setup();
+    mocks.extractConfig.questionKeywords = ["第", "例", "训练"];
+    mocks.parseDocumentBlocks.mockReturnValue([
+      {
+        id: "block-question",
+        type: "question",
+        content: "第一象限内的点满足什么条件？",
+        order: 0,
+        status: "new",
+        questionType: "single",
+        options: ["第一象限", "第二象限", "第三象限", "第四象限"],
+        answer: "A",
+        analysis: "示例解析",
+        difficulty: 3,
+      },
+      {
+        id: "block-question-labelled",
+        type: "question",
+        content: "例题1 第一象限内点的横纵坐标符号是什么？",
+        order: 1,
+        status: "new",
+        questionType: "single",
+        options: ["例函数", "第二象限"],
+        answer: "A",
+        analysis: "示例解析",
+        difficulty: 3,
+      },
+      {
+        id: "block-knowledge",
+        type: "knowledge",
+        content: "训练方法用于巩固知识。\n第一象限内点的横纵坐标均为正。",
+        order: 2,
+        status: "new",
+      },
+    ]);
+
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "确认入库" }));
+
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    const payload = mocks.confirmExtract.mock.calls[0][2];
+
+    expect(payload.questions[0]).toMatchObject({
+      stem: "第一象限内的点满足什么条件？",
+      options: ["第一象限", "第二象限", "第三象限", "第四象限"],
+    });
+    expect(payload.questions[1]).toMatchObject({
+      stem: "第一象限内点的横纵坐标符号是什么？",
+      options: ["例函数", "第二象限"],
+    });
+    expect(payload.knowledgeBlocks[0]).toMatchObject({
+      title: "训练方法用于巩固知识。\n第一象限内点的横...",
+      content: "训练方法用于巩固知识。\n第一象限内点的横纵坐标均为正。",
+    });
+  });
+
   it("fills missing answer, analysis, and summary with 略 before ingestion", async () => {
     const user = userEvent.setup();
     mocks.parseDocumentBlocks.mockReturnValue([
