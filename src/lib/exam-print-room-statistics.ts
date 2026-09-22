@@ -91,21 +91,32 @@ export function buildExamPrintRoomStatistics(arrangement: ExamArrangement): Exam
   const combinedAssignments = arrangement.assignments.filter((assignment) => assignment.sessionKey === "combined");
   const selectionAssignments = combinedAssignments.length > 0 ? combinedAssignments : arrangement.assignments;
 
-  const rooms = arrangement.rooms
-    .filter((room) => usedRoomIds.has(room.id))
-    .map((room) => {
+  const roomDetails = new Map<string, { roomNumber: string; roomLocation: string }>();
+  const configuredRooms = new Map(arrangement.rooms.map((room) => [room.id, room]));
+  for (const assignment of arrangement.assignments) {
+    if (!usedRoomIds.has(assignment.roomId) || roomDetails.has(assignment.roomId)) continue;
+    const physicalRoom = configuredRooms.get(assignment.physicalRoomId || assignment.roomId);
+    roomDetails.set(assignment.roomId, {
+      roomNumber: assignment.physicalRoomId
+        ? assignment.roomNumber || assignment.roomName
+        : physicalRoom?.number || physicalRoom?.name || assignment.roomNumber || assignment.roomName,
+      roomLocation: physicalRoom?.location || assignment.roomLocation || assignment.roomName,
+    });
+  }
+  const rooms = [...roomDetails.entries()]
+    .map(([roomId, room]) => {
       const labels = new Set<string>();
-      const roomCombinedAssignments = selectionAssignments.filter((assignment) => assignment.roomId === room.id);
+      const roomCombinedAssignments = selectionAssignments.filter((assignment) => assignment.roomId === roomId);
       const roomSelectionAssignments = roomCombinedAssignments.length > 0
         ? roomCombinedAssignments
-        : arrangement.assignments.filter((assignment) => assignment.roomId === room.id);
+        : arrangement.assignments.filter((assignment) => assignment.roomId === roomId);
       for (const assignment of roomSelectionAssignments) {
         labels.add(selectionLabel(studentSubjects.get(assignment.studentId) || assignmentSubjects(assignment)));
       }
       return {
-        roomId: room.id,
-        roomNumber: room.number || room.name,
-        roomLocation: room.location || room.name,
+        roomId,
+        roomNumber: room.roomNumber,
+        roomLocation: room.roomLocation,
         selectionLabel: [...labels].sort((left, right) => left.localeCompare(right, "zh-CN")).join("、") || "—",
       };
     });

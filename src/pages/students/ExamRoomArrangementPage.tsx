@@ -316,6 +316,47 @@ function roomCapacityTotal(rooms: ExamRoomConfig[], roomIds?: Iterable<string>):
   ), 0);
 }
 
+function groupRoomCapacity(
+  draft: ExamArrangementInput,
+  groupKey: string,
+  room: ExamRoomConfig,
+): number {
+  return draft.groupRoomCapacities?.[groupKey]?.[room.id] ?? room.capacity;
+}
+
+function groupRoomCapacityTotal(
+  draft: ExamArrangementInput,
+  groupKey: string,
+): number {
+  const selected = new Set(draft.groupRoomIds?.[groupKey] || []);
+  return draft.rooms.reduce((total, room) => (
+    selected.has(room.id) ? total + groupRoomCapacity(draft, groupKey, room) : total
+  ), 0);
+}
+
+function balancedMixedRoomCapacities(
+  groups: ExamGroupSummary[],
+  capacity: number,
+): Record<string, number> | null {
+  if (groups.length < 2 || capacity < groups.length) return null;
+  const totalDemand = groups.reduce((sum, group) => sum + group.studentCount, 0);
+  const target = Math.min(capacity, totalDemand);
+  const capacities = Object.fromEntries(groups.map((group) => [group.key, 1]));
+  let remaining = target - groups.length;
+  while (remaining > 0) {
+    const candidate = groups
+      .filter((group) => capacities[group.key] < group.studentCount)
+      .sort((left, right) => (
+        (right.studentCount - capacities[right.key]) - (left.studentCount - capacities[left.key])
+        || left.key.localeCompare(right.key, "zh-CN")
+      ))[0];
+    if (!candidate) break;
+    capacities[candidate.key] += 1;
+    remaining -= 1;
+  }
+  return capacities;
+}
+
 function inferSelectedAcademicSubjects(name: string): string[] {
   const aliases: Array<[string, string]> = [
     ["物", "物理"],
@@ -458,6 +499,54 @@ function normalizeGroupRoomIds(
   }));
 }
 
+function normalizeGroupRoomCapacities(
+  draft: ExamArrangementInput,
+  context: ExamArrangementContext,
+): Record<string, Record<string, number>> {
+  const groups = new Map(summarizeExamGroups(draft, context).map((group) => [group.key, group]));
+  const roomMap = new Map(draft.rooms.map((room) => [room.id, room]));
+  const normalized: Record<string, Record<string, number>> = {};
+  for (const [groupKey, capacities] of Object.entries(draft.groupRoomCapacities || {})) {
+    if (!groups.has(groupKey)) continue;
+    const selectedRooms = new Set(draft.groupRoomIds?.[groupKey] || []);
+    const entries = Object.entries(capacities || {}).flatMap(([roomId, rawCapacity]) => {
+      const room = roomMap.get(roomId);
+      const capacity = Math.floor(Number(rawCapacity));
+      if (!room || !selectedRooms.has(roomId) || !Number.isFinite(capacity) || capacity < 1) return [];
+      return [[roomId, Math.min(capacity, room.capacity)] as const];
+    });
+    if (entries.length > 0) normalized[groupKey] = Object.fromEntries(entries);
+  }
+  return normalized;
+}
+
+function normalizeSplitRoomIdsBySession(
+  draft: ExamArrangementInput,
+  context: ExamArrangementContext,
+): Record<string, string[]> {
+  const sessions = new Map<string, ExamGroupSummary[]>();
+  for (const group of summarizeExamGroups(draft, context)) {
+    const groups = sessions.get(group.sessionKey) || [];
+    groups.push(group);
+    sessions.set(group.sessionKey, groups);
+  }
+  const roomMap = new Map(draft.rooms.map((room) => [room.id, room]));
+  return Object.fromEntries(Object.entries(draft.splitRoomIdsBySession || {}).flatMap(([sessionKey, selectedRoomIds]) => {
+    const groups = sessions.get(sessionKey);
+    if (!groups || groups.length < 2) return [];
+    const valid = uniqueSubjects(selectedRoomIds || []).filter((roomId) => {
+      const room = roomMap.get(roomId);
+      if (!room) return false;
+      const roomGroups = groups.filter((group) => (draft.groupRoomIds?.[group.key] || []).includes(roomId));
+      if (roomGroups.length < 2) return false;
+      const capacities = roomGroups.map((group) => draft.groupRoomCapacities?.[group.key]?.[roomId]);
+      return capacities.every((capacity) => capacity !== undefined)
+        && capacities.reduce((sum, capacity) => sum + (capacity || 0), 0) <= room.capacity;
+    });
+    return valid.length > 0 ? [[sessionKey, valid] as const] : [];
+  }));
+}
+
 function createDefaultRooms(context: ExamArrangementContext): ExamRoomConfig[] {
   if (context.classes.length === 0) {
     return [{ id: "room-1", name: "1考场", number: "1考场", location: "待填写", capacity: 30 }];
@@ -501,6 +590,8 @@ function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInp
     seatOrder: "random",
     rooms,
     groupRoomIds: {},
+    groupRoomCapacities: {},
+    splitRoomIdsBySession: {},
     classRules: createRules(context, DEFAULT_SUBJECTS, rooms, studentSubjects),
     studentSubjects,
   };
@@ -552,7 +643,14 @@ function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementC
       };
     }),
   };
-  return { ...normalized, groupRoomIds: normalizeGroupRoomIds(normalized, context) };
+  const groupRoomIds = normalizeGroupRoomIds(normalized, context);
+  const withRoomGroups = { ...normalized, groupRoomIds };
+  const groupRoomCapacities = normalizeGroupRoomCapacities(withRoomGroups, context);
+  const withCapacities = { ...withRoomGroups, groupRoomCapacities };
+  return {
+    ...withCapacities,
+    splitRoomIdsBySession: normalizeSplitRoomIdsBySession(withCapacities, context),
+  };
 }
 
 function cloneDraft(arrangement: ExamArrangement, context: ExamArrangementContext): ExamArrangementInput {
@@ -570,6 +668,8 @@ function cloneDraft(arrangement: ExamArrangement, context: ExamArrangementContex
     seatOrder: arrangement.seatOrder,
     rooms: structuredClone(arrangement.rooms),
     groupRoomIds: structuredClone(arrangement.groupRoomIds || {}),
+    groupRoomCapacities: structuredClone(arrangement.groupRoomCapacities || {}),
+    splitRoomIdsBySession: structuredClone(arrangement.splitRoomIdsBySession || {}),
     classRules: structuredClone(arrangement.classRules),
     studentSubjects: structuredClone(arrangement.studentSubjects),
   }, context);
@@ -821,6 +921,15 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const examGroups = useMemo(() => (
     draft && context ? summarizeExamGroups(draft, context) : []
   ), [context, draft]);
+  const examSessions = useMemo(() => {
+    const sessions = new Map<string, ExamGroupSummary[]>();
+    for (const group of examGroups) {
+      const groups = sessions.get(group.sessionKey) || [];
+      groups.push(group);
+      sessions.set(group.sessionKey, groups);
+    }
+    return [...sessions.entries()].map(([key, groups]) => ({ key, groups }));
+  }, [examGroups]);
   const totalRoomCapacity = useMemo(() => draft ? roomCapacityTotal(draft.rooms) : 0, [draft]);
   const activeFixedRoomClassId = context?.classes.some((classItem) => classItem.id === fixedRoomClassId)
     ? fixedRoomClassId
@@ -1169,14 +1278,106 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     });
   };
 
+  const setGroupRoomCapacity = (groupKey: string, roomId: string, rawCapacity: number) => {
+    const capacity = Math.floor(Number(rawCapacity));
+    updateDraft((current) => {
+      const room = current.rooms.find((item) => item.id === roomId);
+      if (!room || !Number.isFinite(capacity) || capacity < 1 || capacity > room.capacity) {
+        toast.error("布置人数超出范围", room ? `请输入 1 至 ${room.capacity} 人` : undefined);
+        return current;
+      }
+      const group = summarizeExamGroups(current, context!).find((item) => item.key === groupKey);
+      if (group && current.splitRoomIdsBySession?.[group.sessionKey]?.includes(roomId)) {
+        const sessionGroups = summarizeExamGroups(current, context!).filter((item) => (
+          item.sessionKey === group.sessionKey
+          && (current.groupRoomIds?.[item.key] || []).includes(roomId)
+        ));
+        const total = sessionGroups.reduce((sum, item) => (
+          sum + (item.key === groupKey
+            ? capacity
+            : groupRoomCapacity(current, item.key, room))
+        ), 0);
+        if (total > room.capacity) {
+          toast.error("混合考场人数超过上限", `各组合合计不能超过 ${room.capacity} 人`);
+          return current;
+        }
+      }
+      return {
+        ...current,
+        groupRoomCapacities: {
+          ...current.groupRoomCapacities,
+          [groupKey]: {
+            ...current.groupRoomCapacities?.[groupKey],
+            [roomId]: capacity,
+          },
+        },
+      };
+    });
+  };
+
+  const toggleSplitRoom = (sessionKey: string, roomId: string) => {
+    updateDraft((current) => {
+      const room = current.rooms.find((item) => item.id === roomId);
+      if (!room) return current;
+      const currentSplit = current.splitRoomIdsBySession?.[sessionKey] || [];
+      if (currentSplit.includes(roomId)) {
+        return {
+          ...current,
+          splitRoomIdsBySession: {
+            ...current.splitRoomIdsBySession,
+            [sessionKey]: currentSplit.filter((item) => item !== roomId),
+          },
+        };
+      }
+      const groups = summarizeExamGroups(current, context!).filter((group) => (
+        group.sessionKey === sessionKey
+        && (current.groupRoomIds?.[group.key] || []).includes(roomId)
+      ));
+      if (groups.length < 2) {
+        toast.error("至少两个同场组合使用该考场时才能拆分");
+        return current;
+      }
+      const currentTotal = groups.reduce((sum, group) => (
+        sum + groupRoomCapacity(current, group.key, room)
+      ), 0);
+      const capacities = currentTotal <= room.capacity
+        ? Object.fromEntries(groups.map((group) => [group.key, groupRoomCapacity(current, group.key, room)]))
+        : balancedMixedRoomCapacities(groups, room.capacity);
+      if (!capacities) {
+        toast.error("考场容量不足", `至少需要 ${groups.length} 个座位才能拆成 ${groups.length} 个混合考场`);
+        return current;
+      }
+      const groupRoomCapacities = structuredClone(current.groupRoomCapacities || {});
+      for (const group of groups) {
+        groupRoomCapacities[group.key] = {
+          ...groupRoomCapacities[group.key],
+          [roomId]: capacities[group.key],
+        };
+      }
+      return {
+        ...current,
+        groupRoomCapacities,
+        splitRoomIdsBySession: {
+          ...current.splitRoomIdsBySession,
+          [sessionKey]: [...new Set([...currentSplit, roomId])],
+        },
+      };
+    });
+  };
+
   const resetGroupRooms = (group: ExamGroupSummary) => {
-    updateDraft((current) => ({
-      ...current,
-      groupRoomIds: {
-        ...current.groupRoomIds,
-        [group.key]: defaultRoomIdsForGroup(group, current.rooms),
-      },
-    }));
+    updateDraft((current) => {
+      const groupRoomCapacities = { ...(current.groupRoomCapacities || {}) };
+      delete groupRoomCapacities[group.key];
+      return {
+        ...current,
+        groupRoomCapacities,
+        groupRoomIds: {
+          ...current.groupRoomIds,
+          [group.key]: defaultRoomIdsForGroup(group, current.rooms),
+        },
+      };
+    });
   };
 
   const toggleClassSubject = (classId: string, subject: string) => {
@@ -1689,36 +1890,115 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 </div>
                 <div className="mt-4 border-t border-ink-100 pt-4">
                   <div className="text-sm font-medium text-ink-800">考试组合使用考场</div>
-                  <div className="mt-1 text-xs text-ink-500">系统按参加各组合的班级教室和所有教室外考场自动生成，可逐项微调。</div>
+                  <div className="mt-1 text-xs text-ink-500">同一实际考试场次的组合并列处理并共享实体考场总容量；每个组合可限制各考场布置人数，共用考场还可拆成“混1、混2”等独立逻辑考场。</div>
                   <div className="mt-3 space-y-3">
-                    {examGroups.map((group) => (
-                      <div key={group.key} className="rounded-lg border border-ink-100 bg-paper p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-medium text-ink-900">
-                              {group.subjectLabel.split(" / ").join("、")}
+                    {examSessions.map((session, sessionIndex) => {
+                      const sessionTitle = session.key === "combined"
+                        ? "合并场次"
+                        : session.key.startsWith("simultaneous:")
+                          ? `同时场次 · ${session.key.slice("simultaneous:".length).split("|").join("、")}`
+                          : `单独场次 · ${session.key.replace(/^subject:/, "")}`;
+                      const sharedRooms = draft.rooms.filter((room) => session.groups.filter((group) => (
+                        (draft.groupRoomIds?.[group.key] || []).includes(room.id)
+                      )).length >= 2);
+                      return (
+                        <div key={session.key} data-testid={`exam-session-${sessionIndex + 1}`} className="rounded-xl border border-ink-200 bg-ink-50/60 p-3 sm:p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="text-sm font-medium text-ink-900">{sessionTitle}</div>
+                              <div className="mt-0.5 text-xs text-ink-500">
+                                {session.groups.length} 个考试组合并列 · 共 {session.groups.reduce((sum, group) => sum + group.studentCount, 0)} 人 · 实体考场容量在本场次内共享
+                              </div>
                             </div>
-                            <div className="mt-0.5 text-xs text-ink-500">
-                              {group.sessionKey === "combined"
-                                ? `合并场次 · ${group.studentCount} 人 · ${group.classIds.length} 个班级`
-                                : `单独场次 · ${group.studentCount} 人 · ${group.classIds.length} 个班级`}
-                              <span aria-live="polite"> · 所选考场最多可安排 {roomCapacityTotal(draft.rooms, draft.groupRoomIds?.[group.key] || [])} 个位置</span>
-                            </div>
+                            <Badge>{roomCapacityTotal(draft.rooms)} 个实体座位</Badge>
                           </div>
-                          <Button variant="ghost" size="sm" onClick={() => resetGroupRooms(group)}><RotateCcw className="h-3.5 w-3.5" />恢复自动分配</Button>
+
+                          <div className={cn("mt-3 grid gap-3", session.groups.length > 1 && "lg:grid-cols-2 2xl:grid-cols-3")}>
+                            {session.groups.map((group) => (
+                              <div key={group.key} className="rounded-lg border border-ink-100 bg-paper p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div>
+                                    <div className="text-sm font-medium text-ink-900">{group.subjectLabel.split(" / ").join("、")}</div>
+                                    <div className="mt-0.5 text-xs text-ink-500">
+                                      {group.sessionKey === "combined" ? "合并场次" : "单独场次"} · {group.studentCount} 人 · {group.classIds.length} 个班级
+                                      <span aria-live="polite"> · 所选考场最多可安排 {roomCapacityTotal(draft.rooms, draft.groupRoomIds?.[group.key] || [])} 个位置</span>
+                                      <span aria-live="polite"> · 本组合布置上限 {groupRoomCapacityTotal(draft, group.key)} 人</span>
+                                    </div>
+                                  </div>
+                                  <Button variant="ghost" size="sm" onClick={() => resetGroupRooms(group)}><RotateCcw className="h-3.5 w-3.5" />恢复自动分配</Button>
+                                </div>
+                                <div className="mt-3 space-y-2">
+                                  {draft.rooms.map((room) => {
+                                    const selected = (draft.groupRoomIds?.[group.key] || []).includes(room.id);
+                                    const roomUsers = session.groups.filter((item) => (
+                                      (draft.groupRoomIds?.[item.key] || []).includes(room.id)
+                                    ));
+                                    const split = (draft.splitRoomIdsBySession?.[session.key] || []).includes(room.id) && roomUsers.length >= 2;
+                                    const mixedIndex = split ? roomUsers.findIndex((item) => item.key === group.key) + 1 : 0;
+                                    const baseNumber = room.number || room.name;
+                                    const displayNumber = mixedIndex > 0 ? `${baseNumber}混${mixedIndex}` : baseNumber;
+                                    return (
+                                      <div key={room.id} className={cn("rounded-lg border px-2.5 py-2", selected ? "border-gold-200 bg-gold-50/40" : "border-ink-100 bg-ink-50/40")}>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <CheckboxPill
+                                            checked={selected}
+                                            label={selected && displayNumber !== baseNumber
+                                              ? `${displayNumber} · ${room.location || "位置待填写"}`
+                                              : roomChoiceLabel(room, context)}
+                                            onClick={() => toggleGroupRoom(group.key, room.id)}
+                                          />
+                                          {selected && (
+                                            <label className="ml-auto flex items-center gap-1.5 text-xs text-ink-500">
+                                              <span>布置人数</span>
+                                              <Input
+                                                aria-label={`${group.subjectLabel.split(" / ").join("、")}${displayNumber}布置人数`}
+                                                className="h-8 w-20"
+                                                type="number"
+                                                min={1}
+                                                max={room.capacity}
+                                                value={groupRoomCapacity(draft, group.key, room)}
+                                                onChange={(event) => setGroupRoomCapacity(group.key, room.id, Number(event.target.value))}
+                                              />
+                                              <span>/ {room.capacity}</span>
+                                            </label>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {sharedRooms.length > 0 && (
+                            <div className="mt-3 rounded-lg border border-dashed border-ink-200 bg-paper px-3 py-2.5">
+                              <div className="text-xs font-medium text-ink-700">共用考场</div>
+                              <div className="mt-1 text-xs text-ink-500">拆分后，同一实体教室会按本场次中的考试组合生成“混1、混2…”；各分区人数合计不能超过实体考场最多人数。</div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {sharedRooms.map((room) => {
+                                  const split = (draft.splitRoomIdsBySession?.[session.key] || []).includes(room.id);
+                                  const roomUsers = session.groups.filter((group) => (
+                                    (draft.groupRoomIds?.[group.key] || []).includes(room.id)
+                                  ));
+                                  const total = roomUsers.reduce((sum, group) => sum + groupRoomCapacity(draft, group.key, room), 0);
+                                  return (
+                                    <CheckboxPill
+                                      key={room.id}
+                                      checked={split}
+                                      label={split
+                                        ? `${room.number || room.name} 已拆分（${total}/${room.capacity}）`
+                                        : `拆分 ${room.number || room.name} 为混合考场`}
+                                      onClick={() => toggleSplitRoom(session.key, room.id)}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {draft.rooms.map((room) => (
-                            <CheckboxPill
-                              key={room.id}
-                              checked={(draft.groupRoomIds?.[group.key] || []).includes(room.id)}
-                              label={roomChoiceLabel(room, context)}
-                              onClick={() => toggleGroupRoom(group.key, room.id)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="mt-4 border-t border-ink-100 pt-4">

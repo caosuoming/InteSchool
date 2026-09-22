@@ -147,6 +147,103 @@ describe("generateExamAssignments", () => {
     ]));
   });
 
+  it("respects the adjustable room limit for each exam group", () => {
+    const simultaneous = input("subject");
+    simultaneous.separateSubjects = ["物理", "化学"];
+    simultaneous.simultaneousSubjectGroups = [["物理", "化学"]];
+    simultaneous.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: ["物理"] },
+    ];
+    simultaneous.rooms = [
+      { id: "room-a", name: "第一考场", capacity: 3 },
+      { id: "room-b", name: "第二考场", capacity: 3 },
+    ];
+    simultaneous.classRules = simultaneous.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a", "room-b"], 化学: ["room-a", "room-b"] },
+    }));
+    simultaneous.groupRoomIds = {
+      "subject:物理": ["room-a", "room-b"],
+      "subject:化学": ["room-a", "room-b"],
+    };
+    simultaneous.groupRoomCapacities = {
+      "subject:物理": { "room-a": 1, "room-b": 3 },
+    };
+
+    const assignments = generateExamAssignments(simultaneous, context);
+    const physicsInRoomA = assignments.filter((item) => item.subjectLabel === "物理" && item.roomId === "room-a");
+
+    expect(assignments.filter((item) => item.subjectLabel === "物理")).toHaveLength(2);
+    expect(physicsInRoomA.length).toBeLessThanOrEqual(1);
+  });
+
+  it("splits a shared physical room into numbered mixed rooms", () => {
+    const simultaneous = input("subject");
+    simultaneous.separateSubjects = ["物理", "化学"];
+    simultaneous.simultaneousSubjectGroups = [["物理", "化学"]];
+    simultaneous.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: ["物理"] },
+    ];
+    simultaneous.rooms = [{ id: "room-a", name: "第一考场", capacity: 3 }];
+    simultaneous.classRules = simultaneous.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+    simultaneous.groupRoomIds = {
+      "subject:物理": ["room-a"],
+      "subject:化学": ["room-a"],
+    };
+    simultaneous.groupRoomCapacities = {
+      "subject:物理": { "room-a": 2 },
+      "subject:化学": { "room-a": 1 },
+    };
+    simultaneous.splitRoomIdsBySession = {
+      "simultaneous:物理|化学": ["room-a"],
+    };
+
+    const assignments = generateExamAssignments(simultaneous, context);
+
+    expect(new Set(assignments.map((item) => item.roomId)).size).toBe(2);
+    expect(new Set(assignments.map((item) => item.roomNumber))).toEqual(new Set(["第一考场混1", "第一考场混2"]));
+    expect(assignments.every((item) => item.physicalRoomId === "room-a")).toBe(true);
+    for (const roomId of new Set(assignments.map((item) => item.roomId))) {
+      expect(Math.min(...assignments.filter((item) => item.roomId === roomId).map((item) => item.seatNo))).toBe(1);
+    }
+  });
+
+  it("rejects mixed-room limits whose sum exceeds the physical room capacity", () => {
+    const simultaneous = input("subject");
+    simultaneous.separateSubjects = ["物理", "化学"];
+    simultaneous.simultaneousSubjectGroups = [["物理", "化学"]];
+    simultaneous.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: ["物理"] },
+    ];
+    simultaneous.rooms = [{ id: "room-a", name: "第一考场", capacity: 2 }];
+    simultaneous.classRules = simultaneous.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+    simultaneous.groupRoomIds = {
+      "subject:物理": ["room-a"],
+      "subject:化学": ["room-a"],
+    };
+    simultaneous.groupRoomCapacities = {
+      "subject:物理": { "room-a": 2 },
+      "subject:化学": { "room-a": 1 },
+    };
+    simultaneous.splitRoomIdsBySession = {
+      "simultaneous:物理|化学": ["room-a"],
+    };
+
+    expect(() => generateExamAssignments(simultaneous, context)).toThrow(/混合考场.*超过最多人数/);
+  });
+
   it("rejects a student who is configured for two subjects that occur simultaneously", () => {
     const simultaneous = input("subject");
     simultaneous.separateSubjects = ["物理", "化学"];

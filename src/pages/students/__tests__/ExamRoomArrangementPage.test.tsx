@@ -256,6 +256,40 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getAllByText(/所选考场最多可安排 32 个位置/).length).toBeGreaterThan(0);
   });
 
+  it("places same-session exam combinations side by side and can split a shared room", async () => {
+    const user = userEvent.setup();
+    const secondStudent = {
+      ...context.students[0],
+      id: "student-2",
+      name: "李同学",
+      studentNo: "002",
+      subjectSelection: "史",
+    };
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      ...context,
+      cohort: { ...cohort, studentCount: 2 },
+      classes: [{ ...context.classes[0], studentCount: 2 }],
+      students: [
+        { ...context.students[0], subjectSelection: "物" },
+        secondStudent,
+      ],
+    });
+    renderPage();
+
+    const session = await screen.findByTestId("exam-session-1");
+    expect(within(session).getByText(/2 个考试组合并列/)).toBeInTheDocument();
+    expect(within(session).getByText("语文、数学、英语、物理")).toBeInTheDocument();
+    expect(within(session).getByText("语文、数学、英语、历史")).toBeInTheDocument();
+    expect(within(session).getAllByText(/本组合布置上限 2 人/)).toHaveLength(2);
+
+    const splitButton = within(session).getByRole("button", { name: "拆分 1考场 为混合考场" });
+    await user.click(splitButton);
+
+    expect(within(session).getByRole("button", { name: "1考场 已拆分（2/2）" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(session).getByRole("button", { name: /1考场混1/ })).toBeInTheDocument();
+    expect(within(session).getByRole("button", { name: /1考场混2/ })).toBeInTheDocument();
+  });
+
   it("allows an individual student to be marked absent", async () => {
     const user = userEvent.setup();
     renderPage();

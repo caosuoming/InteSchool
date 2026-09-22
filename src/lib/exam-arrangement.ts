@@ -15,6 +15,7 @@ interface SeatTask {
   className: string;
   subjectLabel: string;
   sessionKey: string;
+  groupKey: string;
   eligibleRoomIds: string[];
   concentrationKey?: string;
   seatPreference?: ExamStudentSeatPreference;
@@ -302,6 +303,7 @@ function createTask(
     className,
     subjectLabel,
     sessionKey,
+    groupKey,
     eligibleRoomIds,
     concentrationKey: taskConcentrationKey(student, selectedSubjects, simultaneousGroups),
     seatPreference,
@@ -441,8 +443,30 @@ function allocateSession(
 ): ExamSeatAssignment[] {
   const roomMap = new Map(rooms.map((room) => [room.id, room]));
   const used = new Map(rooms.map((room) => [room.id, 0]));
+  const groupRoomUsed = new Map<string, number>();
   const seatOrder = input.seatOrder || "random";
-  const seed = `${input.name}:${input.examDate || ""}:${tasks[0]?.sessionKey || sessionIndex}`;
+  const sessionKey = tasks[0]?.sessionKey || String(sessionIndex);
+  const seed = `${input.name}:${input.examDate || ""}:${sessionKey}`;
+  const splitRoomIds = new Set(input.splitRoomIdsBySession?.[sessionKey] || []);
+  const roomCapacityForGroup = (task: SeatTask, room: ExamRoomConfig): number => (
+    input.groupRoomCapacities?.[task.groupKey]?.[room.id] ?? room.capacity
+  );
+  const groupRoomUsageKey = (task: SeatTask, roomId: string) => `${task.groupKey}\0${roomId}`;
+
+  for (const roomId of splitRoomIds) {
+    const room = roomMap.get(roomId);
+    if (!room) throw new Error(`混合考场引用了不存在的考场：${roomId}`);
+    const groupKeys = [...new Set(tasks
+      .filter((task) => task.eligibleRoomIds.includes(roomId))
+      .map((task) => task.groupKey))];
+    if (groupKeys.length < 2) continue;
+    const total = groupKeys.reduce((sum, groupKey) => (
+      sum + (input.groupRoomCapacities?.[groupKey]?.[roomId] ?? room.capacity)
+    ), 0);
+    if (total > room.capacity) {
+      throw new Error(`混合考场「${room.number || room.name}」各组合布置人数合计 ${total}，超过最多人数 ${room.capacity}`);
+    }
+  }
   const sorted = [...tasks].sort((left, right) =>
     left.eligibleRoomIds.length - right.eligibleRoomIds.length
     || compareTasks(left, right, seatOrder, context, seed, false),
@@ -454,6 +478,9 @@ function allocateSession(
       .map((roomId) => roomMap.get(roomId))
       .filter((room): room is ExamRoomConfig => Boolean(room))
       .filter((room) => (used.get(room.id) || 0) < room.capacity)
+      .filter((room) => (
+        (groupRoomUsed.get(groupRoomUsageKey(task, room.id)) || 0) < roomCapacityForGroup(task, room)
+      ))
       .sort((left, right) => {
         const leftUsed = used.get(left.id) || 0;
         const rightUsed = used.get(right.id) || 0;
@@ -465,21 +492,45 @@ function allocateSession(
       throw new Error(`「${task.subjectLabel}」考场容量不足，无法安排 ${task.className} ${task.student.name}`);
     }
     used.set(room.id, (used.get(room.id) || 0) + 1);
+    const usageKey = groupRoomUsageKey(task, room.id);
+    groupRoomUsed.set(usageKey, (groupRoomUsed.get(usageKey) || 0) + 1);
     return { task, room };
   });
 
-  const seatNumbers = new Map<SeatTask, number>();
+  const groupOrder = [...new Set(tasks.map((task) => task.groupKey))]
+    .sort((left, right) => left.localeCompare(right, "zh-CN"));
+  const splitGroupIndexes = new Map<string, Map<string, number>>();
   for (const room of rooms) {
-    planned
-      .filter((item) => item.room.id === room.id)
+    if (!splitRoomIds.has(room.id)) continue;
+    const groups = groupOrder.filter((groupKey) => planned.some((item) => (
+      item.room.id === room.id && item.task.groupKey === groupKey
+    )));
+    if (groups.length < 2) continue;
+    splitGroupIndexes.set(room.id, new Map(groups.map((groupKey, index) => [groupKey, index + 1])));
+  }
+  const resolved = planned.map(({ task, room }) => {
+    const mixedIndex = splitGroupIndexes.get(room.id)?.get(task.groupKey);
+    const baseRoomNumber = room.number || room.name;
+    return {
+      task,
+      room,
+      logicalRoomId: mixedIndex ? `${room.id}::mixed::${encodeURIComponent(task.groupKey)}` : room.id,
+      roomNumber: mixedIndex ? `${baseRoomNumber}混${mixedIndex}` : baseRoomNumber,
+      physicalRoomId: mixedIndex ? room.id : undefined,
+    };
+  });
+
+  const seatNumbers = new Map<SeatTask, number>();
+  for (const logicalRoomId of [...new Set(resolved.map((item) => item.logicalRoomId))]) {
+    resolved
+      .filter((item) => item.logicalRoomId === logicalRoomId)
       .sort((left, right) => compareSeatTasks(left.task, right.task, seatOrder, context, seed))
       .forEach((item, index) => seatNumbers.set(item.task, index + 1));
   }
 
-  return planned
+  return resolved
     .sort((left, right) => compareTasks(left.task, right.task, seatOrder, context, seed))
-    .map(({ task, room }, index) => {
-      const roomNumber = room.number || room.name;
+    .map(({ task, room, logicalRoomId, roomNumber, physicalRoomId }, index) => {
       const roomLocation = room.location || room.name;
       return {
         id: `${task.sessionKey}:${task.student.id}`,
@@ -490,7 +541,8 @@ function allocateSession(
         className: task.className,
         subjectLabel: task.subjectLabel,
         sessionKey: task.sessionKey,
-        roomId: room.id,
+        ...(physicalRoomId ? { physicalRoomId } : {}),
+        roomId: logicalRoomId,
         roomName: roomNumber,
         roomNumber,
         roomLocation,
@@ -513,6 +565,22 @@ export function generateExamAssignments(
   const invalidSeparate = uniqueStrings(input.separateSubjects || []).filter((subject) => !subjects.includes(subject));
   if (invalidSeparate.length > 0) throw new Error(`独立排考科目不存在：${invalidSeparate.join("、")}`);
   const rooms = normalizeRooms(input.rooms || []);
+  const roomMap = new Map(rooms.map((room) => [room.id, room]));
+  for (const [groupKey, capacities] of Object.entries(input.groupRoomCapacities || {})) {
+    for (const [roomId, rawCapacity] of Object.entries(capacities || {})) {
+      const room = roomMap.get(roomId);
+      if (!room) throw new Error(`考试组合「${groupKey}」人数设置引用了不存在的考场`);
+      const capacity = Math.floor(Number(rawCapacity));
+      if (!Number.isFinite(capacity) || capacity < 1 || capacity > room.capacity) {
+        throw new Error(`考试组合「${groupKey}」在「${room.number || room.name}」的布置人数应为 1 至 ${room.capacity} 人`);
+      }
+    }
+  }
+  for (const [sessionKey, roomIds] of Object.entries(input.splitRoomIdsBySession || {})) {
+    const normalized = uniqueStrings(roomIds || []);
+    const missing = normalized.filter((roomId) => !roomMap.has(roomId));
+    if (missing.length > 0) throw new Error(`场次「${sessionKey}」的混合考场引用了不存在的考场`);
+  }
   const rules = normalizeRules(input, context, subjects, rooms);
   const selections = normalizeSelections(input, context, rules, subjects);
   const tasks = buildTasks(input, context, subjects, rooms, rules, selections);
