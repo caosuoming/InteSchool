@@ -163,12 +163,12 @@ function paginateDeskLabels(
 }
 
 function getClassPrintLayout(studentCount: number, maxAssignments: number): {
-  columns: 3;
+  columns: 4;
   density: PrintDensity;
   pageCapacity: number;
 } {
   const count = Math.max(1, studentCount);
-  const columns = 3;
+  const columns = 4;
   const assignmentCount = Math.max(1, maxAssignments);
   const requiredRowsForTwoPages = Math.max(1, Math.ceil(count / (columns * 2)));
   const density = assignmentCount <= 4 && requiredRowsForTwoPages <= 10 ? "normal" : "compact";
@@ -258,6 +258,28 @@ function uniqueSubjects(values: string[]): string[] {
     ...DEFAULT_SUBJECTS.filter((subject) => selected.has(subject)),
     ...[...selected].filter((subject) => !DEFAULT_SUBJECTS.includes(subject)),
   ];
+}
+
+type StudentArrangementGroup = ReturnType<typeof groupStudentArrangements>[number];
+
+function studentPrintSubjectLabel(student: StudentArrangementGroup): string {
+  return uniqueSubjects(student.assignments.flatMap((assignment) => assignment.subjectLabel.split(" / "))).join(" / ");
+}
+
+function hasSingleExamPosition(student: StudentArrangementGroup): boolean {
+  return new Set(student.assignments.map((assignment) => `${assignment.roomId}:${assignment.seatNo}`)).size === 1;
+}
+
+function classPrintMajoritySubjectLabel(students: StudentArrangementGroup[]): string | null {
+  if (students.length === 0 || students.some((student) => !hasSingleExamPosition(student))) return null;
+
+  const counts = new Map<string, number>();
+  for (const student of students) {
+    const label = studentPrintSubjectLabel(student);
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const [majority] = [...counts.entries()].sort((left, right) => right[1] - left[1]);
+  return majority && majority[1] > students.length / 2 ? majority[0] : null;
 }
 
 function subjectSelectionNames(context: ExamArrangementContext): string[] {
@@ -2000,13 +2022,14 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
             <div ref={classPrintRef} className="print-only exam-class-arrangement-sheet" aria-hidden="true">
               {selectedClassAssignmentGroups.flatMap(({ classItem, students }) => {
                 const maxAssignments = Math.max(...students.map((student) => student.assignments.length), 1);
+                const majoritySubjectLabel = classPrintMajoritySubjectLabel(students);
                 const baseLayout = getClassPrintLayout(
                   students.length,
-                  maxAssignments,
+                  majoritySubjectLabel ? 1 : maxAssignments,
                 );
                 const pages = chunkForPrint(students, baseLayout.pageCapacity);
                 return pages.map((pageStudents, pageIndex) => {
-                  const layout = getClassPrintLayout(pageStudents.length, maxAssignments);
+                  const layout = getClassPrintLayout(pageStudents.length, majoritySubjectLabel ? 1 : maxAssignments);
                   return (
                   <section
                     key={`${classItem.id}-${pageIndex}`}
@@ -2024,6 +2047,11 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                           {classItem.name} · {students.length} 名学生
                           {pages.length > 1 && ` · 第 ${pageIndex + 1}/${pages.length} 页`}
                         </strong>
+                        {majoritySubjectLabel && (
+                          <span className="exam-class-arrangement-header-subjects">
+                            本班考试科目：{majoritySubjectLabel.split(" / ").join("、")}
+                          </span>
+                        )}
                         <span>{selectedArrangement.examDate || "考试日期待定"}</span>
                       </div>
                     </header>
@@ -2035,27 +2063,37 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         alignItems: "start",
                       }}
                     >
-                      {pageStudents.map((student) => (
+                      {pageStudents.map((student) => {
+                        const studentSubjectLabel = studentPrintSubjectLabel(student);
+                        const showStudentSubject = !majoritySubjectLabel || studentSubjectLabel !== majoritySubjectLabel;
+                        const printAssignments = majoritySubjectLabel ? student.assignments.slice(0, 1) : student.assignments;
+                        return (
                         <article key={student.key} className="exam-class-arrangement-student">
                           <div className="exam-class-arrangement-student-header">
                             <strong>{student.studentName}</strong>
                             <span>{student.studentNo}</span>
                           </div>
                           <div className="exam-class-arrangement-items">
-                            {student.assignments.map((item) => (
-                              <div key={item.id} className="exam-class-arrangement-item" title={item.admissionNo}>
-                                <strong className="exam-class-arrangement-subject">
-                                  {subjectLines(item.subjectLabel).map((line, lineIndex) => (
+                            {printAssignments.map((item) => (
+                              <div
+                                key={item.id}
+                                className="exam-class-arrangement-item"
+                                data-subject-hidden={showStudentSubject ? undefined : "true"}
+                                title={item.admissionNo}
+                              >
+                                {showStudentSubject && <strong className="exam-class-arrangement-subject">
+                                  {subjectLines(majoritySubjectLabel ? studentSubjectLabel : item.subjectLabel).map((line, lineIndex) => (
                                     <span key={`${lineIndex}-${line}`}>{line}</span>
                                   ))}
-                                </strong>
+                                </strong>}
                                 <span>{item.roomNumber || item.roomName} · {item.seatNo}号</span>
                                 <span>{item.roomLocation || item.roomName}</span>
                               </div>
                             ))}
                           </div>
                         </article>
-                      ))}
+                        );
+                      })}
                     </div>
                   </section>
                   );
