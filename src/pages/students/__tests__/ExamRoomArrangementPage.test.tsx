@@ -415,15 +415,15 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByRole("button", { name: "下载班级 PDF" })).toBeEnabled();
     expect(screen.getAllByTestId("class-arrangement-print-page")).toHaveLength(1);
     const classPrintPage = screen.getByTestId("class-arrangement-print-page");
-    expect(classPrintPage).toHaveAttribute("data-columns", "3");
+    expect(classPrintPage).toHaveAttribute("data-columns", "4");
     const classGrid = classPrintPage.querySelector<HTMLElement>(".exam-class-arrangement-grid");
     expect(classGrid?.style.gridAutoRows).toBe("max-content");
     expect(classGrid?.style.alignItems).toBe("start");
-    expect([...classPrintPage.querySelectorAll(".exam-class-arrangement-subject span")].map((node) => node.textContent)).toEqual([
-      "语文、数学、英语",
-      "化学、生物",
-      "物理",
-    ]);
+    expect(classPrintPage.querySelector(".exam-class-arrangement-header-subjects")).toHaveTextContent(
+      "本班考试科目：语文、数学、英语、物理、化学、生物",
+    );
+    expect(classPrintPage.querySelectorAll(".exam-class-arrangement-subject")).toHaveLength(0);
+    expect(classPrintPage.querySelectorAll(".exam-class-arrangement-item")).toHaveLength(1);
 
     await user.click(screen.getByRole("tab", { name: "桌贴预览" }));
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
@@ -506,6 +506,85 @@ describe("ExamRoomArrangementPage", () => {
     await user.click(separateRooms);
     expect(separateRooms).not.toBeChecked();
     expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
+  });
+
+  it("keeps subjects beside special students when a class mostly shares one-position exam subjects", async () => {
+    const user = userEvent.setup();
+    const students = Array.from({ length: 3 }, (_, index) => ({
+      ...context.students[0],
+      id: `student-${index + 1}`,
+      name: `学生${index + 1}`,
+      studentNo: String(index + 1).padStart(3, "0"),
+    }));
+    const assignments = students.map((student, index) => ({
+      ...savedArrangement.assignments[0],
+      id: `combined:${student.id}`,
+      studentId: student.id,
+      studentName: student.name,
+      studentNo: student.studentNo,
+      subjectLabel: index < 2 ? "语文 / 数学" : "语文",
+      seatNo: index + 1,
+      admissionNo: `20260510${String(index + 1).padStart(6, "0")}`,
+    }));
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      ...context,
+      cohort: { ...cohort, studentCount: students.length },
+      classes: [{ ...context.classes[0], studentCount: students.length }],
+      students,
+    });
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{
+      ...savedArrangement,
+      assignments,
+    }]);
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+
+    const printPage = screen.getByTestId("class-arrangement-print-page");
+    const cards = [...printPage.querySelectorAll<HTMLElement>(".exam-class-arrangement-student")];
+    const cardFor = (studentName: string) => cards.find((card) => card.textContent?.includes(studentName));
+    expect(printPage.querySelector(".exam-class-arrangement-header-subjects")).toHaveTextContent("本班考试科目：语文、数学");
+    expect(cardFor("学生1")?.querySelector(".exam-class-arrangement-subject")).toBeNull();
+    expect(cardFor("学生2")?.querySelector(".exam-class-arrangement-subject")).toBeNull();
+    expect(cardFor("学生3")?.querySelector(".exam-class-arrangement-subject")).toHaveTextContent("语文");
+  });
+
+  it("keeps the original per-assignment subject layout when a student has multiple exam positions", async () => {
+    const user = userEvent.setup();
+    const secondRoom = {
+      id: "room-2",
+      name: "高三（2）班",
+      number: "高三（2）班",
+      location: "教学楼 302",
+      capacity: 30,
+    };
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{
+      ...savedArrangement,
+      rooms: [...savedArrangement.rooms, secondRoom],
+      assignments: [
+        savedArrangement.assignments[0],
+        {
+          ...savedArrangement.assignments[1],
+          roomId: secondRoom.id,
+          roomName: secondRoom.name,
+          roomNumber: secondRoom.number,
+          roomLocation: secondRoom.location,
+          seatNo: 2,
+        },
+      ],
+    }]);
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+
+    const printPage = screen.getByTestId("class-arrangement-print-page");
+    expect(printPage.querySelector(".exam-class-arrangement-header-subjects")).toBeNull();
+    expect([...printPage.querySelectorAll(".exam-class-arrangement-subject span")].map((node) => node.textContent)).toEqual([
+      "语文、数学、英语",
+      "化学、生物",
+      "物理",
+    ]);
+    expect(printPage.querySelectorAll(".exam-class-arrangement-item")).toHaveLength(2);
   });
 
   it("switches result previews one class and one room at a time", async () => {
@@ -706,10 +785,13 @@ describe("ExamRoomArrangementPage", () => {
 
     const pages = screen.getAllByTestId("class-arrangement-print-page");
     expect(pages).toHaveLength(2);
-    expect(pages[0]).toHaveAttribute("data-columns", "3");
-    expect(pages[0].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(36);
-    expect(pages[1].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(31);
+    expect(pages[0]).toHaveAttribute("data-columns", "4");
+    expect(pages[0].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(40);
+    expect(pages[1].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(27);
     expect(pages[0].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("高三（1）班 · 67 名学生 · 第 1/2 页");
+    expect(pages[1].querySelector(".exam-class-arrangement-header-subjects")).toHaveTextContent(
+      "本班考试科目：语文、数学、英语、化学、生物",
+    );
   });
 
   it("continues desk labels across rooms and 8K pages when separate-room pagination is disabled", async () => {

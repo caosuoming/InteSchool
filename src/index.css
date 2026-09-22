@@ -476,8 +476,8 @@
 }
 
   .exam-class-arrangement-page {
-    --class-print-font-size: 5.7pt;
-    --class-print-gap: 1.8mm;
+    --class-print-font-size: 5.45pt;
+    --class-print-gap: 1.35mm;
     page: exam-class-arrangement;
     width: 210mm;
     height: 297mm;
@@ -514,13 +514,16 @@
     display: flex;
     align-items: baseline;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 3mm;
     text-align: right;
-    white-space: nowrap;
   }
   .exam-class-arrangement-header-meta strong {
     font-size: 7pt;
     font-weight: 700;
+  }
+  .exam-class-arrangement-header-subjects {
+    font-weight: 600;
   }
   .exam-class-arrangement-grid {
     display: grid;
@@ -536,7 +539,7 @@
     overflow: hidden;
     border: 0.2mm solid #777;
     border-radius: 0.8mm;
-    padding: 1.15mm;
+    padding: 0.95mm;
     background: #fff;
   }
   .exam-class-arrangement-student-header {
@@ -569,11 +572,14 @@
   .exam-class-arrangement-item {
     display: grid;
     min-width: 0;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.85fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1fr);
     align-items: center;
     gap: 0.7mm;
     font-size: var(--class-print-font-size);
     line-height: 1.28;
+  }
+  .exam-class-arrangement-item[data-subject-hidden="true"] {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   }
   .exam-class-arrangement-item > * {
     min-width: 0;
