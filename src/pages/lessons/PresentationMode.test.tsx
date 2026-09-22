@@ -1255,6 +1255,68 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "放大所选文本" })).toBeEnabled();
   });
 
+  it("keeps answer and analysis opaque, horizontally resizable, and restores hidden panel writing", async () => {
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={[questionSlide]}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    const surface = screen.getByTestId("presentation-surface");
+    vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800,
+      width: 1000, height: 800, toJSON: () => ({}),
+    });
+
+    await user.click(screen.getByRole("button", { name: "左侧显示内容" }));
+    await user.click(screen.getByRole("button", { name: "答案" }));
+    await user.click(screen.getByRole("button", { name: "解析" }));
+
+    const answerPanel = screen.getByRole("region", { name: "答案浮层" });
+    const analysisPanel = screen.getByRole("region", { name: "解析浮层" });
+    expect(answerPanel).toHaveStyle({ backgroundColor: "#fffef8" });
+    expect(analysisPanel).toHaveStyle({ backgroundColor: "#fffef8" });
+    expect(screen.getByLabelText("调整解析框左边界")).toBeInTheDocument();
+    expect(screen.getByLabelText("调整解析框右边界")).toBeInTheDocument();
+
+    const rightHandle = screen.getByLabelText("调整解析框右边界");
+    fireEvent.pointerDown(rightHandle, { pointerId: 31, clientX: 950, clientY: 650 });
+    fireEvent.pointerMove(rightHandle, { pointerId: 31, clientX: 990, clientY: 650 });
+    fireEvent.pointerUp(rightHandle, { pointerId: 31, clientX: 990, clientY: 650 });
+    expect(analysisPanel).toHaveStyle({ width: "46%" });
+
+    const leftHandle = screen.getByLabelText("调整解析框左边界");
+    fireEvent.pointerDown(leftHandle, { pointerId: 32, clientX: 530, clientY: 650 });
+    fireEvent.pointerMove(leftHandle, { pointerId: 32, clientX: 500, clientY: 650 });
+    fireEvent.pointerUp(leftHandle, { pointerId: 32, clientX: 500, clientY: 650 });
+    expect(analysisPanel).toHaveStyle({ left: "50%", width: "49%" });
+
+    await user.click(screen.getByRole("button", { name: "红色画笔" }));
+    const analysisCanvas = screen.getByLabelText("解析书写画布") as HTMLCanvasElement;
+    vi.spyOn(analysisCanvas, "getBoundingClientRect").mockReturnValue({
+      x: 500, y: 544, left: 500, top: 544, right: 990, bottom: 736,
+      width: 490, height: 192, toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(analysisCanvas, { pointerId: 33, clientX: 560, clientY: 600 });
+    fireEvent.pointerMove(analysisCanvas, { pointerId: 33, clientX: 620, clientY: 630 });
+    fireEvent.pointerUp(analysisCanvas, { pointerId: 33, clientX: 620, clientY: 630 });
+    expect(analysisCanvas).toHaveAttribute("data-recorded-stroke-count", "1");
+
+    await user.click(screen.getByRole("button", { name: "左侧显示内容" }));
+    await user.click(screen.getByRole("button", { name: "解析" }));
+    expect(screen.queryByRole("region", { name: "解析浮层" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("解析书写画布")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "解析" }));
+    expect(screen.getByRole("region", { name: "解析浮层" })).toBeInTheDocument();
+    expect(screen.getByLabelText("解析书写画布")).toHaveAttribute("data-recorded-stroke-count", "1");
+  });
+
   it("shows question options by default and keeps only answer and analysis as display toggles", async () => {
     const user = userEvent.setup();
     render(

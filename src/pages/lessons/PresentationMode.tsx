@@ -32,7 +32,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { LessonSlide, LessonSlideElement, Question } from "@/types";
+import type { LessonSlide, LessonSlideElement, LessonSlideTextElement, Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { getMaximumContrastTextColor, normalizeHexColor } from "@/lib/color-contrast";
 import { eligibleLotteryStudents, pickWeightedLotteryStudent, studentLotteryDurationMs } from "@/lib/student-lottery";
@@ -43,6 +43,7 @@ import {
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
+import { MathHtml } from "@/components/ui/MathHtml";
 import { uploadFile } from "@/services/api";
 import { questionService } from "@/services/question";
 import { toast } from "@/stores/ui";
@@ -73,6 +74,7 @@ type DrawingToolId =
 type Tool = "none" | "select" | "eraser" | DrawingToolId;
 type Side = "left" | "right";
 type SideTab = "display" | "ask" | "related";
+type QuestionRevealSection = "answer" | "analysis";
 
 interface DrawingPreset {
   id: DrawingToolId;
@@ -104,6 +106,14 @@ interface DrawingStroke {
   color: string;
   width: number;
   points: DrawingPoint[];
+}
+
+interface QuestionPanelInteraction {
+  mode: "move" | "resize";
+  element: LessonSlideTextElement;
+  edge?: "left" | "right";
+  startX: number;
+  startY: number;
 }
 
 const HIGHLIGHTER_ALPHA = 0.45;
@@ -193,6 +203,7 @@ const BOARD_WRITING_AREA_MAX_SCALE = 2;
 const BOARD_WRITING_AREA_VISIBLE_MARGIN_PX = 48;
 const BOARD_WRITING_AREA_WHEEL_ZOOM_SPEED = 0.0015;
 const BOARD_SIDE_CONTROLS_SCREEN_Y = 50;
+const QUESTION_PANEL_MIN_WIDTH = 12;
 
 function createBoardPage(slideId: string, index: number): BoardPage {
   const offset = (index % 5) * 3;
@@ -270,6 +281,11 @@ const PRESENTATION_ELEMENT_PREFIX = "presentation-built-in";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function isQuestionRevealElement(element: LessonSlideElement): element is LessonSlideTextElement {
+  return element.kind === "text"
+    && (element.questionSection === "answer" || element.questionSection === "analysis");
 }
 
 function fontSizePreferencesKey(ownerId?: string): string {
@@ -937,6 +953,7 @@ export function PresentationMode({
 }: PresentationModeProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const questionPanelInteractionRef = useRef<QuestionPanelInteraction | null>(null);
   const boardInteractionRef = useRef<BoardInteraction | null>(null);
   const boardTouchPointersRef = useRef(new Map<number, {
     boardId: string;
@@ -965,6 +982,10 @@ export function PresentationMode({
   const [boardsBySlide, setBoardsBySlide] = useState<Record<string, BoardPage[]>>({});
   const [activeBoardIdsBySlide, setActiveBoardIdsBySlide] = useState<Record<string, string | null>>({});
   const [annotationStrokesBySlide, setAnnotationStrokesBySlide] = useState<Record<string, DrawingStroke[]>>({});
+  const [questionPanelStrokesBySlide, setQuestionPanelStrokesBySlide] = useState<Record<
+    string,
+    Partial<Record<QuestionRevealSection, DrawingStroke[]>>
+  >>({});
   const [boardsVisible, setBoardsVisible] = useState(false);
   const [savingBoardId, setSavingBoardId] = useState<string | null>(null);
   const [mainClearToken, setMainClearToken] = useState(0);
@@ -1089,6 +1110,8 @@ export function PresentationMode({
     currentAnimationSteps,
     currentAnimationProgress,
   );
+  const questionRevealElements = visibleSlideElements.filter(isQuestionRevealElement);
+  const regularVisibleSlideElements = visibleSlideElements.filter((element) => !isQuestionRevealElement(element));
 
   const questionContentControls = currentSlide?.questionSnapshot
     ? [
@@ -1248,6 +1271,97 @@ export function PresentationMode({
     }));
   };
 
+  const updateQuestionPanelElement = useCallback((
+    elementId: string,
+    update: (element: LessonSlideTextElement) => LessonSlideTextElement,
+  ) => {
+    if (!currentSlide) return;
+    setElementOverrides((current) => {
+      const source = current[currentSlide.id] ?? getPresentationElements(currentSlide);
+      return {
+        ...current,
+        [currentSlide.id]: source.map((element) => (
+          element.id === elementId && isQuestionRevealElement(element)
+            ? update(element)
+            : element
+        )),
+      };
+    });
+  }, [currentSlide]);
+
+  const startQuestionPanelInteraction = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    element: LessonSlideTextElement,
+    mode: QuestionPanelInteraction["mode"],
+    edge?: QuestionPanelInteraction["edge"],
+  ) => {
+    if (mode === "move" && tool !== "select") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedElementId(element.id);
+    questionPanelInteractionRef.current = {
+      mode,
+      element,
+      edge,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveQuestionPanelInteraction = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const interaction = questionPanelInteractionRef.current;
+    const surface = surfaceRef.current;
+    if (!interaction || !surface) return;
+    const rect = surface.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const dx = ((event.clientX - interaction.startX) / rect.width) * 100;
+    const dy = ((event.clientY - interaction.startY) / rect.height) * 100;
+
+    updateQuestionPanelElement(interaction.element.id, (element) => {
+      if (interaction.mode === "move") {
+        return {
+          ...element,
+          x: Number(clamp(interaction.element.x + dx, 0, 100 - interaction.element.width).toFixed(4)),
+          y: Number((interaction.element.y + dy).toFixed(4)),
+        };
+      }
+      if (interaction.edge === "left") {
+        const right = interaction.element.x + interaction.element.width;
+        const x = clamp(interaction.element.x + dx, 0, right - QUESTION_PANEL_MIN_WIDTH);
+        return {
+          ...element,
+          x: Number(x.toFixed(4)),
+          width: Number((right - x).toFixed(4)),
+        };
+      }
+      const width = clamp(
+        interaction.element.width + dx,
+        QUESTION_PANEL_MIN_WIDTH,
+        100 - interaction.element.x,
+      );
+      return { ...element, width: Number(width.toFixed(4)) };
+    });
+  };
+
+  const endQuestionPanelInteraction = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!questionPanelInteractionRef.current) return;
+    questionPanelInteractionRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+  };
+
+  const setQuestionPanelStrokes = useCallback((section: QuestionRevealSection, strokes: DrawingStroke[]) => {
+    setQuestionPanelStrokesBySlide((current) => ({
+      ...current,
+      [currentSlideStateKey]: {
+        ...(current[currentSlideStateKey] || {}),
+        [section]: strokes,
+      },
+    }));
+  }, [currentSlideStateKey]);
+
   const scaleSelectedText = (factor: number) => {
     if (!selectedElementId || !currentSlide) return;
     setElementOverrides((current) => {
@@ -1313,6 +1427,10 @@ export function PresentationMode({
       )));
       return;
     }
+    setQuestionPanelStrokesBySlide((current) => {
+      if (!current[currentSlideStateKey]) return current;
+      return { ...current, [currentSlideStateKey]: {} };
+    });
     setMainClearToken((value) => value + 1);
   };
 
@@ -1852,6 +1970,90 @@ export function PresentationMode({
     );
   };
 
+  const renderQuestionRevealPanel = (element: LessonSlideTextElement) => {
+    const section = element.questionSection as QuestionRevealSection;
+    const label = section === "answer" ? "答案" : "解析";
+    const selected = tool === "select" && selectedElementId === element.id;
+    const strokes = questionPanelStrokesBySlide[currentSlideStateKey]?.[section] || [];
+    return (
+      <div
+        key={element.id}
+        role="region"
+        aria-label={`${label}浮层`}
+        data-question-reveal-panel={section}
+        className={cn(
+          "absolute z-20 overflow-hidden rounded-xl border shadow-xl",
+          section === "answer" ? "border-emerald-300" : "border-gold-300",
+          selected && "ring-2 ring-gold-400 ring-offset-1",
+          tool === "select" && "cursor-move",
+        )}
+        style={{
+          left: `${element.x}%`,
+          top: `${element.y}%`,
+          width: `${element.width}%`,
+          height: `${element.height}%`,
+          backgroundColor: colorPreferences.pageBackgroundColor,
+          color: effectiveTextColor,
+        }}
+        onPointerDown={(event) => startQuestionPanelInteraction(event, element, "move")}
+        onPointerMove={moveQuestionPanelInteraction}
+        onPointerUp={endQuestionPanelInteraction}
+        onPointerCancel={endQuestionPanelInteraction}
+      >
+        <div
+          className="h-full overflow-auto px-4 py-3"
+          style={{
+            fontSize: `${(element.fontSize || 18) * (presentationFontSize / DEFAULT_PRESENTATION_FONT_SIZE)}px`,
+            fontFamily: element.fontFamily,
+            fontWeight: element.fontWeight,
+            fontStyle: element.fontStyle,
+            textDecoration: element.textDecoration,
+            textAlign: element.textAlign || "left",
+          }}
+        >
+          <MathHtml className="leading-snug">{element.content || label}</MathHtml>
+        </div>
+
+        <WritableCanvas
+          tool={tool}
+          preset={selectedDrawingPreset}
+          eraserWidth={eraserWidth}
+          clearToken={mainClearToken}
+          strokes={strokes}
+          onStrokesChange={(nextStrokes) => setQuestionPanelStrokes(section, nextStrokes)}
+          ariaLabel={`${label}书写画布`}
+          className="z-10"
+        />
+
+        {(["left", "right"] as const).map((edge) => (
+          <div
+            key={edge}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={`调整${label}框${edge === "left" ? "左" : "右"}边界`}
+            data-question-panel-resize-handle={edge}
+            className={cn(
+              "absolute bottom-0 top-0 z-30 w-3 cursor-ew-resize touch-none",
+              edge === "left" ? "left-0" : "right-0",
+            )}
+            onPointerDown={(event) => startQuestionPanelInteraction(event, element, "resize", edge)}
+            onPointerMove={moveQuestionPanelInteraction}
+            onPointerUp={endQuestionPanelInteraction}
+            onPointerCancel={endQuestionPanelInteraction}
+          >
+            <span
+              className={cn(
+                "pointer-events-none absolute bottom-3 top-3 w-0.5 rounded-full",
+                edge === "left" ? "left-0" : "right-0",
+                section === "answer" ? "bg-emerald-400/80" : "bg-gold-400/80",
+              )}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderSideRail = (side: Side) => {
     const tabs: Array<{ id: SideTab; short: string; label: string; icon: typeof Eye }> = [
       { id: "display", short: "显", label: "显示内容", icon: Eye },
@@ -2095,10 +2297,10 @@ export function PresentationMode({
                 <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-0" />
               </div>
             ) : displayedSlide ? (
-              <div data-testid="presentation-slide-page" className="h-full w-full">
+              <div data-testid="presentation-slide-page" className="relative h-full w-full">
                 <LessonSlideCanvas
                   key={displayedSlide.id}
-                  elements={visibleSlideElements}
+                  elements={regularVisibleSlideElements}
                   editable={tool === "select"}
                   showAnimationOrder={false}
                   animationMode="step"
@@ -2116,6 +2318,7 @@ export function PresentationMode({
                 >
                   <LessonSlideContent slide={displayedSlide} questionVisibility={questionVisibility} />
                 </LessonSlideCanvas>
+                {questionRevealElements.map(renderQuestionRevealPanel)}
               </div>
             ) : (
               <div className="text-sm text-ink-300">课件暂无页面</div>
