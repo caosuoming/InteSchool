@@ -429,6 +429,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByRole("tab", { name: "桌贴预览" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("1 张桌贴")).toBeInTheDocument();
     expect(screen.getAllByTestId("desk-label-card")).toHaveLength(1);
+    expect(screen.getByLabelText("每个考场单独成页")).toBeChecked();
     expect(screen.getByLabelText("桌贴显示学号")).toBeChecked();
     expect(screen.getByLabelText("桌贴显示准考证号")).toBeChecked();
     expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
@@ -462,6 +463,49 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByRole("button", { name: "下载已选桌贴" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "下载桌贴 PDF" })).toBeDisabled();
     expect(screen.getByText("已选择 0 / 1 个考场，共 0 张桌贴")).toBeInTheDocument();
+  });
+
+  it("starts each desk-label room on a new page by default and preserves the previous continuous layout when disabled", async () => {
+    const user = userEvent.setup();
+    const secondRoomAssignment = {
+      ...savedArrangement.assignments[0],
+      id: "combined:student-2",
+      studentId: "student-2",
+      studentName: "李同学",
+      studentNo: "002",
+      roomId: "room-2",
+      roomName: "高三（2）班",
+      roomNumber: "高三（2）班",
+      roomLocation: "教学楼 302",
+      admissionNo: "20260510010002",
+    };
+    const twoRoomArrangement: ExamArrangement = {
+      ...savedArrangement,
+      rooms: [
+        ...savedArrangement.rooms,
+        {
+          id: "room-2",
+          name: "高三（2）班",
+          number: "高三（2）班",
+          location: "教学楼 302",
+          capacity: 30,
+        },
+      ],
+      assignments: [...savedArrangement.assignments, secondRoomAssignment],
+    };
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([twoRoomArrangement]);
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText("选择考场安排"), twoRoomArrangement.id);
+    await user.click(await screen.findByRole("tab", { name: "桌贴预览" }));
+
+    const separateRooms = screen.getByLabelText("每个考场单独成页");
+    expect(separateRooms).toBeChecked();
+    expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(2);
+
+    await user.click(separateRooms);
+    expect(separateRooms).not.toBeChecked();
+    expect(screen.getAllByTestId("desk-label-print-page")).toHaveLength(1);
   });
 
   it("switches result previews one class and one room at a time", async () => {
@@ -668,7 +712,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(pages[0].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("高三（1）班 · 67 名学生 · 第 1/2 页");
   });
 
-  it("continues desk labels across rooms and 8K pages", async () => {
+  it("continues desk labels across rooms and 8K pages when separate-room pagination is disabled", async () => {
     const user = userEvent.setup();
     const secondRoom = {
       id: "room-2",
@@ -704,6 +748,7 @@ describe("ExamRoomArrangementPage", () => {
 
     await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
     await user.click(await screen.findByRole("tab", { name: "桌贴预览" }));
+    await user.click(screen.getByLabelText("每个考场单独成页"));
 
     const pages = screen.getAllByTestId("desk-label-print-page");
     expect(pages).toHaveLength(2);

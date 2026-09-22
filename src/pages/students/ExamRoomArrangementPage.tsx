@@ -117,6 +117,7 @@ function buildDeskLabelRows(labels: DeskLabel[], columns = DESK_LABEL_COLUMNS): 
 function paginateDeskLabels(
   rows: DeskLabelRow[],
   measuredRowHeights?: number[],
+  startEachRoomOnNewPage = false,
 ): {
   columns: number;
   density: PrintDensity;
@@ -132,6 +133,12 @@ function paginateDeskLabels(
   let usedHeight = 0;
 
   for (const [index, row] of rows.entries()) {
+    const startsNewRoom = index > 0 && rows[index - 1].roomId !== row.roomId;
+    if (page.length > 0 && startEachRoomOnNewPage && startsNewRoom) {
+      pages.push(page);
+      page = [];
+      usedHeight = 0;
+    }
     const measuredHeight = measuredRowHeights?.[index];
     const rowHeight = measuredHeight && measuredHeight > 0
       ? measuredHeight
@@ -702,6 +709,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [previewRoomId, setPreviewRoomId] = useState("");
   const [showDeskStudentNo, setShowDeskStudentNo] = useState(true);
   const [showDeskAdmissionNo, setShowDeskAdmissionNo] = useState(true);
+  const [startEachDeskRoomOnNewPage, setStartEachDeskRoomOnNewPage] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState("");
@@ -746,7 +754,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const deskPrintLayout = useMemo(() => paginateDeskLabels(
     deskLabelRows,
     deskRowMeasurement?.signature === deskMeasurementSignature ? deskRowMeasurement.heights : undefined,
-  ), [deskLabelRows, deskMeasurementSignature, deskRowMeasurement]);
+    startEachDeskRoomOnNewPage,
+  ), [deskLabelRows, deskMeasurementSignature, deskRowMeasurement, startEachDeskRoomOnNewPage]);
 
   useLayoutEffect(() => {
     const host = deskMeasureRef.current;
@@ -1820,6 +1829,16 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                             : new Set())}
                         />
                         全选考场
+                      </label>
+                      <span className="h-4 w-px bg-ink-200" aria-hidden="true" />
+                      <label className="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          aria-label="每个考场单独成页"
+                          checked={startEachDeskRoomOnNewPage}
+                          onChange={(event) => setStartEachDeskRoomOnNewPage(event.target.checked)}
+                        />
+                        每个考场单独成页
                       </label>
                       <span className="h-4 w-px bg-ink-200" aria-hidden="true" />
                       <label className="inline-flex cursor-pointer items-center gap-2">
