@@ -61,6 +61,7 @@ interface PresentationModeProps {
   ignoredStudentIds?: ReadonlySet<string>;
   relatedQuestionsById: Record<string, Question>;
   preferenceOwnerId?: string;
+  allowBlankPageCreation?: boolean;
   onExit: () => void;
 }
 
@@ -203,7 +204,23 @@ const BOARD_WRITING_AREA_MAX_SCALE = 2;
 const BOARD_WRITING_AREA_VISIBLE_MARGIN_PX = 48;
 const BOARD_WRITING_AREA_WHEEL_ZOOM_SPEED = 0.0015;
 const BOARD_SIDE_CONTROLS_SCREEN_Y = 50;
+const BOARD_HORIZONTAL_MARGIN_PERCENT = 1.5;
 const QUESTION_PANEL_MIN_WIDTH = 12;
+let blankPresentationSlideSequence = 0;
+
+function createBlankPresentationSlide(index: number): LessonSlide {
+  blankPresentationSlideSequence += 1;
+  return {
+    id: `presentation-blank-slide-${blankPresentationSlideSequence}`,
+    type: "knowledge",
+    title: `空白页 ${index + 1}`,
+    content: "",
+    freeformLayout: true,
+    elements: [],
+    relatedQuestionIds: [],
+    askableStudentIds: [],
+  };
+}
 
 function createBoardPage(slideId: string, index: number): BoardPage {
   const offset = (index % 5) * 3;
@@ -219,9 +236,9 @@ function createBoardPage(slideId: string, index: number): BoardPage {
   };
   return {
     id: boardId,
-    x: 0,
+    x: BOARD_HORIZONTAL_MARGIN_PERCENT,
     y: 10 + offset,
-    width: 100,
+    width: 100 - BOARD_HORIZONTAL_MARGIN_PERCENT * 2,
     height: 62,
     writingAreas: [firstWritingArea],
     activeWritingAreaId: firstWritingArea.id,
@@ -949,6 +966,7 @@ export function PresentationMode({
   ignoredStudentIds = EMPTY_STUDENT_ID_SET,
   relatedQuestionsById,
   preferenceOwnerId,
+  allowBlankPageCreation = false,
   onExit,
 }: PresentationModeProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -965,6 +983,7 @@ export function PresentationMode({
   const suppressBoardTouchDrawingRef = useRef(false);
   const activePageButtonRef = useRef<HTMLButtonElement | null>(null);
   const [currentIndex, setCurrentIndex] = useState(() => clamp(initialIndex, 0, Math.max(0, slides.length - 1)));
+  const [appendedBlankSlides, setAppendedBlankSlides] = useState<LessonSlide[]>([]);
   const [pagePickerOpen, setPagePickerOpen] = useState(false);
   const [tool, setTool] = useState<Tool>("select");
   const [drawingPresets, setDrawingPresets] = useState(INITIAL_DRAWING_PRESETS);
@@ -1002,7 +1021,8 @@ export function PresentationMode({
   const lotteryFinishTimeoutRef = useRef<number | null>(null);
   const lotteryDismissTimeoutRef = useRef<number | null>(null);
 
-  const currentSlide = slides[currentIndex];
+  const presentationSlides = allowBlankPageCreation ? [...slides, ...appendedBlankSlides] : slides;
+  const currentSlide = presentationSlides[currentIndex];
   const currentSlideStateKey = currentSlide?.id || "__empty-slide__";
   const boards = boardsBySlide[currentSlideStateKey] || [];
   const activeBoardId = activeBoardIdsBySlide[currentSlideStateKey] || null;
@@ -1222,13 +1242,30 @@ export function PresentationMode({
       }));
       return;
     }
-    setCurrentIndex((index) => Math.min(slides.length - 1, index + 1));
-  }, [currentAnimationProgress, currentAnimationSteps.length, currentSlide, slides.length]);
+    if (allowBlankPageCreation && currentIndex >= presentationSlides.length - 1) {
+      const nextIndex = presentationSlides.length;
+      setAppendedBlankSlides((current) => [
+        ...current,
+        createBlankPresentationSlide(slides.length + current.length),
+      ]);
+      setCurrentIndex(nextIndex);
+      return;
+    }
+    setCurrentIndex((index) => Math.min(presentationSlides.length - 1, index + 1));
+  }, [
+    allowBlankPageCreation,
+    currentAnimationProgress,
+    currentAnimationSteps.length,
+    currentIndex,
+    currentSlide,
+    presentationSlides.length,
+    slides.length,
+  ]);
 
   const goToPage = useCallback((index: number) => {
-    setCurrentIndex(clamp(index, 0, Math.max(0, slides.length - 1)));
+    setCurrentIndex(clamp(index, 0, Math.max(0, presentationSlides.length - 1)));
     setPagePickerOpen(false);
-  }, [slides.length]);
+  }, [presentationSlides.length]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -2147,7 +2184,7 @@ export function PresentationMode({
             aria-label={`当前第 ${currentIndex + 1} 页，选择页码`}
             aria-haspopup="listbox"
             aria-expanded={pagePickerOpen}
-            title={`第 ${currentIndex + 1} 页，共 ${slides.length} 页`}
+            title={`第 ${currentIndex + 1} 页，共 ${presentationSlides.length} 页`}
             className="flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-semibold tabular-nums transition-colors hover:bg-white/10"
           >
             {currentIndex + 1}
@@ -2158,7 +2195,7 @@ export function PresentationMode({
               aria-label="选择页码"
               className="absolute bottom-full left-1/2 mb-2 max-h-[26rem] w-14 -translate-x-1/2 touch-pan-y overflow-y-auto overscroll-contain rounded-xl border border-white/15 bg-ink-900/95 p-1 shadow-2xl backdrop-blur"
             >
-              {slides.map((_, index) => {
+              {presentationSlides.map((_, index) => {
                 const page = index + 1;
                 const active = index === currentIndex;
                 return (
@@ -2186,7 +2223,9 @@ export function PresentationMode({
       <button
         type="button"
         onClick={goNext}
-        disabled={currentIndex === slides.length - 1 && currentAnimationProgress >= currentAnimationSteps.length}
+        disabled={!allowBlankPageCreation
+          && currentIndex === presentationSlides.length - 1
+          && currentAnimationProgress >= currentAnimationSteps.length}
         aria-label={`${side === "left" ? "左侧" : "右侧"}下一页`}
         title="下一页"
         className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"

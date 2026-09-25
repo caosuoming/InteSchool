@@ -121,6 +121,45 @@ beforeEach(() => {
 });
 
 describe("PresentationMode", () => {
+  it("adds another blank page from either next-page control when blank-page creation is enabled", async () => {
+    const user = userEvent.setup();
+    const blankSlide: LessonSlide = {
+      id: "blank-slide-1",
+      type: "knowledge",
+      title: "空白页 1",
+      content: "",
+      freeformLayout: true,
+      elements: [],
+    };
+
+    render(
+      <PresentationMode
+        slides={[blankSlide]}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        allowBlankPageCreation
+        onExit={vi.fn()}
+      />,
+    );
+
+    const rightNext = screen.getByRole("button", { name: "右侧下一页" });
+    expect(rightNext).toBeEnabled();
+    await user.click(rightNext);
+    expect(screen.getByRole("button", { name: "当前第 2 页，选择页码" })).toHaveAttribute(
+      "title",
+      "第 2 页，共 2 页",
+    );
+
+    const leftNext = screen.getByRole("button", { name: "左侧下一页" });
+    expect(leftNext).toBeEnabled();
+    await user.click(leftNext);
+    expect(screen.getByRole("button", { name: "当前第 3 页，选择页码" })).toHaveAttribute(
+      "title",
+      "第 3 页，共 3 页",
+    );
+  });
+
   it("reveals animation steps before changing pages and groups equal orders", async () => {
     const user = userEvent.setup();
     const animatedSlides: LessonSlide[] = [
@@ -717,7 +756,7 @@ describe("PresentationMode", () => {
 
     await user.click(screen.getByRole("button", { name: "打开板书" }));
     const firstBoard = screen.getByRole("region", { name: "板书 1" });
-    expect(firstBoard).toHaveStyle({ left: "0%", width: "100%" });
+    expect(firstBoard).toHaveStyle({ left: "1.5%", width: "97%" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(firstBoard.querySelector('[data-board-divider="center"]')).toHaveClass("left-1/2");
     expect(screen.getByRole("button", { name: "移动板书 1" })).toBeInTheDocument();
@@ -875,7 +914,7 @@ describe("PresentationMode", () => {
     }
 
     await user.click(leftControls().getByRole("button", { name: "从左侧退出全屏板书 1" }));
-    expect(board).toHaveStyle({ left: "0%", top: "10%", width: "100%", height: "62%" });
+    expect(board).toHaveStyle({ left: "1.5%", top: "10%", width: "97%", height: "62%" });
 
     await user.click(leftControls().getByRole("button", { name: "从左侧截图板书 1" }));
 
@@ -1004,7 +1043,7 @@ describe("PresentationMode", () => {
     fireEvent.pointerDown(moveBoardButton, { pointerId: 1, clientX: 200, clientY: 160 });
     fireEvent.pointerMove(moveBoardButton, { pointerId: 1, clientX: -500, clientY: 160 });
     fireEvent.pointerUp(moveBoardButton, { pointerId: 1, clientX: -500, clientY: 160 });
-    expect(firstBoard).toHaveStyle({ left: "0%", width: "100%" });
+    expect(firstBoard).toHaveStyle({ left: "0%", width: "97%" });
     expect(writingFrame?.style.left).toBe(frameLeftBeforeBoardMove);
 
     const frameLeftBefore = writingFrame?.style.left;
@@ -1146,11 +1185,11 @@ describe("PresentationMode", () => {
     ]);
 
     const westHandle = screen.getByRole("button", { name: "从左边调整板书 1大小" });
-    expect(board).toHaveStyle({ left: "0%", width: "100%" });
+    expect(board).toHaveStyle({ left: "1.5%", width: "97%" });
     fireEvent.pointerDown(westHandle, { pointerId: 3, clientX: 0, clientY: 300 });
     fireEvent.pointerMove(westHandle, { pointerId: 3, clientX: 100, clientY: 300 });
     fireEvent.pointerUp(westHandle, { pointerId: 3, clientX: 100, clientY: 300 });
-    expect(board).toHaveStyle({ left: "10%", width: "90%" });
+    expect(board).toHaveStyle({ left: "11.5%", width: "87%" });
 
     const northHandle = screen.getByRole("button", { name: "从上边调整板书 1大小" });
     fireEvent.pointerDown(northHandle, { pointerId: 4, clientX: 400, clientY: 80 });
@@ -1162,7 +1201,7 @@ describe("PresentationMode", () => {
     fireEvent.pointerDown(southEastHandle, { pointerId: 5, clientX: 840, clientY: 576 });
     fireEvent.pointerMove(southEastHandle, { pointerId: 5, clientX: 940, clientY: 656 });
     fireEvent.pointerUp(southEastHandle, { pointerId: 5, clientX: 940, clientY: 656 });
-    expect(board).toHaveStyle({ left: "10%", width: "90%", top: "0%", height: "82%" });
+    expect(board).toHaveStyle({ left: "11.5%", width: "88.5%", top: "0%", height: "82%" });
 
     const southHandle = screen.getByRole("button", { name: "从下边调整板书 1大小" });
     fireEvent.pointerDown(southHandle, { pointerId: 6, clientX: 500, clientY: 656 });
