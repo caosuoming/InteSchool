@@ -156,6 +156,7 @@ function HomeworkRow({
               <HomeworkAttachments
                 attachments={homework.attachments}
                 theme="dark"
+                fullscreenImages
                 className={cn(homework.content && "mt-4")}
               />
             </div>
@@ -1112,6 +1113,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
                               <HomeworkAttachments
                                 attachments={homework.attachments}
                                 theme="dark"
+                                fullscreenImages
                                 className={cn(homework.content && "mt-3")}
                               />
                               <div className="mt-2 text-[10px] text-neutral-600">{homework.teacherName}</div>
