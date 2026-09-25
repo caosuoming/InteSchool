@@ -1,6 +1,7 @@
 import katex from "katex";
 import sanitizeHtml from "sanitize-html";
 import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
+import { normalizePlainMathText } from "@/lib/plain-math";
 import {
   documentImageInlineStyle,
   parseDocumentImageDisplaySize,
@@ -100,7 +101,9 @@ export function renderMathHtml(content: string): string {
     const parent = textNode.parentElement;
     if (parent?.closest(SKIP_SELECTOR)) continue;
 
-    const normalizedText = normalizeLegacyOmmlMathText(textNode.data);
+    const normalizedText = normalizePlainMathText(
+      normalizeLegacyOmmlMathText(textNode.data),
+    );
     const segments = parseMathSegments(normalizedText);
     if (!segments.some((segment) => segment.type !== "text")) {
       textNode.data = normalizedText;

@@ -382,4 +382,16 @@ y=2
       String.raw`\left|x-1\right|`,
     );
   });
+
+  it.each(["⌒", "⌢", "⏜", "⏠", "͡"])("renders Word arc accent %s as a spanning arc", (accent) => {
+    expect(ommlToLatex(`
+      <m:oMath xmlns:m="${MATH_NS}">
+        <m:acc>
+          <m:accPr><m:chr m:val="${accent}"/></m:accPr>
+          <m:e><m:r><m:t>AB</m:t></m:r></m:e>
+        </m:acc>
+      </m:oMath>
+    `)).toBe(String.raw`\overgroup{AB}`);
+  });
+
 });

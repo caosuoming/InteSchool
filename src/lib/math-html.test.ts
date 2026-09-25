@@ -238,6 +238,24 @@ describe("renderMathHtml", () => {
     expect(container.querySelector("p")).not.toHaveAttribute("onclick");
     expect(container).toHaveTextContent("安全文本");
   });
+  it("renders legacy plain equations as canonical formulas", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      "若直线l₁:ax+(1-a)y=3与l₂:(a-1)x+(2a+3)y=2互相垂直。",
+    );
+
+    expect(
+      Array.from(container.querySelectorAll<HTMLElement>(".katex-formula")).map(
+        (formula) => formula.dataset.latex,
+      ),
+    ).toEqual([
+      "l_{1}:ax+(1-a)y=3",
+      "l_{2}:(a-1)x+(2a+3)y=2",
+    ]);
+    expect(container.textContent).not.toContain("l₁:ax");
+  });
+
+
 });
 
 describe("containsMathDelimiter", () => {

@@ -629,11 +629,13 @@ function convertAcc(el: Element): string {
     return `${accent}{${e}}`;
   }
   const accent = mapAccent(chr);
+  if (accent) return `${accent}{${e}}`;
 
-  return `${accent}{${e}}`;
+  const escapedAccent = escapeLatex(chr).trim();
+  return escapedAccent ? `\\overset{${escapedAccent}}{${e}}` : e;
 }
 
-function mapAccent(chr: string): string {
+function mapAccent(chr: string): string | null {
   const map: Record<string, string> = {
     "^": "\\hat",
     "̂": "\\hat",
@@ -646,10 +648,15 @@ function mapAccent(chr: string): string {
     "̈": "\\ddot",
     "̌": "\\check",
     "̆": "\\breve",
+    "⌒": "\\overgroup",
+    "⌢": "\\overgroup",
+    "⏜": "\\overgroup",
+    "⏠": "\\overgroup",
+    "͡": "\\overgroup",
     "⏞": "\\overbrace",
     "⏟": "\\underbrace",
   };
-  return map[chr] || "\\vec";
+  return map[chr] || null;
 }
 
 /**

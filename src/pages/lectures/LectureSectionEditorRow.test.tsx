@@ -61,20 +61,22 @@ describe("LectureSectionEditorRow", () => {
   });
 
   it("displays an existing custom number and exposes question replacement", () => {
-    const { onReplaceQuestion } = renderRow({ customLabel: "变式 2" });
+    const { container, onReplaceQuestion } = renderRow({ customLabel: "变式 2" });
 
     expect(screen.getByRole("textbox", { name: "题目编号：一次函数练习" })).toHaveValue("变式 2");
-    expect(screen.getAllByText(question.stem)).toHaveLength(1);
+    expect(container).toHaveTextContent("函数");
+    expect(container).toHaveTextContent("的斜率是多少？");
     fireEvent.click(screen.getByRole("button", { name: "换题" }));
     expect(onReplaceQuestion).toHaveBeenCalledOnce();
   });
 
   it("expands the answer and analysis", () => {
-    renderRow();
+    const { container } = renderRow();
 
-    expect(screen.queryByText("一次函数 y = kx + b 的斜率为 k。")).not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent("斜率为");
     fireEvent.click(screen.getByRole("button", { name: "查看答案与解析" }));
-    expect(screen.getByText("一次函数 y = kx + b 的斜率为 k。")).toBeInTheDocument();
+    expect(container).toHaveTextContent("一次函数");
+    expect(container).toHaveTextContent("的斜率为 k。");
   });
 
   it("renders formulas in the stem, options, answer, and analysis", () => {
@@ -93,9 +95,10 @@ describe("LectureSectionEditorRow", () => {
   });
 
   it("keeps a locked document section readable without structure actions", () => {
-    renderRow({ customLabel: "例 3" }, question, true);
+    const { container } = renderRow({ customLabel: "例 3" }, question, true);
 
-    expect(screen.getByText(question.stem)).toBeInTheDocument();
+    expect(container).toHaveTextContent("函数");
+    expect(container).toHaveTextContent("的斜率是多少？");
     expect(screen.queryByRole("textbox", { name: "题目编号：一次函数练习" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "换题" })).not.toBeInTheDocument();
     expect(screen.queryByTitle("上移")).not.toBeInTheDocument();
