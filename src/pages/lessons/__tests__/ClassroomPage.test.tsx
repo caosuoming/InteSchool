@@ -309,6 +309,25 @@ describe("ClassroomPage", () => {
     expect(screen.getByRole("button", { name: "退出全屏" })).toBeInTheDocument();
   });
 
+  it("starts a blank lesson beside More and appends blank pages while teaching", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("完成课本第 42 页第 1—6 题");
+    await user.click(screen.getByRole("button", { name: /^上课/ }));
+
+    const blankLessonButton = screen.getByRole("button", { name: "空白页上课" });
+    const moreLessonsButton = screen.getByRole("button", { name: "更多课件" });
+    expect(blankLessonButton.compareDocumentPosition(moreLessonsButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(blankLessonButton);
+    expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "当前第 1 页，选择页码" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "右侧下一页" }));
+    expect(screen.getByRole("button", { name: "当前第 2 页，选择页码" })).toBeInTheDocument();
+  });
+
   it("keeps the subject rail available before any lesson is published", async () => {
     const user = userEvent.setup();
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);

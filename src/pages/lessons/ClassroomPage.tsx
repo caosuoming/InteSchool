@@ -12,6 +12,7 @@ import {
   ClipboardList,
   Clock,
   Eye,
+  FilePlus2,
   LockKeyhole,
   LogOut,
   Maximize2,
@@ -40,13 +41,31 @@ import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { studentInteractionService } from "@/services/studentInteraction";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { ClassroomDeviceSnapshot, ClassroomHomework, ClassroomNotice, LessonCourseware, SchoolClass, Student } from "@/types";
+import type {
+  ClassroomDeviceSnapshot,
+  ClassroomHomework,
+  ClassroomNotice,
+  LessonCourseware,
+  LessonSlide,
+  SchoolClass,
+  Student,
+} from "@/types";
 import { PresentationMode } from "./PresentationMode";
 
 const CLASSROOM_KEY = "inteschool-classroom-id";
 const DEFAULT_FONT_SIZE = 30;
 const MIN_FONT_SIZE = 20;
 const MAX_FONT_SIZE = 52;
+const BLANK_CLASSROOM_SLIDES: LessonSlide[] = [{
+  id: "classroom-blank-slide-1",
+  type: "knowledge",
+  title: "空白页 1",
+  content: "",
+  freeformLayout: true,
+  elements: [],
+  relatedQuestionIds: [],
+  askableStudentIds: [],
+}];
 
 type ClassroomTab = "homework" | "lesson";
 
@@ -275,6 +294,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
   const [allLessonsOpen, setAllLessonsOpen] = useState(false);
   const [selectedLessonSubject, setSelectedLessonSubject] = useState("");
   const [presenting, setPresenting] = useState<LessonCourseware | null>(null);
+  const [blankPresentationActive, setBlankPresentationActive] = useState(false);
   const [preferences, setPreferences] = useState<ClassroomPreferences>(() => readPreferences(routeClassId || ""));
   const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
@@ -403,6 +423,8 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         const screenshot = await captureClassroomPreview();
         const title = presenting
           ? `课件：${presenting.title}`
+          : blankPresentationActive
+            ? "空白页上课"
           : tab === "homework" ? "今日作业" : "上课课件";
         const device = await classroomDeviceService.reportHeartbeat(token, {
           path: location.pathname,
@@ -423,7 +445,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
       active = false;
       window.clearInterval(timer);
     };
-  }, [deviceMode, location.pathname, presenting, selectedClassId, tab]);
+  }, [blankPresentationActive, deviceMode, location.pathname, presenting, selectedClassId, tab]);
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -595,10 +617,20 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
 
   const openLesson = (lesson: LessonCourseware) => {
     setAllLessonsOpen(false);
+    setBlankPresentationActive(false);
     if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
       void document.documentElement.requestFullscreen().catch(() => undefined);
     }
     setPresenting(lesson);
+  };
+
+  const openBlankLesson = () => {
+    setAllLessonsOpen(false);
+    setPresenting(null);
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      void document.documentElement.requestFullscreen().catch(() => undefined);
+    }
+    setBlankPresentationActive(true);
   };
 
   if (deviceMode && deviceSnapshot?.device.effectiveState !== "active") {
@@ -648,8 +680,8 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
     );
   }
 
-  if (presenting) {
-    const deviceAttention = deviceMode
+  if (presenting || blankPresentationActive) {
+    const deviceAttention = deviceMode && presenting
       ? deviceSnapshot?.studentAttentionByTeacherId?.[presenting.teacherId]
       : undefined;
     const presentationFollowedStudentIds = deviceAttention
@@ -660,14 +692,18 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
       : ignoredStudentIds;
     return (
       <PresentationMode
-        slides={presenting.slides}
+        slides={presenting?.slides || BLANK_CLASSROOM_SLIDES}
         initialIndex={0}
         students={students}
         followedStudentIds={presentationFollowedStudentIds}
         ignoredStudentIds={presentationIgnoredStudentIds}
         relatedQuestionsById={{}}
-        preferenceOwnerId={presenting.teacherId}
-        onExit={() => setPresenting(null)}
+        preferenceOwnerId={presenting?.teacherId || teacher?.id}
+        allowBlankPageCreation={blankPresentationActive}
+        onExit={() => {
+          setPresenting(null);
+          setBlankPresentationActive(false);
+        }}
       />
     );
   }
@@ -938,7 +974,15 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
                   )}
                 </div>
 
-                <div className="flex flex-shrink-0 justify-end border-t border-neutral-800 bg-neutral-950 px-4 py-2.5 sm:px-5">
+                <div className="flex flex-shrink-0 justify-end gap-2 border-t border-neutral-800 bg-neutral-950 px-4 py-2.5 sm:px-5">
+                  <button
+                    type="button"
+                    onClick={openBlankLesson}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-700 px-3 text-xs text-neutral-300 hover:border-amber-400 hover:text-amber-300"
+                  >
+                    <FilePlus2 className="h-3.5 w-3.5" />
+                    空白页上课
+                  </button>
                   <button
                     type="button"
                     onClick={() => setAllLessonsOpen(true)}
