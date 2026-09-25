@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Download,
   ExternalLink,
@@ -7,6 +8,7 @@ import {
   Image as ImageIcon,
   Minus,
   Plus,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -22,6 +24,7 @@ interface HomeworkAttachmentsProps {
   className?: string;
   onRemove?: (attachment: ClassroomHomeworkAttachment) => void;
   removeDisabled?: boolean;
+  fullscreenImages?: boolean;
 }
 
 type PreviewKind = "image" | "pdf" | "document" | "download";
@@ -47,6 +50,89 @@ function AttachmentIcon({ attachment, className }: {
   if (kind === "image") return <ImageIcon className={className} />;
   if (kind === "document" || kind === "pdf") return <FileText className={className} />;
   return <File className={className} />;
+}
+
+function FullscreenImagePreview({
+  attachment,
+  onClose,
+}: {
+  attachment: ClassroomHomeworkAttachment | null;
+  onClose: () => void;
+}) {
+  const [zoom, setZoom] = useState(100);
+
+  useEffect(() => {
+    setZoom(100);
+  }, [attachment?.id]);
+
+  useEffect(() => {
+    if (!attachment) return;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [attachment, onClose]);
+
+  if (!attachment) return null;
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={"全屏预览 " + attachment.name}
+      className="fixed inset-0 z-[100] bg-black"
+    >
+      <div className="absolute inset-0 overflow-auto">
+        <div className="flex min-h-full min-w-full items-center justify-center p-4 sm:p-8">
+          <img
+            src={attachment.url}
+            alt={attachment.name}
+            draggable={false}
+            className="max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] select-none object-contain transition-transform duration-150 sm:max-h-[calc(100vh-4rem)] sm:max-w-[calc(100vw-4rem)]"
+            style={{ transform: "scale(" + zoom / 100 + ")" }}
+          />
+        </div>
+      </div>
+
+      <div className="absolute right-4 top-4 flex items-center gap-1 rounded-xl border border-white/15 bg-black/70 p-1.5 text-white shadow-2xl backdrop-blur sm:right-6 sm:top-6">
+        <button
+          type="button"
+          aria-label="缩小图片"
+          disabled={zoom <= 50}
+          onClick={() => setZoom((value) => Math.max(50, value - 25))}
+          className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Minus className="h-5 w-5" />
+        </button>
+        <span className="w-14 text-center text-sm tabular-nums" aria-live="polite">{zoom}%</span>
+        <button
+          type="button"
+          aria-label="放大图片"
+          disabled={zoom >= 200}
+          onClick={() => setZoom((value) => Math.min(200, value + 25))}
+          className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Plus className="h-5 w-5" />
+        </button>
+        <div className="mx-1 h-6 w-px bg-white/20" />
+        <button
+          type="button"
+          aria-label="关闭图片"
+          onClick={onClose}
+          className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-white/15"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 function HomeworkAttachmentPreview({
@@ -238,6 +324,7 @@ export function HomeworkAttachments({
   className,
   onRemove,
   removeDisabled = false,
+  fullscreenImages = false,
 }: HomeworkAttachmentsProps) {
   const [previewing, setPreviewing] = useState<ClassroomHomeworkAttachment | null>(null);
   if (attachments.length === 0) return null;
@@ -289,7 +376,11 @@ export function HomeworkAttachments({
           </div>
         ))}
       </div>
-      <HomeworkAttachmentPreview attachment={previewing} onClose={() => setPreviewing(null)} />
+      {fullscreenImages && previewing && attachmentKind(previewing) === "image" ? (
+        <FullscreenImagePreview attachment={previewing} onClose={() => setPreviewing(null)} />
+      ) : (
+        <HomeworkAttachmentPreview attachment={previewing} onClose={() => setPreviewing(null)} />
+      )}
     </>
   );
 }

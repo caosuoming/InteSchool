@@ -134,6 +134,19 @@ const attachedHomework: ClassroomHomework = {
   }],
 };
 
+const imageHomework: ClassroomHomework = {
+  ...mathHomework,
+  id: "homework-image",
+  content: "查看函数图像",
+  attachments: [{
+    id: "image-1",
+    name: "函数图像.png",
+    url: "/api/files/image-1",
+    mimeType: "image/png",
+    size: 4096,
+  }],
+};
+
 const lesson: LessonCourseware = {
   id: "lesson-1",
   teacherId: "teacher-1",
@@ -377,5 +390,27 @@ describe("ClassroomPage", () => {
 
     expect(screen.getByText("125%")).toBeInTheDocument();
     expect(screen.getByText("字体 20")).toBeInTheDocument();
+  });
+
+  it("opens homework images in a fullscreen viewer with zoom and close controls", async () => {
+    const user = userEvent.setup();
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([imageHomework]);
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /函数图像\.png/ }));
+
+    const viewer = screen.getByRole("dialog", { name: "全屏预览 函数图像.png" });
+    expect(viewer).toHaveClass("fixed", "inset-0", "bg-black");
+    expect(screen.getByRole("img", { name: "函数图像.png" })).toHaveAttribute("src", "/api/files/image-1");
+    expect(screen.getByText("100%")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "放大图片" }));
+    expect(screen.getByText("125%")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "缩小图片" }));
+    expect(screen.getByText("100%")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "关闭图片" }));
+    expect(screen.queryByRole("dialog", { name: "全屏预览 函数图像.png" })).not.toBeInTheDocument();
   });
 });
