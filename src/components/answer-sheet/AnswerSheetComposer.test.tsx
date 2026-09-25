@@ -31,10 +31,26 @@ describe("AnswerSheetComposer", () => {
     expect(screen.getByRole("heading", { name: "制作答题卡" })).toBeInTheDocument();
     expect(screen.getByLabelText("试卷答题卡二维码").tagName.toLowerCase()).toBe("svg");
     expect(screen.getAllByTestId("student-number-row")).toHaveLength(8);
+    expect(screen.getByTestId("student-number-grid")).not.toHaveTextContent("学号");
     expect(container).toHaveTextContent("[A]");
 
     fireEvent.change(screen.getByLabelText("学号位数"), { target: { value: "10" } });
     expect(screen.getAllByTestId("student-number-row")).toHaveLength(10);
+  });
+
+  it("places class and signature fields beside the student-number grid with a divider", () => {
+    renderComposer();
+
+    const identityArea = screen.getByTestId("answer-sheet-identity-area");
+    const identityFields = screen.getByTestId("answer-sheet-identity-fields");
+    const studentNumberColumn = screen.getByTestId("answer-sheet-student-number-column");
+
+    expect(identityArea).toHaveClass("flex");
+    expect(identityFields.nextElementSibling).toBe(studentNumberColumn);
+    expect(studentNumberColumn).toHaveClass("border-l");
+    expect(identityFields).toContainElement(screen.getByLabelText("班级填写区"));
+    expect(identityFields).toContainElement(screen.getByLabelText("姓名签名填写区"));
+    expect(studentNumberColumn).toContainElement(screen.getByTestId("student-number-grid"));
   });
 
   it("keeps editing single-column and joins A3/8K halves only in preview", () => {
@@ -94,14 +110,38 @@ describe("AnswerSheetComposer", () => {
     const paper = container.querySelector<HTMLElement>(".answer-sheet-paper")!;
     expect(paper).toHaveAttribute("data-paper-columns", "3");
     expect(paper.style.width).toBe("420mm");
-    expect(paper.querySelector("main")?.style.columnCount).toBe("3");
+    const columnFlow = screen.getByTestId("answer-sheet-column-flow");
+    expect(columnFlow.style.columnCount).toBe("3");
+    expect(paper.querySelector("main")).toHaveClass("contents");
 
     const firstColumnHeader = screen.getByTestId("answer-sheet-first-column-header");
-    expect(firstColumnHeader.style.width).toContain("calc(");
-    expect(firstColumnHeader.style.width).not.toBe("100%");
+    expect(firstColumnHeader.parentElement).toBe(columnFlow);
     expect(firstColumnHeader).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
     expect(firstColumnHeader).toContainElement(screen.getByLabelText("姓名签名填写区"));
     expect(screen.getByLabelText("姓名签名填写区")).toHaveAttribute("data-signature-history-limit", "10");
+  });
+
+  it("moves essay images into the answer box and removes empty stem lines", () => {
+    renderComposer({
+      questions: [{
+        id: "essay-with-image",
+        type: "essay",
+        stem: '<p>证明下列结论。</p><p><br></p><img src="/figure.png" alt="几何图"><p>&nbsp;</p>',
+        score: 12,
+      }],
+      initialSettings: { mode: "with-questions" },
+    });
+
+    const stem = screen.getByTestId("essay-question-stem");
+    const answerBox = screen.getByTestId("answer-box");
+    const movedImage = answerBox.querySelector<HTMLImageElement>('img[src="/figure.png"]');
+
+    expect(stem).toHaveTextContent("证明下列结论。");
+    expect(stem.querySelector("img")).toBeNull();
+    expect(stem.querySelectorAll("p")).toHaveLength(1);
+    expect(movedImage).not.toBeNull();
+    expect(movedImage).toHaveClass("answer-sheet-floating-image");
+    expect(movedImage).toHaveAttribute("draggable", "true");
   });
 
   it("renders one resizable answer box with a score cell and lets the teacher choose dashed borders", () => {
