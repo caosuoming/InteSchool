@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Eye, FileSpreadsheet, Pencil, Printer } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -21,8 +21,6 @@ import {
   type AnswerSheetSettings,
   type AnswerSheetWideColumns,
 } from "@/lib/answer-sheet";
-
-const COLUMN_GAP_MM = 8;
 
 const paperSizeConfig: Record<AnswerSheetPaperSize, {
   editWidth: string;
@@ -116,26 +114,59 @@ function groupQuestions(questions: AnswerSheetQuestion[]): QuestionGroup[] {
 
 function StudentNumberGrid({ digits }: { digits: number }) {
   return (
-    <div className="inline-flex max-w-full items-stretch border border-ink-900 bg-white">
-      <div className="flex w-8 shrink-0 items-center justify-center bg-ink-100 text-xs font-semibold tracking-[0.3em] text-ink-800 [writing-mode:vertical-rl]">
-        学号
-      </div>
-      <div className="min-w-0 space-y-0.5 overflow-hidden p-1" aria-label={`${digits}位学号涂填区`}>
-        {Array.from({ length: digits }, (_, row) => (
-          <div key={row} className="flex gap-0.5" data-testid="student-number-row">
-            {Array.from({ length: 10 }, (_, digit) => (
-              <span
-                key={digit}
-                className="flex h-[15px] min-w-[17px] flex-1 items-center justify-center border border-ink-700 font-mono text-[8px] leading-none text-ink-700"
-              >
-                [{digit}]
-              </span>
-            ))}
-          </div>
-        ))}
-      </div>
+    <div
+      className="min-w-0 space-y-0.5 overflow-hidden bg-white"
+      aria-label={`${digits}位学号涂填区`}
+      data-testid="student-number-grid"
+    >
+      {Array.from({ length: digits }, (_, row) => (
+        <div key={row} className="flex gap-0.5" data-testid="student-number-row">
+          {Array.from({ length: 10 }, (_, digit) => (
+            <span
+              key={digit}
+              className="flex h-[15px] min-w-[17px] flex-1 items-center justify-center border border-ink-700 font-mono text-[8px] leading-none text-ink-700"
+            >
+              [{digit}]
+            </span>
+          ))}
+        </div>
+      ))}
     </div>
   );
+}
+
+interface EssayStemContent {
+  stem: string;
+  images: string;
+}
+
+const QUESTION_IMAGE_PATTERN = /<img\b[^>]*>|!\[[^\]]*\]\([^)]+\)/gi;
+const EMPTY_BLOCK_PATTERN = /<(p|div)(?:\s[^>]*)?>\s*(?:(?:&nbsp;|&#160;|<br\s*\/?>)\s*)*<\/\1>/gi;
+
+function splitEssayStemContent(stem: string): EssayStemContent {
+  const images: string[] = [];
+  let compacted = stem.replace(QUESTION_IMAGE_PATTERN, (imageMarkup) => {
+    images.push(imageMarkup);
+    return "";
+  });
+
+  let previous: string;
+  do {
+    previous = compacted;
+    compacted = compacted.replace(EMPTY_BLOCK_PATTERN, "");
+  } while (compacted !== previous);
+
+  compacted = compacted
+    .replace(/(?:<br\s*\/?>\s*){2,}/gi, "<br>")
+    .replace(/(?:\r?\n[ \t]*){2,}/g, "\n")
+    .replace(/^(?:\s|<br\s*\/?>)+/gi, "")
+    .replace(/(?:\s|<br\s*\/?>)+$/gi, "")
+    .trim();
+
+  return {
+    stem: compacted,
+    images: images.join(""),
+  };
 }
 
 function ChoiceAnswer({ number, optionCount }: { number: number; optionCount: number }) {
@@ -170,12 +201,14 @@ function AnswerBox({
   boxStyle,
   compact = false,
   editable,
+  children,
 }: {
   number: number;
   hideNumber?: boolean;
   boxStyle: AnswerSheetBoxStyle;
   compact?: boolean;
   editable: boolean;
+  children?: ReactNode;
 }) {
   return (
     <div
@@ -190,6 +223,11 @@ function AnswerBox({
       data-answer-box-style={boxStyle}
     >
       {!hideNumber && <div className="font-mono text-xs font-semibold text-ink-800">{number}.</div>}
+      {children && (
+        <div className="min-h-0 pr-[14mm] pb-[9mm]" data-testid="answer-box-content">
+          {children}
+        </div>
+      )}
       <div
         className="absolute bottom-0 right-0 flex h-[9mm] w-[13mm] items-center justify-center border-l border-t border-ink-800 bg-white text-[8px] text-ink-500"
         aria-label={`第${number}题评分框`}
@@ -321,6 +359,9 @@ function AnswerField({
     return <ChoiceAnswer number={number} optionCount={question.options?.length || 4} />;
   }
   if (question.type === "judge") return <JudgeAnswer number={number} hideNumber={hideNumber} />;
+  const essayContent = question.type === "essay"
+    ? splitEssayStemContent(question.stem)
+    : null;
   return (
     <AnswerBox
       number={number}
@@ -328,7 +369,13 @@ function AnswerField({
       boxStyle={boxStyle}
       compact={question.type === "short" || question.type === "conceptFill"}
       editable={editable}
-    />
+    >
+      {essayContent?.images && (
+        <DraggableQuestionContent className="min-w-0" editable={editable}>
+          {essayContent.images}
+        </DraggableQuestionContent>
+      )}
+    </AnswerBox>
   );
 }
 
@@ -339,30 +386,43 @@ function QuestionWithAnswer({
   editable,
 }: NumberedQuestion & { boxStyle: AnswerSheetBoxStyle; editable: boolean }) {
   const isFill = question.type === "short" || question.type === "conceptFill";
+  const essayContent = question.type === "essay"
+    ? splitEssayStemContent(question.stem)
+    : null;
+  const displayStem = essayContent?.stem ?? question.stem;
 
   return (
     <div className="space-y-1.5" data-answer-sheet-question>
-      {question.stem && (
-        <div className="flex items-start gap-2 text-xs text-ink-700">
+      {displayStem && (
+        <div
+          className="flex items-start gap-2 text-xs text-ink-700"
+          data-testid={question.type === "essay" ? "essay-question-stem" : undefined}
+        >
           <span className="w-7 shrink-0 font-mono font-semibold text-ink-800">{number}.</span>
           <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
-            {question.stem}
+            {displayStem}
           </DraggableQuestionContent>
         </div>
       )}
       {question.type === "judge" ? (
-        <div className={question.stem ? "pl-7" : undefined}>
-          <JudgeAnswer number={number} hideNumber={Boolean(question.stem)} />
+        <div className={displayStem ? "pl-7" : undefined}>
+          <JudgeAnswer number={number} hideNumber={Boolean(displayStem)} />
         </div>
       ) : (
-        <div className={question.stem ? "pl-7" : undefined} data-testid={isFill ? "fill-answer-region" : undefined}>
+        <div className={displayStem ? "pl-7" : undefined} data-testid={isFill ? "fill-answer-region" : undefined}>
           <AnswerBox
             number={number}
-            hideNumber={Boolean(question.stem)}
+            hideNumber={Boolean(displayStem)}
             boxStyle={boxStyle}
             compact={isFill}
             editable={editable}
-          />
+          >
+            {essayContent?.images && (
+              <DraggableQuestionContent className="min-w-0" editable={editable}>
+                {essayContent.images}
+              </DraggableQuestionContent>
+            )}
+          </AnswerBox>
         </div>
       )}
     </div>
@@ -424,9 +484,6 @@ export function AnswerSheetComposer({
   const isPreview = viewMode === "preview";
   const paperColumns = isPreview && paperSize.supportsMultipleColumns ? settings.widePaperColumns : 1;
   const paperWidth = isPreview ? paperSize.previewWidth : paperSize.editWidth;
-  const firstColumnWidth = paperColumns > 1
-    ? `calc((100% - ${(paperColumns - 1) * COLUMN_GAP_MM}mm) / ${paperColumns})`
-    : "100%";
 
   const updateSettings = (patch: Partial<AnswerSheetSettings>) => {
     setSettings((current) => {
@@ -586,54 +643,65 @@ export function AnswerSheetComposer({
             data-paper-view={viewMode}
             data-paper-columns={paperColumns}
           >
-            <header
-              className="relative mb-4 box-border min-w-0"
-              style={{ width: firstColumnWidth }}
-              data-testid="answer-sheet-first-column-header"
-            >
-              <div
-                className="answer-sheet-qr absolute right-0 top-0 z-10 flex w-[24mm] flex-col items-center bg-white"
-                data-testid="answer-sheet-qr-position"
-              >
-                <QRCodeSVG
-                  value={qrPayload}
-                  size={98}
-                  style={{ width: "100%", height: "auto", display: "block" }}
-                  level="M"
-                  aria-label={`${resourceLabel}答题卡二维码`}
-                />
-                <div className="mt-1 w-full truncate text-center font-mono text-[8px] text-ink-500" title={resourceId}>
-                  {resourceType}:{resourceId}
-                </div>
-              </div>
-
-              <div className="pr-[27mm]">
-                <h1 className="mb-1 text-center font-serif text-xl font-bold">{title}</h1>
-                {description && <div className="mb-3 text-center text-xs text-ink-500">{description}</div>}
-              </div>
-
-              <div className="mr-[27mm] border border-ink-900 p-2.5">
-                <div className="mb-2 flex items-center gap-2 text-sm">
-                  <span className="shrink-0">班级：</span>
-                  <span className="h-5 min-w-20 flex-1 border-b border-ink-700" aria-label="班级填写区" />
-                </div>
-                <div className="mb-3 flex items-stretch gap-2 text-sm">
-                  <span className="shrink-0 pt-1">姓名：</span>
-                  <span
-                    className="h-[13mm] min-w-0 flex-1 border border-dashed border-ink-700"
-                    aria-label="姓名签名填写区"
-                    data-answer-sheet-field="signature"
-                    data-signature-history-limit="10"
-                  />
-                </div>
-                <StudentNumberGrid digits={settings.studentNumberDigits} />
-              </div>
-            </header>
-
-            <main
-              className={paperColumns > 1 ? "answer-sheet-columns" : "space-y-4"}
+            <div
+              className={paperColumns > 1 ? "answer-sheet-columns" : undefined}
               style={paperColumns > 1 ? { columnCount: paperColumns } : undefined}
+              data-testid="answer-sheet-column-flow"
             >
+              <header
+                className="relative mb-4 box-border min-w-0 break-inside-avoid"
+                data-testid="answer-sheet-first-column-header"
+              >
+                <div
+                  className="answer-sheet-qr absolute right-0 top-0 z-10 flex w-[24mm] flex-col items-center bg-white"
+                  data-testid="answer-sheet-qr-position"
+                >
+                  <QRCodeSVG
+                    value={qrPayload}
+                    size={98}
+                    style={{ width: "100%", height: "auto", display: "block" }}
+                    level="M"
+                    aria-label={`${resourceLabel}答题卡二维码`}
+                  />
+                  <div className="mt-1 w-full truncate text-center font-mono text-[8px] text-ink-500" title={resourceId}>
+                    {resourceType}:{resourceId}
+                  </div>
+                </div>
+
+                <div className="pr-[27mm]">
+                  <h1 className="mb-1 text-center font-serif text-xl font-bold">{title}</h1>
+                  {description && <div className="mb-3 text-center text-xs text-ink-500">{description}</div>}
+                </div>
+
+                <div
+                  className="mr-[27mm] flex min-w-0 items-stretch border border-ink-900"
+                  data-testid="answer-sheet-identity-area"
+                >
+                  <div className="min-w-0 flex-1 p-2.5" data-testid="answer-sheet-identity-fields">
+                    <div className="mb-2 flex items-center gap-2 text-sm">
+                      <span className="shrink-0">班级：</span>
+                      <span className="h-5 min-w-20 flex-1 border-b border-ink-700" aria-label="班级填写区" />
+                    </div>
+                    <div className="flex items-stretch gap-2 text-sm">
+                      <span className="shrink-0 pt-1">姓名：</span>
+                      <span
+                        className="h-[13mm] min-w-0 flex-1 border border-dashed border-ink-700"
+                        aria-label="姓名签名填写区"
+                        data-answer-sheet-field="signature"
+                        data-signature-history-limit="10"
+                      />
+                    </div>
+                  </div>
+                  <div
+                    className="flex min-w-[48mm] shrink-0 items-center border-l border-ink-900 p-2.5"
+                    data-testid="answer-sheet-student-number-column"
+                  >
+                    <StudentNumberGrid digits={settings.studentNumberDigits} />
+                  </div>
+                </div>
+              </header>
+
+              <main className={paperColumns > 1 ? "contents" : "space-y-4"}>
               {settings.mode === "with-questions" && settings.choiceLayout === "concentrated" && choiceItems.length > 0 && (
                 <section className="mb-4 break-inside-avoid" data-testid="concentrated-choice-area">
                   <div className="mb-1 text-sm font-semibold">选择题填涂区</div>
@@ -663,7 +731,8 @@ export function AnswerSheetComposer({
                   </div>
                 </section>
               ))}
-            </main>
+              </main>
+            </div>
 
             <footer className="mt-5 border-t border-ink-300 pt-2 text-center text-[10px] text-ink-500 [column-span:all]">
               {typeof totalScore === "number" ? `总分：${totalScore}分` : "答题结束后请检查学号与作答内容"}
