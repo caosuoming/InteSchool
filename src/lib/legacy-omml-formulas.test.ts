@@ -42,4 +42,12 @@ describe("normalizeLegacyOmmlMathText", () => {
       "已知函数 $f\\left(x\\right)=\\begin{cases} a\\cdot 2^x,&x\\le 0\\\\ \\log_{2}x,&x>0 \\end{cases}若关于x的方程 f\\left(f\\left(x\\right)\\right)=0 有且仅有两个实数根，则实数a$ 的取值范围是（ ）。",
     );
   });
+
+  it("repairs legacy arc formulas only in explicit arc context", () => {
+    expect(normalizeLegacyOmmlMathText("圆弧 $\\vec{AB}$ 的长度为 2。"))
+      .toBe("圆弧 $\\overgroup{AB}$ 的长度为 2。");
+    expect(normalizeLegacyOmmlMathText("向量 $\\vec{AB}$ 与向量 $\\overrightarrow{CD}$。"))
+      .toBe("向量 $\\vec{AB}$ 与向量 $\\overrightarrow{CD}$。");
+  });
+
 });

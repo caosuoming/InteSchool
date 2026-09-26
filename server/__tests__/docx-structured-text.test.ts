@@ -46,6 +46,19 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("canonicalizes plain Word math expressions during ingestion", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>若直线l₁:ax+(1-a)y=3与l₂:(a-1)x+(2a+3)y=2互相垂直，则实数a=。</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "若直线$l_{1}:ax+(1-a)y=3$与$l_{2}:(a-1)x+(2a+3)y=2$互相垂直，则实数a=。",
+    );
+  });
+
+
   it("preserves vector-angle formulas with CJK angle delimiters", async () => {
     const data = await makeDocx(`
       <w:p>

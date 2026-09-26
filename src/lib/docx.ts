@@ -11,6 +11,7 @@ import { mml2omml } from "mathml2omml";
 import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
+import { normalizePlainMathText } from "@/lib/plain-math";
 import {
   parseDocumentImageDisplaySize,
   parseOfficeMetafileLayout,
@@ -234,7 +235,7 @@ function textRunsWithLineBreaks(text: string, style: DocumentTextStyle = {}): Te
 }
 
 function documentTextChildren(value: string | undefined, style: DocumentTextStyle = {}): ParagraphChild[] {
-  const text = mergeInlineFormulaRuns(normalizeLegacyOmmlMathText(plainDocumentText(value)));
+  const text = mergeInlineFormulaRuns(normalizePlainMathText(normalizeLegacyOmmlMathText(plainDocumentText(value))));
   if (!text) return [textRun("", style)];
 
   const children: ParagraphChild[] = [];
@@ -883,7 +884,7 @@ async function documentRichChildren(
   style: DocumentTextStyle = {},
 ): Promise<ParagraphChild[]> {
   const { text: extractedText, images } = extractRichDocumentContent(value);
-  const text = mergeInlineFormulaRuns(normalizeLegacyOmmlMathText(extractedText));
+  const text = mergeInlineFormulaRuns(normalizePlainMathText(normalizeLegacyOmmlMathText(extractedText)));
   if (!text) return [textRun("", style)];
 
   const children: ParagraphChild[] = [];

@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
 import { extname, posix } from "node:path";
 import { ommlToLatex } from "../../src/lib/omml-to-latex.js";
+import { normalizePlainMathText } from "../../src/lib/plain-math.js";
 import {
   renderDocumentTableStructuredCell,
   serializeDocumentTable,
@@ -427,7 +428,9 @@ function extractParagraph(
   }
   if (field) content.push(field.result);
 
-  return normalizeText(markScriptedMathVariables(content.join(""))).trim();
+  return normalizeText(
+    normalizePlainMathText(markScriptedMathVariables(content.join(""))),
+  ).trim();
 }
 
 function wordChild(element: Element, localName: string): Element | undefined {

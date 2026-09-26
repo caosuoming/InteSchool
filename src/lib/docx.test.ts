@@ -371,6 +371,50 @@ describe("generateExamPaperDocx", () => {
     expect(documentXml).not.toContain("（5 分）");
   });
 
+  it("canonicalizes legacy plain equations into editable Office math during export", async () => {
+    const formulaPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem: "若直线l₁:ax+(1-a)y=3与l₂:(a-1)x+(2a+3)y=2互相垂直。",
+      }],
+      contentBlocks: [{
+        ...structuredPaper.contentBlocks![2],
+        content: "若直线l₁:ax+(1-a)y=3与l₂:(a-1)x+(2a+3)y=2互相垂直。",
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(formulaPaper, { [linkedQuestion.id]: linkedQuestion });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml.match(/<m:oMath\b/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(documentXml).toContain("Times New Roman");
+    expect(documentXml).not.toContain("l₁:ax");
+    expect(documentXml).not.toContain("l₂:(a-1)x");
+  });
+
+  it("exports circular arcs as native Office accents instead of vector arrows", async () => {
+    const arcPaper: ExamPaper = {
+      ...structuredPaper,
+      questions: [],
+      contentBlocks: [{
+        id: "arc-formula",
+        type: "knowledge",
+        content: "圆弧 $\\overgroup{AB}$ 的长度。",
+      }],
+    };
+
+    const blob = await buildExamPaperDocxBlob(arcPaper);
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+
+    expect(documentXml).toContain('<m:chr m:val="⏠"');
+    expect(documentXml).toContain("<m:acc>");
+    expect(documentXml).not.toContain("→");
+    expect(documentXml).not.toContain("⃗");
+  });
+
   it("emits editable Office math with the surrounding text size and a complete math font", async () => {
     const formulaPaper: ExamPaper = {
       ...structuredPaper,

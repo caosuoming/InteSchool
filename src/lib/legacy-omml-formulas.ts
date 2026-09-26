@@ -3,6 +3,9 @@ const LEGACY_UNICODE_DELIMITER_PATTERN = /\\(left|right)([‖∥∣])/g;
 const LEGACY_REDUNDANT_CASES_WRAPPER_PATTERN =
   /\\left\\\{\s*\\begin\{aligned\}\s*(\\begin\{cases\}[\s\S]*?\\end\{cases\})\s*\\end\{aligned\}\s*\\right\./g;
 
+const LEGACY_ARC_VECTOR_PATTERN =
+  /((?:圆弧|优弧|劣弧|弧)[^$\n]{0,12})\$(?:\\vec|\\over(?:right|left)arrow)\{([A-Za-z]{2,4})\}\$/g;
+
 function normalizeLegacyOmmlDelimiters(latex: string): string {
   return latex.replace(
     LEGACY_UNICODE_DELIMITER_PATTERN,
@@ -72,20 +75,25 @@ export function normalizeLegacyOmmlLatex(latex: string, surroundingText: string)
 
 /**
  * Repairs formulas already persisted by older OMML converters. Besides the
- * historical \mathbb label issue, some Word/MathType documents stored Unicode
- * vertical delimiters directly after \left/\right, which KaTeX rejects.
+ * historical \mathbb label issue, older imports could also mistake an arc accent
+ * for a vector, while some Word/MathType documents stored Unicode vertical
+ * delimiters directly after \left/\right, which KaTeX rejects.
  */
 export function normalizeLegacyOmmlMathText(text: string): string {
+  const arcNormalized = text.replace(
+    LEGACY_ARC_VECTOR_PATTERN,
+    (_match, prefix: string, points: string) => `${prefix}$\\overgroup{${points}}$`,
+  );
   if (
-    !text.includes("\\mathbb")
-    && !/\\(?:left|right)[‖∥∣]/.test(text)
-    && !(text.includes("\\left\\{") && text.includes("\\begin{cases}"))
-  ) return text;
+    !arcNormalized.includes("\\mathbb")
+    && !/\\(?:left|right)[‖∥∣]/.test(arcNormalized)
+    && !(arcNormalized.includes("\\left\\{") && arcNormalized.includes("\\begin{cases}"))
+  ) return arcNormalized;
 
-  return text.replace(/(\${1,2})([\s\S]+?)\1/g, (full, delimiter: string, latex: string, offset: number) => {
+  return arcNormalized.replace(/(\${1,2})([\s\S]+?)\1/g, (full, delimiter: string, latex: string, offset: number) => {
     const contextStart = Math.max(0, offset - 24);
-    const contextEnd = Math.min(text.length, offset + full.length + 24);
-    const surroundingText = text.slice(contextStart, contextEnd);
+    const contextEnd = Math.min(arcNormalized.length, offset + full.length + 24);
+    const surroundingText = arcNormalized.slice(contextStart, contextEnd);
     const normalized = normalizeLegacyOmmlLatex(latex, surroundingText);
     return `${delimiter}${normalized}${delimiter}`;
   });

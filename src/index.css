@@ -157,6 +157,13 @@
     font-style: normal;
   }
 
+  /* Imported and canonicalized formulas use Times New Roman for Latin variables. */
+  .question-rich-content .katex .mathnormal,
+  .document-preview-content .katex .mathnormal {
+    font-family: "Times New Roman", Times, serif;
+    font-style: italic;
+  }
+
   /* KaTeX's inline box sits slightly high beside the app's Chinese body fonts. */
   .question-answer-content .katex-formula:not(.katex-formula-block) > .katex {
     vertical-align: -0.08em;
