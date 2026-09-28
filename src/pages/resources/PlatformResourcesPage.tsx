@@ -66,6 +66,7 @@ import type {
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { teacherResourceScopeId } from "@/lib/personal-resource-scope";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 import { MathHtml } from "@/components/ui/MathHtml";
@@ -524,7 +525,7 @@ export default function PlatformResourcesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [updatingModeratorId, setUpdatingModeratorId] = useState<string | null>(null);
 
-  const schoolId = teacher?.schoolId || "sch-1";
+  const schoolId = teacher ? teacherResourceScopeId(teacher) : "";
   const platformAdmin = getActiveRole(teacher) === "platform_admin";
   const teacherSubject = getActiveSubject(teacher);
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);

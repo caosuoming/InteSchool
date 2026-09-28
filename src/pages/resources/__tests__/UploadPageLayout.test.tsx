@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -148,6 +148,80 @@ describe("UploadPage public attributes layout", () => {
     for (const label of ["年级", "学年", "学期", "课件类型（默认）"]) {
       expect(within(grid).getByLabelText(label)).toBeInTheDocument();
     }
+  });
+
+  it("uploads documents for a personal identity using the personal resource scope", async () => {
+    const user = userEvent.setup();
+    useAuthStore.setState({
+      teacher: {
+        id: "teacher-1",
+        schoolId: null,
+        subject: "数学",
+        role: "teacher",
+        affiliations: [{
+          id: "aff-personal",
+          schoolId: null,
+          subject: "数学",
+          status: "active",
+          isCurrent: true,
+        }],
+        currentAffiliationId: "aff-personal",
+      } as Teacher,
+      loading: false,
+      error: null,
+    });
+    vi.mocked(uploadFile).mockResolvedValue({
+      id: "file-personal",
+      ownerId: "teacher-1",
+      schoolId: null,
+      originalName: "个人讲义.pdf",
+      mimeType: "application/pdf",
+      size: 8,
+      createdAt: "2026-09-28T00:00:00.000Z",
+      url: "/api/files/file-personal",
+    });
+    vi.mocked(lectureService.createLecture).mockResolvedValue({
+      id: "lecture-personal",
+      teacherId: "teacher-1",
+      schoolId: "personal-directory:teacher-1",
+      title: "个人讲义",
+      chapterIds: [],
+      knowledgePointIds: [],
+      grade: "高一",
+      schoolYear: "2026-2027",
+      semester: "上学期",
+      classIds: [],
+      studentIds: [],
+      sections: [],
+      version: 1,
+      status: "draft",
+      originalFileUrl: "/api/files/file-personal",
+      originalFileName: "个人讲义.pdf",
+      originalFileType: "pdf",
+      originalFileSize: 8,
+      createdAt: "2026-09-28T00:00:00.000Z",
+      updatedAt: "2026-09-28T00:00:00.000Z",
+    });
+
+    const { container } = renderPage("lecture");
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await user.upload(input!, new File(["personal"], "个人讲义.pdf", { type: "application/pdf" }));
+    await user.click(screen.getByRole("button", { name: "上传 1 个文件" }));
+
+    await waitFor(() => expect(uploadFile).toHaveBeenCalledTimes(1));
+    expect(lectureService.listLectures).toHaveBeenCalledWith({
+      teacherId: "teacher-1",
+      schoolId: "personal-directory:teacher-1",
+    });
+    expect(lectureService.createLecture).toHaveBeenCalledWith(
+      "teacher-1",
+      "personal-directory:teacher-1",
+      expect.objectContaining({
+        title: "个人讲义",
+        originalFileUrl: "/api/files/file-personal",
+      }),
+    );
   });
 
   it("reviews a similar existing file before uploading and can discard the incoming file", async () => {

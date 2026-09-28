@@ -5,6 +5,7 @@ import { serviceRegistry, type ServiceName } from "./service-registry.js";
 import { serviceParameters } from "./service-metadata.js";
 import type { DatabaseStore } from "./database.js";
 import { EXAM_MANAGER_ROLES } from "../src/lib/exam-permissions.js";
+import { personalResourceScopeId } from "../src/lib/personal-resource-scope.js";
 import {
   canHomeroomUpdateStudentStatus,
   canManageStudentArchive,
@@ -119,6 +120,20 @@ const PERSONAL_SETTINGS_ID_MUTATIONS = new Set([
   "deleteLectureType",
   "toggleLectureType",
   "batchUpdateLectureTypeSortOrder",
+]);
+
+const PERSONAL_RESOURCE_SERVICES = new Set<ServiceName>([
+  "courseware",
+  "donation",
+  "examPaper",
+  "extract",
+  "lecture",
+  "material",
+  "question",
+  "quota",
+  "resourceFolder",
+  "settings",
+  "share",
 ]);
 
 const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
@@ -434,10 +449,11 @@ function validateEmbeddedIdentity(
   value: unknown,
   teacher: TeacherRecord,
   admin: boolean,
+  allowedSchoolId: string | null,
   key?: string,
 ): void {
   if (Array.isArray(value)) {
-    for (const item of value) validateEmbeddedIdentity(item, teacher, admin, key);
+    for (const item of value) validateEmbeddedIdentity(item, teacher, admin, allowedSchoolId, key);
     return;
   }
   if (!value || typeof value !== "object") return;
@@ -445,10 +461,10 @@ function validateEmbeddedIdentity(
     if (OWNER_KEYS.includes(childKey) && typeof childValue === "string" && childValue !== teacher.id) {
       throw new Error("无权以其他教师身份执行操作");
     }
-    if (SCHOOL_KEYS.includes(childKey) && typeof childValue === "string" && childValue !== teacher.schoolId) {
+    if (SCHOOL_KEYS.includes(childKey) && typeof childValue === "string" && childValue !== allowedSchoolId) {
       throw new Error("无权访问其他学校的数据");
     }
-    validateEmbeddedIdentity(childValue, teacher, admin, childKey);
+    validateEmbeddedIdentity(childValue, teacher, admin, allowedSchoolId, childKey);
   }
 }
 
@@ -466,6 +482,8 @@ function authorize(
   const teacher = state.teachers.find((item) => item.id === session.teacherId) || null;
   if (!teacher) throw new Error("账号关联的教师资料不存在");
   const admin = isAdmin(teacher);
+  const personalResourceAccess = !teacher.schoolId && PERSONAL_RESOURCE_SERVICES.has(service);
+  const allowedSchoolId = teacher.schoolId || (personalResourceAccess ? personalResourceScopeId(teacher.id) : null);
   const params = (serviceParameters as Record<string, Record<string, readonly string[]>>)[service]?.[method] || [];
   const normalizedArgs = [...args];
   const personalDirectoryScopeIndex = service === "knowledge"
@@ -492,6 +510,10 @@ function authorize(
       normalizedArgs[index] = undefined;
       return;
     }
+    if (SCHOOL_KEYS.includes(name) && personalResourceAccess) {
+      normalizedArgs[index] = allowedSchoolId;
+      return;
+    }
     if (
       OWNER_KEYS.includes(name)
       && typeof value === "string"
@@ -504,7 +526,7 @@ function authorize(
     if (
       SCHOOL_KEYS.includes(name)
       && typeof value === "string"
-      && value !== teacher.schoolId
+      && value !== allowedSchoolId
       && !(service === "organization" && isPlatformAdmin(teacher))
     ) {
       throw new Error("无权访问其他学校的数据");
@@ -512,14 +534,20 @@ function authorize(
     if (name === "schoolIdOrTeacherId" && value !== teacher.id && value !== teacher.schoolId) {
       throw new Error("无权访问该范围的数据");
     }
-    validateEmbeddedIdentity(value, teacher, admin, name);
+    validateEmbeddedIdentity(value, teacher, admin, allowedSchoolId, name);
   });
 
   if (service === "settings" && PERSONAL_SETTINGS_ID_MUTATIONS.has(method)) {
     normalizedArgs.push(teacher.id);
   }
 
-  if (service !== "school" && service !== "help" && service !== "knowledge" && !teacher.schoolId) {
+  if (
+    !teacher.schoolId
+    && service !== "school"
+    && service !== "help"
+    && service !== "knowledge"
+    && !personalResourceAccess
+  ) {
     throw new Error("请先完成学校认证");
   }
 
@@ -537,13 +565,13 @@ function authorize(
         .find((item) => item.id === params.resourceId)
       : undefined;
     if (!resource) throw new Error("分享资源不存在");
-    if (recordOwner(resource) !== teacher.id || recordSchool(resource) !== teacher.schoolId) {
+    if (recordOwner(resource) !== teacher.id || recordSchool(resource) !== allowedSchoolId) {
       throw new Error("无权分享不属于自己的资源");
     }
     normalizedArgs[0] = {
       ...params,
       fromTeacherId: teacher.id,
-      fromSchoolId: teacher.schoolId,
+      fromSchoolId: allowedSchoolId,
     };
   }
 
@@ -619,7 +647,7 @@ function authorize(
         }
         if (method === "acceptShare") {
           normalizedArgs[1] = teacher.id;
-          normalizedArgs[2] = teacher.schoolId;
+          normalizedArgs[2] = allowedSchoolId;
         }
         authorizedShareMutation = true;
       }

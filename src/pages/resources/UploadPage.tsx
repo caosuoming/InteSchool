@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { inferMaterialTypeFromFile } from "@/lib/material-media";
 import { countPptxSlides } from "@/lib/pptx";
 import { findFileNameDuplicates, type FileNameCandidate } from "@/lib/file-name-duplicate";
+import { teacherResourceScopeId } from "@/lib/personal-resource-scope";
 
 type TabKey = "upload" | "share" | "ai";
 
@@ -149,22 +150,23 @@ export function UploadPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { teacher } = useAuthStore();
-  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
-  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(teacher?.schoolId);
+  const resourceScopeId = teacher ? teacherResourceScopeId(teacher) : undefined;
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(resourceScopeId);
+  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(resourceScopeId);
   const {
     examPaperTypeOptions,
     lectureTypeOptions,
     defaultExamPaperTypeId,
     defaultLectureTypeId,
     ready: documentTypesReady,
-  } = useDocumentTypeOptions(teacher?.schoolId);
+  } = useDocumentTypeOptions(resourceScopeId);
   const {
     sourceOptions,
     categoryOptions,
     defaultSource,
     defaultCategory,
     ready: metadataReady,
-  } = useQuestionMetadataOptions(teacher?.schoolId);
+  } = useQuestionMetadataOptions(resourceScopeId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("upload");
 
@@ -249,11 +251,11 @@ export function UploadPage() {
   ]);
 
   useEffect(() => {
-    if (teacher?.schoolId) {
-      knowledgeService.getChapterTree(teacher.schoolId).then(setChapterTree);
-      knowledgeService.getKnowledgeTree(teacher.schoolId).then(setKnowledgeTree);
+    if (resourceScopeId) {
+      knowledgeService.getChapterTree(resourceScopeId).then(setChapterTree);
+      knowledgeService.getKnowledgeTree(resourceScopeId).then(setKnowledgeTree);
     }
-  }, [teacher]);
+  }, [resourceScopeId]);
 
   useEffect(() => {
     if (!teacher) return;
@@ -331,8 +333,8 @@ export function UploadPage() {
   };
 
   const loadDuplicateCandidates = async (resourceType: ResourceType): Promise<FileNameCandidate[]> => {
-    if (!teacher?.schoolId) return [];
-    const filter = { teacherId: teacher.id, schoolId: teacher.schoolId };
+    if (!teacher || !resourceScopeId) return [];
+    const filter = { teacherId: teacher.id, schoolId: resourceScopeId };
 
     if (resourceType === "examPaper") {
       const resources = await examPaperService.listPapers(filter);
@@ -392,7 +394,7 @@ export function UploadPage() {
   };
 
   const uploadBatchItems = async (items: BatchFileItem[], currentType: ResourceType) => {
-    if (!teacher?.schoolId || items.length === 0) return;
+    if (!teacher || !resourceScopeId || items.length === 0) return;
 
     setSubmitting(true);
     let successCount = 0;
@@ -423,7 +425,7 @@ export function UploadPage() {
         if (currentType === "examPaper") {
           const originalFileType = detectOriginalFileType(item.file.name);
           const paper = await examPaperService.createPaper(
-            teacher.id, teacher.schoolId, {
+            teacher.id, resourceScopeId, {
               ...baseInput,
               duration: 90,
               totalScore: 100,
@@ -442,7 +444,7 @@ export function UploadPage() {
         } else if (currentType === "lecture") {
           const originalFileType = detectOriginalFileType(item.file.name);
           const lecture = await lectureService.createLecture(
-            teacher.id, teacher.schoolId, {
+            teacher.id, resourceScopeId, {
               ...baseInput,
               classIds: [],
               studentIds: [],
@@ -469,7 +471,7 @@ export function UploadPage() {
             ? await countPptxSlides(item.file)
             : undefined;
           const cw = await coursewareService.createCourseware(
-            teacher.id, teacher.schoolId, {
+            teacher.id, resourceScopeId, {
               ...baseInput,
               type: resolvedCoursewareType,
               content: item.description.trim() || item.file.name,
@@ -483,7 +485,7 @@ export function UploadPage() {
           resourceId = cw.id;
         } else if (currentType === "material") {
           const mat = await materialService.createMaterial(
-            teacher.id, teacher.schoolId, {
+            teacher.id, resourceScopeId, {
               ...baseInput,
               type: (item.materialType || materialType) as MaterialType,
               content: item.description.trim() || item.file.name,
@@ -522,7 +524,7 @@ export function UploadPage() {
   };
 
   const handleBatchSubmit = async () => {
-    if (!teacher || !teacher.schoolId) {
+    if (!teacher) {
       toast.error("请先登录", "未获取到教师信息");
       return;
     }
@@ -620,9 +622,9 @@ export function UploadPage() {
   };
 
   const handleAcceptShare = async (id: string) => {
-    if (!teacher?.schoolId) return;
+    if (!teacher || !resourceScopeId) return;
     try {
-      await shareService.acceptShare(id, teacher.id, teacher.schoolId);
+      await shareService.acceptShare(id, teacher.id, resourceScopeId);
       setAcceptedIds((prev) => new Set(prev).add(id));
       setIncomingShares((prev) => prev.filter((item) => item.id !== id));
       toast.success("已保存到我的资源");
