@@ -7,6 +7,7 @@ import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { schoolRosterService } from "./school-roster.js";
 import { getStudentArchiveStatus } from "../../src/lib/student-archive.js";
+import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 
 export interface StudentInput {
   name: string;
@@ -101,6 +102,7 @@ function currentAffiliation(teacher: Teacher, schoolId: string | null) {
 }
 
 function canManageStudentArchive(teacher: Teacher, schoolId: string | null): boolean {
+  if (isPlatformAdminAccount(teacher)) return true;
   const affiliation = currentAffiliation(teacher, schoolId);
   const role = affiliation?.role || teacher.role;
   if (role === "school_admin" || role === "platform_admin") return true;

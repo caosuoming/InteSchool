@@ -82,20 +82,19 @@ describe("AdminPage", () => {
     expect(within(school).getByText("教师入校审核")).toBeInTheDocument();
 
     const platform = screen.getByRole("region", { name: "平台管理员管理" });
-    expect(within(platform).getByText("教师注册管理")).toBeInTheDocument();
+    expect(within(school).getByText("教师注册担保")).toBeInTheDocument();
     expect(within(platform).getByText("用户与密码管理")).toBeInTheDocument();
     expect(within(platform).queryByText("学校管理员审核")).not.toBeInTheDocument();
-    expect(within(platform).queryByText("新增学校审核")).not.toBeInTheDocument();
+    expect(within(platform).queryByText("新用户和新建校审核")).not.toBeInTheDocument();
   });
 
   it("keeps platform-only review entries in the platform-admin group", () => {
     renderForRole("platform_admin");
 
     const platform = screen.getByRole("region", { name: "平台管理员管理" });
-    expect(within(platform).getByText("教师注册管理")).toBeInTheDocument();
     expect(within(platform).getByText("用户与密码管理")).toBeInTheDocument();
     expect(within(platform).getByText("学校管理员审核")).toBeInTheDocument();
-    expect(within(platform).getByText("新增学校审核")).toBeInTheDocument();
+    expect(within(platform).getByText("新用户和新建校审核")).toBeInTheDocument();
 
     expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
       "个人用户管理",

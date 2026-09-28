@@ -5,15 +5,9 @@ import { Badge, Button, Card, Input } from "@/components/ui";
 import { authService } from "@/services/auth";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { RegistrationAuthorization, RegistrationAuthorizationKind, Teacher } from "@/types";
+import type { RegistrationAuthorization, RegistrationAuthorizationKind } from "@/types";
 import { cn } from "@/lib/utils";
-
-function currentRole(teacher: Teacher | null): string | null {
-  if (!teacher) return null;
-  const affiliation = teacher.affiliations.find((item) => item.id === teacher.currentAffiliationId)
-    || teacher.affiliations.find((item) => item.isCurrent);
-  return affiliation?.role || teacher.role;
-}
+import { isPlatformAdminAccount } from "@/lib/platform-admin";
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -28,7 +22,7 @@ function formatDate(value: string): string {
 
 export default function RegistrationAccessPage() {
   const teacher = useAuthStore((state) => state.teacher);
-  const isAdmin = ["school_admin", "platform_admin"].includes(currentRole(teacher) || "");
+  const isAdmin = isPlatformAdminAccount(teacher);
   const [kind, setKind] = useState<RegistrationAuthorizationKind>(isAdmin ? "admin" : "guarantee");
   const [phone, setPhone] = useState("");
   const [records, setRecords] = useState<RegistrationAuthorization[]>([]);
@@ -91,7 +85,7 @@ export default function RegistrationAccessPage() {
         <PageHeader
           title="教师注册管理"
           description={isAdmin
-            ? "管理学校的教师注册准入；管理员可预授权，也可查看本校教师担保记录"
+            ? "平台管理员可为当前学校预授权手机号；其他老用户使用教师担保"
             : "将待注册教师的手机号加入“我来担保”名单"}
           icon={<UserPlus className="w-5 h-5" />}
         />

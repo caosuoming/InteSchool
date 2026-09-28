@@ -20,6 +20,7 @@ import type {
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 
 interface ClassroomCoursewareSession {
   coursewareId: string;
@@ -110,6 +111,7 @@ function activeAffiliation(teacher: Teacher): TeacherAffiliation | null {
 }
 
 function accountRole(teacher: Teacher): "teacher" | "school_admin" | "platform_admin" {
+  if (isPlatformAdminAccount(teacher)) return "platform_admin";
   return activeAffiliation(teacher)?.role || teacher.role;
 }
 

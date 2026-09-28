@@ -22,6 +22,7 @@ vi.mock("@/stores/auth", () => ({
 vi.mock("@/services/auth", () => ({
   authService: {
     getIdentityContext: vi.fn(),
+    getAccessSettings: vi.fn(),
   },
 }));
 
@@ -53,6 +54,7 @@ describe("LoginPage", () => {
     authState.login.mockResolvedValue(false);
     authState.register.mockResolvedValue(false);
     vi.mocked(authService.getIdentityContext).mockResolvedValue({ phone: "13800138000", teacher: true, parent: false });
+    vi.mocked(authService.getAccessSettings).mockResolvedValue({ registrationMode: "open", schoolCreationMode: "review" });
     vi.mocked(schoolService.searchSchools).mockResolvedValue([]);
   });
 

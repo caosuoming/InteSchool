@@ -19,6 +19,7 @@ export interface TeacherRecord {
   affiliations: Array<Record<string, unknown>>;
   currentAffiliationId: string | null;
   platformModeratorSubjects?: string[];
+  accountDisabled?: boolean;
   createdAt: string;
   [key: string]: unknown;
 }

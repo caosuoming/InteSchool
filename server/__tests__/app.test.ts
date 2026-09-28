@@ -108,45 +108,9 @@ async function register(
       teachingClassIds: [],
     },
   });
-  expect(response.statusCode).toBe(202);
-  await approveRegistrationForTest(email);
-  return login(app, email, password);
-}
-
-async function approveRegistrationForTest(identifier: string): Promise<void> {
-  const before = built.store.loadState();
-  const after = structuredClone(before);
-  const teacherId = await built.store.getTeacherIdByAccountIdentifier(identifier);
-  const teacher = after.teachers.find((item) => item.id === teacherId);
-  if (!teacher) throw new Error(`待审核教师不存在: ${identifier}`);
-  const application = (after.applications as Array<Record<string, unknown>>).find((item) =>
-    item.registrationApplication === true && item.teacherId === teacher.id && item.status === "pending",
-  );
-  if (!application) throw new Error(`注册申请不存在: ${identifier}`);
-  const schoolId = String(application.schoolId || "");
-  const schoolAffiliation = teacher.affiliations.find((item) => item.schoolId === schoolId);
-  if (!schoolAffiliation || typeof schoolAffiliation.id !== "string") {
-    throw new Error(`待审核学校身份不存在: ${identifier}`);
-  }
-  teacher.schoolId = schoolId;
-  teacher.status = "active";
-  teacher.subject = String(schoolAffiliation.subject || teacher.subject);
-  teacher.teachingGrades = Array.isArray(schoolAffiliation.teachingGrades)
-    ? schoolAffiliation.teachingGrades as string[]
-    : [];
-  teacher.teachingClassIds = Array.isArray(schoolAffiliation.teachingClassIds)
-    ? schoolAffiliation.teachingClassIds as string[]
-    : [];
-  teacher.role = schoolAffiliation.role as typeof teacher.role;
-  teacher.roles = Array.isArray(schoolAffiliation.roles) ? schoolAffiliation.roles as string[] : ["teacher"];
-  teacher.affiliations = teacher.affiliations.map((item) => item.id === schoolAffiliation.id
-    ? { ...item, status: "active", isCurrent: true }
-    : { ...item, isCurrent: false });
-  teacher.currentAffiliationId = schoolAffiliation.id;
-  application.status = "approved";
-  const school = (after.schools as Array<Record<string, unknown>>).find((item) => item.id === schoolId);
-  if (school) school.teacherCount = Number(school.teacherCount || 0) + 1;
-  await built.store.saveState(before, after);
+  expect(response.statusCode).toBe(200);
+  const body = response.json<{ teacher: Record<string, unknown>; csrfToken: string }>();
+  return { cookie: sessionCookie(response), csrfToken: body.csrfToken, teacher: body.teacher };
 }
 
 function multipartPayload(
@@ -428,8 +392,8 @@ describe("production backend", () => {
         teachingClassIds: [],
       },
     });
-    expect(registered.statusCode).toBe(202);
-    expect(registered.json()).toMatchObject({ teacher: null, csrfToken: null, pending: true });
+    expect(registered.statusCode).toBe(200);
+    expect(registered.json()).toMatchObject({ teacher: { schoolId: "sch-2" }, csrfToken: expect.any(String) });
     expect(await built.store.getTeacherIdByAccountIdentifier(phone)).not.toBeNull();
 
     const personalLogin = await built.app.inject({
@@ -438,8 +402,7 @@ describe("production backend", () => {
       payload: { identifier: phone, password: "StrongPass123" },
     });
     expect(personalLogin.statusCode).toBe(200);
-    expect(personalLogin.json<{ teacher: { schoolId: string | null } }>().teacher.schoolId).toBeNull();
-    await approveRegistrationForTest(phone);
+    expect(personalLogin.json<{ teacher: { schoolId: string | null } }>().teacher.schoolId).toBe("sch-2");
 
     const phoneLogin = await built.app.inject({
       method: "POST",
@@ -483,8 +446,7 @@ describe("production backend", () => {
         teachingClassIds: [],
       },
     });
-    expect(other.statusCode).toBe(202);
-    await approveRegistrationForTest(otherPhone);
+    expect(other.statusCode).toBe(200);
     const otherLogin = await built.app.inject({
       method: "POST",
       url: "/api/auth/login",
@@ -534,9 +496,17 @@ describe("production backend", () => {
         subject: "数学",
       },
     });
-    expect(unauthorized.statusCode).toBe(202);
-    expect(unauthorized.json()).toMatchObject({ pending: true });
+    expect(unauthorized.statusCode).toBe(200);
+    expect(unauthorized.json()).toMatchObject({ teacher: { schoolId: "sch-1" } });
 
+    const beforeAdminRoleChange = built.store.loadState();
+    const stateWithPlatformAdmin = structuredClone(beforeAdminRoleChange);
+    const platformTeacher = stateWithPlatformAdmin.teachers.find((item) => item.id === "tch-1")!;
+    platformTeacher.role = "platform_admin";
+    platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === platformTeacher.currentAffiliationId
+      ? { ...item, role: "platform_admin" }
+      : item);
+    await built.store.saveState(beforeAdminRoleChange, stateWithPlatformAdmin);
     const admin = await login(built.app);
     const authorizedPhone = nextPhone();
     const created = await built.app.inject({
@@ -564,7 +534,7 @@ describe("production backend", () => {
         teachingGrades: ["高一"],
       },
     });
-    expect(registered.statusCode).toBe(202);
+    expect(registered.statusCode).toBe(200);
 
     const records = await built.app.inject({
       method: "GET",
@@ -656,7 +626,209 @@ describe("production backend", () => {
         subject: "数学",
       },
     });
-    expect(registeredAfterRevoke.statusCode).toBe(202);
+    expect(registeredAfterRevoke.statusCode).toBe(200);
+  });
+
+  it("applies configurable registration and school-creation policies while preserving personal signup", async () => {
+    const beforeRoleChange = built.store.loadState();
+    const withPlatformAdmin = structuredClone(beforeRoleChange);
+    const platformTeacher = withPlatformAdmin.teachers.find((item) => item.id === "tch-1")!;
+    platformTeacher.role = "platform_admin";
+    platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === platformTeacher.currentAffiliationId
+      ? { ...item, role: "platform_admin" }
+      : item);
+    await built.store.saveState(beforeRoleChange, withPlatformAdmin);
+    const admin = await login(built.app);
+
+    const defaults = await built.app.inject({ method: "GET", url: "/api/auth/access-settings" });
+    expect(defaults.statusCode).toBe(200);
+    expect(defaults.json()).toEqual({ registrationMode: "open", schoolCreationMode: "review" });
+
+    const configured = await built.app.inject({
+      method: "PUT",
+      url: "/api/auth/access-settings",
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { registrationMode: "authorized", schoolCreationMode: "open" },
+    });
+    expect(configured.statusCode, configured.body).toBe(200);
+
+    const personalPhone = nextPhone();
+    const personal = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        password: "StrongPass123",
+        name: "个人教师",
+        phone: personalPhone,
+        subject: "数学",
+      },
+    });
+    expect(personal.statusCode, personal.body).toBe(200);
+    expect(personal.json()).toMatchObject({
+      teacher: {
+        schoolId: null,
+        affiliations: [expect.objectContaining({ schoolId: null, status: "active", isCurrent: true })],
+      },
+    });
+
+    const blockedPhone = nextPhone();
+    const blocked = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        password: "StrongPass123",
+        name: "无授权教师",
+        phone: blockedPhone,
+        schoolId: "sch-1",
+        subject: "数学",
+      },
+    });
+    expect(blocked.statusCode).toBe(403);
+
+    const authorizedPhone = nextPhone();
+    const authorization = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/registration-authorizations",
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { phone: authorizedPhone, kind: "admin", schoolId: "sch-1" },
+    });
+    expect(authorization.statusCode, authorization.body).toBe(200);
+
+    const authorized = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        password: "StrongPass123",
+        name: "授权入校教师",
+        phone: authorizedPhone,
+        schoolId: "sch-1",
+        subject: "数学",
+      },
+    });
+    expect(authorized.statusCode, authorized.body).toBe(200);
+    expect(authorized.json()).toMatchObject({ teacher: { schoolId: "sch-1", roles: ["teacher"] } });
+
+    const newSchoolPhone = nextPhone();
+    const directSchool = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        password: "StrongPass123",
+        name: "直建学校教师",
+        phone: newSchoolPhone,
+        newSchool: { name: "直接创建测试校", code: "DIRECT1", city: "南京" },
+        subject: "数学",
+      },
+    });
+    expect(directSchool.statusCode, directSchool.body).toBe(200);
+    const directTeacher = directSchool.json<{ teacher: { schoolId: string | null } }>().teacher;
+    expect(directTeacher.schoolId).toEqual(expect.any(String));
+    expect(built.store.loadState().schools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: directTeacher.schoolId, name: "直接创建测试校", code: "DIRECT1" }),
+    ]));
+  });
+
+  it("keeps platform authority across school switches and supports user and school suspension", async () => {
+    const target = await register(built.app, "suspend-target@example.com");
+    const targetTeacherId = String(target.teacher.id);
+
+    const beforeRoleChange = built.store.loadState();
+    const withPlatformAdmin = structuredClone(beforeRoleChange);
+    const platformTeacher = withPlatformAdmin.teachers.find((item) => item.id === "tch-1")!;
+    platformTeacher.role = "platform_admin";
+    platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === "aff-1"
+      ? { ...item, role: "platform_admin" }
+      : item);
+    await built.store.saveState(beforeRoleChange, withPlatformAdmin);
+    const platform = await login(built.app);
+
+    const switched = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/affiliations/aff-2/activate",
+      headers: { cookie: platform.cookie, "x-inteschool-csrf": platform.csrfToken },
+    });
+    expect(switched.statusCode, switched.body).toBe(200);
+    expect(switched.json()).toMatchObject({ schoolId: "sch-3", role: "teacher" });
+
+    const platformSettings = await built.app.inject({
+      method: "PUT",
+      url: "/api/auth/access-settings",
+      headers: { cookie: platform.cookie, "x-inteschool-csrf": platform.csrfToken },
+      payload: { registrationMode: "open", schoolCreationMode: "review" },
+    });
+    expect(platformSettings.statusCode, platformSettings.body).toBe(200);
+
+    const disabledUser = await built.app.inject({
+      method: "PATCH",
+      url: `/api/auth/teachers/${targetTeacherId}/disabled`,
+      headers: { cookie: platform.cookie, "x-inteschool-csrf": platform.csrfToken },
+      payload: { disabled: true },
+    });
+    expect(disabledUser.statusCode, disabledUser.body).toBe(200);
+
+    const oldTargetSession = await built.app.inject({
+      method: "GET",
+      url: "/api/auth/current",
+      headers: { cookie: target.cookie },
+    });
+    expect(oldTargetSession.json()).toEqual({ teacher: null, csrfToken: null });
+    const disabledLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { identifier: "suspend-target@example.com", password: "StrongPass123" },
+    });
+    expect(disabledLogin.statusCode).toBe(403);
+
+    const restoredUser = await built.app.inject({
+      method: "PATCH",
+      url: `/api/auth/teachers/${targetTeacherId}/disabled`,
+      headers: { cookie: platform.cookie, "x-inteschool-csrf": platform.csrfToken },
+      payload: { disabled: false },
+    });
+    expect(restoredUser.statusCode).toBe(200);
+    const restoredLogin = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { identifier: "suspend-target@example.com", password: "StrongPass123" },
+    });
+    expect(restoredLogin.statusCode).toBe(200);
+
+    const disabledSchool = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/schools/sch-2/accounts-disabled",
+      headers: { cookie: platform.cookie, "x-inteschool-csrf": platform.csrfToken },
+      payload: { disabled: true },
+    });
+    expect(disabledSchool.statusCode, disabledSchool.body).toBe(200);
+
+    const afterSchoolDisable = await built.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { identifier: "suspend-target@example.com", password: "StrongPass123" },
+    });
+    expect(afterSchoolDisable.statusCode).toBe(200);
+    const personalTarget = afterSchoolDisable.json<{
+      teacher: { schoolId: string | null; currentAffiliationId: string; affiliations: Array<{ id: string; schoolId: string | null }> };
+      csrfToken: string;
+    }>();
+    expect(personalTarget.teacher.schoolId).toBeNull();
+    const schoolAffiliation = personalTarget.teacher.affiliations.find((item) => item.schoolId === "sch-2")!;
+
+    const blockedSwitch = await built.app.inject({
+      method: "POST",
+      url: `/api/auth/affiliations/${schoolAffiliation.id}/activate`,
+      headers: { cookie: sessionCookie(afterSchoolDisable), "x-inteschool-csrf": personalTarget.csrfToken },
+    });
+    expect(blockedSwitch.statusCode).toBe(400);
+    expect(blockedSwitch.json()).toEqual({ error: "该学校账号已停用，请使用个人身份" });
+
+    const restoredSchool = await built.app.inject({
+      method: "PATCH",
+      url: "/api/auth/schools/sch-2/accounts-disabled",
+      headers: { cookie: platform.cookie, "x-inteschool-csrf": platform.csrfToken },
+      payload: { disabled: false },
+    });
+    expect(restoredSchool.statusCode).toBe(200);
   });
 
   it("lets teachers request new roles in backend settings and lets only their school administrator approve them", async () => {
@@ -746,9 +918,8 @@ describe("production backend", () => {
     expect(JSON.stringify(current.json())).not.toContain(password);
   });
 
-  it("lets new users choose a school without preauthorization and queues school membership for review", async () => {
+  it("lets new users join directly while extra roles and new schools follow their review policies", async () => {
     const phone = nextPhone();
-
     const registered = await built.app.inject({
       method: "POST",
       url: "/api/auth/register",
@@ -764,76 +935,67 @@ describe("production backend", () => {
         roles: ["teacher", "headTeacher", "gradeLeader"],
       },
     });
-    expect(registered.statusCode).toBe(202);
-    expect(registered.json()).toMatchObject({ teacher: null, csrfToken: null, pending: true });
-    expect((built.store.loadState().notifications as AppNotification[]).some((notification) =>
-      notification.recipientTeacherId === "tch-1"
-      && notification.title === "新教师注册待审核"
-      && notification.actionUrl === "/admin/teacher-school-applications"
-      && notification.readAt === null,
-    )).toBe(true);
-
-    const personalLogin = await built.app.inject({
-      method: "POST",
-      url: "/api/auth/login",
-      payload: { identifier: "school-profile@example.com", password: "StrongPass123" },
-    });
-    expect(personalLogin.statusCode).toBe(200);
-    const personalBody = personalLogin.json<{
+    expect(registered.statusCode, registered.body).toBe(200);
+    const registeredBody = registered.json<{
       teacher: {
         schoolId: string | null;
-        status: string;
-        currentAffiliationId: string;
+        roles: string[];
         affiliations: Array<Record<string, unknown>>;
       };
       csrfToken: string;
     }>();
-    expect(personalBody.teacher).toMatchObject({ schoolId: null, status: "active" });
-    expect(personalBody.teacher.affiliations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ schoolId: null, status: "active", isCurrent: true }),
-      expect.objectContaining({ schoolId: "sch-1", status: "pending", isCurrent: false }),
+    expect(registeredBody.teacher).toMatchObject({
+      schoolId: "sch-1",
+      roles: ["teacher"],
+    });
+    expect(registeredBody.teacher.affiliations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ schoolId: "sch-1", status: "active", isCurrent: true, roles: ["teacher"] }),
+      expect.objectContaining({ schoolId: null, status: "active", isCurrent: false }),
     ]));
 
-    const duplicatePending = await built.app.inject({
+    const stateAfterRegistration = built.store.loadState();
+    const roleApplication = (stateAfterRegistration.schoolAdminApplications as Array<Record<string, unknown>>)
+      .find((item) => item.kind === "teacher_roles" && item.teacherName === "教学资料教师");
+    expect(roleApplication).toMatchObject({
+      schoolId: "sch-1",
+      requestedRoles: ["headTeacher", "gradeLeader"],
+      status: "pending",
+    });
+    expect((stateAfterRegistration.notifications as AppNotification[]).some((notification) =>
+      notification.recipientTeacherId === "tch-1"
+      && notification.title === "新的教师权限申请"
+      && notification.actionUrl === "/admin/registration-review"
+      && notification.readAt === null,
+    )).toBe(true);
+
+    const duplicateApplication = await built.app.inject({
       method: "POST",
       url: "/api/auth/applications",
       headers: {
-        cookie: sessionCookie(personalLogin),
-        "x-inteschool-csrf": personalBody.csrfToken,
+        cookie: sessionCookie(registered),
+        "x-inteschool-csrf": registeredBody.csrfToken,
       },
-      payload: {
-        schoolId: "sch-1",
-        subjects: ["物理"],
-        roles: ["teacher"],
-      },
+      payload: { schoolId: "sch-1", subject: "物理", roles: ["teacher"] },
     });
-    expect(duplicatePending.statusCode).toBe(400);
-    expect(duplicatePending.json()).toEqual({
-      error: "已提交过该学校的认证申请，不能重复申请；后续权限调整请在后台设置中提交",
-    });
+    expect(duplicateApplication.statusCode).toBe(400);
+    expect(duplicateApplication.json()).toEqual({ error: "已加入该学校，无需重复申请" });
 
     const admin = await login(built.app);
-    const pending = await built.app.inject({
+    const pendingRoles = await built.app.inject({
       method: "GET",
-      url: "/api/auth/applications/pending",
+      url: "/api/auth/role-applications/pending",
       headers: { cookie: admin.cookie },
     });
-    const registrationApplication = pending.json<Array<Record<string, unknown>>>().find((item) =>
-      item.teacherName === "教学资料教师",
-    );
-    expect(registrationApplication).toMatchObject({
-      schoolId: "sch-1",
-      teachingGrades: ["高一", "高二"],
-      roles: ["teacher", "headTeacher", "gradeLeader"],
-      registrationApplication: true,
-    });
+    expect(pendingRoles.json<Array<Record<string, unknown>>>()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: roleApplication?.id, requestedRoles: ["headTeacher", "gradeLeader"] }),
+    ]));
     const approved = await built.app.inject({
       method: "POST",
-      url: `/api/auth/applications/${String(registrationApplication?.id)}/review`,
+      url: `/api/auth/role-applications/${String(roleApplication?.id)}/review`,
       headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
       payload: { approved: true },
     });
-    expect(approved.statusCode).toBe(200);
+    expect(approved.statusCode, approved.body).toBe(200);
 
     const approvedLogin = await built.app.inject({
       method: "POST",
@@ -841,42 +1003,8 @@ describe("production backend", () => {
       payload: { identifier: "school-profile@example.com", password: "StrongPass123" },
     });
     expect(approvedLogin.statusCode).toBe(200);
-    const registeredBody = approvedLogin.json<{ teacher: Record<string, unknown>; csrfToken: string }>();
-    expect(registeredBody.teacher).toMatchObject({
-      schoolId: "sch-1",
-      subject: "物理",
-      teachingGrades: ["高一", "高二"],
-      status: "active",
-      roles: ["teacher", "headTeacher", "gradeLeader"],
-    });
-
-    const proofPayload = multipartPayload("same-school-proof.txt", "already joined");
-    const proofUpload = await built.app.inject({
-      method: "POST",
-      url: "/api/files",
-      headers: {
-        cookie: sessionCookie(approvedLogin),
-        "x-inteschool-csrf": registeredBody.csrfToken,
-        "content-type": proofPayload.contentType,
-      },
-      payload: proofPayload.body,
-    });
-    const duplicateApplication = await built.app.inject({
-      method: "POST",
-      url: "/api/auth/applications",
-      headers: {
-        cookie: sessionCookie(approvedLogin),
-        "x-inteschool-csrf": registeredBody.csrfToken,
-      },
-      payload: {
-        schoolId: "sch-1",
-        employeeNo: "DUP-001",
-        subject: "物理",
-        proofFileId: proofUpload.json<{ id: string }>().id,
-      },
-    });
-    expect(duplicateApplication.statusCode).toBe(400);
-    expect(duplicateApplication.json()).toEqual({ error: "已加入该学校，无需重复申请" });
+    expect(approvedLogin.json<{ teacher: { roles: string[] } }>().teacher.roles)
+      .toEqual(expect.arrayContaining(["teacher", "headTeacher", "gradeLeader"]));
 
     const newSchoolPhone = nextPhone();
     const created = await built.app.inject({
@@ -893,8 +1021,12 @@ describe("production backend", () => {
         roles: ["teacher", "gradeLeader"],
       },
     });
-    expect(created.statusCode).toBe(202);
-    expect(created.json()).toMatchObject({ teacher: null, csrfToken: null, pending: true });
+    expect(created.statusCode, created.body).toBe(200);
+    expect(created.json()).toMatchObject({
+      teacher: { schoolId: null },
+      csrfToken: expect.any(String),
+      pendingSchoolCreation: true,
+    });
     const afterNewSchoolRegistration = built.store.loadState();
     expect(afterNewSchoolRegistration.schools).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "南京测试新校" }),

@@ -28,7 +28,7 @@ export const COLLECTIONS = [
   "lectures", "lectureColumnTemplates", "examPapers", "coursewares", "materials", "resourceFolders", "baskets", "documents",
   "recognitions", "answerRecords", "subjectGroups", "prepGroups", "organizationDepartments", "onlineResources",
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
-  "shareRecords", "creditTransactions", "platformCreditSettings", "examPublications", "lessonCoursewares", "reflections",
+  "shareRecords", "creditTransactions", "platformCreditSettings", "platformAccessSettings", "examPublications", "lessonCoursewares", "reflections",
   "classroomHomeworks", "classroomNotices", "classroomDevices",
   "studentInteractions", "studentInteractionFollows", "studentInteractionIgnores", "homeworkAttitudeRecords", "homeworkKnowledgeRecords", "homeworkRecordPreferences", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
@@ -885,11 +885,15 @@ export class DatabaseStore {
     return id;
   }
 
-  async getAvailableRegistrationAuthorization(phone: string): Promise<RegistrationAuthorizationRecord | null> {
+  async getAvailableRegistrationAuthorization(phone: string, schoolId?: string): Promise<RegistrationAuthorizationRecord | null> {
     const result = await this.sql.query<{ id: string }>(`
       SELECT id FROM registration_authorizations
-      WHERE phone = $1 AND consumed_at IS NULL AND revoked_at IS NULL LIMIT 1
-    `, [phone]);
+      WHERE phone = $1
+        AND consumed_at IS NULL
+        AND revoked_at IS NULL
+        AND ($2::text IS NULL OR school_id = $2)
+      LIMIT 1
+    `, [phone, schoolId || null]);
     return result.rows[0] ? this.getRegistrationAuthorization(result.rows[0].id) : null;
   }
 
@@ -899,6 +903,8 @@ export class DatabaseStore {
     phone: string,
     options: {
       requireAuthorization?: boolean;
+      consumeAuthorization?: boolean;
+      authorizationSchoolId?: string;
       newSchool?: {
         id: string;
         name: string;
@@ -921,11 +927,17 @@ export class DatabaseStore {
       await this.sql.transaction(async (client) => {
       const existingPhone = await client.query("SELECT 1 FROM users WHERE phone = $1 LIMIT 1", [phone]);
       if (existingPhone.rows.length > 0) throw new DuplicateAccountError("该手机号已注册");
-      const authorizationResult = await client.query<{ id: string }>(`
-        SELECT id FROM registration_authorizations
-        WHERE phone = $1 AND consumed_at IS NULL AND revoked_at IS NULL
-        FOR UPDATE
-      `, [phone]);
+      const authorizationResult = options.consumeAuthorization === false
+        ? { rows: [] as Array<{ id: string }> }
+        : await client.query<{ id: string }>(`
+          SELECT id FROM registration_authorizations
+          WHERE phone = $1
+            AND consumed_at IS NULL
+            AND revoked_at IS NULL
+            AND ($2::text IS NULL OR school_id = $2)
+          LIMIT 1
+          FOR UPDATE
+        `, [phone, options.authorizationSchoolId || null]);
       const authorizationId = authorizationResult.rows[0]?.id;
       if (!authorizationId && options.requireAuthorization !== false) {
         const error = new Error("该手机号尚未获得注册授权，请联系学校管理员或现有教师担保") as Error & { statusCode: number };
@@ -1317,6 +1329,10 @@ export class DatabaseStore {
     `, [tokenHash, now]);
     const row = result.rows[0];
     if (!row) return null;
+    if (this.getTeacherById(row.teacher_id)?.accountDisabled) {
+      await this.sql.query("DELETE FROM sessions WHERE token_hash = $1", [tokenHash]);
+      return null;
+    }
     await this.sql.query("UPDATE sessions SET last_seen_at = $1 WHERE token_hash = $2", [now, tokenHash]);
     return {
       userId: row.id,
@@ -1329,6 +1345,14 @@ export class DatabaseStore {
 
   async deleteSession(token: string | undefined): Promise<void> {
     if (token) await this.sql.query("DELETE FROM sessions WHERE token_hash = $1", [hashToken(token)]);
+  }
+
+  async deleteSessionsByTeacherId(teacherId: string): Promise<void> {
+    await this.sql.query(`
+      DELETE FROM sessions WHERE user_id IN (
+        SELECT id FROM users WHERE teacher_id = $1
+      )
+    `, [teacherId]);
   }
 
   async cleanupSessions(): Promise<void> {

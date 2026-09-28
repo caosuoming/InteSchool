@@ -19,6 +19,7 @@ import { extractPptxImage } from "../lib/pptx-assets.js";
 import { convertMathTypeDocxToOmml, probeMathTypeRuntime } from "../lib/mathtype-docx.js";
 import { createAsyncLimiter } from "../lib/async-limiter.js";
 import { withReadOnlyState, withSerializedState } from "../rpc.js";
+import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 
 function buildSections(text: string): Array<{
   id: string;
@@ -110,8 +111,8 @@ function canReviewApplicationProof(
   teacher: TeacherRecord,
   fileId: string,
 ): boolean {
-  if (!["school_admin", "platform_admin"].includes(activeRole(teacher))) return false;
-  const platformAdmin = activeRole(teacher) === "platform_admin";
+  if (activeRole(teacher) !== "school_admin" && !isPlatformAdminAccount(teacher)) return false;
+  const platformAdmin = isPlatformAdminAccount(teacher);
   return (store.loadState().applications as Array<Record<string, unknown>>).some((application) =>
     application.proofFileId === fileId && (platformAdmin || application.schoolId === teacher.schoolId));
 }
@@ -146,7 +147,7 @@ function canReadFile(
     if (
       correction.reporterTeacherId === teacher.id
       || correction.recipientTeacherId === teacher.id
-      || activeRole(teacher) === "platform_admin"
+      || isPlatformAdminAccount(teacher)
     ) return true;
     const donation = ((state.shareRecords || []) as Array<{
       id: string;

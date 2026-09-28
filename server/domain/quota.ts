@@ -11,6 +11,7 @@ import type {
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { genId } from "../domain-shared.js";
+import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 
 export const DEFAULT_RESOURCE_CAPACITIES: Record<ResourceQuotaKey, number> = {
   question: 10_000,
@@ -69,14 +70,8 @@ const EXAM_USAGE_LABELS: Record<ExamUsageQuotaKey, string> = {
   gradeStatistics: "成绩统计",
 };
 
-function currentRole(teacher: Teacher): string {
-  const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
-    || teacher.affiliations?.find((item) => item.isCurrent);
-  return affiliation?.role || teacher.role;
-}
-
 function isPlatformAdmin(teacher: Teacher): boolean {
-  return currentRole(teacher) === "platform_admin";
+  return isPlatformAdminAccount(teacher);
 }
 
 function teachers(): Teacher[] {

@@ -19,6 +19,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { canManageSchoolRoster } from "@/lib/roster-permissions";
 import { canManageTeachingProfiles } from "@/lib/teaching-profile-permissions";
+import { isPlatformAdminAccount } from "@/lib/platform-admin";
 
 interface AdminItem {
   icon: typeof GitBranch;
@@ -32,6 +33,7 @@ interface AdminItem {
   platformOnly?: boolean;
   rosterOnly?: boolean;
   teachingProfileOnly?: boolean;
+  personalOnly?: boolean;
 }
 
 type AdminGroupKey = "personal" | "school" | "platform";
@@ -65,6 +67,14 @@ const adminGroups: AdminGroup[] = [
 ];
 
 const allAdminItems: AdminItem[] = [
+  {
+    icon: GraduationCap,
+    title: "个人教学班",
+    description: "创建和管理个人教学班及学生档案，不需要加入学校即可使用",
+    href: "/classes",
+    group: "personal",
+    personalOnly: true,
+  },
   {
     icon: GitBranch,
     title: "知识树管理",
@@ -126,10 +136,10 @@ const allAdminItems: AdminItem[] = [
   },
   {
     icon: UserPlus,
-    title: "教师注册管理",
-    description: "管理员预授权教师手机号，或将待注册教师加入“我来担保”名单",
+    title: "教师注册担保",
+    description: "本校老用户可为待注册教师提供手机号担保",
     href: "/admin/registration-access",
-    group: "platform",
+    group: "school",
     schoolOnly: true,
   },
   {
@@ -138,7 +148,6 @@ const allAdminItems: AdminItem[] = [
     description: "查看学校用户权限、管理学校管理员身份并重置教师登录密码",
     href: "/admin/accounts",
     group: "platform",
-    schoolOnly: true,
     adminOnly: true,
   },
   {
@@ -150,10 +159,10 @@ const allAdminItems: AdminItem[] = [
     platformOnly: true,
   },
   {
-    icon: Building2,
-    title: "新增学校审核",
-    description: "审核用户提交的新学校申请，通过后将学校加入平台目录",
-    href: "/admin/school-creation-applications",
+    icon: UserPlus,
+    title: "新用户和新建校审核",
+    description: "配置平台注册与新建校策略，统一处理新用户权限和新学校申请",
+    href: "/admin/registration-review",
     group: "platform",
     platformOnly: true,
   },
@@ -164,13 +173,14 @@ export function AdminPage() {
   const currentAffiliation = getCurrentAffiliation();
   const isPersonal = !currentAffiliation?.schoolId;
   const activeRole = currentAffiliation?.role;
-  const isAdmin = ["school_admin", "platform_admin"].includes(String(activeRole));
-  const isPlatformAdmin = activeRole === "platform_admin";
+  const isPlatformAdmin = isPlatformAdminAccount(teacher);
+  const isAdmin = activeRole === "school_admin" || isPlatformAdmin;
   const canManageRoster = teacher ? canManageSchoolRoster(teacher, currentAffiliation) : false;
   const canManageProfiles = teacher ? canManageTeachingProfiles(teacher, currentAffiliation) : false;
 
   const adminItems = allAdminItems.filter((item) => {
     if (item.schoolOnly && isPersonal) return false;
+    if (item.personalOnly && !isPersonal) return false;
     if (item.adminOnly && !isAdmin) return false;
     if (item.platformOnly && !isPlatformAdmin) return false;
     if (item.rosterOnly && !canManageRoster) return false;

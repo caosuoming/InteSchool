@@ -8,6 +8,7 @@ import { db } from "../runtime-db.js";
 import { delay } from "../domain-shared.js";
 import { createNotification, platformAdminTeacherIds } from "./notification.js";
 import { isTeacherRole, normalizeTeacherRoles } from "../../src/lib/teacher-roles.js";
+import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 
 interface SchoolCreationInput {
   name: string;
@@ -23,7 +24,7 @@ function activeRole(teacher: TeacherRecord): string {
 }
 
 function requirePlatformAdmin(teacher: TeacherRecord): void {
-  if (activeRole(teacher) !== "platform_admin") {
+  if (!isPlatformAdminAccount(teacher)) {
     throw new Error("该操作需要平台超级管理员权限");
   }
 }
