@@ -2732,6 +2732,10 @@ export interface LessonSlide {
   id: string;
   type: LessonSlideType;
   title: string;
+  /** 不向这些授课班级展示本页。 */
+  hiddenClassIds?: string[];
+  /** 页面设计背景色；未设置时使用上课端默认背景。 */
+  backgroundColor?: string;
   /** 使用自由画布布局时，页面正文完全由 elements 渲染。 */
   freeformLayout?: boolean;
   /** 题目ID（type=question时） */
@@ -3066,10 +3070,21 @@ export interface HelpTopicView extends HelpTopic {
   replies: HelpReply[];
 }
 
+export interface HelpChangelogEntry {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface HelpBoardSnapshot {
   topics: HelpTopicView[];
   categories: HelpCategory[];
   canManage: boolean;
+  changelog: HelpChangelogEntry[];
+  canManageChangelog: boolean;
+  changelogShareToken: string | null;
 }
 
 // ============ 课后反思 ============

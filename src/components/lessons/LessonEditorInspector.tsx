@@ -3,12 +3,16 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ClipboardPaste,
+  Copy,
   FileBox,
   FileQuestion,
+  EyeOff,
   Image as ImageIcon,
   Link as LinkIcon,
   Music2,
   Plus,
+  Scissors,
   Star,
   Trash2,
   Type,
@@ -60,10 +64,14 @@ interface LessonEditorInspectorProps {
   relatedQuestionsById: Record<string, Question>;
   canDeleteSlide: boolean;
   canMergeSlide: boolean;
+  canPasteElement: boolean;
   onSelectElement: (id: string | null) => void;
   onSelectTextRegion: (region: LessonSlideTextRegion | null) => void;
   onUpdateElement: (patch: Partial<LessonSlideElement>) => void;
   onDeleteElement: () => void;
+  onCopyElement: () => void;
+  onCutElement: () => void;
+  onPasteElement: () => void;
   onUpdateTextStyle: (region: LessonSlideTextRegion, fontSize: number) => void;
   onUpdateSlide: (patch: Partial<LessonSlide>) => void;
   onAddText: () => void;
@@ -106,6 +114,14 @@ const DEFAULT_TEXT_SIZE: Record<LessonSlideTextRegion, number> = {
   stem: 24,
   options: 16,
 };
+
+const SLIDE_BACKGROUND_PRESETS = [
+  { label: "纯白", value: "#FFFFFF" },
+  { label: "暖白", value: "#FFFEF8" },
+  { label: "浅灰", value: "#F5F7FA" },
+  { label: "浅蓝", value: "#F1F7FF" },
+  { label: "浅绿", value: "#F3FAF5" },
+] as const;
 
 function elementLabel(element: LessonSlideElement, index: number): string {
   if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
@@ -190,10 +206,14 @@ export function LessonEditorInspector({
   relatedQuestionsById,
   canDeleteSlide,
   canMergeSlide,
+  canPasteElement,
   onSelectElement,
   onSelectTextRegion,
   onUpdateElement,
   onDeleteElement,
+  onCopyElement,
+  onCutElement,
+  onPasteElement,
   onUpdateTextStyle,
   onUpdateSlide,
   onAddText,
@@ -266,6 +286,14 @@ export function LessonEditorInspector({
   );
   const selectedStudentCount = [...selectedStudentIds]
     .filter((studentId) => selectableStudentIds.has(studentId)).length;
+  const hiddenClassIds = new Set(slide.hiddenClassIds || []);
+
+  const toggleSlideHiddenClass = (classId: string) => {
+    const next = new Set(hiddenClassIds);
+    if (next.has(classId)) next.delete(classId);
+    else next.add(classId);
+    onUpdateSlide({ hiddenClassIds: next.size > 0 ? [...next] : undefined });
+  };
 
   const updateSelectedAnimation = (patch: Partial<LessonSlideElement>) => {
     if (!selectedElement) return;
@@ -374,6 +402,16 @@ export function LessonEditorInspector({
                 <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddQuestion}>
                   <FileQuestion className="h-4 w-4" />
                   题目
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-auto flex-col gap-1 py-3"
+                  onClick={onPasteElement}
+                  disabled={!canPasteElement || !canInsertElements}
+                >
+                  <ClipboardPaste className="h-4 w-4" />
+                  粘贴元素
                 </Button>
               </div>
               <input
@@ -586,6 +624,14 @@ export function LessonEditorInspector({
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" size="sm" onClick={onCopyElement}>
+                <Copy className="h-4 w-4" />复制元素
+              </Button>
+              <Button variant="outline" size="sm" onClick={onCutElement}>
+                <Scissors className="h-4 w-4" />剪切元素
+              </Button>
+            </div>
             <Button variant="ghost" size="sm" className="w-full text-red-500" onClick={onDeleteElement}>
               <Trash2 className="h-4 w-4" />删除元素
             </Button>
@@ -597,6 +643,15 @@ export function LessonEditorInspector({
 
         {tab === "properties" && !selectedTextRegion && !selectedElement && (
           <div className="space-y-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={onPasteElement}
+              disabled={!canPasteElement || !canInsertElements}
+            >
+              <ClipboardPaste className="h-4 w-4" />粘贴元素
+            </Button>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-ink-600">页面标题</label>
               <Input value={slide.title} onChange={(event) => onUpdateSlide({ title: event.target.value })} />
@@ -619,6 +674,94 @@ export function LessonEditorInspector({
                 <Button variant="outline" size="sm" className="w-full" onClick={() => onOpenFormulaEditor("analysis")}>编辑解析</Button>
               </div>
             )}
+            <div className="border-t border-ink-100 pt-3">
+              <div className="mb-3 text-xs font-medium text-ink-600">页面控制</div>
+              <div className="space-y-4">
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <label className="text-xs font-medium text-ink-600">页面背景</label>
+                    {slide.backgroundColor && (
+                      <button
+                        type="button"
+                        className="text-[11px] text-ink-400 underline decoration-ink-200 underline-offset-2 hover:text-ink-700"
+                        onClick={() => onUpdateSlide({ backgroundColor: undefined })}
+                      >
+                        使用默认背景
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {SLIDE_BACKGROUND_PRESETS.map((preset) => {
+                      const active = (slide.backgroundColor || "").toUpperCase() === preset.value;
+                      return (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          aria-label={`设置页面背景：${preset.label}`}
+                          aria-pressed={active}
+                          title={preset.label}
+                          onClick={() => onUpdateSlide({ backgroundColor: preset.value })}
+                          className={cn(
+                            "h-7 w-7 rounded-full border-2 shadow-sm transition-transform hover:scale-105",
+                            active ? "border-gold-500 ring-2 ring-gold-100" : "border-ink-200",
+                          )}
+                          style={{ backgroundColor: preset.value }}
+                        />
+                      );
+                    })}
+                    <label className="flex items-center gap-2 rounded-md border border-ink-200 px-2 py-1 text-[11px] text-ink-500">
+                      自定义
+                      <input
+                        type="color"
+                        aria-label="自定义页面背景色"
+                        value={slide.backgroundColor || "#FFFFFF"}
+                        onChange={(event) => onUpdateSlide({ backgroundColor: event.target.value.toUpperCase() })}
+                        className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1.5 text-xs font-medium text-ink-600">本页不显示给</div>
+                  <div className="mb-2 text-[11px] leading-5 text-ink-400">
+                    仅影响上课时的页面序列；未勾选的授课班级仍正常显示本页。
+                  </div>
+                  {selectedClasses.length === 0 ? (
+                    <div className="rounded-lg bg-mist px-3 py-4 text-center text-xs text-ink-400">
+                      请先选择授课班级
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {selectedClasses.map((item) => {
+                        const hidden = hiddenClassIds.has(item.id);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            aria-label={`切换${item.name}当前页可见性`}
+                            aria-pressed={hidden}
+                            onClick={() => toggleSlideHiddenClass(item.id)}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
+                              hidden
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : "border-ink-100 text-ink-700 hover:border-ink-300",
+                            )}
+                          >
+                            <EyeOff className={cn("h-3.5 w-3.5", hidden ? "text-amber-600" : "text-ink-300")} />
+                            <span className="min-w-0 flex-1 truncate">{item.grade} · {item.name}</span>
+                            <span className={cn("text-[10px]", hidden ? "text-amber-700" : "text-ink-400")}>
+                              {hidden ? "不显示" : "显示"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="border-t border-ink-100 pt-3">
               <div className="mb-2 text-xs font-medium text-ink-600">页面操作</div>
               <div className="space-y-2">

@@ -5,7 +5,7 @@ import type { DatabaseStore } from "./database.js";
 import type { AppState, SessionUser, TeacherRecord } from "./types.js";
 import { invokeRpc } from "./rpc.js";
 
-function teacher(role: "teacher" | "school_admin" = "teacher", personal = false): TeacherRecord {
+function teacher(role: "teacher" | "school_admin" | "platform_admin" = "teacher", personal = false): TeacherRecord {
   const schoolId = personal ? null : "school-1";
   return {
     id: "teacher-1",
@@ -38,6 +38,8 @@ function state(record: TeacherRecord): AppState {
     helpTopics: [],
     helpReplies: [],
     helpCategories: [],
+    helpChangelogEntries: [],
+    helpChangelogShares: [],
   } as AppState;
 }
 
@@ -82,5 +84,35 @@ describe("help RPC authorization", () => {
     const adminState = state(teacher("school_admin"));
     await invokeRpc(storeFor(adminState), session(), "help", "createCategory", ["使用帮助", null]);
     expect(adminState.helpCategories).toHaveLength(1);
+  });
+
+  it("restricts changelog mutations to platform administrators and allows token reads without a session", async () => {
+    const schoolAdminState = state(teacher("school_admin"));
+    await expect(invokeRpc(storeFor(schoolAdminState), session(), "help", "createChangelogEntry", [{
+      title: "更新",
+      content: "内容",
+    }, null])).rejects.toThrow("平台管理员");
+
+    const platformState = state(teacher("platform_admin"));
+    await invokeRpc(storeFor(platformState), session(), "help", "createChangelogEntry", [{
+      title: "更新",
+      content: "内容",
+    }, null]);
+    const token = await invokeRpc(
+      storeFor(platformState),
+      session(),
+      "help",
+      "generateChangelogShare",
+      [null],
+    ) as string;
+
+    const shared = await invokeRpc(
+      storeFor(platformState),
+      null,
+      "help",
+      "getSharedChangelog",
+      [token],
+    ) as Array<{ title: string }>;
+    expect(shared.map((entry) => entry.title)).toEqual(["更新"]);
   });
 });

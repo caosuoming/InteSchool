@@ -233,6 +233,36 @@ describe("PlatformResourcesPage layout and filters", () => {
     });
   });
 
+  it("loads platform resources for a personal identity using its personal scope", async () => {
+    useAuthStore.setState({
+      teacher: {
+        id: "teacher-self",
+        schoolId: null,
+        subject: "数学",
+        role: "teacher",
+        affiliations: [{
+          id: "aff-personal",
+          schoolId: null,
+          subject: "数学",
+          status: "active",
+          isCurrent: true,
+        }],
+        currentAffiliationId: "aff-personal",
+      } as Teacher,
+      loading: false,
+      error: null,
+    });
+
+    renderPage();
+
+    await screen.findByText("单选题资源");
+    expect(shareService.listPublicDonations).toHaveBeenCalledWith("teacher-self");
+    expect(donationService.getSaveStatus).toHaveBeenCalledWith(
+      "teacher-self",
+      "personal-directory:teacher-self",
+    );
+  });
+
   it("removes standalone settings and keeps actions on the donor row", async () => {
     renderPage();
 

@@ -100,6 +100,11 @@ interface LessonSaveState {
   classIds: string[];
 }
 
+interface LessonElementClipboard {
+  element: LessonSlideElement;
+  sourceSlideId: string;
+}
+
 function lessonSaveStateFromCourseware(courseware: LessonCourseware): LessonSaveState {
   return {
     slides: courseware.slides,
@@ -152,6 +157,7 @@ export function LessonEditorPage() {
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedTextRegion, setSelectedTextRegion] = useState<LessonSlideTextRegion | null>(null);
+  const [elementClipboard, setElementClipboard] = useState<LessonElementClipboard | null>(null);
   const [slideNavigatorWidth, setSlideNavigatorWidth] = useState(SLIDE_NAV_DEFAULT_WIDTH);
   const [slideNavigatorCollapsed, setSlideNavigatorCollapsed] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
@@ -650,6 +656,40 @@ export function LessonEditorPage() {
     setSelectedElementId(null);
   };
 
+  const copySelectedElement = () => {
+    if (!selectedElement || !currentSlide) return;
+    setElementClipboard({
+      element: structuredClone(selectedElement),
+      sourceSlideId: currentSlide.id,
+    });
+    toast.success("已复制元素");
+  };
+
+  const cutSelectedElement = () => {
+    if (!selectedElement || !currentSlide) return;
+    setElementClipboard({
+      element: structuredClone(selectedElement),
+      sourceSlideId: currentSlide.id,
+    });
+    updateCurrentElements((currentSlide.elements || []).filter((element) => element.id !== selectedElement.id));
+    setSelectedElementId(null);
+    toast.success("已剪切元素");
+  };
+
+  const pasteElement = () => {
+    if (!currentSlide || currentSlide.type === "courseware" || !elementClipboard) return;
+    const pastedElement: LessonSlideElement = {
+      ...structuredClone(elementClipboard.element),
+      id: genId("element"),
+    };
+    updateCurrentElements([...(currentSlide.elements || []), pastedElement]);
+    setSelectedElementId(pastedElement.id);
+    setSelectedTextRegion(null);
+    toast.success(
+      elementClipboard.sourceSlideId === currentSlide.id ? "已粘贴元素" : "已粘贴到当前页面",
+    );
+  };
+
   const currentSaveState: LessonSaveState | null = courseware ? {
     slides,
     title: courseware.title,
@@ -750,13 +790,15 @@ export function LessonEditorPage() {
       const removedStudentIds = new Set(
         students.filter((student) => student.classId === classId).map((student) => student.id),
       );
-      if (removedStudentIds.size > 0) {
-        setSlides((previous) => previous.map((slide) => ({
+      setSlides((previous) => previous.map((slide) => {
+        const nextHiddenClassIds = (slide.hiddenClassIds || []).filter((id) => id !== classId);
+        return {
           ...slide,
           askableStudentIds: (slide.askableStudentIds || [])
             .filter((studentId) => !removedStudentIds.has(studentId)),
-        })));
-      }
+          hiddenClassIds: nextHiddenClassIds.length > 0 ? nextHiddenClassIds : undefined,
+        };
+      }));
     }
     setCourseware({ ...courseware, classIds: next });
   };
@@ -1200,7 +1242,10 @@ export function LessonEditorPage() {
                 </div>
 
                 {currentSlide.type === "courseware" ? (
-                  <div className="overflow-hidden rounded-xl bg-paper shadow-lg">
+                  <div
+                    className="overflow-hidden rounded-xl bg-paper shadow-lg"
+                    style={currentSlide.backgroundColor ? { backgroundColor: currentSlide.backgroundColor } : undefined}
+                  >
                     <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-[64vh]" />
                     <div className="flex items-center gap-2 border-t border-ink-100 px-4 py-3">
                       {getCoursewareEditorUrl(currentSlide) && (
@@ -1226,6 +1271,9 @@ export function LessonEditorPage() {
                       if (elementId) setSelectedTextRegion(null);
                     }}
                     onElementsChange={updateVisibleCurrentElements}
+                    canvasStyle={currentSlide.backgroundColor
+                      ? { backgroundColor: currentSlide.backgroundColor }
+                      : undefined}
                   >
                     <LessonSlideContent
                       slide={currentSlide}
@@ -1324,6 +1372,7 @@ export function LessonEditorPage() {
                     relatedQuestionsById={relatedQuestionsMap}
                     canDeleteSlide={slides.length > 1}
                     canMergeSlide={currentIndex < slides.length - 1}
+                    canPasteElement={Boolean(elementClipboard)}
                     onSelectElement={(elementId) => {
                       setSelectedElementId(elementId);
                       if (elementId) setSelectedTextRegion(null);
@@ -1334,6 +1383,9 @@ export function LessonEditorPage() {
                     }}
                     onUpdateElement={updateSelectedElement}
                     onDeleteElement={deleteSelectedElement}
+                    onCopyElement={copySelectedElement}
+                    onCutElement={cutSelectedElement}
+                    onPasteElement={pasteElement}
                     onUpdateTextStyle={updateSelectedTextStyle}
                     onUpdateSlide={updateCurrentSlide}
                     onAddText={addTextElement}

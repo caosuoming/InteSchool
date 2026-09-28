@@ -17,6 +17,7 @@ import { Button, Card, Modal, Select, Spinner, Textarea, Input } from "@/compone
 import { toast } from "@/stores/ui";
 import { helpService, type HelpReplyInput, type HelpTopicInput } from "@/services/help";
 import { uploadFile } from "@/services/api";
+import { ChangelogSection } from "@/pages/help/ChangelogSection";
 import type {
   HelpAttachment,
   HelpBoardSnapshot,
@@ -26,7 +27,14 @@ import type {
 } from "@/types";
 import { cn } from "@/lib/utils";
 
-const EMPTY_BOARD: HelpBoardSnapshot = { topics: [], categories: [], canManage: false };
+const EMPTY_BOARD: HelpBoardSnapshot = {
+  topics: [],
+  categories: [],
+  canManage: false,
+  changelog: [],
+  canManageChangelog: false,
+  changelogShareToken: null,
+};
 
 const topicMeta: Record<HelpTopicType, {
   label: string;
@@ -239,6 +247,7 @@ function ReplyComposer({
 export default function HelpPage() {
   const [board, setBoard] = useState<HelpBoardSnapshot>(EMPTY_BOARD);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"board" | "changelog">("board");
   const [filter, setFilter] = useState("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [topicModalOpen, setTopicModalOpen] = useState(false);
@@ -340,9 +349,9 @@ export default function HelpPage() {
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
       <PageHeader
         title="帮助与许愿"
-        description="询问平台用法、补充解答、提出建议，或者许下你希望智题云校实现的愿望。"
+        description="询问平台用法、补充解答、提出建议、许下愿望，或查看平台更新日志。"
         icon={<CircleHelp className="h-5 w-5" />}
-        action={(
+        action={view === "board" ? (
           <div className="flex gap-2">
             {board.canManage && (
               <Button variant="outline" onClick={() => setCategoryModalOpen(true)}>
@@ -355,9 +364,36 @@ export default function HelpPage() {
               发表话题
             </Button>
           </div>
-        )}
+        ) : undefined}
       />
 
+      <div className="mb-5 flex w-fit rounded-lg border border-ink-150 bg-paper p-1">
+        <button
+          type="button"
+          onClick={() => setView("board")}
+          className={cn(
+            "rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors",
+            view === "board" ? "bg-ink-900 text-white" : "text-ink-500 hover:text-ink-800",
+          )}
+        >
+          帮助与许愿
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("changelog")}
+          className={cn(
+            "rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors",
+            view === "changelog" ? "bg-ink-900 text-white" : "text-ink-500 hover:text-ink-800",
+          )}
+        >
+          更新日志
+        </button>
+      </div>
+
+      {view === "changelog" ? (
+        <ChangelogSection board={board} loading={loading} onRefresh={refresh} />
+      ) : (
+        <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -540,6 +576,8 @@ export default function HelpPage() {
             );
           })}
         </div>
+      )}
+        </>
       )}
 
       <Modal
