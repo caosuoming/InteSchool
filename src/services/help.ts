@@ -2,6 +2,7 @@ import { rpcCall } from "./api";
 import type {
   HelpAttachment,
   HelpBoardSnapshot,
+  HelpChangelogEntry,
   HelpReply,
   HelpReplyType,
   HelpTopic,
@@ -20,6 +21,11 @@ export interface HelpReplyInput {
   type: HelpReplyType;
   content: string;
   attachments?: HelpAttachment[];
+}
+
+export interface HelpChangelogInput {
+  title: string;
+  content: string;
 }
 
 export const helpService = {
@@ -57,5 +63,25 @@ export const helpService = {
 
   async deleteReply(replyId: string): Promise<void> {
     await rpcCall("help", "deleteReply", [replyId, null]);
+  },
+
+  async createChangelogEntry(input: HelpChangelogInput): Promise<HelpChangelogEntry> {
+    return rpcCall("help", "createChangelogEntry", [input, null]) as Promise<HelpChangelogEntry>;
+  },
+
+  async updateChangelogEntry(entryId: string, input: HelpChangelogInput): Promise<HelpChangelogEntry> {
+    return rpcCall("help", "updateChangelogEntry", [entryId, input, null]) as Promise<HelpChangelogEntry>;
+  },
+
+  async deleteChangelogEntry(entryId: string): Promise<void> {
+    await rpcCall("help", "deleteChangelogEntry", [entryId, null]);
+  },
+
+  async generateChangelogShare(): Promise<string> {
+    return rpcCall("help", "generateChangelogShare", [null]) as Promise<string>;
+  },
+
+  async getSharedChangelog(token: string): Promise<HelpChangelogEntry[]> {
+    return rpcCall("help", "getSharedChangelog", [token]) as Promise<HelpChangelogEntry[]>;
   },
 };

@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
 import type {
   HelpAttachment,
   HelpBoardSnapshot,
   HelpCategory,
+  HelpChangelogEntry,
   HelpReply,
   HelpReplyType,
   HelpTopic,
@@ -26,6 +28,14 @@ function canManage(teacher: Teacher): boolean {
 
 function requireManager(teacher: Teacher): void {
   if (!canManage(teacher)) throw new Error("该操作需要学校管理员权限");
+}
+
+function canManageChangelog(teacher: Teacher): boolean {
+  return activeRole(teacher) === "platform_admin";
+}
+
+function requirePlatformAdmin(teacher: Teacher): void {
+  if (!canManageChangelog(teacher)) throw new Error("该操作需要平台管理员权限");
 }
 
 function publicAuthor(teacher: Teacher): { name: string; avatar: string } {
@@ -70,6 +80,43 @@ function sortedTopics(): HelpTopic[] {
   });
 }
 
+interface HelpChangelogShareRecord {
+  id: string;
+  token: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HelpChangelogInput {
+  title: string;
+  content: string;
+}
+
+function changelogEntries(): HelpChangelogEntry[] {
+  return (db.read("helpChangelogEntries") as HelpChangelogEntry[] | undefined) || [];
+}
+
+function sortedChangelogEntries(): HelpChangelogEntry[] {
+  return [...changelogEntries()].sort((left, right) => (
+    new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  ));
+}
+
+function changelogShares(): HelpChangelogShareRecord[] {
+  return (db.read("helpChangelogShares") as HelpChangelogShareRecord[] | undefined) || [];
+}
+
+function normalizeChangelogInput(input: HelpChangelogInput): { title: string; content: string } {
+  const title = String(input?.title || "").trim();
+  const content = String(input?.content || "").trim();
+  if (!title) throw new Error("请输入更新日志标题");
+  if (title.length > 100) throw new Error("更新日志标题不能超过 100 字");
+  if (!content) throw new Error("请输入更新日志内容");
+  if (content.length > 20000) throw new Error("更新日志内容不能超过 20000 字");
+  return { title, content };
+}
+
 export interface HelpTopicInput {
   type: HelpTopicType;
   title: string;
@@ -100,7 +147,15 @@ export const helpService = {
     }));
     const categories = [...(db.read("helpCategories") as HelpCategory[])]
       .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "zh-CN"));
-    return { topics, categories, canManage: canManage(teacher) };
+    const changelogManager = canManageChangelog(teacher);
+    return {
+      topics,
+      categories,
+      canManage: canManage(teacher),
+      changelog: sortedChangelogEntries(),
+      canManageChangelog: changelogManager,
+      changelogShareToken: changelogManager ? (changelogShares()[0]?.token || null) : null,
+    };
   },
 
   async createTopic(input: HelpTopicInput, teacher: Teacher): Promise<HelpTopic> {
@@ -241,5 +296,72 @@ export const helpService = {
     const replies = db.read("helpReplies") as HelpReply[];
     if (!replies.some((item) => item.id === replyId)) throw new Error("回复不存在");
     db.update("helpReplies", (items: HelpReply[]) => items.filter((item) => item.id !== replyId));
+  },
+
+  async createChangelogEntry(input: HelpChangelogInput, teacher: Teacher): Promise<HelpChangelogEntry> {
+    requirePlatformAdmin(teacher);
+    const normalized = normalizeChangelogInput(input);
+    const now = new Date().toISOString();
+    const entry: HelpChangelogEntry = {
+      id: genId("help-changelog"),
+      title: normalized.title,
+      content: normalized.content,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.update("helpChangelogEntries", (items: HelpChangelogEntry[] | undefined) => [entry, ...(items || [])]);
+    return entry;
+  },
+
+  async updateChangelogEntry(
+    entryId: string,
+    input: HelpChangelogInput,
+    teacher: Teacher,
+  ): Promise<HelpChangelogEntry> {
+    requirePlatformAdmin(teacher);
+    const existing = changelogEntries().find((item) => item.id === entryId);
+    if (!existing) throw new Error("更新日志不存在");
+    const normalized = normalizeChangelogInput(input);
+    const updated: HelpChangelogEntry = {
+      ...existing,
+      title: normalized.title,
+      content: normalized.content,
+      updatedAt: new Date().toISOString(),
+    };
+    db.update("helpChangelogEntries", (items: HelpChangelogEntry[] | undefined) => (
+      (items || []).map((item) => item.id === entryId ? updated : item)
+    ));
+    return updated;
+  },
+
+  async deleteChangelogEntry(entryId: string, teacher: Teacher): Promise<void> {
+    requirePlatformAdmin(teacher);
+    if (!changelogEntries().some((item) => item.id === entryId)) throw new Error("更新日志不存在");
+    db.update("helpChangelogEntries", (items: HelpChangelogEntry[] | undefined) => (
+      (items || []).filter((item) => item.id !== entryId)
+    ));
+  },
+
+  async generateChangelogShare(teacher: Teacher): Promise<string> {
+    requirePlatformAdmin(teacher);
+    const now = new Date().toISOString();
+    const existing = changelogShares()[0];
+    const record: HelpChangelogShareRecord = {
+      id: existing?.id || "help-changelog-share",
+      token: randomBytes(24).toString("base64url"),
+      createdBy: teacher.id,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    db.write("helpChangelogShares", [record]);
+    return record.token;
+  },
+
+  async getSharedChangelog(tokenInput: string): Promise<HelpChangelogEntry[]> {
+    const token = String(tokenInput || "").trim();
+    if (!token || !changelogShares().some((item) => item.token === token)) {
+      throw new Error("分享链接无效或已失效");
+    }
+    return sortedChangelogEntries();
   },
 };

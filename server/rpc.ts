@@ -23,6 +23,7 @@ const PUBLIC_CALLS = new Set([
   "classroomDevice.getClassroomSnapshot",
   "classroomDevice.reportHeartbeat",
   "grade.getPublishedReportByToken",
+  "help.getSharedChangelog",
 ]);
 
 export function isPublicRpcCall(service: string, method: string): boolean {

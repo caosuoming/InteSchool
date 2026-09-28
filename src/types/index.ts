@@ -3054,10 +3054,21 @@ export interface HelpTopicView extends HelpTopic {
   replies: HelpReply[];
 }
 
+export interface HelpChangelogEntry {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface HelpBoardSnapshot {
   topics: HelpTopicView[];
   categories: HelpCategory[];
   canManage: boolean;
+  changelog: HelpChangelogEntry[];
+  canManageChangelog: boolean;
+  changelogShareToken: string | null;
 }
 
 // ============ 课后反思 ============

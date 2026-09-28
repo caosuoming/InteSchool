@@ -54,6 +54,7 @@ const PublishedGradeReportPage = lazy(() => import("@/pages/students/PublishedGr
 const MyExamsPage = lazy(() => import("@/pages/exams/MyExamsPage"));
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const HelpPage = lazy(() => import("@/pages/help/HelpPage"));
+const SharedChangelogPage = lazy(() => import("@/pages/help/SharedChangelogPage"));
 
 function RouteLoading() {
   return (
@@ -191,6 +192,7 @@ export default function App() {
           <Route path="/classroom-login" element={<ClassroomLoginPage />} />
           <Route path="/classroom-device" element={<ClassroomPage deviceMode />} />
           <Route path="/grade-reports/:token" element={<PublishedGradeReportPage />} />
+          <Route path="/changelog/:token" element={<SharedChangelogPage />} />
           <Route
             path="/classroom"
             element={teacher ? (teacher.schoolId ? <ClassroomPage /> : <Navigate to="/school-auth" replace />) : <Navigate to="/classroom-login" replace />}
