@@ -100,6 +100,11 @@ interface LessonSaveState {
   classIds: string[];
 }
 
+interface LessonElementClipboard {
+  element: LessonSlideElement;
+  sourceSlideId: string;
+}
+
 function lessonSaveStateFromCourseware(courseware: LessonCourseware): LessonSaveState {
   return {
     slides: courseware.slides,
@@ -152,6 +157,7 @@ export function LessonEditorPage() {
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedTextRegion, setSelectedTextRegion] = useState<LessonSlideTextRegion | null>(null);
+  const [elementClipboard, setElementClipboard] = useState<LessonElementClipboard | null>(null);
   const [slideNavigatorWidth, setSlideNavigatorWidth] = useState(SLIDE_NAV_DEFAULT_WIDTH);
   const [slideNavigatorCollapsed, setSlideNavigatorCollapsed] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
@@ -648,6 +654,40 @@ export function LessonEditorPage() {
     if (!selectedElement || !currentSlide) return;
     updateCurrentElements((currentSlide.elements || []).filter((element) => element.id !== selectedElement.id));
     setSelectedElementId(null);
+  };
+
+  const copySelectedElement = () => {
+    if (!selectedElement || !currentSlide) return;
+    setElementClipboard({
+      element: structuredClone(selectedElement),
+      sourceSlideId: currentSlide.id,
+    });
+    toast.success("已复制元素");
+  };
+
+  const cutSelectedElement = () => {
+    if (!selectedElement || !currentSlide) return;
+    setElementClipboard({
+      element: structuredClone(selectedElement),
+      sourceSlideId: currentSlide.id,
+    });
+    updateCurrentElements((currentSlide.elements || []).filter((element) => element.id !== selectedElement.id));
+    setSelectedElementId(null);
+    toast.success("已剪切元素");
+  };
+
+  const pasteElement = () => {
+    if (!currentSlide || currentSlide.type === "courseware" || !elementClipboard) return;
+    const pastedElement: LessonSlideElement = {
+      ...structuredClone(elementClipboard.element),
+      id: genId("element"),
+    };
+    updateCurrentElements([...(currentSlide.elements || []), pastedElement]);
+    setSelectedElementId(pastedElement.id);
+    setSelectedTextRegion(null);
+    toast.success(
+      elementClipboard.sourceSlideId === currentSlide.id ? "已粘贴元素" : "已粘贴到当前页面",
+    );
   };
 
   const currentSaveState: LessonSaveState | null = courseware ? {
@@ -1324,6 +1364,7 @@ export function LessonEditorPage() {
                     relatedQuestionsById={relatedQuestionsMap}
                     canDeleteSlide={slides.length > 1}
                     canMergeSlide={currentIndex < slides.length - 1}
+                    canPasteElement={Boolean(elementClipboard)}
                     onSelectElement={(elementId) => {
                       setSelectedElementId(elementId);
                       if (elementId) setSelectedTextRegion(null);
@@ -1334,6 +1375,9 @@ export function LessonEditorPage() {
                     }}
                     onUpdateElement={updateSelectedElement}
                     onDeleteElement={deleteSelectedElement}
+                    onCopyElement={copySelectedElement}
+                    onCutElement={cutSelectedElement}
+                    onPasteElement={pasteElement}
                     onUpdateTextStyle={updateSelectedTextStyle}
                     onUpdateSlide={updateCurrentSlide}
                     onAddText={addTextElement}

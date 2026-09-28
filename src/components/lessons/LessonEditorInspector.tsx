@@ -3,12 +3,15 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ClipboardPaste,
+  Copy,
   FileBox,
   FileQuestion,
   Image as ImageIcon,
   Link as LinkIcon,
   Music2,
   Plus,
+  Scissors,
   Star,
   Trash2,
   Type,
@@ -60,10 +63,14 @@ interface LessonEditorInspectorProps {
   relatedQuestionsById: Record<string, Question>;
   canDeleteSlide: boolean;
   canMergeSlide: boolean;
+  canPasteElement: boolean;
   onSelectElement: (id: string | null) => void;
   onSelectTextRegion: (region: LessonSlideTextRegion | null) => void;
   onUpdateElement: (patch: Partial<LessonSlideElement>) => void;
   onDeleteElement: () => void;
+  onCopyElement: () => void;
+  onCutElement: () => void;
+  onPasteElement: () => void;
   onUpdateTextStyle: (region: LessonSlideTextRegion, fontSize: number) => void;
   onUpdateSlide: (patch: Partial<LessonSlide>) => void;
   onAddText: () => void;
@@ -190,10 +197,14 @@ export function LessonEditorInspector({
   relatedQuestionsById,
   canDeleteSlide,
   canMergeSlide,
+  canPasteElement,
   onSelectElement,
   onSelectTextRegion,
   onUpdateElement,
   onDeleteElement,
+  onCopyElement,
+  onCutElement,
+  onPasteElement,
   onUpdateTextStyle,
   onUpdateSlide,
   onAddText,
@@ -374,6 +385,16 @@ export function LessonEditorInspector({
                 <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddQuestion}>
                   <FileQuestion className="h-4 w-4" />
                   题目
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-auto flex-col gap-1 py-3"
+                  onClick={onPasteElement}
+                  disabled={!canPasteElement || !canInsertElements}
+                >
+                  <ClipboardPaste className="h-4 w-4" />
+                  粘贴元素
                 </Button>
               </div>
               <input
@@ -586,6 +607,14 @@ export function LessonEditorInspector({
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" size="sm" onClick={onCopyElement}>
+                <Copy className="h-4 w-4" />复制元素
+              </Button>
+              <Button variant="outline" size="sm" onClick={onCutElement}>
+                <Scissors className="h-4 w-4" />剪切元素
+              </Button>
+            </div>
             <Button variant="ghost" size="sm" className="w-full text-red-500" onClick={onDeleteElement}>
               <Trash2 className="h-4 w-4" />删除元素
             </Button>
@@ -597,6 +626,15 @@ export function LessonEditorInspector({
 
         {tab === "properties" && !selectedTextRegion && !selectedElement && (
           <div className="space-y-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={onPasteElement}
+              disabled={!canPasteElement || !canInsertElements}
+            >
+              <ClipboardPaste className="h-4 w-4" />粘贴元素
+            </Button>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-ink-600">页面标题</label>
               <Input value={slide.title} onChange={(event) => onUpdateSlide({ title: event.target.value })} />
