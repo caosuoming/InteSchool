@@ -48,6 +48,8 @@ function state(): AppState {
     helpTopics: [],
     helpReplies: [],
     helpCategories: [],
+    helpChangelogEntries: [],
+    helpChangelogShares: [],
   };
 }
 
@@ -141,6 +143,52 @@ describe("helpService", () => {
         categoryId: category.id,
       }, admin);
       expect(topic.categoryId).toBe(category.id);
+    });
+  });
+
+  it("allows only platform administrators to maintain and share the changelog", async () => {
+    const appState = state();
+    const user = teacher("user");
+    const schoolAdmin = teacher("school-admin", "school_admin");
+    const platformAdmin = teacher("platform-admin", "platform_admin");
+
+    await runWithState(appState, async () => {
+      await expect(helpService.createChangelogEntry({
+        title: "普通用户更新",
+        content: "不应成功",
+      }, user)).rejects.toThrow("平台管理员");
+
+      await expect(helpService.createChangelogEntry({
+        title: "学校管理员更新",
+        content: "也不应成功",
+      }, schoolAdmin)).rejects.toThrow("平台管理员");
+
+      const entry = await helpService.createChangelogEntry({
+        title: "九月更新",
+        content: "新增更新日志。",
+      }, platformAdmin);
+      expect((await helpService.getBoard(user)).canManageChangelog).toBe(false);
+      expect((await helpService.getBoard(schoolAdmin)).changelogShareToken).toBeNull();
+
+      await helpService.updateChangelogEntry(entry.id, {
+        title: "九月更新（修订）",
+        content: "新增更新日志和分享链接。",
+      }, platformAdmin);
+
+      const token = await helpService.generateChangelogShare(platformAdmin);
+      const adminBoard = await helpService.getBoard(platformAdmin);
+      expect(adminBoard.canManageChangelog).toBe(true);
+      expect(adminBoard.changelogShareToken).toBe(token);
+      expect(adminBoard.changelog[0].title).toBe("九月更新（修订）");
+      expect(await helpService.getSharedChangelog(token)).toHaveLength(1);
+
+      const replacementToken = await helpService.generateChangelogShare(platformAdmin);
+      expect(replacementToken).not.toBe(token);
+      await expect(helpService.getSharedChangelog(token)).rejects.toThrow("已失效");
+      expect(await helpService.getSharedChangelog(replacementToken)).toHaveLength(1);
+
+      await helpService.deleteChangelogEntry(entry.id, platformAdmin);
+      expect(await helpService.getSharedChangelog(replacementToken)).toEqual([]);
     });
   });
 

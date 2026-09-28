@@ -37,6 +37,25 @@ export const serviceParameters = {
     "deleteReply": [
       "replyId",
       "teacher"
+    ],
+    "createChangelogEntry": [
+      "input",
+      "teacher"
+    ],
+    "updateChangelogEntry": [
+      "entryId",
+      "input",
+      "teacher"
+    ],
+    "deleteChangelogEntry": [
+      "entryId",
+      "teacher"
+    ],
+    "generateChangelogShare": [
+      "teacher"
+    ],
+    "getSharedChangelog": [
+      "token"
     ]
   },
   "classroomDevice": {
