@@ -258,6 +258,7 @@ describe("neutral completed answer records", () => {
       expect(mastery[0]).toMatchObject({
         knowledgePointPath: ["集合的概念"],
         totalAttempts: 1,
+        doneCount: 1,
         correctCount: 1,
         partialCount: 0,
         wrongCount: 0,

@@ -97,6 +97,13 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/analytics", () => ({
   analyticsService: {
     getSchoolQuestionStats: vi.fn(),
+    getAnsweredQuestionIds: vi.fn(),
+    listPendingQuestionAssignments: vi.fn(),
+    getQuestionWeaknessScore: vi.fn(),
+    annotateTreeWithStudentProgress: vi.fn(),
+    listAnswerRecordsByStudents: vi.fn(),
+    getKnowledgeMastery: vi.fn(),
+    saveAnswerRecord: vi.fn(),
   },
   inferScore: vi.fn(),
 }));
@@ -166,6 +173,13 @@ describe("QuestionBankPage personal resource scope", () => {
     vi.mocked(prepService.getUsedQuestionIds).mockResolvedValue([]);
     vi.mocked(quotaService.getQuota).mockResolvedValue(null as never);
     vi.mocked(analyticsService.getSchoolQuestionStats).mockResolvedValue([]);
+    vi.mocked(analyticsService.getAnsweredQuestionIds).mockResolvedValue(new Set());
+    vi.mocked(analyticsService.listPendingQuestionAssignments).mockResolvedValue([]);
+    vi.mocked(analyticsService.getQuestionWeaknessScore).mockResolvedValue(new Map());
+    vi.mocked(analyticsService.annotateTreeWithStudentProgress).mockImplementation(async (tree) => tree);
+    vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([]);
+    vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([]);
+    vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
     vi.mocked(lectureService.listLectures).mockResolvedValue([]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([]);
     useTagPrefsStore.setState({
@@ -271,6 +285,106 @@ describe("QuestionBankPage personal resource scope", () => {
 
     expect(classService.listMyClasses).toHaveBeenCalledWith("school-2", "teacher-1");
     expect(classService.listMyStudents).toHaveBeenCalledWith("school-2", "teacher-1");
+  });
+
+  it("filters trained knowledge points by low mastery and untrained knowledge points by easy difficulty", async () => {
+    const baseQuestion: Question = {
+      id: "question-base",
+      teacherId: "teacher-1",
+      schoolId: "school-2",
+      type: "short",
+      stem: "基础题",
+      answer: "1",
+      analysis: "",
+      chapterIds: ["chapter-1"],
+      knowledgePointIds: [],
+      difficulty: 3,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      hiddenByExamIds: [],
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const lowMasteryQuestion = {
+      ...baseQuestion,
+      id: "question-low-mastery",
+      stem: "低掌握题",
+      knowledgePointIds: ["kp-low"],
+      difficulty: 4 as const,
+    };
+    const highMasteryQuestion = {
+      ...baseQuestion,
+      id: "question-high-mastery",
+      stem: "高掌握题",
+      knowledgePointIds: ["kp-high"],
+      difficulty: 1 as const,
+    };
+    const easyUntrainedQuestion = {
+      ...baseQuestion,
+      id: "question-untrained-easy",
+      stem: "未训练易题",
+      knowledgePointIds: ["kp-untrained"],
+      difficulty: 1 as const,
+    };
+    const hardUntrainedQuestion = {
+      ...baseQuestion,
+      id: "question-untrained-hard",
+      stem: "未训练难题",
+      knowledgePointIds: ["kp-untrained"],
+      difficulty: 5 as const,
+    };
+
+    vi.mocked(classService.listMyStudents).mockResolvedValue([{
+      id: "student-1",
+      schoolId: "school-2",
+      classId: "class-1",
+      studentNo: "001",
+      name: "张三",
+      grade: "高一",
+    } as never]);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([
+      highMasteryQuestion,
+      hardUntrainedQuestion,
+      lowMasteryQuestion,
+      easyUntrainedQuestion,
+    ]);
+    vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([
+      { knowledgePointId: "kp-low", totalAttempts: 4, doneCount: 0, correctRate: 0.25 },
+      { knowledgePointId: "kp-high", totalAttempts: 5, doneCount: 0, correctRate: 0.8 },
+      { knowledgePointId: "kp-untrained", totalAttempts: 0, doneCount: 0, correctRate: 0 },
+    ] as never);
+
+    render(
+      <MemoryRouter>
+        <QuestionBankPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "选择学生" }));
+    fireEvent.click(await screen.findByText("张三"));
+    fireEvent.click(screen.getByRole("button", { name: "确定（1 人）" }));
+
+    expect(await screen.findByRole("button", { name: "训练过" })).toBeInTheDocument();
+    await waitFor(() => expect(questionService.listQuestions).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "训练过" }));
+    await waitFor(() => {
+      expect(screen.getByText("低掌握题")).toBeInTheDocument();
+      expect(screen.getByText("高掌握题")).toBeInTheDocument();
+      expect(screen.queryByText("未训练易题")).not.toBeInTheDocument();
+    });
+    expect(document.body.textContent!.indexOf("低掌握题")).toBeLessThan(document.body.textContent!.indexOf("高掌握题"));
+
+    fireEvent.click(screen.getByRole("button", { name: "未训练" }));
+    await waitFor(() => {
+      expect(screen.getByText("未训练易题")).toBeInTheDocument();
+      expect(screen.getByText("未训练难题")).toBeInTheDocument();
+      expect(screen.queryByText("低掌握题")).not.toBeInTheDocument();
+    });
+    expect(document.body.textContent!.indexOf("未训练易题")).toBeLessThan(document.body.textContent!.indexOf("未训练难题"));
+    expect(analyticsService.getKnowledgeMastery).toHaveBeenCalledWith(["student-1"], "school-2", undefined);
   });
 
   it("selects every unselected question on the current page without clearing existing selections", async () => {

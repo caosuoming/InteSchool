@@ -565,16 +565,19 @@ export const analyticsService = {
     >();
 
     for (const record of records) {
-      if (record.score === "done") continue;
       const question = questionMap.get(record.questionId);
       if (!question || !question.knowledgePointIds) continue;
       for (const kpId of question.knowledgePointIds) {
         const stat = kpStats.get(kpId) || { total: 0, correct: 0, partial: 0, wrong: 0, done: 0 };
-        stat.total++;
         const score = record.score || (record.isCorrect ? "correct" : "wrong");
-        if (score === "correct") stat.correct++;
-        else if (score === "partial") stat.partial++;
-        else stat.wrong++;
+        if (score === "done") {
+          stat.done++;
+        } else {
+          stat.total++;
+          if (score === "correct") stat.correct++;
+          else if (score === "partial") stat.partial++;
+          else stat.wrong++;
+        }
         kpStats.set(kpId, stat);
       }
     }

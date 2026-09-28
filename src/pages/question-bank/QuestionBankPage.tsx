@@ -16,7 +16,7 @@ import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
-import { analyticsService, type DateRange, type SchoolQuestionStat } from "@/services/analytics";
+import { analyticsService, type DateRange, type KnowledgeMastery, type SchoolQuestionStat } from "@/services/analytics";
 import { lectureService } from "@/services/lecture";
 import { examPaperService } from "@/services/examPaper";
 import { quotaService } from "@/services/quota";
@@ -55,6 +55,7 @@ import { generateQuestionDocx } from "@/lib/docx";
 type Mode = "manage" | "use";
 type SortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
 type LeftTab = "chapter" | "knowledge";
+type TrainingStatusFilter = "all" | "trained" | "untrained";
 
 const difficultyOptions = [
   { value: 1, label: "简单" },
@@ -210,6 +211,7 @@ export default function QuestionBankPage({
   const [showKnowledge, setShowKnowledge] = useState(true);
   const [showRemark, setShowRemark] = useState(true);
   const [showStudentAnswers, setShowStudentAnswers] = useState(true);
+  const [trainingStatus, setTrainingStatus] = useState<TrainingStatusFilter>("all");
 
   // 相关题目弹窗
   const [relatedModal, setRelatedModal] = useState<{
@@ -270,6 +272,7 @@ export default function QuestionBankPage({
     selectedSemester ||
     selectedSources.length > 0 ||
     selectedCategories.length > 0 ||
+    trainingStatus !== "all" ||
     keyword ||
     searchFields.length > 0 ||
     selectedStudentIds.length > 0;
@@ -322,8 +325,43 @@ export default function QuestionBankPage({
 
     const data = await questionService.listQuestions(filter);
 
-    const sorted = [...data];
-    if (mode === "use" && selectedStudentIds.length > 0 && sortKey === "weakness") {
+    let sorted = [...data];
+    if (mode === "use" && selectedStudentIds.length > 0 && trainingStatus !== "all") {
+      const mastery = await analyticsService.getKnowledgeMastery(
+        selectedStudentIds,
+        teacher.schoolId!,
+        dateRange,
+      );
+      const masteryByKnowledgePointId = new Map<string, KnowledgeMastery>(
+        mastery.map((item) => [item.knowledgePointId, item]),
+      );
+      const isTrained = (item: KnowledgeMastery): boolean =>
+        item.totalAttempts > 0 || (item.doneCount ?? 0) > 0;
+      const masteryPriorities = (question: Question): number[] => question.knowledgePointIds
+        .map((id) => masteryByKnowledgePointId.get(id))
+        .filter((item): item is KnowledgeMastery => Boolean(item && isTrained(item)))
+        .map((item) => item.totalAttempts > 0 ? item.correctRate : 2);
+      const knownMastery = (question: Question): KnowledgeMastery[] => question.knowledgePointIds
+        .map((id) => masteryByKnowledgePointId.get(id))
+        .filter((item): item is KnowledgeMastery => Boolean(item));
+
+      if (trainingStatus === "trained") {
+        sorted = sorted
+          .filter((question) => masteryPriorities(question).length > 0)
+          .sort((a, b) => {
+            const aRate = Math.min(...masteryPriorities(a));
+            const bRate = Math.min(...masteryPriorities(b));
+            return aRate - bRate || a.difficulty - b.difficulty || b.recommendation - a.recommendation;
+          });
+      } else {
+        sorted = sorted
+          .filter((question) => {
+            const masteryItems = knownMastery(question);
+            return masteryItems.some((item) => !isTrained(item));
+          })
+          .sort((a, b) => a.difficulty - b.difficulty || b.recommendation - a.recommendation);
+      }
+    } else if (mode === "use" && selectedStudentIds.length > 0 && sortKey === "weakness") {
       const weakness = await analyticsService.getQuestionWeaknessScore(
         teacher.schoolId!,
         selectedStudentIds,
@@ -366,9 +404,15 @@ export default function QuestionBankPage({
     teacher, keyword, searchFields, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic,
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
-    selectedSources, selectedCategories, mode, selectedStudentIds, excludeDone, sortKey, dateRange,
+    selectedSources, selectedCategories, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
     currentPage, pageSize,
   ]);
+
+  useEffect(() => {
+    if (selectedStudentIds.length === 0 && trainingStatus !== "all") {
+      setTrainingStatus("all");
+    }
+  }, [selectedStudentIds.length, trainingStatus]);
 
   useEffect(() => {
     if (!teacher) return;
@@ -604,6 +648,7 @@ export default function QuestionBankPage({
     setSelectedSemester("");
     setSelectedSources([]);
     setSelectedCategories([]);
+    setTrainingStatus("all");
     setSelectedStudentIds([]);
   };
 
@@ -1048,6 +1093,35 @@ export default function QuestionBankPage({
                   />
                   <span className="text-ink-600">学生答题情况</span>
                 </label>
+                <span className="ml-2 text-xs text-ink-500">训练状态：</span>
+                <button
+                  type="button"
+                  aria-pressed={trainingStatus === "trained"}
+                  onClick={() => setTrainingStatus((value) => value === "trained" ? "all" : "trained")}
+                  className={cn(
+                    "px-2.5 py-1 rounded text-xs border transition-all",
+                    trainingStatus === "trained"
+                      ? "bg-gold-400 border-gold-400 text-ink-900"
+                      : "bg-paper border-ink-200 text-ink-600 hover:border-ink-300",
+                  )}
+                  title="仅显示至少关联一个已训练知识点的题目，并优先显示掌握度较低的知识点"
+                >
+                  训练过
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={trainingStatus === "untrained"}
+                  onClick={() => setTrainingStatus((value) => value === "untrained" ? "all" : "untrained")}
+                  className={cn(
+                    "px-2.5 py-1 rounded text-xs border transition-all",
+                    trainingStatus === "untrained"
+                      ? "bg-gold-400 border-gold-400 text-ink-900"
+                      : "bg-paper border-ink-200 text-ink-600 hover:border-ink-300",
+                  )}
+                  title="仅显示至少关联一个未训练知识点的题目，并按难度从易到难排列"
+                >
+                  未训练
+                </button>
               </div>
             )}
           </Card>
@@ -1508,7 +1582,7 @@ export default function QuestionBankPage({
         onClose={() => setShowStudentPicker(false)}
         size="lg"
         title="选择学生"
-        description="选择学生后，题目将按这些学生的薄弱点优先排序"
+        description="选择学生后，可按训练状态筛选题目，并依据知识点掌握情况优化排序"
         footer={
           <div className="flex items-center justify-between w-full">
             <Button variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}>
