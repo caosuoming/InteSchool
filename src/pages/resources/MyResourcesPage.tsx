@@ -64,6 +64,7 @@ import {
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { DocumentFormatIcon } from "@/components/resource/DocumentFormatIcon";
+import { DonationQuestionComparison } from "@/components/resource/DonationQuestionComparison";
 import {
   DocumentMetadataModal,
   type DocumentMetadataValue,
@@ -4423,12 +4424,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           {donationCheck?.conflicts.map((conflict) => {
             const decision = donationDecisions[conflict.item.resourceId];
             if (!decision) return null;
-            const fieldRows = [
-              { key: "stem", label: "题干", source: conflict.sourceQuestion.stem, target: conflict.targetQuestion.stem },
-              { key: "answer", label: "答案", source: conflict.sourceQuestion.answer, target: conflict.targetQuestion.answer },
-              { key: "analysis", label: "解析", source: conflict.sourceQuestion.analysis, target: conflict.targetQuestion.analysis },
-              { key: "summary", label: "总结", source: conflict.sourceQuestion.summary || "（无）", target: conflict.targetQuestion.summary || "（无）" },
-            ] as const;
             return (
               <Card key={conflict.item.resourceId} className="p-4">
                 <div className="flex items-center justify-between gap-3 mb-4">
@@ -4461,66 +4456,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     ))}
                   </div>
                 </div>
-                <div className="grid grid-cols-[88px_1fr_1fr] gap-2 text-xs">
-                  <div />
-                  <div className="font-medium text-ink-600 px-2">本次捐赠</div>
-                  <div className="font-medium text-ink-600 px-2">平台现有</div>
-                  {fieldRows.map((field) => (
-                    <div key={field.key} className="contents">
-                      <div className="font-medium text-ink-700 py-2">{field.label}</div>
-                      <button
-                        disabled={decision.action !== "merge"}
-                        onClick={() => updateDonationDecision(conflict.item.resourceId, (current) => ({
-                          ...current,
-                          fields: {
-                            ...current.fields,
-                            [field.key]: field.key === "stem"
-                              ? "source"
-                              : current.fields[field.key] === "both"
-                                ? "target"
-                                : current.fields[field.key] === "target"
-                                  ? "both"
-                                  : "source",
-                          },
-                        }))}
-                        className={cn(
-                          "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
-                          decision.action === "merge" && ["source", "both"].includes(decision.fields[field.key])
-                            ? "border-gold-400 bg-gold-50"
-                            : "border-ink-100 bg-mist/40",
-                          decision.action !== "merge" && "opacity-60 cursor-default",
-                        )}
-                      >
-                        {field.source}
-                      </button>
-                      <button
-                        disabled={decision.action !== "merge"}
-                        onClick={() => updateDonationDecision(conflict.item.resourceId, (current) => ({
-                          ...current,
-                          fields: {
-                            ...current.fields,
-                            [field.key]: field.key === "stem"
-                              ? "target"
-                              : current.fields[field.key] === "both"
-                                ? "source"
-                                : current.fields[field.key] === "source"
-                                  ? "both"
-                                  : "target",
-                          },
-                        }))}
-                        className={cn(
-                          "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
-                          decision.action === "merge" && ["target", "both"].includes(decision.fields[field.key])
-                            ? "border-gold-400 bg-gold-50"
-                            : "border-ink-100 bg-mist/40",
-                          decision.action !== "merge" && "opacity-60 cursor-default",
-                        )}
-                      >
-                        {field.target}
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <DonationQuestionComparison
+                  conflict={conflict}
+                  decision={decision}
+                  onChange={(next) => updateDonationDecision(
+                    conflict.item.resourceId,
+                    () => next,
+                  )}
+                />
               </Card>
             );
           })}
