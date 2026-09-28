@@ -790,13 +790,15 @@ export function LessonEditorPage() {
       const removedStudentIds = new Set(
         students.filter((student) => student.classId === classId).map((student) => student.id),
       );
-      if (removedStudentIds.size > 0) {
-        setSlides((previous) => previous.map((slide) => ({
+      setSlides((previous) => previous.map((slide) => {
+        const nextHiddenClassIds = (slide.hiddenClassIds || []).filter((id) => id !== classId);
+        return {
           ...slide,
           askableStudentIds: (slide.askableStudentIds || [])
             .filter((studentId) => !removedStudentIds.has(studentId)),
-        })));
-      }
+          hiddenClassIds: nextHiddenClassIds.length > 0 ? nextHiddenClassIds : undefined,
+        };
+      }));
     }
     setCourseware({ ...courseware, classIds: next });
   };
@@ -1240,7 +1242,10 @@ export function LessonEditorPage() {
                 </div>
 
                 {currentSlide.type === "courseware" ? (
-                  <div className="overflow-hidden rounded-xl bg-paper shadow-lg">
+                  <div
+                    className="overflow-hidden rounded-xl bg-paper shadow-lg"
+                    style={currentSlide.backgroundColor ? { backgroundColor: currentSlide.backgroundColor } : undefined}
+                  >
                     <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-[64vh]" />
                     <div className="flex items-center gap-2 border-t border-ink-100 px-4 py-3">
                       {getCoursewareEditorUrl(currentSlide) && (
@@ -1266,6 +1271,9 @@ export function LessonEditorPage() {
                       if (elementId) setSelectedTextRegion(null);
                     }}
                     onElementsChange={updateVisibleCurrentElements}
+                    canvasStyle={currentSlide.backgroundColor
+                      ? { backgroundColor: currentSlide.backgroundColor }
+                      : undefined}
                   >
                     <LessonSlideContent
                       slide={currentSlide}

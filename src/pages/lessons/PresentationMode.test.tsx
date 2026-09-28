@@ -431,6 +431,29 @@ describe("PresentationMode", () => {
     expect(canvas).toHaveAttribute("data-recorded-stroke-count", "1");
   });
 
+  it("uses a slide-specific background with automatic text contrast", () => {
+    const customBackgroundSlide: LessonSlide = {
+      ...slides[0],
+      backgroundColor: "#111827",
+    };
+
+    render(
+      <PresentationMode
+        slides={[customBackgroundSlide]}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    const text = screen.getByText("第一页内容");
+    const textBox = text.closest<HTMLElement>('[style*="font-size"]');
+    const slideCanvas = text.closest<HTMLElement>(".aspect-auto");
+    expect(slideCanvas).toHaveStyle({ backgroundColor: "#111827" });
+    expect(textBox).toHaveStyle({ color: "#ffffff" });
+  });
+
   it("combines page, text, and board colors with automatic maximum contrast", async () => {
     expect(getMaximumContrastTextColor("#ffffff")).toBe("#111827");
     expect(getMaximumContrastTextColor("#111827")).toBe("#ffffff");

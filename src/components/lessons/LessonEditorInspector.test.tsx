@@ -137,6 +137,28 @@ describe("LessonEditorInspector", () => {
     expect(onUpdateElement).toHaveBeenCalledWith({ scheduledPlayAt: "09:35" });
   });
 
+  it("configures the current page background and class visibility", async () => {
+    const user = userEvent.setup();
+    const onUpdateSlide = vi.fn();
+    renderInspector({
+      onUpdateSlide,
+      classes: [
+        { id: "class-1", name: "高一（1）班", grade: "高一", type: "school" } as SchoolClass,
+        { id: "class-2", name: "高一（2）班", grade: "高一", type: "school" } as SchoolClass,
+      ],
+      selectedClassIds: ["class-1", "class-2"],
+    });
+
+    await user.click(screen.getByRole("button", { name: "属性" }));
+    expect(screen.getByText("页面控制")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "设置页面背景：浅蓝" }));
+    expect(onUpdateSlide).toHaveBeenCalledWith({ backgroundColor: "#F1F7FF" });
+
+    await user.click(screen.getByRole("button", { name: "切换高一（2）班当前页可见性" }));
+    expect(onUpdateSlide).toHaveBeenCalledWith({ hiddenClassIds: ["class-2"] });
+  });
+
   it("updates the selected built-in text region font size", async () => {
     const user = userEvent.setup();
     const onUpdateTextStyle = vi.fn();

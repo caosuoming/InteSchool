@@ -692,7 +692,9 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
       : ignoredStudentIds;
     return (
       <PresentationMode
-        slides={presenting?.slides || BLANK_CLASSROOM_SLIDES}
+        slides={presenting
+          ? presenting.slides.filter((slide) => !(slide.hiddenClassIds || []).includes(selectedClassId))
+          : BLANK_CLASSROOM_SLIDES}
         initialIndex={0}
         students={students}
         followedStudentIds={presentationFollowedStudentIds}

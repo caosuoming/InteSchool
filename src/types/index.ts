@@ -2720,6 +2720,10 @@ export interface LessonSlide {
   id: string;
   type: LessonSlideType;
   title: string;
+  /** 不向这些授课班级展示本页。 */
+  hiddenClassIds?: string[];
+  /** 页面设计背景色；未设置时使用上课端默认背景。 */
+  backgroundColor?: string;
   /** 使用自由画布布局时，页面正文完全由 elements 渲染。 */
   freeformLayout?: boolean;
   /** 题目ID（type=question时） */
