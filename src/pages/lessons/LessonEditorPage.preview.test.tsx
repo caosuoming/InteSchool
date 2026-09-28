@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Basket, LessonCourseware, Material, Question, Teacher } from "@/types";
+import type { Basket, LessonCourseware, LessonSlideElement, Material, Question, Teacher } from "@/types";
 
 const mocks = vi.hoisted(() => ({
   getCourseware: vi.fn(),
@@ -298,6 +298,96 @@ describe("LessonEditorPage preview query", () => {
       expect(screen.getByAltText("clipboard.png")).toHaveAttribute("src", "/uploads/pasted.png");
     });
     expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+  });
+
+  it("copies a free element and pastes an independent clone onto another slide", async () => {
+    const sourceElement = {
+      id: "element-source",
+      kind: "text",
+      content: "跨页复制文本",
+      x: 18,
+      y: 22,
+      width: 44,
+      height: 16,
+      fontSize: 28,
+      fontWeight: "bold",
+      textAlign: "center",
+      enterAnimation: "rise",
+      actionAnimation: "pulse",
+      exitAnimation: "fade",
+      animationOrder: 2,
+    } satisfies LessonSlideElement;
+    const clipboardCourseware: LessonCourseware = {
+      ...courseware,
+      slides: [
+        { ...courseware.slides[0], id: "slide-source", title: "来源页", elements: [sourceElement] },
+        { ...courseware.slides[0], id: "slide-target", title: "目标页", elements: [] },
+      ],
+    };
+    mocks.getCourseware.mockResolvedValue(clipboardCourseware);
+
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+
+    fireEvent.click(await screen.findByRole("button", { name: "跨页复制文本" }));
+    fireEvent.click(screen.getByRole("button", { name: "复制元素" }));
+    fireEvent.click(screen.getByText("目标页"));
+
+    const pasteButton = screen.getByRole("button", { name: "粘贴元素" });
+    expect(pasteButton).toBeEnabled();
+    fireEvent.click(pasteButton);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(mocks.updateCourseware).toHaveBeenCalled();
+    });
+    const savedSlides = mocks.updateCourseware.mock.calls.at(-1)?.[1].slides as LessonCourseware["slides"];
+    expect(savedSlides[0].elements).toEqual([sourceElement]);
+    expect(savedSlides[1].elements).toHaveLength(1);
+    expect(savedSlides[1].elements?.[0]).toMatchObject({
+      ...sourceElement,
+      id: expect.not.stringMatching(/^element-source$/),
+    });
+  });
+
+  it("cuts a free element from its source slide and pastes it onto another slide", async () => {
+    const sourceElement = {
+      id: "element-cut-source",
+      kind: "image",
+      src: "/uploads/source.png",
+      alt: "待剪切图片",
+      x: 9,
+      y: 13,
+      width: 36,
+      height: 30,
+      enterAnimation: "fade",
+    } satisfies LessonSlideElement;
+    const clipboardCourseware: LessonCourseware = {
+      ...courseware,
+      slides: [
+        { ...courseware.slides[0], id: "slide-source", title: "剪切来源页", elements: [sourceElement] },
+        { ...courseware.slides[0], id: "slide-target", title: "剪切目标页", elements: [] },
+      ],
+    };
+    mocks.getCourseware.mockResolvedValue(clipboardCourseware);
+
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+
+    fireEvent.click(await screen.findByRole("button", { name: "待剪切图片" }));
+    fireEvent.click(screen.getByRole("button", { name: "剪切元素" }));
+    fireEvent.click(screen.getByText("剪切目标页"));
+    fireEvent.click(screen.getByRole("button", { name: "粘贴元素" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(mocks.updateCourseware).toHaveBeenCalled();
+    });
+    const savedSlides = mocks.updateCourseware.mock.calls.at(-1)?.[1].slides as LessonCourseware["slides"];
+    expect(savedSlides[0].elements).toEqual([]);
+    expect(savedSlides[1].elements).toHaveLength(1);
+    expect(savedSlides[1].elements?.[0]).toMatchObject({
+      ...sourceElement,
+      id: expect.not.stringMatching(/^element-cut-source$/),
+    });
   });
 
   it("inserts questions only from the teacher resource baskets", async () => {
