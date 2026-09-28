@@ -1,4 +1,4 @@
-import { isPlatformAdminAccount } from "./platform-admin";
+import { isPlatformAdminAccount } from "./platform-admin.js";
 
 export const TEACHING_PROFILE_MANAGER_ROLES = [
   "gradeLeader",
