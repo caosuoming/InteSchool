@@ -1039,8 +1039,9 @@ export function PresentationMode({
     setActiveBoardIdsBySlide((current) => ({ ...current, [currentSlideStateKey]: boardId }));
   }, [currentSlideStateKey]);
   const selectedDrawingPreset = drawingPresets.find((preset) => preset.id === tool);
+  const effectivePageBackgroundColor = currentSlide?.backgroundColor || colorPreferences.pageBackgroundColor;
   const effectiveTextColor = colorPreferences.textColorMode === "auto"
-    ? getMaximumContrastTextColor(colorPreferences.pageBackgroundColor)
+    ? getMaximumContrastTextColor(effectivePageBackgroundColor)
     : colorPreferences.textColor;
   const baseCurrentElements = currentSlide ? getPresentationElements(currentSlide) : [];
   const currentElements = currentSlide
@@ -2029,7 +2030,7 @@ export function PresentationMode({
           top: `${element.y}%`,
           width: `${element.width}%`,
           height: `${element.height}%`,
-          backgroundColor: colorPreferences.pageBackgroundColor,
+          backgroundColor: effectivePageBackgroundColor,
           color: effectiveTextColor,
         }}
         onPointerDown={(event) => startQuestionPanelInteraction(event, element, "move")}
@@ -2331,7 +2332,7 @@ export function PresentationMode({
               <div
                 data-testid="presentation-slide-page"
                 className="h-full w-full overflow-hidden bg-paper"
-                style={{ backgroundColor: colorPreferences.pageBackgroundColor }}
+                style={{ backgroundColor: effectivePageBackgroundColor }}
               >
                 <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-0" />
               </div>
@@ -2350,7 +2351,7 @@ export function PresentationMode({
                   onSelectElement={setSelectedElementId}
                   onElementsChange={updateVisibleElements}
                   className="h-full w-full aspect-auto rounded-none shadow-none"
-                  canvasStyle={{ backgroundColor: colorPreferences.pageBackgroundColor }}
+                  canvasStyle={{ backgroundColor: effectivePageBackgroundColor }}
                   textColor={effectiveTextColor}
                   textBackgroundColor="transparent"
                   textFontSizeScale={presentationFontSize / DEFAULT_PRESENTATION_FONT_SIZE}

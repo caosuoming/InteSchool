@@ -309,6 +309,41 @@ describe("ClassroomPage", () => {
     expect(screen.getByRole("button", { name: "退出全屏" })).toBeInTheDocument();
   });
 
+  it("skips courseware pages hidden for the active class", async () => {
+    const user = userEvent.setup();
+    vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([{
+      ...lesson,
+      slides: [
+        {
+          id: "hidden-slide",
+          type: "knowledge",
+          title: "仅其他班可见",
+          content: "这页不应出现在当前班级",
+          hiddenClassIds: ["class-1"],
+        },
+        {
+          id: "visible-slide",
+          type: "knowledge",
+          title: "当前班级可见",
+          content: "这页应正常展示",
+        },
+      ],
+    }]);
+
+    renderPage();
+
+    await screen.findByText("完成课本第 42 页第 1—6 题");
+    await user.click(screen.getByRole("button", { name: /^上课/ }));
+    await user.click(screen.getByRole("button", { name: /函数图像/ }));
+
+    expect(await screen.findByText("这页应正常展示")).toBeInTheDocument();
+    expect(screen.queryByText("这页不应出现在当前班级")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "当前第 1 页，选择页码" })).toHaveAttribute(
+      "title",
+      "第 1 页，共 1 页",
+    );
+  });
+
   it("starts a blank lesson beside More and appends blank pages while teaching", async () => {
     const user = userEvent.setup();
     renderPage();
