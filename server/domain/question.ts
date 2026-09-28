@@ -1,4 +1,7 @@
 import type {
+  ExamPaper,
+  Lecture,
+  LectureSection,
   Question,
   QuestionAdaptationInput,
   QuestionFilter,
@@ -45,14 +48,56 @@ export interface QuestionInput {
   duplicateDecision?: "add";
 }
 
+function collectLectureQuestionIds(sections: readonly LectureSection[]): string[] {
+  const ids: string[] = [];
+  for (const section of sections) {
+    if (section.questionId) ids.push(section.questionId);
+    if (section.children?.length) ids.push(...collectLectureQuestionIds(section.children));
+  }
+  return ids;
+}
+
+function currentQuestionUsageCounts(): Map<string, number> {
+  const counts = new Map<string, number>();
+  const addDocumentReferences = (questionIds: readonly string[]) => {
+    for (const questionId of new Set(questionIds)) {
+      counts.set(questionId, (counts.get(questionId) || 0) + 1);
+    }
+  };
+
+  for (const lecture of (db.read("lectures") || []) as Lecture[]) {
+    addDocumentReferences(collectLectureQuestionIds(lecture.sections || []));
+  }
+  for (const paper of (db.read("examPapers") || []) as ExamPaper[]) {
+    addDocumentReferences(
+      paper.questions.flatMap((question) => question.questionId ? [question.questionId] : []),
+    );
+  }
+  return counts;
+}
+
+function withCurrentUsageCount(
+  question: Question,
+  counts: ReadonlyMap<string, number>,
+): Question {
+  const usageCount = counts.get(question.id) || 0;
+  return question.usageCount === usageCount ? question : { ...question, usageCount };
+}
+
+function withCurrentUsageCounts(questions: Question[]): Question[] {
+  const counts = currentQuestionUsageCounts();
+  return questions.map((question) => withCurrentUsageCount(question, counts));
+}
+
 export function recordQuestionUsage(questionIds: readonly string[]): void {
   const uniqueQuestionIds = new Set(questionIds);
   if (uniqueQuestionIds.size === 0) return;
   const now = new Date().toISOString();
+  const usageCounts = currentQuestionUsageCounts();
   db.update("questions", (list) =>
     list.map((question) =>
       uniqueQuestionIds.has(question.id)
-        ? { ...question, usageCount: question.usageCount + 1, lastUsedAt: now }
+        ? { ...question, usageCount: usageCounts.get(question.id) || 0, lastUsedAt: now }
         : question,
     ),
   );
@@ -194,10 +239,10 @@ function sortQuestions(questions: Question[], sortKey: QuestionSortKey): Questio
 export const questionService = {
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
     const indexed = await db.searchQuestions(filter);
-    if (indexed) return indexed;
+    if (indexed) return withCurrentUsageCounts(indexed);
     await delay(300);
     const all = db.read("questions");
-    return all.filter((q) => matchFilter(q, filter));
+    return withCurrentUsageCounts(all.filter((q) => matchFilter(q, filter)));
   },
 
   async listQuestionPage(
@@ -207,8 +252,16 @@ export const questionService = {
     sortKey: QuestionSortKey = "newest",
     teacher: TeacherRecord,
   ): Promise<{ items: Question[]; total: number }> {
-    const indexed = await db.searchQuestionPage(filter, page, pageSize, sortKey, teacher.id);
-    if (indexed) return indexed;
+    const requiresCurrentUsageSort = sortKey === "usage" || sortKey === "weakness";
+    if (!requiresCurrentUsageSort) {
+      const indexed = await db.searchQuestionPage(filter, page, pageSize, sortKey, teacher.id);
+      if (indexed) {
+        return {
+          ...indexed,
+          items: withCurrentUsageCounts(indexed.items),
+        };
+      }
+    }
 
     const data = await this.listQuestions(filter);
     const visible = data.filter((question) => question.teacherId === teacher.id || question.isShared);
@@ -226,7 +279,9 @@ export const questionService = {
 
   async getQuestion(id: string): Promise<Question | null> {
     await delay(150);
-    return db.read("questions").find((q) => q.id === id) || null;
+    const question = db.read("questions").find((q) => q.id === id);
+    if (!question) return null;
+    return withCurrentUsageCount(question, currentQuestionUsageCounts());
   },
 
   /**
