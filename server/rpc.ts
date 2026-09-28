@@ -1,5 +1,6 @@
 import type { AppState, SessionUser, TeacherRecord } from "./types.js";
 import { highestTeacherRoleLevel, isTeacherRole, TEACHER_ROLE_LEVEL } from "../src/lib/teacher-roles.js";
+import { isPlatformAdminAccount } from "../src/lib/platform-admin.js";
 import { runWithState } from "./runtime-db.js";
 import { serviceRegistry, type ServiceName } from "./service-registry.js";
 import { serviceParameters } from "./service-metadata.js";
@@ -263,11 +264,11 @@ function activeRole(teacher: TeacherRecord): string {
 }
 
 function isAdmin(teacher: TeacherRecord): boolean {
-  return ["school_admin", "platform_admin"].includes(activeRole(teacher));
+  return activeRole(teacher) === "school_admin" || isPlatformAdminAccount(teacher);
 }
 
 function isPlatformAdmin(teacher: TeacherRecord): boolean {
-  return activeRole(teacher) === "platform_admin";
+  return isPlatformAdminAccount(teacher);
 }
 
 function activeAffiliation(teacher: TeacherRecord): Record<string, unknown> | null {
@@ -548,6 +549,7 @@ function authorize(
     && service !== "help"
     && service !== "knowledge"
     && !personalResourceAccess
+    && !(isPlatformAdmin(teacher) && (service === "organization" || service === "quota"))
   ) {
     throw new Error("请先完成学校认证");
   }

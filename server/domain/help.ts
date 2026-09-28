@@ -12,6 +12,7 @@ import type {
 } from "../../src/types/index.js";
 import { genId } from "../domain-shared.js";
 import { db } from "../runtime-db.js";
+import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 
 const TOPIC_TYPES = new Set<HelpTopicType>(["question", "suggestion", "wish"]);
 const REPLY_TYPES = new Set<HelpReplyType>(["follow_up", "answer"]);
@@ -23,7 +24,7 @@ function activeRole(teacher: Teacher): string {
 }
 
 function canManage(teacher: Teacher): boolean {
-  return ["school_admin", "platform_admin"].includes(activeRole(teacher));
+  return activeRole(teacher) === "school_admin" || isPlatformAdminAccount(teacher);
 }
 
 function requireManager(teacher: Teacher): void {

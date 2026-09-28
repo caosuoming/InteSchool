@@ -7,6 +7,7 @@ import { organizationService, roleLabels } from "@/services/organization";
 import { schoolService } from "@/services/school";
 import { quotaService } from "@/services/quota";
 import { useAuthStore } from "@/stores/auth";
+import { isPlatformAdminAccount } from "@/lib/platform-admin";
 import { toast } from "@/stores/ui";
 import type {
   ExamUsageQuotaKey,
@@ -53,7 +54,7 @@ export default function AccountManagementPage() {
   const { teacher: current, getCurrentAffiliation } = useAuthStore();
   const currentAffiliation = getCurrentAffiliation();
   const activeRole = currentAffiliation?.role || current?.role;
-  const isPlatformAdmin = activeRole === "platform_admin";
+  const isPlatformAdmin = isPlatformAdminAccount(current);
   const currentSchoolId = currentAffiliation?.schoolId || current?.schoolId || "";
 
   const [schools, setSchools] = useState<School[]>([]);
@@ -61,6 +62,8 @@ export default function AccountManagementPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [roleSavingId, setRoleSavingId] = useState<string | null>(null);
+  const [suspendingTeacherId, setSuspendingTeacherId] = useState<string | null>(null);
+  const [schoolSuspending, setSchoolSuspending] = useState(false);
   const [resetTarget, setResetTarget] = useState<Teacher | null>(null);
   const [customPassword, setCustomPassword] = useState("");
   const [issuedPassword, setIssuedPassword] = useState("");
@@ -136,8 +139,9 @@ export default function AccountManagementPage() {
     return role === "school_admin" || role === "platform_admin";
   }).length, [schoolId, teachers]);
 
+  const selectedSchool = schools.find((school) => school.id === schoolId) || null;
   const selectedSchoolName = isPlatformAdmin
-    ? schools.find((school) => school.id === schoolId)?.name || "所选学校"
+    ? selectedSchool?.name || "所选学校"
     : currentAffiliation?.schoolName || "本校";
 
   const setSchoolAdmin = async (target: Teacher, nextRole: "teacher" | "school_admin") => {
@@ -151,6 +155,36 @@ export default function AccountManagementPage() {
       toast.error("权限更新失败", error instanceof Error ? error.message : undefined);
     } finally {
       setRoleSavingId(null);
+    }
+  };
+
+  const toggleTeacherDisabled = async (target: Teacher) => {
+    setSuspendingTeacherId(target.id);
+    try {
+      await authService.setTeacherDisabled(target.id, !target.accountDisabled);
+      setTeachers((items) => items.map((item) => item.id === target.id
+        ? { ...item, accountDisabled: !target.accountDisabled }
+        : item));
+      toast.success(target.accountDisabled ? "账号已恢复" : "账号已停用");
+    } catch (error) {
+      toast.error("账号状态更新失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSuspendingTeacherId(null);
+    }
+  };
+
+  const toggleSchoolDisabled = async () => {
+    if (!schoolId || !selectedSchool) return;
+    setSchoolSuspending(true);
+    try {
+      const disabled = !selectedSchool.accountsDisabled;
+      await authService.setSchoolAccountsDisabled(schoolId, disabled);
+      setSchools((items) => items.map((item) => item.id === schoolId ? { ...item, accountsDisabled: disabled } : item));
+      toast.success(disabled ? "已停用该校全部学校身份" : "已恢复该校学校身份");
+    } catch (error) {
+      toast.error("学校账号状态更新失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSchoolSuspending(false);
     }
   };
 
@@ -275,7 +309,7 @@ export default function AccountManagementPage() {
       />
 
       <Card className="mb-5 p-5">
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-end">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto_auto_auto] md:items-end">
           <div>
             {isPlatformAdmin ? (
               <Select
@@ -300,7 +334,21 @@ export default function AccountManagementPage() {
           <div className="rounded-lg border border-gold-100 bg-gold-50 px-4 py-2.5 text-sm text-gold-800">
             管理员 <strong className="ml-1">{adminCount}</strong>
           </div>
+          {isPlatformAdmin && selectedSchool && (
+            <Button
+              type="button"
+              variant="outline"
+              loading={schoolSuspending}
+              className={selectedSchool.accountsDisabled ? "" : "border-red-200 text-red-700 hover:bg-red-50"}
+              onClick={() => void toggleSchoolDisabled()}
+            >
+              {selectedSchool.accountsDisabled ? "恢复该校账户" : "停用该校账户"}
+            </Button>
+          )}
         </div>
+        {isPlatformAdmin && selectedSchool?.accountsDisabled && (
+          <p className="mt-3 text-xs text-red-700">该学校的全部学校身份已停用；用户仍可切换到个人身份继续使用。</p>
+        )}
       </Card>
 
       {isPlatformAdmin && (
@@ -386,7 +434,7 @@ export default function AccountManagementPage() {
               const affiliation = affiliationFor(teacher, schoolId);
               if (!affiliation) return null;
               const isSelf = teacher.id === current?.id;
-              const isPlatformTarget = affiliation.role === "platform_admin";
+              const isPlatformTarget = isPlatformAdminAccount(teacher);
               const canReset = !isSelf && (isPlatformAdmin || !isPlatformTarget);
               const canChangeSchoolRole = isPlatformAdmin && !isPlatformTarget;
               const directRoles = affiliation.assignedRoles?.length ? affiliation.assignedRoles : affiliation.roles;
@@ -398,6 +446,7 @@ export default function AccountManagementPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium text-ink-900">{teacher.name}</span>
                         {isSelf && <Badge variant="teal">当前账号</Badge>}
+                        {teacher.accountDisabled && <Badge variant="red">账号已停用</Badge>}
                         <Badge variant={accountRoleVariant(affiliation.role)}>{accountRoleLabel(affiliation.role)}</Badge>
                       </div>
                       <div className="mt-1 truncate text-sm text-ink-500">
@@ -431,6 +480,17 @@ export default function AccountManagementPage() {
                       {isPlatformAdmin && (
                         <Button type="button" variant="outline" onClick={() => void openQuota(teacher)}>
                           <Gauge className="h-4 w-4" />积分与用量
+                        </Button>
+                      )}
+                      {isPlatformAdmin && !isSelf && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          loading={suspendingTeacherId === teacher.id}
+                          className={teacher.accountDisabled ? "" : "border-red-200 text-red-700 hover:bg-red-50"}
+                          onClick={() => void toggleTeacherDisabled(teacher)}
+                        >
+                          {teacher.accountDisabled ? "恢复账号" : "停用账号"}
                         </Button>
                       )}
                       {!canReset && isPlatformTarget && !isPlatformAdmin && (

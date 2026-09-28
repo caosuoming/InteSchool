@@ -1,3 +1,5 @@
+import { isPlatformAdminAccount } from "./platform-admin.js";
+
 export const TEACHING_PROFILE_MANAGER_ROLES = [
   "gradeLeader",
   "dean",
@@ -24,6 +26,7 @@ export function canManageTeachingProfiles(
   teacher: TeachingProfilePermissionTeacher,
   affiliation?: TeachingProfilePermissionAffiliation | null,
 ): boolean {
+  if (isPlatformAdminAccount(teacher)) return true;
   const active = affiliation
     || teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
     || teacher.affiliations?.find((item) => item.isCurrent)

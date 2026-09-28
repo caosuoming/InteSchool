@@ -2,6 +2,7 @@ import type {
   RegistrationAuthorization,
   RegistrationAuthorizationKind,
   RegistrationContext,
+  PlatformAccessSettings,
   SchoolAdminApplication,
   SchoolApplication,
   Teacher,
@@ -39,6 +40,17 @@ export const authService = {
 
   async getRegistrationContext(phone: string): Promise<RegistrationContext> {
     return apiRequest<RegistrationContext>(`/api/auth/registration-context?phone=${encodeURIComponent(phone)}`);
+  },
+
+  async getAccessSettings(): Promise<PlatformAccessSettings> {
+    return apiRequest<PlatformAccessSettings>("/api/auth/access-settings");
+  },
+
+  async updateAccessSettings(settings: PlatformAccessSettings): Promise<PlatformAccessSettings> {
+    return apiRequest<PlatformAccessSettings>("/api/auth/access-settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }, true);
   },
 
   async getIdentityContext(phone: string): Promise<{ phone: string; teacher: boolean; parent: boolean }> {
@@ -100,10 +112,11 @@ export const authService = {
   async createRegistrationAuthorization(
     phone: string,
     kind: RegistrationAuthorizationKind,
+    schoolId?: string,
   ): Promise<RegistrationAuthorization> {
     return apiRequest<RegistrationAuthorization>("/api/auth/registration-authorizations", {
       method: "POST",
-      body: JSON.stringify({ phone, kind }),
+      body: JSON.stringify({ phone, kind, ...(schoolId ? { schoolId } : {}) }),
     }, true);
   },
 
@@ -124,6 +137,20 @@ export const authService = {
     return apiRequest<{ password: string }>(`/api/auth/teachers/${encodeURIComponent(teacherId)}/password-reset`, {
       method: "POST",
       body: JSON.stringify(newPassword ? { newPassword } : {}),
+    }, true);
+  },
+
+  async setTeacherDisabled(teacherId: string, disabled: boolean): Promise<void> {
+    await apiRequest(`/api/auth/teachers/${encodeURIComponent(teacherId)}/disabled`, {
+      method: "PATCH",
+      body: JSON.stringify({ disabled }),
+    }, true);
+  },
+
+  async setSchoolAccountsDisabled(schoolId: string, disabled: boolean): Promise<void> {
+    await apiRequest(`/api/auth/schools/${encodeURIComponent(schoolId)}/accounts-disabled`, {
+      method: "PATCH",
+      body: JSON.stringify({ disabled }),
     }, true);
   },
 

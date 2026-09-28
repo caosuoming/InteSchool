@@ -12,6 +12,8 @@ import type { PlatformCreditSettings, School, Teacher, TeacherAffiliation, UserQ
 vi.mock("@/services/auth", () => ({
   authService: {
     resetTeacherPassword: vi.fn(),
+    setTeacherDisabled: vi.fn(),
+    setSchoolAccountsDisabled: vi.fn(),
     getCurrentAffiliation: vi.fn(),
   },
 }));
@@ -134,6 +136,8 @@ describe("AccountManagementPage", () => {
     vi.mocked(schoolService.listSchools).mockResolvedValue(schools);
     vi.mocked(organizationService.setTeacherSchoolRole).mockResolvedValue(undefined);
     vi.mocked(authService.resetTeacherPassword).mockResolvedValue({ password: "RandomPass_12345" });
+    vi.mocked(authService.setTeacherDisabled).mockResolvedValue(undefined);
+    vi.mocked(authService.setSchoolAccountsDisabled).mockResolvedValue(undefined);
     vi.mocked(quotaService.getCreditSettings).mockResolvedValue(creditSettings);
     vi.mocked(quotaService.getQuota).mockImplementation(async (teacherId) => quotaSnapshot(teacherId, 3));
     vi.mocked(quotaService.updateCreditSettings).mockImplementation(async (settings) => settings);

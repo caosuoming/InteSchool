@@ -9,7 +9,7 @@ import { schoolService } from "@/services/school";
 import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
 import { TEACHER_ROLES } from "@/lib/teacher-roles";
 import { useAuthStore } from "@/stores/auth";
-import type { School as SchoolRecord, TeacherRole } from "@/types";
+import type { PlatformAccessSettings, School as SchoolRecord, TeacherRole } from "@/types";
 import { BrandMark } from "@/components/brand/BrandMark";
 import { roleLabels } from "@/services/organization";
 
@@ -41,6 +41,8 @@ export default function LoginPage({
   const [schoolSearching, setSchoolSearching] = useState(false);
   const [selectedSchool, setSelectedSchool] = useState<SchoolRecord | null>(null);
   const [createSchool, setCreateSchool] = useState(false);
+  const [personalOnly, setPersonalOnly] = useState(false);
+  const [accessSettings, setAccessSettings] = useState<PlatformAccessSettings>({ registrationMode: "open", schoolCreationMode: "review" });
   const [schoolName, setSchoolName] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
   const [schoolCity, setSchoolCity] = useState("");
@@ -54,11 +56,16 @@ export default function LoginPage({
   const collectiveEntry = destination === "/prep?entry=collective";
 
   useEffect(() => {
-    if (teacher) navigate(teacher.schoolId ? destination : "/school-auth");
+    if (teacher) navigate(destination);
   }, [destination, teacher, navigate]);
 
   useEffect(() => {
-    if (mode !== "register" || createSchool) return;
+    if (mode !== "register") return;
+    void authService.getAccessSettings().then(setAccessSettings).catch(() => undefined);
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "register" || createSchool || personalOnly) return;
     const keyword = schoolQuery.trim();
     if (!keyword) {
       setSchoolResults([]);
@@ -83,7 +90,7 @@ export default function LoginPage({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [createSchool, mode, schoolQuery]);
+  }, [createSchool, mode, personalOnly, schoolQuery]);
 
   const checkLoginIdentity = async (): Promise<{ teacher: boolean; parent: boolean } | null> => {
     const normalized = identifier.trim().replace(/[\s()-]/g, "").replace(/^\+86/, "");
@@ -135,7 +142,7 @@ export default function LoginPage({
       await login(identifier, password);
       return;
     }
-    if (!createSchool && !selectedSchool) return;
+    if (!personalOnly && !createSchool && !selectedSchool) return;
     const result = await register({
       email,
       password,
@@ -145,9 +152,11 @@ export default function LoginPage({
       teachingGrades,
       roles,
       requestSchoolAdmin,
-      ...(createSchool
+      ...(!personalOnly && createSchool
         ? { newSchool: { name: schoolName, code: schoolCode, city: schoolCity, description: schoolDescription } }
-        : { schoolId: selectedSchool!.id }),
+        : !personalOnly && selectedSchool
+          ? { schoolId: selectedSchool.id }
+          : {}),
     });
     if (result === "pending") {
       setRegistrationPending(true);
@@ -205,7 +214,9 @@ export default function LoginPage({
             </h2>
             <p className="text-sm text-ink-500 mt-1">
               {mode === "register"
-                ? "搜索并选择所在学校；没有匹配学校时可同时申请新增"
+                ? accessSettings.registrationMode === "authorized"
+                  ? "可注册个人账号；加入已有学校需老用户担保或平台管理员授权"
+                  : "可直接注册个人账号，或搜索并加入所在学校"
                 : collectiveEntry
                   ? "使用备课组内任一教师账号登录"
                   : "登录后继续教学工作"}
@@ -223,7 +234,26 @@ export default function LoginPage({
                 <Input label="姓名" value={name} onChange={(event) => setName(event.target.value)} required placeholder="请输入真实姓名" />
                 <Input label="手机号" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required placeholder="请输入手机号" />
 
-                {!createSchool ? (
+                <label className="flex items-start gap-3 rounded-lg border border-ink-200 bg-white p-4 text-sm text-ink-700">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={personalOnly}
+                    onChange={(event) => {
+                      setPersonalOnly(event.target.checked);
+                      if (event.target.checked) {
+                        setCreateSchool(false);
+                        setSelectedSchool(null);
+                      }
+                    }}
+                  />
+                  <span>
+                    <span className="block font-medium text-ink-900">暂不加入学校，以个人身份使用</span>
+                    <span className="mt-1 block text-xs text-ink-500">注册后可在后台设置创建个人教学班，之后也可以再申请加入学校。</span>
+                  </span>
+                </label>
+
+                {!personalOnly && (!createSchool ? (
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-ink-700" htmlFor="registration-school-search">所在学校</label>
                     <div className="relative">
@@ -281,6 +311,9 @@ export default function LoginPage({
                       <Plus className="h-4 w-4" />
                       没有我的学校，申请新增
                     </Button>
+                    {accessSettings.registrationMode === "authorized" && (
+                      <p className="text-xs text-amber-700">当前平台要求加入已有学校前先获得老用户担保或平台管理员授权。</p>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-3 rounded-lg border border-ink-200 bg-white p-4">
@@ -297,11 +330,16 @@ export default function LoginPage({
                       <Input label="所在城市" value={schoolCity} onChange={(event) => setSchoolCity(event.target.value)} required />
                       <Textarea label="学校简介（可选）" value={schoolDescription} onChange={(event) => setSchoolDescription(event.target.value)} />
                     </div>
+                    <p className="text-xs text-ink-500">
+                      {accessSettings.schoolCreationMode === "open"
+                        ? "当前允许直接新建学校，注册完成后即可进入。"
+                        : "当前新建学校需要平台管理员确认；审核期间仍可使用个人身份。"}
+                    </p>
                   </div>
-                )}
+                ))}
 
                 <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
-                <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
+                {!personalOnly && <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
                   <legend className="px-1 text-sm font-medium text-ink-700">任教年级</legend>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {GRADE_OPTIONS.map((grade) => (
@@ -311,8 +349,8 @@ export default function LoginPage({
                       </label>
                     ))}
                   </div>
-                </fieldset>
-                <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
+                </fieldset>}
+                {!personalOnly && <fieldset className="rounded-lg border border-ink-200 bg-white p-4">
                   <legend className="px-1 text-sm font-medium text-ink-700">职务与权限申请</legend>
                   <p className="mb-3 text-xs text-ink-500">勾选实际担任的职务；审核通过后获得相应权限。</p>
                   <div className="flex flex-wrap gap-2">
@@ -332,7 +370,7 @@ export default function LoginPage({
                     <input type="checkbox" checked={requestSchoolAdmin} onChange={(event) => setRequestSchoolAdmin(event.target.checked)} />
                     同时申请学校管理员权限（仅平台超级管理员可授予）
                   </label>
-                </fieldset>
+                </fieldset>}
               </>
             )}
 
@@ -387,7 +425,7 @@ export default function LoginPage({
               size="lg"
               loading={loading || parentLoggingIn}
               className="w-full"
-              disabled={mode === "register" && !createSchool && !selectedSchool}
+              disabled={mode === "register" && !personalOnly && !createSchool && !selectedSchool}
             >
               {mode === "register"
                 ? "提交注册申请"

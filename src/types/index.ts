@@ -109,6 +109,14 @@ export interface UserQuotaSnapshot {
 
 export type RegistrationAuthorizationKind = "admin" | "guarantee";
 
+export type UserRegistrationMode = "open" | "authorized";
+export type SchoolCreationMode = "open" | "review";
+
+export interface PlatformAccessSettings {
+  registrationMode: UserRegistrationMode;
+  schoolCreationMode: SchoolCreationMode;
+}
+
 export interface RegistrationAuthorization {
   id: string;
   phone: string;
@@ -170,6 +178,8 @@ export interface Teacher {
   teachingPlan?: TeacherTeachingPlan;
   /** 可管理的平台资源学科；仅平台超级管理员可以授予或撤销。 */
   platformModeratorSubjects?: string[];
+  /** 平台管理员停用整个登录账号；停用后所有会话立即失效。 */
+  accountDisabled?: boolean;
   /** 平台超级管理员针对该用户设置的容量/次数覆盖值。 */
   quotaOverrides?: UserQuotaOverrides;
   createdAt: string;
@@ -184,6 +194,8 @@ export interface School {
   teacherCount: number;
   studentCount: number;
   city: string;
+  /** 停用该学校的学校身份；用户仍可使用个人身份登录。 */
+  accountsDisabled?: boolean;
 }
 
 /** 学科组（如：数学组、语文组） */
