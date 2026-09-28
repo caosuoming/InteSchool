@@ -99,14 +99,23 @@ describe("question keyword search", () => {
 describe("question pagination", () => {
   it("filters visibility before counting, sorts, and returns only the requested page", async () => {
     const questions = [
-      question("owned-low", { teacherId: "teacher-1", usageCount: 2 }),
-      question("owned-high", { teacherId: "teacher-1", usageCount: 9 }),
-      question("shared", { teacherId: "teacher-2", isShared: true, usageCount: 5 }),
+      question("owned-low", { teacherId: "teacher-1", usageCount: 20 }),
+      question("owned-high", { teacherId: "teacher-1", usageCount: 0 }),
+      question("shared", { teacherId: "teacher-2", isShared: true, usageCount: 50 }),
       question("private-other", { teacherId: "teacher-2", isShared: false, usageCount: 99 }),
     ];
     const teacher = { id: "teacher-1", schoolId: "school-1" } as TeacherRecord;
+    const appState = state(questions);
+    appState.examPapers = [
+      { id: "paper-high-1", questions: [{ questionId: "owned-high" }] },
+      { id: "paper-high-2", questions: [{ questionId: "owned-high" }] },
+      { id: "paper-high-3", questions: [{ questionId: "owned-high" }] },
+      { id: "paper-shared-1", questions: [{ questionId: "shared" }] },
+      { id: "paper-shared-2", questions: [{ questionId: "shared" }] },
+      { id: "paper-low-1", questions: [{ questionId: "owned-low" }] },
+    ];
 
-    await runWithState(state(questions), async () => {
+    await runWithState(appState, async () => {
       const result = await questionService.listQuestionPage(
         { schoolId: "school-1" },
         2,
@@ -137,7 +146,10 @@ describe("question pagination", () => {
         "recentUse",
         teacher,
       );
-      expect(result).toEqual(backendPage);
+      expect(result).toEqual({
+        ...backendPage,
+        items: [expect.objectContaining({ id: "db-page", usageCount: 0 })],
+      });
     }, { searchQuestions, searchQuestionPage });
 
     expect(searchQuestionPage).toHaveBeenCalledWith(
