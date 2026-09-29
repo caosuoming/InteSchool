@@ -6,6 +6,14 @@ import type {
   LectureSection,
 } from "../../src/types/index.js";
 import { isDocumentStructureLocked } from "../../src/lib/document-resource.js";
+import { db } from "../runtime-db.js";
+
+export function assertDocumentNotUsed(documentId: string): void {
+  const used = (db.read("answerRecords") || []).some((record) => record.lectureId === documentId);
+  if (used) {
+    throw new Error("文档已用，已有学生答题记录，不能再编辑");
+  }
+}
 
 function sameStringArray(left: string[] | undefined, right: string[] | undefined): boolean {
   if (left === right) return true;

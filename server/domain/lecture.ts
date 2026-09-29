@@ -13,7 +13,7 @@ import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
-import { sanitizeLecturePatch } from "./document-resource-lock.js";
+import { assertDocumentNotUsed, sanitizeLecturePatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveLectureToExamPaper } from "./document-library-move.js";
 import { lectureKnowledgePointIds } from "./document-knowledge.js";
@@ -263,6 +263,7 @@ export const lectureService = {
   async updateLecture(id: string, patch: Partial<Lecture>): Promise<Lecture> {
     await delay(300);
     maybeThrowError();
+    assertDocumentNotUsed(id);
     let updated: Lecture | null = null;
     db.update("lectures", (list) =>
       list.map((l) => {
