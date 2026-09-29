@@ -13,7 +13,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Send, Save, RotateCcw, Undo2,
   FileQuestion, Blocks, Check,
-  Play, School, ExternalLink,
+  Play, School, ExternalLink, Download,
   GripVertical, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -47,6 +47,7 @@ import { PresentationMode } from "./PresentationMode";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
 import { getCoursewareEditorUrl } from "@/lib/courseware-online";
+import { downloadOfflineLessonCourseware } from "@/lib/lesson-courseware-offline";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { LessonEditorInspector } from "@/components/lessons/LessonEditorInspector";
@@ -126,6 +127,7 @@ export function LessonEditorPage() {
   const [saving, setSaving] = useState(false);
   const [savedDraft, setSavedDraft] = useState<LessonSaveState | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [downloadingOffline, setDownloadingOffline] = useState(false);
 
   const [relatedQuestions, setRelatedQuestions] = useState<Question[]>([]);
   const [relatedQuestionsLoading, setRelatedQuestionsLoading] = useState(false);
@@ -992,6 +994,31 @@ export function LessonEditorPage() {
     setCurrentIndex(currentIndex + 1);
   };
 
+  const handleOfflineDownload = async () => {
+    if (!courseware || downloadingOffline) return;
+    setDownloadingOffline(true);
+    try {
+      const title = courseware.title.trim() || "未命名课件";
+      const result = await downloadOfflineLessonCourseware({
+        ...courseware,
+        title,
+        slides,
+      });
+      if (result.warnings.length > 0) {
+        toast.warning(
+          "脱机课件已下载",
+          `${result.warnings.length} 个资源未能内嵌，离线时可能无法使用`,
+        );
+      } else {
+        toast.success("脱机课件已下载", result.fileName);
+      }
+    } catch (error) {
+      toast.error("下载失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDownloadingOffline(false);
+    }
+  };
+
   const openPreview = () => {
     setPreviewMode(true);
     if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
@@ -1078,6 +1105,17 @@ export function LessonEditorPage() {
         >
           <Save className="w-4 h-4" />
           保存
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void handleOfflineDownload()}
+          loading={downloadingOffline}
+          disabled={!courseware}
+          title="下载可直接打开的脱机上课页面"
+        >
+          <Download className="w-4 h-4" />
+          下载
         </Button>
         <Button variant="outline" size="sm" onClick={openPreview}>
           <Play className="w-4 h-4" />

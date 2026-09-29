@@ -5,7 +5,7 @@ import {
   FileText, Plus, Search, BookOpen, Lightbulb,
   Calendar, Eye, Presentation, FileBox,
   ArrowUpDown, Clock, Library,
-  FileSpreadsheet, Sparkles, Trash2, Upload,
+  FileSpreadsheet, Sparkles, Trash2, Upload, Download,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
@@ -32,6 +32,11 @@ import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { createBlankLessonCourseware } from "@/lib/lesson-courseware-create";
+import { lessonCoursewareService } from "@/services/lessonCourseware";
+import {
+  downloadOfflineLessonCourseware,
+  offlineLessonFromLibraryCourseware,
+} from "@/lib/lesson-courseware-offline";
 
 type ResourceTab = "lecture" | "examPaper" | "courseware" | "material";
 type LeftTab = "chapter" | "knowledge";
@@ -108,6 +113,7 @@ export default function ResourceLibraryPage() {
   // 拆解入题库
   const [extractTarget, setExtractTarget] = useState<{ id: string; type: "examPaper" | "lecture" } | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const [offlineCoursewareDownloadId, setOfflineCoursewareDownloadId] = useState("");
 
   const schoolId = teacher?.schoolId || "sch-1";
 
@@ -279,6 +285,31 @@ export default function ResourceLibraryPage() {
       toast.error("拆解失败", e?.message);
     } finally {
       setExtracting(false);
+    }
+  };
+
+  const handleDownloadCoursewareOffline = async (item: Courseware) => {
+    if (offlineCoursewareDownloadId) return;
+    setOfflineCoursewareDownloadId(item.id);
+    try {
+      const linked = item.lessonCoursewareId
+        ? await lessonCoursewareService.getCourseware(item.lessonCoursewareId)
+        : null;
+      const result = await downloadOfflineLessonCourseware(
+        linked || offlineLessonFromLibraryCourseware(item),
+      );
+      if (result.warnings.length > 0) {
+        toast.warning(
+          "脱机课件已下载",
+          `${result.warnings.length} 个资源未能内嵌，离线时可能无法使用`,
+        );
+      } else {
+        toast.success("脱机课件已下载", result.fileName);
+      }
+    } catch (error) {
+      toast.error("下载失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setOfflineCoursewareDownloadId("");
     }
   };
 
@@ -534,6 +565,8 @@ export default function ResourceLibraryPage() {
                   ]}
                   content={item.content}
                   updatedAt={item.updatedAt}
+                  onDownload={() => void handleDownloadCoursewareOffline(item)}
+                  downloadDisabled={Boolean(offlineCoursewareDownloadId)}
                   onDelete={() => handleDelete(item.id)}
                 />
               ))}
@@ -686,10 +719,23 @@ interface ResourceCardProps {
   updatedAt: string;
   onClick?: () => void;
   onExtract?: () => void;
+  onDownload?: () => void;
+  downloadDisabled?: boolean;
   onDelete?: () => void;
 }
 
-function ResourceCard({ title, description, meta, content, updatedAt, onClick, onExtract, onDelete }: ResourceCardProps) {
+function ResourceCard({
+  title,
+  description,
+  meta,
+  content,
+  updatedAt,
+  onClick,
+  onExtract,
+  onDownload,
+  downloadDisabled,
+  onDelete,
+}: ResourceCardProps) {
   return (
     <div className="card-base p-4 hover:shadow-cardHover transition-all group">
       <div className="flex items-start gap-3">
@@ -735,6 +781,17 @@ function ResourceCard({ title, description, meta, content, updatedAt, onClick, o
               title="拆解入题库"
             >
               <Sparkles className="w-4 h-4" />
+            </button>
+          )}
+          {onDownload && (
+            <button
+              onClick={onDownload}
+              disabled={downloadDisabled}
+              className="p-1.5 rounded text-ink-400 hover:bg-teal-50 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-40"
+              title="下载脱机课件"
+              aria-label="下载脱机课件"
+            >
+              <Download className="w-4 h-4" />
             </button>
           )}
           {onDelete && (
