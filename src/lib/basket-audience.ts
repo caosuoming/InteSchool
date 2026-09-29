@@ -1,5 +1,31 @@
 import type { AnyClass, Basket, Student, TreeNode } from "@/types";
 
+function sameIdSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightIds = new Set(right);
+  return left.every((id) => rightIds.has(id));
+}
+
+export function preferredBasketForClassIds(
+  baskets: readonly Basket[],
+  classIds: readonly string[],
+): Basket | null {
+  if (baskets.length === 0) return null;
+
+  const targetClassIds = Array.from(new Set(classIds.filter(Boolean)));
+  if (targetClassIds.length > 0) {
+    const audienceMatch = baskets.find((basket) => (
+      sameIdSet(
+        Array.from(new Set((basket.classIds || []).filter(Boolean))),
+        targetClassIds,
+      )
+    ));
+    if (audienceMatch) return audienceMatch;
+  }
+
+  return baskets.find((basket) => basket.isDefault) || baskets[0];
+}
+
 export function resolveBasketAudienceStudentIds(
   basket: Pick<Basket, "classIds" | "studentIds">,
   classes: AnyClass[],
