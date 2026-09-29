@@ -360,6 +360,98 @@ describe("PresentationMode", () => {
     expect(screen.getByLabelText("板书 1书写区 1")).toHaveAttribute("data-recorded-stroke-count", "1");
   });
 
+  it("requires clear confirmation and restores cleared annotations while eraser undo can repeat", async () => {
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={[slides[0]]}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "红色画笔" }));
+    const canvas = screen.getByLabelText("课件批注画布") as HTMLCanvasElement;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800,
+      width: 1000, height: 800, toJSON: () => ({}),
+    });
+    const drawStroke = (pointerId: number, startX: number, startY: number, endX: number, endY: number) => {
+      fireEvent.pointerDown(canvas, { pointerId, clientX: startX, clientY: startY });
+      fireEvent.pointerMove(canvas, { pointerId, clientX: endX, clientY: endY });
+      fireEvent.pointerUp(canvas, { pointerId, clientX: endX, clientY: endY });
+    };
+
+    drawStroke(11, 100, 100, 180, 140);
+    expect(canvas).toHaveAttribute("data-recorded-stroke-count", "1");
+
+    const clearButton = screen.getByRole("button", { name: "清空批注" });
+    expect(within(clearButton).getByText("清屏")).toBeInTheDocument();
+    await user.click(clearButton);
+    expect(canvas).toHaveAttribute("data-recorded-stroke-count", "1");
+    expect(screen.getByRole("dialog", { name: "确认清屏" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "确认清屏" }));
+    await waitFor(() => expect(canvas).toHaveAttribute("data-recorded-stroke-count", "0"));
+
+    await user.click(screen.getByRole("button", { name: "清屏操作" }));
+    const undoClear = screen.getByRole("button", { name: "撤销上次清屏" });
+    expect(undoClear).toBeEnabled();
+    await user.click(undoClear);
+    expect(canvas).toHaveAttribute("data-recorded-stroke-count", "1");
+
+    await user.click(screen.getByRole("button", { name: "橡皮擦" }));
+    drawStroke(12, 120, 110, 150, 130);
+    drawStroke(13, 130, 120, 160, 140);
+    expect(canvas).toHaveAttribute("data-recorded-stroke-count", "3");
+
+    await user.click(screen.getByRole("button", { name: "橡皮擦设置与撤销" }));
+    const undoEraser = screen.getByRole("button", { name: "撤销上次擦除" });
+    expect(undoEraser).toBeEnabled();
+    await user.click(undoEraser);
+    expect(canvas).toHaveAttribute("data-recorded-stroke-count", "2");
+    expect(undoEraser).toBeEnabled();
+    await user.click(undoEraser);
+    expect(canvas).toHaveAttribute("data-recorded-stroke-count", "1");
+    expect(undoEraser).toBeDisabled();
+  });
+
+  it("restores the active board writing area after confirmed clear", async () => {
+    const user = userEvent.setup();
+    render(
+      <PresentationMode
+        slides={[slides[0]]}
+        initialIndex={0}
+        students={[]}
+        relatedQuestionsById={{}}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "打开板书" }));
+    await user.click(screen.getByRole("button", { name: "红色画笔" }));
+    const boardCanvas = screen.getByLabelText("板书 1书写区 1") as HTMLCanvasElement;
+    vi.spyOn(boardCanvas, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800,
+      width: 1000, height: 800, toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(boardCanvas, { pointerId: 21, clientX: 200, clientY: 200 });
+    fireEvent.pointerMove(boardCanvas, { pointerId: 21, clientX: 260, clientY: 240 });
+    fireEvent.pointerUp(boardCanvas, { pointerId: 21, clientX: 260, clientY: 240 });
+    expect(boardCanvas).toHaveAttribute("data-recorded-stroke-count", "1");
+
+    await user.click(screen.getByRole("button", { name: "清空当前板书" }));
+    expect(boardCanvas).toHaveAttribute("data-recorded-stroke-count", "1");
+    await user.click(screen.getByRole("button", { name: "确认清屏" }));
+    await waitFor(() => expect(boardCanvas).toHaveAttribute("data-recorded-stroke-count", "0"));
+
+    await user.click(screen.getByRole("button", { name: "清屏操作" }));
+    await user.click(screen.getByRole("button", { name: "撤销上次清屏" }));
+    expect(boardCanvas).toHaveAttribute("data-recorded-stroke-count", "1");
+  });
+
   it("batches high-frequency handwriting updates per animation frame without repainting the full canvas", async () => {
     const clearRect = vi.fn();
     const stroke = vi.fn();
@@ -1274,8 +1366,8 @@ describe("PresentationMode", () => {
     expect(animatedElement?.style.animation).toBe("");
 
     await user.click(screen.getByRole("button", { name: "橡皮擦" }));
-    expect(screen.getByRole("button", { name: "设置橡皮擦范围" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "设置橡皮擦范围" }));
+    expect(screen.getByRole("button", { name: "橡皮擦设置与撤销" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "橡皮擦设置与撤销" }));
     expect(screen.getByRole("button", { name: "橡皮擦范围48" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "橡皮擦范围48" }));
     expect(screen.getByRole("button", { name: "橡皮擦" })).toHaveAttribute("title", "橡皮擦 · 48px");
