@@ -255,7 +255,6 @@ describe("renderMathHtml", () => {
     expect(container.textContent).not.toContain("l₁:ax");
   });
 
-
 });
 
 describe("containsMathDelimiter", () => {
@@ -282,5 +281,17 @@ describe("serializeMathHtml", () => {
 
     expect(serialized).toBe("<strong>已知</strong> $x^2=1$");
     expect(serialized).not.toContain("class=\"katex\"");
+  });
+});
+
+describe("proper subset rendering", () => {
+  it("renders raw proper-subset symbols in question content", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml("<p>若 B⊊A，则 B 是 A 的真子集。</p>");
+
+    expect(container.querySelector(".katex-formula")).toHaveAttribute(
+      "data-latex",
+      "B\\subsetneq A",
+    );
   });
 });

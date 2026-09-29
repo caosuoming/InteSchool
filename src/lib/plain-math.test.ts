@@ -34,4 +34,14 @@ describe("normalizePlainMathText", () => {
     const value = '<i class="math-variable">a</i> 与 $x^2=1$';
     expect(normalizePlainMathText(value)).toBe(value);
   });
+
+  it("canonicalizes subset relations including strict-subset glyph variants", () => {
+    expect(normalizePlainMathText("若 B⊂A，则 B 是 A 的真子集。")).toBe(
+      "若 $B\\subset A$，则 B 是 A 的真子集。",
+    );
+    expect(normalizePlainMathText("B⊊A")).toBe("$B\\subsetneq A$");
+    expect(normalizePlainMathText("B⫋A")).toBe("$B\\subsetneqq A$");
+    expect(normalizePlainMathText("A∩B⊆C")).toBe("$A\\cap B\\subseteq C$");
+  });
+
 });
