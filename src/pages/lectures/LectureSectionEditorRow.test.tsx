@@ -2,6 +2,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { LectureSection, Question } from "@/types";
+
+vi.mock("@/services/question", () => ({
+  questionService: {
+    listQuestions: async () => [],
+  },
+}));
+
 import { LectureSectionEditorRow } from "./LectureSectionEditorRow";
 
 const section: LectureSection = {
@@ -20,6 +27,14 @@ const question = {
   options: ["1", "2", "-1", "-2"],
   answer: "B",
   analysis: "一次函数 y = kx + b 的斜率为 k。",
+  schoolId: "school-1",
+  chapterIds: [],
+  knowledgePointIds: ["knowledge-1"],
+  difficulty: 2,
+  recommendation: 3,
+  usageCount: 0,
+  createdAt: "2026-09-29T00:00:00.000Z",
+  updatedAt: "2026-09-29T00:00:00.000Z",
 } as Question;
 
 function renderRow(
@@ -34,6 +49,8 @@ function renderRow(
       section={{ ...section, ...overrides }}
       index={2}
       question={questionOverride}
+      schoolId="school-1"
+      excludedQuestionIds={new Set([questionOverride.id])}
       canMoveUp
       canMoveDown
       onLabelChange={onLabelChange}
@@ -60,14 +77,21 @@ describe("LectureSectionEditorRow", () => {
     expect(onLabelChange).toHaveBeenCalledWith("例 7");
   });
 
-  it("displays an existing custom number and exposes question replacement", () => {
+  it("displays an existing custom number and toggles related-question replacement", () => {
     const { container, onReplaceQuestion } = renderRow({ customLabel: "变式 2" });
 
     expect(screen.getByRole("textbox", { name: "题目编号：一次函数练习" })).toHaveValue("变式 2");
     expect(container).toHaveTextContent("函数");
     expect(container).toHaveTextContent("的斜率是多少？");
     fireEvent.click(screen.getByRole("button", { name: "换题" }));
-    expect(onReplaceQuestion).toHaveBeenCalledOnce();
+
+    expect(screen.getByRole("button", { name: "属性" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "同类题" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("textbox", { name: "题目编号：一次函数练习" })).not.toBeInTheDocument();
+    expect(onReplaceQuestion).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "属性" }));
+    expect(screen.getByRole("textbox", { name: "题目编号：一次函数练习" })).toBeInTheDocument();
   });
 
   it("expands the answer and analysis", () => {

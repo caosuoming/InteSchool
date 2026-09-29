@@ -10,6 +10,7 @@ import {
   Type,
 } from "lucide-react";
 
+import { RelatedQuestionReplacementPanel } from "@/components/question/RelatedQuestionReplacementPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { MathHtml } from "@/components/ui/MathHtml";
@@ -20,6 +21,8 @@ interface LectureSectionEditorRowProps {
   section: LectureSection;
   index: number;
   question?: Question;
+  schoolId?: string;
+  excludedQuestionIds?: ReadonlySet<string>;
   answered?: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -27,7 +30,7 @@ interface LectureSectionEditorRowProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEditSection: () => void;
-  onReplaceQuestion?: () => void;
+  onReplaceQuestion?: (question: Question) => void;
   onRemove: () => void;
   readOnly?: boolean;
   dragHandle?: ReactNode;
@@ -44,6 +47,8 @@ export function LectureSectionEditorRow({
   section,
   index,
   question,
+  schoolId,
+  excludedQuestionIds,
   answered = false,
   canMoveUp,
   canMoveDown,
@@ -57,6 +62,7 @@ export function LectureSectionEditorRow({
   dragHandle,
 }: LectureSectionEditorRowProps) {
   const [showAnswer, setShowAnswer] = useState(false);
+  const [replacementMode, setReplacementMode] = useState(false);
   const Icon = section.type === "question"
     ? ListOrdered
     : section.type === "knowledge"
@@ -71,14 +77,14 @@ export function LectureSectionEditorRow({
           {sectionLabels[section.type]}
         </Badge>
 
-        {section.type === "question" && !readOnly && (
+        {section.type === "question" && !readOnly && !replacementMode && (
           <div className="flex w-36 items-center gap-1.5">
             <span className="flex-shrink-0 text-xs text-ink-500">题号</span>
             <Input
-              aria-label={`题目编号：${section.title}`}
+              aria-label={"题目编号：" + section.title}
               value={section.customLabel || ""}
               onChange={(event) => onLabelChange(event.target.value)}
-              placeholder={`${index + 1}.`}
+              placeholder={String(index + 1) + "."}
               className="h-8 px-2 py-1 text-xs"
             />
           </div>
@@ -92,34 +98,38 @@ export function LectureSectionEditorRow({
         {answered && <span className="tag-gold text-[10px] py-0.5">已做过</span>}
 
         {!readOnly && <div className="ml-auto flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={onMoveUp}
-            disabled={!canMoveUp}
-            className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-25"
-            title="上移"
-          >
-            <ChevronUp className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onMoveDown}
-            disabled={!canMoveDown}
-            className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-25"
-            title="下移"
-          >
-            <ChevronDown className="h-4 w-4" />
-          </button>
-          {section.type === "question" && question && onReplaceQuestion && (
+          {!replacementMode && (
+            <>
+              <button
+                type="button"
+                onClick={onMoveUp}
+                disabled={!canMoveUp}
+                className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-25"
+                title="上移"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={onMoveDown}
+                disabled={!canMoveDown}
+                className="rounded p-1 text-ink-400 hover:bg-gold-50 hover:text-gold-700 disabled:opacity-25"
+                title="下移"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </>
+          )}
+          {section.type === "question" && question && schoolId && onReplaceQuestion && (
             <button
               type="button"
-              onClick={onReplaceQuestion}
+              onClick={() => setReplacementMode((current) => !current)}
               className="rounded px-2 py-1 text-xs text-teal-600 hover:bg-teal-50 hover:text-teal-700"
             >
-              换题
+              {replacementMode ? "属性" : "换题"}
             </button>
           )}
-          {section.type !== "question" && (
+          {!replacementMode && section.type !== "question" && (
             <button
               type="button"
               onClick={onEditSection}
@@ -129,58 +139,72 @@ export function LectureSectionEditorRow({
               <Edit3 className="h-4 w-4" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={onRemove}
-            className="rounded p-1 text-ink-400 hover:bg-red-50 hover:text-red-600"
-            title="删除内容块"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {!replacementMode && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="rounded p-1 text-ink-400 hover:bg-red-50 hover:text-red-600"
+              title="删除内容块"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>}
       </div>
 
       <div className="px-4 py-3">
         {section.type === "question" ? (
           question ? (
-            <div className="space-y-2">
-              <MathHtml className="whitespace-pre-wrap text-sm leading-relaxed text-ink-900">
-                {question.stem}
-              </MathHtml>
-              {section.displayMode !== "stem-only" && question.options && question.options.length > 0 && (
-                <div className={cn("grid gap-2 text-xs text-ink-700", getOptionsGridCols(question.options.length))}>
-                  {question.options.map((option, optionIndex) => (
-                    <div key={optionIndex} className="flex min-w-0 items-start gap-1 rounded border border-ink-100 px-2 py-1.5">
-                      <span className="font-mono font-semibold text-ink-500">
-                        {String.fromCharCode(65 + optionIndex)}.
-                      </span>
-                      <MathHtml className="min-w-0 flex-1 break-all">{option}</MathHtml>
+            replacementMode && schoolId && onReplaceQuestion ? (
+              <RelatedQuestionReplacementPanel
+                question={question}
+                schoolId={schoolId}
+                excludedQuestionIds={excludedQuestionIds}
+                onReplace={(replacement) => {
+                  onReplaceQuestion(replacement);
+                  setReplacementMode(false);
+                }}
+              />
+            ) : (
+              <div className="space-y-2">
+                <MathHtml className="whitespace-pre-wrap text-sm leading-relaxed text-ink-900">
+                  {question.stem}
+                </MathHtml>
+                {section.displayMode !== "stem-only" && question.options && question.options.length > 0 && (
+                  <div className={cn("grid gap-2 text-xs text-ink-700", getOptionsGridCols(question.options.length))}>
+                    {question.options.map((option, optionIndex) => (
+                      <div key={optionIndex} className="flex min-w-0 items-start gap-1 rounded border border-ink-100 px-2 py-1.5">
+                        <span className="font-mono font-semibold text-ink-500">
+                          {String.fromCharCode(65 + optionIndex)}.
+                        </span>
+                        <MathHtml className="min-w-0 flex-1 break-all">{option}</MathHtml>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {section.displayMode !== "stem-only" && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAnswer((previous) => !previous)}
+                    className="text-xs text-teal-600 hover:text-teal-700"
+                  >
+                    {showAnswer ? "收起答案与解析" : "查看答案与解析"}
+                  </button>
+                )}
+                {section.displayMode !== "stem-only" && showAnswer && (
+                  <div className="space-y-2">
+                    <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2 text-xs text-ink-800">
+                      <span className="font-medium text-emerald-700">答案：</span>
+                      <MathHtml className="question-answer-content mt-1">{question.answer}</MathHtml>
                     </div>
-                  ))}
-                </div>
-              )}
-              {section.displayMode !== "stem-only" && (
-                <button
-                  type="button"
-                  onClick={() => setShowAnswer((previous) => !previous)}
-                  className="text-xs text-teal-600 hover:text-teal-700"
-                >
-                  {showAnswer ? "收起答案与解析" : "查看答案与解析"}
-                </button>
-              )}
-              {section.displayMode !== "stem-only" && showAnswer && (
-                <div className="space-y-2">
-                  <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2 text-xs text-ink-800">
-                    <span className="font-medium text-emerald-700">答案：</span>
-                    <MathHtml className="question-answer-content mt-1">{question.answer}</MathHtml>
+                    <div className="rounded border border-gold-200 bg-gold-50/30 p-2 text-xs text-ink-800">
+                      <span className="font-medium text-gold-700">解析：</span>
+                      <MathHtml className="mt-1">{question.analysis}</MathHtml>
+                    </div>
                   </div>
-                  <div className="rounded border border-gold-200 bg-gold-50/30 p-2 text-xs text-ink-800">
-                    <span className="font-medium text-gold-700">解析：</span>
-                    <MathHtml className="mt-1">{question.analysis}</MathHtml>
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )
           ) : (
             <div className="text-xs text-ink-400">题目加载中...</div>
           )

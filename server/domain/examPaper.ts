@@ -9,7 +9,7 @@ import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
-import { sanitizeExamPaperPatch } from "./document-resource-lock.js";
+import { assertDocumentNotUsed, sanitizeExamPaperPatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveExamPaperToLecture } from "./document-library-move.js";
 import { examPaperKnowledgePointIds } from "./document-knowledge.js";
@@ -167,6 +167,7 @@ export const examPaperService = {
   async updatePaper(id: string, patch: Partial<ExamPaper>): Promise<ExamPaper> {
     await delay(300);
     maybeThrowError();
+    assertDocumentNotUsed(id);
     let updated: ExamPaper | null = null;
     let addedQuestionIds: string[] = [];
     db.update("examPapers", (list) =>

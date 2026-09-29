@@ -209,6 +209,25 @@ describe("LectureEditorPage courseware action", () => {
     });
   });
 
+  it("locks an already-used lecture against further editing", async () => {
+    mocks.listAnswerRecordsByLecture.mockResolvedValue([{
+      id: "answer-1",
+      studentId: "student-1",
+      questionId: "question-1",
+      lectureId: lecture.id,
+      isCorrect: true,
+      score: "correct",
+      answeredAt: "2026-09-29T00:00:00.000Z",
+    }]);
+
+    renderPage();
+
+    expect(await screen.findByText("该文档已录入学生答题记录，现已锁定，不能再编辑。")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("标题")[0]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "发布" })).toBeDisabled();
+  });
+
   it("saves current lecture edits before creating courseware from edit mode", async () => {
     const user = userEvent.setup();
     renderPage();

@@ -8,7 +8,7 @@ import {
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered, Copy,
   AlertCircle, Lock, Calendar, Layout,
   Sparkles, BookOpen, Lightbulb, Download,
-  CheckSquare, ArrowUpDown, Link2, RotateCcw,
+  CheckSquare, ArrowUpDown, RotateCcw,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { examPaperService } from "@/services/examPaper";
@@ -36,6 +36,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
+import { RelatedQuestionReplacementPanel } from "@/components/question/RelatedQuestionReplacementPanel";
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
@@ -88,7 +89,6 @@ import type {
   PrepTask,
   Question,
   ResourceSemester,
-  SimilarQuestionCandidate,
   Student,
   TreeNode,
 } from "@/types";
@@ -274,7 +274,9 @@ export default function ExamPaperEditorPage() {
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [paper, setPaper] = useState<ExamPaper | null>(null);
+  const [isUsedDocument, setIsUsedDocument] = useState(false);
   const isStructureLocked = isDocumentStructureLocked(paper);
+  const isEditingLocked = isStructureLocked || isUsedDocument;
   const [questions, setQuestions] = useState<Record<string, Question>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -419,7 +421,7 @@ export default function ExamPaperEditorPage() {
   }, [audienceStudentIds.length, questionProgress]);
 
   const openAddQuestion = useCallback((target: AddTarget = null) => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     setAddTarget(target);
     setReplaceIdx(null);
     setAddSource("choose");
@@ -443,7 +445,7 @@ export default function ExamPaperEditorPage() {
         return next;
       });
     }
-  }, [isStructureLocked]);
+  }, [isEditingLocked]);
 
   const closeAddQuestion = useCallback(() => {
     setAddSource(null);
@@ -486,7 +488,10 @@ export default function ExamPaperEditorPage() {
         navigate("/my-resources");
         return;
       }
-      const draft = navigationDraft?.paperId === p.id ? navigationDraft : undefined;
+      const usedDocumentIds = await analyticsService.listUsedDocumentIds([p.id]).catch(() => []);
+      const usedDocument = usedDocumentIds.includes(p.id);
+      setIsUsedDocument(usedDocument);
+      const draft = !usedDocument && navigationDraft?.paperId === p.id ? navigationDraft : undefined;
       const nextPaperQuestions = draft?.paperQuestions || p.questions;
       const nextContentBlocks = draft?.contentBlocks || p.contentBlocks || [];
       setPaper(p);
@@ -823,6 +828,7 @@ export default function ExamPaperEditorPage() {
     blockId: string,
     patch: Partial<ExtractedDocumentBlock>,
   ) => {
+    if (isUsedDocument) return;
     const current = contentBlocks.find((block) => block.id === blockId);
     setContentBlocks((previous) => previous.map((block) =>
       block.id === blockId ? { ...block, ...patch } : block,
@@ -837,7 +843,7 @@ export default function ExamPaperEditorPage() {
   };
 
   const moveContentBlock = (index: number, direction: "up" | "down") => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     const block = contentBlocks[index];
     if (!block) return;
 
@@ -857,7 +863,7 @@ export default function ExamPaperEditorPage() {
   };
 
   const removeContentBlock = (blockId: string) => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     const block = contentBlocks.find((item) => item.id === blockId);
     setContentBlocks((previous) => previous.filter((item) => item.id !== blockId));
     if (block?.examPaperQuestionId) {
@@ -893,6 +899,10 @@ export default function ExamPaperEditorPage() {
     chapterIds: string[],
     knowledgePointIds: string[],
   ) => {
+    if (isUsedDocument) {
+      toast.warning("文档已用，不能再编辑");
+      return;
+    }
     try {
       const updated = await questionService.updateQuestion(questionId, {
         chapterIds,
@@ -904,10 +914,10 @@ export default function ExamPaperEditorPage() {
       toast.error("更新失败", error instanceof Error ? error.message : "请稍后重试");
       throw error;
     }
-  }, []);
+  }, [isUsedDocument]);
 
   const saveDocumentMetadata = async (value: DocumentMetadataValue) => {
-    if (!paper) return;
+    if (!paper || isUsedDocument) return;
     setSavingDocumentMetadata(true);
     try {
       const updated = await examPaperService.updatePaper(paper.id, value);
@@ -928,7 +938,7 @@ export default function ExamPaperEditorPage() {
 
   // 编辑模式：调整顺序
   const handleMove = (idx: number, dir: "up" | "down") => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     setPaperQuestions((prev) => {
       const next = [...prev];
       const target = dir === "up" ? idx - 1 : idx + 1;
@@ -939,7 +949,7 @@ export default function ExamPaperEditorPage() {
   };
 
   const handleMoveWithinGroup = (idx: number, dir: "up" | "down") => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     setPaperQuestions((prev) => {
       const current = prev[idx];
       if (!current) return prev;
@@ -963,25 +973,13 @@ export default function ExamPaperEditorPage() {
 
   // 编辑模式：删除题目
   const handleRemoveQuestion = (pqId: string) => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     setPaperQuestions((prev) => prev.filter((q) => q.id !== pqId));
     setContentBlocks((prev) => prev.filter((block) => block.examPaperQuestionId !== pqId));
   };
 
-  // 编辑模式：换题（替换某题的题库关联）
-  const handleReplaceQuestion = (idx: number) => {
-    if (isStructureLocked) return;
-    setAddTarget(null);
-    setReplaceIdx(idx);
-    setSelectedQuestionIds([]);
-    setSelectedBasket(null);
-    setSelectedPaper(null);
-    setSelectedLecture(null);
-    setAddSource("bank");
-  };
-
   const replacePaperQuestionAt = useCallback((replaceIndex: number, newQuestion: Question) => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     const replacedQuestion = paperQuestions[replaceIndex];
     if (!replacedQuestion) return;
     setPaperQuestions((previous) => previous.map((paperQuestion, index) => {
@@ -1008,15 +1006,16 @@ export default function ExamPaperEditorPage() {
         : block,
     ));
     toast.success("题目已替换");
-  }, [isStructureLocked, paperQuestions]);
+  }, [isEditingLocked, paperQuestions]);
 
   // 编辑模式：修改分值
   const handleUpdateScore = (pqId: string, score: number) => {
+    if (isUsedDocument) return;
     setPaperQuestions((prev) => prev.map((q) => q.id === pqId ? { ...q, score } : q));
   };
 
   const handlePreviewUpdateScore = async (pqId: string, score: number) => {
-    if (!paper || !Number.isFinite(score) || score < 0) return;
+    if (!paper || isUsedDocument || !Number.isFinite(score) || score < 0) return;
     const previousQuestions = paperQuestions;
     const nextQuestions = paperQuestions.map((question) =>
       question.id === pqId ? { ...question, score } : question,
@@ -1041,6 +1040,7 @@ export default function ExamPaperEditorPage() {
   };
 
   const handleUpdateHeadingScore = (headingId: string, score: number) => {
+    if (isUsedDocument) return;
     setPaperQuestions((previous) => setScoreUnderHeading(
       contentBlocks,
       previous,
@@ -1051,8 +1051,8 @@ export default function ExamPaperEditorPage() {
 
   // 添加题目确认
   const handleConfirmAdd = async () => {
-    if (isStructureLocked) {
-      toast.warning("上传原稿和拆解稿不能增删或替换题目");
+    if (isEditingLocked) {
+      toast.warning(isUsedDocument ? "文档已用，不能再编辑" : "上传原稿和拆解稿不能增删或替换题目");
       return;
     }
     if (!addSource || addSource === "choose" || selectedQuestionIds.length === 0) {
@@ -1241,7 +1241,7 @@ export default function ExamPaperEditorPage() {
 
   // 保存
   const handleSave = async (silent = false) => {
-    if (!paper || saving) return;
+    if (!paper || saving || isUsedDocument) return;
     if (!title.trim()) {
       if (!silent) toast.error("请填写文档名");
       return;
@@ -1267,7 +1267,7 @@ export default function ExamPaperEditorPage() {
   };
 
   useAutosave({
-    enabled: !isPreview && Boolean(paper) && !prepTaskId && Boolean(title.trim()),
+    enabled: !isPreview && Boolean(paper) && !prepTaskId && !isUsedDocument && Boolean(title.trim()),
     dirty: hasUnsavedChanges,
     saving,
     onSave: () => handleSave(true),
@@ -1428,7 +1428,7 @@ export default function ExamPaperEditorPage() {
 
   // 调整大题型顺序
   const handleGroupMove = (groupType: string, dir: "up" | "down") => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     setGroupOrder((prev) => {
       const idx = prev.indexOf(groupType);
       if (idx === -1) return prev;
@@ -1444,7 +1444,7 @@ export default function ExamPaperEditorPage() {
     paperQuestion.questionId ? questions[paperQuestion.questionId]?.difficulty || 3 : 3;
 
   const handleSortByDifficulty = () => {
-    if (isStructureLocked) return;
+    if (isEditingLocked) return;
     setPaperQuestions((previous) => {
       const next = [...previous];
       next.sort((left, right) => {
@@ -2016,7 +2016,7 @@ export default function ExamPaperEditorPage() {
               预览
             </Button>
             {!prepTaskId && (
-              <Button variant="outline" onClick={() => setAudiencePickerOpen(true)}>
+              <Button variant="outline" onClick={() => setAudiencePickerOpen(true)} disabled={isUsedDocument}>
                 <Users className="w-4 h-4" />
                 <span className="max-w-48 truncate">
                   {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
@@ -2027,7 +2027,7 @@ export default function ExamPaperEditorPage() {
             <Button
               variant="outline"
               onClick={handleUndo}
-              disabled={!hasUnsavedChanges || saving}
+              disabled={!hasUnsavedChanges || saving || isUsedDocument}
               title={hasUnsavedChanges ? "撤销到上次保存的内容" : "没有可撤销的修改"}
             >
               <RotateCcw className="w-4 h-4" />
@@ -2037,7 +2037,7 @@ export default function ExamPaperEditorPage() {
               variant="gold"
               onClick={() => void handleSave()}
               loading={saving}
-              disabled={!hasUnsavedChanges}
+              disabled={!hasUnsavedChanges || isUsedDocument}
               title={hasUnsavedChanges ? "保存修改；有未保存修改时会定时自动保存" : "没有需要保存的修改"}
             >
               <Save className="w-4 h-4" />
@@ -2046,6 +2046,13 @@ export default function ExamPaperEditorPage() {
           </div>
         }
       />
+
+      {isUsedDocument && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
+          <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span>该文档已录入学生答题记录，现已锁定，不能再编辑。</span>
+        </div>
+      )}
 
       {!prepTaskId && (
         <div
@@ -2096,32 +2103,36 @@ export default function ExamPaperEditorPage() {
           </div>
           <div className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2">
-              <Input label="文档名" value={title} onChange={(e) => setTitle(e.target.value)} />
-              <Input label="描述" value={description} onChange={(e) => setDescription(e.target.value)} />
+              <Input label="文档名" value={title} onChange={(e) => setTitle(e.target.value)} disabled={isUsedDocument} />
+              <Input label="描述" value={description} onChange={(e) => setDescription(e.target.value)} disabled={isUsedDocument} />
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <Select
                 label="年级"
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
+                disabled={isUsedDocument}
                 options={includeCurrentOption(gradeOptions, grade)}
               />
               <Select
                 label="学年"
                 value={schoolYear}
                 onChange={(e) => setSchoolYear(e.target.value)}
+                disabled={isUsedDocument}
                 options={includeCurrentOption(schoolYearOptions, schoolYear)}
               />
               <Select
                 label="学期"
                 value={semester}
                 onChange={(e) => setSemester(e.target.value as ResourceSemester)}
+                disabled={isUsedDocument}
                 options={semesterOptions}
               />
               <Select
                 label="试卷类型"
                 value={typeId}
                 onChange={(e) => setTypeId(e.target.value)}
+                disabled={isUsedDocument}
                 options={[
                   { value: "", label: "未设置" },
                   ...examPaperTypeOptions,
@@ -2132,6 +2143,7 @@ export default function ExamPaperEditorPage() {
                 type="number"
                 value={String(duration)}
                 onChange={(e) => setDuration(Number(e.target.value))}
+                disabled={isUsedDocument}
               />
             </div>
           </div>
@@ -2146,7 +2158,7 @@ export default function ExamPaperEditorPage() {
                 <h3 className="font-serif font-semibold text-ink-900">试卷全貌</h3>
                 <Badge variant="ink">{paperQuestions.length} 题</Badge>
               </div>
-              {!isStructureLocked && <div className="flex flex-wrap items-center gap-2">
+              {!isEditingLocked && <div className="flex flex-wrap items-center gap-2">
                 {!isStructuredExtract && (
                   <>
                     <div className="flex items-center rounded-md border border-ink-200 p-0.5 bg-ink-50">
@@ -2289,7 +2301,7 @@ export default function ExamPaperEditorPage() {
                             <span className="text-xs text-ink-500">分</span>
                           </div>
                         )}
-                        {isQuestionGroup && !isStructureLocked && (
+                        {isQuestionGroup && !isEditingLocked && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -2304,7 +2316,7 @@ export default function ExamPaperEditorPage() {
                             添加题目
                           </Button>
                         )}
-                        {!isStructureLocked && <div className={cn(
+                        {!isEditingLocked && <div className={cn(
                           "flex items-center gap-0.5",
                           block.type !== "question" && !isQuestionGroup && "ml-auto",
                         )}>
@@ -2340,7 +2352,7 @@ export default function ExamPaperEditorPage() {
                           label="知识块标题"
                           value={block.title || ""}
                           onChange={(event) => updateContentBlock(block.id, { title: event.target.value })}
-                          disabled={isStructureLocked}
+                          disabled={isEditingLocked}
                           className="mb-2"
                         />
                       )}
@@ -2358,14 +2370,14 @@ export default function ExamPaperEditorPage() {
                           label="文档标题"
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
-                          disabled={isStructureLocked}
+                          disabled={isEditingLocked}
                         />
                       ) : isQuestionGroup ? (
                         <Input
                           aria-label="题型或项目名"
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
-                          disabled={isStructureLocked}
+                          disabled={isEditingLocked}
                         />
                       ) : (
                         <Textarea
@@ -2374,7 +2386,7 @@ export default function ExamPaperEditorPage() {
                             : "内容"}
                           value={block.content}
                           onChange={(event) => updateContentBlock(block.id, { content: event.target.value })}
-                          disabled={isStructureLocked}
+                          disabled={isEditingLocked}
                           rows={4}
                         />
                       )}
@@ -2394,11 +2406,10 @@ export default function ExamPaperEditorPage() {
                             knowledgeNameMap={knowledgeNameMap}
                             onUpdateCatalogs={handleUpdateQuestionCatalogs}
                             onReplace={(replacement) => replacePaperQuestionAt(paperQuestionIndex, replacement)}
-                            onOpenReplace={() => handleReplaceQuestion(paperQuestionIndex)}
                             onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
                             progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
                             excludedQuestionIds={paperQuestionIds}
-                            structureLocked={isStructureLocked}
+                            structureLocked={isEditingLocked}
                           />
                         </aside>
                       )}
@@ -2411,7 +2422,7 @@ export default function ExamPaperEditorPage() {
                 icon={<FileText className="w-10 h-10 text-ink-200" />}
                 title="试卷暂无题目"
                 description="从右侧选择来源添加题目"
-                action={!isStructureLocked ? (
+                action={!isEditingLocked ? (
                   <Button variant="gold" size="sm" onClick={() => openAddQuestion()}>
                     <Plus className="w-3.5 h-3.5" /> 添加题目
                   </Button>
@@ -2444,7 +2455,7 @@ export default function ExamPaperEditorPage() {
                             ? <ChevronRight className="h-4 w-4" />
                             : <ChevronDown className="h-4 w-4" />}
                         </button>
-                        {!isStructureLocked && <div className="flex flex-col gap-0.5">
+                        {!isEditingLocked && <div className="flex flex-col gap-0.5">
                           <button
                             onClick={() => handleGroupMove(group.type, "up")}
                             disabled={groupIndex === 0}
@@ -2487,7 +2498,7 @@ export default function ExamPaperEditorPage() {
                           />
                           <span className="text-xs text-ink-500">分</span>
                         </div>
-                        {!isStructureLocked && <Button
+                        {!isEditingLocked && <Button
                           variant="outline"
                           size="sm"
                           className="ml-auto"
@@ -2513,7 +2524,7 @@ export default function ExamPaperEditorPage() {
                               onMoveUp={() => handleMoveWithinGroup(item.index, "up")}
                               onMoveDown={() => handleMoveWithinGroup(item.index, "down")}
                               onRemove={() => handleRemoveQuestion(item.pq.id)}
-                              structureLocked={isStructureLocked}
+                              structureLocked={isEditingLocked}
                               sidebar={(
                                 <EditQuestionCatalogPanel
                                   pq={item.pq}
@@ -2528,11 +2539,10 @@ export default function ExamPaperEditorPage() {
                                   knowledgeNameMap={knowledgeNameMap}
                                   onUpdateCatalogs={handleUpdateQuestionCatalogs}
                                   onReplace={(replacement) => replacePaperQuestionAt(item.index, replacement)}
-                                  onOpenReplace={() => handleReplaceQuestion(item.index)}
                                   onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
                                   progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
                                   excludedQuestionIds={paperQuestionIds}
-                                  structureLocked={isStructureLocked}
+                                  structureLocked={isEditingLocked}
                                 />
                               )}
                             />
@@ -2566,7 +2576,7 @@ export default function ExamPaperEditorPage() {
                       onMoveUp={() => handleMove(index, "up")}
                       onMoveDown={() => handleMove(index, "down")}
                       onRemove={() => handleRemoveQuestion(paperQuestion.id)}
-                      structureLocked={isStructureLocked}
+                      structureLocked={isEditingLocked}
                       sidebar={(
                         <EditQuestionCatalogPanel
                           pq={paperQuestion}
@@ -2581,11 +2591,10 @@ export default function ExamPaperEditorPage() {
                           knowledgeNameMap={knowledgeNameMap}
                           onUpdateCatalogs={handleUpdateQuestionCatalogs}
                           onReplace={(replacement) => replacePaperQuestionAt(index, replacement)}
-                          onOpenReplace={() => handleReplaceQuestion(index)}
                           onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
                           progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
                           excludedQuestionIds={paperQuestionIds}
-                          structureLocked={isStructureLocked}
+                          structureLocked={isEditingLocked}
                         />
                       )}
                     />
@@ -2614,10 +2623,10 @@ export default function ExamPaperEditorPage() {
                 <Sparkles className="w-4 h-4 text-gold-500" />
                 <h3 className="font-serif font-semibold text-ink-900 text-sm">组卷工具</h3>
               </div>
-              {isStructureLocked ? (
+              {isEditingLocked ? (
                 <div className="flex items-start gap-2 rounded-md bg-ink-50 px-2.5 py-2 text-[11px] leading-relaxed text-ink-500">
                   <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                  <span>当前文档结构已锁定，仅可调整题目分值。</span>
+                  <span>{isUsedDocument ? "当前文档已用，不能再编辑。" : "当前文档结构已锁定，仅可调整题目分值。"}</span>
                 </div>
               ) : (
                 <>
@@ -3257,11 +3266,11 @@ function EditQuestionCatalogPanel({
   knowledgeNameMap,
   onUpdateCatalogs,
   onReplace,
-  onOpenReplace,
   onUpdateScore,
   progress,
   excludedQuestionIds,
   structureLocked,
+  readOnly = false,
 }: {
   pq: ExamPaperQuestion;
   index: number;
@@ -3275,19 +3284,17 @@ function EditQuestionCatalogPanel({
   knowledgeNameMap: Map<string, string>;
   onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[]) => Promise<void>;
   onReplace: (question: Question) => void;
-  onOpenReplace: () => void;
   onUpdateScore: (score: number) => void;
   progress?: QuestionProgress;
   excludedQuestionIds: Set<string>;
   structureLocked: boolean;
+  readOnly?: boolean;
 }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
   const [draftKnowledgePointIds, setDraftKnowledgePointIds] = useState<string[]>([]);
   const [savingCatalogs, setSavingCatalogs] = useState(false);
-  const [relatedOpen, setRelatedOpen] = useState(false);
-  const [relatedLoading, setRelatedLoading] = useState(false);
-  const [relatedQuestions, setRelatedQuestions] = useState<SimilarQuestionCandidate[]>([]);
+  const [mode, setMode] = useState<"properties" | "related">("properties");
 
   const chapterNames = (question?.chapterIds || [])
     .map((chapterId) => chapterNameMap.get(chapterId))
@@ -3296,65 +3303,23 @@ function EditQuestionCatalogPanel({
     .map((knowledgePointId) => knowledgeNameMap.get(knowledgePointId))
     .filter(Boolean) as string[];
   const difficulty = question?.difficulty || 3;
+  const replacementDisabled = structureLocked || readOnly;
 
   const openCatalogEditor = () => {
-    if (!question) return;
+    if (!question || readOnly) return;
     setDraftChapterIds(question.chapterIds);
     setDraftKnowledgePointIds(question.knowledgePointIds);
     setCatalogOpen(true);
   };
 
   const saveCatalogs = async () => {
-    if (!question) return;
+    if (!question || readOnly) return;
     setSavingCatalogs(true);
     try {
       await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds);
       setCatalogOpen(false);
-      setRelatedOpen(false);
-      setRelatedQuestions([]);
     } finally {
       setSavingCatalogs(false);
-    }
-  };
-
-  const toggleRelatedQuestions = async () => {
-    if (relatedOpen) {
-      setRelatedOpen(false);
-      return;
-    }
-    setRelatedOpen(true);
-    if (!question || question.knowledgePointIds.length === 0 || relatedQuestions.length > 0) return;
-
-    setRelatedLoading(true);
-    try {
-      const candidates = await questionService.listQuestions({
-        schoolId,
-        knowledgePointIds: question.knowledgePointIds,
-      });
-      const currentKnowledgeIds = new Set(question.knowledgePointIds);
-      const ranked = candidates
-        .filter((candidate) => !excludedQuestionIds.has(candidate.id) && candidate.type === question.type)
-        .map((candidate) => {
-          const candidateKnowledgeIds = new Set(candidate.knowledgePointIds);
-          const overlap = question.knowledgePointIds.filter((id) => candidateKnowledgeIds.has(id)).length;
-          const union = new Set([...currentKnowledgeIds, ...candidateKnowledgeIds]).size;
-          return {
-            question: candidate,
-            similarity: union > 0 ? overlap / union : 0,
-          };
-        })
-        .filter((candidate) => candidate.similarity > 0)
-        .sort((left, right) =>
-          right.similarity - left.similarity
-          || right.question.recommendation - left.question.recommendation
-          || right.question.usageCount - left.question.usageCount,
-        )
-        .slice(0, 6);
-      setRelatedQuestions(ranked);
-    } catch (error) {
-      toast.error("相关题加载失败", error instanceof Error ? error.message : "请稍后重试");
-    } finally {
-      setRelatedLoading(false);
     }
   };
 
@@ -3365,116 +3330,84 @@ function EditQuestionCatalogPanel({
         data-testid={`exam-editor-question-details-${index + 1}`}
       >
         <div className="mb-3 flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题属性</div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
-              <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
-                {difficultyLabel[difficulty]}
-              </Badge>
-              <QuestionProgressBadge progress={progress} />
+          {mode === "related" ? (
+            <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题相关题</div>
+          ) : (
+            <div className="min-w-0">
+              <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题属性</div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
+                <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
+                  {difficultyLabel[difficulty]}
+                </Badge>
+                <QuestionProgressBadge progress={progress} />
+              </div>
             </div>
-          </div>
-          {!structureLocked && (
-            <Button variant="outline" size="sm" onClick={onOpenReplace} aria-label="换题">
-              换题
+          )}
+          {!replacementDisabled && question && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMode((current) => current === "properties" ? "related" : "properties")}
+              aria-label={mode === "properties" ? "换题" : "属性"}
+            >
+              {mode === "properties" ? "换题" : "属性"}
             </Button>
           )}
         </div>
 
-        <div className="mb-3 flex items-center gap-2 border-b border-ink-100 pb-3">
-          <span className="text-xs text-ink-400">分值</span>
-          <Input
-            aria-label="题目分值"
-            type="number"
-            min="0"
-            step="0.5"
-            value={String(pq.score)}
-            onChange={(event) => onUpdateScore(Number(event.target.value))}
-            className="h-8 w-20 text-xs"
+        {mode === "related" && question && !replacementDisabled ? (
+          <RelatedQuestionReplacementPanel
+            question={question}
+            schoolId={schoolId}
+            excludedQuestionIds={excludedQuestionIds}
+            onReplace={(replacement) => {
+              onReplace(replacement);
+              setMode("properties");
+            }}
           />
-          <span className="text-xs text-ink-500">分</span>
-        </div>
-
-        <div className="space-y-1 text-xs leading-5 text-ink-600">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="font-medium text-ink-600">章节课与知识点</span>
-            <button
-              type="button"
-              onClick={openCatalogEditor}
-              disabled={!question}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
-              aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
-            >
-              <Edit3 className="h-3 w-3" />
-              编辑
-            </button>
-          </div>
-          <div>
-            <span className="text-ink-400">章节课目录：</span>
-            {chapterNames.length > 0 ? chapterNames.join("、") : "暂无关联章节课"}
-          </div>
-          <div>
-            <span className="text-ink-400">知识点目录：</span>
-            {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
-          </div>
-        </div>
-
-        <div className="mt-3 border-t border-ink-100 pt-3">
-          <button
-            type="button"
-            onClick={() => void toggleRelatedQuestions()}
-            disabled={!question}
-            className="flex w-full items-center justify-between rounded-md px-1 py-1 text-left text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:cursor-not-allowed disabled:text-ink-300"
-            aria-expanded={relatedOpen}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <Link2 className="h-3.5 w-3.5" />
-              相关题
-            </span>
-            {relatedOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-
-          {relatedOpen && (
-            <div className="mt-2 space-y-2" data-testid={`exam-editor-related-questions-${index + 1}`}>
-              {!question || question.knowledgePointIds.length === 0 ? (
-                <div className="rounded-md bg-ink-50 px-2 py-3 text-center text-[11px] text-ink-400">
-                  当前题目暂无知识点，无法匹配相关题
-                </div>
-              ) : relatedLoading ? (
-                <div className="flex justify-center py-4"><Spinner size={16} /></div>
-              ) : relatedQuestions.length === 0 ? (
-                <div className="rounded-md bg-ink-50 px-2 py-3 text-center text-[11px] text-ink-400">
-                  暂无同题型且知识点高度相似的题目
-                </div>
-              ) : relatedQuestions.map((candidate, candidateIndex) => (
-                <div key={candidate.question.id} className="rounded-md border border-ink-100 p-2">
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-medium text-teal-700">
-                      知识点相似度 {Math.round(candidate.similarity * 100)}%
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={structureLocked}
-                      onClick={() => {
-                        setRelatedOpen(false);
-                        setRelatedQuestions([]);
-                        onReplace(candidate.question);
-                      }}
-                      aria-label={`用相关题 ${candidateIndex + 1} 替换第 ${index + 1} 题`}
-                    >
-                      替换原题
-                    </Button>
-                  </div>
-                  <MathHtml className="line-clamp-3 text-xs leading-5 text-ink-800">
-                    {candidate.question.stem}
-                  </MathHtml>
-                </div>
-              ))}
+        ) : (
+          <>
+            <div className="mb-3 flex items-center gap-2 border-b border-ink-100 pb-3">
+              <span className="text-xs text-ink-400">分值</span>
+              <Input
+                aria-label="题目分值"
+                type="number"
+                min="0"
+                step="0.5"
+                value={String(pq.score)}
+                onChange={(event) => onUpdateScore(Number(event.target.value))}
+                disabled={readOnly}
+                className="h-8 w-20 text-xs"
+              />
+              <span className="text-xs text-ink-500">分</span>
             </div>
-          )}
-        </div>
+
+            <div className="space-y-1 text-xs leading-5 text-ink-600">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="font-medium text-ink-600">章节课与知识点</span>
+                <button
+                  type="button"
+                  onClick={openCatalogEditor}
+                  disabled={!question || readOnly}
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
+                  aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
+                >
+                  <Edit3 className="h-3 w-3" />
+                  编辑
+                </button>
+              </div>
+              <div>
+                <span className="text-ink-400">章节课目录：</span>
+                {chapterNames.length > 0 ? chapterNames.join("、") : "暂无关联章节课"}
+              </div>
+              <div>
+                <span className="text-ink-400">知识点目录：</span>
+                {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <Modal
@@ -3486,7 +3419,7 @@ function EditQuestionCatalogPanel({
         footer={(
           <>
             <Button variant="ghost" onClick={() => setCatalogOpen(false)}>取消</Button>
-            <Button variant="gold" onClick={saveCatalogs} loading={savingCatalogs}>保存</Button>
+            <Button variant="gold" onClick={saveCatalogs} loading={savingCatalogs} disabled={readOnly}>保存</Button>
           </>
         )}
       >
@@ -3498,7 +3431,7 @@ function EditQuestionCatalogPanel({
             </div>
             {chapterTree ? (
               <SearchableTree
-                editable
+                editable={!readOnly}
                 data={chapterTree}
                 onDataChange={onChapterTreeChange}
                 title="章节课目录"
@@ -3521,7 +3454,7 @@ function EditQuestionCatalogPanel({
             </div>
             {knowledgeTree ? (
               <SearchableTree
-                editable
+                editable={!readOnly}
                 data={knowledgeTree}
                 onDataChange={onKnowledgeTreeChange}
                 title="知识点目录"

@@ -263,7 +263,9 @@ export default function LectureEditorPage() {
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester, ready: resourceOptionsReady } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [lecture, setLecture] = useState<Lecture | null>(null);
+  const [isUsedDocument, setIsUsedDocument] = useState(false);
   const isStructureLocked = isDocumentStructureLocked(lecture);
+  const isEditingLocked = isStructureLocked || isUsedDocument;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedDraft, setSavedDraft] = useState<LectureSaveState | null>(null);
@@ -403,6 +405,10 @@ export default function LectureEditorPage() {
     )),
     [sections],
   );
+  const lectureQuestionIdSet = useMemo(
+    () => new Set(lectureQuestionIds),
+    [lectureQuestionIds],
+  );
   const editorLayout = useMemo(
     () => buildLectureEditorLayout(sections, true),
     [sections],
@@ -519,7 +525,9 @@ export default function LectureEditorPage() {
 
           const records = await analyticsService.listAnswerRecordsByLecture(lec.id);
           setAnswerRecords(records);
+          setIsUsedDocument(records.length > 0);
         } else {
+          setIsUsedDocument(false);
           setTitle("未命名讲义");
           setGrade(defaultGrade);
           setSchoolYear(defaultSchoolYear);
@@ -720,7 +728,7 @@ export default function LectureEditorPage() {
   };
 
   const handleSave = async (publish = false, silent = false) => {
-    if (!teacher || saving) return;
+    if (!teacher || saving || isUsedDocument) return;
     if (!title.trim()) {
       if (!silent) toast.error("请填写讲义标题");
       return;
@@ -759,7 +767,7 @@ export default function LectureEditorPage() {
   };
 
   useAutosave({
-    enabled: !isPreview && Boolean(lecture) && !prepTaskId && Boolean(title.trim()),
+    enabled: !isPreview && Boolean(lecture) && !prepTaskId && !isUsedDocument && Boolean(title.trim()),
     dirty: hasUnsavedChanges,
     saving,
     onSave: () => handleSave(false, true),
@@ -777,7 +785,7 @@ export default function LectureEditorPage() {
     }
     setSendingToCourseware(true);
     try {
-      if (!isPreview) {
+      if (!isPreview && !isUsedDocument) {
         const updated = await lectureService.updateLecture(lecture.id, buildLecturePatch());
         setLecture(updated);
         setSavedDraft(lectureSaveStateFromLecture(updated));
@@ -1236,6 +1244,44 @@ export default function LectureEditorPage() {
     setBankChapterIds([]);
     setBankKnowledgeIds([]);
   };
+
+  const handleReplaceSectionQuestion = useCallback((
+    sectionId: string,
+    parentId: string | undefined,
+    replacement: Question,
+  ) => {
+    if (isEditingLocked) return;
+    const replacementTitle = "题目·" + replacement.stem.slice(0, 18)
+      + (replacement.stem.length > 18 ? "..." : "");
+    setSections((previous) => previous.map((section) => {
+      if (parentId && section.id === parentId) {
+        return {
+          ...section,
+          children: section.children.map((child) => child.id === sectionId
+            ? {
+                ...child,
+                title: replacementTitle,
+                content: "",
+                questionId: replacement.id,
+                children: [],
+              }
+            : child),
+        };
+      }
+      if (!parentId && section.id === sectionId) {
+        return {
+          ...section,
+          title: replacementTitle,
+          content: "",
+          questionId: replacement.id,
+          children: [],
+        };
+      }
+      return section;
+    }));
+    setLectureQuestions((previous) => ({ ...previous, [replacement.id]: replacement }));
+    toast.success("题目已更换");
+  }, [isEditingLocked]);
 
   // 添加讲义内容 / 换题
   const handleConfirmAddQuestions = async () => {
@@ -1799,7 +1845,7 @@ export default function LectureEditorPage() {
           action={
             <div className="flex items-center gap-2">
               {!prepTaskId && (
-                <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)}>
+                <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)} disabled={isUsedDocument}>
                   <Users className="w-4 h-4" />
                   <span className="max-w-48 truncate">
                     {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
@@ -2096,7 +2142,7 @@ export default function LectureEditorPage() {
                 <Button
                   variant="outline"
                   onClick={handleUndo}
-                  disabled={!hasUnsavedChanges || saving}
+                  disabled={!hasUnsavedChanges || saving || isUsedDocument}
                   title={hasUnsavedChanges ? "撤销到上次保存的内容" : "没有可撤销的修改"}
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -2107,7 +2153,7 @@ export default function LectureEditorPage() {
                 variant="outline"
                 onClick={() => void handleSave(false)}
                 loading={saving}
-                disabled={Boolean(lecture) && !hasUnsavedChanges}
+                disabled={isUsedDocument || (Boolean(lecture) && !hasUnsavedChanges)}
                 title={lecture
                   ? (hasUnsavedChanges ? "保存修改；有未保存修改时会定时自动保存" : "没有需要保存的修改")
                   : "保存新讲义"}
@@ -2116,7 +2162,7 @@ export default function LectureEditorPage() {
                 保存
               </Button>
               {!prepTaskId && (
-                <Button variant="gold" onClick={() => handleSave(true)} loading={publishing}>
+                <Button variant="gold" onClick={() => handleSave(true)} loading={publishing} disabled={isUsedDocument}>
                   <Send className="w-4 h-4" />
                   发布
                 </Button>
@@ -2140,7 +2186,7 @@ export default function LectureEditorPage() {
                   {linkedCourseware ? "课件" : "发送到我的课件"}
                 </Button>
               )}
-              <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)}>
+              <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)} disabled={isUsedDocument}>
                 <UserCheck className="w-4 h-4" />
                 <span className="max-w-48 truncate">
                   {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
@@ -2151,6 +2197,13 @@ export default function LectureEditorPage() {
           </div>
         }
       />
+
+      {isUsedDocument && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
+          <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span>该文档已录入学生答题记录，现已锁定，不能再编辑。</span>
+        </div>
+      )}
 
       {/* 完成情况学生选择器 + 时间周期选择器 */}
       {currentVersionType !== "extract" && (
@@ -2216,13 +2269,14 @@ export default function LectureEditorPage() {
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="lg:col-span-2">
-                <Input label="标题" value={title} onChange={(event) => setTitle(event.target.value)} />
+                <Input label="标题" value={title} onChange={(event) => setTitle(event.target.value)} disabled={isUsedDocument} />
               </div>
               <div className="lg:col-span-2">
                 <Textarea
                   label="描述"
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
+                  disabled={isUsedDocument}
                   rows={1}
                   placeholder="讲义简介"
                 />
@@ -2231,24 +2285,28 @@ export default function LectureEditorPage() {
                 label="适用年级"
                 value={grade}
                 onChange={(event) => setGrade(event.target.value)}
+                disabled={isUsedDocument}
                 options={includeCurrentOption(gradeOptions, grade)}
               />
               <Select
                 label="学年"
                 value={schoolYear}
                 onChange={(event) => setSchoolYear(event.target.value)}
+                disabled={isUsedDocument}
                 options={includeCurrentOption(schoolYearOptions, schoolYear)}
               />
               <Select
                 label="学期"
                 value={semester}
                 onChange={(event) => setSemester(event.target.value as ResourceSemester)}
+                disabled={isUsedDocument}
                 options={semesterOptions}
               />
               <Select
                 label="讲义类型"
                 value={typeId}
                 onChange={(event) => setTypeId(event.target.value)}
+                disabled={isUsedDocument}
                 options={[
                   { value: "", label: "未设置" },
                   ...lectureTypeOptions,
@@ -2263,12 +2321,12 @@ export default function LectureEditorPage() {
                     <div className="text-xs font-medium text-ink-600 mb-1.5">章节目录</div>
                     {chapterTree && (
                       <SearchableTree
-                        editable
+                        editable={!isUsedDocument}
                         data={chapterTree}
                         onDataChange={setChapterTree}
                         title="章节目录"
                         showHeader={false}
-                        checkable
+                        checkable={!isUsedDocument}
                         checkedIds={selectedChapterIds}
                         onCheck={setSelectedChapterIds}
                         expandLevel={1}
@@ -2280,13 +2338,13 @@ export default function LectureEditorPage() {
                     <div className="text-xs font-medium text-ink-600 mb-1.5">知识点</div>
                     {knowledgeTree && (
                       <SearchableTree
-                        editable
+                        editable={!isUsedDocument}
                         data={knowledgeTree}
                         onDataChange={setKnowledgeTree}
                         title="知识点目录"
                         accent="teal"
                         showHeader={false}
-                        checkable
+                        checkable={!isUsedDocument}
                         checkedIds={selectedPointIds}
                         onCheck={setSelectedPointIds}
                         expandLevel={1}
@@ -2314,7 +2372,7 @@ export default function LectureEditorPage() {
                   <h3 className="font-serif font-semibold text-ink-900">讲义全貌</h3>
                   <Badge variant="ink">{sections.length} 个内容块</Badge>
                 </div>
-                {!isStructureLocked && <div className="flex flex-wrap items-center gap-2">
+                {!isEditingLocked && <div className="flex flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => setColumnTemplateOpen(true)}>
                     <LayoutTemplate className="w-3.5 h-3.5" /> 栏目模板
                   </Button>
@@ -2324,7 +2382,7 @@ export default function LectureEditorPage() {
                 </div>}
               </div>
 
-              {editingSection && editingSection.type !== "chapter" && !isStructureLocked && (
+              {editingSection && editingSection.type !== "chapter" && !isEditingLocked && (
                 <div className="p-3 mb-4 rounded-lg border border-gold-200 bg-gold-50/20">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-medium text-ink-700">
@@ -2373,7 +2431,7 @@ export default function LectureEditorPage() {
                   <FileText className="w-12 h-12 mx-auto mb-3 text-ink-200" />
                   <div className="text-sm text-ink-500 mb-1">讲义暂无栏目</div>
                   <div className="text-xs text-ink-400 mb-3">先创建栏目，再加入知识块、文本或题目。</div>
-                  {!isStructureLocked && (
+                  {!isEditingLocked && (
                     <Button variant="gold" size="sm" onClick={handleAddChapter}>
                       <Plus className="w-3.5 h-3.5" /> 创建第一个栏目
                     </Button>
@@ -2406,7 +2464,7 @@ export default function LectureEditorPage() {
                               <input
                                 aria-label={`栏目名称 ${sectionIndex + 1}`}
                                 value={section.title}
-                                disabled={isStructureLocked}
+                                disabled={isEditingLocked}
                                 onFocus={() => setSelectedChapterId(section.id)}
                                 onChange={(event) => handleUpdateColumnTitle(section.id, event.target.value)}
                                 placeholder="栏目名称（可留空）"
@@ -2418,7 +2476,7 @@ export default function LectureEditorPage() {
                               <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-ink-500">{section.content}</p>
                             )}
                           </div>
-                          {!isStructureLocked && <div className="flex items-center gap-0.5">
+                          {!isEditingLocked && <div className="flex items-center gap-0.5">
                             <button
                               type="button"
                               onClick={() => handleMoveSection(sectionIndex, "up")}
@@ -2444,7 +2502,7 @@ export default function LectureEditorPage() {
                           </div>}
                         </div>
 
-                        {!isStructureLocked && <div className="flex flex-wrap items-center gap-1.5 mb-3 rounded-lg border border-ink-100 bg-ink-50/50 p-2">
+                        {!isEditingLocked && <div className="flex flex-wrap items-center gap-1.5 mb-3 rounded-lg border border-ink-100 bg-ink-50/50 p-2">
                           <span className="mr-1 text-xs font-medium text-ink-500">添加内容</span>
                           <Button
                             variant="outline"
@@ -2506,14 +2564,14 @@ export default function LectureEditorPage() {
                             {items.length === 0 ? (
                               <button
                                 type="button"
-                                disabled={isStructureLocked}
+                                disabled={isEditingLocked}
                                 onClick={() => {
                                   setSelectedChapterId(section.id);
                                   setAddSource("bank");
                                 }}
                                 className="w-full rounded-lg border border-dashed border-ink-200 py-8 text-xs text-ink-400 hover:border-gold-300 hover:text-gold-700 disabled:cursor-default disabled:hover:border-ink-200 disabled:hover:text-ink-400"
                               >
-                                {isStructureLocked ? "当前栏目暂无内容" : "当前栏目暂无内容，可拖拽内容到此处或点击添加题目"}
+                                {isEditingLocked ? "当前栏目暂无内容" : "当前栏目暂无内容，可拖拽内容到此处或点击添加题目"}
                               </button>
                             ) : (
                               <div className="space-y-3">
@@ -2530,6 +2588,8 @@ export default function LectureEditorPage() {
                                         section={child}
                                         index={Math.max(0, questionIndex)}
                                         question={question}
+                                        schoolId={teacher?.schoolId}
+                                        excludedQuestionIds={lectureQuestionIdSet}
                                         answered={Boolean(child.questionId && answeredQuestionIds.has(child.questionId))}
                                         canMoveUp={itemIndex > 0}
                                         canMoveDown={itemIndex < items.length - 1}
@@ -2546,19 +2606,18 @@ export default function LectureEditorPage() {
                                           setSectionContent(child.content);
                                           setSectionLabel(child.customLabel || "");
                                         }}
-                                        onReplaceQuestion={question ? () => {
-                                          setReplacingQuestion({
-                                            sectionId: child.id,
-                                            parentId: isNestedChild ? section.id : undefined,
-                                          });
-                                          setSelectedQuestionIds([]);
-                                          setAddSource("bank");
+                                        onReplaceQuestion={question ? (replacement) => {
+                                          handleReplaceSectionQuestion(
+                                            child.id,
+                                            isNestedChild ? section.id : undefined,
+                                            replacement,
+                                          );
                                         } : undefined}
                                         onRemove={() => handleRemoveSection(
                                           child.id,
                                           isNestedChild ? section.id : undefined,
                                         )}
-                                        readOnly={isStructureLocked}
+                                        readOnly={isEditingLocked}
                                       />
                                       {prepTaskId && (
                                         <div className="flex justify-end">
@@ -2583,7 +2642,7 @@ export default function LectureEditorPage() {
                     );
                   })}
 
-                  {(editorLayout.ungrouped.length > 0 || !isStructureLocked) && (
+                  {(editorLayout.ungrouped.length > 0 || !isEditingLocked) && (
                     <section className="rounded-xl border border-ink-100 bg-paper p-3">
                       <div className="mb-3 flex items-center gap-2 border-b border-ink-100 pb-3">
                         <FileText className="w-4 h-4 text-ink-500" />
@@ -2612,6 +2671,8 @@ export default function LectureEditorPage() {
                                     section={section}
                                     index={Math.max(0, questionIndex)}
                                     question={question}
+                                    schoolId={teacher?.schoolId}
+                                    excludedQuestionIds={lectureQuestionIdSet}
                                     answered={Boolean(section.questionId && answeredQuestionIds.has(section.questionId))}
                                     canMoveUp={itemIndex > 0}
                                     canMoveDown={itemIndex < editorLayout.ungrouped.length - 1}
@@ -2624,13 +2685,11 @@ export default function LectureEditorPage() {
                                       setSectionContent(section.content);
                                       setSectionLabel(section.customLabel || "");
                                     }}
-                                    onReplaceQuestion={question ? () => {
-                                      setReplacingQuestion({ sectionId: section.id });
-                                      setSelectedQuestionIds([]);
-                                      setAddSource("bank");
+                                    onReplaceQuestion={question ? (replacement) => {
+                                      handleReplaceSectionQuestion(section.id, undefined, replacement);
                                     } : undefined}
                                     onRemove={() => handleRemoveSection(section.id)}
-                                    readOnly={isStructureLocked}
+                                    readOnly={isEditingLocked}
                                   />
                                 );
                               })}
@@ -2651,10 +2710,10 @@ export default function LectureEditorPage() {
                   <Sparkles className="w-4 h-4 text-gold-500" />
                   <h3 className="font-serif font-semibold text-ink-900 text-sm">讲义工具</h3>
                 </div>
-                {isStructureLocked ? (
+                {isEditingLocked ? (
                   <div className="flex items-start gap-2 rounded-md bg-ink-50 px-2.5 py-2 text-[11px] leading-relaxed text-ink-500">
                     <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                    <span>当前文档结构已锁定，不能新增、删除或调整内容。</span>
+                    <span>{isUsedDocument ? "当前文档已用，不能再编辑。" : "当前文档结构已锁定，不能新增、删除或调整内容。"}</span>
                   </div>
                 ) : (
                   <>

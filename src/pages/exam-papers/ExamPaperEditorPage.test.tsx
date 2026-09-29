@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   createLessonFromExamPaper: vi.fn(),
   getLessonCoursewareBySource: vi.fn(),
   listAnswerRecordsByStudents: vi.fn(),
+  listUsedDocumentIds: vi.fn(),
   saveAnswerRecord: vi.fn(),
   batchSaveAnswerRecords: vi.fn(),
 }));
@@ -105,6 +106,7 @@ vi.mock("@/services/analytics", () => ({
   analyticsService: {
     getAnsweredQuestionIds: vi.fn().mockResolvedValue(new Set()),
     listAnswerRecordsByStudents: mocks.listAnswerRecordsByStudents,
+    listUsedDocumentIds: mocks.listUsedDocumentIds,
     saveAnswerRecord: mocks.saveAnswerRecord,
     batchSaveAnswerRecords: mocks.batchSaveAnswerRecords,
   },
@@ -317,6 +319,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
     mocks.getLessonCoursewareBySource.mockResolvedValue(null);
     mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
+    mocks.listUsedDocumentIds.mockResolvedValue([]);
     mocks.saveAnswerRecord.mockResolvedValue(null);
     mocks.batchSaveAnswerRecords.mockResolvedValue([]);
   });
@@ -1086,15 +1089,33 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(details).getByRole("button", { name: "换题" })).toBeInTheDocument();
     expect(within(details).getByRole("button", { name: "编辑第 1 题章节课和知识点" })).toBeInTheDocument();
 
-    fireEvent.click(within(details).getByRole("button", { name: "相关题" }));
-    const related = await screen.findByTestId("exam-editor-related-questions-1");
-    expect(within(related).getByText("同知识点替换题")).toBeInTheDocument();
-    fireEvent.click(within(related).getByRole("button", { name: "用相关题 1 替换第 1 题" }));
+    fireEvent.click(within(details).getByRole("button", { name: "换题" }));
+    expect(within(details).getByRole("button", { name: "属性" })).toBeInTheDocument();
+    expect(within(details).getByRole("tab", { name: "同类题" })).toHaveAttribute("aria-selected", "true");
+    expect(within(details).queryByLabelText("题目分值")).not.toBeInTheDocument();
+    expect(await within(details).findByText("同知识点替换题")).toBeInTheDocument();
+    fireEvent.click(within(details).getByRole("button", { name: "替换为：同知识点替换题" }));
 
     await waitFor(() => {
       expect(screen.queryByText(question.stem)).not.toBeInTheDocument();
     });
     expect(screen.getByText("同知识点替换题")).toBeInTheDocument();
+  });
+
+  it("locks an already-used paper against further editing", async () => {
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+    });
+    mocks.listUsedDocumentIds.mockResolvedValue([paper.id]);
+
+    renderEditorPage();
+
+    expect(await screen.findByText("该文档已录入学生答题记录，现已锁定，不能再编辑。")).toBeInTheDocument();
+    expect(screen.getByLabelText("文档名")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "添加题目" })).not.toBeInTheDocument();
   });
 });
 
@@ -1114,6 +1135,7 @@ describe("ExamPaperEditorPage structured editor", () => {
     mocks.getChapterTree.mockResolvedValue(chapterTree);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
     mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
+    mocks.listUsedDocumentIds.mockResolvedValue([]);
     mocks.saveAnswerRecord.mockResolvedValue(null);
     mocks.batchSaveAnswerRecords.mockResolvedValue([]);
     mocks.getLessonCoursewareBySource.mockResolvedValue(null);
