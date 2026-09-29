@@ -648,7 +648,7 @@ describe("LecturePreviewPage", () => {
     expect(within(questionDetails).getAllByText("讲义已有备注").length).toBeGreaterThan(0);
 
     fireEvent.click(within(questionDetails).getByRole("button", { name: "添加备注" }));
-    fireEvent.change(within(questionDetails).getByLabelText("新增题目备注"), {
+    fireEvent.change(await within(questionDetails).findByLabelText("新增题目备注"), {
       target: { value: "讲义新备注" },
     });
     fireEvent.click(within(questionDetails).getByRole("button", { name: "添加" }));

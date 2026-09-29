@@ -94,6 +94,29 @@ const timeRangeOptions: { value: TimeRangeKey; label: string }[] = [
   { value: "2year", label: "两年内" },
 ];
 
+function adjustDirectorySelectionForDescendants(
+  tree: TreeNode | null,
+  checkedIds: string[],
+  includeDescendants: boolean,
+): string[] {
+  if (!tree || checkedIds.length === 0) return checkedIds;
+  const checked = new Set(checkedIds);
+  const next: string[] = [];
+
+  const visit = (node: TreeNode, ancestorSelected: boolean) => {
+    const selected = checked.has(node.id);
+    if (includeDescendants) {
+      if (selected || ancestorSelected) next.push(node.id);
+    } else if (selected && !ancestorSelected) {
+      next.push(node.id);
+    }
+    node.children.forEach((child) => visit(child, ancestorSelected || selected));
+  };
+
+  visit(tree, false);
+  return next;
+}
+
 function getDateRange(key: TimeRangeKey): DateRange | undefined {
   if (key === "all") return undefined;
   const now = new Date();
@@ -165,6 +188,7 @@ export default function QuestionBankPage({
   const [checkedKnowledge, setCheckedKnowledge] = useState<string[]>([]);
   const [chapterLogic, setChapterLogic] = useState<FilterLogic>("or");
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
+  const [includeDescendants, setIncludeDescendants] = useState(true);
   const [noChapter, setNoChapter] = useState(false);
   const [noKnowledge, setNoKnowledge] = useState(false);
 
@@ -817,6 +841,15 @@ export default function QuestionBankPage({
   const displayTree = leftTab === "chapter" ? chapterTree : knowledgeTree;
   const displayCheckedIds = leftTab === "chapter" ? checkedChapters : checkedKnowledge;
   const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : setCheckedKnowledge;
+  const handleIncludeDescendantsChange = (next: boolean) => {
+    setIncludeDescendants(next);
+    setCheckedChapters((current) =>
+      adjustDirectorySelectionForDescendants(chapterTree, current, next),
+    );
+    setCheckedKnowledge((current) =>
+      adjustDirectorySelectionForDescendants(knowledgeTree, current, next),
+    );
+  };
 
   return (
     <div>
@@ -908,7 +941,7 @@ export default function QuestionBankPage({
                   >
                     <span className="flex items-center justify-center gap-1.5">
                       <BookOpen className="w-3.5 h-3.5" />
-                      章节课目录
+                      章节课
                     </span>
                   </button>
                   <button
@@ -922,7 +955,7 @@ export default function QuestionBankPage({
                   >
                     <span className="flex items-center justify-center gap-1.5">
                       <Lightbulb className="w-3.5 h-3.5" />
-                      知识点目录
+                      知识点
                     </span>
                   </button>
                 </div>
@@ -946,6 +979,7 @@ export default function QuestionBankPage({
                   checkable
                   checkedIds={displayCheckedIds}
                   onCheck={setDisplayCheckedIds}
+                  cascadeCheck={includeDescendants}
                   showDoneCount={selectedStudentIds.length > 0}
                   expandLevel={1}
                   searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : "搜索知识点..."}
@@ -958,6 +992,19 @@ export default function QuestionBankPage({
                       setKnowledgeLogic(logic);
                     }
                   }}
+                  headerActions={(
+                    <label
+                      className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-ink-600"
+                      title="包含子节点对应的题目"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={includeDescendants}
+                        onChange={(event) => handleIncludeDescendantsChange(event.target.checked)}
+                      />
+                      包含
+                    </label>
+                  )}
                 />
               </div>
           </Card>

@@ -49,17 +49,23 @@ vi.mock("@/components/tree/SearchableTree", () => ({
     data,
     editable = false,
     onDataChange,
+    cascadeCheck = true,
+    headerActions,
   }: {
     data: TreeNode;
     editable?: boolean;
     onDataChange?: (data: TreeNode) => void;
+    cascadeCheck?: boolean;
+    headerActions?: import("react").ReactNode;
   }) => (
     <div
       data-testid={`searchable-tree-${data.type}`}
       data-editable={String(editable)}
       data-has-data-change={String(Boolean(onDataChange))}
+      data-cascade-check={String(cascadeCheck)}
     >
       目录
+      {headerActions}
     </div>
   ),
 }));
@@ -262,12 +268,19 @@ describe("QuestionBankPage personal resource scope", () => {
     const chapterDirectory = await screen.findByTestId("searchable-tree-chapter");
     expect(chapterDirectory).toHaveAttribute("data-editable", "false");
     expect(chapterDirectory).toHaveAttribute("data-has-data-change", "false");
+    expect(chapterDirectory).toHaveAttribute("data-cascade-check", "true");
+    expect(screen.getByRole("button", { name: "章节课" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "包含" })).toBeChecked();
 
-    fireEvent.click(screen.getByRole("button", { name: "知识点目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "知识点" }));
 
     const knowledgeDirectory = await screen.findByTestId("searchable-tree-knowledge");
     expect(knowledgeDirectory).toHaveAttribute("data-editable", "false");
     expect(knowledgeDirectory).toHaveAttribute("data-has-data-change", "false");
+    expect(knowledgeDirectory).toHaveAttribute("data-cascade-check", "true");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "包含" }));
+    expect(screen.getByTestId("searchable-tree-knowledge")).toHaveAttribute("data-cascade-check", "false");
   });
 
   it("queries personal questions by teacher while keeping class context on the active school", async () => {
