@@ -201,6 +201,25 @@ describe("document extract copies", () => {
     });
   });
 
+  it("uses math default scores for extracted single, fill-in, and multiple choice questions", async () => {
+    const appState = state();
+    appState.teachers = [
+      { id: "teacher-1", subject: "数学" },
+    ] as unknown as AppState["teachers"];
+    const mathBlocks: ExtractedDocumentBlock[] = [
+      { id: "math-single", type: "question", content: "单选题", questionType: "single" },
+      { id: "math-short", type: "question", content: "填空题", questionType: "short" },
+      { id: "math-multiple", type: "question", content: "多选题", questionType: "multiple" },
+    ];
+
+    await runWithState(appState, async () => {
+      const copy = await examPaperService.createExtractCopy("paper-source", mathBlocks);
+
+      expect(copy.questions.map((question) => question.score)).toEqual([5, 5, 6]);
+      expect(copy.totalScore).toBe(16);
+    });
+  });
+
   it("builds an editable lecture manuscript in the original block order", async () => {
     const appState = state();
     const lectureBlocks = blocks().map((block) => (
