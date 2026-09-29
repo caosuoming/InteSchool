@@ -12,7 +12,7 @@ import type {
   TeachingScheduleSemester,
   Teacher,
 } from "../../src/types/index.js";
-import { generateExamAssignments } from "../../src/lib/exam-arrangement.js";
+import { generateExamAssignments, normalizeExamRoomSharing } from "../../src/lib/exam-arrangement.js";
 import {
   normalizeTeachingScheduleConfig,
   parseTeachingScheduleSlotKey,
@@ -215,7 +215,7 @@ export const examArrangementService = {
     maybeThrowError();
     const context = await this.getContext(schoolId, input.cohortKey);
     const separateSubjects = input.separateSubjects ?? (input.mode === "subject" ? input.subjects : []);
-    const preparedInput: ExamArrangementInput = {
+    const preparedInput = normalizeExamRoomSharing({
       ...input,
       subjectSetupMode: input.subjectSetupMode || "all",
       selectionSubjects: structuredClone(input.selectionSubjects || {}),
@@ -235,7 +235,7 @@ export const examArrangementService = {
         ...selection,
         absent: Boolean(selection.absent),
       })),
-    };
+    } satisfies ExamArrangementInput, context);
     const assignments = generateExamAssignments(preparedInput, context);
     const existing = input.id
       ? readArrangements().find((item) => item.id === input.id)

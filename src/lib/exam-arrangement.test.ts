@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExamArrangementContext, ExamArrangementInput } from "@/types";
-import { generateExamAssignments, summarizeExamGroups } from "./exam-arrangement";
+import { generateExamAssignments, normalizeExamRoomSharing, summarizeExamGroups } from "./exam-arrangement";
 
 const context: ExamArrangementContext = {
   cohort: {
@@ -215,7 +215,7 @@ describe("generateExamAssignments", () => {
     }
   });
 
-  it("rejects mixed-room limits whose sum exceeds the physical room capacity", () => {
+  it("automatically balances mixed-room limits instead of requiring a manual split", () => {
     const simultaneous = input("subject");
     simultaneous.separateSubjects = ["物理", "化学"];
     simultaneous.simultaneousSubjectGroups = [["物理", "化学"]];
@@ -224,7 +224,7 @@ describe("generateExamAssignments", () => {
       { studentId: "student-2", subjects: ["化学"] },
       { studentId: "student-3", subjects: ["物理"] },
     ];
-    simultaneous.rooms = [{ id: "room-a", name: "第一考场", capacity: 2 }];
+    simultaneous.rooms = [{ id: "room-a", name: "第一考场", capacity: 3 }];
     simultaneous.classRules = simultaneous.classRules.map((rule) => ({
       ...rule,
       subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
@@ -234,14 +234,46 @@ describe("generateExamAssignments", () => {
       "subject:化学": ["room-a"],
     };
     simultaneous.groupRoomCapacities = {
-      "subject:物理": { "room-a": 2 },
-      "subject:化学": { "room-a": 1 },
-    };
-    simultaneous.splitRoomIdsBySession = {
-      "simultaneous:物理|化学": ["room-a"],
+      "subject:物理": { "room-a": 3 },
+      "subject:化学": { "room-a": 2 },
     };
 
-    expect(() => generateExamAssignments(simultaneous, context)).toThrow(/混合考场.*超过最多人数/);
+    const normalized = normalizeExamRoomSharing(simultaneous, context);
+    const physicsLimit = normalized.groupRoomCapacities?.["subject:物理"]?.["room-a"] || 0;
+    const chemistryLimit = normalized.groupRoomCapacities?.["subject:化学"]?.["room-a"] || 0;
+    expect(physicsLimit + chemistryLimit).toBeLessThanOrEqual(3);
+    expect(normalized.splitRoomIdsBySession?.["simultaneous:物理|化学"]).toContain("room-a");
+
+    const assignments = generateExamAssignments(simultaneous, context);
+    expect(assignments).toHaveLength(3);
+    expect(new Set(assignments.map((item) => item.roomNumber))).toEqual(new Set(["第一考场混1", "第一考场混2"]));
+  });
+
+  it("reuses the same physical seat for subject combinations that never occur at the same time", () => {
+    const reusable = input("combination");
+    reusable.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: [], absent: true },
+    ];
+    reusable.rooms = [{ id: "room-a", name: "第一考场", capacity: 1 }];
+    reusable.classRules = reusable.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+
+    const assignments = generateExamAssignments(reusable, context);
+
+    expect(assignments).toHaveLength(2);
+    expect(assignments.map((item) => item.roomId)).toEqual(["room-a", "room-a"]);
+    expect(assignments.map((item) => item.seatNo)).toEqual([1, 1]);
+  });
+
+  it("ignores an incomplete simultaneous group until at least two subjects are selected", () => {
+    const optional = input("combination");
+    optional.simultaneousSubjectGroups = [["物理"]];
+
+    expect(() => generateExamAssignments(optional, context)).not.toThrow();
   });
 
   it("rejects a student who is configured for two subjects that occur simultaneously", () => {

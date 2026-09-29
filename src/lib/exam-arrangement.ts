@@ -16,6 +16,7 @@ interface SeatTask {
   subjectLabel: string;
   sessionKey: string;
   groupKey: string;
+  examSlotKeys: string[];
   eligibleRoomIds: string[];
   concentrationKey?: string;
   seatPreference?: ExamStudentSeatPreference;
@@ -71,9 +72,6 @@ function normalizeSimultaneousSubjectGroups(
       throw new Error(`科目不能同时属于多个同时考试组合：${duplicated.join("、")}`);
     }
     const available = normalized.filter((subject) => !claimed.has(subject));
-    if (strict && available.length < 2) {
-      throw new Error("每个同时考试组合至少需要两个科目");
-    }
     if (available.length < 2) continue;
     available.forEach((subject) => claimed.add(subject));
     groups.push(available);
@@ -84,6 +82,26 @@ function normalizeSimultaneousSubjectGroups(
 function simultaneousSessionKey(subject: string, groups: string[][]): string {
   const group = groups.find((items) => items.includes(subject));
   return group ? `simultaneous:${group.join("|")}` : `subject:${subject}`;
+}
+
+function examSlotKey(subject: string, groups: string[][]): string {
+  const group = groups.find((items) => items.includes(subject));
+  return group ? `simultaneous:${group.join("|")}` : `subject:${subject}`;
+}
+
+function groupExamSlotKeys(group: ExamGroupSummary, simultaneousGroups: string[][]): string[] {
+  return uniqueStrings(group.subjectLabel.split(" / ")).map((subject) => examSlotKey(subject, simultaneousGroups));
+}
+
+export function examGroupsShareExamTime(
+  input: ExamArrangementInput,
+  left: ExamGroupSummary,
+  right: ExamGroupSummary,
+): boolean {
+  const subjects = uniqueStrings(input.subjects || []);
+  const simultaneousGroups = normalizeSimultaneousSubjectGroups(input, subjects);
+  const leftSlots = new Set(groupExamSlotKeys(left, simultaneousGroups));
+  return groupExamSlotKeys(right, simultaneousGroups).some((slotKey) => leftSlots.has(slotKey));
 }
 
 function taskConcentrationKey(student: Student, selectedSubjects: string[], groups: string[][]): string | undefined {
@@ -159,6 +177,194 @@ export function summarizeExamGroups(
       left.sessionKey.localeCompare(right.sessionKey, "zh-CN")
       || left.subjectLabel.localeCompare(right.subjectLabel, "zh-CN"),
     );
+}
+
+function configuredRoomsForGroup(input: ExamArrangementInput, group: ExamGroupSummary): string[] {
+  const configured = uniqueStrings(input.groupRoomIds?.[group.key] || []);
+  if (configured.length > 0) return configured;
+  if (group.sessionKey === "combined") {
+    const separateSubjects = new Set(uniqueStrings(input.separateSubjects || []));
+    const combinedSubjects = uniqueStrings(input.subjects || []).filter((subject) => !separateSubjects.has(subject));
+    const legacy = uniqueStrings(input.groupRoomIds?.[`combined:${combinedSubjects.join("|")}`] || []);
+    if (legacy.length > 0) return legacy;
+  }
+  const defaultRooms = input.rooms
+    .filter((room) => !room.classroomClassId || group.classIds.includes(room.classroomClassId))
+    .map((room) => room.id);
+  return defaultRooms.length > 0 ? defaultRooms : input.rooms.map((room) => room.id);
+}
+
+export function normalizeExamRoomSharing(
+  input: ExamArrangementInput,
+  context: ExamArrangementContext,
+): ExamArrangementInput {
+  const groups = summarizeExamGroups(input, context);
+  if (groups.length === 0 || input.rooms.length === 0) {
+    return { ...input, splitRoomIdsBySession: {} };
+  }
+  const roomMap = new Map(input.rooms.map((room) => [room.id, room]));
+  const simultaneousGroups = normalizeSimultaneousSubjectGroups(input, uniqueStrings(input.subjects || []));
+  const slotsByGroup = new Map(groups.map((group) => [group.key, groupExamSlotKeys(group, simultaneousGroups)]));
+  const roomsByGroup = new Map(groups.map((group) => [group.key, configuredRoomsForGroup(input, group)]));
+  try {
+    const subjects = uniqueStrings(input.subjects || []);
+    const rooms = normalizeRooms(input.rooms || []);
+    const rules = normalizeRules(input, context, subjects, rooms);
+    const selections = normalizeSelections(input, context, rules, subjects);
+    const tasks = buildTasks(input, context, subjects, rooms, rules, selections);
+    const eligibleByGroup = new Map<string, Set<string>>();
+    for (const task of tasks) {
+      const roomIds = eligibleByGroup.get(task.groupKey) || new Set<string>();
+      task.eligibleRoomIds.forEach((roomId) => roomIds.add(roomId));
+      eligibleByGroup.set(task.groupKey, roomIds);
+    }
+    for (const group of groups) {
+      const eligible = [...(eligibleByGroup.get(group.key) || [])];
+      if (eligible.length > 0) roomsByGroup.set(group.key, eligible);
+    }
+  } catch {
+    // Draft editing can temporarily be incomplete; generation performs strict validation later.
+  }
+  const groupMap = new Map(groups.map((group) => [group.key, group]));
+  const effectiveCapacities = new Map<string, Map<string, number>>();
+  const totalCapacities = new Map<string, number>();
+  const adjustedCapacities: Record<string, Record<string, number>> = structuredClone(input.groupRoomCapacities || {});
+  const adjustedRoomIds: Record<string, string[]> = structuredClone(input.groupRoomIds || {});
+
+  for (const group of groups) {
+    const capacities = new Map<string, number>();
+    for (const roomId of roomsByGroup.get(group.key) || []) {
+      const room = roomMap.get(roomId);
+      if (!room) continue;
+      const explicit = input.groupRoomCapacities?.[group.key]?.[roomId];
+      const capacity = explicit === undefined
+        ? Math.min(room.capacity, group.studentCount)
+        : Math.max(0, Math.min(room.capacity, Math.floor(Number(explicit))));
+      capacities.set(roomId, capacity);
+    }
+    effectiveCapacities.set(group.key, capacities);
+    totalCapacities.set(group.key, [...capacities.values()].reduce((sum, capacity) => sum + capacity, 0));
+  }
+
+  const sessions = new Map<string, ExamGroupSummary[]>();
+  for (const group of groups) {
+    const sessionGroups = sessions.get(group.sessionKey) || [];
+    sessionGroups.push(group);
+    sessions.set(group.sessionKey, sessionGroups);
+  }
+  const splitCandidates = new Map<string, Set<string>>();
+
+  // Reduce only redundant capacity. This keeps every combination's total configured
+  // positions at or above its actual student count whenever the selected rooms permit it.
+  for (let pass = 0; pass < Math.max(1, groups.length * input.rooms.length); pass += 1) {
+    let changed = false;
+    for (const [sessionKey, sessionGroups] of sessions) {
+      for (const room of input.rooms) {
+        const groupsBySlot = new Map<string, ExamGroupSummary[]>();
+        for (const group of sessionGroups) {
+          if ((effectiveCapacities.get(group.key)?.get(room.id) || 0) <= 0) continue;
+          for (const slotKey of slotsByGroup.get(group.key) || []) {
+            const slotGroups = groupsBySlot.get(slotKey) || [];
+            slotGroups.push(group);
+            groupsBySlot.set(slotKey, slotGroups);
+          }
+        }
+        for (const slotGroups of groupsBySlot.values()) {
+          if (slotGroups.length < 2) continue;
+          let overflow = slotGroups.reduce((sum, group) => (
+            sum + (effectiveCapacities.get(group.key)?.get(room.id) || 0)
+          ), 0) - room.capacity;
+          if (overflow <= 0) continue;
+          const candidates = splitCandidates.get(sessionKey) || new Set<string>();
+          candidates.add(room.id);
+          splitCandidates.set(sessionKey, candidates);
+
+          while (overflow > 0) {
+            const reducible = slotGroups
+              .map((group) => {
+                const capacity = effectiveCapacities.get(group.key)?.get(room.id) || 0;
+                const surplus = Math.max(0, (totalCapacities.get(group.key) || 0) - group.studentCount);
+                return { group, capacity, surplus, reducible: Math.min(capacity, surplus) };
+              })
+              .filter((item) => item.reducible > 0)
+              .sort((left, right) => right.reducible - left.reducible
+                || right.surplus - left.surplus
+                || left.group.key.localeCompare(right.group.key, "zh-CN"));
+            const candidate = reducible[0];
+            if (!candidate) break;
+            const reduction = Math.min(overflow, candidate.reducible);
+            const nextCapacity = candidate.capacity - reduction;
+            effectiveCapacities.get(candidate.group.key)?.set(room.id, nextCapacity);
+            totalCapacities.set(candidate.group.key, (totalCapacities.get(candidate.group.key) || 0) - reduction);
+            overflow -= reduction;
+            changed = true;
+            if (nextCapacity > 0) {
+              adjustedCapacities[candidate.group.key] = {
+                ...adjustedCapacities[candidate.group.key],
+                [room.id]: nextCapacity,
+              };
+            } else {
+              const selected = adjustedRoomIds[candidate.group.key]
+                || roomsByGroup.get(candidate.group.key)
+                || [];
+              adjustedRoomIds[candidate.group.key] = selected.filter((roomId) => roomId !== room.id);
+              if (adjustedCapacities[candidate.group.key]) {
+                delete adjustedCapacities[candidate.group.key][room.id];
+                if (Object.keys(adjustedCapacities[candidate.group.key]).length === 0) {
+                  delete adjustedCapacities[candidate.group.key];
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  const splitRoomIdsBySession: Record<string, string[]> = {};
+  for (const [sessionKey, roomIds] of splitCandidates) {
+    const sessionGroups = sessions.get(sessionKey) || [];
+    const valid = [...roomIds].filter((roomId) => {
+      const groupsBySlot = new Map<string, string[]>();
+      for (const group of sessionGroups) {
+        if ((effectiveCapacities.get(group.key)?.get(roomId) || 0) <= 0) continue;
+        for (const slotKey of slotsByGroup.get(group.key) || []) {
+          const groupKeys = groupsBySlot.get(slotKey) || [];
+          groupKeys.push(group.key);
+          groupsBySlot.set(slotKey, groupKeys);
+        }
+      }
+      return [...groupsBySlot.values()].some((groupKeys) => new Set(groupKeys).size >= 2);
+    });
+    if (valid.length > 0) splitRoomIdsBySession[sessionKey] = valid;
+  }
+  for (const [sessionKey, roomIds] of Object.entries(input.splitRoomIdsBySession || {})) {
+    const valid = uniqueStrings(roomIds || []).filter((roomId) => roomMap.has(roomId));
+    if (valid.length > 0) {
+      splitRoomIdsBySession[sessionKey] = [...new Set([...(splitRoomIdsBySession[sessionKey] || []), ...valid])];
+    }
+  }
+
+  // Remove empty/stale capacity entries while preserving explicit user limits that
+  // were not involved in an automatic conflict adjustment.
+  for (const [groupKey, capacities] of Object.entries(adjustedCapacities)) {
+    if (!groupMap.has(groupKey)) {
+      delete adjustedCapacities[groupKey];
+      continue;
+    }
+    for (const roomId of Object.keys(capacities)) {
+      if (!roomMap.has(roomId)) delete capacities[roomId];
+    }
+    if (Object.keys(capacities).length === 0) delete adjustedCapacities[groupKey];
+  }
+
+  return {
+    ...input,
+    groupRoomIds: adjustedRoomIds,
+    groupRoomCapacities: adjustedCapacities,
+    splitRoomIdsBySession,
+  };
 }
 
 function normalizeRooms(rooms: ExamRoomConfig[]): ExamRoomConfig[] {
@@ -304,6 +510,7 @@ function createTask(
     subjectLabel,
     sessionKey,
     groupKey,
+    examSlotKeys: uniqueStrings(selectedSubjects.map((subject) => examSlotKey(subject, simultaneousGroups))),
     eligibleRoomIds,
     concentrationKey: taskConcentrationKey(student, selectedSubjects, simultaneousGroups),
     seatPreference,
@@ -442,7 +649,8 @@ function allocateSession(
   context: ExamArrangementContext,
 ): ExamSeatAssignment[] {
   const roomMap = new Map(rooms.map((room) => [room.id, room]));
-  const used = new Map(rooms.map((room) => [room.id, 0]));
+  const usedBySlot = new Map<string, number>();
+  const usedTotal = new Map(rooms.map((room) => [room.id, 0]));
   const groupRoomUsed = new Map<string, number>();
   const seatOrder = input.seatOrder || "random";
   const sessionKey = tasks[0]?.sessionKey || String(sessionIndex);
@@ -452,21 +660,16 @@ function allocateSession(
     input.groupRoomCapacities?.[task.groupKey]?.[room.id] ?? room.capacity
   );
   const groupRoomUsageKey = (task: SeatTask, roomId: string) => `${task.groupKey}\0${roomId}`;
+  const roomSlotUsageKey = (roomId: string, slotKey: string) => `${roomId}\0${slotKey}`;
+  const roomUsageRatio = (task: SeatTask, room: ExamRoomConfig): number => Math.max(
+    0,
+    ...task.examSlotKeys.map((slotKey) => (usedBySlot.get(roomSlotUsageKey(room.id, slotKey)) || 0) / room.capacity),
+  );
 
   for (const roomId of splitRoomIds) {
-    const room = roomMap.get(roomId);
-    if (!room) throw new Error(`混合考场引用了不存在的考场：${roomId}`);
-    const groupKeys = [...new Set(tasks
-      .filter((task) => task.eligibleRoomIds.includes(roomId))
-      .map((task) => task.groupKey))];
-    if (groupKeys.length < 2) continue;
-    const total = groupKeys.reduce((sum, groupKey) => (
-      sum + (input.groupRoomCapacities?.[groupKey]?.[roomId] ?? room.capacity)
-    ), 0);
-    if (total > room.capacity) {
-      throw new Error(`混合考场「${room.number || room.name}」各组合布置人数合计 ${total}，超过最多人数 ${room.capacity}`);
-    }
+    if (!roomMap.has(roomId)) throw new Error(`混合考场引用了不存在的考场：${roomId}`);
   }
+
   const sorted = [...tasks].sort((left, right) =>
     left.eligibleRoomIds.length - right.eligibleRoomIds.length
     || compareTasks(left, right, seatOrder, context, seed, false),
@@ -477,21 +680,26 @@ function allocateSession(
     const candidates = task.eligibleRoomIds
       .map((roomId) => roomMap.get(roomId))
       .filter((room): room is ExamRoomConfig => Boolean(room))
-      .filter((room) => (used.get(room.id) || 0) < room.capacity)
+      .filter((room) => task.examSlotKeys.every((slotKey) => (
+        (usedBySlot.get(roomSlotUsageKey(room.id, slotKey)) || 0) < room.capacity
+      )))
       .filter((room) => (
         (groupRoomUsed.get(groupRoomUsageKey(task, room.id)) || 0) < roomCapacityForGroup(task, room)
       ))
       .sort((left, right) => {
-        const leftUsed = used.get(left.id) || 0;
-        const rightUsed = used.get(right.id) || 0;
-        const ratio = leftUsed / left.capacity - rightUsed / right.capacity;
-        return ratio || (left.number || left.name).localeCompare(right.number || right.name, "zh-CN");
+        const totalRatio = (usedTotal.get(left.id) || 0) / left.capacity - (usedTotal.get(right.id) || 0) / right.capacity;
+        const slotRatio = roomUsageRatio(task, left) - roomUsageRatio(task, right);
+        return totalRatio || slotRatio || (left.number || left.name).localeCompare(right.number || right.name, "zh-CN");
       });
     const room = candidates[0];
     if (!room) {
       throw new Error(`「${task.subjectLabel}」考场容量不足，无法安排 ${task.className} ${task.student.name}`);
     }
-    used.set(room.id, (used.get(room.id) || 0) + 1);
+    for (const slotKey of task.examSlotKeys) {
+      const usageKey = roomSlotUsageKey(room.id, slotKey);
+      usedBySlot.set(usageKey, (usedBySlot.get(usageKey) || 0) + 1);
+    }
+    usedTotal.set(room.id, (usedTotal.get(room.id) || 0) + 1);
     const usageKey = groupRoomUsageKey(task, room.id);
     groupRoomUsed.set(usageKey, (groupRoomUsed.get(usageKey) || 0) + 1);
     return { task, room };
@@ -502,11 +710,23 @@ function allocateSession(
   const splitGroupIndexes = new Map<string, Map<string, number>>();
   for (const room of rooms) {
     if (!splitRoomIds.has(room.id)) continue;
-    const groups = groupOrder.filter((groupKey) => planned.some((item) => (
-      item.room.id === room.id && item.task.groupKey === groupKey
-    )));
-    if (groups.length < 2) continue;
-    splitGroupIndexes.set(room.id, new Map(groups.map((groupKey, index) => [groupKey, index + 1])));
+    const roomItems = planned.filter((item) => item.room.id === room.id);
+    const groupsBySlot = new Map<string, Set<string>>();
+    for (const item of roomItems) {
+      for (const slotKey of item.task.examSlotKeys) {
+        const groupKeys = groupsBySlot.get(slotKey) || new Set<string>();
+        groupKeys.add(item.task.groupKey);
+        groupsBySlot.set(slotKey, groupKeys);
+      }
+    }
+    const splitGroups = new Set<string>();
+    for (const groupKeys of groupsBySlot.values()) {
+      if (groupKeys.size < 2) continue;
+      groupKeys.forEach((groupKey) => splitGroups.add(groupKey));
+    }
+    const orderedGroups = groupOrder.filter((groupKey) => splitGroups.has(groupKey));
+    if (orderedGroups.length < 2) continue;
+    splitGroupIndexes.set(room.id, new Map(orderedGroups.map((groupKey, index) => [groupKey, index + 1])));
   }
   const resolved = planned.map(({ task, room }) => {
     const mixedIndex = splitGroupIndexes.get(room.id)?.get(task.groupKey);
@@ -522,10 +742,32 @@ function allocateSession(
 
   const seatNumbers = new Map<SeatTask, number>();
   for (const logicalRoomId of [...new Set(resolved.map((item) => item.logicalRoomId))]) {
-    resolved
+    const roomItems = resolved
       .filter((item) => item.logicalRoomId === logicalRoomId)
-      .sort((left, right) => compareSeatTasks(left.task, right.task, seatOrder, context, seed))
-      .forEach((item, index) => seatNumbers.set(item.task, index + 1));
+      .sort((left, right) => compareSeatTasks(left.task, right.task, seatOrder, context, seed));
+    const capacity = roomItems[0]?.room.capacity || 0;
+    if (roomItems.length <= capacity) {
+      roomItems.forEach((item, index) => seatNumbers.set(item.task, index + 1));
+      continue;
+    }
+    const occupiedBySlot = new Map<string, Set<number>>();
+    for (const item of roomItems) {
+      let seatNo = 1;
+      while (seatNo <= item.room.capacity && item.task.examSlotKeys.some((slotKey) => (
+        occupiedBySlot.get(slotKey)?.has(seatNo)
+      ))) {
+        seatNo += 1;
+      }
+      if (seatNo > item.room.capacity) {
+        throw new Error(`「${item.task.subjectLabel}」在「${item.room.number || item.room.name}」中没有可复用的座位`);
+      }
+      seatNumbers.set(item.task, seatNo);
+      for (const slotKey of item.task.examSlotKeys) {
+        const occupied = occupiedBySlot.get(slotKey) || new Set<number>();
+        occupied.add(seatNo);
+        occupiedBySlot.set(slotKey, occupied);
+      }
+    }
   }
 
   return resolved
@@ -556,6 +798,7 @@ export function generateExamAssignments(
   input: ExamArrangementInput,
   context: ExamArrangementContext,
 ): ExamSeatAssignment[] {
+  input = normalizeExamRoomSharing(input, context);
   const name = input.name?.trim();
   if (!name) throw new Error("请填写考试名称");
   if (!context.students.length) throw new Error("所选年级暂无在读学生");
