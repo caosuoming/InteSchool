@@ -426,6 +426,16 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(analyticsService.listUsedDocumentIds).mockResolvedValue([]);
   });
 
+  it("starts loading a resource tab immediately instead of waiting for search debounce", () => {
+    vi.useFakeTimers();
+    try {
+      renderPage("material");
+      expect(materialService.listMaterials).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows created answer sheets after the material tab with only the chapter directory", async () => {
     vi.mocked(examPaperService.listPapers).mockResolvedValue([
       { ...examPaper, hasAnswerSheet: true, answerSheetCreatedAt: "2026-08-02T00:00:00.000Z" },
