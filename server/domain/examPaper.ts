@@ -13,6 +13,7 @@ import { sanitizeExamPaperPatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveExamPaperToLecture } from "./document-library-move.js";
 import { examPaperKnowledgePointIds } from "./document-knowledge.js";
+import { subjectAwareDefaultQuestionScore } from "../../src/lib/question-default-score.js";
 
 function withDerivedKnowledgePoints(paper: ExamPaper): ExamPaper {
   return { ...paper, knowledgePointIds: examPaperKnowledgePointIds(paper) };
@@ -309,6 +310,7 @@ export const examPaperService = {
     const source = db.read("examPapers").find((p) => p.id === sourceId);
     if (!source) throw new Error("源试卷不存在");
     assertResourceCapacity(source.teacherId, "examPaper");
+    const subject = (db.read("teachers") || []).find((teacher) => teacher.id === source.teacherId)?.subject;
     const now = new Date().toISOString();
     const normalizedBlocks = contentBlocks.map((block) => ({
       ...block,
@@ -331,7 +333,11 @@ export const examPaperService = {
             options: linkedQuestion?.options,
             answer: linkedQuestion?.answer || "",
             analysis: linkedQuestion?.analysis || "",
-            score: type === "essay" ? 15 : type === "short" ? 5 : type === "multiple" ? 3 : 2,
+            score: subjectAwareDefaultQuestionScore(
+              type,
+              subject,
+              type === "essay" ? 15 : type === "short" ? 5 : type === "multiple" ? 3 : 2,
+            ),
             type,
           };
         })

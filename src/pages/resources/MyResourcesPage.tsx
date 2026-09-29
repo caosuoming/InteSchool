@@ -56,6 +56,7 @@ import { genId } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { questionStemSimilarity } from "@/lib/question-similarity";
+import { subjectAwareDefaultQuestionScore } from "@/lib/question-default-score";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import {
   QuestionDuplicateReviewModal,
@@ -1417,7 +1418,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       options: q.options,
       answer: q.answer,
       analysis: q.analysis,
-      score: q.type === "essay" ? 15 : q.type === "short" ? 5 : 2,
+      score: subjectAwareDefaultQuestionScore(
+        q.type,
+        teacher?.subject,
+        q.type === "essay" ? 15 : q.type === "short" ? 5 : 2,
+      ),
       type: q.type,
     }));
     const totalScore = questions.reduce((sum, q) => sum + q.score, 0);

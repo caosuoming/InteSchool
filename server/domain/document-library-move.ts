@@ -14,6 +14,7 @@ import type {
 import { db } from "../runtime-db.js";
 import { genId } from "../domain-shared.js";
 import { assertResourceCapacity } from "./quota.js";
+import { subjectAwareDefaultQuestionScore } from "../../src/lib/question-default-score.js";
 
 type DocumentResourceType = "examPaper" | "lecture";
 
@@ -78,6 +79,7 @@ function lectureSectionsFromPaperQuestions(questions: ExamPaperQuestion[]): Lect
 
 function paperQuestionsFromBlocks(
   blocks: ExtractedDocumentBlock[],
+  subject?: string,
 ): { blocks: ExtractedDocumentBlock[]; questions: ExamPaperQuestion[] } {
   const normalizedBlocks = blocks.map((block) => ({ ...block }));
   const questions = normalizedBlocks
@@ -96,14 +98,17 @@ function paperQuestionsFromBlocks(
         options: linkedQuestion?.options,
         answer: linkedQuestion?.answer || "",
         analysis: linkedQuestion?.analysis || "",
-        score: scoreForQuestionType(type),
+        score: subjectAwareDefaultQuestionScore(type, subject, scoreForQuestionType(type)),
         type,
       };
     });
   return { blocks: normalizedBlocks, questions };
 }
 
-function paperQuestionsFromLectureSections(sections: LectureSection[]): ExamPaperQuestion[] {
+function paperQuestionsFromLectureSections(
+  sections: LectureSection[],
+  subject?: string,
+): ExamPaperQuestion[] {
   const result: ExamPaperQuestion[] = [];
   for (const section of sections) {
     if (section.type === "question") {
@@ -117,12 +122,12 @@ function paperQuestionsFromLectureSections(sections: LectureSection[]): ExamPape
         options: linkedQuestion?.options,
         answer: linkedQuestion?.answer || "",
         analysis: linkedQuestion?.analysis || "",
-        score: 5,
+        score: subjectAwareDefaultQuestionScore(type, subject, 5),
         type,
         questionId: linkedQuestion?.id || section.questionId,
       });
     }
-    if (section.children?.length) result.push(...paperQuestionsFromLectureSections(section.children));
+    if (section.children?.length) result.push(...paperQuestionsFromLectureSections(section.children, subject));
   }
   return result;
 }
@@ -176,10 +181,13 @@ function paperToLecture(paper: ExamPaper, root: ExamPaper, now: string): Lecture
 }
 
 function lectureToPaper(lecture: Lecture, now: string): ExamPaper {
+  const subject = (db.read("teachers") || []).find((teacher: { id: string; subject?: string }) => (
+    teacher.id === lecture.teacherId
+  ))?.subject;
   const fromBlocks = lecture.contentBlocks?.length
-    ? paperQuestionsFromBlocks(lecture.contentBlocks)
+    ? paperQuestionsFromBlocks(lecture.contentBlocks, subject)
     : null;
-  const questions = fromBlocks?.questions || paperQuestionsFromLectureSections(lecture.sections);
+  const questions = fromBlocks?.questions || paperQuestionsFromLectureSections(lecture.sections, subject);
   return {
     id: lecture.id,
     teacherId: lecture.teacherId,
