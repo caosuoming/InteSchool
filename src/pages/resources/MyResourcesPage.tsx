@@ -10,7 +10,7 @@ import {
   ShoppingCart, CheckSquare, Square, Plus, X,
   Layout,
   Gift, Users, Pencil, Check,
-  Folder, FolderPlus, FolderMinus, Pin, PinOff, ArrowUp, ArrowDown,
+  Folder, FolderPlus, FolderMinus, Pin, PinOff, ArrowUp, ArrowDown, Download,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
@@ -91,6 +91,10 @@ import {
 import { documentResourceUsageSummary, isIssuedUnusedDocumentResource } from "@/lib/document-resource-usage";
 import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import { createBlankLessonCourseware } from "@/lib/lesson-courseware-create";
+import {
+  downloadOfflineLessonCourseware,
+  offlineLessonFromLibraryCourseware,
+} from "@/lib/lesson-courseware-offline";
 import {
   appendUniqueIds,
   batchResourceKey,
@@ -595,6 +599,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [examPapers, setExamPapers] = useState<ExamPaper[]>([]);
   const [coursewares, setCoursewares] = useState<Courseware[]>([]);
   const [coursewarePushKey, setCoursewarePushKey] = useState("");
+  const [offlineCoursewareDownloadId, setOfflineCoursewareDownloadId] = useState("");
   const [materials, setMaterials] = useState<Material[]>([]);
   const [quota, setQuota] = useState<UserQuotaSnapshot | null>(null);
   const [resourceFolders, setResourceFolders] = useState<ResourceFolder[]>([]);
@@ -690,6 +695,31 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       questionSourceType: resource.questionSourceType,
       questionCategory: resource.questionCategory,
     });
+  };
+
+  const handleDownloadCoursewareOffline = async (item: Courseware) => {
+    if (offlineCoursewareDownloadId) return;
+    setOfflineCoursewareDownloadId(item.id);
+    try {
+      const linked = item.lessonCoursewareId
+        ? await lessonCoursewareService.getCourseware(item.lessonCoursewareId)
+        : null;
+      const result = await downloadOfflineLessonCourseware(
+        linked || offlineLessonFromLibraryCourseware(item),
+      );
+      if (result.warnings.length > 0) {
+        toast.warning(
+          "脱机课件已下载",
+          `${result.warnings.length} 个资源未能内嵌，离线时可能无法使用`,
+        );
+      } else {
+        toast.success("脱机课件已下载", result.fileName);
+      }
+    } catch (error) {
+      toast.error("下载失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setOfflineCoursewareDownloadId("");
+    }
   };
 
   const handlePushCoursewareForEditing = async (item: Courseware) => {
@@ -3959,7 +3989,18 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   onEditProperties={() => setDocumentMetadataTarget({ resourceType: "courseware", resource: item })}
                   onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                   onDuplicate={() => openDuplicate("courseware", item.id, item.title)}
-                  additionalActions={folderActionsFor("courseware", item.id, item.title)}
+                  additionalActions={[
+                    {
+                      key: "downloadOffline",
+                      label: "下载脱机课件",
+                      ariaLabel: `下载脱机课件：${item.title}`,
+                      icon: <Download />,
+                      onClick: () => void handleDownloadCoursewareOffline(item),
+                      disabled: Boolean(offlineCoursewareDownloadId),
+                      tone: "teal",
+                    },
+                    ...folderActionsFor("courseware", item.id, item.title),
+                  ]}
                   />
                   {item.sourceResourceType && item.sourceResourceId && (
                     <LinkedResourceRow
