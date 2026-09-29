@@ -487,6 +487,14 @@ describe("MyResourcesPage resource basket", () => {
 
     await waitFor(() => {
       expect(lectureService.createLecture).toHaveBeenCalledOnce();
+      expect(lectureService.createLecture).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          classIds: populatedBasket.classIds,
+          studentIds: populatedBasket.studentIds,
+        }),
+      );
       expect(confirmSpy).toHaveBeenCalledWith("是否移除已引用题目？");
       expect(basketService.removeQuestion).toHaveBeenCalledWith(populatedBasket.id, basketQuestion.id);
     });
@@ -526,6 +534,13 @@ describe("MyResourcesPage resource basket", () => {
 
     await waitFor(() => {
       expect(examPaperService.createPaper).toHaveBeenCalledOnce();
+      expect(examPaperService.createPaper).toHaveBeenCalledWith(
+        "teacher-1",
+        "school-1",
+        expect.objectContaining({
+          classIds: populatedBasket.classIds,
+        }),
+      );
       expect(confirmSpy).toHaveBeenCalledWith("是否移除已引用题目？");
     });
     expect(basketService.removeQuestion).not.toHaveBeenCalled();
