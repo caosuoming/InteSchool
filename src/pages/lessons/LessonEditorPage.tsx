@@ -31,6 +31,7 @@ import type {
   LessonSlide,
   LessonSlideElement,
   LessonSlideTextRegion,
+  Basket,
   Material,
   MaterialType,
   Question,
@@ -53,6 +54,11 @@ import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { LessonEditorInspector } from "@/components/lessons/LessonEditorInspector";
 import { QuickEditModal } from "@/components/question/QuickEditModal";
 import { createLessonQuestionSlide } from "@/lib/lesson-courseware-create";
+import {
+  basketAudienceLabel,
+  preferredBasketForClassIds,
+} from "@/lib/basket-audience";
+import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import {
   getStudentKnowledgeWeakness,
   rankLessonStudents,
@@ -136,6 +142,8 @@ export function LessonEditorPage() {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [questionMetadataOpen, setQuestionMetadataOpen] = useState(false);
   const [questionPickerOpen, setQuestionPickerOpen] = useState(false);
+  const [questionBaskets, setQuestionBaskets] = useState<Basket[]>([]);
+  const [selectedQuestionBasketId, setSelectedQuestionBasketId] = useState<string | null>(null);
   const [basketQuestions, setBasketQuestions] = useState<Question[]>([]);
   const [basketQuestionsLoading, setBasketQuestionsLoading] = useState(false);
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
@@ -169,6 +177,7 @@ export function LessonEditorPage() {
   );
   const slideNavigatorResizeRef = useRef<SlideNavigatorResizeState | null>(null);
   const inspectorResizeRef = useRef<InspectorResizeState | null>(null);
+  const questionBasketLoadRef = useRef(0);
 
   useEffect(() => {
     const updateReferenceSize = () => setPresentationReferenceSize(getPresentationReferenceSize());
@@ -250,6 +259,9 @@ export function LessonEditorPage() {
 
   const currentSlide = slides[currentIndex];
   const selectedElement = currentSlide?.elements?.find((item) => item.id === selectedElementId) || null;
+  const selectedQuestionBasket = questionBaskets.find(
+    (basket) => basket.id === selectedQuestionBasketId,
+  ) || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -504,28 +516,58 @@ export function LessonEditorPage() {
     setSelectedTextRegion(null);
   };
 
-  const openQuestionPicker = async () => {
-    if (!teacher) return;
-    setQuestionPickerOpen(true);
+  const loadQuestionBasket = async (basket: Basket | null) => {
+    const requestId = ++questionBasketLoadRef.current;
+    setSelectedQuestionBasketId(basket?.id || null);
+    setBasketQuestions([]);
+    if (!basket) {
+      setBasketQuestionsLoading(false);
+      return;
+    }
+
     setBasketQuestionsLoading(true);
     try {
-      const baskets = await basketService.listBaskets(teacher.id);
-      const questionIds = Array.from(new Set(
-        baskets.flatMap((basket) => basket.questionIds || []),
-      ));
       const questions = await Promise.all(
-        questionIds.map((questionId) => questionService.getQuestion(questionId)),
+        basket.questionIds.map((questionId) => questionService.getQuestion(questionId)),
       );
+      if (requestId !== questionBasketLoadRef.current) return;
       setBasketQuestions(questions.filter((question): question is Question => Boolean(question)));
     } catch (error) {
+      if (requestId !== questionBasketLoadRef.current) return;
       toast.error("资源篮题目加载失败", error instanceof Error ? error.message : undefined);
       setBasketQuestions([]);
     } finally {
+      if (requestId === questionBasketLoadRef.current) setBasketQuestionsLoading(false);
+    }
+  };
+
+  const openQuestionPicker = async () => {
+    if (!teacher) return;
+    questionBasketLoadRef.current += 1;
+    setQuestionPickerOpen(true);
+    setQuestionBaskets([]);
+    setSelectedQuestionBasketId(null);
+    setBasketQuestions([]);
+    setBasketQuestionsLoading(true);
+    try {
+      const baskets = await basketService.listBaskets(teacher.id);
+      setQuestionBaskets(baskets);
+      await loadQuestionBasket(preferredBasketForClassIds(baskets, courseware?.classIds || []));
+    } catch (error) {
+      toast.error("资源篮题目加载失败", error instanceof Error ? error.message : undefined);
+      setQuestionBaskets([]);
+      setBasketQuestions([]);
       setBasketQuestionsLoading(false);
     }
   };
 
-  const insertQuestionFromBasket = (question: Question) => {
+  const selectQuestionBasket = (basketId: string) => {
+    const basket = questionBaskets.find((item) => item.id === basketId) || null;
+    void loadQuestionBasket(basket);
+  };
+
+  const insertQuestionFromBasket = async (question: Question) => {
+    const sourceBasket = questionBaskets.find((basket) => basket.id === selectedQuestionBasketId) || null;
     const slide = createLessonQuestionSlide(question);
     const insertIndex = Math.min(currentIndex + 1, slides.length);
     setSlides((previous) => {
@@ -538,6 +580,21 @@ export function LessonEditorPage() {
     setSelectedTextRegion(null);
     setQuestionPickerOpen(false);
     toast.success("已插入题目");
+
+    const removal = await promptToRemoveReferencedBasketQuestions(sourceBasket?.id, [question.id]);
+    if (removal.removedQuestionIds.length > 0 && sourceBasket) {
+      const removedQuestionIds = new Set(removal.removedQuestionIds);
+      setQuestionBaskets((current) => current.map((basket) => basket.id === sourceBasket.id
+        ? {
+            ...basket,
+            questionIds: basket.questionIds.filter((questionId) => !removedQuestionIds.has(questionId)),
+          }
+        : basket));
+      setBasketQuestions((current) => current.filter((item) => !removedQuestionIds.has(item.id)));
+    }
+    if (removal.failedQuestionIds.length > 0) {
+      toast.warning("已插入题目，但未能从资源篮移除");
+    }
   };
 
   const openMaterialPicker = async () => {
@@ -1508,14 +1565,43 @@ export function LessonEditorPage() {
         open={questionPickerOpen}
         onClose={() => setQuestionPickerOpen(false)}
         title="从资源篮插入题目"
-        description="这里只显示当前教师资源篮中的题目。插入后会在当前页下方新建题目页。"
+        description="先选择资源篮，再插入题目。课件已有授课班级时会优先选择使用对象一致的资源篮。"
         size="lg"
         footer={null}
       >
+        <div className="mb-4 rounded-lg border border-ink-100 bg-mist/30 p-3">
+          <label htmlFor="lesson-question-basket" className="mb-1.5 block text-xs font-medium text-ink-600">
+            资源篮
+          </label>
+          <select
+            id="lesson-question-basket"
+            aria-label="选择资源篮"
+            value={selectedQuestionBasketId || ""}
+            disabled={questionBaskets.length === 0}
+            onChange={(event) => selectQuestionBasket(event.target.value)}
+            className="h-9 w-full rounded-md border border-ink-200 bg-paper px-3 text-sm text-ink-800 outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-100 disabled:cursor-not-allowed disabled:text-ink-400"
+          >
+            {questionBaskets.length === 0 ? (
+              <option value="">暂无资源篮</option>
+            ) : questionBaskets.map((basket) => (
+              <option key={basket.id} value={basket.id}>
+                {basket.name}{basket.isDefault ? "（默认）" : ""}
+              </option>
+            ))}
+          </select>
+          {selectedQuestionBasket && (
+            <div className="mt-1.5 text-xs text-ink-500">
+              使用对象：{basketAudienceLabel(selectedQuestionBasket, classes, students)}
+            </div>
+          )}
+        </div>
+
         {basketQuestionsLoading ? (
           <div className="py-10 text-center text-sm text-ink-500">正在加载资源篮题目...</div>
+        ) : !selectedQuestionBasket ? (
+          <div className="py-10 text-center text-sm text-ink-500">暂无可用资源篮</div>
         ) : basketQuestions.length === 0 ? (
-          <div className="py-10 text-center text-sm text-ink-500">资源篮中暂无题目</div>
+          <div className="py-10 text-center text-sm text-ink-500">当前资源篮暂无题目</div>
         ) : (
           <div className="max-h-[60vh] space-y-2 overflow-auto pr-1">
             {basketQuestions.map((question) => (
@@ -1535,7 +1621,7 @@ export function LessonEditorPage() {
                   </div>
                 )}
                 <div className="flex justify-end">
-                  <Button size="sm" variant="gold" onClick={() => insertQuestionFromBasket(question)}>
+                  <Button size="sm" variant="gold" onClick={() => void insertQuestionFromBasket(question)}>
                     <Plus className="h-3.5 w-3.5" />插入
                   </Button>
                 </div>
