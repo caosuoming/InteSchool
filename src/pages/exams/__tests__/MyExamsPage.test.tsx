@@ -408,11 +408,13 @@ describe("MyExamsPage", () => {
     expect(floatingPanel?.style.left).not.toBe(originalLeft);
     fireEvent.pointerUp(leftDragHandle, { pointerId: 1, clientX: 140, clientY: 125 });
 
-    const collapseButton = within(durationCard as HTMLElement).getByRole("button", { name: "收起名单" });
+    const collapseButton = within(durationCard as HTMLElement).getByRole("button", { name: "收起面板" });
     expect(collapseButton).toHaveAttribute("aria-expanded", "true");
     fireEvent.click(collapseButton);
     expect(within(durationCard as HTMLElement).queryByRole("columnheader", { name: "姓名" })).not.toBeInTheDocument();
-    const expandButton = within(durationCard as HTMLElement).getByRole("button", { name: "展开名单" });
+    expect(within(durationCard as HTMLElement).queryByText("自动排表先应用基本要求")).not.toBeInTheDocument();
+    expect(durationCard).toHaveClass("p-3");
+    const expandButton = within(durationCard as HTMLElement).getByRole("button", { name: "展开面板" });
     expect(expandButton).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(expandButton);
     expect(within(durationCard as HTMLElement).getByRole("columnheader", { name: "姓名" })).toBeInTheDocument();
