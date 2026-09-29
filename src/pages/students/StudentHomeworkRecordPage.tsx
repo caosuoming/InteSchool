@@ -28,6 +28,7 @@ import type {
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
 import { StudentRosterSidebar } from "./StudentRosterSidebar";
 import { buildStudentRosterGroups } from "./student-roster";
+import { ClassHomeworkOverview } from "./ClassHomeworkOverview";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
@@ -78,6 +79,7 @@ export function StudentHomeworkRecordPage() {
   const [pinnedKnowledgePointIds, setPinnedKnowledgePointIds] = useState<string[]>([]);
   const [draftPinnedIds, setDraftPinnedIds] = useState<string[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set());
   const [keyword, setKeyword] = useState("");
   const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
@@ -211,6 +213,15 @@ export function StudentHomeworkRecordPage() {
   };
 
   const selectedStudent = students.find((student) => student.id === selectedStudentId) ?? null;
+  const selectedClass = classes.find((classInfo) => classInfo.id === selectedClassId) ?? null;
+  const classMembers = useMemo(() => {
+    if (!selectedClass) return [];
+    if (selectedClass.type === "school") {
+      return students.filter((student) => student.classId === selectedClass.id);
+    }
+    const memberIds = new Set(selectedClass.studentIds);
+    return students.filter((student) => memberIds.has(student.id));
+  }, [selectedClass, students]);
   const knowledgePointMap = useMemo(
     () => new Map(knowledgePoints.map((point) => [point.id, point] as const)),
     [knowledgePoints],
@@ -436,6 +447,7 @@ export function StudentHomeworkRecordPage() {
             loading={loading}
             keyword={keyword}
             selectedStudentId={selectedStudentId}
+            selectedGroupId={selectedClassId}
             expandedGroupIds={expandedGroupIds}
             followedStudentIds={followedStudentIds}
             ignoredStudentIds={ignoredStudentIds}
@@ -444,7 +456,15 @@ export function StudentHomeworkRecordPage() {
             lastInteractionMap={lastInteractionMap}
             onKeywordChange={setKeyword}
             onToggleGroup={toggleGroup}
-            onSelectStudent={setSelectedStudentId}
+            onSelectGroup={(groupId) => {
+              if (!classes.some((classInfo) => classInfo.id === groupId)) return;
+              setSelectedClassId(groupId);
+              setSelectedStudentId(null);
+            }}
+            onSelectStudent={(studentId) => {
+              setSelectedStudentId(studentId);
+              setSelectedClassId(null);
+            }}
             onToggleFollow={(studentId) => void toggleFollow(studentId)}
             onToggleIgnore={(studentId) => void toggleIgnore(studentId)}
           />
@@ -458,19 +478,29 @@ export function StudentHomeworkRecordPage() {
                 <h2 className="font-serif text-lg font-semibold text-ink-900">作业记录</h2>
               </div>
               <div className="mt-1 text-xs text-ink-500">
-                {selectedStudent
-                  ? `当前学生：${selectedStudent.name} · 固定 ${pinnedKnowledgePoints.length} 个知识点`
-                  : "选择左侧学生后记录各知识点的作业情况"}
+                {selectedClass
+                  ? `当前班级：${selectedClass.name} · ${classMembers.length} 名学生`
+                  : selectedStudent
+                    ? `当前学生：${selectedStudent.name} · 固定 ${pinnedKnowledgePoints.length} 个知识点`
+                    : "从左侧选择班级查看总览，或选择学生记录个人作业情况"}
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={openPicker} disabled={!knowledgeTree || loading}>
-              <Pin className="w-3.5 h-3.5" />
-              固定知识点
-            </Button>
+            {!selectedClass && (
+              <Button variant="outline" size="sm" onClick={openPicker} disabled={!knowledgeTree || loading}>
+                <Pin className="w-3.5 h-3.5" />
+                固定知识点
+              </Button>
+            )}
           </Card>
 
           <Card className="flex-1 min-h-0 overflow-auto">
-            {!selectedStudent ? (
+            {selectedClass && teacher?.id ? (
+              <ClassHomeworkOverview
+                classInfo={selectedClass}
+                students={classMembers}
+                teacherId={teacher.id}
+              />
+            ) : !selectedStudent ? (
               <EmptyState
                 icon={<ListChecks className="w-10 h-10 text-ink-200" />}
                 title="请选择学生"

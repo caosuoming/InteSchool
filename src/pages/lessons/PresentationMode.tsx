@@ -110,10 +110,12 @@ interface DrawingStroke {
   sequence: number;
 }
 
+type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+
 interface QuestionPanelInteraction {
   mode: "move" | "resize";
   element: LessonSlideTextElement;
-  edge?: "left" | "right";
+  resizeDirection?: ResizeDirection;
   startX: number;
   startY: number;
 }
@@ -162,7 +164,7 @@ type ClearUndoSnapshot =
       strokes: DrawingStroke[];
     };
 
-type BoardResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+type BoardResizeDirection = ResizeDirection;
 
 interface BoardInteraction {
   mode: "move" | "resize" | "move-frame";
@@ -185,7 +187,7 @@ interface BoardPinchInteraction {
   startCenterY: number;
 }
 
-interface BoardResizeHandle {
+interface ResizeHandle {
   direction: BoardResizeDirection;
   label: string;
   className: string;
@@ -222,6 +224,7 @@ const BOARD_WRITING_AREA_WHEEL_ZOOM_SPEED = 0.0015;
 const BOARD_SIDE_CONTROLS_SCREEN_Y = 50;
 const BOARD_HORIZONTAL_MARGIN_PERCENT = 1.5;
 const QUESTION_PANEL_MIN_WIDTH = 12;
+const QUESTION_PANEL_MIN_HEIGHT = 8;
 let blankPresentationSlideSequence = 0;
 let drawingStrokeSequence = 0;
 
@@ -316,7 +319,7 @@ const DEFAULT_PRESENTATION_QUESTION_VISIBILITY: LessonQuestionContentVisibility 
   options: true,
 };
 
-const BOARD_RESIZE_HANDLES: BoardResizeHandle[] = [
+const RESIZE_HANDLES: ResizeHandle[] = [
   { direction: "n", label: "上边", className: "left-6 right-6 top-0 h-2 cursor-ns-resize" },
   { direction: "ne", label: "右上角", className: "right-0 top-0 h-6 w-6 cursor-nesw-resize", corner: true },
   { direction: "e", label: "右边", className: "bottom-6 right-0 top-6 w-2 cursor-ew-resize" },
@@ -326,6 +329,17 @@ const BOARD_RESIZE_HANDLES: BoardResizeHandle[] = [
   { direction: "w", label: "左边", className: "bottom-6 left-0 top-6 w-2 cursor-ew-resize" },
   { direction: "nw", label: "左上角", className: "left-0 top-0 h-6 w-6 cursor-nwse-resize", corner: true },
 ];
+
+const QUESTION_PANEL_RESIZE_LABELS: Record<ResizeDirection, string> = {
+  n: "上边界",
+  ne: "右上角",
+  e: "右边界",
+  se: "右下角",
+  s: "下边界",
+  sw: "左下角",
+  w: "左边界",
+  nw: "左上角",
+};
 
 const PRESENTATION_ELEMENT_PREFIX = "presentation-built-in";
 
@@ -1387,10 +1401,10 @@ export function PresentationMode({
   }, [currentSlide]);
 
   const startQuestionPanelInteraction = (
-    event: ReactPointerEvent<HTMLDivElement>,
+    event: ReactPointerEvent<HTMLElement>,
     element: LessonSlideTextElement,
     mode: QuestionPanelInteraction["mode"],
-    edge?: QuestionPanelInteraction["edge"],
+    resizeDirection?: QuestionPanelInteraction["resizeDirection"],
   ) => {
     if (mode === "move" && tool !== "select") return;
     event.preventDefault();
@@ -1399,14 +1413,14 @@ export function PresentationMode({
     questionPanelInteractionRef.current = {
       mode,
       element,
-      edge,
+      resizeDirection,
       startX: event.clientX,
       startY: event.clientY,
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
-  const moveQuestionPanelInteraction = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const moveQuestionPanelInteraction = (event: ReactPointerEvent<HTMLElement>) => {
     const interaction = questionPanelInteractionRef.current;
     const surface = surfaceRef.current;
     if (!interaction || !surface) return;
@@ -1423,25 +1437,55 @@ export function PresentationMode({
           y: Number((interaction.element.y + dy).toFixed(4)),
         };
       }
-      if (interaction.edge === "left") {
-        const right = interaction.element.x + interaction.element.width;
-        const x = clamp(interaction.element.x + dx, 0, right - QUESTION_PANEL_MIN_WIDTH);
-        return {
-          ...element,
-          x: Number(x.toFixed(4)),
-          width: Number((right - x).toFixed(4)),
-        };
+      const direction = interaction.resizeDirection || "se";
+      let x = interaction.element.x;
+      let y = interaction.element.y;
+      let width = interaction.element.width;
+      let height = interaction.element.height;
+      const right = interaction.element.x + interaction.element.width;
+      const bottom = interaction.element.y + interaction.element.height;
+
+      if (direction.includes("e")) {
+        width = clamp(
+          interaction.element.width + dx,
+          QUESTION_PANEL_MIN_WIDTH,
+          100 - interaction.element.x,
+        );
       }
-      const width = clamp(
-        interaction.element.width + dx,
-        QUESTION_PANEL_MIN_WIDTH,
-        100 - interaction.element.x,
-      );
-      return { ...element, width: Number(width.toFixed(4)) };
+      if (direction.includes("w")) {
+        x = clamp(
+          interaction.element.x + dx,
+          0,
+          right - QUESTION_PANEL_MIN_WIDTH,
+        );
+        width = right - x;
+      }
+      if (direction.includes("s")) {
+        height = clamp(
+          interaction.element.height + dy,
+          QUESTION_PANEL_MIN_HEIGHT,
+          100 - interaction.element.y,
+        );
+      }
+      if (direction.includes("n")) {
+        y = clamp(
+          interaction.element.y + dy,
+          0,
+          bottom - QUESTION_PANEL_MIN_HEIGHT,
+        );
+        height = bottom - y;
+      }
+      return {
+        ...element,
+        x: Number(x.toFixed(4)),
+        y: Number(y.toFixed(4)),
+        width: Number(width.toFixed(4)),
+        height: Number(height.toFixed(4)),
+      };
     });
   };
 
-  const endQuestionPanelInteraction = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const endQuestionPanelInteraction = (event: ReactPointerEvent<HTMLElement>) => {
     if (!questionPanelInteractionRef.current) return;
     questionPanelInteractionRef.current = null;
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
@@ -2251,31 +2295,46 @@ export function PresentationMode({
           className="z-10"
         />
 
-        {(["left", "right"] as const).map((edge) => (
-          <div
-            key={edge}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={`调整${label}框${edge === "left" ? "左" : "右"}边界`}
-            data-question-panel-resize-handle={edge}
-            className={cn(
-              "absolute bottom-0 top-0 z-30 w-3 cursor-ew-resize touch-none",
-              edge === "left" ? "left-0" : "right-0",
-            )}
-            onPointerDown={(event) => startQuestionPanelInteraction(event, element, "resize", edge)}
-            onPointerMove={moveQuestionPanelInteraction}
-            onPointerUp={endQuestionPanelInteraction}
-            onPointerCancel={endQuestionPanelInteraction}
-          >
-            <span
+        {RESIZE_HANDLES.map((handle) => {
+          const verticalEdge = handle.direction === "e" || handle.direction === "w";
+          const horizontalEdge = handle.direction === "n" || handle.direction === "s";
+          return (
+            <button
+              key={handle.direction}
+              type="button"
+              aria-label={`调整${label}框${QUESTION_PANEL_RESIZE_LABELS[handle.direction]}`}
+              data-question-panel-resize-handle={handle.direction}
               className={cn(
-                "pointer-events-none absolute bottom-3 top-3 w-0.5 rounded-full",
-                edge === "left" ? "left-0" : "right-0",
-                section === "answer" ? "bg-emerald-400/80" : "bg-gold-400/80",
+                "absolute z-30 touch-none border-0 bg-transparent p-0",
+                handle.className,
               )}
-            />
-          </div>
-        ))}
+              onPointerDown={(event) => startQuestionPanelInteraction(
+                event,
+                element,
+                "resize",
+                handle.direction,
+              )}
+              onPointerMove={moveQuestionPanelInteraction}
+              onPointerUp={endQuestionPanelInteraction}
+              onPointerCancel={endQuestionPanelInteraction}
+            >
+              {(verticalEdge || horizontalEdge) && (
+                <span
+                  className={cn(
+                    "pointer-events-none absolute rounded-full",
+                    verticalEdge && "bottom-3 top-3 w-0.5",
+                    horizontalEdge && "left-3 right-3 h-0.5",
+                    handle.direction === "w" && "left-0",
+                    handle.direction === "e" && "right-0",
+                    handle.direction === "n" && "top-0",
+                    handle.direction === "s" && "bottom-0",
+                    section === "answer" ? "bg-emerald-400/80" : "bg-gold-400/80",
+                  )}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
     );
   };
@@ -2722,7 +2781,7 @@ export function PresentationMode({
               {renderBoardSideControls(board, label, "left")}
               {renderBoardSideControls(board, label, "right")}
 
-              {!board.restoreBounds && BOARD_RESIZE_HANDLES.map((handle) => (
+              {!board.restoreBounds && RESIZE_HANDLES.map((handle) => (
                 <button
                   key={handle.direction}
                   type="button"

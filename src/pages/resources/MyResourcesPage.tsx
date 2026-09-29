@@ -572,6 +572,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [activeTab, setActiveTab] = useState<MyResourceTab>(initialTab);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
 
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
@@ -932,7 +933,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
     setLoading(true);
     const baseFilter = {
-      keyword,
+      keyword: debouncedKeyword,
       chapterIds: checkedChapters,
       chapterLogic,
       knowledgePointIds: activeTab === "answerSheet" ? [] : checkedKnowledge,
@@ -1055,7 +1056,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   }, [
     activeTab,
-    keyword,
+    debouncedKeyword,
     checkedChapters,
     checkedKnowledge,
     chapterLogic,
@@ -1076,8 +1077,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [activeTab, schoolId]);
 
   useEffect(() => {
-    const timer = setTimeout(() => loadAll(), 300);
+    const timer = setTimeout(() => setDebouncedKeyword(keyword), 300);
     return () => clearTimeout(timer);
+  }, [keyword]);
+
+  useEffect(() => {
+    void loadAll();
   }, [loadAll]);
 
   useEffect(() => {
