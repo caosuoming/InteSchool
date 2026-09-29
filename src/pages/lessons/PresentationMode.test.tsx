@@ -1317,7 +1317,7 @@ describe("PresentationMode", () => {
     expect(screen.getByRole("button", { name: "放大所选文本" })).toBeEnabled();
   });
 
-  it("keeps answer and analysis opaque, horizontally resizable, and restores hidden panel writing", async () => {
+  it("keeps answer and analysis opaque, resizable from every edge and corner, and restores hidden panel writing", async () => {
     const user = userEvent.setup();
     render(
       <PresentationMode
@@ -1345,6 +1345,17 @@ describe("PresentationMode", () => {
     expect(analysisPanel).toHaveStyle({ backgroundColor: "#fffef8" });
     expect(screen.getByLabelText("调整解析框左边界")).toBeInTheDocument();
     expect(screen.getByLabelText("调整解析框右边界")).toBeInTheDocument();
+    expect(screen.getByLabelText("调整解析框上边界")).toBeInTheDocument();
+    expect(screen.getByLabelText("调整解析框下边界")).toBeInTheDocument();
+    expect(screen.getByLabelText("调整解析框左上角")).toBeInTheDocument();
+    expect(screen.getByLabelText("调整解析框右上角")).toBeInTheDocument();
+    expect(screen.getByLabelText("调整解析框左下角")).toBeInTheDocument();
+    expect(screen.getByLabelText("调整解析框右下角")).toBeInTheDocument();
+    expect(Array.from(
+      analysisPanel.querySelectorAll<HTMLElement>("[data-question-panel-resize-handle]"),
+    ).map((handle) => handle.dataset.questionPanelResizeHandle)).toEqual([
+      "n", "ne", "e", "se", "s", "sw", "w", "nw",
+    ]);
 
     const rightHandle = screen.getByLabelText("调整解析框右边界");
     fireEvent.pointerDown(rightHandle, { pointerId: 31, clientX: 950, clientY: 650 });
@@ -1358,15 +1369,32 @@ describe("PresentationMode", () => {
     fireEvent.pointerUp(leftHandle, { pointerId: 32, clientX: 500, clientY: 650 });
     expect(analysisPanel).toHaveStyle({ left: "50%", width: "49%" });
 
+    const topHandle = screen.getByLabelText("调整解析框上边界");
+    fireEvent.pointerDown(topHandle, { pointerId: 33, clientX: 700, clientY: 544 });
+    fireEvent.pointerMove(topHandle, { pointerId: 33, clientX: 700, clientY: 504 });
+    fireEvent.pointerUp(topHandle, { pointerId: 33, clientX: 700, clientY: 504 });
+    expect(analysisPanel).toHaveStyle({ top: "63%", height: "29%" });
+
+    const southEastHandle = screen.getByLabelText("调整解析框右下角");
+    fireEvent.pointerDown(southEastHandle, { pointerId: 34, clientX: 990, clientY: 736 });
+    fireEvent.pointerMove(southEastHandle, { pointerId: 34, clientX: 950, clientY: 776 });
+    fireEvent.pointerUp(southEastHandle, { pointerId: 34, clientX: 950, clientY: 776 });
+    expect(analysisPanel).toHaveStyle({
+      left: "50%",
+      top: "63%",
+      width: "45%",
+      height: "34%",
+    });
+
     await user.click(screen.getByRole("button", { name: "红色画笔" }));
     const analysisCanvas = screen.getByLabelText("解析书写画布") as HTMLCanvasElement;
     vi.spyOn(analysisCanvas, "getBoundingClientRect").mockReturnValue({
-      x: 500, y: 544, left: 500, top: 544, right: 990, bottom: 736,
-      width: 490, height: 192, toJSON: () => ({}),
+      x: 500, y: 504, left: 500, top: 504, right: 950, bottom: 776,
+      width: 450, height: 272, toJSON: () => ({}),
     });
-    fireEvent.pointerDown(analysisCanvas, { pointerId: 33, clientX: 560, clientY: 600 });
-    fireEvent.pointerMove(analysisCanvas, { pointerId: 33, clientX: 620, clientY: 630 });
-    fireEvent.pointerUp(analysisCanvas, { pointerId: 33, clientX: 620, clientY: 630 });
+    fireEvent.pointerDown(analysisCanvas, { pointerId: 35, clientX: 560, clientY: 600 });
+    fireEvent.pointerMove(analysisCanvas, { pointerId: 35, clientX: 620, clientY: 630 });
+    fireEvent.pointerUp(analysisCanvas, { pointerId: 35, clientX: 620, clientY: 630 });
     expect(analysisCanvas).toHaveAttribute("data-recorded-stroke-count", "1");
 
     await user.click(screen.getByRole("button", { name: "左侧显示内容" }));
