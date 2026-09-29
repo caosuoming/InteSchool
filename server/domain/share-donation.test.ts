@@ -196,6 +196,8 @@ describe("platform resource donations", () => {
         "school-c",
       );
       const copiedLecture = (appState.lectures as Lecture[]).find((item) => item.id === saved.resourceId)!;
+      expect(copiedLecture.isExtractCopy).toBeFalsy();
+      expect(copiedLecture.sourceResourceId).toBeUndefined();
       const copiedQuestion = (appState.questions as Question[]).find((item) =>
         item.teacherId === "teacher-c" && item.platformSourceDonationIds?.length,
       )!;
@@ -604,6 +606,8 @@ describe("platform resource donations", () => {
       );
       const copied = (appState.examPapers as ExamPaper[]).find((item) => item.id === result.resourceId)!;
       expect(copied.teacherId).toBe("teacher-c");
+      expect(copied.isExtractCopy).toBeFalsy();
+      expect(copied.sourceResourceId).toBeUndefined();
       expect(copied.questions[0].questionId).toBe("q-c-existing");
       expect(copied.questions[1].questionId).toBeTruthy();
       expect(copied.questions[1].questionId).not.toBe("q-b-second");
