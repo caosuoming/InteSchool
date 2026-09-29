@@ -428,9 +428,64 @@ describe("SchoolRosterPage", () => {
     });
   });
 
-  it("asks whether to keep old students missing from a repeated roster import", async () => {
+  it("imports students into an empty class without opening reconciliation", async () => {
     const importedRows = [
       { className: classes[1].name, name: "李同学", studentNo: "20260002" },
+    ];
+    vi.mocked(readStudentRosterFile).mockResolvedValue(importedRows);
+    const { container } = renderPage();
+    await screen.findByRole("button", { name: "导入学生" });
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["roster"], "students.xlsx")] },
+    });
+
+    await waitFor(() => {
+      expect(classService.bulkImportStudents).toHaveBeenCalledWith(
+        grade.id,
+        "teacher-1",
+        importedRows,
+        { missingStudents: "keep", matchStudentIds: undefined },
+      );
+    });
+    expect(screen.queryByText("确认学生名单对应关系")).not.toBeInTheDocument();
+  });
+
+  it("auto-merges a same-class same-name student even when the grade has another namesake", async () => {
+    const namesake: Student = {
+      ...student,
+      id: "student-namesake",
+      studentNo: "20260099",
+      classId: classes[1].id,
+    };
+    vi.mocked(classService.listStudentsBySchool).mockResolvedValue([student, namesake]);
+    const importedRows = [
+      { className: classes[0].name, name: student.name },
+    ];
+    vi.mocked(readStudentRosterFile).mockResolvedValue(importedRows);
+    const { container } = renderPage();
+    await screen.findByRole("button", { name: "导入学生" });
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["roster"], "students.xlsx")] },
+    });
+
+    await waitFor(() => {
+      expect(classService.bulkImportStudents).toHaveBeenCalledWith(
+        grade.id,
+        "teacher-1",
+        importedRows,
+        { missingStudents: "keep", matchStudentIds: undefined },
+      );
+    });
+    expect(screen.queryByText("确认学生名单对应关系")).not.toBeInTheDocument();
+  });
+
+  it("asks whether to keep old students missing from a repeated roster import", async () => {
+    const importedRows = [
+      { className: classes[0].name, name: "李同学", studentNo: "20260002" },
     ];
     vi.mocked(readStudentRosterFile).mockResolvedValue(importedRows);
     const { container } = renderPage();
@@ -458,7 +513,7 @@ describe("SchoolRosterPage", () => {
 
   it("can delete old students missing from a repeated roster import", async () => {
     const importedRows = [
-      { className: classes[1].name, name: "李同学", studentNo: "20260002" },
+      { className: classes[0].name, name: "李同学", studentNo: "20260002" },
     ];
     vi.mocked(readStudentRosterFile).mockResolvedValue(importedRows);
     vi.mocked(classService.bulkImportStudents).mockResolvedValue({

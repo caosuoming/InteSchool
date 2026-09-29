@@ -476,6 +476,161 @@ describe("class lifecycle service", () => {
     });
   });
 
+  it("imports directly into an empty class even when another class has a namesake", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push(
+      {
+        id: "class-2027-source",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(1)班",
+        grade: "高二",
+        studentCount: 1,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+      {
+        id: "class-2027-empty",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(2)班",
+        grade: "高二",
+        studentCount: 0,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+    );
+    (state.students as Array<Record<string, unknown>>).push({
+      id: "student-existing-namesake",
+      name: "张三",
+      studentNo: "OLD-001",
+      classId: "class-2027-source",
+      schoolId: "school-1",
+      grade: "高二",
+      status: "active",
+    });
+
+    await runWithState(state, async () => {
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(2)班", name: "张三", studentNo: "NEW-001" },
+      ]);
+
+      expect(result).toMatchObject({ createdStudents: 1, updatedStudents: 0 });
+      expect(getStudent(state, "student-existing-namesake")).toMatchObject({
+        classId: "class-2027-source",
+        studentNo: "OLD-001",
+      });
+      expect((state.students as Array<Record<string, unknown>>)).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: "张三",
+          studentNo: "NEW-001",
+          classId: "class-2027-empty",
+          status: "active",
+        }),
+      ]));
+    });
+  });
+
+  it("auto-merges the unique same-class namesake even when another class has the same name", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push(
+      {
+        id: "class-2027-a",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(1)班",
+        grade: "高二",
+        studentCount: 1,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+      {
+        id: "class-2027-b",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(2)班",
+        grade: "高二",
+        studentCount: 1,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+    );
+    (state.students as Array<Record<string, unknown>>).push(
+      {
+        id: "student-same-a",
+        name: "张三",
+        studentNo: "A-001",
+        classId: "class-2027-a",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+      {
+        id: "student-same-b",
+        name: "张三",
+        studentNo: "B-001",
+        classId: "class-2027-b",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+    );
+
+    await runWithState(state, async () => {
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(1)班", name: "张三", studentNo: "A-NEW" },
+      ], { missingStudents: "keep" });
+
+      expect(result).toMatchObject({ createdStudents: 0, updatedStudents: 1 });
+      expect(getStudent(state, "student-same-a")).toMatchObject({ studentNo: "A-NEW", classId: "class-2027-a" });
+      expect(getStudent(state, "student-same-b")).toMatchObject({ studentNo: "B-001", classId: "class-2027-b" });
+    });
+  });
+
+  it("requires explicit resolution for a different-name row in a populated class", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "class-2027-populated",
+      type: "school",
+      schoolId: "school-1",
+      gradeId: "grade-2027",
+      name: "高二(1)班",
+      grade: "高二",
+      studentCount: 1,
+      status: "active",
+      createdBy: "teacher-1",
+      createdAt: "2025-09-01T00:00:00.000Z",
+    });
+    (state.students as Array<Record<string, unknown>>).push({
+      id: "student-original",
+      name: "旧姓名",
+      studentNo: "OLD-001",
+      classId: "class-2027-populated",
+      schoolId: "school-1",
+      grade: "高二",
+      status: "active",
+    });
+
+    await runWithState(state, async () => {
+      await expect(classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(1)班", name: "新姓名", studentNo: "NEW-001" },
+      ])).rejects.toThrow("请先确认对应关系");
+
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(1)班", name: "新姓名", studentNo: "NEW-001" },
+      ], { matchStudentIds: { "0": null }, missingStudents: "keep" });
+      expect(result).toMatchObject({ createdStudents: 1, updatedStudents: 0 });
+    });
+  });
+
   it("requires explicit resolution for same-name class changes and permits creating a distinct student", async () => {
     const state = createState();
     (state.schoolClasses as Array<Record<string, unknown>>).push(
@@ -498,26 +653,37 @@ describe("class lifecycle service", () => {
         gradeId: "grade-2027",
         name: "高二(2)班",
         grade: "高二",
-        studentCount: 0,
+        studentCount: 1,
         status: "active",
         createdBy: "teacher-1",
         createdAt: "2025-09-01T00:00:00.000Z",
       },
     );
-    (state.students as Array<Record<string, unknown>>).push({
-      id: "student-same-name",
-      name: "张三",
-      studentNo: "",
-      classId: "class-2027-same-a",
-      schoolId: "school-1",
-      grade: "高二",
-      status: "active",
-    });
+    (state.students as Array<Record<string, unknown>>).push(
+      {
+        id: "student-same-name",
+        name: "张三",
+        studentNo: "",
+        classId: "class-2027-same-a",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+      {
+        id: "student-target-class",
+        name: "李四",
+        studentNo: "",
+        classId: "class-2027-same-b",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+    );
 
     await runWithState(state, async () => {
       await expect(classService.bulkImportStudents("grade-2027", "teacher-1", [
         { className: "高二(2)班", name: "张三" },
-      ])).rejects.toThrow("同名学生或班级变化");
+      ])).rejects.toThrow("请先确认对应关系");
 
       const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
         { className: "高二(2)班", name: "张三" },
@@ -629,6 +795,75 @@ describe("class lifecycle service", () => {
       expect(getClass(state, "class-2027")).toMatchObject({ studentCount: 1 });
       const recycleBin = await classService.listSchoolRosterRecycleBin("school-1");
       expect(recycleBin.students.map((item) => item.id)).toContain("student-remove");
+    });
+  });
+
+  it("deletes unmatched students only from classes included in the import", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push(
+      {
+        id: "class-2027-imported",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(1)班",
+        grade: "高二",
+        studentCount: 2,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+      {
+        id: "class-2027-untouched",
+        type: "school",
+        schoolId: "school-1",
+        gradeId: "grade-2027",
+        name: "高二(2)班",
+        grade: "高二",
+        studentCount: 1,
+        status: "active",
+        createdBy: "teacher-1",
+        createdAt: "2025-09-01T00:00:00.000Z",
+      },
+    );
+    (state.students as Array<Record<string, unknown>>).push(
+      {
+        id: "student-imported-match",
+        name: "保留学生",
+        studentNo: "301",
+        classId: "class-2027-imported",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+      {
+        id: "student-imported-remove",
+        name: "删除学生",
+        studentNo: "302",
+        classId: "class-2027-imported",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+      {
+        id: "student-untouched",
+        name: "其他班学生",
+        studentNo: "401",
+        classId: "class-2027-untouched",
+        schoolId: "school-1",
+        grade: "高二",
+        status: "active",
+      },
+    );
+
+    await runWithState(state, async () => {
+      const result = await classService.bulkImportStudents("grade-2027", "teacher-1", [
+        { className: "高二(1)班", name: "保留学生", studentNo: "301" },
+      ], { missingStudents: "delete" });
+
+      expect(result).toMatchObject({ updatedStudents: 1, deletedStudents: 1 });
+      expect(getStudent(state, "student-imported-remove")).toMatchObject({ status: "deleted" });
+      expect(getStudent(state, "student-untouched")).toMatchObject({ status: "active" });
     });
   });
 

@@ -428,10 +428,12 @@ export const schoolRosterService = {
       && item.status === "active"
       && gradeClassIds.has(item.classId),
     );
-    const existingByName = new Map<string, Student[]>();
+    const existingStudentsByClass = new Map<string, Student[]>();
     for (const student of existingGradeStudents) {
-      const key = normalizeName(student.name).toLocaleLowerCase("zh-CN");
-      existingByName.set(key, [...(existingByName.get(key) || []), student]);
+      existingStudentsByClass.set(
+        student.classId,
+        [...(existingStudentsByClass.get(student.classId) || []), student],
+      );
     }
 
     const seenNumbers = new Set<string>();
@@ -451,10 +453,6 @@ export const schoolRosterService = {
     const assignments = effectiveRows.map(({ row, rowIndex }) => {
       const targetClass = classMap.get(row.className.toLocaleLowerCase("zh-CN"));
       if (!targetClass) throw new Error(`班级不存在：${row.className}`);
-      const nameKey = row.name.toLocaleLowerCase("zh-CN");
-      const candidates = (existingByName.get(nameKey) || [])
-        .filter((student) => !matchedExistingIds.has(student.id));
-
       let matched: Student | undefined;
       const explicitKey = String(rowIndex);
       const hasExplicitResolution = Object.prototype.hasOwnProperty.call(matchStudentIds, explicitKey);
@@ -466,19 +464,16 @@ export const schoolRosterService = {
           if (matchedExistingIds.has(matched.id)) throw new Error(`原学生“${matched.name}”被重复对应到多条新名单记录`);
         }
       } else {
-        if (row.studentNo) {
-          const sameNumber = existingGradeStudents.filter((student) =>
+        const targetClassStudents = existingStudentsByClass.get(targetClass.id) || [];
+        if (targetClassStudents.length > 0) {
+          const sameClassName = targetClassStudents.filter((student) =>
             !matchedExistingIds.has(student.id)
-            && student.studentNo.trim().toLocaleLowerCase("zh-CN") === row.studentNo.toLocaleLowerCase("zh-CN"),
+            && normalizeName(student.name).toLocaleLowerCase("zh-CN") === row.name.toLocaleLowerCase("zh-CN"),
           );
-          if (sameNumber.length === 1) matched = sameNumber[0];
-        }
-        if (!matched) {
-          const sameClass = candidates.filter((student) => student.classId === targetClass.id);
-          if (sameClass.length === 1 && candidates.length === 1) {
-            matched = sameClass[0];
-          } else if (candidates.length > 0) {
-            throw new Error(`第 ${rowIndex + 2} 行“${row.name}”存在同名学生或班级变化，请先确认对应关系`);
+          if (sameClassName.length === 1) {
+            matched = sameClassName[0];
+          } else {
+            throw new Error(`第 ${rowIndex + 2} 行“${row.name}”无法自动对应，请先确认对应关系`);
           }
         }
       }
@@ -486,9 +481,10 @@ export const schoolRosterService = {
       return { row, rowIndex, targetClass, matched };
     });
 
+    const reconciledClassIds = new Set(assignments.map(({ targetClass }) => targetClass.id));
     const unmatchedExistingIds = new Set(
       existingGradeStudents
-        .filter((student) => !matchedExistingIds.has(student.id))
+        .filter((student) => reconciledClassIds.has(student.classId) && !matchedExistingIds.has(student.id))
         .map((student) => student.id),
     );
 
