@@ -627,8 +627,8 @@
     --desk-section-spacing: 1.15mm;
     --desk-seat-padding: 0.9mm;
     --desk-subline-spacing: 0.65mm;
-    --desk-content-shift: -1.85mm;
-    --desk-seat-shift: -1.75mm;
+    --desk-content-shift: 0mm;
+    --desk-seat-shift: 0mm;
     page: exam-desk-label;
     display: grid;
     width: 260mm;
@@ -655,8 +655,8 @@
     --desk-section-spacing: 0.8mm;
     --desk-seat-padding: 0.65mm;
     --desk-subline-spacing: 0.45mm;
-    --desk-content-shift: -1.6mm;
-    --desk-seat-shift: -1.6mm;
+    --desk-content-shift: 0mm;
+    --desk-seat-shift: 0mm;
   }
   .exam-desk-label-measure {
     position: fixed;
@@ -761,6 +761,7 @@
     justify-content: flex-start;
     flex-wrap: wrap;
     gap: 0.4mm 1mm;
+    padding-bottom: 0.5em;
     text-align: left;
   }
   .exam-desk-label-name {
@@ -771,6 +772,7 @@
     font-weight: 700;
     letter-spacing: 0.04em;
     line-height: 1.3;
+    transform: translateY(0.5em);
   }
   .exam-desk-label-subject {
     display: flex;
