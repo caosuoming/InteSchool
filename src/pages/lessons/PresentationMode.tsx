@@ -107,6 +107,7 @@ interface DrawingStroke {
   color: string;
   width: number;
   points: DrawingPoint[];
+  sequence: number;
 }
 
 type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
@@ -147,6 +148,21 @@ interface BoardPage {
     height: number;
   };
 }
+
+type ClearUndoSnapshot =
+  | {
+      kind: "page";
+      slideKey: string;
+      annotationStrokes: DrawingStroke[];
+      questionPanelStrokes: Partial<Record<QuestionRevealSection, DrawingStroke[]>>;
+    }
+  | {
+      kind: "board";
+      slideKey: string;
+      boardId: string;
+      writingAreaId: string;
+      strokes: DrawingStroke[];
+    };
 
 type BoardResizeDirection = ResizeDirection;
 
@@ -210,6 +226,23 @@ const BOARD_HORIZONTAL_MARGIN_PERCENT = 1.5;
 const QUESTION_PANEL_MIN_WIDTH = 12;
 const QUESTION_PANEL_MIN_HEIGHT = 8;
 let blankPresentationSlideSequence = 0;
+let drawingStrokeSequence = 0;
+
+function nextDrawingStrokeSequence() {
+  drawingStrokeSequence += 1;
+  return drawingStrokeSequence;
+}
+
+function latestEraserSequence(strokes: DrawingStroke[]) {
+  for (let index = strokes.length - 1; index >= 0; index -= 1) {
+    if (strokes[index].kind === "eraser") return strokes[index].sequence;
+  }
+  return null;
+}
+
+function removeEraserStroke(strokes: DrawingStroke[], sequence: number) {
+  return strokes.filter((stroke) => stroke.kind !== "eraser" || stroke.sequence !== sequence);
+}
 
 function createBlankPresentationSlide(index: number): LessonSlide {
   blankPresentationSlideSequence += 1;
@@ -844,11 +877,12 @@ function WritableCanvas({
     if (tool === "none" || tool === "select") return;
     event.preventDefault();
     drawingBoundsRef.current = event.currentTarget.getBoundingClientRect();
+    const sequence = nextDrawingStrokeSequence();
     const stroke: DrawingStroke = tool === "eraser"
-      ? { kind: "eraser", color: "#000000", width: eraserWidth, points: [] }
+      ? { kind: "eraser", color: "#000000", width: eraserWidth, points: [], sequence }
       : preset
-        ? { kind: preset.kind, color: preset.color, width: preset.width, points: [] }
-        : { kind: "pen", color: "#000000", width: 3, points: [] };
+        ? { kind: preset.kind, color: preset.color, width: preset.width, points: [], sequence }
+        : { kind: "pen", color: "#000000", width: 3, points: [], sequence };
     stroke.points.push(pointFromClientPosition(event.clientX, event.clientY));
     activeStrokeRef.current = stroke;
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -1022,6 +1056,9 @@ export function PresentationMode({
   const [boardsVisible, setBoardsVisible] = useState(false);
   const [savingBoardId, setSavingBoardId] = useState<string | null>(null);
   const [mainClearToken, setMainClearToken] = useState(0);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearUndoMenuOpen, setClearUndoMenuOpen] = useState(false);
+  const [clearUndoSnapshot, setClearUndoSnapshot] = useState<ClearUndoSnapshot | null>(null);
   const [colorSettingsOpen, setColorSettingsOpen] = useState(false);
   const [colorPreferences, setColorPreferences] = useState<PresentationColorPreferences>(readColorPreferences);
   const [presentationFontSize, setPresentationFontSize] = useState(() => (
@@ -1041,6 +1078,24 @@ export function PresentationMode({
   const boards = boardsBySlide[currentSlideStateKey] || [];
   const activeBoardId = activeBoardIdsBySlide[currentSlideStateKey] || null;
   const currentAnnotationStrokes = annotationStrokesBySlide[currentSlideStateKey] || [];
+  const currentQuestionPanelStrokes = questionPanelStrokesBySlide[currentSlideStateKey] || {};
+  const activeBoard = boards.find((board) => board.id === activeBoardId);
+  const activeWritingArea = activeBoard?.writingAreas.find((area) => area.id === activeBoard.activeWritingAreaId);
+  const activeSurfaceIsBoard = Boolean(boardsVisible && activeBoard && activeWritingArea);
+  const canUndoClear = Boolean(clearUndoSnapshot && (
+    clearUndoSnapshot.kind === "board"
+      ? activeSurfaceIsBoard
+        && clearUndoSnapshot.slideKey === currentSlideStateKey
+        && clearUndoSnapshot.boardId === activeBoard?.id
+        && clearUndoSnapshot.writingAreaId === activeWritingArea?.id
+      : !activeSurfaceIsBoard && clearUndoSnapshot.slideKey === currentSlideStateKey
+  ));
+  const canUndoEraser = activeSurfaceIsBoard
+    ? Boolean(activeWritingArea?.strokes.some((stroke) => stroke.kind === "eraser"))
+    : currentAnnotationStrokes.some((stroke) => stroke.kind === "eraser")
+      || Object.values(currentQuestionPanelStrokes).some((strokes) => (
+        strokes?.some((stroke) => stroke.kind === "eraser")
+      ));
   const setBoards = useCallback((update: BoardPage[] | ((current: BoardPage[]) => BoardPage[])) => {
     setBoardsBySlide((current) => {
       const currentBoards = current[currentSlideStateKey] || [];
@@ -1203,6 +1258,8 @@ export function PresentationMode({
         setSidePanel(null);
         setPresetMenuToolId(null);
         setEraserSizeMenuOpen(false);
+        setClearConfirmOpen(false);
+        setClearUndoMenuOpen(false);
         setColorSettingsOpen(false);
       }
       if (!(target instanceof Element) || !target.closest("[data-presentation-page-picker]")) {
@@ -1227,6 +1284,8 @@ export function PresentationMode({
     setSelectedElementId(null);
     setPresetMenuToolId(null);
     setEraserSizeMenuOpen(false);
+    setClearConfirmOpen(false);
+    setClearUndoMenuOpen(false);
     setColorSettingsOpen(false);
     setPagePickerOpen(false);
   }, [currentIndex]);
@@ -1487,21 +1546,42 @@ export function PresentationMode({
   const toggleSidePanel = (side: Side, tab: SideTab) => {
     setPresetMenuToolId(null);
     setEraserSizeMenuOpen(false);
+    setClearConfirmOpen(false);
+    setClearUndoMenuOpen(false);
     setColorSettingsOpen(false);
     setSidePanel((current) => (
       current?.side === side && current.tab === tab ? null : { side, tab }
     ));
   };
 
-  const clearActiveSurface = () => {
-    if (boardsVisible && activeBoardId) {
+  const requestClearActiveSurface = () => {
+    setPresetMenuToolId(null);
+    setEraserSizeMenuOpen(false);
+    setClearUndoMenuOpen(false);
+    setColorSettingsOpen(false);
+    setSidePanel(null);
+    setClearConfirmOpen(true);
+  };
+
+  const confirmClearActiveSurface = () => {
+    setClearConfirmOpen(false);
+    if (activeSurfaceIsBoard && activeBoard && activeWritingArea) {
+      setClearUndoSnapshot(activeWritingArea.strokes.length > 0
+        ? {
+            kind: "board",
+            slideKey: currentSlideStateKey,
+            boardId: activeBoard.id,
+            writingAreaId: activeWritingArea.id,
+            strokes: activeWritingArea.strokes,
+          }
+        : null);
       setBoards((current) => current.map((board) => (
-        board.id === activeBoardId
+        board.id === activeBoard.id
           ? {
               ...board,
               writingAreas: board.writingAreas.map((area) => (
-                area.id === board.activeWritingAreaId
-                  ? { ...area, clearToken: area.clearToken + 1 }
+                area.id === activeWritingArea.id
+                  ? { ...area, strokes: [], clearToken: area.clearToken + 1 }
                   : area
               )),
             }
@@ -1509,11 +1589,119 @@ export function PresentationMode({
       )));
       return;
     }
-    setQuestionPanelStrokesBySlide((current) => {
-      if (!current[currentSlideStateKey]) return current;
-      return { ...current, [currentSlideStateKey]: {} };
-    });
+
+    const hasQuestionPanelStrokes = Object.values(currentQuestionPanelStrokes)
+      .some((strokes) => Boolean(strokes?.length));
+    setClearUndoSnapshot(currentAnnotationStrokes.length > 0 || hasQuestionPanelStrokes
+      ? {
+          kind: "page",
+          slideKey: currentSlideStateKey,
+          annotationStrokes: currentAnnotationStrokes,
+          questionPanelStrokes: currentQuestionPanelStrokes,
+        }
+      : null);
+    setAnnotationStrokesBySlide((current) => ({ ...current, [currentSlideStateKey]: [] }));
+    setQuestionPanelStrokesBySlide((current) => ({
+      ...current,
+      [currentSlideStateKey]: {},
+    }));
     setMainClearToken((value) => value + 1);
+  };
+
+  const undoLastClear = () => {
+    const snapshot = clearUndoSnapshot;
+    if (!snapshot) return;
+
+    if (snapshot.kind === "board") {
+      if (
+        !activeSurfaceIsBoard
+        || snapshot.slideKey !== currentSlideStateKey
+        || snapshot.boardId !== activeBoard?.id
+        || snapshot.writingAreaId !== activeWritingArea?.id
+      ) return;
+      setBoards((current) => current.map((board) => (
+        board.id === snapshot.boardId
+          ? {
+              ...board,
+              writingAreas: board.writingAreas.map((area) => (
+                area.id === snapshot.writingAreaId
+                  ? { ...area, strokes: [...snapshot.strokes, ...area.strokes] }
+                  : area
+              )),
+            }
+          : board
+      )));
+      setClearUndoSnapshot(null);
+      return;
+    }
+
+    if (activeSurfaceIsBoard || snapshot.slideKey !== currentSlideStateKey) return;
+    setAnnotationStrokesBySlide((current) => ({
+      ...current,
+      [currentSlideStateKey]: [
+        ...snapshot.annotationStrokes,
+        ...(current[currentSlideStateKey] || []),
+      ],
+    }));
+    setQuestionPanelStrokesBySlide((current) => {
+      const currentPanels = current[currentSlideStateKey] || {};
+      const restoredPanels: Partial<Record<QuestionRevealSection, DrawingStroke[]>> = { ...currentPanels };
+      for (const section of ["answer", "analysis"] as const) {
+        const clearedStrokes = snapshot.questionPanelStrokes[section] || [];
+        const laterStrokes = currentPanels[section] || [];
+        if (clearedStrokes.length > 0 || laterStrokes.length > 0) {
+          restoredPanels[section] = [...clearedStrokes, ...laterStrokes];
+        }
+      }
+      return { ...current, [currentSlideStateKey]: restoredPanels };
+    });
+    setClearUndoSnapshot(null);
+  };
+
+  const undoLastEraser = () => {
+    if (activeSurfaceIsBoard && activeBoard && activeWritingArea) {
+      const sequence = latestEraserSequence(activeWritingArea.strokes);
+      if (sequence === null) return;
+      setBoards((current) => current.map((board) => (
+        board.id === activeBoard.id
+          ? {
+              ...board,
+              writingAreas: board.writingAreas.map((area) => (
+                area.id === activeWritingArea.id
+                  ? { ...area, strokes: removeEraserStroke(area.strokes, sequence) }
+                  : area
+              )),
+            }
+          : board
+      )));
+      return;
+    }
+
+    let target: "annotation" | QuestionRevealSection = "annotation";
+    let sequence = latestEraserSequence(currentAnnotationStrokes);
+    for (const section of ["answer", "analysis"] as const) {
+      const candidate = latestEraserSequence(currentQuestionPanelStrokes[section] || []);
+      if (candidate !== null && (sequence === null || candidate > sequence)) {
+        target = section;
+        sequence = candidate;
+      }
+    }
+    if (sequence === null) return;
+
+    if (target === "annotation") {
+      setAnnotationStrokesBySlide((current) => ({
+        ...current,
+        [currentSlideStateKey]: removeEraserStroke(current[currentSlideStateKey] || [], sequence),
+      }));
+      return;
+    }
+    setQuestionPanelStrokesBySlide((current) => ({
+      ...current,
+      [currentSlideStateKey]: {
+        ...(current[currentSlideStateKey] || {}),
+        [target]: removeEraserStroke(current[currentSlideStateKey]?.[target] || [], sequence),
+      },
+    }));
   };
 
   const addBoard = () => {
@@ -2756,7 +2944,17 @@ export function PresentationMode({
           <div className="relative" data-presentation-popup-root>
             {eraserSizeMenuOpen && (
               <div className="absolute bottom-full left-1/2 mb-2 w-44 -translate-x-1/2 rounded-xl border border-ink-100 bg-paper p-3 shadow-2xl">
-                <div className="text-[10px] font-medium text-ink-400">擦除范围</div>
+                <button
+                  type="button"
+                  aria-label="撤销上次擦除"
+                  disabled={!canUndoEraser}
+                  onClick={undoLastEraser}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-ink-100 px-2 py-2 text-xs font-medium text-ink-700 transition-colors hover:border-gold-300 hover:bg-gold-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  撤销擦除
+                </button>
+                <div className="mt-3 text-[10px] font-medium text-ink-400">擦除范围</div>
                 <div className="mt-2 grid grid-cols-3 gap-1.5">
                   {ERASER_WIDTHS.map((width) => (
                     <button
@@ -2791,6 +2989,8 @@ export function PresentationMode({
               onClick={() => {
                 setTool(tool === "eraser" ? "none" : "eraser");
                 setPresetMenuToolId(null);
+                setClearConfirmOpen(false);
+                setClearUndoMenuOpen(false);
                 setSidePanel(null);
                 setColorSettingsOpen(false);
                 if (tool === "eraser") setEraserSizeMenuOpen(false);
@@ -2805,32 +3005,99 @@ export function PresentationMode({
             >
               <Eraser className="h-5 w-5" />
             </button>
-            {tool === "eraser" && (
-              <button
-                type="button"
-                aria-label="设置橡皮擦范围"
-                className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink-800 text-paper shadow"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setPresetMenuToolId(null);
-                  setSidePanel(null);
-                  setColorSettingsOpen(false);
-                  setEraserSizeMenuOpen((open) => !open);
-                }}
-              >
-                <ChevronUp className="h-3 w-3" />
-              </button>
-            )}
+            <button
+              type="button"
+              aria-label="橡皮擦设置与撤销"
+              aria-expanded={eraserSizeMenuOpen}
+              className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink-800 text-paper shadow"
+              onClick={(event) => {
+                event.stopPropagation();
+                setPresetMenuToolId(null);
+                setClearConfirmOpen(false);
+                setClearUndoMenuOpen(false);
+                setSidePanel(null);
+                setColorSettingsOpen(false);
+                setEraserSizeMenuOpen((open) => !open);
+              }}
+              title="橡皮擦设置与撤销"
+            >
+              <ChevronUp className="h-3 w-3" />
+            </button>
           </div>
-          <button
-            type="button"
-            aria-label={boardsVisible && activeBoardId ? "清空当前板书" : "清空批注"}
-            onClick={clearActiveSurface}
-            className="flex h-10 w-9 items-center justify-center rounded-lg bg-mist text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
-            title={boardsVisible && activeBoardId ? "清空当前板书" : "清空批注"}
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <div className="relative" data-presentation-popup-root>
+            {clearConfirmOpen && (
+              <div
+                role="dialog"
+                aria-label="确认清屏"
+                className="absolute bottom-full left-1/2 mb-2 w-40 -translate-x-1/2 rounded-xl border border-red-100 bg-paper p-2.5 shadow-2xl"
+              >
+                <div className="text-xs font-medium text-ink-700">确认清空当前书写？</div>
+                <div className="mt-2 flex gap-1.5">
+                  <button
+                    type="button"
+                    aria-label="确认清屏"
+                    onClick={confirmClearActiveSurface}
+                    className="flex-1 rounded-lg bg-red-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                  >
+                    确认清屏
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="取消清屏"
+                    onClick={() => setClearConfirmOpen(false)}
+                    className="rounded-lg border border-ink-100 px-2 py-1.5 text-xs text-ink-600 hover:bg-mist"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+            {clearUndoMenuOpen && (
+              <div className="absolute bottom-full left-1/2 mb-2 w-40 -translate-x-1/2 rounded-xl border border-ink-100 bg-paper p-2.5 shadow-2xl">
+                <button
+                  type="button"
+                  aria-label="撤销上次清屏"
+                  disabled={!canUndoClear}
+                  onClick={() => {
+                    undoLastClear();
+                    setClearUndoMenuOpen(false);
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-ink-100 px-2 py-2 text-xs font-medium text-ink-700 transition-colors hover:border-gold-300 hover:bg-gold-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  撤销清屏
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              aria-label={activeSurfaceIsBoard ? "清空当前板书" : "清空批注"}
+              onClick={requestClearActiveSurface}
+              className="flex h-10 w-9 flex-col items-center justify-center gap-0.5 rounded-lg bg-mist text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
+              title={activeSurfaceIsBoard ? "清空当前板书" : "清空批注"}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="text-[9px] leading-none">清屏</span>
+            </button>
+            <button
+              type="button"
+              aria-label="清屏操作"
+              aria-expanded={clearUndoMenuOpen}
+              className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink-800 text-paper shadow"
+              onClick={(event) => {
+                event.stopPropagation();
+                setPresetMenuToolId(null);
+                setEraserSizeMenuOpen(false);
+                setClearConfirmOpen(false);
+                setSidePanel(null);
+                setColorSettingsOpen(false);
+                setClearUndoMenuOpen((open) => !open);
+              }}
+              title="撤销上次清屏"
+            >
+              <ChevronUp className="h-3 w-3" />
+            </button>
+          </div>
           <button
             type="button"
             aria-label={boardsVisible ? "收起板书" : "打开板书"}
