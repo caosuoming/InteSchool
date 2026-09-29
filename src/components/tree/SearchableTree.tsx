@@ -20,6 +20,8 @@ export interface SearchableTreeProps {
   checkable?: boolean;
   checkedIds?: string[];
   onCheck?: (ids: string[]) => void;
+  /** 勾选节点时是否同时勾选其所有子节点。 */
+  cascadeCheck?: boolean;
   showDoneCount?: boolean;
   expandLevel?: number;
   className?: string;
@@ -96,6 +98,7 @@ export function SearchableTree({
   checkable = false,
   checkedIds = [],
   onCheck,
+  cascadeCheck = true,
   showDoneCount = false,
   expandLevel = 1,
   className,
@@ -397,6 +400,7 @@ export function SearchableTree({
               checkable={checkable}
               checkedIds={checkedIds}
               onCheck={onCheck}
+              cascadeCheck={cascadeCheck}
               defaultExpandAll={isSearching}
               expandLevel={expandLevel}
               highlightedIds={matchingIds}

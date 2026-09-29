@@ -106,6 +106,27 @@ describe("SearchableTree", () => {
     expect(onCheck).toHaveBeenCalledWith(["lesson-1", "point-1"]);
   });
 
+  it("can check only the selected node when cascading is disabled", () => {
+    const onCheck = vi.fn();
+    render(
+      <SearchableTree
+        data={tree}
+        title="章节目录"
+        checkable
+        checkedIds={[]}
+        onCheck={onCheck}
+        cascadeCheck={false}
+      />,
+    );
+
+    const chapterLabel = screen.getByText("第一章 集合与函数");
+    const chapterRow = chapterLabel.parentElement;
+    expect(chapterRow).not.toBeNull();
+    fireEvent.click(within(chapterRow!).getAllByRole("button")[1]);
+
+    expect(onCheck).toHaveBeenCalledWith(["chapter-1"]);
+  });
+
   it("shows an empty state when no node matches", () => {
     render(<SearchableTree data={tree} title="知识点目录" />);
 

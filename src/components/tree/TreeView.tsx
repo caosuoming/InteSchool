@@ -15,6 +15,8 @@ interface TreeViewProps {
   checkable?: boolean;
   checkedIds?: string[];
   onCheck?: (ids: string[]) => void;
+  /** 勾选节点时是否同时勾选其所有子节点。 */
+  cascadeCheck?: boolean;
   selectedId?: string;
   onSelect?: (node: TreeNode) => void;
   showCount?: boolean;
@@ -37,6 +39,7 @@ export function TreeView({
   checkable = false,
   checkedIds = [],
   onCheck,
+  cascadeCheck = true,
   selectedId,
   onSelect,
   showCount = true,
@@ -89,24 +92,37 @@ export function TreeView({
 
   const isFullyChecked = useCallback(
     (node: TreeNode): boolean => {
+      if (!cascadeCheck) return checkedIds.includes(node.id);
       const all = getNodeAndDescendants(node);
       return all.every((id) => checkedIds.includes(id));
     },
-    [checkedIds, getNodeAndDescendants],
+    [cascadeCheck, checkedIds, getNodeAndDescendants],
   );
 
   const isPartiallyChecked = useCallback(
     (node: TreeNode): boolean => {
       const all = getNodeAndDescendants(node);
+      if (!cascadeCheck) {
+        if (checkedIds.includes(node.id)) return false;
+        return all.slice(1).some((id) => checkedIds.includes(id));
+      }
       const checked = all.filter((id) => checkedIds.includes(id));
       return checked.length > 0 && !all.every((id) => checkedIds.includes(id));
     },
-    [checkedIds, getNodeAndDescendants],
+    [cascadeCheck, checkedIds, getNodeAndDescendants],
   );
 
   const handleCheck = useCallback(
     (node: TreeNode) => {
       if (!onCheck) return;
+      if (!cascadeCheck) {
+        onCheck(
+          checkedIds.includes(node.id)
+            ? checkedIds.filter((id) => id !== node.id)
+            : [...checkedIds, node.id],
+        );
+        return;
+      }
       const ids = getNodeAndDescendants(node);
       if (isFullyChecked(node)) {
         onCheck(checkedIds.filter((id) => !ids.includes(id)));
@@ -114,7 +130,7 @@ export function TreeView({
         onCheck(Array.from(new Set([...checkedIds, ...ids])));
       }
     },
-    [onCheck, checkedIds, getNodeAndDescendants, isFullyChecked],
+    [cascadeCheck, onCheck, checkedIds, getNodeAndDescendants, isFullyChecked],
   );
 
   const containsNode = useCallback((root: TreeNode, id: string): boolean => {
