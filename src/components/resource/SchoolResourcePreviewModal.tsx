@@ -80,6 +80,17 @@ function DocumentBlocksPreview({ blocks }: { blocks: ExtractedDocumentBlock[] })
   );
 }
 
+function hasMatchingLeadingQuestionNumber(stem: string, expectedNumber: number): boolean {
+  const match = /^(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?[、.．:：)）]/.exec(stem.trimStart());
+  if (!match) return false;
+
+  const normalized = match[1].replace(
+    /[０-９]/g,
+    (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0),
+  );
+  return Number(normalized) === expectedNumber;
+}
+
 export function ExamPaperPreview({ paper }: { paper: ExamPaper }) {
   return (
     <div className="space-y-4">
@@ -98,7 +109,7 @@ export function ExamPaperPreview({ paper }: { paper: ExamPaper }) {
           {paper.questions.map((question, index) => (
             <div key={question.id} className="py-3">
               <ExtractedQuestionContent
-                number={index + 1}
+                number={hasMatchingLeadingQuestionNumber(question.stem, index + 1) ? undefined : index + 1}
                 stem={question.stem}
                 options={question.options}
                 answer={question.answer}
