@@ -394,4 +394,11 @@ y=2
     `)).toBe(String.raw`\overgroup{AB}`);
   });
 
+  it.each([
+    ["⊊", "B\\subsetneq A"],
+    ["⫋", "B\\subsetneqq A"],
+  ])("converts strict-subset glyph %s", (symbol, expected) => {
+    expect(ommlToLatex(mathRun("B" + symbol + "A"))).toBe(expected);
+  });
+
 });

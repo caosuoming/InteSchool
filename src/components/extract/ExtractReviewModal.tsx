@@ -32,6 +32,7 @@ import { questionService } from "@/services/question";
 import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
 import { renderExtractText } from "@/lib/extract-text-renderer";
+import { ensureFillBlankAnswerArea } from "@/lib/fill-blank";
 import { stripLeadingScoreLabels } from "@/lib/question-text-cleanup";
 import {
   parseDocumentBlocks,
@@ -481,7 +482,18 @@ export function ExtractReviewModal({
 
   const updateBlockField = (id: string, field: Partial<DocBlock>) => {
     setBlocks((list) =>
-      list.map((b) => (b.id === id ? { ...b, ...field, status: "edited" } : b)),
+      list.map((block) => {
+        if (block.id !== id) return block;
+        const updated: DocBlock = { ...block, ...field, status: "edited" };
+        if (
+          updated.type === "question"
+          && updated.questionType === "short"
+          && (field.questionType === "short" || field.answer !== undefined)
+        ) {
+          updated.content = ensureFillBlankAnswerArea(updated.content, updated.answer);
+        }
+        return updated;
+      }),
     );
     if (field.content !== undefined) {
       setDuplicateChecks((current) => {
@@ -684,19 +696,24 @@ export function ExtractReviewModal({
       const summaryKeywords = [...extractConfig.summaryKeywords];
 
       const extractedQuestions = questionBlocks.map((b) => {
+        const type = b.questionType || defaultQuestionType;
+        const answer = normalizeQuestionField(
+          removeKeywords(b.answer || "", answerKeywords),
+          ["待教师补充"],
+        );
         const keywordFilteredStem = removeKeywords(b.content, questionKeywords);
-        const stem = preservedScoreLabelBlockIds.has(b.id)
+        const cleanedStem = preservedScoreLabelBlockIds.has(b.id)
           ? keywordFilteredStem
           : stripLeadingScoreLabels(keywordFilteredStem).text;
+        const stem = type === "short"
+          ? ensureFillBlankAnswerArea(cleanedStem, answer)
+          : cleanedStem;
         return {
           id: b.id,
-          type: b.questionType || defaultQuestionType,
+          type,
           stem,
           options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
-          answer: normalizeQuestionField(
-            removeKeywords(b.answer || "", answerKeywords),
-            ["待教师补充"],
-          ),
+          answer,
           analysis: normalizeQuestionField(
             removeKeywords(b.analysis || "", analysisKeywords),
             ["待教师补充解析"],
@@ -801,11 +818,14 @@ export function ExtractReviewModal({
       const extractCopyBlocks: ExtractedDocumentBlock[] = blocks.map((block) => {
         if (block.type === "question") {
           const item = extractedQuestionById.get(block.id);
-          const customLabel = item ? originalQuestionLabel(block.content, item.stem) : undefined;
+          const content = item?.type === "short"
+            ? ensureFillBlankAnswerArea(block.content, item.answer)
+            : block.content;
+          const customLabel = item ? originalQuestionLabel(content, item.stem) : undefined;
           return {
             id: block.id,
             type: "question",
-            content: block.content,
+            content,
             ...(customLabel ? { customLabel } : {}),
             questionType: item?.type || block.questionType || defaultQuestionType,
             questionId: questionIdByItemId[block.id],

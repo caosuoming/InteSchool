@@ -862,10 +862,11 @@ function copySnapshotToTeacher(
   const directory = ensureDirectorySnapshot(share.directorySnapshot, toSchoolId);
   const original = share.resourceSnapshot;
   const embeddedQuestionIds = copyEmbeddedQuestionsToTeacher(share, toTeacherId, toSchoolId, directory);
+  const isPlatformCopy = share.kind === "donation";
   const platformSourceDonationIds = [
     ...new Set([
       ...(original.platformSourceDonationIds || []),
-      ...(share.kind === "donation" ? [share.id] : []),
+      ...(isPlatformCopy ? [share.id] : []),
     ]),
   ];
   let copy: ShareableResource;
@@ -914,6 +915,8 @@ function copySnapshotToTeacher(
           questionId: block.questionId ? embeddedQuestionIds.get(block.questionId) : undefined,
           examPaperQuestionId: undefined,
         })),
+        isExtractCopy: isPlatformCopy ? undefined : (original as ExamPaper).isExtractCopy,
+        sourceResourceId: isPlatformCopy ? undefined : (original as ExamPaper).sourceResourceId,
         status: "draft",
         createdAt: now,
         updatedAt: now,
@@ -938,6 +941,10 @@ function copySnapshotToTeacher(
           questionId: block.questionId ? embeddedQuestionIds.get(block.questionId) : undefined,
           examPaperQuestionId: undefined,
         })),
+        isExtractCopy: isPlatformCopy ? undefined : (original as Lecture).isExtractCopy,
+        sourceResourceId: isPlatformCopy ? undefined : (original as Lecture).sourceResourceId,
+        versionType: isPlatformCopy ? undefined : (original as Lecture).versionType,
+        hasOrigin: isPlatformCopy ? undefined : (original as Lecture).hasOrigin,
         status: "draft",
         version: 1,
         createdAt: now,

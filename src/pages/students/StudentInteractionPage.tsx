@@ -19,6 +19,7 @@ import type {
   HomeworkKnowledgeRecord,
   KnowledgePoint,
   Student,
+  StudentMissingHomeworkRecord,
   StudentInteractionAttachment,
   StudentInteractionView,
 } from "@/types";
@@ -90,6 +91,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [gradeQueryData, setGradeQueryData] = useState<GradeQueryData | null>(null);
   const [recentHomeworkRecords, setRecentHomeworkRecords] = useState<HomeworkKnowledgeRecord[]>([]);
   const [homeworkFeedbackRecords, setHomeworkFeedbackRecords] = useState<HomeworkAttitudeRecord[]>([]);
+  const [missingHomeworkRecords, setMissingHomeworkRecords] = useState<StudentMissingHomeworkRecord[]>([]);
 
   // 新建记录
   const [newType, setNewType] = useState<"chat" | "attitude" | "status">("chat");
@@ -163,9 +165,10 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const loadInteractions = useCallback(async () => {
     if (!selectedStudentId) return;
     try {
-      const [interactionResult, homeworkResult] = await Promise.allSettled([
+      const [interactionResult, homeworkResult, missingHomeworkResult] = await Promise.allSettled([
         studentInteractionService.listByStudent(selectedStudentId),
         homeworkRecordService.listAttitudesByStudent(selectedStudentId),
+        homeworkRecordService.listMissingByStudent(selectedStudentId),
       ]);
       if (interactionResult.status === "rejected") throw interactionResult.reason;
       const list = interactionResult.value;
@@ -175,6 +178,12 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       } else {
         setHomeworkFeedbackRecords([]);
         toast.error("加载作业评价失败", homeworkResult.reason instanceof Error ? homeworkResult.reason.message : undefined);
+      }
+      if (missingHomeworkResult.status === "fulfilled") {
+        setMissingHomeworkRecords(missingHomeworkResult.value);
+      } else {
+        setMissingHomeworkRecords([]);
+        toast.error("加载未交作业记录失败", missingHomeworkResult.reason instanceof Error ? missingHomeworkResult.reason.message : undefined);
       }
       // 更新该学生最近互动时间缓存
       if (list.length > 0) {
@@ -189,6 +198,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       }
     } catch (err) {
       setHomeworkFeedbackRecords([]);
+      setMissingHomeworkRecords([]);
       toast.error("加载互动记录失败");
     }
   }, [selectedStudentId]);
@@ -403,9 +413,16 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       sortAt: record.homeworkDate ? `${record.homeworkDate}T12:00:00` : record.createdAt,
       record,
     })),
+    ...missingHomeworkRecords.map((record) => ({
+      kind: "missingHomework" as const,
+      id: record.id,
+      sortAt: `${record.homeworkDate}T12:00:00`,
+      record,
+    })),
   ].sort((left, right) => new Date(right.sortAt).getTime() - new Date(left.sortAt).getTime()), [
     homeworkFeedbackRecords,
     interactions,
+    missingHomeworkRecords,
   ]);
 
   // 最近态度
@@ -764,6 +781,36 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                                 <div className={cn(record.keywords.length > 0 && "mt-1.5")}>
                                   <span className="font-medium text-ink-600">作业评价：</span>
                                   <span className="whitespace-pre-wrap">{record.evaluation}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (entry.kind === "missingHomework") {
+                        const record = entry.record;
+                        const dateLabel = new Date(`${record.homeworkDate}T00:00:00`).toLocaleDateString("zh-CN");
+                        return (
+                          <div
+                            key={`missing-homework-${entry.id}`}
+                            className="relative pl-6 pb-3 border-l-2 border-ink-100 last:border-l-transparent"
+                          >
+                            <div className="absolute -left-2 top-0 w-3 h-3 rounded-full border-2 border-paper bg-red-400" />
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="amber">作业</Badge>
+                              <span className="text-xs font-medium text-red-600">未交作业</span>
+                              <span className="text-xs text-ink-500">作业日期 {dateLabel}</span>
+                            </div>
+                            <div className="text-sm text-ink-700 leading-relaxed bg-red-50/40 p-2 rounded">
+                              <div>
+                                <span className="font-medium text-ink-600">班级：</span>
+                                {classMap[record.classId]?.name || "原班级"}
+                              </div>
+                              {record.summary && (
+                                <div className="mt-1.5">
+                                  <span className="font-medium text-ink-600">作业概况：</span>
+                                  <span className="whitespace-pre-wrap">{record.summary}</span>
                                 </div>
                               )}
                             </div>

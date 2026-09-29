@@ -543,6 +543,23 @@ describe("DOCX structure-aware text extraction", () => {
     await expect(extractDocxImage(data, "../../secret")).resolves.toBeNull();
   });
 
+  it("preserves underlined whitespace runs as fill-in answer areas", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>若 x=</w:t></w:r>
+        <w:r>
+          <w:rPr><w:u w:val="single"/></w:rPr>
+          <w:t xml:space="preserve">      </w:t>
+        </w:r>
+        <w:r><w:t>，则继续计算。</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "若 x=______，则继续计算。",
+    );
+  });
+
   it("returns an empty string when document.xml is absent", async () => {
     const data = await new JSZip().generateAsync({ type: "nodebuffer" });
     await expect(extractDocxStructuredText(data)).resolves.toBe("");
