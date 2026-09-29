@@ -1,5 +1,9 @@
 import type { Material, Question, QuestionType } from "@/types";
 import {
+  ensureFillBlankAnswerArea,
+  hasFillBlankAnswerArea,
+} from "@/lib/fill-blank";
+import {
   isDocumentTableFragment,
   parseDocumentTable,
 } from "@/lib/document-table";
@@ -296,6 +300,7 @@ function inferAtomicQuestionType(
     if (sectionType === "multiple" || sectionType === "single") return sectionType;
     return "single";
   }
+  if (hasFillBlankAnswerArea(block.content || "")) return "short";
   if (sectionType && !["single", "multiple"].includes(sectionType)) return sectionType;
   return block.questionType || (text.length > 120 ? "essay" : "short");
 }
@@ -1397,6 +1402,14 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     if (block.type === "question") {
       block.options = (block.options || []).filter((option) => option.trim()).map((option) => option.trim());
       block.questionType = inferQuestionType(block, sectionQuestionType, config);
+      const fillBlankSignal = sectionQuestionType === "short"
+        || hasFillBlankAnswerArea(block.content)
+        || config.fillBlankKeywords.some((keyword) => (
+          keyword && [block.content, block.answer].filter(Boolean).join("\n").includes(keyword)
+        ));
+      if (block.questionType === "short" && fillBlankSignal) {
+        block.content = ensureFillBlankAnswerArea(block.content, block.answer);
+      }
       block.difficulty ||= 3;
     }
     if (block.type === "knowledge" && !block.knowledgeTitle) {
@@ -1677,6 +1690,18 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   return blocks;
 }
 
+function normalizeFillBlankAreas(blocks: DocumentBlock[]): DocumentBlock[] {
+  for (const block of blocks) {
+    if (
+      block.type !== "question"
+      || block.questionType !== "short"
+      || !hasFillBlankAnswerArea(block.content)
+    ) continue;
+    block.content = ensureFillBlankAnswerArea(block.content, block.answer);
+  }
+  return blocks;
+}
+
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const solutionHeadingIndexes = lines
@@ -1697,8 +1722,8 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
       allowPositionalFallback: kind !== "answer",
     });
     const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
-    if (merged >= requiredMatches) return blocks;
+    if (merged >= requiredMatches) return normalizeFillBlankAreas(blocks);
   }
 
-  return parseDocumentBlocksCore(content, config);
+  return normalizeFillBlankAreas(parseDocumentBlocksCore(content, config));
 }
