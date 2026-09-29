@@ -170,20 +170,24 @@ function getClassPrintLayout(studentCount: number, maxAssignments: number): {
   const count = Math.max(1, studentCount);
   const columns = 4;
   const assignmentCount = Math.max(1, maxAssignments);
-  const requiredRowsForTwoPages = Math.max(1, Math.ceil(count / (columns * 2)));
-  const density = assignmentCount <= 4 && requiredRowsForTwoPages <= 10 ? "normal" : "compact";
-  const contentHeight = density === "normal"
-    ? 8 + assignmentCount * 3.25
-    : 7.2 + assignmentCount * 2.8;
-  const gap = density === "normal" ? 1.8 : 1.4;
   const availableHeight = 277;
-  const readableRows = Math.max(1, Math.min(10, Math.floor((availableHeight + gap) / (contentHeight + gap))));
-  const maxRows = Math.max(readableRows, requiredRowsForTwoPages);
-  const pageCapacity = columns * maxRows;
+
+  const rowsForDensity = (density: PrintDensity) => {
+    const contentHeight = density === "normal"
+      ? 8 + assignmentCount * 3.25
+      : 7.2 + assignmentCount * 2.8;
+    const gap = density === "normal" ? 1.35 : 1.4;
+    return Math.max(1, Math.floor((availableHeight + gap) / (contentHeight + gap)));
+  };
+
+  const normalCapacity = columns * rowsForDensity("normal");
+  const compactCapacity = columns * rowsForDensity("compact");
+  const density: PrintDensity = count <= normalCapacity ? "normal" : "compact";
+
   return {
     columns,
     density,
-    pageCapacity,
+    pageCapacity: density === "normal" ? normalCapacity : compactCapacity,
   };
 }
 

@@ -180,6 +180,11 @@ describe("groupDeskLabels", () => {
       format: [210, 297],
     }));
     expect(html2canvas).toHaveBeenCalledTimes(2);
+    expect(html2canvas).toHaveBeenNthCalledWith(1, expect.any(HTMLElement), expect.objectContaining({
+      scale: 3,
+      backgroundColor: "#ffffff",
+      useCORS: true,
+    }));
     expect(pdfAddImage).toHaveBeenCalledTimes(2);
     expect(pdfAddImage).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), "PNG", 0, 0, 210, 297, undefined, "FAST");
     expect(pdfAddPage).toHaveBeenCalledTimes(1);

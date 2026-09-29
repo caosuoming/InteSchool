@@ -47,6 +47,8 @@ export interface ExamDeskLabelDisplayOptions {
 
 export type ExamPdfPaperSize = "A4" | "8K";
 
+const PDF_RENDER_SCALE = 3;
+
 const PDF_PAPER_SIZES: Record<ExamPdfPaperSize, { width: number; height: number }> = {
   A4: { width: 210, height: 297 },
   "8K": { width: 260, height: 370 },
@@ -107,7 +109,7 @@ export async function downloadExamPreviewPdf(
       const canvas = await html2canvas(page, {
         backgroundColor: "#ffffff",
         logging: false,
-        scale: 2,
+        scale: PDF_RENDER_SCALE,
         useCORS: true,
         windowWidth,
         windowHeight,
