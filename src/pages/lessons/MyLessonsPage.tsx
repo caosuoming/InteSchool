@@ -230,9 +230,24 @@ export function MyLessonsPage() {
     [classes],
   );
 
-  const currentNotice = useMemo(() => [...notices].sort((left, right) => (
+  const activeNotices = useMemo(() => {
+    const now = Date.now();
+    return notices.filter((notice) => (
+      new Date(notice.startsAt).getTime() <= now
+      && new Date(notice.endsAt).getTime() >= now
+    ));
+  }, [notices]);
+  const historicalNotices = useMemo(() => {
+    const now = Date.now();
+    return notices
+      .filter((notice) => new Date(notice.endsAt).getTime() < now)
+      .sort((left, right) => (
+        new Date(right.endsAt).getTime() - new Date(left.endsAt).getTime()
+      ));
+  }, [notices]);
+  const currentNotice = useMemo(() => [...activeNotices].sort((left, right) => (
     new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
-  ))[0], [notices]);
+  ))[0], [activeNotices]);
 
   const today = localDateValue();
   const currentHomeworks = useMemo(
@@ -300,7 +315,6 @@ export function MyLessonsPage() {
         classroomNoticeService.listNotices({
           schoolId: teacher.schoolId,
           teacherId: teacher.id,
-          activeOnly: true,
         }),
       ]);
       const affiliation = getCurrentAffiliation();
@@ -1087,7 +1101,7 @@ export function MyLessonsPage() {
           ) : (
             <div className="grid gap-2 lg:grid-cols-2">
               {classes.map((schoolClass) => {
-                const classNotices = notices.filter((notice) => notice.classIds.includes(schoolClass.id));
+                const classNotices = activeNotices.filter((notice) => notice.classIds.includes(schoolClass.id));
                 return (
                   <div key={schoolClass.id} className="rounded-lg border border-ink-100 bg-mist/50 px-3 py-3">
                     <div className="text-xs font-medium text-ink-700">{schoolClass.grade} · {schoolClass.name}</div>
@@ -1108,6 +1122,35 @@ export function MyLessonsPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 border-t border-ink-100 pt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-ink-800">历史通知</div>
+              <div className="mt-1 text-xs text-ink-400">已超过展示结束时间的通知会保留在这里。</div>
+            </div>
+            <Badge variant="ink">{historicalNotices.length} 条</Badge>
+          </div>
+          {homeworkLoading ? (
+            <div className="py-4 text-xs text-ink-400">加载中...</div>
+          ) : historicalNotices.length === 0 ? (
+            <div className="py-4 text-xs text-ink-400">暂无历史通知。</div>
+          ) : (
+            <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+              {historicalNotices.map((notice) => (
+                <div key={notice.id} className="rounded-lg border border-ink-100 bg-mist/50 px-3 py-3">
+                  <div className="whitespace-pre-wrap text-sm text-ink-800">{notice.content}</div>
+                  <div className="mt-2 text-xs text-ink-500">
+                    展示时间：
+                    {new Date(notice.startsAt).toLocaleString("zh-CN", { hour12: false })}
+                    {" 至 "}
+                    {new Date(notice.endsAt).toLocaleString("zh-CN", { hour12: false })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

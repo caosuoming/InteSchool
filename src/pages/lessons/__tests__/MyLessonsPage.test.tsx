@@ -136,6 +136,16 @@ const activeNotice: ClassroomNotice = {
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
 
+const expiredNotice: ClassroomNotice = {
+  ...activeNotice,
+  id: "notice-expired",
+  content: "上周五放学后进行卫生检查",
+  startsAt: "2020-01-01T08:00:00.000Z",
+  endsAt: "2020-01-01T10:00:00.000Z",
+  createdAt: "2020-01-01T07:00:00.000Z",
+  updatedAt: "2020-01-01T07:00:00.000Z",
+};
+
 function courseware(
   id: string,
   lifecycleStatus: "active" | "completed" | "trashed" = "active",
@@ -503,6 +513,35 @@ describe("MyLessonsPage classroom publishing", () => {
         }),
       );
     });
+  });
+
+  it("shows expired notices in history without mixing them into the current class display", async () => {
+    const user = userEvent.setup();
+    vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice, expiredNotice]);
+
+    render(
+      <MemoryRouter>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "班级通知" }));
+
+    await waitFor(() => {
+      expect(classroomNoticeService.listNotices).toHaveBeenCalledWith({
+        schoolId: "school-1",
+        teacherId: "teacher-1",
+      });
+    });
+
+    expect(screen.getByText("历史通知")).toBeInTheDocument();
+    expect(screen.getByText(expiredNotice.content)).toBeInTheDocument();
+    expect(screen.getByText(/展示时间：/)).toBeInTheDocument();
+
+    const currentSection = screen.getByText("当前各班显示内容").parentElement;
+    expect(currentSection).toBeTruthy();
+    expect(within(currentSection as HTMLElement).queryByText(expiredNotice.content)).not.toBeInTheDocument();
+    expect(within(currentSection as HTMLElement).getByText(activeNotice.content)).toBeInTheDocument();
   });
 
   it("uploads homework attachments and passes stored metadata to the service", async () => {
