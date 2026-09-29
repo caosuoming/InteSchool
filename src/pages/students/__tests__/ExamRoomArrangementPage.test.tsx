@@ -785,7 +785,7 @@ describe("ExamRoomArrangementPage", () => {
     }
   });
 
-  it("splits a large class over multiple readable A4 pages", async () => {
+  it("keeps a class on one A4 page whenever the estimated layout fits", async () => {
     const user = userEvent.setup();
     const students = Array.from({ length: 67 }, (_, index) => ({
       ...context.students[0],
@@ -818,14 +818,55 @@ describe("ExamRoomArrangementPage", () => {
     await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
 
     const pages = screen.getAllByTestId("class-arrangement-print-page");
-    expect(pages).toHaveLength(2);
+    expect(pages).toHaveLength(1);
     expect(pages[0]).toHaveAttribute("data-columns", "4");
-    expect(pages[0].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(40);
-    expect(pages[1].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(27);
-    expect(pages[0].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("高三（1）班 · 67 名学生 · 第 1/2 页");
-    expect(pages[1].querySelector(".exam-class-arrangement-header-subjects")).toHaveTextContent(
+    expect(pages[0]).toHaveAttribute("data-density", "normal");
+    expect(pages[0].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(67);
+    expect(pages[0].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("高三（1）班 · 67 名学生");
+    expect(pages[0].querySelector(".exam-class-arrangement-header-subjects")).toHaveTextContent(
       "本班考试科目：语文、数学、英语、化学、生物",
     );
+  });
+
+  it("splits a class only after the compact A4 layout is full", async () => {
+    const user = userEvent.setup();
+    const students = Array.from({ length: 97 }, (_, index) => ({
+      ...context.students[0],
+      id: `student-${index + 1}`,
+      name: `学生${index + 1}`,
+      studentNo: String(index + 1).padStart(3, "0"),
+    }));
+    const assignments = students.map((student, index) => ({
+      ...savedArrangement.assignments[0],
+      id: `combined:${student.id}`,
+      studentId: student.id,
+      studentName: student.name,
+      studentNo: student.studentNo,
+      seatNo: index + 1,
+      admissionNo: `20260510${String(index + 1).padStart(6, "0")}`,
+    }));
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      ...context,
+      cohort: { ...cohort, studentCount: students.length },
+      classes: [{ ...context.classes[0], studentCount: students.length }],
+      students,
+    });
+    vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{
+      ...savedArrangement,
+      rooms: [{ ...savedArrangement.rooms[0], capacity: 100 }],
+      assignments,
+    }]);
+    renderPage();
+
+    await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+
+    const pages = screen.getAllByTestId("class-arrangement-print-page");
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toHaveAttribute("data-density", "compact");
+    expect(pages[0].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(96);
+    expect(pages[1].querySelectorAll(".exam-class-arrangement-student")).toHaveLength(1);
+    expect(pages[0].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("第 1/2 页");
+    expect(pages[1].querySelector(".exam-class-arrangement-header-meta")).toHaveTextContent("第 2/2 页");
   });
 
   it("continues desk labels across rooms and 8K pages when separate-room pagination is disabled", async () => {
