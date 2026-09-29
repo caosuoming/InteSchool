@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -256,8 +256,7 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getAllByText(/所选考场最多可安排 32 个位置/).length).toBeGreaterThan(0);
   });
 
-  it("places same-session exam combinations side by side and can split a shared room", async () => {
-    const user = userEvent.setup();
+  it("automatically splits same-time exam combinations and shows the draggable capacity summary", async () => {
     const secondStudent = {
       ...context.students[0],
       id: "student-2",
@@ -280,14 +279,26 @@ describe("ExamRoomArrangementPage", () => {
     expect(within(session).getByText(/2 个考试组合并列/)).toBeInTheDocument();
     expect(within(session).getByText("语文、数学、英语、物理")).toBeInTheDocument();
     expect(within(session).getByText("语文、数学、英语、历史")).toBeInTheDocument();
-    expect(within(session).getAllByText(/本组合布置上限 2 人/)).toHaveLength(2);
+    expect(within(session).getAllByText(/本组合布置上限 1 人/)).toHaveLength(2);
+    expect(within(session).queryByRole("button", { name: /1考场混1/ })).not.toBeInTheDocument();
 
-    const splitButton = within(session).getByRole("button", { name: "拆分 1考场 为混合考场" });
-    await user.click(splitButton);
+    fireEvent.change(
+      within(session).getByLabelText("语文、数学、英语、历史1考场布置人数"),
+      { target: { value: "2" } },
+    );
 
-    expect(within(session).getByRole("button", { name: "1考场 已拆分（2/2）" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(session).getByRole("button", { name: /1考场混1/ })).toBeInTheDocument();
-    expect(within(session).getByRole("button", { name: /1考场混2/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(session).getByRole("button", { name: /1考场混1/ })).toBeInTheDocument();
+      expect(within(session).getByRole("button", { name: /1考场混2/ })).toBeInTheDocument();
+    });
+    expect(within(session).getAllByText(/本组合布置上限 1 人/)).toHaveLength(2);
+    expect(within(session).queryByRole("button", { name: /拆分 1考场/ })).not.toBeInTheDocument();
+
+    const summary = screen.getByRole("dialog", { name: "考试组合人数与位置" });
+    expect(within(summary).getAllByText(/实际 1 人/)).toHaveLength(2);
+    expect(within(summary).getAllByText("位置 1 个")).toHaveLength(2);
+    expect(screen.getByText(/无需手动设置共用考场/)).toBeInTheDocument();
+
   });
 
   it("allows an individual student to be marked absent", async () => {
