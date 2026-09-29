@@ -762,6 +762,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [resourceAudienceClasses, setResourceAudienceClasses] = useState<AnyClass[]>([]);
   const [usedDocumentIds, setUsedDocumentIds] = useState<Set<string>>(new Set());
   const [editingBasketAudience, setEditingBasketAudience] = useState(false);
+  const [editingBasketAudienceId, setEditingBasketAudienceId] = useState<string | null>(null);
   const [savingBasketAudience, setSavingBasketAudience] = useState(false);
   const [draftBasketClassIds, setDraftBasketClassIds] = useState<string[]>([]);
   const [draftBasketStudentIds, setDraftBasketStudentIds] = useState<string[]>([]);
@@ -787,6 +788,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const selectedBasket = useMemo(
     () => baskets.find((basket) => basket.id === selectedBasketId) || null,
     [baskets, selectedBasketId],
+  );
+  const editingBasketAudienceBasket = useMemo(
+    () => baskets.find((basket) => basket.id === editingBasketAudienceId) || null,
+    [baskets, editingBasketAudienceId],
   );
   const basketAudienceStudentIds = useMemo(
     () => selectedBasket
@@ -1164,23 +1169,24 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
-  const openBasketAudienceEditor = () => {
-    if (!selectedBasket) return;
-    setDraftBasketClassIds(selectedBasket.classIds || []);
-    setDraftBasketStudentIds(selectedBasket.studentIds || []);
+  const openBasketAudienceEditor = (basket: Basket) => {
+    setEditingBasketAudienceId(basket.id);
+    setDraftBasketClassIds(basket.classIds || []);
+    setDraftBasketStudentIds(basket.studentIds || []);
     setEditingBasketAudience(true);
   };
 
   const handleSaveBasketAudience = async () => {
-    if (!selectedBasket) return;
+    if (!editingBasketAudienceId) return;
     setSavingBasketAudience(true);
     try {
-      const updated = await basketService.updateBasket(selectedBasket.id, {
+      const updated = await basketService.updateBasket(editingBasketAudienceId, {
         classIds: draftBasketClassIds,
         studentIds: draftBasketStudentIds,
       });
       setBaskets((current) => current.map((item) => item.id === updated.id ? updated : item));
       setEditingBasketAudience(false);
+      setEditingBasketAudienceId(null);
       toast.success("资源篮使用对象已更新");
     } catch (e: any) {
       toast.error("更新使用对象失败", e?.message);
@@ -2834,31 +2840,43 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           {basketAudienceLabel(b, audienceClasses, audienceStudents)}
                         </div>
                       </div>
-                      <div className="flex items-center gap-0.5 ml-2">
+                      <div className="flex flex-col items-end self-stretch gap-1 ml-2">
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSetDefaultBasket(b.id);
+                            }}
+                            className={cn(
+                              "p-1 rounded transition-colors",
+                              b.isDefault
+                                ? "text-gold-500 bg-gold-50"
+                                : "text-ink-300 hover:text-gold-500 hover:bg-gold-50",
+                            )}
+                            title={b.isDefault ? "当前为默认资源篮" : "设为默认资源篮"}
+                          >
+                            <Star className="w-3 h-3" fill={b.isDefault ? "currentColor" : "none"} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteBasket(b.id, b.name);
+                            }}
+                            className="p-1 rounded text-ink-300 hover:text-red-500 hover:bg-red-50"
+                            title="删除"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleSetDefaultBasket(b.id);
+                            openBasketAudienceEditor(b);
                           }}
-                          className={cn(
-                            "p-1 rounded transition-colors",
-                            b.isDefault
-                              ? "text-gold-500 bg-gold-50"
-                              : "text-ink-300 hover:text-gold-500 hover:bg-gold-50",
-                          )}
-                          title={b.isDefault ? "当前为默认资源篮" : "设为默认资源篮"}
+                          className="mt-auto inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] leading-4 text-ink-400 transition-colors hover:bg-gold-50 hover:text-gold-600"
                         >
-                          <Star className="w-3 h-3" fill={b.isDefault ? "currentColor" : "none"} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteBasket(b.id, b.name);
-                          }}
-                          className="p-1 rounded text-ink-300 hover:text-red-500 hover:bg-red-50"
-                          title="删除"
-                        >
-                          <X className="w-3 h-3" />
+                          <Pencil className="w-3 h-3" />
+                          调整适用对象
                         </button>
                       </div>
                     </div>
@@ -2898,10 +2916,6 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <Button variant="outline" onClick={openBasketAudienceEditor}>
-                      <Pencil className="w-4 h-4" />
-                      调整使用对象
-                    </Button>
                     <Button variant="outline" onClick={handleGenerateLecture} disabled={selectedQuestionIds.size === 0 && selectedMaterialIds.size === 0}>
                       <FileText className="w-4 h-4" />
                       生成讲义
@@ -4611,10 +4625,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
       <Modal
         open={editingBasketAudience}
-        onClose={() => setEditingBasketAudience(false)}
+        onClose={() => {
+          setEditingBasketAudience(false);
+          setEditingBasketAudienceId(null);
+        }}
         size="lg"
         title="调整资源篮使用对象"
-        description={selectedBasket ? `资源篮：${selectedBasket.name}` : undefined}
+        description={editingBasketAudienceBasket ? `资源篮：${editingBasketAudienceBasket.name}` : undefined}
         footer={
           <div className="flex items-center justify-between w-full">
             <Button
@@ -4627,7 +4644,15 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               清空选择
             </Button>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setEditingBasketAudience(false)}>取消</Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingBasketAudience(false);
+                  setEditingBasketAudienceId(null);
+                }}
+              >
+                取消
+              </Button>
               <Button variant="gold" onClick={handleSaveBasketAudience} loading={savingBasketAudience}>
                 保存
               </Button>

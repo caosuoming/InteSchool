@@ -532,7 +532,7 @@ describe("MyResourcesPage resource basket", () => {
     confirmSpy.mockRestore();
   });
 
-  it("updates the audience from an opened basket", async () => {
+  it("updates the audience from the basket card action", async () => {
     vi.mocked(basketService.listBaskets).mockResolvedValue([createdBasket]);
     vi.mocked(basketService.getBasket).mockResolvedValue(createdBasket);
     vi.mocked(basketService.updateBasket).mockResolvedValue({
@@ -547,8 +547,8 @@ describe("MyResourcesPage resource basket", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(await screen.findByText("复习资料"));
-    fireEvent.click(await screen.findByRole("button", { name: "调整使用对象" }));
+    fireEvent.click(await screen.findByRole("button", { name: "调整适用对象" }));
+    expect(screen.getByText("资源篮：复习资料")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "清空选择" }));
     fireEvent.click(screen.getByRole("checkbox", { name: /张同学/ }));
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
