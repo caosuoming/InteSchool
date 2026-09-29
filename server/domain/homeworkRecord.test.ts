@@ -111,6 +111,7 @@ function state(): AppState {
     homeworkAttitudeRecords: [],
     homeworkKnowledgeRecords: [],
     homeworkRecordPreferences: [],
+    homeworkClassOverviewRecords: [],
   } as AppState;
 }
 
@@ -246,6 +247,70 @@ describe("homeworkRecordService", () => {
       }, teacher)).resolves.toBeNull();
       await expect(homeworkRecordService.getAttitudeByStudent("student-1", "2026-09-05", teacher))
         .resolves.toBeNull();
+    });
+  });
+
+  it("persists class homework attendance and derives missing records while excluding leave", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const summaryOnly = await homeworkRecordService.saveClassOverview({
+        classId: "class-1",
+        homeworkDate: "2026-09-07",
+        summary: "二次函数作业整体完成一般",
+      }, teacher);
+      expect(summaryOnly).toMatchObject({
+        teacherId: "teacher-1",
+        classId: "class-1",
+        homeworkDate: "2026-09-07",
+        summary: "二次函数作业整体完成一般",
+        attendanceTaken: false,
+      });
+      await expect(homeworkRecordService.listMissingByStudent("student-1", teacher))
+        .resolves.toEqual([]);
+
+      const attendance = await homeworkRecordService.saveClassOverview({
+        classId: "class-1",
+        homeworkDate: "2026-09-07",
+        submittedStudentIds: [],
+        absentStudentIds: [],
+        attendanceTaken: true,
+      }, teacher);
+      expect(attendance).toMatchObject({
+        id: summaryOnly.id,
+        studentIds: ["student-1"],
+        submittedStudentIds: [],
+        absentStudentIds: [],
+        attendanceTaken: true,
+      });
+      await expect(homeworkRecordService.listMissingByStudent("student-1", teacher))
+        .resolves.toMatchObject([{
+          classOverviewId: summaryOnly.id,
+          classId: "class-1",
+          homeworkDate: "2026-09-07",
+          summary: "二次函数作业整体完成一般",
+        }]);
+
+      await homeworkRecordService.saveClassOverview({
+        classId: "class-1",
+        homeworkDate: "2026-09-07",
+        submittedStudentIds: [],
+        absentStudentIds: ["student-1"],
+        attendanceTaken: true,
+      }, teacher);
+      await expect(homeworkRecordService.listMissingByStudent("student-1", teacher))
+        .resolves.toEqual([]);
+
+      await expect(homeworkRecordService.listClassOverviews("class-1", teacher))
+        .resolves.toMatchObject([{
+          homeworkDate: "2026-09-07",
+          summary: "二次函数作业整体完成一般",
+          absentStudentIds: ["student-1"],
+        }]);
+      await expect(homeworkRecordService.saveClassOverview({
+        classId: "class-2",
+        homeworkDate: "2026-09-07",
+        summary: "无权限",
+      }, teacher)).rejects.toThrow("只能记录自己的任教班级或个人教学班");
     });
   });
 

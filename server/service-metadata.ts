@@ -1745,6 +1745,23 @@ export const serviceParameters = {
       "studentId",
       "teacher"
     ],
+    "getClassOverview": [
+      "classId",
+      "homeworkDate",
+      "teacher"
+    ],
+    "listClassOverviews": [
+      "classId",
+      "teacher"
+    ],
+    "saveClassOverview": [
+      "input",
+      "teacher"
+    ],
+    "listMissingByStudent": [
+      "studentId",
+      "teacher"
+    ],
     "setAttitudeKeywords": [
       "input",
       "teacher"

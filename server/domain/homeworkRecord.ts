@@ -1,10 +1,14 @@
 import type {
+  AnyClass,
   HomeworkAttitudeKeyword,
   HomeworkAttitudeRecord,
+  HomeworkClassOverviewRecord,
   HomeworkKnowledgeRecord,
   HomeworkKnowledgeStatus,
   HomeworkRecordPreference,
   KnowledgePoint,
+  Student,
+  StudentMissingHomeworkRecord,
   Teacher,
 } from "../../src/types/index.js";
 import { HOMEWORK_ATTITUDE_KEYWORDS } from "../../src/types/index.js";
@@ -41,6 +45,27 @@ async function requireStudentAccess(teacher: Teacher, studentId: string): Promis
   if (!students.some((student) => student.id === studentId)) {
     throw new Error("只能记录自己任教班级或个人教学班的学生");
   }
+}
+
+async function requireClassAccess(teacher: Teacher, classId: string): Promise<AnyClass> {
+  const classes = await classService.listMyClasses(teacher.schoolId, teacher.id);
+  const classInfo = classes.find((item) => item.id === classId);
+  if (!classInfo) throw new Error("只能记录自己的任教班级或个人教学班");
+  return classInfo;
+}
+
+function classStudentIds(classInfo: AnyClass): string[] {
+  const students = ((db.read("students") || []) as Student[]).filter((student) => student.status === "active");
+  if (classInfo.type === "school") {
+    return students.filter((student) => student.classId === classInfo.id).map((student) => student.id);
+  }
+  const allowed = new Set(classInfo.studentIds);
+  return students.filter((student) => allowed.has(student.id)).map((student) => student.id);
+}
+
+function normalizeStudentIds(value: unknown, fieldName: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${fieldName}格式不正确`);
+  return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
 }
 
 function teacherKnowledgePoints(teacher: Teacher): KnowledgePoint[] {
@@ -131,6 +156,168 @@ export const homeworkRecordService = {
         const dateOrder = homeworkDateOf(b).localeCompare(homeworkDateOf(a));
         return dateOrder || b.updatedAt.localeCompare(a.updatedAt);
       });
+  },
+
+  async getClassOverview(
+    classId: string,
+    homeworkDate: string,
+    teacher: Teacher,
+  ): Promise<HomeworkClassOverviewRecord | null> {
+    await delay(80);
+    const normalizedClassId = String(classId || "").trim();
+    if (!normalizedClassId) throw new Error("班级不能为空");
+    const normalizedDate = normalizeHomeworkDate(homeworkDate);
+    if (!normalizedDate) throw new Error("作业日期不能为空");
+    await requireClassAccess(teacher, normalizedClassId);
+    return ((db.read("homeworkClassOverviewRecords") || []) as HomeworkClassOverviewRecord[])
+      .find((item) => (
+        item.teacherId === teacher.id
+        && item.classId === normalizedClassId
+        && item.homeworkDate === normalizedDate
+      )) || null;
+  },
+
+  async listClassOverviews(
+    classId: string,
+    teacher: Teacher,
+  ): Promise<HomeworkClassOverviewRecord[]> {
+    await delay(80);
+    const normalizedClassId = String(classId || "").trim();
+    if (!normalizedClassId) throw new Error("班级不能为空");
+    await requireClassAccess(teacher, normalizedClassId);
+    return ((db.read("homeworkClassOverviewRecords") || []) as HomeworkClassOverviewRecord[])
+      .filter((item) => (
+        item.teacherId === teacher.id
+        && item.classId === normalizedClassId
+        && (item.attendanceTaken || Boolean(item.summary?.trim()))
+      ))
+      .sort((left, right) => {
+        const dateOrder = right.homeworkDate.localeCompare(left.homeworkDate);
+        return dateOrder || right.updatedAt.localeCompare(left.updatedAt);
+      });
+  },
+
+  async saveClassOverview(
+    input: {
+      classId: string;
+      homeworkDate: string;
+      summary?: string;
+      submittedStudentIds?: string[];
+      absentStudentIds?: string[];
+      attendanceTaken?: boolean;
+    },
+    teacher: Teacher,
+  ): Promise<HomeworkClassOverviewRecord> {
+    await delay(100);
+    const classId = String(input?.classId || "").trim();
+    if (!classId) throw new Error("班级不能为空");
+    const homeworkDate = normalizeHomeworkDate(input?.homeworkDate);
+    if (!homeworkDate) throw new Error("作业日期不能为空");
+    const classInfo = await requireClassAccess(teacher, classId);
+    if (!teacher.schoolId) throw new Error("当前教师未加入学校");
+
+    const records = ((db.read("homeworkClassOverviewRecords") || []) as HomeworkClassOverviewRecord[]);
+    const existing = records.find((item) => (
+      item.teacherId === teacher.id
+      && item.classId === classId
+      && item.homeworkDate === homeworkDate
+    ));
+    const summary = input.summary === undefined ? existing?.summary || "" : String(input.summary).trim();
+    if (summary.length > 4000) throw new Error("作业概况不能超过 4000 字");
+
+    let studentIds = existing?.studentIds || [];
+    let submittedStudentIds = existing?.submittedStudentIds || [];
+    let absentStudentIds = existing?.absentStudentIds || [];
+    let attendanceTaken = existing?.attendanceTaken === true;
+
+    const updatingAttendance = input.submittedStudentIds !== undefined
+      || input.absentStudentIds !== undefined
+      || input.attendanceTaken !== undefined;
+    if (updatingAttendance) {
+      studentIds = classStudentIds(classInfo);
+      const allowedStudentIds = new Set(studentIds);
+      submittedStudentIds = normalizeStudentIds(
+        input.submittedStudentIds ?? submittedStudentIds,
+        "已交作业学生列表",
+      );
+      absentStudentIds = normalizeStudentIds(
+        input.absentStudentIds ?? absentStudentIds,
+        "请假学生列表",
+      );
+      if (submittedStudentIds.some((id) => !allowedStudentIds.has(id))
+        || absentStudentIds.some((id) => !allowedStudentIds.has(id))) {
+        throw new Error("作业点名中包含不属于该班级的学生");
+      }
+      const absentSet = new Set(absentStudentIds);
+      if (submittedStudentIds.some((id) => absentSet.has(id))) {
+        throw new Error("同一学生不能同时标记为已交作业和请假");
+      }
+      attendanceTaken = input.attendanceTaken ?? true;
+    }
+
+    const now = new Date().toISOString();
+    const next: HomeworkClassOverviewRecord = existing
+      ? {
+          ...existing,
+          summary,
+          studentIds,
+          submittedStudentIds,
+          absentStudentIds,
+          attendanceTaken,
+          updatedAt: now,
+        }
+      : {
+          id: genId("hco"),
+          teacherId: teacher.id,
+          schoolId: teacher.schoolId,
+          classId,
+          homeworkDate,
+          summary,
+          studentIds,
+          submittedStudentIds,
+          absentStudentIds,
+          attendanceTaken,
+          createdAt: now,
+          updatedAt: now,
+        };
+    db.update("homeworkClassOverviewRecords", (items: HomeworkClassOverviewRecord[] = []) => existing
+      ? items.map((item) => item.id === existing.id ? next : item)
+      : [next, ...items]);
+    return next;
+  },
+
+  async listMissingByStudent(
+    studentId: string,
+    teacher: Teacher,
+  ): Promise<StudentMissingHomeworkRecord[]> {
+    await delay(80);
+    const normalizedStudentId = String(studentId || "").trim();
+    if (!normalizedStudentId) throw new Error("学生不能为空");
+    await requireStudentAccess(teacher, normalizedStudentId);
+    return ((db.read("homeworkClassOverviewRecords") || []) as HomeworkClassOverviewRecord[])
+      .filter((item) => (
+        item.teacherId === teacher.id
+        && item.attendanceTaken === true
+        && (item.studentIds || []).includes(normalizedStudentId)
+        && !(item.submittedStudentIds || []).includes(normalizedStudentId)
+        && !(item.absentStudentIds || []).includes(normalizedStudentId)
+      ))
+      .sort((left, right) => {
+        const dateOrder = right.homeworkDate.localeCompare(left.homeworkDate);
+        return dateOrder || right.updatedAt.localeCompare(left.updatedAt);
+      })
+      .map((item) => ({
+        id: `${item.id}:${normalizedStudentId}`,
+        classOverviewId: item.id,
+        teacherId: item.teacherId,
+        schoolId: item.schoolId,
+        classId: item.classId,
+        studentId: normalizedStudentId,
+        homeworkDate: item.homeworkDate,
+        summary: item.summary || "",
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      }));
   },
 
   async setAttitudeKeywords(

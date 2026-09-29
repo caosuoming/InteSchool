@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StudentHomeworkRecordPage } from "@/pages/students/StudentHomeworkRecordPage";
 import { classService } from "@/services/class";
 import { homeworkRecordService } from "@/services/homeworkRecord";
+import { classroomHomeworkService } from "@/services/classroomHomework";
 import { studentInteractionService } from "@/services/studentInteraction";
 import { knowledgeService } from "@/services/knowledge";
 import { useAuthStore } from "@/stores/auth";
@@ -22,9 +23,18 @@ vi.mock("@/services/homeworkRecord", () => ({
     setPinnedKnowledgePointIds: vi.fn(),
     listByStudent: vi.fn(),
     getAttitudeByStudent: vi.fn(),
+    getClassOverview: vi.fn(),
+    listClassOverviews: vi.fn(),
+    saveClassOverview: vi.fn(),
     setAttitudeKeywords: vi.fn(),
     setEvaluation: vi.fn(),
     setRecord: vi.fn(),
+  },
+}));
+
+vi.mock("@/services/classroomHomework", () => ({
+  classroomHomeworkService: {
+    listHomeworks: vi.fn(),
   },
 }));
 
@@ -130,6 +140,23 @@ describe("StudentHomeworkRecordPage", () => {
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue(knowledgePoints);
     vi.mocked(homeworkRecordService.listPinnedKnowledgePointIds).mockResolvedValue(["kp-child"]);
+    vi.mocked(homeworkRecordService.getClassOverview).mockResolvedValue(null);
+    vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([]);
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([]);
+    vi.mocked(homeworkRecordService.saveClassOverview).mockImplementation(async (input) => ({
+      id: "overview-1",
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      classId: input.classId,
+      homeworkDate: input.homeworkDate,
+      summary: input.summary ?? "",
+      studentIds: students.map((student) => student.id),
+      submittedStudentIds: input.submittedStudentIds ?? [],
+      absentStudentIds: input.absentStudentIds ?? [],
+      attendanceTaken: input.attendanceTaken ?? false,
+      createdAt: "2026-09-05T08:00:00.000Z",
+      updatedAt: "2026-09-05T08:01:00.000Z",
+    }));
     vi.mocked(homeworkRecordService.listByStudent).mockResolvedValue([{
       id: "record-1",
       teacherId: "teacher-1",
@@ -226,6 +253,30 @@ describe("StudentHomeworkRecordPage", () => {
     await user.click(screen.getByRole("button", { name: "取消不关注甲同学" }));
     await waitFor(() => {
       expect(studentInteractionService.setStudentIgnored).toHaveBeenCalledWith("student-1", false);
+    });
+  });
+
+  it("shows the class homework overview and saves attendance for the whole class", async () => {
+    const user = userEvent.setup();
+    render(<StudentHomeworkRecordPage />);
+
+    const groupToggle = await screen.findByRole("button", { name: /高一（1）班/ });
+    await user.click(groupToggle);
+
+    expect(await screen.findByText("高一（1）班 · 作业情况总览")).toBeInTheDocument();
+    expect(screen.getByText("当天作业内容")).toBeInTheDocument();
+    expect(screen.getByText("作业点名")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "甲同学已交作业" }));
+    await user.click(screen.getByRole("button", { name: "保存作业点名" }));
+
+    await waitFor(() => {
+      expect(homeworkRecordService.saveClassOverview).toHaveBeenCalledWith(expect.objectContaining({
+        classId: "class-1",
+        submittedStudentIds: ["student-1"],
+        absentStudentIds: [],
+        attendanceTaken: true,
+      }));
     });
   });
 
