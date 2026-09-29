@@ -164,7 +164,6 @@ function chooseBalancedRoomTeacher(
   unavailable: Set<string>,
   minutes: Map<string, number>,
   preferredSubjects: Set<string>,
-  priority: "subject" | "duration",
   allowed: (teacher: ExamInvigilationTeacher) => boolean,
 ): ExamInvigilationTeacher | null {
   return candidates
@@ -173,7 +172,8 @@ function chooseBalancedRoomTeacher(
       const subjectDifference = Number(!preferredSubjects.has(left.subject)) - Number(!preferredSubjects.has(right.subject));
       const durationDifference = (minutes.get(left.id) || 0) - (minutes.get(right.id) || 0);
       return (
-        (priority === "subject" ? subjectDifference || durationDifference : durationDifference || subjectDifference)
+        durationDifference
+        || subjectDifference
         || Number(Boolean(left.isPrepLeader)) - Number(Boolean(right.isPrepLeader))
         || left.name.localeCompare(right.name, "zh-CN")
       );
@@ -259,6 +259,7 @@ export function buildExamInvigilationTable(
   ]));
   const teacherSessions = new Map(config.teachers.map((teacher) => [teacher.id, 0]));
   const teacherDates = new Map(config.teachers.map((teacher) => [teacher.id, new Set<string>()]));
+  const ownSubjectTeacherIds = new Set<string>();
   const groupedTimes = groupSchedules(arrangement, config);
   const patrolTeacherIds = resolvePatrolTeacherIds(config, teachers);
   const usedRoomIds = new Set<string>();
@@ -337,6 +338,12 @@ export function buildExamInvigilationTable(
     return true;
   };
 
+  const markOwnSubjectAssignment = (teacherId: string | null | undefined, subjects: Set<string>) => {
+    if (!teacherId) return;
+    const teacher = teachers.get(teacherId);
+    if (teacher && subjects.has(teacher.subject)) ownSubjectTeacherIds.add(teacherId);
+  };
+
   const rows = rowInputs.map((input) => {
     const unavailable = new Set<string>(patrolTeacherIds);
     const override = normalizeOverride(config.overrides?.[input.key], teachers);
@@ -346,16 +353,25 @@ export function buildExamInvigilationTable(
       const activeRoomIds = group.roomIds.filter((roomId) => (input.roomStudents.get(roomId)?.size || 0) > 0);
       const overriddenRoomId = activeRoomIds.find((roomId) => Object.prototype.hasOwnProperty.call(override.roomTeacherIds, roomId));
       const overriddenTeacherId = overriddenRoomId === undefined ? undefined : override.roomTeacherIds[overriddenRoomId];
+      const roomSubjectSet = new Set<string>();
+      activeRoomIds.forEach((roomId) => {
+        input.roomSubjects.get(roomId)?.forEach((subject) => roomSubjectSet.add(subject));
+      });
+      if (roomSubjectSet.size === 0) input.subjectSet.forEach((subject) => roomSubjectSet.add(subject));
       return {
         group,
         activeRoomIds,
         canonicalRoomId: activeRoomIds[0],
         overriddenTeacherId,
+        roomSubjectSet,
       };
     });
 
     for (const item of roomGroups) {
-      if (item.overriddenTeacherId) unavailable.add(item.overriddenTeacherId);
+      if (item.overriddenTeacherId) {
+        unavailable.add(item.overriddenTeacherId);
+        markOwnSubjectAssignment(item.overriddenTeacherId, item.roomSubjectSet);
+      }
     }
     if (override.outsideTeacherId) unavailable.add(override.outsideTeacherId);
 
@@ -381,7 +397,57 @@ export function buildExamInvigilationTable(
       );
       if (fallbackOutside) outsideTeacherIds = [fallbackOutside.id];
     }
-    outsideTeacherIds.forEach((teacherId) => unavailable.add(teacherId));
+    outsideTeacherIds.forEach((teacherId) => {
+      unavailable.add(teacherId);
+      markOwnSubjectAssignment(teacherId, input.subjectSet);
+    });
+
+    const subjectPriorityRoomTeachers = new Map<string, string>();
+    if ((config.autoArrangePriority || "duration") === "subject") {
+      const autoRoomGroups = roomGroups.filter((item) => item.canonicalRoomId && item.overriddenTeacherId === undefined);
+      const candidatesByRoom = new Map<string, ExamInvigilationTeacher[]>();
+      autoRoomGroups.forEach((item) => {
+        candidatesByRoom.set(item.canonicalRoomId!, config.teachers
+          .filter((teacher) => (
+            !teacher.isLeader
+            && !unavailable.has(teacher.id)
+            && !ownSubjectTeacherIds.has(teacher.id)
+            && item.roomSubjectSet.has(teacher.subject)
+            && requirement(teacher)
+          ))
+          .sort((left, right) => (
+            (teacherPriorityMinutes.get(left.id) || 0) - (teacherPriorityMinutes.get(right.id) || 0)
+            || Number(Boolean(left.isPrepLeader)) - Number(Boolean(right.isPrepLeader))
+            || left.name.localeCompare(right.name, "zh-CN")
+          )));
+      });
+
+      const teacherRoom = new Map<string, string>();
+      const assignRoom = (roomId: string, visitedTeachers: Set<string>): boolean => {
+        for (const teacher of candidatesByRoom.get(roomId) || []) {
+          if (visitedTeachers.has(teacher.id)) continue;
+          visitedTeachers.add(teacher.id);
+          const previousRoomId = teacherRoom.get(teacher.id);
+          if (previousRoomId === undefined || assignRoom(previousRoomId, visitedTeachers)) {
+            teacherRoom.set(teacher.id, roomId);
+            subjectPriorityRoomTeachers.set(roomId, teacher.id);
+            return true;
+          }
+        }
+        return false;
+      };
+
+      [...candidatesByRoom.keys()]
+        .sort((left, right) => (
+          (candidatesByRoom.get(left)?.length || 0) - (candidatesByRoom.get(right)?.length || 0)
+        ))
+        .forEach((roomId) => { assignRoom(roomId, new Set<string>()); });
+
+      subjectPriorityRoomTeachers.forEach((teacherId) => {
+        unavailable.add(teacherId);
+        ownSubjectTeacherIds.add(teacherId);
+      });
+    }
 
     for (const item of roomGroups) {
       item.group.roomIds.forEach((roomId) => { roomTeacherIds[roomId] = null; });
@@ -390,22 +456,23 @@ export function buildExamInvigilationTable(
         roomTeacherIds[item.canonicalRoomId] = item.overriddenTeacherId || null;
         continue;
       }
-      const roomSubjectSet = new Set<string>();
-      item.activeRoomIds.forEach((roomId) => {
-        const subjects = input.roomSubjects.get(roomId);
-        subjects?.forEach((subject) => roomSubjectSet.add(subject));
-      });
-      if (roomSubjectSet.size === 0) input.subjectSet.forEach((subject) => roomSubjectSet.add(subject));
+      const subjectPriorityTeacherId = subjectPriorityRoomTeachers.get(item.canonicalRoomId);
+      if (subjectPriorityTeacherId) {
+        roomTeacherIds[item.canonicalRoomId] = subjectPriorityTeacherId;
+        continue;
+      }
       const teacher = chooseBalancedRoomTeacher(
         config.teachers,
         unavailable,
         teacherPriorityMinutes,
-        roomSubjectSet,
-        config.autoArrangePriority || "duration",
+        item.roomSubjectSet,
         requirement,
       );
       roomTeacherIds[item.canonicalRoomId] = teacher?.id || null;
-      if (teacher) unavailable.add(teacher.id);
+      if (teacher) {
+        unavailable.add(teacher.id);
+        markOwnSubjectAssignment(teacher.id, item.roomSubjectSet);
+      }
     }
 
     if (!outsideOverridden && outsideTeacherIds.length === 0) {
@@ -418,6 +485,7 @@ export function buildExamInvigilationTable(
       if (fallbackOutside) {
         outsideTeacherIds = [fallbackOutside.id];
         unavailable.add(fallbackOutside.id);
+        markOwnSubjectAssignment(fallbackOutside.id, input.subjectSet);
       }
     }
 

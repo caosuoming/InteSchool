@@ -1411,11 +1411,21 @@ export function InvigilationTableSection({
             </button>
           </>
         )}
-        <Card className={cn(tableTwoVisible && "max-h-[calc(100vh-2rem)] overflow-y-auto pt-10 shadow-2xl ring-1 ring-ink-200")}>
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
+        <Card className={cn(
+          durationListCollapsed && "p-3",
+          tableTwoVisible && "max-h-[calc(100vh-2rem)] shadow-2xl ring-1 ring-ink-200",
+          tableTwoVisible && !durationListCollapsed && "overflow-y-auto pt-10",
+        )}>
+          <div className={cn(
+            "flex justify-between gap-3",
+            durationListCollapsed ? "mb-0 flex-nowrap items-center" : "mb-4 flex-wrap items-end",
+            tableTwoVisible && durationListCollapsed && "px-8",
+          )}>
+            <div className={cn(durationListCollapsed && "min-w-0")}>
               <h2 className="text-base font-semibold text-ink-900">监考时长</h2>
-              <p className="mt-1 text-xs text-ink-500">自动排表先应用基本要求，再通过表二勾选或交换微调；默认按累计时长最短优先。</p>
+              {!durationListCollapsed && (
+                <p className="mt-1 text-xs text-ink-500">自动排表先应用基本要求，再通过表二勾选或交换微调；默认按累计时长最短优先。</p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {!durationListCollapsed && (
@@ -1429,7 +1439,7 @@ export function InvigilationTableSection({
                 onClick={() => setDurationListCollapsed((collapsed) => !collapsed)}
               >
                 {durationListCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                {durationListCollapsed ? "展开名单" : "收起名单"}
+                {durationListCollapsed ? "展开面板" : "收起面板"}
               </Button>
             </div>
           </div>

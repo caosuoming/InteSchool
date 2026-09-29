@@ -163,6 +163,67 @@ describe("exam invigilation table", () => {
     expect(table.rows[0].roomTeacherIds["room-1"]).toBe("teacher-a");
   });
 
+  it("maximizes own-subject assignments before balancing flexible rooms", () => {
+    const input = arrangement();
+    const mathAssignment = input.assignments.find((item) => item.subjectLabel === "数学")!;
+    const historyAssignment = input.assignments.find((item) => item.subjectLabel === "历史")!;
+    input.subjects = ["数学", "历史"];
+    input.separateSubjects = ["数学", "历史"];
+    input.assignments = [
+      { ...mathAssignment, id: "math:room-1", studentId: "math-room-1" },
+      {
+        ...historyAssignment,
+        id: "history:room-1",
+        studentId: "history-room-1",
+        roomId: "room-1",
+        roomName: "1",
+        roomNumber: "1",
+        roomLocation: "教学楼101",
+      },
+      {
+        ...mathAssignment,
+        id: "math:room-2",
+        studentId: "math-room-2",
+        roomId: "room-2",
+        roomName: "2",
+        roomNumber: "2",
+        roomLocation: "教学楼102",
+      },
+      {
+        ...mathAssignment,
+        id: "math:room-3",
+        studentId: "math-room-3",
+        roomId: "room-unused",
+        roomName: "3",
+        roomNumber: "3",
+        roomLocation: "教学楼103",
+      },
+    ];
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "math", name: "甲数学老师", subject: "数学" },
+        { id: "history", name: "乙历史老师", subject: "历史" },
+        { id: "short", name: "丙地理老师", subject: "地理" },
+        { id: "long", name: "丁生物老师", subject: "生物" },
+      ],
+      subjectTimes: [
+        { subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 },
+        { subject: "历史", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 },
+      ],
+      autoArrangePriority: "subject",
+      patrolTeacherIds: [],
+      overrides: {},
+    };
+
+    const table = buildExamInvigilationTable(input, settings, {
+      baselineTeacherMinutes: { short: 0, long: 300 },
+    });
+
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBe("history");
+    expect(table.rows[0].roomTeacherIds["room-2"]).toBe("math");
+    expect(table.rows[0].roomTeacherIds["room-unused"]).toBe("short");
+  });
+
   it("excludes teachers on leave from automatic room, outside and patrol duties", () => {
     const input = arrangement();
     const settings = config();
