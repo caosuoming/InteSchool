@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LecturePreviewPage from "./LecturePreviewPage";
@@ -647,11 +648,11 @@ describe("LecturePreviewPage", () => {
     const questionDetails = await screen.findByTestId("lecture-question-details-1");
     expect(within(questionDetails).getAllByText("讲义已有备注").length).toBeGreaterThan(0);
 
-    fireEvent.click(within(questionDetails).getByRole("button", { name: "添加备注" }));
-    fireEvent.change(await within(questionDetails).findByLabelText("新增题目备注"), {
-      target: { value: "讲义新备注" },
-    });
-    fireEvent.click(within(questionDetails).getByRole("button", { name: "添加" }));
+    const user = userEvent.setup();
+    await user.click(within(questionDetails).getByRole("button", { name: "添加备注" }));
+    const remarkInput = await screen.findByLabelText("新增题目备注");
+    await user.type(remarkInput, "讲义新备注");
+    await user.click(screen.getByRole("button", { name: "添加" }));
 
     await waitFor(() => {
       expect(questionService.addRemark).toHaveBeenCalledWith(question.id, "讲义新备注");
