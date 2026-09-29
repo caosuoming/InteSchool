@@ -3205,6 +3205,41 @@ export interface HomeworkRecordPreference {
   updatedAt: string;
 }
 
+/** 教师针对整个班级、某次作业保存的作业概况与点名结果。 */
+export interface HomeworkClassOverviewRecord {
+  id: string;
+  teacherId: string;
+  schoolId: string;
+  classId: string;
+  homeworkDate: string;
+  /** 当天整班作业的总体情况；允许仅做点名而不填写概况。 */
+  summary: string;
+  /** 点名保存时的学生快照，用于后续稳定判断未交作业记录。 */
+  studentIds: string[];
+  /** 已提交作业的学生。 */
+  submittedStudentIds: string[];
+  /** 当天请假的学生；请假学生不会被视为未交作业。 */
+  absentStudentIds: string[];
+  /** 是否已经保存过本次作业点名。 */
+  attendanceTaken: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** “师生互动”时间线中由整班作业点名派生出的未交作业记录。 */
+export interface StudentMissingHomeworkRecord {
+  id: string;
+  classOverviewId: string;
+  teacherId: string;
+  schoolId: string;
+  classId: string;
+  studentId: string;
+  homeworkDate: string;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ============ 校本资源备份 ============
 
 /** 校本资源备份类型 */

@@ -2,8 +2,10 @@ import { rpcCall } from "./api";
 import type {
   HomeworkAttitudeKeyword,
   HomeworkAttitudeRecord,
+  HomeworkClassOverviewRecord,
   HomeworkKnowledgeRecord,
   HomeworkKnowledgeStatus,
+  StudentMissingHomeworkRecord,
 } from "@/types";
 
 export const homeworkRecordService = {
@@ -25,6 +27,29 @@ export const homeworkRecordService = {
 
   async listAttitudesByStudent(studentId: string): Promise<HomeworkAttitudeRecord[]> {
     return rpcCall("homeworkRecord", "listAttitudesByStudent", [studentId]) as any;
+  },
+
+  async getClassOverview(classId: string, homeworkDate: string): Promise<HomeworkClassOverviewRecord | null> {
+    return rpcCall("homeworkRecord", "getClassOverview", [classId, homeworkDate]) as any;
+  },
+
+  async listClassOverviews(classId: string): Promise<HomeworkClassOverviewRecord[]> {
+    return rpcCall("homeworkRecord", "listClassOverviews", [classId]) as any;
+  },
+
+  async saveClassOverview(input: {
+    classId: string;
+    homeworkDate: string;
+    summary?: string;
+    submittedStudentIds?: string[];
+    absentStudentIds?: string[];
+    attendanceTaken?: boolean;
+  }): Promise<HomeworkClassOverviewRecord> {
+    return rpcCall("homeworkRecord", "saveClassOverview", [input]) as any;
+  },
+
+  async listMissingByStudent(studentId: string): Promise<StudentMissingHomeworkRecord[]> {
+    return rpcCall("homeworkRecord", "listMissingByStudent", [studentId]) as any;
   },
 
   async setAttitudeKeywords(input: {
