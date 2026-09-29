@@ -118,6 +118,7 @@ interface RosterImportReview {
   reviewRows: RosterReviewRow[];
   autoMatchedStudentIds: string[];
   gradeStudents: Student[];
+  reconciledStudents: Student[];
 }
 
 interface PendingRosterImport {
@@ -131,7 +132,7 @@ function unresolvedOldStudents(pending: PendingRosterImport): Student[] {
   for (const value of Object.values(pending.resolutions)) {
     if (value && value !== "__create__") matched.add(value);
   }
-  return pending.review.gradeStudents.filter((student) => !matched.has(student.id));
+  return pending.review.reconciledStudents.filter((student) => !matched.has(student.id));
 }
 
 function buildRosterImportReview(
@@ -140,22 +141,28 @@ function buildRosterImportReview(
   classes: SchoolClass[],
   grade: SchoolGrade,
 ): RosterImportReview {
-  const gradeClassIds = new Set(
-    classes.filter((item) => classBelongsToGrade(item, grade)).map((item) => item.id),
-  );
+  const gradeClasses = classes.filter((item) => classBelongsToGrade(item, grade));
+  const gradeClassIds = new Set(gradeClasses.map((item) => item.id));
   const classByName = new Map(
-    classes
-      .filter((item) => classBelongsToGrade(item, grade))
-      .map((item) => [normalizeRosterName(item.name), item] as const),
+    gradeClasses.map((item) => [normalizeRosterName(item.name), item] as const),
   );
   const gradeStudents = students.filter((student) =>
     student.status === "active" && gradeClassIds.has(student.classId),
   );
+  const studentsByClass = new Map<string, Student[]>();
   const byName = new Map<string, Student[]>();
   for (const student of gradeStudents) {
+    studentsByClass.set(student.classId, [...(studentsByClass.get(student.classId) || []), student]);
     const key = normalizeRosterName(student.name);
     byName.set(key, [...(byName.get(key) || []), student]);
   }
+
+  const importedClassIds = new Set<string>();
+  for (const row of rows) {
+    const targetClass = classByName.get(normalizeRosterName(row.className));
+    if (targetClass) importedClassIds.add(targetClass.id);
+  }
+  const reconciledStudents = gradeStudents.filter((student) => importedClassIds.has(student.classId));
 
   const seenStudentNumbers = new Set<string>();
   const matchedIds = new Set<string>();
@@ -165,40 +172,28 @@ function buildRosterImportReview(
     if (studentNo && seenStudentNumbers.has(studentNo)) return;
     if (studentNo) seenStudentNumbers.add(studentNo);
 
-    if (studentNo) {
-      const byNumber = gradeStudents.filter((student) =>
-        !matchedIds.has(student.id)
-        && student.studentNo?.trim().toLocaleLowerCase("zh-CN") === studentNo,
-      );
-      if (byNumber.length === 1) {
-        matchedIds.add(byNumber[0].id);
-        return;
-      }
+    const targetClass = classByName.get(normalizeRosterName(row.className));
+    const targetClassStudents = targetClass ? studentsByClass.get(targetClass.id) || [] : [];
+    if (targetClassStudents.length === 0) return;
+
+    const rowName = normalizeRosterName(row.name);
+    const sameClass = targetClassStudents.filter((student) =>
+      !matchedIds.has(student.id) && normalizeRosterName(student.name) === rowName,
+    );
+    if (sameClass.length === 1) {
+      matchedIds.add(sameClass[0].id);
+      return;
     }
 
-    const candidates = (byName.get(normalizeRosterName(row.name)) || [])
-      .filter((student) => !matchedIds.has(student.id));
-    const targetClass = classByName.get(normalizeRosterName(row.className));
-    const sameClass = targetClass
-      ? candidates.filter((student) => student.classId === targetClass.id)
-      : [];
-    if (candidates.length === 1 && sameClass.length === 1) {
-      matchedIds.add(candidates[0].id);
-      return;
-    }
-    if (candidates.length > 0) {
-      reviewRows.push({ rowIndex, row, reason: "sameName" });
-      return;
-    }
-    if (gradeStudents.some((student) => !matchedIds.has(student.id))) {
-      reviewRows.push({ rowIndex, row, reason: "unmatched" });
-    }
+    const hasNamesake = (byName.get(rowName) || []).some((student) => !matchedIds.has(student.id));
+    reviewRows.push({ rowIndex, row, reason: hasNamesake ? "sameName" : "unmatched" });
   });
 
   return {
     reviewRows,
     autoMatchedStudentIds: [...matchedIds],
     gradeStudents,
+    reconciledStudents,
   };
 }
 
@@ -470,7 +465,7 @@ export default function SchoolRosterPage() {
     await run(async () => {
       const rows = await readStudentRosterFile(file);
       const review = buildRosterImportReview(rows, students, classes, selectedGrade);
-      const autoUnmatchedStudents = review.gradeStudents.filter(
+      const autoUnmatchedStudents = review.reconciledStudents.filter(
         (student) => !review.autoMatchedStudentIds.includes(student.id),
       );
       if (review.reviewRows.length > 0 || autoUnmatchedStudents.length > 0) {
