@@ -1470,6 +1470,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       duration: Math.max(30, questions.length * 5),
       totalScore,
       questions,
+      classIds: selectedBasket?.classIds || [],
       status: "draft",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
