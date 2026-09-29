@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getQuestion: vi.fn(),
   listQuestions: vi.fn(),
   listBaskets: vi.fn(),
+  removeQuestion: vi.fn(),
   getMaterial: vi.fn(),
   listMyStudents: vi.fn(),
   listMyClasses: vi.fn(),
@@ -76,7 +77,10 @@ vi.mock("@/services/question", () => ({
   },
 }));
 vi.mock("@/services/basket", () => ({
-  basketService: { listBaskets: mocks.listBaskets },
+  basketService: {
+    listBaskets: mocks.listBaskets,
+    removeQuestion: mocks.removeQuestion,
+  },
 }));
 vi.mock("@/services/material", () => ({
   materialService: { getMaterial: mocks.getMaterial },
@@ -119,6 +123,8 @@ describe("LessonEditorPage preview query", () => {
     mocks.getQuestion.mockResolvedValue(null);
     mocks.listQuestions.mockResolvedValue([]);
     mocks.listBaskets.mockResolvedValue([]);
+    mocks.removeQuestion.mockResolvedValue(undefined);
+    window.confirm = vi.fn(() => false);
     mocks.getMaterial.mockResolvedValue(null);
     mocks.listMyStudents.mockResolvedValue([]);
     mocks.listMyClasses.mockResolvedValue([]);
@@ -422,6 +428,79 @@ describe("LessonEditorPage preview query", () => {
 
     expect(await screen.findByText("第 2 页，共 2 页")).toBeInTheDocument();
     expect(document.querySelector(".katex")).not.toBeNull();
+  });
+
+  it("prefers the basket matching the lesson audience and can remove the inserted question from it", async () => {
+    const audienceCourseware = {
+      ...courseware,
+      classIds: ["class-1"],
+    } as LessonCourseware;
+    const question = {
+      id: "question-class-1",
+      type: "single",
+      stem: '<p>观察函数图像。</p><img src="/api/files/function.png" alt="函数图像">',
+      options: ["递增", "递减"],
+      answer: "递增",
+      analysis: "观察图像可知。",
+    } as unknown as Question;
+    const defaultBasket = {
+      id: "basket-default",
+      teacherId: teacher.id,
+      name: "默认资源篮",
+      questionIds: [],
+      materialIds: [],
+      classIds: [],
+      isDefault: true,
+    } as Basket;
+    const matchingBasket = {
+      id: "basket-class-1",
+      teacherId: teacher.id,
+      name: "一班资源篮",
+      questionIds: [question.id],
+      materialIds: [],
+      classIds: ["class-1"],
+    } as Basket;
+
+    mocks.getCourseware.mockResolvedValue(audienceCourseware);
+    mocks.updateCourseware.mockImplementation(async (_id, patch) => ({
+      ...audienceCourseware,
+      ...patch,
+    }));
+    mocks.listBaskets.mockResolvedValue([defaultBasket, matchingBasket]);
+    mocks.getQuestion.mockImplementation(async (questionId: string) => (
+      questionId === question.id ? question : null
+    ));
+    window.confirm = vi.fn(() => true);
+
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    expect(await screen.findByRole("textbox", { name: "课件名称" })).toHaveValue(courseware.title);
+
+    fireEvent.click(screen.getByRole("button", { name: "题目" }));
+
+    const basketSelect = await screen.findByRole("combobox", { name: "选择资源篮" });
+    expect(basketSelect).toHaveValue(matchingBasket.id);
+    expect(screen.getByText("使用对象：1 个班级")).toBeInTheDocument();
+    expect(await screen.findByText("观察函数图像。")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "插入" }));
+
+    await waitFor(() => {
+      expect(mocks.removeQuestion).toHaveBeenCalledWith(matchingBasket.id, question.id);
+      expect(screen.getByAltText("函数图像")).toHaveAttribute("src", "/api/files/function.png");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalled());
+    const savedSlides = mocks.updateCourseware.mock.calls.at(-1)?.[1].slides as LessonCourseware["slides"];
+    const insertedSlide = savedSlides[1];
+    expect(insertedSlide.questionSnapshot?.stem).toBe("<p>观察函数图像。</p>");
+    expect(insertedSlide.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "image",
+        src: "/api/files/function.png",
+        questionSection: "stem",
+      }),
+    ]));
   });
 
   it("inserts basket materials onto the current slide and stores scheduled media playback", async () => {

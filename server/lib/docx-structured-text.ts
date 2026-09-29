@@ -248,6 +248,34 @@ function wordRunIsBold(element: Element): boolean {
   return !["0", "false", "off", "none"].includes(value);
 }
 
+function wordRunIsUnderlined(element: Element): boolean {
+  const properties = elementChildren(element).find(
+    (child) => child.namespaceURI === WORD_NS && child.localName === "rPr",
+  );
+  if (!properties) return false;
+  const underline = elementChildren(properties).find(
+    (child) => child.namespaceURI === WORD_NS && child.localName === "u",
+  );
+  if (!underline) return false;
+  const value = (
+    underline.getAttributeNS(WORD_NS, "val")
+    || underline.getAttribute("w:val")
+    || "single"
+  ).toLowerCase();
+  return !["0", "false", "off", "none"].includes(value);
+}
+
+function underlinedBlank(content: string): string | null {
+  if (!content || !/^[\s\u00a0\u3000]+$/.test(content)) return null;
+  let width = 0;
+  for (const character of Array.from(content)) {
+    if (character === "\t") width += 4;
+    else if (character === "\u3000") width += 2;
+    else width += 1;
+  }
+  return "_".repeat(Math.max(4, Math.min(32, width)));
+}
+
 function mathVariableMarkup(content: string, bold = false): string {
   const isVector = bold && /^[A-Za-z0]$/.test(content);
   const className = isVector
@@ -324,6 +352,10 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
       .filter((child) => child !== properties)
       .map((child) => extractInlineContent(child, imageUrl))
       .join("");
+    if (wordRunIsUnderlined(element)) {
+      const blank = underlinedBlank(content);
+      if (blank) return blank;
+    }
     const bold = wordRunIsBold(element);
     const styledContent = bold && /^[A-Za-z0]$/.test(content)
       ? mathVariableMarkup(content, true)

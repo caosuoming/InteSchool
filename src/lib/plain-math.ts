@@ -2,7 +2,7 @@ const PROTECTED_CONTENT_PATTERN =
   /(\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\n])+\$|!\[[^\]]*\]\([^)]+\)|<[^>]*>)/g;
 
 const PLAIN_MATH_CHUNK_PATTERN =
-  /[A-Za-z0-9\u0370-\u03ffℓ₀-₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾()[\]{}+\-−－*/×÷·⋅=＝<>≤≥≠≈≡⊥∥:：,.， \t]+/g;
+  /[A-Za-z0-9\u0370-\u03ffℓ₀-₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾()[\]{}+\-−－*/×÷·⋅=＝<>≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌∪∩∅:：,.， \t]+/g;
 
 const SUBSCRIPT_CHARACTERS: Record<string, string> = {
   "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
@@ -20,10 +20,10 @@ const SUPERSCRIPT_CHARACTERS: Record<string, string> = {
   "⁺": "+", "⁻": "-", "⁼": "=", "⁽": "(", "⁾": ")",
 };
 
-const RELATION_PATTERN = /[=＝<>≤≥≠≈≡⊥∥]/;
-const STRONG_RELATION_PATTERN = /[=＝≤≥≠≈≡⊥∥]/;
+const RELATION_PATTERN = /[=＝<>≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌]/;
+const STRONG_RELATION_PATTERN = /[=＝≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌]/;
 const EXTRA_MATH_STRUCTURE_PATTERN =
-  /[+\-−－*/×÷·⋅()[\]{}₀-₉₊₋₌₍₎⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾⊥∥]/;
+  /[+\-−－*/×÷·⋅()[\]{}₀-₉₊₋₌₍₎⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾⊥∥∪∩∅]/;
 const COORDINATE_PATTERN =
   /(?:^|[,，\s])(?:[A-Z]|[A-Z][₀-₉0-9]+)\s*[（(]\s*[A-Za-z0-9+\-−－₀-₉.]+\s*[,，]\s*[A-Za-z0-9+\-−－₀-₉.]+\s*[)）]/;
 
@@ -73,6 +73,20 @@ function normalizeLatexCandidate(value: string): string {
     .replace(/≡/g, String.raw`\equiv `)
     .replace(/⊥/g, String.raw`\perp `)
     .replace(/∥/g, String.raw`\parallel `)
+    .replace(/∈/g, String.raw`\in `)
+    .replace(/∉/g, String.raw`\notin `)
+    .replace(/∋/g, String.raw`\ni `)
+    .replace(/⊂/g, String.raw`\subset `)
+    .replace(/⊃/g, String.raw`\supset `)
+    .replace(/⊆/g, String.raw`\subseteq `)
+    .replace(/⊇/g, String.raw`\supseteq `)
+    .replace(/⊊/g, String.raw`\subsetneq `)
+    .replace(/⫋/g, String.raw`\subsetneqq `)
+    .replace(/⊋/g, String.raw`\supsetneq `)
+    .replace(/⫌/g, String.raw`\supsetneqq `)
+    .replace(/∪/g, String.raw`\cup `)
+    .replace(/∩/g, String.raw`\cap `)
+    .replace(/∅/g, String.raw`\emptyset `)
     .replace(/ℓ/g, String.raw`\ell `)
     .replace(/\b(sin|cos|tan|cot|sec|csc|log|ln|lg|lim|max|min)\b/g, String.raw`\$1`)
     .replace(/\s+/g, " ")

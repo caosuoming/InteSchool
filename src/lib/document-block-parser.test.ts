@@ -1772,4 +1772,58 @@ describe("document block parser", () => {
       ["question", "例1 求方程的根。"],
     ]);
   });
+
+  it("keeps extracted choice options ahead of the three-space fill heuristic", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、单项选择题",
+        "1. 下列结论正确的是   A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案：B",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      questionType: "single",
+      options: ["甲", "乙", "丙", "丁"],
+      answer: "B",
+    });
+  });
+
+  it("converts long spaces in fill-blank questions into answer-sized underlines", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "二、填空题",
+        "1. 函数的值域为   。",
+        "答案：正无穷",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      questionType: "short",
+      content: "1. 函数的值域为______。",
+      answer: "正无穷",
+    });
+  });
+
+  it("adds an answer area for a fill-blank section even when the source omitted one", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "二、填空题",
+        "1. 方程的根为。",
+        "答案：2",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      questionType: "short",
+      content: "1. 方程的根为____。",
+      answer: "2",
+    });
+  });
 });

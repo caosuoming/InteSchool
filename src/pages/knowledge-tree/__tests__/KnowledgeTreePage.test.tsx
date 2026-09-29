@@ -247,6 +247,92 @@ describe("KnowledgeTreePage", () => {
     });
   });
 
+  it("keeps expanded branches and the selected node while an edit refreshes the tree", async () => {
+    const initialTree: TreeNode = {
+      id: "root",
+      name: "全部章节",
+      type: "chapter",
+      count: 0,
+      children: [
+        {
+          id: "chapter-parent",
+          name: "第一单元",
+          type: "chapter",
+          count: 0,
+          children: [
+            {
+              id: "chapter-selected",
+              name: "选中章节",
+              type: "chapter",
+              count: 0,
+              children: [],
+            },
+            {
+              id: "chapter-sibling",
+              name: "同级章节",
+              type: "chapter",
+              count: 0,
+              children: [],
+            },
+          ],
+        },
+      ],
+    };
+    const refreshedTree: TreeNode = {
+      ...initialTree,
+      children: initialTree.children.map((node) => ({
+        ...node,
+        children: node.children.map((child) =>
+          child.id === "chapter-selected"
+            ? { ...child, name: "选中章节（新）" }
+            : child,
+        ),
+      })),
+    };
+    let resolveRefresh!: (tree: TreeNode) => void;
+    const refreshPromise = new Promise<TreeNode>((resolve) => {
+      resolveRefresh = resolve;
+    });
+
+    vi.mocked(knowledgeService.getChapterTree)
+      .mockResolvedValueOnce(initialTree)
+      .mockReturnValueOnce(refreshPromise);
+    vi.mocked(knowledgeService.renameNode).mockResolvedValue();
+    vi.spyOn(window, "prompt").mockReturnValue("选中章节（新）");
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    const parentLabel = await screen.findByText("第一单元");
+    const parentRow = parentLabel.parentElement!;
+    fireEvent.click(parentRow.querySelector("button")!);
+    fireEvent.click(screen.getByText("选中章节"));
+    expect(screen.getByText("同级章节")).toBeVisible();
+    expect(screen.getByRole("button", { name: "添加节点到「选中章节」" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "改名" }));
+    await waitFor(() => {
+      expect(knowledgeService.renameNode).toHaveBeenCalledWith(
+        "chapter-selected",
+        "chapter",
+        "选中章节（新）",
+      );
+    });
+
+    expect(screen.getByText("同级章节")).toBeVisible();
+    expect(screen.getByRole("button", { name: "添加节点到「选中章节」" })).toBeInTheDocument();
+
+    resolveRefresh(refreshedTree);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "添加节点到「选中章节（新）」" })).toBeInTheDocument();
+    });
+    expect(screen.getByText("同级章节")).toBeVisible();
+  });
+
   it("merges a selected node into another child of the same parent", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
 

@@ -57,6 +57,15 @@ function directorySnapshotTree(type: TreeKind, nodes: DirectoryCatalogNode[]): T
   };
 }
 
+function findTreeNode(root: TreeNode, id: string): TreeNode | null {
+  if (root.id === id) return root;
+  for (const child of root.children) {
+    const found = findTreeNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
 export default function KnowledgeTreePage() {
   const { teacher } = useAuthStore();
   const [kind, setKind] = useState<TreeKind>("chapter");
@@ -109,6 +118,9 @@ export default function KnowledgeTreePage() {
         ? await knowledgeService.getChapterTree(teacher.schoolId!)
         : await knowledgeService.getKnowledgeTree(teacher.schoolId!);
     setTree(t);
+    setSelectedNode((current) =>
+      current ? findTreeNode(t, current.id) : null,
+    );
     setLoading(false);
   }, [kind, teacher]);
 
@@ -224,15 +236,6 @@ export default function KnowledgeTreePage() {
     };
     walk(node);
     return ids;
-  };
-
-  const findTreeNode = (root: TreeNode, id: string): TreeNode | null => {
-    if (root.id === id) return root;
-    for (const child of root.children) {
-      const found = findTreeNode(child, id);
-      if (found) return found;
-    }
-    return null;
   };
 
   const canDropTreeNode = (source: TreeNode, target: TreeNode): boolean => {
@@ -546,7 +549,7 @@ export default function KnowledgeTreePage() {
               />
             </div>
 
-            {loading ? (
+            {loading && !displayedTree ? (
               <div className="flex justify-center py-8">
                 <Spinner size={20} />
               </div>

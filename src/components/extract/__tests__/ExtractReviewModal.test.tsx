@@ -209,6 +209,53 @@ describe("ExtractReviewModal", () => {
     expect(mocks.parseDocumentBlocks).not.toHaveBeenCalled();
   });
 
+  it("adds an answer area when review changes a question to fill-in-the-blank", async () => {
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="填空题审阅"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[
+          {
+            id: "fill-blank-review",
+            type: "question",
+            content: "方程的根为。",
+            order: 0,
+            status: "new",
+            questionType: "single",
+            options: ["1", "2"],
+            answer: "123456",
+            analysis: "代入可得。",
+            difficulty: 3,
+          },
+        ]}
+      />,
+    );
+
+    const questionType = await screen.findByLabelText("题型选择");
+    fireEvent.change(questionType, { target: { value: "short" } });
+
+    expect(await screen.findByText("方程的根为______。")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /确认入库/ }));
+    await waitFor(() => expect(mocks.createLectureExtractCopy).toHaveBeenCalledTimes(1));
+    expect(mocks.createLectureExtractCopy.mock.calls[0][1]).toContainEqual(
+      expect.objectContaining({
+        id: "fill-blank-review",
+        type: "question",
+        content: "方程的根为______。",
+        questionType: "short",
+      }),
+    );
+  });
+
   it("renders script markup in review titles instead of showing literal tags", async () => {
     render(
       <ExtractReviewModal
