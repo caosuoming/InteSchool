@@ -808,6 +808,7 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                             const fullPath = knowledgePointFullPath(m);
                             const hasChildren = parentKnowledgePointIds.has(m.knowledgePointId);
                             const collapsed = collapsedKnowledgePointIds.has(m.knowledgePointId);
+                            const showStats = !hasChildren || collapsed;
                             const placement = knowledgePointPlacements[m.knowledgePointId] ?? "normal";
                             return (
                               <tr
@@ -857,38 +858,38 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                   </div>
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-mono text-ink-700">
-                                  {m.totalAttempts + doneCount}
+                                  {showStats ? m.totalAttempts + doneCount : null}
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
-                                  {doneCount > 0 ? (
+                                  {showStats && doneCount > 0 ? (
                                     <span className="text-sky-600 font-mono">{doneCount}</span>
-                                  ) : (
+                                  ) : showStats ? (
                                     <span className="text-ink-300">—</span>
-                                  )}
+                                  ) : null}
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
-                                  {m.correctCount > 0 ? (
+                                  {showStats && m.correctCount > 0 ? (
                                     <span className="text-emerald-600 font-mono">{m.correctCount}</span>
-                                  ) : (
+                                  ) : showStats ? (
                                     <span className="text-ink-300">—</span>
-                                  )}
+                                  ) : null}
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
-                                  {m.partialCount > 0 ? (
+                                  {showStats && m.partialCount > 0 ? (
                                     <span className="text-amber-600 font-mono">{m.partialCount}</span>
-                                  ) : (
+                                  ) : showStats ? (
                                     <span className="text-ink-300">—</span>
-                                  )}
+                                  ) : null}
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
-                                  {m.wrongCount > 0 ? (
+                                  {showStats && m.wrongCount > 0 ? (
                                     <span className="text-red-600 font-mono">{m.wrongCount}</span>
-                                  ) : (
+                                  ) : showStats ? (
                                     <span className="text-ink-300">—</span>
-                                  )}
+                                  ) : null}
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
-                                  {m.totalAttempts > 0 ? (
+                                  {showStats && m.totalAttempts > 0 ? (
                                     <div className="flex flex-col items-center gap-1">
                                       {showComparison && hasComparisonData(selection, sameGradeTypeAvg, prevBestClass, classAvgMastery) ? (
                                         <div className="w-full min-w-[140px] space-y-1">
@@ -992,15 +993,17 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                         </div>
                                       )}
                                     </div>
-                                  ) : (
+                                  ) : showStats ? (
                                     <span className="text-ink-300 text-xs">—</span>
-                                  )}
+                                  ) : null}
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
-                                  <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border", cfg.bg, cfg.color)}>
-                                    <MasteryIcon className="w-3 h-3" />
-                                    {cfg.label}
-                                  </span>
+                                  {showStats ? (
+                                    <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border", cfg.bg, cfg.color)}>
+                                      <MasteryIcon className="w-3 h-3" />
+                                      {cfg.label}
+                                    </span>
+                                  ) : null}
                                 </td>
                               </tr>
                             );
