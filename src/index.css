@@ -350,6 +350,36 @@
   min-width: 32mm;
 }
 
+.answer-sheet-inline-blank {
+  display: inline-block;
+  box-sizing: border-box;
+  min-width: 22mm;
+  min-height: 6mm;
+  padding: 0 1mm;
+  overflow: hidden;
+  resize: both;
+  border: 1px dashed #334e68;
+  vertical-align: middle;
+  white-space: nowrap;
+  line-height: 1.35;
+  cursor: nwse-resize;
+}
+
+.answer-sheet-inline-blank[data-answer-sheet-editable="false"],
+.answer-sheet-question-content[data-answer-sheet-editable="false"] .answer-sheet-inline-blank {
+  resize: none;
+  cursor: default;
+}
+
+.answer-sheet-editor-page,
+.answer-sheet-preview-sheet {
+  break-after: page;
+}
+
+.answer-sheet-preview-column + .answer-sheet-preview-column {
+  border-left: 1px solid #cbd5e1;
+}
+
 .answer-sheet-paper-a4 { page: answer-sheet-a4; }
 .answer-sheet-paper-a3 { page: answer-sheet-a3; }
 .answer-sheet-paper-8k { page: answer-sheet-8k; }
@@ -397,6 +427,12 @@
     margin: 0 !important;
     width: 100% !important;
     min-height: auto !important;
+  }
+  .answer-sheet-preview-sheet {
+    break-after: page;
+  }
+  .answer-sheet-preview-sheet:last-child {
+    break-after: auto;
   }
   .exam-paper-preview-grid {
     display: block;

@@ -38,22 +38,26 @@ describe("AnswerSheetComposer", () => {
     expect(screen.getAllByTestId("student-number-row")).toHaveLength(10);
   });
 
-  it("places class and signature fields beside the student-number grid with a divider", () => {
+  it("places class, signature, student number, and QR code in one identity row", () => {
     renderComposer();
 
     const identityArea = screen.getByTestId("answer-sheet-identity-area");
     const identityFields = screen.getByTestId("answer-sheet-identity-fields");
     const studentNumberColumn = screen.getByTestId("answer-sheet-student-number-column");
+    const qrPosition = screen.getByTestId("answer-sheet-qr-position");
 
     expect(identityArea).toHaveClass("flex");
     expect(identityFields.nextElementSibling).toBe(studentNumberColumn);
+    expect(studentNumberColumn.nextElementSibling).toBe(qrPosition);
     expect(studentNumberColumn).toHaveClass("border-l");
+    expect(qrPosition).toHaveClass("border-l");
     expect(identityFields).toContainElement(screen.getByLabelText("班级填写区"));
     expect(identityFields).toContainElement(screen.getByLabelText("姓名签名填写区"));
     expect(studentNumberColumn).toContainElement(screen.getByTestId("student-number-grid"));
+    expect(identityArea).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
   });
 
-  it("keeps editing single-column and joins A3/8K halves only in preview", () => {
+  it("uses exact paper height while editing and joins wide-paper editor pages only in preview", () => {
     const { container } = renderComposer();
     const paper = () => container.querySelector<HTMLElement>(".answer-sheet-paper")!;
 
@@ -61,7 +65,8 @@ describe("AnswerSheetComposer", () => {
     expect(paper()).toHaveAttribute("data-paper-view", "edit");
     expect(paper()).toHaveAttribute("data-paper-columns", "1");
     expect(paper().style.width).toBe("185mm");
-    expect(paper().style.minHeight).toBe("260mm");
+    expect(paper().style.height).toBe("260mm");
+    expect(paper()).toHaveClass("overflow-hidden");
 
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(screen.getByRole("heading", { name: "预览答题卡" })).toBeInTheDocument();
@@ -75,7 +80,7 @@ describe("AnswerSheetComposer", () => {
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A3" } });
     expect(paper()).toHaveAttribute("data-paper-columns", "1");
     expect(paper().style.width).toBe("210mm");
-    expect(paper().style.minHeight).toBe("297mm");
+    expect(paper().style.height).toBe("297mm");
 
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(paper()).toHaveAttribute("data-paper-columns", "2");
@@ -89,14 +94,35 @@ describe("AnswerSheetComposer", () => {
     expect(screen.getAllByTestId("inline-choice-question")).toHaveLength(2);
     expect(screen.queryByTestId("concentrated-choice-area")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("附题干选择题填涂方式"), {
+    fireEvent.change(screen.getByLabelText("附题干答题区布局"), {
       target: { value: "concentrated" },
     });
     expect(screen.getByTestId("concentrated-choice-area")).toBeInTheDocument();
     expect(screen.queryByTestId("inline-choice-question")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("concentrated-choice-question")).toHaveLength(2);
     expect(screen.getByText("选择题填涂区")).toBeInTheDocument();
+    expect(screen.getByText("填空题答题区")).toBeInTheDocument();
+    expect(screen.getByTestId("concentrated-fill-area")).toBeInTheDocument();
     expect(screen.getAllByText("4").length).toBeGreaterThan(0);
+  });
+
+  it("keeps fill blanks inline with inferred underlines and resizable dashed boxes", () => {
+    const { container } = renderComposer({
+      questions: [
+        { id: "fill-existing", type: "short", stem: "结果为____。", score: 5 },
+        { id: "fill-missing", type: "short", stem: "方程的根为。", score: 5 },
+      ],
+      initialSettings: { mode: "with-questions", choiceLayout: "inline" },
+    });
+
+    expect(screen.getAllByTestId("inline-fill-question")).toHaveLength(2);
+    expect(screen.queryByTestId("concentrated-fill-area")).not.toBeInTheDocument();
+    const blanks = container.querySelectorAll<HTMLElement>(".answer-sheet-inline-blank");
+    expect(blanks).toHaveLength(2);
+    expect(blanks[0]).toHaveTextContent("____");
+    expect(blanks[0]).toHaveAttribute("data-answer-sheet-editable", "true");
+    expect(blanks[0].style.resize).toBe("both");
+    expect(screen.queryByTestId("fill-answer-region")).not.toBeInTheDocument();
   });
 
   it("keeps the title, identity area, and QR code in the first column of a merged wide preview", () => {
@@ -112,10 +138,11 @@ describe("AnswerSheetComposer", () => {
     expect(paper.style.width).toBe("420mm");
     const columnFlow = screen.getByTestId("answer-sheet-column-flow");
     expect(columnFlow.style.columnCount).toBe("3");
-    expect(paper.querySelector("main")).toHaveClass("contents");
+    expect(columnFlow).toHaveClass("grid");
+    expect(columnFlow.querySelectorAll(".answer-sheet-preview-column")).toHaveLength(3);
 
     const firstColumnHeader = screen.getByTestId("answer-sheet-first-column-header");
-    expect(firstColumnHeader.parentElement).toBe(columnFlow);
+    expect(columnFlow).toContainElement(firstColumnHeader);
     expect(firstColumnHeader).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
     expect(firstColumnHeader).toContainElement(screen.getByLabelText("姓名签名填写区"));
     expect(screen.getByLabelText("姓名签名填写区")).toHaveAttribute("data-signature-history-limit", "10");
@@ -170,7 +197,7 @@ describe("AnswerSheetComposer", () => {
 
     expect(screen.getByLabelText("纸张")).toHaveValue("A3");
     expect(screen.getByLabelText("学号位数")).toHaveValue(9);
-    expect(screen.getByLabelText("附题干选择题填涂方式")).toHaveValue("concentrated");
+    expect(screen.getByLabelText("附题干答题区布局")).toHaveValue("concentrated");
 
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "8K" } });
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({

@@ -1,4 +1,12 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Eye, FileSpreadsheet, Pencil, Printer } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -21,32 +29,32 @@ import {
   type AnswerSheetSettings,
   type AnswerSheetWideColumns,
 } from "@/lib/answer-sheet";
+import { decorateFillBlankAnswerAreas } from "@/lib/fill-blank";
+
+const PAGE_PADDING_MM = 8;
+const MM_TO_CSS_PX = 96 / 25.4;
 
 const paperSizeConfig: Record<AnswerSheetPaperSize, {
-  editWidth: string;
-  previewWidth: string;
-  minHeight: string;
+  physicalWidthMm: number;
+  heightMm: number;
   className: string;
   supportsMultipleColumns: boolean;
 }> = {
   A4: {
-    editWidth: "210mm",
-    previewWidth: "210mm",
-    minHeight: "297mm",
+    physicalWidthMm: 210,
+    heightMm: 297,
     className: "answer-sheet-paper-a4",
     supportsMultipleColumns: false,
   },
   A3: {
-    editWidth: "210mm",
-    previewWidth: "420mm",
-    minHeight: "297mm",
+    physicalWidthMm: 420,
+    heightMm: 297,
     className: "answer-sheet-paper-a3",
     supportsMultipleColumns: true,
   },
   "8K": {
-    editWidth: "185mm",
-    previewWidth: "370mm",
-    minHeight: "260mm",
+    physicalWidthMm: 370,
+    heightMm: 260,
     className: "answer-sheet-paper-8k",
     supportsMultipleColumns: true,
   },
@@ -81,8 +89,31 @@ interface QuestionGroupDraft {
   questions: AnswerSheetQuestion[];
 }
 
+interface FlowItem {
+  key: string;
+  kind:
+    | "header"
+    | "zone-heading"
+    | "zone-choice"
+    | "zone-fill"
+    | "group-heading"
+    | "question"
+    | "footer";
+  item?: NumberedQuestion;
+  group?: QuestionGroup;
+  groupIndex?: number;
+  first?: boolean;
+  last?: boolean;
+  label?: string;
+  testId?: string;
+}
+
 function isChoiceQuestion(question: AnswerSheetQuestion): boolean {
   return question.type === "single" || question.type === "multiple";
+}
+
+function isFillQuestion(question: AnswerSheetQuestion): boolean {
+  return question.type === "short" || question.type === "conceptFill";
 }
 
 function groupQuestions(questions: AnswerSheetQuestion[]): QuestionGroup[] {
@@ -124,7 +155,7 @@ function StudentNumberGrid({ digits }: { digits: number }) {
           {Array.from({ length: 10 }, (_, digit) => (
             <span
               key={digit}
-              className="flex h-[15px] min-w-[17px] flex-1 items-center justify-center border border-ink-700 font-mono text-[8px] leading-none text-ink-700"
+              className="flex h-[15px] min-w-[16px] flex-1 items-center justify-center border border-ink-700 font-mono text-[8px] leading-none text-ink-700"
             >
               [{digit}]
             </span>
@@ -279,11 +310,22 @@ function DraggableQuestionContent({
       cleanups.push(() => image.removeEventListener("dragend", handleDragEnd));
     });
 
+    root.querySelectorAll<HTMLElement>(".answer-sheet-inline-blank").forEach((blank, index) => {
+      blank.dataset.answerSheetInlineBlank = String(index);
+      blank.dataset.answerSheetEditable = editable ? "true" : "false";
+      blank.title = editable ? "拖动右下角可调整填空区域的长度和高度" : "";
+      blank.style.resize = editable ? "both" : "none";
+    });
+
     return () => cleanups.forEach((cleanup) => cleanup());
   }, [children, editable]);
 
   return (
-    <div ref={rootRef} className={className}>
+    <div
+      ref={rootRef}
+      className={`answer-sheet-question-content ${className || ""}`}
+      data-answer-sheet-editable={editable ? "true" : "false"}
+    >
       <MathHtml>{children}</MathHtml>
     </div>
   );
@@ -344,6 +386,33 @@ function ChoiceQuestionText({ question, number, editable }: NumberedQuestion & {
   );
 }
 
+function FillQuestionInline({ question, number, editable }: NumberedQuestion & { editable: boolean }) {
+  const decoratedStem = useMemo(
+    () => decorateFillBlankAnswerAreas(question.stem),
+    [question.stem],
+  );
+
+  return (
+    <div className="flex items-start gap-2 text-xs text-ink-800" data-testid="inline-fill-question" data-answer-sheet-question>
+      <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
+      <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+        {decoratedStem}
+      </DraggableQuestionContent>
+    </div>
+  );
+}
+
+function QuestionStemOnly({ question, number, editable }: NumberedQuestion & { editable: boolean }) {
+  return (
+    <div className="flex items-start gap-2 text-xs text-ink-800" data-testid="concentrated-fill-question" data-answer-sheet-question>
+      <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
+      <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+        {question.stem}
+      </DraggableQuestionContent>
+    </div>
+  );
+}
+
 function AnswerField({
   question,
   number,
@@ -367,7 +436,7 @@ function AnswerField({
       number={number}
       hideNumber={hideNumber}
       boxStyle={boxStyle}
-      compact={question.type === "short" || question.type === "conceptFill"}
+      compact={isFillQuestion(question)}
       editable={editable}
     >
       {essayContent?.images && (
@@ -385,7 +454,6 @@ function QuestionWithAnswer({
   boxStyle,
   editable,
 }: NumberedQuestion & { boxStyle: AnswerSheetBoxStyle; editable: boolean }) {
-  const isFill = question.type === "short" || question.type === "conceptFill";
   const essayContent = question.type === "essay"
     ? splitEssayStemContent(question.stem)
     : null;
@@ -409,12 +477,12 @@ function QuestionWithAnswer({
           <JudgeAnswer number={number} hideNumber={Boolean(displayStem)} />
         </div>
       ) : (
-        <div className={displayStem ? "pl-7" : undefined} data-testid={isFill ? "fill-answer-region" : undefined}>
+        <div className={displayStem ? "pl-7" : undefined}>
           <AnswerBox
             number={number}
             hideNumber={Boolean(displayStem)}
             boxStyle={boxStyle}
-            compact={isFill}
+            compact={isFillQuestion(question)}
             editable={editable}
           >
             {essayContent?.images && (
@@ -455,6 +523,10 @@ function buildInitialSettings(initialSettings?: Partial<AnswerSheetSettings>): A
   };
 }
 
+function sameNumberArray(left: number[], right: number[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 export function AnswerSheetComposer({
   title,
   description,
@@ -470,20 +542,29 @@ export function AnswerSheetComposer({
 }: AnswerSheetComposerProps) {
   const [settings, setSettings] = useState<AnswerSheetSettings>(() => buildInitialSettings(initialSettings));
   const [viewMode, setViewMode] = useState<"edit" | "preview">(initialViewMode);
+  const [pageStarts, setPageStarts] = useState<number[]>([0]);
+  const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
+
   const groups = useMemo(() => groupQuestions(questions), [questions]);
   const numberedQuestions = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const choiceItems = useMemo(
     () => numberedQuestions.filter(({ question }) => isChoiceQuestion(question)),
     [numberedQuestions],
   );
+  const fillItems = useMemo(
+    () => numberedQuestions.filter(({ question }) => isFillQuestion(question)),
+    [numberedQuestions],
+  );
   const qrPayload = useMemo(
     () => buildAnswerSheetQrPayload(resourceType, resourceId),
     [resourceId, resourceType],
   );
+
   const paperSize = paperSizeConfig[settings.paperSize];
+  const paperColumns = paperSize.supportsMultipleColumns ? settings.widePaperColumns : 1;
+  const logicalPageWidthMm = paperSize.physicalWidthMm / paperColumns;
+  const pageContentHeightPx = (paperSize.heightMm - PAGE_PADDING_MM * 2) * MM_TO_CSS_PX;
   const isPreview = viewMode === "preview";
-  const paperColumns = isPreview && paperSize.supportsMultipleColumns ? settings.widePaperColumns : 1;
-  const paperWidth = isPreview ? paperSize.previewWidth : paperSize.editWidth;
 
   const updateSettings = (patch: Partial<AnswerSheetSettings>) => {
     setSettings((current) => {
@@ -492,6 +573,188 @@ export function AnswerSheetComposer({
       return next;
     });
   };
+
+  const flowItems = useMemo<FlowItem[]>(() => {
+    const items: FlowItem[] = [{ key: "header", kind: "header" }];
+
+    if (settings.mode === "with-questions" && settings.choiceLayout === "concentrated") {
+      if (choiceItems.length > 0) {
+        items.push({
+          key: "zone-choice-heading",
+          kind: "zone-heading",
+          label: "选择题填涂区",
+          testId: "concentrated-choice-area",
+        });
+        choiceItems.forEach((item, index) => {
+          items.push({
+            key: `zone-choice-${item.question.id}`,
+            kind: "zone-choice",
+            item,
+            first: index === 0,
+            last: index === choiceItems.length - 1,
+          });
+        });
+      }
+
+      if (fillItems.length > 0) {
+        items.push({
+          key: "zone-fill-heading",
+          kind: "zone-heading",
+          label: "填空题答题区",
+          testId: "concentrated-fill-area",
+        });
+        fillItems.forEach((item, index) => {
+          items.push({
+            key: `zone-fill-${item.question.id}`,
+            kind: "zone-fill",
+            item,
+            first: index === 0,
+            last: index === fillItems.length - 1,
+          });
+        });
+      }
+    }
+
+    groups.forEach((group, groupIndex) => {
+      items.push({
+        key: `group-heading-${group.type}`,
+        kind: "group-heading",
+        group,
+        groupIndex,
+      });
+      group.items.forEach((item, itemIndex) => {
+        items.push({
+          key: `question-${item.question.id}`,
+          kind: "question",
+          item,
+          group,
+          groupIndex,
+          first: itemIndex === 0,
+          last: itemIndex === group.items.length - 1,
+        });
+      });
+    });
+
+    items.push({ key: "footer", kind: "footer" });
+    return items;
+  }, [choiceItems, fillItems, groups, settings.choiceLayout, settings.mode]);
+
+  const recalculatePagination = useCallback(() => {
+    if (flowItems.length === 0 || pageContentHeightPx <= 0) return;
+
+    const heights = flowItems.map((_, index) => {
+      const node = flowItemRefs.current.get(index);
+      return node ? node.getBoundingClientRect().height : null;
+    });
+    if (heights.some((height) => height === null)) return;
+
+    const nextStarts = [0];
+    let usedHeight = 0;
+
+    for (let index = 0; index < flowItems.length; index += 1) {
+      const height = heights[index] || 0;
+      const flowItem = flowItems[index];
+      const keepWithNext = flowItem.kind === "zone-heading" || flowItem.kind === "group-heading";
+      const nextHeight = keepWithNext && index + 1 < heights.length
+        ? (heights[index + 1] || 0)
+        : 0;
+      const requiredHeight = height + nextHeight;
+
+      if (usedHeight > 0 && usedHeight + requiredHeight > pageContentHeightPx) {
+        nextStarts.push(index);
+        usedHeight = 0;
+      }
+
+      usedHeight += height;
+    }
+
+    setPageStarts((current) => sameNumberArray(current, nextStarts) ? current : nextStarts);
+  }, [flowItems, pageContentHeightPx]);
+
+  useLayoutEffect(() => {
+    recalculatePagination();
+  }, [logicalPageWidthMm, pageStarts, recalculatePagination, settings.answerBoxStyle, viewMode]);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(() => recalculatePagination());
+    flowItemRefs.current.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [flowItems.length, pageStarts, recalculatePagination]);
+
+  const logicalPages = useMemo(() => {
+    const normalizedStarts = Array.from(new Set([
+      0,
+      ...pageStarts.filter((start) => start > 0 && start < flowItems.length),
+    ])).sort((left, right) => left - right);
+
+    return normalizedStarts.map((start, pageIndex) => {
+      const end = normalizedStarts[pageIndex + 1] ?? flowItems.length;
+      return Array.from({ length: Math.max(0, end - start) }, (_, offset) => start + offset);
+    });
+  }, [flowItems.length, pageStarts]);
+
+  const previewSheets = useMemo(() => {
+    const sheets: number[][][] = [];
+    for (let index = 0; index < logicalPages.length; index += paperColumns) {
+      sheets.push(logicalPages.slice(index, index + paperColumns));
+    }
+    return sheets;
+  }, [logicalPages, paperColumns]);
+
+  const renderHeader = () => (
+    <header
+      className="box-border min-w-0 pb-4"
+      data-testid="answer-sheet-first-column-header"
+    >
+      <div>
+        <h1 className="mb-1 text-center font-serif text-xl font-bold">{title}</h1>
+        {description && <div className="mb-3 text-center text-xs text-ink-500">{description}</div>}
+      </div>
+
+      <div
+        className="flex min-w-0 items-stretch border border-ink-900"
+        data-testid="answer-sheet-identity-area"
+      >
+        <div className="min-w-0 flex-1 p-2.5" data-testid="answer-sheet-identity-fields">
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <span className="shrink-0">班级：</span>
+            <span className="h-5 min-w-10 flex-1 border-b border-ink-700" aria-label="班级填写区" />
+          </div>
+          <div className="flex items-stretch gap-2 text-sm">
+            <span className="shrink-0 pt-1">姓名：</span>
+            <span
+              className="h-[13mm] min-w-0 flex-1 border border-dashed border-ink-700"
+              aria-label="姓名签名填写区"
+              data-answer-sheet-field="signature"
+              data-signature-history-limit="10"
+            />
+          </div>
+        </div>
+        <div
+          className="flex min-w-[43mm] max-w-[52mm] shrink-0 items-center border-l border-ink-900 p-2"
+          data-testid="answer-sheet-student-number-column"
+        >
+          <StudentNumberGrid digits={settings.studentNumberDigits} />
+        </div>
+        <div
+          className="answer-sheet-qr flex w-[24mm] shrink-0 flex-col items-center justify-center border-l border-ink-900 p-1.5"
+          data-testid="answer-sheet-qr-position"
+        >
+          <QRCodeSVG
+            value={qrPayload}
+            size={82}
+            style={{ width: "20mm", height: "20mm", display: "block" }}
+            level="M"
+            aria-label={`${resourceLabel}答题卡二维码`}
+          />
+          <div className="mt-1 w-full truncate text-center font-mono text-[7px] text-ink-500" title={resourceId}>
+            {resourceType}:{resourceId}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
 
   const renderGroupItem = (item: NumberedQuestion) => {
     const { question } = item;
@@ -504,12 +767,21 @@ export function AnswerSheetComposer({
         />
       );
     }
+
     if (isChoiceQuestion(question)) {
       if (settings.choiceLayout === "inline") {
         return <InlineChoiceQuestion {...item} editable={!isPreview} />;
       }
       return <ChoiceQuestionText {...item} editable={!isPreview} />;
     }
+
+    if (isFillQuestion(question)) {
+      if (settings.choiceLayout === "inline") {
+        return <FillQuestionInline {...item} editable={!isPreview} />;
+      }
+      return <QuestionStemOnly {...item} editable={!isPreview} />;
+    }
+
     return (
       <QuestionWithAnswer
         {...item}
@@ -518,6 +790,93 @@ export function AnswerSheetComposer({
       />
     );
   };
+
+  const renderFlowItem = (flowItem: FlowItem) => {
+    if (flowItem.kind === "header") return renderHeader();
+
+    if (flowItem.kind === "zone-heading") {
+      return (
+        <div className="pt-1 pb-1 text-sm font-semibold" data-testid={flowItem.testId}>
+          {flowItem.label}
+        </div>
+      );
+    }
+
+    if (flowItem.kind === "zone-choice" && flowItem.item) {
+      return (
+        <div
+          className={`border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          data-answer-sheet-question
+        >
+          <ChoiceAnswer
+            number={flowItem.item.number}
+            optionCount={flowItem.item.question.options?.length || 4}
+          />
+        </div>
+      );
+    }
+
+    if (flowItem.kind === "zone-fill" && flowItem.item) {
+      return (
+        <div
+          className={`border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          data-answer-sheet-question
+        >
+          <AnswerBox
+            number={flowItem.item.number}
+            boxStyle={settings.answerBoxStyle}
+            compact
+            editable={!isPreview}
+          />
+        </div>
+      );
+    }
+
+    if (flowItem.kind === "group-heading" && flowItem.group && flowItem.groupIndex !== undefined) {
+      return (
+        <div className="pt-1 pb-1 text-sm font-semibold">
+          {flowItem.groupIndex + 1}、{flowItem.group.label}（{flowItem.group.items.length}题）
+        </div>
+      );
+    }
+
+    if (flowItem.kind === "question" && flowItem.item) {
+      return (
+        <div
+          className={`border-x border-ink-800 px-3 py-2 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          data-answer-sheet-question
+        >
+          {renderGroupItem(flowItem.item)}
+        </div>
+      );
+    }
+
+    return (
+      <footer className="pt-2 text-center text-[10px] text-ink-500 border-t border-ink-300">
+        {typeof totalScore === "number" ? `总分：${totalScore}分` : "答题结束后请检查学号与作答内容"}
+      </footer>
+    );
+  };
+
+  const renderPageContent = (indices: number[]) => (
+    <div className="answer-sheet-page-content h-full overflow-hidden">
+      {indices.map((flowIndex) => (
+        <div
+          key={flowItems[flowIndex].key}
+          ref={(node) => {
+            if (node) {
+              flowItemRefs.current.set(flowIndex, node);
+            } else {
+              flowItemRefs.current.delete(flowIndex);
+            }
+          }}
+          data-answer-sheet-flow-item={flowItems[flowIndex].kind}
+        >
+          {renderFlowItem(flowItems[flowIndex])}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-ink-100 px-4 py-8">
@@ -578,12 +937,12 @@ export function AnswerSheetComposer({
                   </div>
                 </div>
                 <Select
-                  label="附题干选择题填涂方式"
+                  label="附题干答题区布局"
                   value={settings.choiceLayout}
                   disabled={settings.mode !== "with-questions"}
                   onChange={(event) => updateSettings({ choiceLayout: event.target.value as AnswerSheetChoiceLayout })}
                   options={[
-                    { value: "inline", label: "填涂区在选项中" },
+                    { value: "inline", label: "填涂在选项中" },
                     { value: "concentrated", label: "填涂区集中" },
                   ]}
                 />
@@ -636,108 +995,66 @@ export function AnswerSheetComposer({
         </div>
 
         <div className="answer-sheet-print-shell overflow-x-auto pb-8">
-          <article
-            className={`answer-sheet-paper ${paperSize.className} relative mx-auto box-border bg-white p-[8mm] text-ink-950 shadow-xl`}
-            style={{ width: paperWidth, minHeight: paperSize.minHeight }}
-            data-paper-size={settings.paperSize}
-            data-paper-view={viewMode}
-            data-paper-columns={paperColumns}
-          >
-            <div
-              className={paperColumns > 1 ? "answer-sheet-columns" : undefined}
-              style={paperColumns > 1 ? { columnCount: paperColumns } : undefined}
-              data-testid="answer-sheet-column-flow"
-            >
-              <header
-                className="relative mb-4 box-border min-w-0 break-inside-avoid"
-                data-testid="answer-sheet-first-column-header"
-              >
-                <div
-                  className="answer-sheet-qr absolute right-0 top-0 z-10 flex w-[24mm] flex-col items-center bg-white"
-                  data-testid="answer-sheet-qr-position"
+          {!isPreview ? (
+            <div className="space-y-6" data-testid="answer-sheet-editor-pages">
+              {logicalPages.map((indices, pageIndex) => (
+                <article
+                  key={`edit-page-${pageIndex}`}
+                  className={`answer-sheet-paper answer-sheet-editor-page ${paperSize.className} relative mx-auto box-border overflow-hidden bg-white p-[8mm] text-ink-950 shadow-xl`}
+                  style={{
+                    width: `${logicalPageWidthMm}mm`,
+                    height: `${paperSize.heightMm}mm`,
+                  }}
+                  data-paper-size={settings.paperSize}
+                  data-paper-view="edit"
+                  data-paper-columns="1"
+                  data-paper-page={pageIndex + 1}
                 >
-                  <QRCodeSVG
-                    value={qrPayload}
-                    size={98}
-                    style={{ width: "100%", height: "auto", display: "block" }}
-                    level="M"
-                    aria-label={`${resourceLabel}答题卡二维码`}
-                  />
-                  <div className="mt-1 w-full truncate text-center font-mono text-[8px] text-ink-500" title={resourceId}>
-                    {resourceType}:{resourceId}
-                  </div>
-                </div>
-
-                <div className="pr-[27mm]">
-                  <h1 className="mb-1 text-center font-serif text-xl font-bold">{title}</h1>
-                  {description && <div className="mb-3 text-center text-xs text-ink-500">{description}</div>}
-                </div>
-
-                <div
-                  className="mr-[27mm] flex min-w-0 items-stretch border border-ink-900"
-                  data-testid="answer-sheet-identity-area"
-                >
-                  <div className="min-w-0 flex-1 p-2.5" data-testid="answer-sheet-identity-fields">
-                    <div className="mb-2 flex items-center gap-2 text-sm">
-                      <span className="shrink-0">班级：</span>
-                      <span className="h-5 min-w-20 flex-1 border-b border-ink-700" aria-label="班级填写区" />
-                    </div>
-                    <div className="flex items-stretch gap-2 text-sm">
-                      <span className="shrink-0 pt-1">姓名：</span>
-                      <span
-                        className="h-[13mm] min-w-0 flex-1 border border-dashed border-ink-700"
-                        aria-label="姓名签名填写区"
-                        data-answer-sheet-field="signature"
-                        data-signature-history-limit="10"
-                      />
-                    </div>
-                  </div>
-                  <div
-                    className="flex min-w-[48mm] shrink-0 items-center border-l border-ink-900 p-2.5"
-                    data-testid="answer-sheet-student-number-column"
-                  >
-                    <StudentNumberGrid digits={settings.studentNumberDigits} />
-                  </div>
-                </div>
-              </header>
-
-              <main className={paperColumns > 1 ? "contents" : "space-y-4"}>
-              {settings.mode === "with-questions" && settings.choiceLayout === "concentrated" && choiceItems.length > 0 && (
-                <section className="mb-4 break-inside-avoid" data-testid="concentrated-choice-area">
-                  <div className="mb-1 text-sm font-semibold">选择题填涂区</div>
-                  <div className="space-y-2 border border-ink-800 p-3">
-                    {choiceItems.map(({ question, number }) => (
-                      <ChoiceAnswer
-                        key={question.id}
-                        number={number}
-                        optionCount={question.options?.length || 4}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {groups.map((group, groupIndex) => (
-                <section key={group.type} className="mb-4">
-                  <div className="mb-1 text-sm font-semibold">
-                    {groupIndex + 1}、{group.label}（{group.items.length}题）
-                  </div>
-                  <div className="space-y-2 border border-ink-800 p-3">
-                    {group.items.map((item) => (
-                      <div key={item.question.id} className="break-inside-avoid" data-answer-sheet-question>
-                        {renderGroupItem(item)}
-                      </div>
-                    ))}
-                  </div>
-                </section>
+                  {renderPageContent(indices)}
+                </article>
               ))}
-              </main>
             </div>
-
-            <footer className="mt-5 border-t border-ink-300 pt-2 text-center text-[10px] text-ink-500 [column-span:all]">
-              {typeof totalScore === "number" ? `总分：${totalScore}分` : "答题结束后请检查学号与作答内容"}
-            </footer>
-          </article>
+          ) : (
+            <div className="space-y-6" data-testid="answer-sheet-preview-pages">
+              {previewSheets.map((sheetPages, sheetIndex) => (
+                <article
+                  key={`preview-sheet-${sheetIndex}`}
+                  className={`answer-sheet-paper answer-sheet-preview-sheet ${paperSize.className} relative mx-auto box-border overflow-hidden bg-white text-ink-950 shadow-xl`}
+                  style={{
+                    width: `${paperSize.physicalWidthMm}mm`,
+                    height: `${paperSize.heightMm}mm`,
+                  }}
+                  data-paper-size={settings.paperSize}
+                  data-paper-view="preview"
+                  data-paper-columns={paperColumns}
+                  data-paper-page={sheetIndex + 1}
+                >
+                  <div
+                    className="answer-sheet-preview-grid grid h-full"
+                    style={{
+                      gridTemplateColumns: `repeat(${paperColumns}, minmax(0, 1fr))`,
+                      columnCount: paperColumns,
+                    }}
+                    data-testid="answer-sheet-column-flow"
+                  >
+                    {Array.from({ length: paperColumns }, (_, columnIndex) => {
+                      const indices = sheetPages[columnIndex];
+                      return (
+                        <section
+                          key={columnIndex}
+                          className="answer-sheet-preview-column box-border h-full min-w-0 overflow-hidden p-[8mm]"
+                          style={{ width: `${logicalPageWidthMm}mm` }}
+                          data-editor-page={sheetIndex * paperColumns + columnIndex + 1}
+                        >
+                          {indices ? renderPageContent(indices) : null}
+                        </section>
+                      );
+                    })}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
