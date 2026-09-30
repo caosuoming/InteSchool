@@ -93,6 +93,7 @@ export function ChapterMasteryCard({
                 const MasteryIcon = cfg.icon;
                 const hasChildren = parentChapterIds.has(item.chapterId);
                 const collapsed = collapsedChapterIds.has(item.chapterId);
+                const showStats = !hasChildren || collapsed;
                 const fullPath = item.chapterPath.join(" \\ ");
                 const placement = placements[item.chapterId] ?? "normal";
                 return (
@@ -138,18 +139,32 @@ export function ChapterMasteryCard({
                         </button>
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 text-center font-mono text-ink-700">{item.totalAttempts}</td>
-                    <td className="py-2.5 px-3 text-center">
-                      {item.correctCount > 0 ? <span className="text-emerald-600 font-mono">{item.correctCount}</span> : <span className="text-ink-300">—</span>}
+                    <td className="py-2.5 px-3 text-center font-mono text-ink-700">
+                      {showStats ? item.totalAttempts : null}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {item.partialCount > 0 ? <span className="text-amber-600 font-mono">{item.partialCount}</span> : <span className="text-ink-300">—</span>}
+                      {showStats
+                        ? item.correctCount > 0
+                          ? <span className="text-emerald-600 font-mono">{item.correctCount}</span>
+                          : <span className="text-ink-300">—</span>
+                        : null}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {item.wrongCount > 0 ? <span className="text-red-600 font-mono">{item.wrongCount}</span> : <span className="text-ink-300">—</span>}
+                      {showStats
+                        ? item.partialCount > 0
+                          ? <span className="text-amber-600 font-mono">{item.partialCount}</span>
+                          : <span className="text-ink-300">—</span>
+                        : null}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {item.totalAttempts > 0 ? (
+                      {showStats
+                        ? item.wrongCount > 0
+                          ? <span className="text-red-600 font-mono">{item.wrongCount}</span>
+                          : <span className="text-ink-300">—</span>
+                        : null}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {showStats && item.totalAttempts > 0 ? (
                         <div className="flex items-center justify-center gap-1.5">
                           <div className="w-12 h-1.5 bg-ink-100 rounded-full overflow-hidden">
                             <div
@@ -162,15 +177,17 @@ export function ChapterMasteryCard({
                           </div>
                           <span className="font-mono text-xs text-ink-600">{Math.round(item.correctRate * 100)}%</span>
                         </div>
-                      ) : (
+                      ) : showStats ? (
                         <span className="text-ink-300 text-xs">—</span>
-                      )}
+                      ) : null}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border", cfg.bg, cfg.color)}>
-                        <MasteryIcon className="w-3 h-3" />
-                        {cfg.label}
-                      </span>
+                      {showStats ? (
+                        <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border", cfg.bg, cfg.color)}>
+                          <MasteryIcon className="w-3 h-3" />
+                          {cfg.label}
+                        </span>
+                      ) : null}
                     </td>
                   </tr>
                 );

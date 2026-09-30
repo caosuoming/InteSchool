@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import StudentLearningPage from "@/pages/analytics/StudentLearningPage";
 import { useAuthStore } from "@/stores/auth";
@@ -179,7 +179,11 @@ describe("StudentLearningPage", () => {
       expect(screen.getByRole("button", { name: "展开知识点 集合" })).toBeInTheDocument();
       expect(screen.queryByText("集合的概念")).not.toBeInTheDocument();
     });
+    const knowledgeRootRow = screen.getByRole("button", { name: "查看知识点目录 集合" }).closest("tr");
+    expect(knowledgeRootRow).not.toBeNull();
+    expect(within(knowledgeRootRow!).getAllByRole("cell").at(-1)).toHaveTextContent("未训练");
     fireEvent.click(screen.getByRole("button", { name: "展开知识点 集合" }));
+    expect(within(knowledgeRootRow!).getAllByRole("cell").at(-1)).toBeEmptyDOMElement();
     expect(screen.getByTitle("集合\\集合的概念")).toHaveTextContent("集合的概念");
 
     fireEvent.click(screen.getByRole("button", { name: "查看知识点目录 集合的概念" }));
@@ -188,6 +192,55 @@ describe("StudentLearningPage", () => {
     expect(localStorage.getItem("inteschool:student-learning:placements:school-1:teacher-1"))
       .toContain('"point-1":"top"');
     expect(classService.listMyClasses).toHaveBeenCalledWith("school-1", "teacher-1");
+  });
+
+  it("hides parent mastery stats as soon as its child level is expanded", async () => {
+    vi.mocked(knowledgeService.listChapters).mockResolvedValue([
+      { id: "book-1", schoolId: "school-1", parentId: null, name: "选择性必修第二册", order: 1, level: 0 },
+      { id: "chapter-1", schoolId: "school-1", parentId: "book-1", name: "第6章 空间向量与立体几何", order: 1, level: 1 },
+      { id: "lesson-1", schoolId: "school-1", parentId: "chapter-1", name: "6.1.1 空间向量的线性运算", order: 1, level: 2 },
+    ]);
+    const answered = makeQuestion("q-hierarchy", "层级统计题", ["lesson-1"], ["point-1"]);
+    vi.mocked(analyticsService.getStudentAnswerDetails).mockResolvedValue([
+      {
+        record: {
+          id: "record-hierarchy",
+          studentId: "student-1",
+          questionId: answered.id,
+          lectureId: "lecture-1",
+          isCorrect: true,
+          score: "correct",
+          answeredAt: "2026-08-20T00:00:00.000Z",
+        },
+        question: answered,
+      },
+    ]);
+
+    render(<StudentLearningPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "高一（1）班" }));
+
+    const rootButton = await screen.findByRole("button", { name: "查看章节课目录 选择性必修第二册" });
+    const rootRow = rootButton.closest("tr");
+    expect(rootRow).not.toBeNull();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "展开章节 选择性必修第二册" })).toBeInTheDocument();
+      expect(within(rootRow!).getAllByRole("cell")[1]).toHaveTextContent("1");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "展开章节 选择性必修第二册" }));
+    expect(within(rootRow!).getAllByRole("cell")[1]).toBeEmptyDOMElement();
+
+    const chapterButton = screen.getByRole("button", { name: "查看章节课目录 第6章 空间向量与立体几何" });
+    const chapterRow = chapterButton.closest("tr");
+    expect(chapterRow).not.toBeNull();
+    expect(within(chapterRow!).getAllByRole("cell")[1]).toHaveTextContent("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "展开章节 第6章 空间向量与立体几何" }));
+    expect(within(chapterRow!).getAllByRole("cell")[1]).toBeEmptyDOMElement();
+
+    const lessonRow = screen.getByRole("button", { name: "查看章节课目录 6.1.1 空间向量的线性运算" }).closest("tr");
+    expect(lessonRow).not.toBeNull();
+    expect(within(lessonRow!).getAllByRole("cell")[1]).toHaveTextContent("1");
   });
 
   it("shows only the clicked directory's answered and unanswered questions and allows adding both to baskets", async () => {

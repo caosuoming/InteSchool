@@ -218,6 +218,43 @@ describe("school question statistics", () => {
   });
 });
 
+describe("hierarchical knowledge mastery", () => {
+  it("rolls descendant records into directory nodes without double counting", async () => {
+    const appState = state();
+    const childQuestion = {
+      ...question("question-child"),
+      knowledgePointIds: ["point-1", "point-child"],
+    };
+    appState.questions = [childQuestion];
+    appState.answerRecords = [{
+      id: "answer-child",
+      studentId: "student-1",
+      questionId: childQuestion.id,
+      lectureId: "lecture-1",
+      isCorrect: false,
+      score: "partial",
+      source: "manual",
+      answeredAt: now,
+    }];
+
+    await runWithState(appState, async () => {
+      const mastery = await analyticsService.getKnowledgeMastery(["student-1"], "school-1");
+      expect(mastery.find((item) => item.knowledgePointId === "point-1")).toMatchObject({
+        totalAttempts: 1,
+        correctCount: 0,
+        partialCount: 1,
+        wrongCount: 0,
+        correctRate: 0,
+        masteryLevel: "weak",
+      });
+      expect(mastery.find((item) => item.knowledgePointId === "point-child")).toMatchObject({
+        totalAttempts: 1,
+        partialCount: 1,
+      });
+    });
+  });
+});
+
 describe("neutral completed answer records", () => {
   it("stores completed records while excluding them from correctness and mastery denominators", async () => {
     const appState = state();

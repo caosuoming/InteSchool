@@ -542,6 +542,20 @@ export const analyticsService = {
       : allKnowledgePoints.filter((point) => !point.teacherId && point.schoolId === schoolId);
     const knowledgePointMap = new Map(knowledgePoints.map((point) => [point.id, point] as const));
 
+    const expandKnowledgePointIdsWithAncestors = (knowledgePointIds: readonly string[]): Set<string> => {
+      const expanded = new Set<string>();
+      for (const knowledgePointId of knowledgePointIds) {
+        const visited = new Set<string>();
+        let current = knowledgePointMap.get(knowledgePointId);
+        while (current && !visited.has(current.id)) {
+          visited.add(current.id);
+          expanded.add(current.id);
+          current = current.parentId ? knowledgePointMap.get(current.parentId) : undefined;
+        }
+      }
+      return expanded;
+    };
+
     const getKnowledgePointPath = (knowledgePointId: string): string[] => {
       const path: string[] = [];
       const visited = new Set<string>();
@@ -567,7 +581,9 @@ export const analyticsService = {
     for (const record of records) {
       const question = questionMap.get(record.questionId);
       if (!question || !question.knowledgePointIds) continue;
-      for (const kpId of question.knowledgePointIds) {
+      // Directory nodes summarize their whole subtree. De-duplicate ancestor
+      // IDs so a question tagged with both parent and child is counted once.
+      for (const kpId of expandKnowledgePointIdsWithAncestors(question.knowledgePointIds)) {
         const stat = kpStats.get(kpId) || { total: 0, correct: 0, partial: 0, wrong: 0, done: 0 };
         const score = record.score || (record.isCorrect ? "correct" : "wrong");
         if (score === "done") {
@@ -595,17 +611,19 @@ export const analyticsService = {
     }
     for (const record of homeworkRecords) {
       if (!knowledgePointMap.has(record.knowledgePointId)) continue;
-      const stat = kpStats.get(record.knowledgePointId)
-        || { total: 0, correct: 0, partial: 0, wrong: 0, done: 0 };
-      if (record.status === "done") {
-        stat.done++;
-      } else {
-        stat.total++;
-        if (record.status === "correct") stat.correct++;
-        else if (record.status === "partial") stat.partial++;
-        else stat.wrong++;
+      for (const kpId of expandKnowledgePointIdsWithAncestors([record.knowledgePointId])) {
+        const stat = kpStats.get(kpId)
+          || { total: 0, correct: 0, partial: 0, wrong: 0, done: 0 };
+        if (record.status === "done") {
+          stat.done++;
+        } else {
+          stat.total++;
+          if (record.status === "correct") stat.correct++;
+          else if (record.status === "partial") stat.partial++;
+          else stat.wrong++;
+        }
+        kpStats.set(kpId, stat);
       }
-      kpStats.set(record.knowledgePointId, stat);
     }
 
     // 构建结果：包含所有知识点（未训练的也列出）。

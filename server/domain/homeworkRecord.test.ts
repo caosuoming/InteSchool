@@ -375,13 +375,13 @@ describe("homeworkRecordService", () => {
         teacher,
       );
       expect(mastery.find((item) => item.knowledgePointId === "kp-1")).toMatchObject({
-        totalAttempts: 0,
+        totalAttempts: 1,
         doneCount: 1,
         correctCount: 0,
-        partialCount: 0,
+        partialCount: 1,
         wrongCount: 0,
         correctRate: 0,
-        masteryLevel: "untrained",
+        masteryLevel: "weak",
       });
       expect(mastery.find((item) => item.knowledgePointId === "kp-2")).toMatchObject({
         knowledgePointPath: ["函数单调性", "单调区间"],
