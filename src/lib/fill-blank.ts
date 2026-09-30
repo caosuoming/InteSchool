@@ -148,6 +148,23 @@ export function ensureFillBlankAnswerArea(stem: string, answer?: string): string
   return protectedContent.restore(insertInferredBlank(protectedContent.text, blank));
 }
 
+/**
+ * Normalizes a fill-in-the-blank stem and wraps only real answer underlines in
+ * a marker span. Rich HTML and LaTeX are protected so formula subscripts such
+ * as `$a_1$` are never mistaken for answer blanks.
+ */
+export function decorateFillBlankAnswerAreas(stem: string, answer?: string): string {
+  const normalized = ensureFillBlankAnswerArea(stem, answer);
+  if (!normalized) return normalized;
+
+  const protectedContent = protectRichContent(normalized);
+  const decorated = protectedContent.text.replace(
+    /[_＿]{2,}/g,
+    (blank) => `<span class="answer-sheet-inline-blank">${blank}</span>`,
+  );
+  return protectedContent.restore(decorated);
+}
+
 export function hasFillBlankAnswerArea(stem: string): boolean {
   const { text } = protectRichContent(stem);
   return /[_＿]{2,}|[ \t\u3000]{3,}/.test(text);
