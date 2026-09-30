@@ -896,6 +896,35 @@ export const serviceParameters = {
       "teacherId",
       "type"
     ],
+    "getDirectoryCatalog": [
+      "teacherId",
+      "catalogId"
+    ],
+    "createDirectoryCatalog": [
+      "teacherId",
+      "type",
+      "name"
+    ],
+    "renameDirectoryCatalog": [
+      "teacherId",
+      "catalogId",
+      "name"
+    ],
+    "listDirectoryNodeAssociations": [
+      "teacherId",
+      "type"
+    ],
+    "createDirectoryNodeAssociation": [
+      "teacherId",
+      "sourceCatalogId",
+      "sourceNodeId",
+      "targetCatalogId",
+      "targetNodeId"
+    ],
+    "deleteDirectoryNodeAssociation": [
+      "teacherId",
+      "associationId"
+    ],
     "listDirectoryDonations": [
       "teacherId",
       "type"
