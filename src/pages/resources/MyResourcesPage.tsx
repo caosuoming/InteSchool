@@ -803,7 +803,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [basketInsightsLoading, setBasketInsightsLoading] = useState(false);
 
   const schoolId = teacher?.schoolId || "sch-1";
-  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(schoolId);
+  const resourceOptionsSchoolId = activeTab === "question" ? null : schoolId;
+  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(resourceOptionsSchoolId);
   const {
     examPaperTypes,
     lectureTypes,
@@ -813,8 +814,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     defaultLectureTypeId,
     getExamPaperTypeLabel,
     getLectureTypeLabel,
-  } = useDocumentTypeOptions(schoolId);
-  const questionTypeConfig = useQuestionTypeOptions(schoolId);
+  } = useDocumentTypeOptions(resourceOptionsSchoolId);
+  const questionTypeConfig = useQuestionTypeOptions(resourceOptionsSchoolId);
   const getQuestionTypeLabel = questionTypeConfig.getLabel;
   const questionTypeOptions = questionTypeConfig.options ?? [];
   const selectedBasket = useMemo(

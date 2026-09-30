@@ -189,7 +189,7 @@ export default function DashboardPage() {
       icon: Library,
       color: "text-gold-600",
       bg: "bg-gold-50",
-      link: "/question-bank",
+      link: "/my-resources/questions",
     },
     {
       label: "讲义数量",
@@ -220,7 +220,7 @@ export default function DashboardPage() {
   const quickActions = [
     { label: "导入文档", desc: "AI 识别题目入库", icon: FileUp, link: "/import" },
     { label: "新建讲义", desc: "组题生成讲义", icon: FileText, link: "/lectures/new" },
-    { label: "题库管理", desc: "查看与编辑题目", icon: Library, link: "/question-bank" },
+    { label: "题库管理", desc: "查看与编辑题目", icon: Library, link: "/my-resources/questions" },
     { label: "新建试题篮", desc: "整理候选题目", icon: ShoppingBasket, link: "/baskets" },
   ];
 

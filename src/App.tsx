@@ -19,7 +19,8 @@ const LecturePreviewPage = lazy(() => import("@/pages/lectures/LecturePreviewPag
 const LectureAnswerSheetPage = lazy(() => import("@/pages/lectures/LectureAnswerSheetPage"));
 const ExamPaperEditorPage = lazy(() => import("@/pages/exam-papers/ExamPaperEditorPage"));
 const ExamPaperAnswerSheetPage = lazy(() => import("@/pages/exam-papers/ExamPaperAnswerSheetPage"));
-const MyResourcesPage = lazy(() => import("@/pages/resources/MyResourcesPage"));
+const loadMyResourcesPage = () => import("@/pages/resources/MyResourcesPage");
+const MyResourcesPage = lazy(loadMyResourcesPage);
 const SchoolResourcesPage = lazy(() => import("@/pages/resources/SchoolResourcesPage"));
 const PlatformResourcesPage = lazy(() => import("@/pages/resources/PlatformResourcesPage"));
 const UploadPage = lazy(() => import("@/pages/resources/UploadPage"));
@@ -82,6 +83,14 @@ export default function App() {
   useEffect(() => {
     applyAppearanceMode(appearanceMode);
   }, [appearanceMode]);
+
+  useEffect(() => {
+    if (!teacher) return;
+    const timer = window.setTimeout(() => {
+      void loadMyResourcesPage();
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [teacher]);
 
   if (loading) return <RouteLoading />;
 

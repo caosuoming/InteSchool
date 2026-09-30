@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { inferScore } from "@/services/analytics";
 import { generateQuestionDocx } from "@/lib/docx";
+import { treeNameMap } from "@/lib/basket-audience";
 
 type Mode = "manage" | "use";
 type SortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
@@ -180,6 +181,7 @@ export default function QuestionBankPage({
   const [quota, setQuota] = useState<UserQuotaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [searchFields, setSearchFields] = useState<QuestionSearchField[]>([]);
 
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
@@ -319,7 +321,7 @@ export default function QuestionBankPage({
 
     const filter = {
       teacherId: teacher.id,
-      keyword,
+      keyword: debouncedKeyword,
       searchFields,
       chapterIds: checkedChapters,
       chapterLogic,
@@ -425,7 +427,7 @@ export default function QuestionBankPage({
     setTotalQuestionCount(sorted.length);
     setLoading(false);
   }, [
-    teacher, keyword, searchFields, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic,
+    teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic,
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
@@ -441,14 +443,12 @@ export default function QuestionBankPage({
   useEffect(() => {
     if (!teacher) return;
     const load = async () => {
-      const [ch, kp, bs, allClasses, stus, chapters, points] = await Promise.all([
+      const [ch, kp, bs, allClasses, stus] = await Promise.all([
         knowledgeService.getChapterTree(teacher.schoolId!),
         knowledgeService.getKnowledgeTree(teacher.schoolId!),
         basketService.listBaskets(teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
-        knowledgeService.listChapters(teacher.schoolId!),
-        knowledgeService.listKnowledgePoints(teacher.schoolId!),
       ]);
       setChapterTree(ch);
       setKnowledgeTree(kp);
@@ -456,15 +456,19 @@ export default function QuestionBankPage({
       setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
       setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
       setStudents(stus);
-      setChapterMap(new Map(chapters.map((c) => [c.id, c.name])));
-      setKnowledgeMap(new Map(points.map((p) => [p.id, p.name])));
+      setChapterMap(treeNameMap(ch));
+      setKnowledgeMap(treeNameMap(kp));
     };
     load();
   }, [teacher]);
 
   useEffect(() => {
-    const t = setTimeout(loadQuestions, 300);
+    const t = setTimeout(() => setDebouncedKeyword(keyword), 180);
     return () => clearTimeout(t);
+  }, [keyword]);
+
+  useEffect(() => {
+    void loadQuestions();
   }, [loadQuestions]);
 
   useEffect(() => {
