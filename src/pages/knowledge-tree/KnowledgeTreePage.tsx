@@ -4,7 +4,7 @@ import {
   GitBranch, Search, Plus, Folder, FolderOpen, FileText,
   BookOpen, ArrowRight, ShoppingBasket,
   Pencil, Trash2, ChevronUp, ChevronDown, FolderInput, GitMerge,
-  Gift, Download, Layers3, ArrowLeft,
+  Gift, Download, Layers3, ArrowLeft, Link2, FolderPlus,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { knowledgeService } from "@/services/knowledge";
@@ -25,9 +25,11 @@ import type {
   TreeNode,
   Question,
   Basket,
+  DirectoryCatalog,
   DirectoryCatalogSummary,
   DirectoryDonation,
   DirectoryCatalogNode,
+  DirectoryNodeAssociation,
 } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -90,6 +92,12 @@ export default function KnowledgeTreePage() {
   const [donatingDirectory, setDonatingDirectory] = useState(false);
   const [acceptingDirectory, setAcceptingDirectory] = useState(false);
   const [switchingCatalog, setSwitchingCatalog] = useState(false);
+  const [directoryAssociations, setDirectoryAssociations] = useState<DirectoryNodeAssociation[]>([]);
+  const [associationOpen, setAssociationOpen] = useState(false);
+  const [associationTargetCatalogId, setAssociationTargetCatalogId] = useState("");
+  const [associationTargetCatalog, setAssociationTargetCatalog] = useState<DirectoryCatalog | null>(null);
+  const [associationTargetNodeId, setAssociationTargetNodeId] = useState("");
+  const [associationSaving, setAssociationSaving] = useState(false);
 
   const handleKindChange = (nextKind: TreeKind) => {
     if (nextKind === kind) return;
@@ -108,6 +116,10 @@ export default function KnowledgeTreePage() {
     setMergeOpen(false);
     setMerging(false);
     setPreviewDonation(null);
+    setAssociationOpen(false);
+    setAssociationTargetCatalog(null);
+    setAssociationTargetCatalogId("");
+    setAssociationTargetNodeId("");
   };
 
   const loadTree = useCallback(async () => {
@@ -147,12 +159,14 @@ export default function KnowledgeTreePage() {
 
   const loadDirectoryMeta = useCallback(async () => {
     if (!teacher) return;
-    const [nextCatalogs, nextDonations] = await Promise.all([
+    const [nextCatalogs, nextDonations, nextAssociations] = await Promise.all([
       knowledgeService.listDirectoryCatalogs(teacher.id, kind),
       knowledgeService.listDirectoryDonations(teacher.id, kind),
+      knowledgeService.listDirectoryNodeAssociations(teacher.id, kind),
     ]);
     setCatalogs(nextCatalogs);
     setDirectoryDonations(nextDonations);
+    setDirectoryAssociations(nextAssociations);
   }, [kind, teacher]);
 
   useEffect(() => {
@@ -281,16 +295,23 @@ export default function KnowledgeTreePage() {
   };
 
   const handleRename = async () => {
-    if (!selectedNode) return;
+    if (!selectedNode || !teacher) return;
     const newName = window.prompt("请输入新名称", selectedNode.name);
     if (newName === null || !newName.trim() || newName.trim() === selectedNode.name) return;
     try {
-      await knowledgeService.renameNode(selectedNode.id, kind, newName.trim());
+      if (selectedNode.id === "root") {
+        const active = catalogs.find((catalog) => catalog.isActive) || catalogs[0];
+        if (!active) return;
+        await knowledgeService.renameDirectoryCatalog(teacher.id, active.id, newName.trim());
+        await loadDirectoryMeta();
+      } else {
+        await knowledgeService.renameNode(selectedNode.id, kind, newName.trim());
+      }
       toast.success("已改名");
       await loadTree();
       setSelectedNode((prev) => (prev ? { ...prev, name: newName.trim() } : prev));
-    } catch {
-      toast.error("改名失败");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "改名失败");
     }
   };
 
@@ -406,6 +427,109 @@ export default function KnowledgeTreePage() {
     }
   };
 
+  const handleCreateCatalog = async () => {
+    if (!teacher) return;
+    const defaultName = kind === "chapter" ? "新章节课目录" : "新知识点目录";
+    const name = window.prompt("请输入新目录名称", defaultName);
+    if (name === null || !name.trim()) return;
+    try {
+      await knowledgeService.createDirectoryCatalog(teacher.id, kind, name.trim());
+      setSelectedNode(null);
+      setQuestions([]);
+      await Promise.all([loadTree(), loadDirectoryMeta()]);
+      toast.success("已新建并启用目录");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "新建目录失败");
+    }
+  };
+
+  const handleRenameActiveCatalog = async () => {
+    if (!teacher) return;
+    const active = catalogs.find((catalog) => catalog.isActive) || catalogs[0];
+    if (!active) return;
+    const currentName = active.rootName || active.name;
+    const name = window.prompt("请输入新目录名称", currentName);
+    if (name === null || !name.trim() || name.trim() === currentName) return;
+    try {
+      await knowledgeService.renameDirectoryCatalog(teacher.id, active.id, name.trim());
+      await Promise.all([loadTree(), loadDirectoryMeta()]);
+      setSelectedNode((current) =>
+        current?.id === "root" ? { ...current, name: name.trim() } : current,
+      );
+      toast.success("目录已改名");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "目录改名失败");
+    }
+  };
+
+  const loadAssociationTargetCatalog = async (catalogId: string) => {
+    if (!teacher || !catalogId) {
+      setAssociationTargetCatalog(null);
+      setAssociationTargetNodeId("");
+      return;
+    }
+    setAssociationTargetCatalogId(catalogId);
+    setAssociationTargetNodeId("");
+    try {
+      const catalog = await knowledgeService.getDirectoryCatalog(teacher.id, catalogId);
+      setAssociationTargetCatalog(catalog);
+    } catch (error) {
+      setAssociationTargetCatalog(null);
+      toast.error(error instanceof Error ? error.message : "加载目录失败");
+    }
+  };
+
+  const handleOpenAssociation = async () => {
+    if (!selectedNode || selectedNode.id === "root") return;
+    const active = catalogs.find((catalog) => catalog.isActive) || catalogs[0];
+    const target = catalogs.find((catalog) => catalog.id !== active?.id);
+    if (!target) {
+      toast.error("请先创建另一套目录");
+      return;
+    }
+    setAssociationOpen(true);
+    await loadAssociationTargetCatalog(target.id);
+  };
+
+  const handleCreateAssociation = async () => {
+    if (
+      !teacher ||
+      !selectedNode ||
+      selectedNode.id === "root" ||
+      !associationTargetCatalogId ||
+      !associationTargetNodeId
+    ) return;
+    const active = catalogs.find((catalog) => catalog.isActive) || catalogs[0];
+    if (!active) return;
+    setAssociationSaving(true);
+    try {
+      await knowledgeService.createDirectoryNodeAssociation(
+        teacher.id,
+        active.id,
+        selectedNode.id,
+        associationTargetCatalogId,
+        associationTargetNodeId,
+      );
+      await loadDirectoryMeta();
+      toast.success("目录节点关联已建立");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "建立关联失败");
+    } finally {
+      setAssociationSaving(false);
+    }
+  };
+
+  const handleDeleteAssociation = async (associationId: string) => {
+    if (!teacher) return;
+    try {
+      await knowledgeService.deleteDirectoryNodeAssociation(teacher.id, associationId);
+      await loadDirectoryMeta();
+      toast.success("关联已删除");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除关联失败");
+    }
+  };
+
   const handleAcceptDirectory = async (mode: "merge" | "new") => {
     if (!teacher || !previewDonation) return;
     setAcceptingDirectory(true);
@@ -446,6 +570,26 @@ export default function KnowledgeTreePage() {
     ? selectedParent.children.filter((node) => node.id !== selectedNode?.id)
     : [];
   const activeCatalog = catalogs.find((catalog) => catalog.isActive) || catalogs[0];
+  const otherCatalogs = catalogs.filter((catalog) => catalog.id !== activeCatalog?.id);
+  const selectedNodeAssociations = selectedNode && activeCatalog
+    ? directoryAssociations.filter(
+        (association) =>
+          (
+            association.sourceCatalogId === activeCatalog.id &&
+            association.sourceNodeId === selectedNode.id
+          ) ||
+          (
+            association.targetCatalogId === activeCatalog.id &&
+            association.targetNodeId === selectedNode.id
+          ),
+      )
+    : [];
+  const associationTargetTree = associationTargetCatalog
+    ? directorySnapshotTree(kind, associationTargetCatalog.nodes)
+    : null;
+  const associationTargetNodes = associationTargetTree
+    ? flattenTreeWithPaths(associationTargetTree)
+    : [];
   const previewTree = previewDonation
     ? directorySnapshotTree(previewDonation.type, previewDonation.nodes)
     : null;
@@ -513,6 +657,23 @@ export default function KnowledgeTreePage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={handleCreateCatalog}
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              新建目录
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!activeCatalog}
+              onClick={handleRenameActiveCatalog}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              目录改名
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               loading={donatingDirectory}
               onClick={handleDonateDirectory}
             >
@@ -572,7 +733,7 @@ export default function KnowledgeTreePage() {
             )}
 
             <p className="mt-2 text-[11px] leading-5 text-ink-400">
-              可直接拖动节点到另一个节点下；拖到“全部章节/全部知识点”可移到顶级。
+              可直接拖动节点到另一个节点下；拖到“{tree?.name || (kind === "chapter" ? "全部章节" : "全部知识点")}”可移到顶级。
             </p>
 
             <div className="mt-3 pt-3 border-t border-ink-100">
@@ -618,9 +779,24 @@ export default function KnowledgeTreePage() {
                     <div className="flex items-center gap-2 mb-2">
                       <h2 className="font-serif text-xl font-bold text-ink-900">{selectedNode.name}</h2>
                       <Badge variant="ink">
-                        {kind === "chapter" ? "章节" : "知识点"}
+                        {selectedNode.id === "root"
+                          ? "目录"
+                          : kind === "chapter" ? "章节" : "知识点"}
                       </Badge>
                     </div>
+                    {selectedNode.id === "root" && (
+                      <div className="flex items-center gap-0.5 mb-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleRename}
+                          className="h-7 px-2.5"
+                        >
+                          <Pencil className="w-3 h-3 mr-1" />
+                          改名
+                        </Button>
+                      </div>
+                    )}
                     {selectedNode.id !== "root" && (
                       <div className="flex items-center gap-0.5 mb-1">
                         <Button
@@ -669,6 +845,20 @@ export default function KnowledgeTreePage() {
                         >
                           <GitMerge className="w-3 h-3 mr-1" />
                           合并
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleOpenAssociation}
+                          disabled={otherCatalogs.length === 0}
+                          className="h-7 px-2.5"
+                          title={otherCatalogs.length === 0 ? "请先创建另一套目录" : undefined}
+                        >
+                          <Link2 className="w-3 h-3 mr-1" />
+                          关联目录节点
+                          {selectedNodeAssociations.length > 0
+                            ? "（" + selectedNodeAssociations.length + "）"
+                            : ""}
                         </Button>
                         <Button
                           variant="ghost"
@@ -877,6 +1067,117 @@ export default function KnowledgeTreePage() {
               </button>
             ));
           })()}
+        </div>
+      </Modal>
+
+      <Modal
+        open={associationOpen}
+        onClose={() => {
+          if (associationSaving) return;
+          setAssociationOpen(false);
+          setAssociationTargetCatalog(null);
+          setAssociationTargetCatalogId("");
+          setAssociationTargetNodeId("");
+        }}
+        size="sm"
+        title="关联目录节点"
+        description={selectedNode
+          ? "为「" + selectedNode.name + "」选择另一套目录中的对应节点。切换目录时，题目和资源关联会按这里的映射迁移。"
+          : undefined}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              disabled={associationSaving}
+              onClick={() => setAssociationOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="gold"
+              loading={associationSaving}
+              disabled={!associationTargetNodeId}
+              onClick={handleCreateAssociation}
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              建立关联
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <label className="block">
+            <span className="block text-xs font-medium text-ink-600 mb-1.5">目标目录</span>
+            <select
+              aria-label="目标目录"
+              value={associationTargetCatalogId}
+              onChange={(event) => loadAssociationTargetCatalog(event.target.value)}
+              className="input-base"
+            >
+              {otherCatalogs.map((catalog) => (
+                <option key={catalog.id} value={catalog.id}>
+                  {catalog.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="block text-xs font-medium text-ink-600 mb-1.5">目标节点</span>
+            <select
+              aria-label="目标节点"
+              value={associationTargetNodeId}
+              disabled={!associationTargetCatalog || associationTargetNodes.length === 0}
+              onChange={(event) => setAssociationTargetNodeId(event.target.value)}
+              className="input-base"
+            >
+              <option value="">请选择节点</option>
+              {associationTargetNodes.map(({ node, path }) => (
+                <option key={node.id} value={node.id}>
+                  {path.join(" / ")}
+                </option>
+              ))}
+            </select>
+            {associationTargetCatalog && associationTargetNodes.length === 0 && (
+              <p className="mt-1.5 text-xs text-ink-400">该目录还没有节点。</p>
+            )}
+          </label>
+
+          {selectedNodeAssociations.length > 0 && (
+            <div className="pt-3 border-t border-ink-100">
+              <div className="text-xs font-medium text-ink-600 mb-2">已有关联</div>
+              <div className="space-y-1.5">
+                {selectedNodeAssociations.map((association) => {
+                  const otherCatalogId =
+                    association.sourceCatalogId === activeCatalog?.id
+                      ? association.targetCatalogId
+                      : association.sourceCatalogId;
+                  const otherCatalog = catalogs.find(
+                    (catalog) => catalog.id === otherCatalogId,
+                  );
+                  return (
+                    <div
+                      key={association.id}
+                      className="flex items-center gap-2 rounded-md border border-ink-100 px-2.5 py-2"
+                    >
+                      <Link2 className="w-3.5 h-3.5 text-gold-600" />
+                      <span className="min-w-0 flex-1 truncate text-xs text-ink-700">
+                        {otherCatalog?.name || "其他目录"}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-red-500"
+                        onClick={() => handleDeleteAssociation(association.id)}
+                      >
+                        删除关联
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 

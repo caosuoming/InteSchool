@@ -6,6 +6,7 @@ import type {
   DirectoryDonation,
   DirectoryDonationAcceptMode,
   DirectoryDonationUpsertResult,
+  DirectoryNodeAssociation,
   KnowledgePoint,
   Question,
   TreeNode,
@@ -123,6 +124,10 @@ function directoryLabel(type: TreeNodeType): string {
   return type === "chapter" ? "章节课目录" : "知识点目录";
 }
 
+function defaultDirectoryRootName(type: TreeNodeType): string {
+  return type === "chapter" ? "全部章节" : "全部知识点";
+}
+
 function directoryTeacher(teacherId: string): DirectoryTeacher {
   const teacher = ((db.read("teachers") || []) as DirectoryTeacher[]).find(
     (item) => item.id === teacherId,
@@ -170,6 +175,10 @@ function directoryCatalogs(): DirectoryCatalog[] {
 
 function directoryDonations(): DirectoryDonation[] {
   return (db.read("directoryDonations") || []) as DirectoryDonation[];
+}
+
+function directoryNodeAssociations(): DirectoryNodeAssociation[] {
+  return (db.read("directoryNodeAssociations") || []) as DirectoryNodeAssociation[];
 }
 
 const PERSONAL_DIRECTORY_PREFIX = "personal-directory:";
@@ -436,6 +445,7 @@ function toCatalogSummary(catalog: DirectoryCatalog): DirectoryCatalogSummary {
     teacherId: catalog.teacherId,
     type: catalog.type,
     name: catalog.name,
+    rootName: catalog.rootName?.trim() || defaultDirectoryRootName(catalog.type),
     nodeCount: catalog.nodes.length,
     isActive: catalog.isActive,
     createdAt: catalog.createdAt,
@@ -587,6 +597,136 @@ const DIRECTORY_REFERENCE_COLLECTIONS = [
   "lessonCoursewares",
   "schoolBackups",
 ] as const;
+
+function replaceDirectoryIdsMany(
+  ids: string[],
+  replacements: Map<string, string[]>,
+): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    for (const replacement of replacements.get(id) ?? [id]) {
+      if (!seen.has(replacement)) {
+        result.push(replacement);
+        seen.add(replacement);
+      }
+    }
+  }
+  return result;
+}
+
+function remapTeacherDirectoryReferencesMany(
+  teacherId: string,
+  type: TreeNodeType,
+  replacements: Map<string, string[]>,
+): void {
+  if (replacements.size === 0) return;
+  const field = type === "chapter" ? "chapterIds" : "knowledgePointIds";
+  for (const collection of DIRECTORY_REFERENCE_COLLECTIONS) {
+    const records = db.read(collection);
+    if (!Array.isArray(records)) continue;
+    db.update(collection, (items: Array<Record<string, unknown>>) =>
+      items.map((item) => {
+        if (
+          directoryRecordOwner(item) !== teacherId ||
+          !Array.isArray(item[field])
+        ) return item;
+        const ids = (item[field] as unknown[]).filter(
+          (id): id is string => typeof id === "string",
+        );
+        const nextIds = replaceDirectoryIdsMany(ids, replacements);
+        return nextIds.length === ids.length &&
+          nextIds.every((id, index) => id === ids[index])
+          ? item
+          : { ...item, [field]: nextIds };
+      }),
+    );
+  }
+}
+
+function associationReplacementsForActivation(
+  teacherId: string,
+  type: TreeNodeType,
+  sourceCatalogId: string,
+  targetCatalogId: string,
+): Map<string, string[]> {
+  const replacements = new Map<string, string[]>();
+  for (const association of directoryNodeAssociations()) {
+    if (association.teacherId !== teacherId || association.type !== type) continue;
+    let sourceNodeId: string | null = null;
+    let targetNodeId: string | null = null;
+    if (
+      association.sourceCatalogId === sourceCatalogId &&
+      association.targetCatalogId === targetCatalogId
+    ) {
+      sourceNodeId = association.sourceNodeId;
+      targetNodeId = association.targetNodeId;
+    } else if (
+      association.targetCatalogId === sourceCatalogId &&
+      association.sourceCatalogId === targetCatalogId
+    ) {
+      sourceNodeId = association.targetNodeId;
+      targetNodeId = association.sourceNodeId;
+    }
+    if (!sourceNodeId || !targetNodeId) continue;
+    const targets = replacements.get(sourceNodeId) ?? [];
+    if (!targets.includes(targetNodeId)) targets.push(targetNodeId);
+    replacements.set(sourceNodeId, targets);
+  }
+  return replacements;
+}
+
+function removeDirectoryNodeAssociations(
+  teacherId: string,
+  type: TreeNodeType,
+  nodeIds: Set<string>,
+): void {
+  db.update(
+    "directoryNodeAssociations",
+    (items: DirectoryNodeAssociation[]) =>
+      (items || []).filter(
+        (item) =>
+          item.teacherId !== teacherId ||
+          item.type !== type ||
+          (
+            !nodeIds.has(item.sourceNodeId) &&
+            !nodeIds.has(item.targetNodeId)
+          ),
+      ),
+  );
+}
+
+function remapDirectoryNodeAssociations(
+  teacherId: string,
+  type: TreeNodeType,
+  replacements: Map<string, string>,
+): void {
+  if (replacements.size === 0) return;
+  db.update(
+    "directoryNodeAssociations",
+    (items: DirectoryNodeAssociation[]) => {
+      const result: DirectoryNodeAssociation[] = [];
+      const seen = new Set<string>();
+      for (const item of items || []) {
+        const next = item.teacherId === teacherId && item.type === type
+          ? {
+              ...item,
+              sourceNodeId: replacements.get(item.sourceNodeId) ?? item.sourceNodeId,
+              targetNodeId: replacements.get(item.targetNodeId) ?? item.targetNodeId,
+            }
+          : item;
+        const left = `${next.sourceCatalogId}:\u0000${next.sourceNodeId}`;
+        const right = `${next.targetCatalogId}:\u0000${next.targetNodeId}`;
+        const pair = left < right ? `${left}|\u0000${right}` : `${right}|\u0000${left}`;
+        const key = `${next.teacherId}\u0000${next.type}\u0000${pair}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(next);
+      }
+      return result;
+    },
+  );
+}
 
 function replaceDirectoryIds(
   ids: string[],
@@ -804,9 +944,15 @@ export const knowledgeService = {
   async getChapterTree(scopeId: string): Promise<TreeNode> {
     await delay(300);
     const chapters = directoryRecords(scopeId, "chapter") as Chapter[];
+    const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
+      (item) => item.id === scopeId,
+    );
+    const active = teacherScope
+      ? ensureDefaultDirectoryCatalog(scopeId, "chapter")
+      : null;
     const tree: TreeNode = {
       id: "root",
-      name: "全部章节",
+      name: active?.rootName?.trim() || defaultDirectoryRootName("chapter"),
       type: "chapter",
       count: 0,
       children: buildChapterTree(chapters, null),
@@ -817,9 +963,15 @@ export const knowledgeService = {
   async getKnowledgeTree(scopeId: string): Promise<TreeNode> {
     await delay(300);
     const points = directoryRecords(scopeId, "knowledge") as KnowledgePoint[];
+    const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
+      (item) => item.id === scopeId,
+    );
+    const active = teacherScope
+      ? ensureDefaultDirectoryCatalog(scopeId, "knowledge")
+      : null;
     const tree: TreeNode = {
       id: "root",
-      name: "全部知识点",
+      name: active?.rootName?.trim() || defaultDirectoryRootName("knowledge"),
       type: "knowledge",
       count: 0,
       children: buildKnowledgeTree(points, null),
@@ -836,6 +988,214 @@ export const knowledgeService = {
     return directoryCatalogs()
       .filter((item) => item.teacherId === teacherId && item.type === type)
       .map(toCatalogSummary);
+  },
+
+  async getDirectoryCatalog(
+    teacherId: string,
+    catalogId: string,
+  ): Promise<DirectoryCatalog> {
+    await delay(80);
+    const catalog = directoryCatalogs().find(
+      (item) => item.id === catalogId && item.teacherId === teacherId,
+    );
+    if (!catalog) throw new Error("目录体系不存在");
+    return structuredClone(catalog);
+  },
+
+  async createDirectoryCatalog(
+    teacherId: string,
+    type: TreeNodeType,
+    name: string,
+  ): Promise<DirectoryCatalogSummary> {
+    await delay(120);
+    const normalizedName = name.trim();
+    if (!normalizedName) throw new Error("目录名称不能为空");
+    syncActiveDirectoryCatalog(teacherId, type);
+    if (
+      directoryCatalogs().some(
+        (item) =>
+          item.teacherId === teacherId &&
+          item.type === type &&
+          item.name === normalizedName,
+      )
+    ) {
+      throw new Error("已存在同名目录");
+    }
+    const now = new Date().toISOString();
+    const created: DirectoryCatalog = {
+      id: genId("dircat"),
+      schoolId: personalDirectorySchoolId(teacherId),
+      teacherId,
+      type,
+      name: normalizedName,
+      rootName: normalizedName,
+      nodes: [],
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.update("directoryCatalogs", (items: DirectoryCatalog[]) => [
+      ...(items || []).map((item) =>
+        item.teacherId === teacherId && item.type === type
+          ? { ...item, isActive: false }
+          : item,
+      ),
+      created,
+    ]);
+    materializeDirectoryNodes(teacherId, type, []);
+    return toCatalogSummary(created);
+  },
+
+  async renameDirectoryCatalog(
+    teacherId: string,
+    catalogId: string,
+    name: string,
+  ): Promise<DirectoryCatalogSummary> {
+    await delay(100);
+    const normalizedName = name.trim();
+    if (!normalizedName) throw new Error("目录名称不能为空");
+    const target = directoryCatalogs().find(
+      (item) => item.id === catalogId && item.teacherId === teacherId,
+    );
+    if (!target) throw new Error("目录体系不存在");
+    if (
+      directoryCatalogs().some(
+        (item) =>
+          item.id !== catalogId &&
+          item.teacherId === teacherId &&
+          item.type === target.type &&
+          item.name === normalizedName,
+      )
+    ) {
+      throw new Error("已存在同名目录");
+    }
+    const now = new Date().toISOString();
+    const updated: DirectoryCatalog = {
+      ...target,
+      name: normalizedName,
+      rootName: normalizedName,
+      updatedAt: now,
+    };
+    db.update("directoryCatalogs", (items: DirectoryCatalog[]) =>
+      (items || []).map((item) => (item.id === catalogId ? updated : item)),
+    );
+    return toCatalogSummary(updated);
+  },
+
+  async listDirectoryNodeAssociations(
+    teacherId: string,
+    type: TreeNodeType,
+  ): Promise<DirectoryNodeAssociation[]> {
+    await delay(80);
+    return directoryNodeAssociations()
+      .filter((item) => item.teacherId === teacherId && item.type === type)
+      .map((item) => structuredClone(item));
+  },
+
+  async createDirectoryNodeAssociation(
+    teacherId: string,
+    sourceCatalogId: string,
+    sourceNodeId: string,
+    targetCatalogId: string,
+    targetNodeId: string,
+  ): Promise<DirectoryNodeAssociation> {
+    await delay(100);
+    if (sourceCatalogId === targetCatalogId) {
+      throw new Error("只能关联不同目录体系中的节点");
+    }
+    const initialCatalogs = directoryCatalogs().filter(
+      (item) => item.teacherId === teacherId,
+    );
+    const initialSource = initialCatalogs.find((item) => item.id === sourceCatalogId);
+    const initialTarget = initialCatalogs.find((item) => item.id === targetCatalogId);
+    if (!initialSource || !initialTarget) throw new Error("目录体系不存在");
+    if (initialSource.type !== initialTarget.type) {
+      throw new Error("只能关联同类型目录节点");
+    }
+    syncActiveDirectoryCatalog(teacherId, initialSource.type);
+    const catalogs = directoryCatalogs().filter(
+      (item) => item.teacherId === teacherId,
+    );
+    const sourceCatalog = catalogs.find((item) => item.id === sourceCatalogId)!;
+    const targetCatalog = catalogs.find((item) => item.id === targetCatalogId)!;
+    if (!sourceCatalog.nodes.some((item) => item.id === sourceNodeId)) {
+      throw new Error("源目录节点不存在");
+    }
+    if (!targetCatalog.nodes.some((item) => item.id === targetNodeId)) {
+      throw new Error("目标目录节点不存在");
+    }
+    const applyAssociationToActiveCatalog = () => {
+      if (sourceCatalog.isActive && !targetCatalog.isActive) {
+        remapTeacherDirectoryReferencesMany(
+          teacherId,
+          sourceCatalog.type,
+          new Map([[targetNodeId, [sourceNodeId]]]),
+        );
+      } else if (targetCatalog.isActive && !sourceCatalog.isActive) {
+        remapTeacherDirectoryReferencesMany(
+          teacherId,
+          sourceCatalog.type,
+          new Map([[sourceNodeId, [targetNodeId]]]),
+        );
+      }
+    };
+    const existing = directoryNodeAssociations().find(
+      (item) =>
+        item.teacherId === teacherId &&
+        item.type === sourceCatalog.type &&
+        (
+          (
+            item.sourceCatalogId === sourceCatalogId &&
+            item.sourceNodeId === sourceNodeId &&
+            item.targetCatalogId === targetCatalogId &&
+            item.targetNodeId === targetNodeId
+          ) ||
+          (
+            item.sourceCatalogId === targetCatalogId &&
+            item.sourceNodeId === targetNodeId &&
+            item.targetCatalogId === sourceCatalogId &&
+            item.targetNodeId === sourceNodeId
+          )
+        ),
+    );
+    if (existing) {
+      applyAssociationToActiveCatalog();
+      return structuredClone(existing);
+    }
+    const created: DirectoryNodeAssociation = {
+      id: genId("dirassoc"),
+      teacherId,
+      type: sourceCatalog.type,
+      sourceCatalogId,
+      sourceNodeId,
+      targetCatalogId,
+      targetNodeId,
+      createdAt: new Date().toISOString(),
+    };
+    db.update(
+      "directoryNodeAssociations",
+      (items: DirectoryNodeAssociation[]) => [...(items || []), created],
+    );
+    applyAssociationToActiveCatalog();
+    return structuredClone(created);
+  },
+
+  async deleteDirectoryNodeAssociation(
+    teacherId: string,
+    associationId: string,
+  ): Promise<void> {
+    await delay(80);
+    const association = directoryNodeAssociations().find(
+      (item) => item.id === associationId,
+    );
+    if (!association || association.teacherId !== teacherId) {
+      throw new Error("目录节点关联不存在");
+    }
+    db.update(
+      "directoryNodeAssociations",
+      (items: DirectoryNodeAssociation[]) =>
+        (items || []).filter((item) => item.id !== associationId),
+    );
   },
 
   async listDirectoryDonations(
@@ -972,6 +1332,13 @@ export const knowledgeService = {
     if (current.id === target.id) return toCatalogSummary(current);
 
     const refreshedTarget = directoryCatalogs().find((item) => item.id === target.id) || target;
+    const replacements = associationReplacementsForActivation(
+      teacherId,
+      target.type,
+      current.id,
+      target.id,
+    );
+    remapTeacherDirectoryReferencesMany(teacherId, target.type, replacements);
     const now = new Date().toISOString();
     db.update("directoryCatalogs", (items: DirectoryCatalog[]) =>
       (items || []).map((item) =>
@@ -1096,6 +1463,9 @@ export const knowledgeService = {
       const target = list.find((item) => item.id === id);
       if (target?.teacherId) ensureDefaultDirectoryCatalog(target.teacherId, "chapter");
       const toDelete = collectSubtree(list, id);
+      if (target?.teacherId) {
+        removeDirectoryNodeAssociations(target.teacherId, "chapter", toDelete);
+      }
       db.update("chapters", (l) => l.filter((c) => !toDelete.has(c.id)));
       // 清理题目中的章节关联
       db.update("questions", (l) =>
@@ -1109,6 +1479,9 @@ export const knowledgeService = {
       const target = list.find((item) => item.id === id);
       if (target?.teacherId) ensureDefaultDirectoryCatalog(target.teacherId, "knowledge");
       const toDelete = collectSubtree(list, id);
+      if (target?.teacherId) {
+        removeDirectoryNodeAssociations(target.teacherId, "knowledge", toDelete);
+      }
 
       // 删除前收集所有被删除节点的名称对应的其他分身ID
       const remainingAliasMap = new Map<string, string[]>();
@@ -1164,6 +1537,9 @@ export const knowledgeService = {
   ): Promise<void> {
     await delay(200);
     if (type === "chapter") {
+      const source = (db.read("chapters") as Chapter[]).find(
+        (item) => item.id === sourceId,
+      );
       const { records, replacements } = mergeDirectoryRecords(
         db.read("chapters") as Chapter[],
         sourceId,
@@ -1171,7 +1547,13 @@ export const knowledgeService = {
       );
       db.write("chapters", records);
       updateDirectoryReferences(type, replacements);
+      if (source?.teacherId) {
+        remapDirectoryNodeAssociations(source.teacherId, type, replacements);
+      }
     } else {
+      const source = (db.read("knowledgePoints") as KnowledgePoint[]).find(
+        (item) => item.id === sourceId,
+      );
       const { records, replacements } = mergeDirectoryRecords(
         db.read("knowledgePoints") as KnowledgePoint[],
         sourceId,
@@ -1179,6 +1561,9 @@ export const knowledgeService = {
       );
       db.write("knowledgePoints", records);
       updateDirectoryReferences(type, replacements);
+      if (source?.teacherId) {
+        remapDirectoryNodeAssociations(source.teacherId, type, replacements);
+      }
     }
   },
 

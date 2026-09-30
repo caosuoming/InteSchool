@@ -1369,6 +1369,8 @@ export interface DirectoryCatalog {
   teacherId?: string;
   type: TreeNodeType;
   name: string;
+  /** 树根节点显示名；旧数据缺省时仍显示“全部章节/全部知识点”。 */
+  rootName?: string;
   nodes: DirectoryCatalogNode[];
   isActive: boolean;
   createdAt: string;
@@ -1381,10 +1383,23 @@ export interface DirectoryCatalogSummary {
   teacherId?: string;
   type: TreeNodeType;
   name: string;
+  rootName?: string;
   nodeCount: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 同一教师的两套目录中两个语义对应节点之间的无向关联。 */
+export interface DirectoryNodeAssociation {
+  id: string;
+  teacherId: string;
+  type: TreeNodeType;
+  sourceCatalogId: string;
+  sourceNodeId: string;
+  targetCatalogId: string;
+  targetNodeId: string;
+  createdAt: string;
 }
 
 /** 面向同学科用户公开的目录捐赠快照。 */

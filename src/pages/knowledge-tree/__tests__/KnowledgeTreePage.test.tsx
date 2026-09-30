@@ -13,6 +13,12 @@ vi.mock("@/services/knowledge", () => ({
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
     listDirectoryCatalogs: vi.fn(),
+    getDirectoryCatalog: vi.fn(),
+    createDirectoryCatalog: vi.fn(),
+    renameDirectoryCatalog: vi.fn(),
+    listDirectoryNodeAssociations: vi.fn(),
+    createDirectoryNodeAssociation: vi.fn(),
+    deleteDirectoryNodeAssociation: vi.fn(),
     listDirectoryDonations: vi.fn(),
     donateDirectory: vi.fn(),
     acceptDirectoryDonation: vi.fn(),
@@ -103,6 +109,43 @@ describe("KnowledgeTreePage", () => {
       updatedAt: "2026-08-21T00:00:00.000Z",
     }]);
     vi.mocked(knowledgeService.listDirectoryDonations).mockResolvedValue([]);
+    vi.mocked(knowledgeService.listDirectoryNodeAssociations).mockResolvedValue([]);
+    vi.mocked(knowledgeService.getDirectoryCatalog).mockResolvedValue({
+      id: "other-catalog",
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      type: "chapter",
+      name: "其他目录",
+      rootName: "其他目录",
+      nodes: [],
+      isActive: false,
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+    });
+    vi.mocked(knowledgeService.createDirectoryCatalog).mockImplementation(async (_teacherId, type, name) => ({
+      id: "catalog-new",
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      type,
+      name,
+      rootName: name,
+      nodeCount: 0,
+      isActive: true,
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+    }));
+    vi.mocked(knowledgeService.renameDirectoryCatalog).mockImplementation(async (_teacherId, catalogId, name) => ({
+      id: catalogId,
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      type: "chapter",
+      name,
+      rootName: name,
+      nodeCount: 2,
+      isActive: true,
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+    }));
     vi.mocked(knowledgeService.donateDirectory).mockResolvedValue({
       donation: {
         id: "donation-current",
@@ -405,6 +448,126 @@ describe("KnowledgeTreePage", () => {
         "teacher-1",
         "directory-donation-1",
         "new",
+      );
+    });
+  });
+
+  it("renames the active chapter catalog and root label", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("人教A版");
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "目录改名" }));
+
+    await waitFor(() => {
+      expect(knowledgeService.renameDirectoryCatalog).toHaveBeenCalledWith(
+        "teacher-1",
+        "current-school-1-chapter",
+        "人教A版",
+      );
+    });
+  });
+
+  it("creates another chapter catalog and activates it", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("苏教版");
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建目录" }));
+
+    await waitFor(() => {
+      expect(knowledgeService.createDirectoryCatalog).toHaveBeenCalledWith(
+        "teacher-1",
+        "chapter",
+        "苏教版",
+      );
+    });
+  });
+
+  it("associates a node with the corresponding node in another catalog", async () => {
+    vi.mocked(knowledgeService.listDirectoryCatalogs).mockResolvedValue([
+      {
+        id: "catalog-a",
+        schoolId: "school-1",
+        teacherId: "teacher-1",
+        type: "chapter",
+        name: "人教A版",
+        rootName: "人教A版",
+        nodeCount: 2,
+        isActive: true,
+        createdAt: "2026-08-21T00:00:00.000Z",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+      },
+      {
+        id: "catalog-b",
+        schoolId: "school-1",
+        teacherId: "teacher-1",
+        type: "chapter",
+        name: "苏教版",
+        rootName: "苏教版",
+        nodeCount: 1,
+        isActive: false,
+        createdAt: "2026-08-21T00:00:00.000Z",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+      },
+    ]);
+    vi.mocked(knowledgeService.getDirectoryCatalog).mockResolvedValue({
+      id: "catalog-b",
+      schoolId: "school-1",
+      teacherId: "teacher-1",
+      type: "chapter",
+      name: "苏教版",
+      rootName: "苏教版",
+      nodes: [{
+        id: "chapter-su",
+        parentId: null,
+        name: "集合",
+        order: 1,
+        level: 0,
+      }],
+      isActive: false,
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+    });
+    vi.mocked(knowledgeService.createDirectoryNodeAssociation).mockResolvedValue({
+      id: "association-1",
+      teacherId: "teacher-1",
+      type: "chapter",
+      sourceCatalogId: "catalog-a",
+      sourceNodeId: "chapter-course",
+      targetCatalogId: "catalog-b",
+      targetNodeId: "chapter-su",
+      createdAt: "2026-08-21T00:00:00.000Z",
+    });
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText("章节课"));
+    fireEvent.click(screen.getByRole("button", { name: "关联目录节点" }));
+    fireEvent.change(await screen.findByLabelText("目标节点"), {
+      target: { value: "chapter-su" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "建立关联" }));
+
+    await waitFor(() => {
+      expect(knowledgeService.createDirectoryNodeAssociation).toHaveBeenCalledWith(
+        "teacher-1",
+        "catalog-a",
+        "chapter-course",
+        "catalog-b",
+        "chapter-su",
       );
     });
   });
