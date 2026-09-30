@@ -43,8 +43,26 @@ describe("offline lesson courseware export", () => {
     expect(html).toContain('id="prev"');
     expect(html).toContain('id="next"');
     expect(html).toContain('id="toggleAnswer"');
-    expect(html).toContain('id="pen"');
+    expect(html).toContain('id="pen-red"');
+    expect(html).toContain('id="pen-blue"');
+    expect(html).toContain('id="pen-black"');
+    expect(html).toContain('id="highlighter-yellow"');
+    expect(html).toContain('id="highlighter-green"');
+    expect(html).toContain('aria-label="设置红色画笔"');
     expect(html).toContain('id="eraser"');
+    expect(html).toContain('id="undoEraser"');
+    expect(html).toContain('id="toggleBoard"');
+    expect(html).toContain('id="boardCanvas"');
+    expect(html).toContain('id="addBoardArea"');
+    expect(html).toContain('id="boardFullscreen"');
+    expect(html).toContain('id="boardScreenshot"');
+    expect(html).toContain('id="colorSettingsToggle"');
+    expect(html).toContain('id="pageColor"');
+    expect(html).toContain('id="textColor"');
+    expect(html).toContain('id="boardColor"');
+    expect(html).toContain('id="fontSize"');
+    expect(html).toContain('id="shrinkSelectedText"');
+    expect(html).toContain('id="growSelectedText"');
     expect(html).toContain("一次函数");
 
     const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
