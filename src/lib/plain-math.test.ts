@@ -44,4 +44,36 @@ describe("normalizePlainMathText", () => {
     expect(normalizePlainMathText("A∩B⊆C")).toBe("$A\\cap B\\subseteq C$");
   });
 
+  it("keeps multiple-choice labels outside formulas in set-builder questions", () => {
+    const normalized = normalizePlainMathText(
+      "2.设集合A={x|1≤x≤3},B={x|2<x<4},则A∪B=( ) A. {x|2<x≤3} B. {x|2≤x≤3} C. {x|1≤x<4} D. {x|1<x<4}",
+    );
+
+    expect(normalized).toContain("A. ${x|2<x\\le 3}$");
+    expect(normalized).toContain("B. ${x|2\\le x\\le 3}$");
+    expect(normalized).toContain("C. ${x|1\\le x<4}$");
+    expect(normalized).toContain("D. {x|1<x<4}");
+  });
+
+  it("does not let mixed less-than and greater-than choices corrupt later labels", () => {
+    const normalized = normalizePlainMathText(
+      "4.已知集合A={x|1<x<2026},B={x|x≤a}.若A⊆B,则实数a的取值范围为( ) A. {a|a≥2026} B. {a|a>2026} C. {a|a≥1} D. {a|a>1}",
+    );
+
+    expect(normalized).toContain("A. ${a|a\\ge 2026}$");
+    expect(normalized).toContain("B. {a|a>2026}");
+    expect(normalized).toContain("C. ${a|a\\ge 1}$");
+    expect(normalized).toContain("D. {a|a>1}");
+  });
+
+  it("keeps bare multiple-choice labels outside normalized comparison formulas", () => {
+    const normalized = normalizePlainMathText(
+      "A {x|x≤1} B {x|x≥2} C {x|x<3} D {x|x>4}",
+    );
+
+    expect(normalized).toBe(
+      "A ${x|x\\le 1}$ B ${x|x\\ge 2}$ C {x|x<3} D {x|x>4}",
+    );
+  });
+
 });

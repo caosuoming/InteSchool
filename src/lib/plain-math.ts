@@ -1,8 +1,11 @@
-const PROTECTED_CONTENT_PATTERN =
-  /(\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\n])+\$|!\[[^\]]*\]\([^)]+\)|<[^>]*>)/g;
+const RICH_TEXT_TAG_SOURCE = String.raw`<\/?(?:a|abbr|address|article|aside|b|blockquote|br|caption|code|col|colgroup|dd|del|details|div|dl|dt|em|figcaption|figure|footer|h[1-6]|header|hr|i|img|ins|kbd|li|main|mark|math|menu|nav|ol|p|pre|q|rp|rt|ruby|s|samp|section|small|span|strong|sub|summary|sup|table|tbody|td|tfoot|th|thead|time|tr|u|ul|var|semantics|annotation|mrow|mi|mo|mn|ms|mtext|mspace|msup|msub|msubsup|mfrac|msqrt|mroot|mover|munder|munderover|mtable|mtr|mtd|menclose|mpadded|mphantom)\b[^>]*>`;
+const PROTECTED_CONTENT_PATTERN = new RegExp(
+  `(\\$\\$[\\s\\S]*?\\$\\$|\\$(?:\\\\.|[^$\\n])+\\$|!\\[[^\\]]*\\]\\([^)]+\\)|${RICH_TEXT_TAG_SOURCE}|(?:^|[\\s\\u3000])(?:[（(][A-Ha-h][）)]|[A-Ha-h](?:[.．、:：)）]|(?=[ \\t\\u3000])))[ \\t\\u3000]*)`,
+  "gim",
+);
 
 const PLAIN_MATH_CHUNK_PATTERN =
-  /[A-Za-z0-9\u0370-\u03ffℓ₀-₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾()[\]{}+\-−－*/×÷·⋅=＝<>≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌∪∩∅:：,.， \t]+/g;
+  /[A-Za-z0-9\u0370-\u03ffℓ₀-₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾()[\]{}+\-−－*/×÷·⋅=＝<>≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌∪∩∅|:：,.， \t]+/g;
 
 const SUBSCRIPT_CHARACTERS: Record<string, string> = {
   "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
