@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseDocumentBlocks, type DocumentParseConfig } from "./document-block-parser";
+import { normalizePlainMathText } from "./plain-math";
 
 const config: DocumentParseConfig = {
   headingKeywords: ["一", "二", "三", "四"],
@@ -160,6 +161,25 @@ describe("document block parser", () => {
       content: "3. 请选择正确结论",
       options: ["甲", "乙", "丙", "丁"],
       answer: "B",
+    });
+  });
+
+  it("keeps four set-builder choices after comparison normalization", () => {
+    const normalized = normalizePlainMathText(
+      "4.已知集合A={x|1<x<2026},B={x|x≤a}.若A⊆B,则实数a的取值范围为( ) A. {a|a≥2026} B. {a|a>2026} C. {a|a≥1} D. {a|a>1}",
+    );
+    const blocks = parseDocumentBlocks(normalized, config);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      questionType: "single",
+      options: [
+        "${a|a\\ge 2026}$",
+        "{a|a>2026}",
+        "${a|a\\ge 1}$",
+        "{a|a>1}",
+      ],
     });
   });
 

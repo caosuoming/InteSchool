@@ -58,6 +58,18 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves comparison choices without treating angle brackets as HTML", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>4.已知集合A={x|1&lt;x&lt;2026},B={x|x≤a}.若A⊆B,则实数a的取值范围为( ) A. {a|a≥2026} B. {a|a&gt;2026} C. {a|a≥1} D. {a|a&gt;1}</w:t></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "4.已知集合$A={x|1<x<2026},B={x|x\\le a}$.若$A\\subseteq B$,则实数a的取值范围为( ) A. ${a|a\\ge 2026}$ B. {a|a>2026} C. ${a|a\\ge 1}$ D. {a|a>1}",
+    );
+  });
+
 
   it("preserves vector-angle formulas with CJK angle delimiters", async () => {
     const data = await makeDocx(`
