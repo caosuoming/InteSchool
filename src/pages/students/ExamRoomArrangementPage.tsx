@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
   LayoutGrid,
@@ -696,6 +698,7 @@ function ExamGroupCapacityFloatingPanel({
   groups: ExamGroupSummary[];
 }) {
   const [position, setPosition] = useState({ x: 16, y: 96 });
+  const [collapsed, setCollapsed] = useState(false);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -743,30 +746,51 @@ function ExamGroupCapacityFloatingPanel({
       >
         <div>
           <div className="text-sm font-medium text-ink-900">考试组合人数与位置</div>
-          <div className="text-[11px] text-ink-400">拖动此处可移动；位置数随考场设置实时更新</div>
+          <div className="text-[11px] text-ink-400">拖动此处可移动；座位数随考场设置实时更新</div>
         </div>
-        <Move className="h-4 w-4 shrink-0 text-ink-400" />
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            aria-label={collapsed ? "展开考试组合人数与位置" : "折叠考试组合人数与位置"}
+            aria-expanded={!collapsed}
+            aria-controls="exam-group-capacity-panel-content"
+            className="rounded-md p-1 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </button>
+          <Move className="h-4 w-4 text-ink-400" />
+        </div>
       </div>
-      <div className="max-h-[min(55vh,420px)] space-y-2 overflow-y-auto p-3">
-        {groups.map((group) => {
-          const positions = groupRoomCapacityTotal(draft, group);
-          const shortage = Math.max(0, group.studentCount - positions);
-          return (
-            <div key={group.key} className="rounded-lg border border-ink-100 bg-ink-50/70 px-2.5 py-2">
-              <div className="truncate text-xs font-medium text-ink-800" title={group.subjectLabel.split(" / ").join("、")}>
-                {group.subjectLabel.split(" / ").join("、")} · 实际 {group.studentCount} 人
+      {!collapsed && (
+        <div id="exam-group-capacity-panel-content" className="max-h-[min(55vh,420px)] space-y-2 overflow-y-auto p-3">
+          {groups.map((group) => {
+            const positions = groupRoomCapacityTotal(draft, group);
+            const delta = positions - group.studentCount;
+            return (
+              <div key={group.key} className="rounded-lg border border-ink-100 bg-ink-50/70 px-2.5 py-2">
+                <div className="truncate text-xs font-medium text-ink-800" title={group.subjectLabel.split(" / ").join("、")}>
+                  {group.subjectLabel.split(" / ").join("、")}
+                </div>
+                <div className="mt-1 text-xs text-ink-500">
+                  本组合需要 {group.studentCount} 个座位，当前已安排 {positions} 个座位
+                </div>
+                <div
+                  className={cn("mt-1 text-[11px]", delta < 0 ? "text-red-600" : "text-ink-500")}
+                  aria-live="polite"
+                >
+                  {delta < 0
+                    ? `当前还缺 ${Math.abs(delta)} 个位置`
+                    : delta > 0
+                      ? `当前多 ${delta} 个位置`
+                      : "当前位置数刚好"}
+                </div>
               </div>
-              <div className="mt-1 flex items-center justify-between gap-2 text-xs text-ink-500">
-                <span>当前位置</span>
-                <span>位置 {positions} 个</span>
-              </div>
-              {shortage > 0 && (
-                <div className="mt-1 text-[11px] text-red-600">还缺 {shortage} 个位置</div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </aside>
   );
 }
@@ -881,6 +905,8 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const classPrintRef = useRef<HTMLDivElement>(null);
   const deskPrintRef = useRef<HTMLDivElement>(null);
   const deskMeasureRef = useRef<HTMLDivElement>(null);
+  const examGroupRoomSectionRef = useRef<HTMLDivElement>(null);
+  const [examGroupRoomSectionVisible, setExamGroupRoomSectionVisible] = useState(false);
   const [deskRowMeasurement, setDeskRowMeasurement] = useState<{ signature: string; heights: number[] } | null>(null);
 
   const selectedArrangement = arrangements.find((item) => item.id === selectedArrangementId) || null;
@@ -968,6 +994,28 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     }
     return [...sessions.entries()].map(([key, groups]) => ({ key, groups }));
   }, [examGroups]);
+
+  useEffect(() => {
+    const section = examGroupRoomSectionRef.current;
+    if (!section || view !== "settings" || examGroups.length === 0) {
+      setExamGroupRoomSectionVisible(false);
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      setExamGroupRoomSectionVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setExamGroupRoomSectionVisible(Boolean(entry?.isIntersecting));
+    }, {
+      rootMargin: "-72px 0px -15% 0px",
+      threshold: 0,
+    });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [examGroups.length, view]);
+
   const totalRoomCapacity = useMemo(() => draft ? roomCapacityTotal(draft.rooms) : 0, [draft]);
   const activeFixedRoomClassId = context?.classes.some((classItem) => classItem.id === fixedRoomClassId)
     ? fixedRoomClassId
@@ -1860,10 +1908,12 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     )}
                   </div>
                 </div>
-                <div className="mt-4 border-t border-ink-100 pt-4">
+                <div ref={examGroupRoomSectionRef} className="mt-4 border-t border-ink-100 pt-4">
                   <div className="text-sm font-medium text-ink-800">考试组合使用考场</div>
                   <div className="mt-1 text-xs text-ink-500">共享同一科目或约定同时考试的组合会自动共用实体考场容量；超过容量时自动拆成“混1、混2”等逻辑考场，无需手动设置共用考场。</div>
-                  {examGroups.length > 0 && <ExamGroupCapacityFloatingPanel draft={draft} groups={examGroups} />}
+                  {examGroupRoomSectionVisible && examGroups.length > 0 && (
+                    <ExamGroupCapacityFloatingPanel draft={draft} groups={examGroups} />
+                  )}
                   <div className="mt-3 space-y-3">
                     {examSessions.map((session, sessionIndex) => {
                       const sessionTitle = session.key === "combined"
