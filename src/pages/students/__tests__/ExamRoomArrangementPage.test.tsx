@@ -295,10 +295,58 @@ describe("ExamRoomArrangementPage", () => {
     expect(within(session).queryByRole("button", { name: /拆分 1考场/ })).not.toBeInTheDocument();
 
     const summary = screen.getByRole("dialog", { name: "考试组合人数与位置" });
-    expect(within(summary).getAllByText(/实际 1 人/)).toHaveLength(2);
-    expect(within(summary).getAllByText("位置 1 个")).toHaveLength(2);
+    expect(within(summary).getByText("语文、数学、英语、物理")).toBeInTheDocument();
+    expect(within(summary).getByText("语文、数学、英语、历史")).toBeInTheDocument();
+    expect(within(summary).getAllByText("本组合需要 1 个座位，当前已安排 1 个座位")).toHaveLength(2);
+    expect(within(summary).getAllByText("当前位置数刚好")).toHaveLength(2);
+
+    const user = userEvent.setup();
+    await user.click(within(summary).getByRole("button", { name: "折叠考试组合人数与位置" }));
+    expect(within(summary).queryByText("本组合需要 1 个座位，当前已安排 1 个座位")).not.toBeInTheDocument();
+    await user.click(within(summary).getByRole("button", { name: "展开考试组合人数与位置" }));
+    expect(within(summary).getAllByText("本组合需要 1 个座位，当前已安排 1 个座位")).toHaveLength(2);
     expect(screen.getByText(/无需手动设置共用考场/)).toBeInTheDocument();
 
+  });
+
+  it("only shows the group capacity summary while the room-assignment section is in view", async () => {
+    let callback: IntersectionObserverCallback | null = null;
+    let observed: Element | null = null;
+
+    class MockIntersectionObserver {
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+      constructor(observerCallback: IntersectionObserverCallback) {
+        callback = observerCallback;
+      }
+      observe(target: Element) { observed = target; }
+      unobserve() {}
+      disconnect() {}
+      takeRecords(): IntersectionObserverEntry[] { return []; }
+    }
+
+    vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+    try {
+      renderPage();
+      await screen.findByText("考试组合使用考场");
+      expect(screen.queryByRole("dialog", { name: "考试组合人数与位置" })).not.toBeInTheDocument();
+      expect(observed).not.toBeNull();
+
+      callback?.([
+        { isIntersecting: true, target: observed } as IntersectionObserverEntry,
+      ], {} as IntersectionObserver);
+      expect(await screen.findByRole("dialog", { name: "考试组合人数与位置" })).toBeInTheDocument();
+
+      callback?.([
+        { isIntersecting: false, target: observed } as IntersectionObserverEntry,
+      ], {} as IntersectionObserver);
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "考试组合人数与位置" })).not.toBeInTheDocument();
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("allows an individual student to be marked absent", async () => {
@@ -421,7 +469,7 @@ describe("ExamRoomArrangementPage", () => {
       await user.click(screen.getByRole("button", { name: `${subject}单独排` }));
     }
 
-    expect(screen.getByText("化学、生物")).toBeInTheDocument();
+    expect(screen.getAllByText("化学、生物").length).toBeGreaterThan(0);
     expect(screen.getByText(/合并场次 · 1 人/)).toBeInTheDocument();
   });
 
