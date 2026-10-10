@@ -1636,6 +1636,8 @@ export interface ExamPaper {
     choiceLayout: "inline" | "concentrated";
     widePaperColumns?: 2 | 3;
     answerBoxStyle?: "solid" | "dashed";
+    answerBoxHeights?: Record<string, number>;
+    essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   createdAt: string;
   updatedAt: string;
@@ -2237,6 +2239,8 @@ export interface Lecture {
     choiceLayout: "inline" | "concentrated";
     widePaperColumns?: 2 | 3;
     answerBoxStyle?: "solid" | "dashed";
+    answerBoxHeights?: Record<string, number>;
+    essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   /** 排版设置 */
   layoutSettings?: {

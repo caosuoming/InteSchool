@@ -30,6 +30,8 @@ import {
   type AnswerSheetWideColumns,
 } from "@/lib/answer-sheet";
 import { decorateFillBlankAnswerAreas } from "@/lib/fill-blank";
+import type { AnswerSheetImageLayout } from "@/lib/answer-sheet";
+import { EssayImages } from "./EssayImages";
 
 const PAGE_PADDING_MM = 8;
 const MM_TO_CSS_PX = 96 / 25.4;
@@ -71,6 +73,16 @@ const typeLabels: Record<string, string> = {
 };
 
 const preferredTypeOrder = ["single", "multiple", "judge", "short", "conceptFill", "essay", "comprehensive"];
+const chineseNumerals = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
+function chineseSectionNumber(number: number): string {
+  if (number < 10) return chineseNumerals[number];
+  if (number < 100) {
+    const tens = Math.floor(number / 10);
+    return `${tens === 1 ? "" : chineseNumerals[tens]}十${number % 10 ? chineseNumerals[number % 10] : ""}`;
+  }
+  return String(number);
+}
 
 interface NumberedQuestion {
   question: AnswerSheetQuestion;
@@ -81,6 +93,22 @@ interface QuestionGroup {
   type: string;
   label: string;
   items: NumberedQuestion[];
+}
+
+function groupScoreLabel(group: QuestionGroup): string {
+  const scores = group.items.map(({ question }) => question.score);
+  if (scores.every((score) => typeof score === "number" && Number.isFinite(score))) {
+    if (scores.every((score) => score === scores[0])) {
+      return `${scores.length}题，每题${scores[0]}分`;
+    }
+    return scores.map((score, index) => `第${group.items[index].number}题${score}分`).join("，");
+  }
+  const knownScores = group.items
+    .filter(({ question }) => typeof question.score === "number" && Number.isFinite(question.score))
+    .map(({ question, number }) => `第${number}题${question.score}分`);
+  return knownScores.length
+    ? `${group.items.length}题，${knownScores.join("，")}`
+    : `${group.items.length}题`;
 }
 
 interface QuestionGroupDraft {
@@ -232,6 +260,8 @@ function AnswerBox({
   boxStyle,
   compact = false,
   editable,
+  height,
+  onHeightChange,
   children,
 }: {
   number: number;
@@ -239,16 +269,23 @@ function AnswerBox({
   boxStyle: AnswerSheetBoxStyle;
   compact?: boolean;
   editable: boolean;
+  height?: number;
+  onHeightChange?: (height: number) => void;
   children?: ReactNode;
 }) {
   return (
     <div
-      className={`answer-sheet-answer-box relative box-border max-w-full border border-ink-800 p-2 ${boxStyle === "dashed" ? "border-dashed" : "border-solid"}`}
+      className={`answer-sheet-answer-box relative box-border w-full border border-ink-800 p-2 ${boxStyle === "dashed" ? "border-dashed" : "border-solid"}`}
       style={{
-        width: "100%",
+        height: height ? `${height}px` : undefined,
         minHeight: compact ? "13mm" : "30mm",
-        resize: editable ? "both" : "none",
+        resize: editable ? "vertical" : "none",
         overflow: "hidden",
+      }}
+      onPointerUp={(event) => {
+        if (!editable || !onHeightChange || event.target !== event.currentTarget) return;
+        const nextHeight = Math.round(event.currentTarget.getBoundingClientRect().height);
+        if (nextHeight > 0 && nextHeight !== height) onHeightChange(nextHeight);
       }}
       data-testid="answer-box"
       data-answer-box-style={boxStyle}
@@ -419,10 +456,18 @@ function AnswerField({
   hideNumber = false,
   boxStyle,
   editable,
+  height,
+  onHeightChange,
+  imageLayouts,
+  onImageLayoutChange,
 }: NumberedQuestion & {
   hideNumber?: boolean;
   boxStyle: AnswerSheetBoxStyle;
   editable: boolean;
+  height?: number;
+  onHeightChange?: (height: number) => void;
+  imageLayouts?: AnswerSheetImageLayout[];
+  onImageLayoutChange: (index: number, layout: AnswerSheetImageLayout) => void;
 }) {
   if (isChoiceQuestion(question)) {
     return <ChoiceAnswer number={number} optionCount={question.options?.length || 4} />;
@@ -438,11 +483,17 @@ function AnswerField({
       boxStyle={boxStyle}
       compact={isFillQuestion(question)}
       editable={editable}
+      height={height}
+      onHeightChange={onHeightChange}
     >
       {essayContent?.images && (
-        <DraggableQuestionContent className="min-w-0" editable={editable}>
-          {essayContent.images}
-        </DraggableQuestionContent>
+        <EssayImages
+          markup={essayContent.images}
+          number={number}
+          editable={editable}
+          layouts={imageLayouts}
+          onLayoutChange={onImageLayoutChange}
+        />
       )}
     </AnswerBox>
   );
@@ -453,7 +504,18 @@ function QuestionWithAnswer({
   number,
   boxStyle,
   editable,
-}: NumberedQuestion & { boxStyle: AnswerSheetBoxStyle; editable: boolean }) {
+  height,
+  onHeightChange,
+  imageLayouts,
+  onImageLayoutChange,
+}: NumberedQuestion & {
+  boxStyle: AnswerSheetBoxStyle;
+  editable: boolean;
+  height?: number;
+  onHeightChange?: (height: number) => void;
+  imageLayouts?: AnswerSheetImageLayout[];
+  onImageLayoutChange: (index: number, layout: AnswerSheetImageLayout) => void;
+}) {
   const essayContent = question.type === "essay"
     ? splitEssayStemContent(question.stem)
     : null;
@@ -477,18 +539,24 @@ function QuestionWithAnswer({
           <JudgeAnswer number={number} hideNumber={Boolean(displayStem)} />
         </div>
       ) : (
-        <div className={displayStem ? "pl-7" : undefined}>
+        <div className={displayStem && question.type !== "essay" ? "pl-7" : undefined}>
           <AnswerBox
             number={number}
             hideNumber={Boolean(displayStem)}
             boxStyle={boxStyle}
             compact={isFillQuestion(question)}
             editable={editable}
+            height={height}
+            onHeightChange={onHeightChange}
           >
             {essayContent?.images && (
-              <DraggableQuestionContent className="min-w-0" editable={editable}>
-                {essayContent.images}
-              </DraggableQuestionContent>
+              <EssayImages
+                markup={essayContent.images}
+                number={number}
+                editable={editable}
+                layouts={imageLayouts}
+                onLayoutChange={onImageLayoutChange}
+              />
             )}
           </AnswerBox>
         </div>
@@ -569,6 +637,31 @@ export function AnswerSheetComposer({
   const updateSettings = (patch: Partial<AnswerSheetSettings>) => {
     setSettings((current) => {
       const next = { ...current, ...patch };
+      onSettingsChange?.(next);
+      return next;
+    });
+  };
+
+  const updateAnswerBoxHeight = (questionId: string, height: number) => {
+    setSettings((current) => {
+      if (current.answerBoxHeights?.[questionId] === height) return current;
+      const next = {
+        ...current,
+        answerBoxHeights: { ...current.answerBoxHeights, [questionId]: height },
+      };
+      onSettingsChange?.(next);
+      return next;
+    });
+  };
+
+  const updateEssayImageLayout = (questionId: string, index: number, layout: AnswerSheetImageLayout) => {
+    setSettings((current) => {
+      const positions = [...(current.essayImageLayouts?.[questionId] || [])];
+      positions[index] = layout;
+      const next = {
+        ...current,
+        essayImageLayouts: { ...current.essayImageLayouts, [questionId]: positions },
+      };
       onSettingsChange?.(next);
       return next;
     });
@@ -764,6 +857,10 @@ export function AnswerSheetComposer({
           {...item}
           boxStyle={settings.answerBoxStyle}
           editable={!isPreview}
+          height={settings.answerBoxHeights?.[question.id]}
+          onHeightChange={(height) => updateAnswerBoxHeight(question.id, height)}
+          imageLayouts={settings.essayImageLayouts?.[question.id]}
+          onImageLayoutChange={(index, layout) => updateEssayImageLayout(question.id, index, layout)}
         />
       );
     }
@@ -787,6 +884,10 @@ export function AnswerSheetComposer({
         {...item}
         boxStyle={settings.answerBoxStyle}
         editable={!isPreview}
+        height={settings.answerBoxHeights?.[question.id]}
+        onHeightChange={(height) => updateAnswerBoxHeight(question.id, height)}
+        imageLayouts={settings.essayImageLayouts?.[question.id]}
+        onImageLayoutChange={(index, layout) => updateEssayImageLayout(question.id, index, layout)}
       />
     );
   };
@@ -827,6 +928,8 @@ export function AnswerSheetComposer({
             boxStyle={settings.answerBoxStyle}
             compact
             editable={!isPreview}
+            height={settings.answerBoxHeights?.[flowItem.item.question.id]}
+            onHeightChange={(height) => updateAnswerBoxHeight(flowItem.item!.question.id, height)}
           />
         </div>
       );
@@ -835,7 +938,7 @@ export function AnswerSheetComposer({
     if (flowItem.kind === "group-heading" && flowItem.group && flowItem.groupIndex !== undefined) {
       return (
         <div className="pt-1 pb-1 text-sm font-semibold">
-          {flowItem.groupIndex + 1}、{flowItem.group.label}（{flowItem.group.items.length}题）
+          {chineseSectionNumber(flowItem.groupIndex + 1)}、{flowItem.group.label}（{groupScoreLabel(flowItem.group)}）
         </div>
       );
     }
@@ -843,7 +946,7 @@ export function AnswerSheetComposer({
     if (flowItem.kind === "question" && flowItem.item) {
       return (
         <div
-          className={`border-x border-ink-800 px-3 py-2 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          className={`border-x border-ink-800 ${flowItem.item.question.type === "essay" ? "px-[1mm]" : "px-3"} py-2 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
           data-answer-sheet-question
         >
           {renderGroupItem(flowItem.item)}
