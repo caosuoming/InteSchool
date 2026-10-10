@@ -13,6 +13,7 @@ export interface AnswerSheetSettings {
   studentNumberDigits: number;
   choiceLayout: AnswerSheetChoiceLayout;
   widePaperColumns: AnswerSheetWideColumns;
+  a4Columns: 1 | 2;
   answerBoxStyle: AnswerSheetBoxStyle;
 }
 
@@ -34,6 +35,7 @@ export const DEFAULT_ANSWER_SHEET_SETTINGS: AnswerSheetSettings = {
   studentNumberDigits: DEFAULT_STUDENT_NUMBER_DIGITS,
   choiceLayout: "inline",
   widePaperColumns: 2,
+  a4Columns: 1,
   answerBoxStyle: "solid",
 };
 

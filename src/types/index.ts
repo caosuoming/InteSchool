@@ -1635,6 +1635,7 @@ export interface ExamPaper {
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
     widePaperColumns?: 2 | 3;
+    a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
   };
   createdAt: string;
@@ -2236,6 +2237,7 @@ export interface Lecture {
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
     widePaperColumns?: 2 | 3;
+    a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
   };
   /** 排版设置 */
