@@ -7,6 +7,12 @@ export type AnswerSheetChoiceLayout = "inline" | "concentrated";
 export type AnswerSheetWideColumns = 2 | 3;
 export type AnswerSheetBoxStyle = "solid" | "dashed";
 
+export interface AnswerSheetImageLayout {
+  x: number;
+  y: number;
+  width: number;
+}
+
 export interface AnswerSheetSettings {
   paperSize: AnswerSheetPaperSize;
   mode: AnswerSheetMode;
@@ -14,6 +20,8 @@ export interface AnswerSheetSettings {
   choiceLayout: AnswerSheetChoiceLayout;
   widePaperColumns: AnswerSheetWideColumns;
   answerBoxStyle: AnswerSheetBoxStyle;
+  answerBoxHeights?: Record<string, number>;
+  essayImageLayouts?: Record<string, AnswerSheetImageLayout[]>;
 }
 
 export interface AnswerSheetQuestion {

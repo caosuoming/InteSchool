@@ -167,8 +167,9 @@ describe("AnswerSheetComposer", () => {
     expect(stem.querySelector("img")).toBeNull();
     expect(stem.querySelectorAll("p")).toHaveLength(1);
     expect(movedImage).not.toBeNull();
-    expect(movedImage).toHaveClass("answer-sheet-floating-image");
-    expect(movedImage).toHaveAttribute("draggable", "true");
+    expect(movedImage?.closest(".answer-sheet-essay-image")).toBeInTheDocument();
+    expect(movedImage).toHaveAttribute("draggable", "false");
+    expect(screen.getByRole("button", { name: "调整第1题第1张图片大小" })).toBeInTheDocument();
   });
 
   it("renders one resizable answer box with a score cell and lets the teacher choose dashed borders", () => {
@@ -176,11 +177,77 @@ describe("AnswerSheetComposer", () => {
 
     const initialBoxes = screen.getAllByTestId("answer-box");
     expect(initialBoxes.length).toBeGreaterThan(0);
-    expect(initialBoxes[0].style.resize).toBe("both");
+    expect(initialBoxes[0].style.resize).toBe("vertical");
     expect(screen.getByLabelText("第3题评分框")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("答题框边线"), { target: { value: "dashed" } });
     expect(screen.getAllByTestId("answer-box")[0]).toHaveAttribute("data-answer-box-style", "dashed");
+  });
+
+  it("uses Chinese section numbers and summarizes equal or differing question scores", () => {
+    renderComposer({
+      questions: [
+        { id: "q1", type: "single", stem: "选择一", score: 4 },
+        { id: "q2", type: "single", stem: "选择二", score: 4 },
+        { id: "q3", type: "essay", stem: "解答一", score: 8 },
+        { id: "q4", type: "essay", stem: "解答二", score: 12 },
+      ],
+    });
+
+    expect(screen.getByText("一、单选题（2题，每题4分）")).toBeInTheDocument();
+    expect(screen.getByText("二、解答题（第3题8分，第4题12分）")).toBeInTheDocument();
+  });
+
+  it("keeps essay answer boxes wide and saves image positions and sizes for preview", () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      questions: [{
+        id: "essay-1",
+        type: "essay",
+        stem: '<p>证明。</p><img src="/figure.png" alt="图">',
+        score: 10,
+      }],
+      initialSettings: { mode: "with-questions" },
+      onSettingsChange,
+    });
+
+    const answerBox = screen.getByTestId("answer-box");
+    expect(answerBox.style.resize).toBe("vertical");
+    expect(answerBox.parentElement).not.toHaveClass("pl-7");
+    expect(answerBox.closest('[data-answer-sheet-flow-item="question"]')?.firstElementChild).toHaveClass("px-[1mm]");
+
+    Object.defineProperties(answerBox, {
+      clientWidth: { configurable: true, value: 480 },
+      clientHeight: { configurable: true, value: 350 },
+    });
+    const image = screen.getByTestId("essay-image");
+    Object.defineProperty(image, "offsetHeight", { configurable: true, value: 90 });
+
+    fireEvent.pointerDown(image, { button: 0, pointerId: 1, clientX: 15, clientY: 15 });
+    fireEvent.pointerMove(image, { pointerId: 1, clientX: 45, clientY: 55 });
+    fireEvent.pointerUp(image, { pointerId: 1 });
+    expect(image).toHaveStyle({ left: "38px", top: "50px" });
+
+    const handle = screen.getByRole("button", { name: "调整第1题第1张图片大小" });
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 2, clientX: 40, clientY: 40 });
+    fireEvent.pointerMove(image, { pointerId: 2, clientX: 100, clientY: 40 });
+    fireEvent.pointerUp(image, { pointerId: 2 });
+    expect(image).toHaveStyle({ width: "180px" });
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({
+      essayImageLayouts: { "essay-1": [{ x: 38, y: 50, width: 180 }] },
+    }));
+
+    vi.spyOn(answerBox, "getBoundingClientRect").mockReturnValue({ height: 240 } as DOMRect);
+    fireEvent.pointerUp(answerBox, { pointerId: 3 });
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({
+      answerBoxHeights: { "essay-1": 240 },
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByTestId("essay-image")).toHaveStyle({ left: "38px", top: "50px", width: "180px" });
+    expect(screen.getByTestId("answer-box")).toHaveStyle({ height: "240px", resize: "none" });
+    expect(screen.queryByRole("button", { name: "调整第1题第1张图片大小" })).not.toBeInTheDocument();
   });
 
   it("loads saved settings and reports subsequent changes", () => {
