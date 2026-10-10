@@ -32,31 +32,28 @@ import {
 import { decorateFillBlankAnswerAreas } from "@/lib/fill-blank";
 
 const PAGE_PADDING_MM = 8;
+const COLUMN_GAP_MM = 6;
 const MM_TO_CSS_PX = 96 / 25.4;
 
 const paperSizeConfig: Record<AnswerSheetPaperSize, {
   physicalWidthMm: number;
   heightMm: number;
   className: string;
-  supportsMultipleColumns: boolean;
 }> = {
   A4: {
     physicalWidthMm: 210,
     heightMm: 297,
     className: "answer-sheet-paper-a4",
-    supportsMultipleColumns: false,
   },
   A3: {
     physicalWidthMm: 420,
     heightMm: 297,
     className: "answer-sheet-paper-a3",
-    supportsMultipleColumns: true,
   },
   "8K": {
     physicalWidthMm: 370,
     heightMm: 260,
     className: "answer-sheet-paper-8k",
-    supportsMultipleColumns: true,
   },
 };
 
@@ -92,7 +89,6 @@ interface QuestionGroupDraft {
 interface FlowItem {
   key: string;
   kind:
-    | "header"
     | "zone-heading"
     | "zone-choice"
     | "zone-fill"
@@ -519,6 +515,7 @@ function buildInitialSettings(initialSettings?: Partial<AnswerSheetSettings>): A
       initialSettings?.studentNumberDigits ?? DEFAULT_ANSWER_SHEET_SETTINGS.studentNumberDigits,
     ),
     widePaperColumns: initialSettings?.widePaperColumns === 3 ? 3 : 2,
+    a4Columns: initialSettings?.a4Columns === 2 ? 2 : 1,
     answerBoxStyle: initialSettings?.answerBoxStyle === "dashed" ? "dashed" : "solid",
   };
 }
@@ -544,6 +541,7 @@ export function AnswerSheetComposer({
   const [viewMode, setViewMode] = useState<"edit" | "preview">(initialViewMode);
   const [pageStarts, setPageStarts] = useState<number[]>([0]);
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
+  const headerRef = useRef<HTMLElement>(null);
 
   const groups = useMemo(() => groupQuestions(questions), [questions]);
   const numberedQuestions = useMemo(() => groups.flatMap((group) => group.items), [groups]);
@@ -561,8 +559,8 @@ export function AnswerSheetComposer({
   );
 
   const paperSize = paperSizeConfig[settings.paperSize];
-  const paperColumns = paperSize.supportsMultipleColumns ? settings.widePaperColumns : 1;
-  const logicalPageWidthMm = paperSize.physicalWidthMm / paperColumns;
+  const paperColumns = settings.paperSize === "A4" ? settings.a4Columns : settings.widePaperColumns;
+  const columnWidthMm = (paperSize.physicalWidthMm - PAGE_PADDING_MM * 2 - COLUMN_GAP_MM * (paperColumns - 1)) / paperColumns;
   const pageContentHeightPx = (paperSize.heightMm - PAGE_PADDING_MM * 2) * MM_TO_CSS_PX;
   const isPreview = viewMode === "preview";
 
@@ -575,7 +573,7 @@ export function AnswerSheetComposer({
   };
 
   const flowItems = useMemo<FlowItem[]>(() => {
-    const items: FlowItem[] = [{ key: "header", kind: "header" }];
+    const items: FlowItem[] = [];
 
     if (settings.mode === "with-questions" && settings.choiceLayout === "concentrated") {
       if (choiceItems.length > 0) {
@@ -650,6 +648,8 @@ export function AnswerSheetComposer({
 
     const nextStarts = [0];
     let usedHeight = 0;
+    let columnIndex = 0;
+    const firstSheetHeight = pageContentHeightPx - (headerRef.current?.getBoundingClientRect().height || 0);
 
     for (let index = 0; index < flowItems.length; index += 1) {
       const height = heights[index] || 0;
@@ -660,25 +660,28 @@ export function AnswerSheetComposer({
         : 0;
       const requiredHeight = height + nextHeight;
 
-      if (usedHeight > 0 && usedHeight + requiredHeight > pageContentHeightPx) {
+      const availableHeight = columnIndex < paperColumns ? firstSheetHeight : pageContentHeightPx;
+      if (usedHeight > 0 && usedHeight + requiredHeight > availableHeight) {
         nextStarts.push(index);
         usedHeight = 0;
+        columnIndex += 1;
       }
 
       usedHeight += height;
     }
 
     setPageStarts((current) => sameNumberArray(current, nextStarts) ? current : nextStarts);
-  }, [flowItems, pageContentHeightPx]);
+  }, [flowItems, pageContentHeightPx, paperColumns]);
 
   useLayoutEffect(() => {
     recalculatePagination();
-  }, [logicalPageWidthMm, pageStarts, recalculatePagination, settings.answerBoxStyle, viewMode]);
+  }, [columnWidthMm, pageStarts, recalculatePagination, settings.answerBoxStyle, viewMode]);
 
   useEffect(() => {
     if (typeof ResizeObserver === "undefined") return undefined;
     const observer = new ResizeObserver(() => recalculatePagination());
     flowItemRefs.current.forEach((node) => observer.observe(node));
+    if (headerRef.current) observer.observe(headerRef.current);
     return () => observer.disconnect();
   }, [flowItems.length, pageStarts, recalculatePagination]);
 
@@ -694,7 +697,7 @@ export function AnswerSheetComposer({
     });
   }, [flowItems.length, pageStarts]);
 
-  const previewSheets = useMemo(() => {
+  const sheets = useMemo(() => {
     const sheets: number[][][] = [];
     for (let index = 0; index < logicalPages.length; index += paperColumns) {
       sheets.push(logicalPages.slice(index, index + paperColumns));
@@ -704,8 +707,9 @@ export function AnswerSheetComposer({
 
   const renderHeader = () => (
     <header
-      className="box-border min-w-0 pb-4"
-      data-testid="answer-sheet-first-column-header"
+      className="box-border w-full shrink-0 pb-4"
+      ref={headerRef}
+      data-testid="answer-sheet-page-header"
     >
       <div>
         <h1 className="mb-1 text-center font-serif text-xl font-bold">{title}</h1>
@@ -716,23 +720,24 @@ export function AnswerSheetComposer({
         className="flex min-w-0 items-stretch border border-ink-900"
         data-testid="answer-sheet-identity-area"
       >
-        <div className="min-w-0 flex-1 p-2.5" data-testid="answer-sheet-identity-fields">
+        <div className="w-[45mm] shrink-0 p-2.5" data-testid="answer-sheet-identity-fields">
           <div className="mb-2 flex items-center gap-2 text-sm">
             <span className="shrink-0">班级：</span>
             <span className="h-5 min-w-10 flex-1 border-b border-ink-700" aria-label="班级填写区" />
           </div>
-          <div className="flex items-stretch gap-2 text-sm">
-            <span className="shrink-0 pt-1">姓名：</span>
+          <div className="text-sm">
+            <div className="mb-1">姓名：</div>
             <span
-              className="h-[13mm] min-w-0 flex-1 border border-dashed border-ink-700"
+              className="block h-[13mm] w-[4em] border border-dashed border-ink-700"
               aria-label="姓名签名填写区"
               data-answer-sheet-field="signature"
               data-signature-history-limit="10"
             />
           </div>
         </div>
+        <div className="min-w-0 flex-1" aria-hidden="true" />
         <div
-          className="flex min-w-[43mm] max-w-[52mm] shrink-0 items-center border-l border-ink-900 p-2"
+          className="flex w-[52mm] shrink-0 items-center border-l border-ink-900 p-2"
           data-testid="answer-sheet-student-number-column"
         >
           <StudentNumberGrid digits={settings.studentNumberDigits} />
@@ -792,8 +797,6 @@ export function AnswerSheetComposer({
   };
 
   const renderFlowItem = (flowItem: FlowItem) => {
-    if (flowItem.kind === "header") return renderHeader();
-
     if (flowItem.kind === "zone-heading") {
       return (
         <div className="pt-1 pb-1 text-sm font-semibold" data-testid={flowItem.testId}>
@@ -957,11 +960,15 @@ export function AnswerSheetComposer({
                   ]}
                 />
                 <Select
-                  label="宽版栏数"
-                  value={String(settings.widePaperColumns)}
-                  disabled={!paperSize.supportsMultipleColumns}
-                  onChange={(event) => updateSettings({ widePaperColumns: Number(event.target.value) as AnswerSheetWideColumns })}
-                  options={[
+                  label="题目栏数"
+                  value={String(paperColumns)}
+                  onChange={(event) => settings.paperSize === "A4"
+                    ? updateSettings({ a4Columns: Number(event.target.value) as 1 | 2 })
+                    : updateSettings({ widePaperColumns: Number(event.target.value) as AnswerSheetWideColumns })}
+                  options={settings.paperSize === "A4" ? [
+                    { value: "1", label: "单栏" },
+                    { value: "2", label: "双栏" },
+                  ] : [
                     { value: "2", label: "两栏" },
                     { value: "3", label: "三栏" },
                   ]}
@@ -995,66 +1002,43 @@ export function AnswerSheetComposer({
         </div>
 
         <div className="answer-sheet-print-shell overflow-x-auto pb-8">
-          {!isPreview ? (
-            <div className="space-y-6" data-testid="answer-sheet-editor-pages">
-              {logicalPages.map((indices, pageIndex) => (
-                <article
-                  key={`edit-page-${pageIndex}`}
-                  className={`answer-sheet-paper answer-sheet-editor-page ${paperSize.className} relative mx-auto box-border overflow-hidden bg-white p-[8mm] text-ink-950 shadow-xl`}
+          <div className="space-y-6" data-testid={isPreview ? "answer-sheet-preview-pages" : "answer-sheet-editor-pages"}>
+            {sheets.map((sheetColumns, sheetIndex) => (
+              <article
+                key={sheetIndex}
+                className={`answer-sheet-paper ${isPreview ? "answer-sheet-preview-sheet" : "answer-sheet-editor-page"} ${paperSize.className} relative mx-auto flex box-border flex-col overflow-hidden bg-white p-[8mm] text-ink-950 shadow-xl`}
+                style={{
+                  width: `${paperSize.physicalWidthMm}mm`,
+                  height: `${paperSize.heightMm}mm`,
+                }}
+                data-paper-size={settings.paperSize}
+                data-paper-view={viewMode}
+                data-paper-columns={paperColumns}
+                data-paper-page={sheetIndex + 1}
+              >
+                {sheetIndex === 0 && renderHeader()}
+                <div
+                  className="answer-sheet-preview-grid grid min-h-0 flex-1"
                   style={{
-                    width: `${logicalPageWidthMm}mm`,
-                    height: `${paperSize.heightMm}mm`,
+                    gridTemplateColumns: `repeat(${paperColumns}, minmax(0, 1fr))`,
+                    columnGap: `${COLUMN_GAP_MM}mm`,
                   }}
-                  data-paper-size={settings.paperSize}
-                  data-paper-view="edit"
-                  data-paper-columns="1"
-                  data-paper-page={pageIndex + 1}
+                  data-testid="answer-sheet-column-flow"
                 >
-                  {renderPageContent(indices)}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-6" data-testid="answer-sheet-preview-pages">
-              {previewSheets.map((sheetPages, sheetIndex) => (
-                <article
-                  key={`preview-sheet-${sheetIndex}`}
-                  className={`answer-sheet-paper answer-sheet-preview-sheet ${paperSize.className} relative mx-auto box-border overflow-hidden bg-white text-ink-950 shadow-xl`}
-                  style={{
-                    width: `${paperSize.physicalWidthMm}mm`,
-                    height: `${paperSize.heightMm}mm`,
-                  }}
-                  data-paper-size={settings.paperSize}
-                  data-paper-view="preview"
-                  data-paper-columns={paperColumns}
-                  data-paper-page={sheetIndex + 1}
-                >
-                  <div
-                    className="answer-sheet-preview-grid grid h-full"
-                    style={{
-                      gridTemplateColumns: `repeat(${paperColumns}, minmax(0, 1fr))`,
-                      columnCount: paperColumns,
-                    }}
-                    data-testid="answer-sheet-column-flow"
-                  >
-                    {Array.from({ length: paperColumns }, (_, columnIndex) => {
-                      const indices = sheetPages[columnIndex];
-                      return (
-                        <section
-                          key={columnIndex}
-                          className="answer-sheet-preview-column box-border h-full min-w-0 overflow-hidden p-[8mm]"
-                          style={{ width: `${logicalPageWidthMm}mm` }}
-                          data-editor-page={sheetIndex * paperColumns + columnIndex + 1}
-                        >
-                          {indices ? renderPageContent(indices) : null}
-                        </section>
-                      );
-                    })}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
+                  {Array.from({ length: paperColumns }, (_, columnIndex) => (
+                    <section
+                      key={columnIndex}
+                      className="answer-sheet-preview-column box-border h-full min-w-0 overflow-hidden"
+                      style={{ width: `${columnWidthMm}mm` }}
+                      data-editor-page={sheetIndex * paperColumns + columnIndex + 1}
+                    >
+                      {sheetColumns[columnIndex] ? renderPageContent(sheetColumns[columnIndex]) : null}
+                    </section>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       </div>
     </div>

@@ -47,7 +47,8 @@ describe("AnswerSheetComposer", () => {
     const qrPosition = screen.getByTestId("answer-sheet-qr-position");
 
     expect(identityArea).toHaveClass("flex");
-    expect(identityFields.nextElementSibling).toBe(studentNumberColumn);
+    expect(identityFields.nextElementSibling).toHaveAttribute("aria-hidden", "true");
+    expect(identityFields.nextElementSibling?.nextElementSibling).toBe(studentNumberColumn);
     expect(studentNumberColumn.nextElementSibling).toBe(qrPosition);
     expect(studentNumberColumn).toHaveClass("border-l");
     expect(qrPosition).toHaveClass("border-l");
@@ -55,16 +56,35 @@ describe("AnswerSheetComposer", () => {
     expect(identityFields).toContainElement(screen.getByLabelText("姓名签名填写区"));
     expect(studentNumberColumn).toContainElement(screen.getByTestId("student-number-grid"));
     expect(identityArea).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
+    expect(identityFields).toHaveClass("w-[45mm]");
+    expect(studentNumberColumn).toHaveClass("w-[52mm]");
+    expect(qrPosition).toHaveClass("w-[24mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[4em]");
+    expect(screen.getByLabelText("姓名签名填写区").previousElementSibling).toHaveTextContent("姓名：");
   });
 
-  it("uses exact paper height while editing and joins wide-paper editor pages only in preview", () => {
+  it("supports A4 dual columns and edits every paper at its physical size", () => {
     const { container } = renderComposer();
     const paper = () => container.querySelector<HTMLElement>(".answer-sheet-paper")!;
 
+    expect(paper()).toHaveAttribute("data-paper-columns", "1");
+    expect(screen.getByLabelText("题目栏数")).toHaveValue("1");
+    fireEvent.change(screen.getByLabelText("题目栏数"), { target: { value: "2" } });
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
+    expect(paper().style.width).toBe("210mm");
+    expect(screen.getByTestId("answer-sheet-column-flow").children).toHaveLength(2);
+    expect(screen.getByTestId("answer-sheet-column-flow")).not.toContainElement(screen.getByTestId("answer-sheet-page-header"));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
+    expect(paper().style.width).toBe("210mm");
+    expect(screen.getByTestId("answer-sheet-page-header")).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "8K" } });
     expect(paper()).toHaveAttribute("data-paper-view", "edit");
-    expect(paper()).toHaveAttribute("data-paper-columns", "1");
-    expect(paper().style.width).toBe("185mm");
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
+    expect(paper().style.width).toBe("370mm");
     expect(paper().style.height).toBe("260mm");
     expect(paper()).toHaveClass("overflow-hidden");
 
@@ -78,13 +98,17 @@ describe("AnswerSheetComposer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A3" } });
-    expect(paper()).toHaveAttribute("data-paper-columns", "1");
-    expect(paper().style.width).toBe("210mm");
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
+    expect(paper().style.width).toBe("420mm");
     expect(paper().style.height).toBe("297mm");
+
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A4" } });
+    expect(screen.getByLabelText("题目栏数")).toHaveValue("2");
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
 
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(paper()).toHaveAttribute("data-paper-columns", "2");
-    expect(paper().style.width).toBe("420mm");
+    expect(paper().style.width).toBe("210mm");
   });
 
   it("supports inline and concentrated choice fill areas while keeping choice options visible", () => {
@@ -125,7 +149,7 @@ describe("AnswerSheetComposer", () => {
     expect(screen.queryByTestId("fill-answer-region")).not.toBeInTheDocument();
   });
 
-  it("keeps the title, identity area, and QR code in the first column of a merged wide preview", () => {
+  it("keeps the title, identity area, and QR code above all columns of a wide preview", () => {
     const { container } = renderComposer({
       initialViewMode: "preview",
       initialSettings: { paperSize: "A3", widePaperColumns: 3 },
@@ -137,15 +161,44 @@ describe("AnswerSheetComposer", () => {
     expect(paper).toHaveAttribute("data-paper-columns", "3");
     expect(paper.style.width).toBe("420mm");
     const columnFlow = screen.getByTestId("answer-sheet-column-flow");
-    expect(columnFlow.style.columnCount).toBe("3");
+    expect(columnFlow.style.gridTemplateColumns).toBe("repeat(3, minmax(0, 1fr))");
     expect(columnFlow).toHaveClass("grid");
     expect(columnFlow.querySelectorAll(".answer-sheet-preview-column")).toHaveLength(3);
 
-    const firstColumnHeader = screen.getByTestId("answer-sheet-first-column-header");
-    expect(columnFlow).toContainElement(firstColumnHeader);
-    expect(firstColumnHeader).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
-    expect(firstColumnHeader).toContainElement(screen.getByLabelText("姓名签名填写区"));
+    const pageHeader = screen.getByTestId("answer-sheet-page-header");
+    expect(paper).toContainElement(pageHeader);
+    expect(columnFlow).not.toContainElement(pageHeader);
+    expect(pageHeader).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
+    expect(pageHeader).toContainElement(screen.getByLabelText("姓名签名填写区"));
+    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("w-[45mm]");
+    expect(screen.getByTestId("answer-sheet-student-number-column")).toHaveClass("w-[52mm]");
+    expect(screen.getByTestId("answer-sheet-qr-position")).toHaveClass("w-[24mm]");
     expect(screen.getByLabelText("姓名签名填写区")).toHaveAttribute("data-signature-history-limit", "10");
+  });
+
+  it("reserves header height across the first sheet and flows questions onto later sheets", () => {
+    const measurement = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const height = this.dataset.testid === "answer-sheet-page-header" ? 200
+        : this.dataset.answerSheetFlowItem === "question" ? 600
+        : this.dataset.answerSheetFlowItem ? 20 : 0;
+      return { height } as DOMRect;
+    });
+
+    try {
+      const { container } = renderComposer({ initialSettings: { a4Columns: 2 } });
+      const sheets = container.querySelectorAll<HTMLElement>(".answer-sheet-paper");
+      expect(sheets).toHaveLength(2);
+      expect(screen.getAllByTestId("answer-sheet-page-header")).toHaveLength(1);
+      const firstColumns = sheets[0].querySelectorAll(".answer-sheet-preview-column");
+      const secondColumns = sheets[1].querySelectorAll(".answer-sheet-preview-column");
+      expect(firstColumns).toHaveLength(2);
+      expect(firstColumns[0].querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(1);
+      expect(firstColumns[1].querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(1);
+      expect(secondColumns[0].querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(1);
+      expect(sheets[1].querySelector("header")).toBeNull();
+    } finally {
+      measurement.mockRestore();
+    }
   });
 
   it("moves essay images into the answer box and removes empty stem lines", () => {
