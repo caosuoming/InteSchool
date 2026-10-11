@@ -1,4 +1,5 @@
 import type { GradeExam, GradeScoreRecord } from "../types/index.js";
+import { ELECTIVE_GRADE_SUBJECTS, inferStatisticSubjectsFromSelections } from "./grade-statistics.js";
 
 export interface GradeClassStatisticsOptions {
   showSubjectClassRanks: boolean;
@@ -64,8 +65,9 @@ export interface GradeClassStatisticsReport {
 }
 
 interface ExamRankedRecord {
-  record: GradeScoreRecord;
   subjectScores: Record<string, number | null>;
+  rawTotal: number | null;
+  assignedTotal: number | null;
   subjectClassRanks: Record<string, number | null>;
   subjectGradeRanks: Record<string, number | null>;
   rawTotalClassRank: number | null;
@@ -80,6 +82,14 @@ function finite(value: number | null | undefined): number | null {
 
 function finalSubjectScore(record: GradeScoreRecord, subject: string): number | null {
   return finite(record.assignedScores[subject]) ?? finite(record.scores[subject]);
+}
+
+function completeTotal(record: GradeScoreRecord, subjects: string[], mode: "raw" | "assigned"): number | null {
+  if (subjects.length === 0) return null;
+  const scores = mode === "raw" ? record.scores : record.assignedScores;
+  const values = subjects.map((subject) => finite(scores[subject]));
+  if (values.some((value) => value === null)) return null;
+  return Math.round(values.reduce((total, value) => total + (value ?? 0), 0) * 100) / 100;
 }
 
 function competitionRanks(
@@ -124,6 +134,31 @@ function ranksByClass(
 }
 
 function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRankedRecord> {
+  const subjectsByClass = new Map(exam.settings.classSubjects.map((item) => [item.classId, new Set(item.examSubjects)]));
+  exam.records.forEach((record) => {
+    const classSubjects = subjectsByClass.get(record.classId) || new Set<string>();
+    exam.subjects.forEach((subject) => {
+      if (finite(record.scores[subject]) !== null || finite(record.assignedScores[subject]) !== null) {
+        classSubjects.add(subject);
+      }
+    });
+    subjectsByClass.set(record.classId, classSubjects);
+  });
+  const totals = new Map(exam.records.map((record) => {
+    const classSubjects = exam.subjects.filter((subject) => subjectsByClass.get(record.classId)?.has(subject));
+    const selectionSubjects = inferStatisticSubjectsFromSelections(classSubjects, [record.subjectSelection || ""]);
+    const selectedElectives = selectionSubjects?.filter((subject) => ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]));
+    const totalSubjects = selectedElectives?.length === 3 && selectionSubjects
+      ? classSubjects.filter((subject) => (
+        !ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number])
+        || selectionSubjects.includes(subject)
+      ))
+      : classSubjects;
+    return [record.studentId, {
+      raw: completeTotal(record, totalSubjects, "raw"),
+      assigned: completeTotal(record, totalSubjects, "assigned"),
+    }] as const;
+  }));
   const subjectGradeRanks = Object.fromEntries(subjects.map((subject) => [
     subject,
     competitionRanks(exam.records, (record) => finalSubjectScore(record, subject)),
@@ -132,13 +167,14 @@ function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRan
     subject,
     ranksByClass(exam.records, (record) => finalSubjectScore(record, subject)),
   ]));
-  const rawTotalGradeRanks = competitionRanks(exam.records, (record) => finite(record.rawTotal));
-  const rawTotalClassRanks = ranksByClass(exam.records, (record) => finite(record.rawTotal));
-  const assignedTotalGradeRanks = competitionRanks(exam.records, (record) => finite(record.assignedTotal));
-  const assignedTotalClassRanks = ranksByClass(exam.records, (record) => finite(record.assignedTotal));
+  const rawTotalGradeRanks = competitionRanks(exam.records, (record) => totals.get(record.studentId)?.raw ?? null);
+  const rawTotalClassRanks = ranksByClass(exam.records, (record) => totals.get(record.studentId)?.raw ?? null);
+  const assignedTotalGradeRanks = competitionRanks(exam.records, (record) => totals.get(record.studentId)?.assigned ?? null);
+  const assignedTotalClassRanks = ranksByClass(exam.records, (record) => totals.get(record.studentId)?.assigned ?? null);
 
   return new Map(exam.records.map((record) => [record.studentId, {
-    record,
+    rawTotal: totals.get(record.studentId)?.raw ?? null,
+    assignedTotal: totals.get(record.studentId)?.assigned ?? null,
     subjectScores: Object.fromEntries(subjects.map((subject) => [subject, finalSubjectScore(record, subject)])),
     subjectClassRanks: Object.fromEntries(subjects.map((subject) => [
       subject,
@@ -236,12 +272,12 @@ function fillExamValues(
     }
   });
   if (options.showRawTotal) {
-    values[metricKey(examId, "rawTotal")] = finite(ranked?.record.rawTotal) ?? null;
+    values[metricKey(examId, "rawTotal")] = ranked?.rawTotal ?? null;
     values[metricKey(examId, "rawTotalClassRank")] = ranked?.rawTotalClassRank ?? null;
     values[metricKey(examId, "rawTotalGradeRank")] = ranked?.rawTotalGradeRank ?? null;
   }
   if (options.showAssignedTotal) {
-    values[metricKey(examId, "assignedTotal")] = finite(ranked?.record.assignedTotal) ?? null;
+    values[metricKey(examId, "assignedTotal")] = ranked?.assignedTotal ?? null;
     values[metricKey(examId, "assignedTotalClassRank")] = ranked?.assignedTotalClassRank ?? null;
     values[metricKey(examId, "assignedTotalGradeRank")] = ranked?.assignedTotalGradeRank ?? null;
   }
