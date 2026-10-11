@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { CalendarRange, ChevronDown, ChevronUp, History, Save } from "lucide-react";
+import { CalendarRange, ChevronDown, ChevronUp, History, Plus, Save, Trash2 } from "lucide-react";
 import type {
   ClassroomHomework,
   TeacherTeachingActualRecord,
@@ -218,6 +218,7 @@ export function TeachingPlanPanel({ plan, homeworks, loading, saving, onSave }: 
   );
   const rangeChanged = Boolean(current && (current.startDate !== startDate || current.endDate !== endDate));
   const hasUnsavedChanges = currentDraft !== lastSavedDraft;
+  const lastDayHasPlan = Boolean(entryMap.get(dateValues[dateValues.length - 1])?.plan?.trim());
 
   useEffect(() => {
     if (!current || dateValues.length === 0 || !hasUnsavedChanges || (rangeChanged && rangeInputFocused)) return;
@@ -236,6 +237,31 @@ export function TeachingPlanPanel({ plan, homeworks, loading, saving, onSave }: 
       const remaining = items.filter((item) => item.date !== date);
       if (!next.note.trim() && !next.plan.trim() && !(next.teachingLog || "").trim()) return remaining;
       return [...remaining, next].sort((left, right) => left.date.localeCompare(right.date));
+    });
+  };
+
+  const shiftPlans = (date: string, insert: boolean) => {
+    const index = dateValues.indexOf(date);
+    if (index < 0 || (insert && lastDayHasPlan)) return;
+    if (!insert && !window.confirm(`删除 ${date} 的教学计划，并将后续计划依次前移？`)) return;
+
+    setEntries((items) => {
+      const previous = new Map(items.map((item) => [item.date, item]));
+      const next = new Map(previous);
+      for (let i = index; i < dateValues.length; i++) {
+        const sourceIndex = insert ? i - 1 : i + 1;
+        const plan = sourceIndex < index || sourceIndex >= dateValues.length
+          ? ""
+          : previous.get(dateValues[sourceIndex])?.plan || "";
+        const entry = previous.get(dateValues[i]) || { date: dateValues[i], note: "", plan: "" };
+        const updated = { ...entry, plan };
+        if (!updated.note.trim() && !updated.plan.trim() && !(updated.teachingLog || "").trim()) {
+          next.delete(entry.date);
+        } else {
+          next.set(entry.date, updated);
+        }
+      }
+      return [...next.values()].sort((left, right) => left.date.localeCompare(right.date));
     });
   };
 
@@ -309,7 +335,8 @@ export function TeachingPlanPanel({ plan, homeworks, loading, saving, onSave }: 
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-4">
           <div>
             <div className="font-medium text-ink-900">{startDate} 至 {endDate}</div>
-            <div className="mt-1 text-xs text-ink-400">默认只显示今天及以后的日期；备注、教学计划和教学日志会自动保存。</div>
+            <div className="mt-1 text-xs text-ink-400">默认只显示今天及以后的日期；备注、教学计划和教学日志会自动保存。可插入或删除某日计划，后续计划按日期顺延或前移。</div>
+            {lastDayHasPlan && <div className="mt-1 text-xs text-amber-700">学期最后一天已有计划，请先延长结束日期再插入新计划。</div>}
           </div>
           {hasPast && (
             <Button variant="outline" size="sm" onClick={() => setShowPast((value) => !value)} aria-expanded={showPast}>
@@ -377,6 +404,27 @@ export function TeachingPlanPanel({ plan, homeworks, loading, saving, onSave }: 
                       />
                     </td>
                     <td className="px-3 py-2">
+                      <div className="mb-1 flex justify-end gap-2 text-xs">
+                        <button
+                          type="button"
+                          aria-label={`在 ${date} 插入教学计划`}
+                          title={lastDayHasPlan ? "请先延长学期结束日期，以免覆盖最后一天的计划" : "在此日插入空白计划，后续计划顺延"}
+                          disabled={lastDayHasPlan}
+                          onClick={() => shiftPlans(date, true)}
+                          className="inline-flex items-center gap-1 text-ink-500 hover:text-gold-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Plus className="h-3.5 w-3.5" />插入
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`删除 ${date} 教学计划`}
+                          title="删除此日计划，后续计划前移"
+                          onClick={() => shiftPlans(date, false)}
+                          className="inline-flex items-center gap-1 text-ink-500 hover:text-red-600"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />删除
+                        </button>
+                      </div>
                       <textarea
                         aria-label={`教学计划 ${date}`}
                         value={entry?.plan || ""}
