@@ -116,4 +116,144 @@ describe("grade class statistics", () => {
     expect(wang.values["previous:subject:语文"]).toBeNull();
     expect(report.columns.some((column) => column.label === "期中考试·总分（赋分）年级排名")).toBe(true);
   });
+  it("totals every examined subject, omits absentees, and ranks only complete scores", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "地理"];
+    const makeRecord = (id: string, classId: string, scores: Record<string, number | null>, assignedScores = scores) => ({
+      ...record(id, classId, classId, id, id, 0, 0, 0, 0, 0),
+      scores,
+      assignedScores,
+      rawTotal: 270,
+      assignedTotal: 270,
+    });
+    const complete = makeRecord("a", "c1", { 语文: 100, 数学: 90, 英语: 80, 物理: 70, 化学: 60, 生物: 50, 地理: null },
+      { 语文: 100, 数学: 90, 英语: 80, 物理: 70, 化学: 85, 生物: 75, 地理: null });
+    const absent = makeRecord("b", "c1", { 语文: 110, 数学: 100, 英语: 90, 物理: 80, 化学: null, 生物: 100, 地理: null });
+    const zero = makeRecord("c", "c1", { 语文: 100, 数学: 90, 英语: 80, 物理: 70, 化学: 60, 生物: 0, 地理: null });
+    const otherClass = {
+      ...makeRecord("d", "c2", { 语文: 100, 数学: 90, 英语: 80, 物理: 70, 化学: 60, 生物: null, 地理: 50 }),
+      subjectSelection: "物化地",
+    };
+    const testedExam: GradeExam = {
+      ...current,
+      subjects,
+      records: [complete, absent, zero, otherClass],
+      settings: {
+        ...current.settings,
+        classSubjects: [
+          { classId: "c1", examSubjects: ["语文", "数学", "英语", "物理", "生物"], statisticSubjects: ["语文", "数学", "英语"], separateRankSubjects: ["生物"] },
+          { classId: "c2", examSubjects: ["语文", "数学", "英语", "物理", "化学", "地理"], statisticSubjects: ["语文", "数学", "英语"] },
+        ],
+      },
+    };
+    const report = buildGradeClassStatisticsReport(testedExam, [], {
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      showSubjectClassRanks: true,
+      showRawTotal: true,
+      showAssignedTotal: true,
+    });
+    const rows = new Map(report.classes.flatMap((table) => table.rows).map((row) => [row.studentId, row.values]));
+
+    expect(rows.get("a")).toMatchObject({
+      "current:rawTotal": 450,
+      "current:assignedTotal": 500,
+      "current:rawTotalClassRank": 1,
+      "current:assignedTotalClassRank": 1,
+      "current:rawTotalGradeRank": 1,
+    });
+    expect(rows.get("b")).toMatchObject({
+      "current:rawTotal": null,
+      "current:assignedTotal": null,
+      "current:rawTotalClassRank": null,
+      "current:assignedTotalGradeRank": null,
+      "current:subjectClassRank:语文": 1,
+    });
+    expect(rows.get("c")).toMatchObject({
+      "current:rawTotal": 400,
+      "current:assignedTotal": 400,
+      "current:rawTotalClassRank": 2,
+    });
+    expect(rows.get("d")).toMatchObject({
+      "current:rawTotal": 450,
+      "current:assignedTotal": 450,
+      "current:rawTotalGradeRank": 1,
+      "current:assignedTotalGradeRank": 2,
+    });
+  });
+
+  it("uses each comparison exam's own subjects for absence and totals", () => {
+    const comparison = {
+      ...previous,
+      records: [
+        { ...previous.records[0], scores: { 语文: 100, 化学: null }, assignedScores: { 语文: 100, 化学: null } },
+        previous.records[1],
+      ],
+    };
+    const report = buildGradeClassStatisticsReport(current, [comparison], {
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      showRawTotal: true,
+      showAssignedTotal: true,
+      comparisonExamIds: ["previous"],
+    });
+    const values = report.classes[0].rows[0].values;
+    expect(values["current:rawTotal"]).toBe(200);
+    expect(values["previous:rawTotal"]).toBeNull();
+    expect(values["previous:assignedTotal"]).toBeNull();
+    expect(values["previous:rawTotalClassRank"]).toBeNull();
+    expect(values["previous:assignedTotalGradeRank"]).toBeNull();
+  });
+
+  it("counts comparison-only subjects instead of reusing the current exam's subject list", () => {
+    const comparison: GradeExam = {
+      ...previous,
+      subjects: ["语文", "化学", "历史"],
+      records: previous.records.map((item) => ({
+        ...item,
+        scores: { ...item.scores, 历史: 70 },
+        assignedScores: { ...item.assignedScores, 历史: 80 },
+      })),
+    };
+    const report = buildGradeClassStatisticsReport(current, [comparison], {
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      showRawTotal: true,
+      showAssignedTotal: true,
+      comparisonExamIds: ["previous"],
+    });
+    const values = report.classes[0].rows[0].values;
+    expect(values["previous:rawTotal"]).toBe(250);
+    expect(values["previous:assignedTotal"]).toBe(272);
+  });
+
+  it("uses each student's six selected subjects in a mixed-elective class", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "历史", "政治", "地理"];
+    const makeMixed = (id: string, subjectSelection: string, electives: string[]) => {
+      const scores = Object.fromEntries(subjects.map((subject) => [
+        subject, ["语文", "数学", "英语", ...electives].includes(subject) ? 80 : null,
+      ]));
+      return { ...record(id, "c1", "一班", id, id, 0, 0, 0, 240, 240), subjectSelection, scores, assignedScores: scores };
+    };
+    const mixedExam: GradeExam = {
+      ...current,
+      subjects,
+      records: [
+        makeMixed("a", "物化生", ["物理", "化学", "生物"]),
+        makeMixed("b", "史政地", ["历史", "政治", "地理"]),
+      ],
+      settings: {
+        ...current.settings,
+        classSubjects: [{ classId: "c1", examSubjects: subjects, statisticSubjects: ["语文", "数学", "英语"] }],
+      },
+    };
+    const report = buildGradeClassStatisticsReport(mixedExam, [], {
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      showRawTotal: true,
+      showAssignedTotal: true,
+    });
+    report.classes[0].rows.forEach((row) => {
+      expect(row.values["current:rawTotal"]).toBe(480);
+      expect(row.values["current:assignedTotal"]).toBe(480);
+      expect(row.values["current:rawTotalGradeRank"]).toBe(1);
+      expect(row.values["current:assignedTotalClassRank"]).toBe(1);
+    });
+  });
+
 });
