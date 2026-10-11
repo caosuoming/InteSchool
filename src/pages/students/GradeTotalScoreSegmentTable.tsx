@@ -73,6 +73,16 @@ export function GradeTotalScoreSegmentTable({
     [context, effectiveClassAverageTemplate, effectiveTemplate, exam],
   );
   const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";
+  const standardStats = (track: GradeAcademicTrack, targetKey: GradeTotalScoreTargetKey) => {
+    const column = report.columns.find((item) => item.kind === "subtotal" && item.track === track);
+    if (!column) return "—人（—）";
+    const count = report.summaryRows.find((row) => row.key === `${targetKey}Count`)?.values[column.key];
+    const candidates = report.summaryRows.find((row) => row.key === "candidateCount")?.values[column.key];
+    if (typeof count !== "number") return "—人（—）";
+    return `${count}人（${typeof candidates === "number" && candidates > 0
+      ? `${((count / candidates) * 100).toFixed(1)}%`
+      : "—"}）`;
+  };
 
   const updateTemplate = (patch: Partial<GradeStatisticsTemplate>) => {
     const nextSettings = {
@@ -265,16 +275,24 @@ export function GradeTotalScoreSegmentTable({
                 ["firstTier", "一本"],
                 ["undergraduate", "二本"],
               ] as const).map(([targetKey, label]) => (
-                <div key={`${track}-${targetKey}`} className="w-32">
-                  <Input
-                    label={`${track === "science" ? "理科" : "文科"}${label}标准`}
-                    type="number"
-                    min={0}
-                    max={2000}
-                    value={trackThresholdValue(track, targetKey)}
-                    onChange={(event) => updateTrackThreshold(track, targetKey, event.target.value)}
-                    onBlur={() => void autoSave()}
-                  />
+                <div key={`${track}-${targetKey}`} className="flex items-end gap-2">
+                  <div className="w-32">
+                    <Input
+                      label={`${track === "science" ? "理科" : "文科"}${label}标准`}
+                      type="number"
+                      min={0}
+                      max={2000}
+                      value={trackThresholdValue(track, targetKey)}
+                      onChange={(event) => updateTrackThreshold(track, targetKey, event.target.value)}
+                      onBlur={() => void autoSave()}
+                    />
+                  </div>
+                  <output
+                    aria-label={`${track === "science" ? "理科" : "文科"}${label}达线统计`}
+                    className="mb-2 whitespace-nowrap text-xs tabular-nums text-ink-600"
+                  >
+                    {standardStats(track, targetKey)}
+                  </output>
                 </div>
               )))}
               <Button variant="ghost" size="sm" onClick={reset}>
