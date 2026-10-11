@@ -170,6 +170,13 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(within(settingsRow).getAllByRole("spinbutton")).toHaveLength(11);
     expect(screen.getByRole("spinbutton", { name: "理科高分1标准" })).toHaveValue(90);
     expect(screen.getByRole("spinbutton", { name: "文科高分1标准" })).toHaveValue(88);
+    expect(screen.getByLabelText("理科高分1达线统计")).toHaveTextContent("1人（100.0%）");
+    expect(screen.getByLabelText("文科高分1达线统计")).toHaveTextContent("—人（—）");
+    expect(settingsRow.querySelectorAll("output")).toHaveLength(8);
+    const scienceThreshold = screen.getByRole("spinbutton", { name: "理科高分1标准" });
+    await user.clear(scienceThreshold);
+    await user.type(scienceThreshold, "95");
+    expect(screen.getByLabelText("理科高分1达线统计")).toHaveTextContent("0人（0.0%）");
     const interval = screen.getByRole("spinbutton", { name: "分数间隔" });
     await user.clear(interval);
     await user.type(interval, "5");
@@ -177,5 +184,52 @@ describe("GradeTotalScoreSegmentTable", () => {
     const changed = onChange.mock.lastCall?.[0];
     expect(changed.templates.find((item: GradeStatisticsTemplate) => item.id === template.id)?.segmentSize).toBe(5);
     expect(screen.getByText("85分以上")).toBeInTheDocument();
+  });
+  it("shows the correct counts and rates for each track and standard", async () => {
+    const mixedExam: GradeExam = {
+      ...exam,
+      records: [
+        ...exam.records,
+        ...[88, 78].map((score, index) => ({
+          ...exam.records[0],
+          id: `record-${index + 2}`,
+          studentId: `student-${index + 2}`,
+          studentNo: `00${index + 2}`,
+          classId: "class-2",
+          className: "高三(2)班",
+          scores: { 数学: score },
+          assignedScores: { 数学: score },
+          rawTotal: score,
+          assignedTotal: score,
+        })),
+      ],
+    };
+    const mixedContext: GradeImportContext = {
+      ...context,
+      cohort: { ...context.cohort, classIds: ["class-1", "class-2"], studentCount: 3 },
+      classes: [
+        ...context.classes,
+        { ...context.classes[0], id: "class-2", name: "高三(2)班", studentCount: 2 },
+      ],
+      classProfiles: {
+        ...context.classProfiles,
+        "class-2": { subjectSelections: ["史政地"], scoreSubjects: ["数学"], hasImportedScores: true },
+      },
+    };
+    const user = userEvent.setup();
+    render(
+      <GradeTotalScoreSegmentTable
+        exam={mixedExam}
+        settings={exam.settings}
+        template={template}
+        classAverageTemplate={classAverageTemplate}
+        context={mixedContext}
+        onChange={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "调整分数段" }));
+    expect(screen.getByLabelText("理科高分1达线统计")).toHaveTextContent("1人（100.0%）");
+    expect(screen.getByLabelText("文科高分1达线统计")).toHaveTextContent("1人（50.0%）");
+    expect(screen.getByLabelText("文科一本达线统计")).toHaveTextContent("2人（100.0%）");
   });
 });
