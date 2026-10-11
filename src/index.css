@@ -347,7 +347,38 @@
 }
 
 .answer-sheet-answer-box {
-  min-width: 32mm;
+  min-width: 0;
+}
+
+.answer-sheet-essay-image {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  max-width: 100%;
+  user-select: none;
+}
+
+.answer-sheet-essay-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.answer-sheet-image-resize {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 13px;
+  height: 13px;
+  border: 1px solid #334e68;
+  background: #fff;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.answer-sheet-answer-box > [aria-label$="评分框"] {
+  z-index: 2;
 }
 
 .answer-sheet-inline-blank {
