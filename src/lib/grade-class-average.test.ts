@@ -7,6 +7,7 @@ import type {
 import {
   buildDefaultClassAverageOptions,
   buildGradeClassAverageReport,
+  classAverageOverallLabel,
   formatGradeClassRangeLabel,
 } from "./grade-class-average.js";
 
@@ -238,6 +239,83 @@ describe("grade class average report", () => {
       totalValues: { raw: 170, assigned: 170 },
     });
     expect(report.overallAverage).toEqual(group.average);
+  });
+
+  it("excludes separately ranked classes per subject and from unified total averages", () => {
+    const settings = {
+      ...exam.settings,
+      classSubjects: [
+        { classId: "class-2", examSubjects: ["数学", "英语"], statisticSubjects: ["数学"], separateRankSubjects: ["英语"] },
+        { classId: "class-10", examSubjects: ["数学", "英语"], statisticSubjects: ["数学", "英语"], separateRankSubjects: [] },
+      ],
+    };
+    const report = buildGradeClassAverageReport(exam, template, context, settings);
+
+    expect(report.groups[0].rows[0].subjectAverages.英语.raw).toBe(80);
+    expect(report.groups[0].average.subjectValues.英语.raw).toBe(86.67);
+    expect(report.overallAverage.subjectValues.数学).toEqual({ raw: 83.33, assigned: 83.33 });
+    expect(report.overallAverage.subjectValues.英语).toEqual({ raw: 100, assigned: 100 });
+    expect(report.overallAverage.totalValues).toEqual({ raw: 170, assigned: 170 });
+    expect(report.overallExcludedClasses).toEqual({
+      subjects: { 数学: [], 英语: ["2班"] },
+      total: ["2班"],
+    });
+    expect(classAverageOverallLabel(report))
+      .toBe("全校平均（不参与统一排名：英语：2班；总分：2班）");
+  });
+
+  it("respects non-participating subjects, custom labels, and hidden classes", () => {
+    const settings = {
+      ...exam.settings,
+      classSubjects: [
+        { classId: "class-2", examSubjects: ["数学", "英语"], statisticSubjects: ["英语"], separateRankSubjects: [] },
+        { classId: "class-10", examSubjects: ["数学", "英语"], statisticSubjects: ["数学"], separateRankSubjects: ["英语"] },
+      ],
+    };
+    const customized: GradeStatisticsTemplate = {
+      ...template,
+      classAverageOptions: { classLabels: { "class-2": "二班", "class-10": "十班" } },
+    };
+    const report = buildGradeClassAverageReport(exam, customized, context, settings);
+
+    expect(report.overallAverage.subjectValues.数学).toEqual({ raw: 70, assigned: 70 });
+    expect(report.overallAverage.subjectValues.英语).toEqual({ raw: 80, assigned: 80 });
+    expect(report.overallAverage.totalValues).toEqual({ raw: 170, assigned: 170 });
+    expect(report.overallExcludedClasses).toEqual({
+      subjects: { 数学: ["二班"], 英语: ["十班"] },
+      total: ["十班"],
+    });
+    expect(classAverageOverallLabel(report))
+      .toBe("全校平均（不参与统一排名：数学：二班；英语：十班；总分：十班）");
+
+    const hiddenReport = buildGradeClassAverageReport(exam, {
+      ...customized,
+      classAverageOptions: { ...customized.classAverageOptions, hiddenClassIds: ["class-10"] },
+    }, context, settings);
+    expect(hiddenReport.overallExcludedClasses).toEqual({
+      subjects: { 数学: ["二班"], 英语: [] },
+      total: [],
+    });
+    expect(hiddenReport.overallAverage.subjectValues.数学.raw).toBeNull();
+    expect(hiddenReport.overallAverage.subjectValues.英语.raw).toBe(80);
+  });
+
+  it("excludes all separately ranked students without inventing a school-wide average", () => {
+    const settings = {
+      ...exam.settings,
+      classSubjects: [
+        { classId: "class-2", examSubjects: ["数学", "英语"], statisticSubjects: ["数学"], separateRankSubjects: ["英语"] },
+        { classId: "class-10", examSubjects: ["数学", "英语"], statisticSubjects: ["数学"], separateRankSubjects: ["英语"] },
+      ],
+    };
+    const report = buildGradeClassAverageReport(exam, template, context, settings);
+
+    expect(report.overallAverage.subjectValues.英语).toEqual({ raw: null, assigned: null });
+    expect(report.overallAverage.totalValues).toEqual({ raw: null, assigned: null });
+    expect(report.overallExcludedClasses).toEqual({
+      subjects: { 数学: [], 英语: ["2班", "10班"] },
+      total: ["2班", "10班"],
+    });
   });
 
   it("excludes partially absent students from both total averages without excluding individual scores", () => {

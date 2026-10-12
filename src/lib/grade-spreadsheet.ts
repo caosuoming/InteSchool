@@ -8,6 +8,7 @@ import type {
 import {
   buildGradeClassAverageReport,
   classAverageScoreCellValue,
+  classAverageOverallLabel,
   formatGradeClassRangeLabel,
   type GradeClassAverageReport,
 } from "./grade-class-average.js";
@@ -669,10 +670,14 @@ function classAverageWorkbookSheet(
 
   if (report.options.showOverallAverage) {
     rows.push([
-      combinedWorkbookCell("全校平均", {
+      combinedWorkbookCell(classAverageOverallLabel(report), {
         columnSpan: 3,
         fontWeight: "bold",
         backgroundColor: "#F3F4F6",
+        wrap: true,
+        height: report.overallExcludedClasses.total.length
+          || report.subjects.some((subject) => report.overallExcludedClasses.subjects[subject].length)
+          ? 48 : undefined,
       }),
       null,
       null,

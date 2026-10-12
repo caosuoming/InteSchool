@@ -56,6 +56,7 @@ export interface GradeClassAverageReport {
   >> & GradeClassAverageOptions;
   groups: GradeClassAverageGroup[];
   overallAverage: GradeClassAverageSummary;
+  overallExcludedClasses: { subjects: Record<string, string[]>; total: string[] };
   overallSubjectScoreModes: Record<string, GradeClassAverageSubjectScoreMode>;
 }
 
@@ -314,6 +315,19 @@ function combinedSubjectScoreModes(
   }));
 }
 
+export function classAverageOverallLabel(report: GradeClassAverageReport): string {
+  const excluded = [
+    ...report.subjects.map((subject) => {
+      const classes = report.overallExcludedClasses.subjects[subject];
+      return classes.length ? `${subject}：${classes.join("、")}` : "";
+    }).filter(Boolean),
+    ...(report.overallExcludedClasses.total.length
+      ? [`总分：${report.overallExcludedClasses.total.join("、")}`]
+      : []),
+  ];
+  return excluded.length ? `全校平均（不参与统一排名：${excluded.join("；")}）` : "全校平均";
+}
+
 export function classAverageScoreCellValue(
   values: GradeClassAverageScorePair,
   mode: GradeClassAverageSubjectScoreMode,
@@ -402,6 +416,34 @@ export function buildGradeClassAverageReport(
     } satisfies GradeClassAverageGroup;
   });
   const reportRecords = classRows.flatMap((row) => recordsByClass.get(row.classId) || []);
+  const classSettings = new Map(settings.classSubjects.map((item) => [item.classId, item]));
+  const excludedFromSubject = (classId: string, subject: string): boolean => {
+    const setting = classSettings.get(classId);
+    return Boolean(setting && (
+      (setting.separateRankSubjects || []).includes(subject)
+      || !setting.statisticSubjects.includes(subject)
+    ));
+  };
+  const excludedFromTotal = (classId: string): boolean =>
+    (classSettings.get(classId)?.separateRankSubjects || []).length > 0;
+  const overallExcludedClasses = {
+    subjects: Object.fromEntries(effectiveSubjects.map((subject) => [
+      subject,
+      classRows.filter((row) => excludedFromSubject(row.classId, subject)).map((row) => row.classLabel),
+    ])),
+    total: classRows.filter((row) => excludedFromTotal(row.classId)).map((row) => row.classLabel),
+  };
+  const unifiedTotalRecords = reportRecords.filter((record) => !excludedFromTotal(record.classId));
+  const overallAverage: GradeClassAverageSummary = {
+    subjectValues: Object.fromEntries(effectiveSubjects.map((subject) => {
+      const records = reportRecords.filter((record) => !excludedFromSubject(record.classId, subject));
+      return [subject, {
+        raw: averageGradeValues(records.map((record) => recordSubjectValue(record, subject, "raw"))),
+        assigned: averageGradeValues(records.map((record) => recordSubjectValue(record, subject, "assigned"))),
+      }];
+    })),
+    totalValues: summaryForRecords(unifiedTotalRecords, effectiveSubjects, exam.subjects, expectedCount).totalValues,
+  };
 
   return {
     title: `${exam.name}班级平均分统计表`,
@@ -409,7 +451,15 @@ export function buildGradeClassAverageReport(
     subjects: effectiveSubjects,
     options,
     groups,
-    overallAverage: summaryForRecords(reportRecords, effectiveSubjects, exam.subjects, expectedCount),
-    overallSubjectScoreModes: combinedSubjectScoreModes(classRows, effectiveSubjects, template.scoreMode),
+    overallAverage,
+    overallExcludedClasses,
+    overallSubjectScoreModes: Object.fromEntries(effectiveSubjects.map((subject) => [
+      subject,
+      combinedSubjectScoreModes(
+        classRows.filter((row) => !excludedFromSubject(row.classId, subject)),
+        [subject],
+        template.scoreMode,
+      )[subject],
+    ])),
   };
 }
