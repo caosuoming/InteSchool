@@ -154,7 +154,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
 
     const byKey = Object.fromEntries(report.summaryRows.map((row) => [row.key, row]));
     expect(report.summaryRows.map((row) => row.label)).toEqual([
-      "考生人数",
+      "实考人数",
       "高分1目标",
       "高分1达线数",
       "完成情况",
@@ -168,7 +168,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       "本科人数",
       "本科率",
     ]);
-    expect(byKey.candidateCount.values).toEqual({ "class-2": 2, "class-1": 2, __total__: 4 });
+    expect(byKey.attendedCount.values).toEqual({ "class-2": 2, "class-1": 2, __total__: 4 });
     expect(byKey.highScore1Count.values).toEqual({ "class-2": 1, "class-1": 1, __total__: 2 });
     expect(byKey.highScore1Status.values).toEqual({
       "class-2": "未完成（-1）",
@@ -343,8 +343,8 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       classAverageTemplate,
     );
     const byKey = Object.fromEntries(report.summaryRows.map((row) => [row.key, row]));
-    expect(byKey.candidateCount.values).toEqual({
-      "class-1": 2, "class-2": 2, __science_subtotal__: 2, __arts_subtotal__: 2, __total__: 4,
+    expect(byKey.attendedCount.values).toEqual({
+      "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
     });
     expect(report.validTotalCounts).toEqual({
       "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
@@ -406,6 +406,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       classAverageTemplate,
     );
     expect(report.validTotalCounts.__total__).toBe(0);
+    expect(report.summaryRows.find((row) => row.key === "attendedCount")?.values.__total__).toBe(0);
     expect(report.summaryRows.find((row) => row.key === "firstTierRate")?.values.__total__).toBeNull();
   });
 
