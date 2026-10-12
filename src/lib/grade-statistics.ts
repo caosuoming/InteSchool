@@ -153,12 +153,6 @@ export function buildDefaultGradeSettings(
   const coreSubjects = normalizedSubjects.filter((subject) =>
     CORE_GRADE_SUBJECTS.includes(subject as (typeof CORE_GRADE_SUBJECTS)[number]),
   );
-  const subjectTeacherIds = Object.fromEntries(
-    normalizedSubjects.map((subject) => [
-      subject,
-      teachers.filter((teacher) => teacher.subject === subject).map((teacher) => teacher.id),
-    ]),
-  );
   const classSubjectTeacherIds = Object.fromEntries(
     unique(classIds).map((classId) => [
       classId,
@@ -167,12 +161,16 @@ export function buildDefaultGradeSettings(
         teachers
           .filter((teacher) => (
             teacher.subject === subject
-            && (!teacher.teachingClassIds?.length || teacher.teachingClassIds.includes(classId))
+            && teacher.teachingClassIds?.includes(classId)
           ))
           .map((teacher) => teacher.id),
       ])),
     ]),
   );
+  const subjectTeacherIds = Object.fromEntries(normalizedSubjects.map((subject) => [
+    subject,
+    unique(Object.values(classSubjectTeacherIds).flatMap((classTeachers) => classTeachers[subject])),
+  ]));
   const classSubjectTeacherNames = Object.fromEntries(
     unique(classIds).map((classId) => [
       classId,
@@ -446,9 +444,7 @@ export function normalizeGradeSettings(
       Object.fromEntries([...subjectSet].map((subject) => [
         subject,
         unique(
-          settings.classSubjectTeacherIds?.[classId]?.[subject]
-            || subjectTeacherIds[subject]
-            || [],
+          settings.classSubjectTeacherIds?.[classId]?.[subject] || [],
         ).filter((id) => teacherSet.size === 0 || teacherSet.has(id)),
       ])),
     ]),
