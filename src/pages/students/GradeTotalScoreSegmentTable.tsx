@@ -86,9 +86,9 @@ export function GradeTotalScoreSegmentTable({
   };
   const separateStandardStats = (classIds: string[], targetKey: GradeTotalScoreTargetKey) => {
     const counts = report.summaryRows.find((row) => row.key === `${targetKey}Count`)?.values;
-    const candidates = report.summaryRows.find((row) => row.key === "candidateCount")?.values;
+    const candidates = report.validTotalCounts;
     const count = classIds.reduce((sum, classId) => sum + (typeof counts?.[classId] === "number" ? counts[classId] as number : 0), 0);
-    const total = classIds.reduce((sum, classId) => sum + (typeof candidates?.[classId] === "number" ? candidates[classId] as number : 0), 0);
+    const total = classIds.reduce((sum, classId) => sum + (candidates[classId] || 0), 0);
     return total > 0 ? `${count}人（${((count / total) * 100).toFixed(1)}%）` : "—人（—）";
   };
 
@@ -464,7 +464,7 @@ export function GradeTotalScoreSegmentTable({
                         key={column.key}
                         className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900 ${column.kind === "class" ? "" : "bg-emerald-50/50"}`}
                       >
-                        {row.kind === "count" && value === 0 ? "" : value ?? "—"}
+                        {row.kind === "count" && row.key !== "attendedCount" && value === 0 ? "" : value ?? "—"}
                       </td>
                     );
                   })}

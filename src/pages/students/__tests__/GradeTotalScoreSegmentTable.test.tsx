@@ -140,7 +140,7 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(emptyCountCells).toHaveLength(3);
     emptyCountCells.forEach((cell) => expect(cell).toBeEmptyDOMElement());
     expect(within(screen.getByRole("row", { name: /90分以上/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
-    expect(within(screen.getByRole("row", { name: /考生人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
+    expect(within(screen.getByRole("row", { name: /实考人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /高分1达线数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /完成情况/ })).getAllByRole("cell", { name: "完成（+0）" })).toHaveLength(3);
     expect(screen.getByTestId("track-standard-summary")).toHaveTextContent(
@@ -278,6 +278,37 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
       ?.totalScoreSegmentOptions?.separateRankThresholds?.['["数学"]']?.highScore1).toBeUndefined();
   });
+  it("uses only students with complete totals for separate ranking-group rates", async () => {
+    const groupedExam: GradeExam = {
+      ...exam,
+      subjects: ["数学", "语文"],
+      records: [
+        { ...exam.records[0], scores: { 数学: 90, 语文: 80 }, assignedScores: { 数学: 90, 语文: 80 } },
+        { ...exam.records[0], id: "record-2", studentId: "student-2", studentNo: "002",
+          scores: { 数学: 90, 语文: null }, assignedScores: { 数学: 90, 语文: null } },
+      ],
+    };
+    const groupedTemplate = { ...template, subjects: ["数学", "语文"] };
+    const groupedSettings: GradeExamSettings = {
+      ...exam.settings,
+      classSubjects: [{ classId: "class-1", examSubjects: ["数学", "语文"], statisticSubjects: ["数学", "语文"], separateRankSubjects: ["数学"] }],
+      templates: [classAverageTemplate, groupedTemplate],
+    };
+    render(
+      <GradeTotalScoreSegmentTable
+        exam={groupedExam}
+        settings={groupedSettings}
+        template={groupedTemplate}
+        classAverageTemplate={classAverageTemplate}
+        context={context}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(within(screen.getByRole("row", { name: /实考人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
+    await userEvent.setup().click(screen.getByRole("button", { name: "调整分数段" }));
+    expect(screen.getByLabelText("单独排名（数学）高分1达线统计")).toHaveTextContent("1人（100.0%）");
+  });
+
   it("shows standards as a proportion of students with complete totals", async () => {
     const incompleteExam: GradeExam = {
       ...exam,
@@ -310,7 +341,7 @@ describe("GradeTotalScoreSegmentTable", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "调整分数段" }));
     expect(screen.getByLabelText("理科高分1达线统计")).toHaveTextContent("1人（100.0%）");
-    expect(within(screen.getByRole("row", { name: /考生人数/ })).getAllByRole("cell", { name: "2" })).toHaveLength(3);
+    expect(within(screen.getByRole("row", { name: /实考人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /一本率/ })).getAllByRole("cell", { name: "100.0%" })).toHaveLength(3);
   });
 

@@ -199,7 +199,7 @@ describe("PublishedGradeReportPage", () => {
     const standardsRow = screen.getByTestId("track-standard-summary");
     expect(standardsRow).toHaveTextContent("理科标准：高分1 300分");
     expect(standardsRow).toHaveTextContent("文科标准：高分1 290分");
-    expect(standardsRow.nextElementSibling).toHaveTextContent("考生人数");
+    expect(standardsRow.nextElementSibling).toHaveTextContent("实考人数");
 
     const zeroTotalRow = screen.getByRole("row", { name: /500分以上/ });
     expect(within(zeroTotalRow).queryByText("0")).not.toBeInTheDocument();

@@ -416,18 +416,12 @@ export function buildGradeTotalScoreSegmentReport(
     });
   };
 
-  const candidatePerClass = Object.fromEntries(classes.map((classItem) => [
-    classItem.classId,
-    recordsByClass.get(classItem.classId)?.length || 0,
-  ]));
   const summaryRows: GradeTotalScoreSummaryRow[] = [
     {
-      key: "candidateCount",
-      label: "考生人数",
+      key: "attendedCount",
+      label: "实考人数",
       kind: "count",
-      values: valuesByColumns(candidatePerClass, (classIds) => (
-        classIds.reduce((sum, classId) => sum + (candidatePerClass[classId] || 0), 0)
-      )),
+      values: validTotalCounts,
     },
     { key: "highScore1Target", label: "高分1目标", kind: "target", targetKey: "highScore1", values: targetValues("highScore1") },
     { key: "highScore1Count", label: "高分1达线数", kind: "count", values: countValues("highScore1") },
