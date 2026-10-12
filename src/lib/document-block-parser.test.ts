@@ -1296,6 +1296,45 @@ describe("document block parser", () => {
     expect(blocks[0].content).toContain("延伸探究2");
   });
 
+  it("starts new questions for 延伸探究 after the previous example's solution", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例4 若函数 f(x) 在 R 上为增函数，求 x 的范围。",
+        "答案：(1/2, +∞)",
+        "解析：由单调性可得 x>1/2。",
+        "延伸探究1 若 f(x) 在 (-1, 1) 上单调递增，求 x 的范围。",
+        "所以 x 的取值范围是 (1/2, 1)。",
+        "延伸探究2 比较 f(3/2) 与 f(a²+2a+5/2) 的大小。",
+        "由函数单调性可得结论。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(3);
+    expect(blocks.map((block) => block.type)).toEqual(["question", "question", "question"]);
+    expect(blocks[0]).toMatchObject({
+      answer: "(1/2, +∞)",
+      analysis: "由单调性可得 x>1/2。",
+    });
+    expect(blocks[1].content).toContain("延伸探究1 若 f(x)");
+    expect(blocks[2].content).toContain("延伸探究2 比较 f(3/2)");
+    expect(blocks[0].analysis).not.toContain("延伸探究");
+  });
+
+  it("recognizes standalone 延伸探究 questions with a legacy keyword config", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "延伸探究1 求集合 A 的子集个数。",
+        "延伸探究（2）证明集合关系。",
+        "延伸探究３ 计算集合元素个数。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(3);
+    expect(blocks.every((block) => block.type === "question")).toBe(true);
+  });
+
   it("keeps all-single 延伸探究 sub-questions typed as single choice", () => {
     const blocks = parseDocumentBlocks(
       [

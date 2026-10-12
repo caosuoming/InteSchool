@@ -62,9 +62,7 @@ function teacherNamesForCell(
   subject: string,
 ): string[] {
   const teacherById = new Map(context.teachers.map((teacher) => [teacher.id, teacher]));
-  const teacherIds = settings.classSubjectTeacherIds?.[classId]?.[subject]
-    ?? settings.subjectTeacherIds?.[subject]
-    ?? [];
+  const teacherIds = settings.classSubjectTeacherIds?.[classId]?.[subject] || [];
   const linkedNames = teacherIds.flatMap((teacherId) => {
     const name = teacherById.get(teacherId)?.name;
     return name ? [name] : [];
@@ -227,9 +225,7 @@ function resolveImportedTeacherAssignment(
 ): { teacherIds: string[]; manualNames: string[] } {
   const importedByName = new Map(cell.importedNames.map((name) => [normalizeTeacherName(name), name]));
   const teacherById = new Map(context.teachers.map((teacher) => [teacher.id, teacher]));
-  const existingIds = settings.classSubjectTeacherIds?.[cell.classId]?.[cell.subject]
-    ?? settings.subjectTeacherIds?.[cell.subject]
-    ?? [];
+  const existingIds = settings.classSubjectTeacherIds?.[cell.classId]?.[cell.subject] || [];
   const teacherIds: string[] = [];
   const resolvedNames = new Set<string>();
 
@@ -271,9 +267,7 @@ export function applyGradeTeacherImportPlan(
       classItem.id,
       Object.fromEntries(subjects.map((subject) => [
         subject,
-        [...(settings.classSubjectTeacherIds?.[classItem.id]?.[subject]
-          ?? settings.subjectTeacherIds?.[subject]
-          ?? [])],
+        [...(settings.classSubjectTeacherIds?.[classItem.id]?.[subject] || [])],
       ])),
     ]),
   );

@@ -4,6 +4,8 @@ import { useParams } from "react-router";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/Spinner";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 import {
   classAverageScoreCellValue,
   formatGradeClassRangeLabel,
@@ -414,15 +416,52 @@ export default function PublishedGradeReportPage() {
   const { token = "" } = useParams();
   const [bundle, setBundle] = useState<GradePublishedReportBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [password, setPassword] = useState("");
+  const [verifying, setVerifying] = useState(false);
+
+  const submitPassword = async () => {
+    setVerifying(true);
+    try {
+      const report = await gradeService.getPublishedReportByToken(token, password);
+      setBundle(report);
+      setError(null);
+      setPassword("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "密码错误");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
     gradeService.getPublishedReportByToken(token)
       .then((next) => { if (active) setBundle(next); })
-      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "成绩分享链接无效"); });
+      .catch((reason) => {
+        if (!active) return;
+        const message = reason instanceof Error ? reason.message : "成绩分享链接无效";
+        if (message.includes("访问密码")) setNeedsPassword(true);
+        else setError(message);
+      });
     return () => { active = false; };
   }, [token]);
 
+  if (needsPassword && !bundle) return (
+    <div className="min-h-screen bg-mist p-6">
+      <div className="mx-auto max-w-md pt-24">
+        <Card className="space-y-4 p-5">
+          <h1 className="text-lg font-medium text-ink-900">请输入成绩统计访问密码</h1>
+          <p className="text-sm text-ink-500">支持常规密码及一次性密码；一次性密码验证后立即失效。</p>
+          <Input label="访问密码" type="password" value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") void submitPassword(); }} />
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <Button variant="gold" disabled={!password.trim()} loading={verifying} onClick={() => void submitPassword()}>验证并查看</Button>
+        </Card>
+      </div>
+    </div>
+  );
   if (!bundle && !error) return <div className="flex min-h-screen items-center justify-center bg-mist"><Spinner size={32} /></div>;
   if (error || !bundle) {
     return (

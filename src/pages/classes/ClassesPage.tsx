@@ -24,11 +24,13 @@ import type {
   PersonalClass,
   PersonalClassStudentCandidate,
   Student,
+  StudentType,
   AnyClass,
   ClassTypeCategory,
 } from "@/types";
 import { formatDate } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
+import { STUDENT_TYPE_OPTIONS, studentTypeOf } from "@/lib/student-type";
 import { findClassTypeByReference } from "@/lib/class-type";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 
@@ -87,6 +89,7 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
   const [newStudentNo, setNewStudentNo] = useState("");
   const [newStudentGrade, setNewStudentGrade] = useState("");
   const [newStudentGender, setNewStudentGender] = useState<"male" | "female">("male");
+  const [newStudentType, setNewStudentType] = useState<StudentType>("regular");
 
   // 添加学生到个人班
   const [addToPersonalOpen, setAddToPersonalOpen] = useState(false);
@@ -109,6 +112,8 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
   const [editStudentGrade, setEditStudentGrade] = useState("");
   const [editStudentGender, setEditStudentGender] = useState<"male" | "female">("male");
   const [editStudentSchool, setEditStudentSchool] = useState("");
+  const [editStudentType, setEditStudentType] = useState<StudentType>("regular");
+  const [editStudentIncluded, setEditStudentIncluded] = useState(true);
 
   // 换班
   const [transferOpen, setTransferOpen] = useState(false);
@@ -253,12 +258,14 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
         studentNo: newStudentNo,
         grade: newStudentGrade,
         gender: newStudentGender,
+        studentType: newStudentType,
       });
     }
     toast.success("学生已添加");
     setAddStudentOpen(false);
     setNewStudentName("");
     setNewStudentNo("");
+    setNewStudentType("regular");
     await load();
     if (selectedClass) await loadClassStudents(selectedClass);
   };
@@ -337,6 +344,8 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
     setEditStudentGrade(s.grade || defaultGrade);
     setEditStudentGender(s.gender || "male");
     setEditStudentSchool(s.externalSchool || "");
+    setEditStudentType(studentTypeOf(s));
+    setEditStudentIncluded(s.includeInStatistics !== false);
     setEditStudentOpen(true);
   };
 
@@ -362,7 +371,9 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
       studentNo: editStudentNo.trim(),
       grade: editStudentGrade,
       gender: editStudentGender,
-      externalSchool: editingStudent.isExternal ? editStudentSchool.trim() : undefined,
+      externalSchool: editStudentType === "visiting" ? editStudentSchool.trim() : undefined,
+      studentType: editStudentType,
+      includeInStatistics: editStudentIncluded,
     });
     toast.success("学生信息已更新");
     setEditStudentOpen(false);
@@ -1200,6 +1211,12 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
               ]}
             />
           </div>
+          <Select
+            label="学生类型"
+            value={newStudentType}
+            onChange={(e) => setNewStudentType(e.target.value as StudentType)}
+            options={STUDENT_TYPE_OPTIONS}
+          />
         </div>
       </Modal>
 
@@ -1418,7 +1435,19 @@ export default function ClassesPage({ personalOnly = false }: { personalOnly?: b
               { value: "female", label: "女" },
             ]}
           />
-          {editingStudent?.isExternal && (
+          <Select
+            label="学生类型"
+            value={editStudentType}
+            onChange={(e) => setEditStudentType(e.target.value as StudentType)}
+            options={STUDENT_TYPE_OPTIONS}
+          />
+          <Select
+            label="是否参与成绩汇总统计"
+            value={editStudentIncluded ? "yes" : "no"}
+            onChange={(e) => setEditStudentIncluded(e.target.value === "yes")}
+            options={[{ value: "yes", label: "是" }, { value: "no", label: "否" }]}
+          />
+          {editStudentType === "visiting" && (
             <Input
               label="校外学校"
               value={editStudentSchool}

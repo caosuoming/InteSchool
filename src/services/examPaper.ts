@@ -40,6 +40,22 @@ export const examPaperService = {
     return rpcCall("examPaper", "getPaper", [id]) as any;
   },
 
+  async listPublishedAnswerSheets(): Promise<ExamPaper[]> {
+    return rpcCall("examPaper", "listPublishedAnswerSheets", []) as any;
+  },
+
+  async getPublishedAnswerSheet(id: string): Promise<ExamPaper | null> {
+    return rpcCall("examPaper", "getPublishedAnswerSheet", [id]) as any;
+  },
+
+  async publishAnswerSheet(id: string, settings?: ExamPaper["answerSheetSettings"]): Promise<ExamPaper> {
+    return rpcCall("examPaper", "publishAnswerSheet", [id, settings]) as any;
+  },
+
+  async unpublishAnswerSheet(id: string): Promise<ExamPaper> {
+    return rpcCall("examPaper", "unpublishAnswerSheet", [id]) as any;
+  },
+
   async markAnswerSheetCreated(
     id: string,
     settings?: ExamPaper["answerSheetSettings"],

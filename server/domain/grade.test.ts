@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
 import { runWithState } from "../runtime-db.js";
 import { gradeService } from "./grade.js";
+import { classService } from "./class.js";
 import { buildDefaultGradeSettings } from "../../src/lib/grade-statistics.js";
 
 function state(): AppState {
@@ -113,6 +114,110 @@ function addSecondCohort(appState: AppState): void {
 }
 
 describe("grade service", () => {
+  it("updates existing unpublished score statistics when editing a student's eligibility", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "参与统计切换",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects: ["数学"],
+        rows: [{
+          rowKey: "row-1",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          studentId: "student-1",
+          scores: { 数学: 95 },
+        }],
+      });
+      expect(exam.records[0].gradeRank).toBe(1);
+      await classService.updateStudent("student-1", {
+        studentType: "resumed",
+        includeInStatistics: false,
+      });
+      const excluded = (await gradeService.getExam(exam.id, undefined, appState.teachers[0]))!.records[0];
+      expect(excluded).toMatchObject({
+        scores: { 数学: 95 }, includeInStatistics: false, gradeRank: 0, classRank: 0,
+      });
+      expect((appState.students as any[])[0]).toMatchObject({
+        studentType: "resumed", includeInStatistics: false, isExternal: false,
+      });
+      await classService.updateStudent("student-1", { includeInStatistics: true });
+      expect((await gradeService.getExam(exam.id, undefined, appState.teachers[0]))!.records[0]).toMatchObject({
+        includeInStatistics: true, gradeRank: 1, classRank: 1,
+      });
+    });
+  });
+
+  it("rebuilds published summary snapshots and query averages when eligibility changes", async () => {
+    const appState = state();
+    const teacher = appState.teachers[0] as any;
+    await runWithState(appState, async () => {
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "已发布的考试",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects: ["数学"],
+        rows: [{
+          rowKey: "row-1",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          studentId: "student-1",
+          scores: { 数学: 95 },
+        }],
+      });
+      const published = await gradeService.publishExamResults(exam.id, undefined, teacher);
+      const token = published.publication!.shareToken;
+      const initial = await gradeService.getPublishedReportByToken(token);
+      expect(initial.classAverage?.groups.flatMap((group) => group.rows)[0].studentCount).toBe(1);
+      await classService.updateStudent("student-1", { includeInStatistics: false });
+      const report = await gradeService.getPublishedReportByToken(token);
+      expect(report.classAverage?.groups.flatMap((group) => group.rows)[0].studentCount).toBe(0);
+      expect(report.totalScoreRanking?.tables.flatMap((table) => table.rows)).toEqual([]);
+      teacher.role = "school_admin";
+      teacher.affiliations[0].role = "school_admin";
+      const query = await gradeService.getQueryData(teacher);
+      expect(query.exams[0].subjectAverages.数学).toBeNull();
+      expect(query.exams[0].classSummaries.find((row) => row.classId === "class-1")?.studentCount).toBe(0);
+      expect(query.exams[0].records[0].scores.数学).toBe(95);
+      expect((await gradeService.getExam(exam.id, undefined, appState.teachers[0]))!.records[0]).toMatchObject({
+        includeInStatistics: false, gradeRank: 0,
+      });
+    });
+  });
+
+  it("imports scores for excluded students but keeps them out of the rank pool", async () => {
+    const appState = state();
+    (appState.students as any[])[0].includeInStatistics = false;
+    await runWithState(appState, async () => {
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "不参与统计导入",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects: ["数学"],
+        rows: [{
+          rowKey: "row-1",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          studentId: "student-1",
+          scores: { 数学: 95 },
+        }],
+      });
+      expect(exam.records[0]).toMatchObject({
+        includeInStatistics: false, scores: { 数学: 95 }, gradeRank: 0, classRank: 0,
+      });
+    });
+  });
+
   it("builds sorted class profiles from roster and latest imported scores", async () => {
     const appState = state();
     (appState.classTypeCategories as any[]) = [{

@@ -1,6 +1,6 @@
 import { openPage } from "@/lib/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   BookOpen, Plus, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
@@ -174,6 +174,8 @@ type LessonTab = "courseware" | "teachingPlan" | "schedule" | "homework" | "noti
 
 export function MyLessonsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedEditId = searchParams.get("edit");
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const [coursewares, setCoursewares] = useState<LessonCourseware[]>([]);
   const [completedCoursewares, setCompletedCoursewares] = useState<LessonCourseware[]>([]);
@@ -187,6 +189,7 @@ export function MyLessonsPage() {
   const [homeworkLoading, setHomeworkLoading] = useState(true);
   const [publishingHomework, setPublishingHomework] = useState(false);
   const [homeworkContent, setHomeworkContent] = useState("");
+  const [homeworkTitle, setHomeworkTitle] = useState("");
   const [homeworkUploads, setHomeworkUploads] = useState<HomeworkUpload[]>([]);
   const [homeworkDate, setHomeworkDate] = useState(localDateValue);
   const [homeworkEndDate, setHomeworkEndDate] = useState(localDateValue);
@@ -199,7 +202,8 @@ export function MyLessonsPage() {
   const [noticeEndsAt, setNoticeEndsAt] = useState(() => localDateTimeValue(new Date(Date.now() + 24 * 60 * 60_000)));
   const [selectedNoticeClassIds, setSelectedNoticeClassIds] = useState<string[]>([]);
   const [publishingNotice, setPublishingNotice] = useState(false);
-  const [activeTab, setActiveTab] = useState<LessonTab>("courseware");
+  const [activeTab, setActiveTab] = useState<LessonTab>(() =>
+    searchParams.get("tab") === "homework" ? "homework" : "courseware");
   const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null);
   const [editingHomeworkId, setEditingHomeworkId] = useState<string | null>(null);
   const [homeworkAttachments, setHomeworkAttachments] = useState<ClassroomHomeworkAttachment[]>([]);
@@ -224,6 +228,7 @@ export function MyLessonsPage() {
   const [teachingPlanLoading, setTeachingPlanLoading] = useState(true);
   const [savingTeachingPlan, setSavingTeachingPlan] = useState(false);
   const homeworkDraftVersion = useRef(0);
+  const openedHomeworkId = useRef<string | null>(null);
 
   const classNames = useMemo(
     () => new Map(classes.map((item) => [item.id, `${item.grade} · ${item.name}`])),
@@ -483,6 +488,7 @@ export function MyLessonsPage() {
     homeworkDraftVersion.current += 1;
     setEditingHomeworkId(null);
     setHomeworkContent("");
+    setHomeworkTitle("");
     setHomeworkUploads([]);
     setHomeworkAttachments([]);
     setHomeworkDate(localDateValue());
@@ -506,6 +512,7 @@ export function MyLessonsPage() {
     const scheduled = new Date(homework.publishAt).getTime() > Date.now();
     setEditingHomeworkId(homework.id);
     setHomeworkContent(homework.content);
+    setHomeworkTitle(homework.title || "");
     setHomeworkUploads([]);
     setHomeworkAttachments(homework.attachments || []);
     setHomeworkDate(homework.assignedDate);
@@ -515,6 +522,15 @@ export function MyLessonsPage() {
     setSelectedClassIds(homework.classIds);
     setActiveTab("homework");
   };
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "homework") setActiveTab("homework");
+    if (!requestedEditId || openedHomeworkId.current === requestedEditId) return;
+    const homework = homeworks.find((item) => item.id === requestedEditId);
+    if (!homework) return;
+    openedHomeworkId.current = requestedEditId;
+    handleEditHomework(homework);
+  }, [homeworks, requestedEditId, searchParams]);
 
   const handlePublishNotice = async () => {
     if (!teacher?.schoolId) return;
@@ -601,6 +617,7 @@ export function MyLessonsPage() {
     setPublishingHomework(true);
     try {
       const input = {
+        ...(homeworkTitle.trim() ? { title: homeworkTitle.trim() } : {}),
         content: homeworkContent,
         attachments: homeworkAttachments,
         classIds: selectedClassIds,
@@ -1169,6 +1186,15 @@ export function MyLessonsPage() {
           </div>
         </div>
 
+        <Input
+          label="作业名称"
+          value={homeworkTitle}
+          onChange={(event) => setHomeworkTitle(event.target.value)}
+          placeholder="例如：第六章函数周末练习（可选）"
+          hint="选填；未填写时在作业列表中显示内容首行。"
+          maxLength={120}
+          className="mb-3"
+        />
         <Textarea
           label="作业内容"
           value={homeworkContent}

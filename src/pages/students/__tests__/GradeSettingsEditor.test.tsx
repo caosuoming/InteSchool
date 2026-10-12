@@ -119,6 +119,38 @@ describe("GradeSettingsEditor", () => {
     expect(classSetting.examSubjects).toContain("数学");
   });
 
+  it("starts with no class teacher selected and changes only the chosen class", async () => {
+    const user = userEvent.setup();
+    const settings = buildDefaultGradeSettings(["数学"], classes.map((item) => item.id));
+    settings.subjectTeacherIds = { 数学: ["teacher-math"] };
+    const teacherContext = {
+      ...context,
+      teachers: [{ id: "teacher-math", name: "数学老师", subject: "数学" }],
+    };
+    const onChange = vi.fn();
+
+    const view = render(
+      <GradeSettingsEditor settings={settings} subjects={["数学"]} context={teacherContext}
+        onChange={onChange} section="settings" />,
+    );
+    const buttons = screen.getAllByRole("button", { name: "数学老师" });
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((button) => !button.querySelector("svg"))).toBe(true);
+
+    await user.click(buttons[0]);
+    const next = onChange.mock.lastCall?.[0];
+    expect(next.classSubjectTeacherIds["class-2"].数学).toEqual(["teacher-math"]);
+    expect(next.classSubjectTeacherIds["class-10"].数学).toEqual([]);
+
+    view.rerender(
+      <GradeSettingsEditor settings={next} subjects={["数学"]} context={teacherContext}
+        onChange={onChange} section="settings" />,
+    );
+    const updated = screen.getAllByRole("button", { name: "数学老师" });
+    expect(updated[0].querySelector("svg")).not.toBeNull();
+    expect(updated[1].querySelector("svg")).toBeNull();
+  });
+
   it("allows manually editing the grade-bound homeroom teacher", async () => {
     const user = userEvent.setup();
     const settings = buildDefaultGradeSettings(["数学"], classes.map((item) => item.id));

@@ -177,6 +177,100 @@ describe("ExtractReviewModal", () => {
     expect(screen.getAllByRole("button", { name: /与上一块合并/ })).toHaveLength(2);
   });
 
+  it.each([
+    {
+      target: "content",
+      expected: { stem: "原题干\n\n补充内容", analysis: "已有解析", summary: "已有总结" },
+    },
+    {
+      target: "analysis",
+      expected: { stem: "原题干", analysis: "已有解析\n\n补充内容", summary: "已有总结" },
+    },
+    {
+      target: "summary",
+      expected: { stem: "原题干", analysis: "已有解析", summary: "已有总结\n\n补充内容" },
+    },
+  ])("merges a block into the previous question's $target field", async ({ target, expected }) => {
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="合并测试"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[
+          {
+            id: "block-question",
+            type: "question",
+            content: "原题干",
+            order: 0,
+            status: "new",
+            questionType: "essay",
+            answer: "A",
+            analysis: "已有解析",
+            summary: "已有总结",
+          },
+          {
+            id: "block-info",
+            type: "documentInfo",
+            content: "补充内容",
+            order: 1,
+            status: "new",
+          },
+        ]}
+      />,
+    );
+
+    const targetSelect = screen.getByRole("combobox", { name: "第2块合并到上一题的部分" });
+    expect(targetSelect).toHaveValue("content");
+    if (target !== "content") await user.selectOptions(targetSelect, target);
+    await user.click(screen.getAllByRole("button", { name: "与上一块合并" })[1]);
+
+    expect(screen.queryByText("文档信息 1")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0]).toMatchObject(expected);
+    await waitFor(() => expect(mocks.createLectureExtractCopy).toHaveBeenCalledTimes(1));
+    expect(mocks.createLectureExtractCopy.mock.calls[0][1]).toEqual([
+      expect.objectContaining({ id: "block-question", type: "question", content: expected.stem }),
+    ]);
+  });
+
+  it("keeps ordinary block merging unchanged when the previous block is not a question", async () => {
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="普通合并"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[
+          { id: "block-knowledge", type: "knowledge", content: "知识开头", order: 0, status: "new" },
+          { id: "block-info", type: "documentInfo", content: "知识结尾", order: 1, status: "new" },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("combobox", { name: /合并到上一题的部分/ })).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "与上一块合并" })[1]);
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].knowledgeBlocks[0].content)
+      .toBe("知识开头\n\n知识结尾");
+  });
+
   it("reviews background extraction blocks without parsing the file again", async () => {
     render(
       <ExtractReviewModal

@@ -39,6 +39,8 @@ const EXAM_MANAGER_MUTATIONS = new Set([
   "copyCohortSettings",
   "updateExamSettings",
   "updateExamMetadata",
+  "setExamAccess",
+  "createExamOneTimePassword",
   "adjustExamScore",
   "publishExamResults",
   "unpublishExamResults",
@@ -433,6 +435,10 @@ function filterAuthorizedResult(
   result: unknown,
   teacher: TeacherRecord | null,
 ): unknown {
+  if (teacher && (service === "examPaper" || service === "lecture") && method === "listPublishedAnswerSheets" && Array.isArray(result)) {
+    const schoolId = teacher.schoolId || personalResourceScopeId(teacher.id);
+    return result.filter((item) => item && typeof item === "object" && (item as { schoolId?: string }).schoolId === schoolId);
+  }
   if (
     teacher
     && service === "question"

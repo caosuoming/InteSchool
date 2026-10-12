@@ -215,6 +215,32 @@ describe("combined grade exports", () => {
     expect(tableFive.data[2].every((cell) => cell?.align === "center")).toBe(true);
   });
 
+  it("exports the unified-only school mean with an exclusion note", async () => {
+    const separateSettings = {
+      ...settings,
+      classSubjects: settings.classSubjects.map((item) => item.classId === "class-1"
+        ? { ...item, statisticSubjects: ["语文"], separateRankSubjects: ["化学"] }
+        : item),
+    };
+    const report = buildGradeClassAverageReport(exam, classAverageTemplate, context, separateSettings);
+    await exportGradeClassAverageReport(report);
+
+    const rows = writeXlsxFile.mock.calls[0][0] as Array<Array<null | {
+      value?: string | number;
+      columnSpan?: number;
+      wrap?: boolean;
+    }>>;
+    const overallRow = rows.find((row) => String(row[0]?.value).startsWith("全校平均"))!;
+    expect(overallRow[0]).toMatchObject({
+      value: "全校平均（不参与统一排名：化学：1班；总分：1班）",
+      columnSpan: 3,
+      wrap: true,
+    });
+    expect(overallRow[3]?.value).toBe(115);
+    expect(overallRow[4]?.value).toBe(85);
+    expect(overallRow[5]?.value).toBe(195);
+  });
+
   it("exports separate ranking group standards alongside the summary counts", async () => {
     const separateSettings = {
       ...settings,
@@ -272,6 +298,8 @@ describe("combined grade exports", () => {
     const classStatisticsReport = buildGradeClassStatisticsReport(exam, [], {
       showSubjectClassRanks: false,
       showSubjectGradeRanks: false,
+      showRawSubjectScores: false,
+      showAssignedSubjectScores: false,
       showRawTotal: false,
       showAssignedTotal: false,
       comparisonExamIds: [],
@@ -298,6 +326,8 @@ describe("combined grade exports", () => {
     const report = buildGradeClassStatisticsReport(exam, [], {
       showSubjectClassRanks: true,
       showSubjectGradeRanks: true,
+      showRawSubjectScores: true,
+      showAssignedSubjectScores: true,
       showRawTotal: true,
       showAssignedTotal: true,
       comparisonExamIds: [],
@@ -309,6 +339,28 @@ describe("combined grade exports", () => {
     const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string }>;
     expect(sheets.map((sheet) => sheet.sheet)).toEqual(["高三（1）班", "高三（2）班"]);
     expect(toFile).toHaveBeenCalledWith("期末考试各班成绩统计.xlsx");
+  });
+
+  it("exports separate raw and assigned elective values into the table-six workbook", async () => {
+    const report = buildGradeClassStatisticsReport(exam, [], {
+      showSubjectClassRanks: false,
+      showSubjectGradeRanks: false,
+      showRawSubjectScores: true,
+      showAssignedSubjectScores: true,
+      showRawTotal: false,
+      showAssignedTotal: false,
+      comparisonExamIds: [],
+    });
+    await exportGradeClassStatisticsReport(report, exam.name);
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
+      data: Array<Array<{ value?: string | number }>>;
+    }>;
+    expect(sheets[0].data[0].map((cell) => cell.value)).toEqual([
+      "班级", "姓名", "语文", "化学（原始分）", "化学（赋分）",
+    ]);
+    expect(sheets[0].data[1].map((cell) => cell.value)).toEqual([
+      "高三（1）班", "张三", 120, 80, 90,
+    ]);
   });
 
   it("includes every subject score in the standalone table-five export", async () => {

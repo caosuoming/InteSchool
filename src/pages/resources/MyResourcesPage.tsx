@@ -1577,7 +1577,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       .filter((paper) => paper.hasAnswerSheet)
       .map((paper) => ({
         id: `examPaper:${paper.id}`,
-        title: paper.title,
+        title: `${paper.title}（答题卡）`,
         sourceId: paper.id,
         sourceType: "examPaper" as const,
         sourceTitle: paper.title,
@@ -1593,7 +1593,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       .filter((lecture) => lecture.hasAnswerSheet)
       .map((lecture) => ({
         id: `lecture:${lecture.id}`,
-        title: lecture.title,
+        title: `${lecture.title}（答题卡）`,
         sourceId: lecture.id,
         sourceType: "lecture" as const,
         sourceTitle: lecture.title,
@@ -3350,6 +3350,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               )}
               {activeTab === "courseware" && (
                 <>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/geogebra/new?mode=classic")}>
+                    <Plus className="w-3.5 h-3.5" />制作 GGB
+                  </Button>
                   <Button variant="gold" size="sm" onClick={handleCreateBlankCourseware}>
                     <Plus className="w-3.5 h-3.5" />
                     做课件
@@ -3361,10 +3364,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 </>
               )}
               {activeTab === "material" && (
-                <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=material")}>
-                  <Upload className="w-3.5 h-3.5" />
-                  上传素材
-                </Button>
+                <>
+                  <Button variant="gold" size="sm" onClick={() => openPage("/geogebra/new?mode=geometry")}>
+                    <Plus className="w-3.5 h-3.5" />制作几何画板
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/geogebra/new?mode=classic")}>
+                    <Plus className="w-3.5 h-3.5" />制作 GGB
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=material")}>
+                    <Upload className="w-3.5 h-3.5" />上传素材
+                  </Button>
+                </>
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap w-full">
@@ -3528,7 +3538,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               {activeTab === "answerSheet" && (paginatedResourceData as AnswerSheetLibraryItem[]).map((item) => (
                 <ResourceCard
                   key={item.id}
-                  title="答题卡"
+                  title={item.title}
                   description={`${item.sourceType === "examPaper" ? "试卷" : "讲义"}：${item.sourceTitle}`}
                   titleIcon={<Layout className="h-4 w-4 text-gold-600" />}
                   titleActions={(

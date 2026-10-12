@@ -577,6 +577,8 @@ export interface StudentArchiveOverview {
   records: StudentArchiveRecord[];
 }
 
+export type StudentType = "regular" | "visiting" | "resumed";
+
 export interface Student {
   id: string;
   name: string;
@@ -588,6 +590,10 @@ export interface Student {
   /** 学生的选科组合，例如“物化生”。 */
   subjectSelection?: string;
   isExternal?: boolean;
+  /** 在校类型，旧记录根据 isExternal 推导。 */
+  studentType?: StudentType;
+  /** 是否参与成绩汇总、赋分及排名；旧记录默认参与。 */
+  includeInStatistics?: boolean;
   externalSchool?: string;
   /** 学生状态：在读 / 挂起 / 已毕业 / 已转校 */
   status: StudentStatus;
@@ -1134,6 +1140,8 @@ export interface GradeScoreRecord {
   className: string;
   /** 成绩表中的学生选科组合或科类。 */
   subjectSelection?: string;
+  /** 不参与汇总的学生仍保留在班级成绩记录中。 */
+  includeInStatistics?: boolean;
   /** 成绩表中的班型描述。 */
   classType?: string;
   scores: Record<string, number | null>;
@@ -1195,6 +1203,8 @@ export interface GradeExam {
   records: GradeScoreRecord[];
   /** 成绩统计页手工微调的审计记录，按修改时间追加。 */
   scoreAdjustments?: GradeScoreAdjustment[];
+  /** 只包含公开的访问控制状态，不包含密码或验证凭据。 */
+  accessControl?: { passwordProtected: boolean; locked: boolean; exemptTeacherIds?: string[] };
   /** 当前有效的成绩发布；撤回后清空，重新发布会生成新链接。 */
   publication?: GradeExamPublication;
   settings: GradeExamSettings;
@@ -1548,8 +1558,16 @@ export interface SchoolSetting {
 /** 试卷状态 */
 export type ExamPaperStatus = "draft" | "published";
 
+/** 按项目编排试卷时的项目，允许先创建空项目。 */
+export interface ExamPaperProject {
+  id: string;
+  name: string;
+}
+
 /** 试卷题目项 */
 export interface ExamPaperQuestion {
+  /** 按项目编排时所属项目；未指定表示未分组。 */
+  projectId?: string;
   id: string;
   questionId?: string; // 关联题库中的题目（拆解后填入）
   stem: string;
@@ -1605,8 +1623,10 @@ export interface ExamPaper {
   questionSourceType?: string;
   /** 上传文档拆解为题目时使用的题类。 */
   questionCategory?: string;
-  /** 题目编排方式：按题型分组或不分题型 */
+  /** 题目编排方式：按题型分组或按项目（允许不分组）。 */
   layoutMode?: "grouped" | "flat";
+  /** 按项目模式中用户创建的有序项目，支持空项目。 */
+  projects?: ExamPaperProject[];
   /** 使用班级 ID；文档级使用对象只精确到班级。 */
   classIds?: string[];
   /** 旧数据兼容字段；新的文档级使用对象以 classIds 为准。 */
@@ -1630,6 +1650,8 @@ export interface ExamPaper {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 答题卡发布时间；撤回后清除，独立于资源本身的发布状态。 */
+  answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
   answerSheetSettings?: {
     paperSize: "A4" | "A3" | "8K";
@@ -1642,6 +1664,7 @@ export interface ExamPaper {
     stemFontSize?: number;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   createdAt: string;
@@ -2236,6 +2259,8 @@ export interface Lecture {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 答题卡发布时间；撤回后清除，独立于资源本身的发布状态。 */
+  answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
   answerSheetSettings?: {
     paperSize: "A4" | "A3" | "8K";
@@ -2248,6 +2273,7 @@ export interface Lecture {
     stemFontSize?: number;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   /** 排版设置 */
@@ -2976,6 +3002,8 @@ export interface ClassroomHomeworkAttachment {
 /** 教师发布到“我要上课”教室屏的作业。 */
 export interface ClassroomHomework {
   id: string;
+  /** 可选作业名称；历史记录以内容首行展示。 */
+  title?: string;
   teacherId: string;
   teacherName: string;
   schoolId: string;

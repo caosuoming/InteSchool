@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   listPersonalClasses: vi.fn(),
   listStudentsByClass: vi.fn(),
   listPublications: vi.fn(),
-  publishExam: vi.fn(),
   listExamPaperTypes: vi.fn(),
   listSettings: vi.fn(),
   getChapterTree: vi.fn(),
@@ -85,7 +84,6 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/examPublish", () => ({
   examPublishService: {
     listPublications: mocks.listPublications,
-    publishExam: mocks.publishExam,
     revokePublication: vi.fn(),
   },
 }));
@@ -660,7 +658,7 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(toolbar).getByRole("button", { name: "添加使用对象" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "发送到我的课件" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
-    expect(within(toolbar).getByRole("button", { name: "发布试卷" })).toBeInTheDocument();
+    expect(within(toolbar).queryByRole("button", { name: "发布试卷" })).not.toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "创建副本" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "一键显示答案" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "下载" })).toBeInTheDocument();
@@ -990,7 +988,7 @@ describe("ExamPaperEditorPage preview", () => {
     const toolbar = screen.getByRole("toolbar", { name: "试卷辅助操作" });
     expect(within(toolbar).getByRole("button", { name: "添加到集体备课" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
-    expect(within(toolbar).getByRole("button", { name: "发布试卷" })).toBeInTheDocument();
+    expect(within(toolbar).queryByRole("button", { name: "发布试卷" })).not.toBeInTheDocument();
     expect(toolbar.previousElementSibling).toContainElement(
       screen.getByRole("heading", { name: `编辑：${paper.title}` }),
     );
@@ -1042,6 +1040,92 @@ describe("ExamPaperEditorPage preview", () => {
     const essayRow = screen.getByText(secondQuestion.stem).closest("div.border");
     expect(essayRow).not.toBeNull();
     expect(within(essayRow as HTMLElement).getByText("3.")).toBeInTheDocument();
+  });
+
+  it("creates an empty project, assigns existing questions, and saves the project structure", async () => {
+    const flatPaper = { ...paper, isExtractCopy: false, contentBlocks: [], layoutMode: "flat" as const, projects: [] };
+    mocks.getPaper.mockResolvedValue(flatPaper);
+    mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...flatPaper, ...patch }));
+
+    renderEditorPage();
+    await screen.findByLabelText("文档名");
+    expect(screen.getAllByText("按项目").length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("项目名称 1")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("新项目名称"), { target: { value: "基础练习" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建项目" }));
+    expect(screen.getByLabelText("项目名称 1")).toHaveValue("基础练习");
+    expect(screen.getAllByText("未分组").length).toBeGreaterThan(0);
+
+    const assignSelect = screen.getByLabelText<HTMLSelectElement>("第 1 题所属项目");
+    const projectId = within(assignSelect).getByRole<HTMLOptionElement>("option", { name: "基础练习" }).value;
+    fireEvent.change(assignSelect, { target: { value: projectId } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, expect.objectContaining({
+      layoutMode: "flat",
+      projects: [{ id: projectId, name: "基础练习" }],
+      questions: [expect.objectContaining({ projectId })],
+    })));
+  });
+
+  it("marks only unmarked multiple-choice stems in project editor and preview without changing stored stems", async () => {
+    const flatPaper = {
+      ...paper, isExtractCopy: false, contentBlocks: [], layoutMode: "flat" as const,
+      questions: [
+        { ...paper.questions[0], type: "multiple", stem: "选出所有正确答案" },
+        { ...paper.questions[0], id: "paper-question-2", type: "multiple", stem: "<p>（多选）选择正确结论</p>" },
+        { ...paper.questions[0], id: "paper-question-3", type: "single", stem: "仅选一项" },
+      ],
+    };
+    mocks.getPaper.mockResolvedValue(flatPaper);
+
+    renderEditorPage();
+    await screen.findByLabelText("文档名");
+    const expectMarkers = () => {
+      const missing = screen.getByText("选出所有正确答案").closest(".cursor-pointer");
+      const existing = screen.getByText("（多选）选择正确结论").closest(".cursor-pointer");
+      const single = screen.getByText("仅选一项").closest(".cursor-pointer");
+      expect(missing?.textContent).toContain("（多选）选出所有正确答案");
+      expect(missing?.textContent?.match(/（多选）/g)).toHaveLength(1);
+      expect(existing?.textContent?.match(/（多选）/g)).toHaveLength(1);
+      expect(single).not.toHaveTextContent("（多选）");
+    };
+
+    expectMarkers();
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    await screen.findByTestId("exam-paper-preview");
+    expectMarkers();
+    expect(mocks.updatePaper).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑试卷" }));
+    await screen.findByLabelText("文档名");
+    fireEvent.click(screen.getByRole("button", { name: "按题型" }));
+    expect(screen.getByText("选出所有正确答案").closest(".cursor-pointer")).not.toHaveTextContent("（多选）");
+  });
+
+  it("allows adding questions directly into an empty project", async () => {
+    const flatPaper = { ...paper, isExtractCopy: false, contentBlocks: [], layoutMode: "flat" as const,
+      questions: [], projects: [{ id: "prj-a", name: "计算题" }] };
+    mocks.getPaper.mockResolvedValue(flatPaper);
+    mocks.listQuestions.mockResolvedValue([question, secondQuestion]);
+    mocks.listBaskets.mockResolvedValue([{
+      id: "basket-project", teacherId: teacher.id, name: "项目用题", questionIds: [question.id],
+      materialIds: [], createdAt: timestamp, updatedAt: timestamp,
+    }]);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    renderEditorPage();
+    const heading = await screen.findByLabelText("项目名称 1");
+    expect(heading).toHaveValue("计算题");
+    fireEvent.click(screen.getAllByRole("button", { name: "添加题目" }).at(-1)!);
+    expect(screen.getByLabelText("添加到项目")).toHaveValue("prj-a");
+    fireEvent.click(screen.getByRole("button", { name: "资源篮" }));
+    fireEvent.click(await screen.findByRole("button", { name: "项目用题 (1)" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择第 1 道题" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加选中题目" }));
+    await waitFor(() => expect(screen.getByLabelText("第 1 题所属项目")).toHaveValue("prj-a"));
+    expect(screen.getByText(question.stem)).toBeInTheDocument();
+    confirmSpy.mockRestore();
   });
 
   it("supports grouped score changes and aligned catalog-related controls in the editor", async () => {

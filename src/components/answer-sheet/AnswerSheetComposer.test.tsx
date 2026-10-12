@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AnswerSheetComposer } from "./AnswerSheetComposer";
 
@@ -25,6 +25,52 @@ function renderComposer(props: Partial<React.ComponentProps<typeof AnswerSheetCo
 }
 
 describe("AnswerSheetComposer", () => {
+  it("keeps the source order and question numbers even when concentrated answer areas move to the front", () => {
+    const { container } = renderComposer({
+      questions: [
+        { id: "fill", label: "例1", type: "short", stem: "填空", score: 4 },
+        { id: "choice1", type: "single", stem: "选择第一", score: 4 },
+        { id: "essay", type: "essay", stem: "证明", score: 8 },
+        { id: "choice2", type: "single", stem: "选择第二", score: 4 },
+      ],
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+    });
+    const originalRows = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="question"]'), (item) => item.textContent || "");
+    expect(originalRows.map((row) => [row.includes("填空"), row.includes("选择第一"), row.includes("证明"), row.includes("选择第二")]))
+      .toEqual([[true, false, false, false], [false, true, false, false], [false, false, true, false], [false, false, false, true]]);
+    expect(originalRows[0]).toContain("例1.");
+    expect(originalRows[1]).toContain("2.");
+    expect(originalRows[2]).toContain("3.");
+    expect(originalRows[3]).toContain("4.");
+    const choices = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="zone-choice"]'), (item) => item.textContent || "");
+    expect(choices).toHaveLength(2);
+    expect(choices[0]).toContain("2.");
+    expect(choices[1]).toContain("4.");
+    expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"]')).toHaveTextContent("例1.");
+  });
+
+  it("publishes before download, prevents editing while published, and supports withdrawal", async () => {
+    const onPublicationChange = vi.fn().mockResolvedValue(undefined);
+    const print = vi.spyOn(window, "print").mockImplementation(() => {});
+    try {
+      const { rerender } = renderComposer({
+        initialViewMode: "preview",
+        onPublicationChange,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "下载答题卡" }));
+      await waitFor(() => expect(onPublicationChange).toHaveBeenCalledWith(true, expect.objectContaining({ paperSize: "A4" })));
+      await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+      rerender(<AnswerSheetComposer title="期中" resourceType="exam-paper" resourceId="paper-1" resourceLabel="试卷"
+        questions={questions} published initialViewMode="preview" onPublicationChange={onPublicationChange} onBack={vi.fn()} />);
+      expect(screen.getByRole("button", { name: "撤回发布" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "编辑答题卡" })).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "撤回发布" }));
+      await waitFor(() => expect(onPublicationChange).toHaveBeenCalledWith(false, expect.anything()));
+    } finally {
+      print.mockRestore();
+    }
+  });
+
   it("uses an 8-digit student number by default and renders a real QR code", () => {
     const { container } = renderComposer();
 
@@ -536,6 +582,90 @@ describe("AnswerSheetComposer", () => {
       mode: "with-questions",
       studentNumberDigits: 9,
       choiceLayout: "concentrated",
+    }));
+  });
+
+
+  it("keeps fill writing lines anchored to the bottom of resized answer boxes", () => {
+    const onSettingsChange = vi.fn();
+    const { container } = renderComposer({ onSettingsChange });
+
+    const fillBox = screen.getByLabelText("第3题评分框").closest('[data-testid="answer-box"]')!;
+    expect(fillBox.querySelector('[data-testid="fill-answer-rule"]')).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-testid="fill-answer-rule"]')).toHaveLength(1);
+    expect(fillBox.querySelector('[data-testid="fill-answer-rule"]')).toHaveClass("answer-sheet-fill-rule");
+
+    vi.spyOn(fillBox, "getBoundingClientRect").mockReturnValue({ height: 200, width: 350 } as DOMRect);
+    fireEvent.pointerUp(fillBox);
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({
+      answerBoxHeights: { q3: 200 },
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByTestId("fill-answer-rule").closest('[data-testid="answer-box"]'))
+      .toHaveStyle({ height: "200px" });
+    fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
+    fireEvent.click(screen.getByLabelText("附题干"));
+    const inlineBlank = container.querySelector(".answer-sheet-inline-blank");
+    expect(inlineBlank).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("附题干答题区布局"), {
+      target: { value: "concentrated" },
+    });
+    expect(screen.getAllByTestId("fill-answer-rule")).toHaveLength(1);
+  });
+
+  it("adapts choice option rows to measured widths without wrapping each option", () => {
+    const measurement = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return {
+        width: this.dataset.testid === "choice-option-layout" ? 150
+          : this.dataset.testid === "choice-option" ? 60 : 0,
+        height: 0,
+      } as DOMRect;
+    });
+    try {
+      const { container } = renderComposer({
+        initialSettings: { mode: "with-questions" },
+        questions: [questions[0]],
+      });
+
+      const rows = screen.getAllByTestId("choice-option-row");
+      expect(rows).toHaveLength(2);
+      expect(rows[0].querySelectorAll('[data-testid="choice-option"]')).toHaveLength(2);
+      expect(rows[1].querySelectorAll('[data-testid="choice-option"]')).toHaveLength(2);
+      expect(container.querySelectorAll(".answer-sheet-choice-option-content")).toHaveLength(4);
+    } finally {
+      measurement.mockRestore();
+    }
+  });
+
+  it("saves per-option line break choices and reproduces them in preview", () => {
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      initialSettings: { mode: "with-questions" },
+      onSettingsChange,
+      questions: [questions[0]],
+    });
+
+    expect(screen.getAllByTestId("choice-option-row")).toHaveLength(1);
+    const select = screen.getByLabelText("第1题选项B排列方式");
+    fireEvent.change(select, { target: { value: "new-line" } });
+    expect(screen.getAllByTestId("choice-option-row")).toHaveLength(2);
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      choiceOptionBreaks: { q1: { 1: "new-line" } },
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getAllByTestId("choice-option-row")).toHaveLength(2);
+    expect(screen.queryByLabelText("第1题选项B排列方式")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
+    expect(screen.getByLabelText("第1题选项B排列方式")).toHaveValue("new-line");
+    fireEvent.change(screen.getByLabelText("第1题选项B排列方式"), {
+      target: { value: "auto" },
+    });
+    expect(screen.getAllByTestId("choice-option-row")).toHaveLength(1);
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      choiceOptionBreaks: {},
     }));
   });
 });

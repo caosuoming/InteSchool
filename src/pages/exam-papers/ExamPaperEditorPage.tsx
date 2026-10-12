@@ -4,9 +4,9 @@ import { useAutosave } from "@/hooks/useAutosave";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
-  FileSpreadsheet, GraduationCap, Users, Send,
+  FileSpreadsheet, Users,
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered, Copy,
-  AlertCircle, Lock, Calendar, Layout,
+  Lock, Layout,
   Sparkles, BookOpen, Lightbulb, Download,
   CheckSquare, ArrowUpDown, RotateCcw,
 } from "lucide-react";
@@ -34,6 +34,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { needsMultipleChoiceMarker } from "@/lib/multiple-choice-marker";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
 import { RelatedQuestionReplacementPanel } from "@/components/question/RelatedQuestionReplacementPanel";
@@ -80,6 +81,7 @@ import type {
   Basket,
   ExamPaper,
   ExamPaperQuestion,
+  ExamPaperProject,
   ExamPaperType,
   ExamPublication,
   ExtractedDocumentBlock,
@@ -102,6 +104,7 @@ import {
 import { treeNameMap } from "@/lib/basket-audience";
 import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
 import { isDocumentStructureLocked } from "@/lib/document-resource";
+import { getProjectSections } from "./project-sections";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
 
@@ -202,6 +205,7 @@ type AddSource = "choose" | "basket" | "bank" | "examPaper" | "lecture";
 type AddTarget =
   | { kind: "group"; groupType: string; label: string }
   | { kind: "heading"; headingId: string; label: string }
+  | { kind: "project"; projectId: string; label: string }
   | null;
 
 interface ExamPaperNavigationDraft {
@@ -216,6 +220,7 @@ interface ExamPaperNavigationDraft {
   paperQuestions: ExamPaperQuestion[];
   contentBlocks: ExtractedDocumentBlock[];
   layoutMode: "grouped" | "flat";
+  projects: ExamPaperProject[];
   selectedClassIds: string[];
   questions: Record<string, Question>;
 }
@@ -239,6 +244,7 @@ type ExamPaperSaveState = Pick<
   | "typeId"
   | "contentBlocks"
   | "layoutMode"
+  | "projects"
 >;
 
 function examPaperSaveStateFromPaper(paper: ExamPaper): ExamPaperSaveState {
@@ -258,6 +264,7 @@ function examPaperSaveStateFromPaper(paper: ExamPaper): ExamPaperSaveState {
     ...(structureLocked ? {} : {
       contentBlocks: paper.contentBlocks || [],
       layoutMode: paper.layoutMode || "grouped",
+      projects: paper.projects || [],
     }),
   };
 }
@@ -274,14 +281,14 @@ export default function ExamPaperEditorPage() {
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [paper, setPaper] = useState<ExamPaper | null>(null);
-  const [isUsedDocument, setIsUsedDocument] = useState(false);
+  const [hasAnswerRecords, setIsUsedDocument] = useState(false);
+  const isUsedDocument = hasAnswerRecords || Boolean(paper?.answerSheetPublishedAt);
   const isStructureLocked = isDocumentStructureLocked(paper);
   const isEditingLocked = isStructureLocked || isUsedDocument;
   const [questions, setQuestions] = useState<Record<string, Question>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedDraft, setSavedDraft] = useState<ExamPaperSaveState | null>(null);
-  const [publishing, setPublishing] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [downloadModes, setDownloadModes] = useState<DocumentDownloadMode[]>(["teacher"]);
@@ -314,6 +321,8 @@ export default function ExamPaperEditorPage() {
   const [paperQuestions, setPaperQuestions] = useState<ExamPaperQuestion[]>([]);
   const [contentBlocks, setContentBlocks] = useState<ExtractedDocumentBlock[]>([]);
   const [layoutMode, setLayoutMode] = useState<"grouped" | "flat">("grouped");
+  const [projects, setProjects] = useState<ExamPaperProject[]>([]);
+  const [newProjectName, setNewProjectName] = useState("");
   const [markingAllDone, setMarkingAllDone] = useState(false);
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
     { properties: true, answerStatus: true, answeredList: true, basket: true },
@@ -327,12 +336,7 @@ export default function ExamPaperEditorPage() {
   // 试题篮
   const [baskets, setBaskets] = useState<Basket[]>([]);
 
-  // 发布弹窗
-  const [publishOpen, setPublishOpen] = useState(false);
   const [classes, setClasses] = useState<AnyClass[]>([]);
-  const [publishTargetClassIds, setPublishTargetClassIds] = useState<string[]>([]);
-  const [publishPassword, setPublishPassword] = useState("");
-  const [publishUnlockAt, setPublishUnlockAt] = useState("");
 
   // 发布记录
   const [publications, setPublications] = useState<ExamPublication[]>([]);
@@ -402,6 +406,8 @@ export default function ExamPaperEditorPage() {
     () => getCollapsedStructuredBlockIds(contentBlocks, collapsedHeadingIds),
     [contentBlocks, collapsedHeadingIds],
   );
+  const projectSections = useMemo(() => getProjectSections(paperQuestions, projects), [paperQuestions, projects]);
+  const flatDisplayQuestions = useMemo(() => projectSections.flatMap((section) => section.questions), [projectSections]);
   const addTargetQuestionType = useMemo(() => {
     if (addTarget?.kind === "group") return addTarget.groupType;
     if (addTarget?.kind === "heading") {
@@ -506,6 +512,7 @@ export default function ExamPaperEditorPage() {
       setPaperQuestions(nextPaperQuestions);
       setContentBlocks(nextContentBlocks);
       setLayoutMode(draft?.layoutMode ?? p.layoutMode ?? "grouped");
+      setProjects(draft?.projects ?? p.projects ?? []);
       setSelectedClassIds(draft?.selectedClassIds ?? p.classIds ?? []);
       setPrepPasswordOpen(false);
       // 加载关联题目
@@ -801,6 +808,7 @@ export default function ExamPaperEditorPage() {
       paperQuestions,
       contentBlocks,
       layoutMode,
+      projects,
       selectedClassIds,
       questions,
     };
@@ -810,6 +818,7 @@ export default function ExamPaperEditorPage() {
     duration,
     grade,
     layoutMode,
+    projects,
     paper,
     paperQuestions,
     questions,
@@ -946,6 +955,29 @@ export default function ExamPaperEditorPage() {
       [next[idx], next[target]] = [next[target], next[idx]];
       return next;
     });
+  };
+
+  const handleMoveWithinProject = (questionId: string, projectId: string | undefined, direction: "up" | "down") => {
+    if (isEditingLocked) return;
+    setPaperQuestions((previous) => {
+      const projectIds = new Set(projects.map((project) => project.id));
+      const sameSection = (question: ExamPaperQuestion) => (projectIds.has(question.projectId || "") ? question.projectId : undefined) === projectId;
+      const sectionIndices = previous.flatMap((question, index) => sameSection(question) ? [index] : []);
+      const index = sectionIndices.findIndex((position) => previous[position].id === questionId);
+      const target = sectionIndices[index + (direction === "up" ? -1 : 1)];
+      if (target === undefined) return previous;
+      const next = [...previous];
+      [next[sectionIndices[index]], next[target]] = [next[target], next[sectionIndices[index]]];
+      return next;
+    });
+  };
+
+  const createProject = () => {
+    if (isEditingLocked) return;
+    const name = newProjectName.trim();
+    if (!name) return;
+    setProjects((previous) => [...previous, { id: crypto.randomUUID(), name }]);
+    setNewProjectName("");
   };
 
   const handleMoveWithinGroup = (idx: number, dir: "up" | "down") => {
@@ -1108,6 +1140,7 @@ export default function ExamPaperEditorPage() {
         analysis: q.analysis,
         score: subjectAwareDefaultQuestionScore(q.type, teacher?.subject, 5),
         type: q.type,
+        ...(addTarget?.kind === "project" ? { projectId: addTarget.projectId } : {}),
       }));
       const newBlocks: ExtractedDocumentBlock[] = newPqs.map((paperQuestion) => ({
         id: `doc-block-${crypto.randomUUID()}`,
@@ -1200,7 +1233,7 @@ export default function ExamPaperEditorPage() {
     classIds: selectedClassIds,
     studentIds: [],
     typeId: typeId || undefined,
-    ...(isStructureLocked ? {} : { contentBlocks, layoutMode }),
+    ...(isStructureLocked ? {} : { contentBlocks, layoutMode, projects }),
   }), [
     contentBlocks,
     description,
@@ -1208,6 +1241,7 @@ export default function ExamPaperEditorPage() {
     grade,
     isStructureLocked,
     layoutMode,
+    projects,
     paperQuestions,
     schoolYear,
     selectedClassIds,
@@ -1235,6 +1269,7 @@ export default function ExamPaperEditorPage() {
     if (!isStructureLocked) {
       setContentBlocks(structuredClone(savedDraft.contentBlocks || []));
       setLayoutMode(savedDraft.layoutMode || "grouped");
+      setProjects(structuredClone(savedDraft.projects || []));
     }
     toast.success("已撤销未保存修改");
   };
@@ -1306,41 +1341,6 @@ export default function ExamPaperEditorPage() {
     }
   };
 
-  // 发布
-  const handlePublish = async () => {
-    if (!paper || !teacher) return;
-    if (publishTargetClassIds.length === 0) {
-      toast.error("请选择发布班级");
-      return;
-    }
-    setPublishing(true);
-    try {
-      const qIds = paperQuestions.map((pq) => pq.questionId).filter(Boolean) as string[];
-      await examPublishService.publishExam({
-        examPaperId: paper.id,
-        publisherId: teacher.id,
-        publisherSchoolId: schoolId,
-        title: paper.title,
-        targetType: "schoolClass",
-        targetClassIds: publishTargetClassIds,
-        targetStudentIds: [],
-        isFormalExam: !!publishPassword || !!publishUnlockAt,
-        viewPassword: publishPassword || undefined,
-        unlockAt: publishUnlockAt || undefined,
-        questionIds: qIds,
-      });
-      toast.success("试卷已发布");
-      setPublishOpen(false);
-      setPublishTargetClassIds([]);
-      setPublishPassword("");
-      setPublishUnlockAt("");
-    } catch (e: any) {
-      toast.error("发布失败", e?.message);
-    } finally {
-      setPublishing(false);
-    }
-  };
-
   // 撤回发布
   const handleRevoke = async (pubId: string) => {
     setRevoking(true);
@@ -1385,6 +1385,7 @@ export default function ExamPaperEditorPage() {
         questions: paperQuestions,
         contentBlocks,
         layoutMode,
+        projects,
       }, questions, downloadModes);
       setDownloadModalOpen(false);
       toast.success(
@@ -1448,6 +1449,11 @@ export default function ExamPaperEditorPage() {
     setPaperQuestions((previous) => {
       const next = [...previous];
       next.sort((left, right) => {
+        if (layoutMode === "flat") {
+          const leftGroup = projects.findIndex((project) => project.id === left.projectId);
+          const rightGroup = projects.findIndex((project) => project.id === right.projectId);
+          if (leftGroup !== rightGroup) return leftGroup - rightGroup;
+        }
         if (layoutMode === "grouped") {
           const leftType = questions[left.questionId || ""]?.type || left.type;
           const rightType = questions[right.questionId || ""]?.type || right.type;
@@ -1659,12 +1665,6 @@ export default function ExamPaperEditorPage() {
               {paper?.hasAnswerSheet ? "预览答题卡" : "制作答题卡"}
             </Button>
           )}
-          {!prepTaskId && (
-            <Button variant="outline" onClick={() => setPublishOpen(true)}>
-              <Send className="w-4 h-4" />
-              发布试卷
-            </Button>
-          )}
           {!prepTaskId && paper?.teacherId === teacher?.id && (
             <Button variant="outline" onClick={handleDuplicate} loading={duplicating}>
               <Copy className="w-4 h-4" />
@@ -1687,6 +1687,8 @@ export default function ExamPaperEditorPage() {
           <Button
             variant="gold"
             onClick={() => navigateWithDraft(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+            disabled={Boolean(paper?.answerSheetPublishedAt)}
+            title={paper?.answerSheetPublishedAt ? "请先撤回发布答题卡" : undefined}
           >
             <Edit3 className="w-4 h-4" />
             编辑试卷
@@ -1833,7 +1835,7 @@ export default function ExamPaperEditorPage() {
                   />
                 );
               })
-            ) : paperQuestions.length === 0 ? (
+            ) : paperQuestions.length === 0 && !(layoutMode === "flat" && projects.length > 0) ? (
               <PreviewQuestionPair
                 left={(
                   <EmptyState
@@ -1898,64 +1900,69 @@ export default function ExamPaperEditorPage() {
                 ];
               })
             ) : (
-              paperQuestions.map((paperQuestion, index) => {
-                const linkedQuestion = paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined;
-                return (
+              projectSections.flatMap((section, sectionIndex) => [
+                ...(section.project ? [
                   <PreviewQuestionPair
-                    key={paperQuestion.id}
+                    key={`project-${section.project.id}`}
+                    leftClassName="pt-3 pb-2"
                     left={(
-                      <PreviewQuestionItem
-                        pq={paperQuestion}
-                        index={index}
-                        expanded={expandedPreviewQuestionIds.has(paperQuestion.id)}
-                        onExpandedChange={(expanded) => setPreviewQuestionExpanded(paperQuestion.id, expanded)}
-                      />
+                      <div className="flex items-center gap-3 border-b border-ink-200 pb-2">
+                        <h2 className="font-serif text-lg font-bold text-ink-900">
+                          {sectionNumerals[sectionIndex - (projectSections[0]?.project ? 0 : 1)] || sectionIndex + 1}、{section.project.name}
+                        </h2>
+                        <span className="text-sm text-ink-500">共 {section.questions.length} 题</span>
+                        <span className="text-sm font-medium text-gold-600">共 {section.questions.reduce((sum, item) => sum + item.score, 0)} 分</span>
+                      </div>
                     )}
-                    right={(
-                      <PreviewQuestionDetails
-                        pq={paperQuestion}
-                        index={index}
-                        question={linkedQuestion}
-                        progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
-                        chapterTree={chapterTree}
-                        knowledgeTree={knowledgeTree}
-                        onChapterTreeChange={setChapterTree}
-                        onKnowledgeTreeChange={setKnowledgeTree}
-                        chapterNameMap={chapterNameMap}
-                        knowledgeNameMap={knowledgeNameMap}
-                        onUpdateCatalogs={handleUpdateQuestionCatalogs}
-                        onBasketChanged={refreshBaskets}
-                        completionQuestionId={getCompletionQuestionId(paperQuestion)}
-                        students={audienceStudents}
-                        answerRecords={answerRecords}
-                        onUpdateStudentAnswer={handleUpdateStudentAnswer}
-                        onQuestionUpdated={handlePreviewQuestionUpdated}
-                        visibility={previewSidebarVisibility}
-                        canEditScore={paper?.teacherId === teacher?.id}
-                        onUpdateScore={handlePreviewUpdateScore}
-                      />
-                    )}
-                  />
-                );
-              })
+                  />,
+                ] : []),
+                ...section.questions.map((paperQuestion) => {
+                  const index = flatDisplayQuestions.findIndex((item) => item.id === paperQuestion.id);
+                  const linkedQuestion = paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined;
+                  return (
+                    <PreviewQuestionPair
+                      key={paperQuestion.id}
+                      left={(
+                        <PreviewQuestionItem
+                          pq={paperQuestion}
+                          index={index}
+                          markMultiple
+                          expanded={expandedPreviewQuestionIds.has(paperQuestion.id)}
+                          onExpandedChange={(expanded) => setPreviewQuestionExpanded(paperQuestion.id, expanded)}
+                        />
+                      )}
+                      right={(
+                        <PreviewQuestionDetails
+                          pq={paperQuestion}
+                          index={index}
+                          question={linkedQuestion}
+                          progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
+                          chapterTree={chapterTree}
+                          knowledgeTree={knowledgeTree}
+                          onChapterTreeChange={setChapterTree}
+                          onKnowledgeTreeChange={setKnowledgeTree}
+                          chapterNameMap={chapterNameMap}
+                          knowledgeNameMap={knowledgeNameMap}
+                          onUpdateCatalogs={handleUpdateQuestionCatalogs}
+                          onBasketChanged={refreshBaskets}
+                          completionQuestionId={getCompletionQuestionId(paperQuestion)}
+                          students={audienceStudents}
+                          answerRecords={answerRecords}
+                          onUpdateStudentAnswer={handleUpdateStudentAnswer}
+                          onQuestionUpdated={handlePreviewQuestionUpdated}
+                          visibility={previewSidebarVisibility}
+                          canEditScore={paper?.teacherId === teacher?.id}
+                          onUpdateScore={handlePreviewUpdateScore}
+                        />
+                      )}
+                    />
+                  );
+                }),
+              ])
             )}
           </div>
         </div>
         </div>
-        {/* 发布弹窗 */}
-        <PublishModal
-          open={publishOpen}
-          onClose={() => setPublishOpen(false)}
-          classes={classes}
-          selectedClassIds={publishTargetClassIds}
-          onClassChange={setPublishTargetClassIds}
-          password={publishPassword}
-          onPasswordChange={setPublishPassword}
-          unlockAt={publishUnlockAt}
-          onUnlockAtChange={setPublishUnlockAt}
-          onPublish={handlePublish}
-          publishing={publishing}
-        />
         <DocumentDownloadModeModal
           open={downloadModalOpen}
           onClose={() => setDownloadModalOpen(false)}
@@ -2050,7 +2057,7 @@ export default function ExamPaperEditorPage() {
       {isUsedDocument && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
           <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>该文档已录入学生答题记录，现已锁定，不能再编辑。</span>
+          <span>{paper?.answerSheetPublishedAt ? "答题卡已发布，请先撤回发布才能编辑。" : "该文档已录入学生答题记录，现已锁定，不能再编辑。"}</span>
         </div>
       )}
 
@@ -2080,10 +2087,6 @@ export default function ExamPaperEditorPage() {
           <Button variant="outline" onClick={() => openPage(`/exam-papers/${id}/answer-sheet`)}>
             <Layout className="w-4 h-4" />
             制作答题卡
-          </Button>
-          <Button variant="outline" onClick={() => setPublishOpen(true)}>
-            <Send className="w-4 h-4" />
-            发布试卷
           </Button>
         </div>
       )}
@@ -2178,9 +2181,24 @@ export default function ExamPaperEditorPage() {
                           layoutMode === "flat" ? "bg-white text-gold-700 shadow-sm font-medium" : "text-ink-500 hover:text-ink-800",
                         )}
                       >
-                        无题型
+                        按项目
                       </button>
                     </div>
+                    {layoutMode === "flat" && (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          aria-label="新项目名称"
+                          value={newProjectName}
+                          onChange={(event) => setNewProjectName(event.target.value)}
+                          onKeyDown={(event) => { if (event.key === "Enter") createProject(); }}
+                          placeholder="输入项目名称"
+                          className="h-8 w-36 rounded-md border border-ink-200 bg-white px-2 text-xs"
+                        />
+                        <Button variant="outline" size="sm" onClick={createProject} disabled={!newProjectName.trim()}>
+                          <Plus className="h-3.5 w-3.5" /> 新建项目
+                        </Button>
+                      </div>
+                    )}
                     <Button variant="outline" size="sm" onClick={handleSortByDifficulty} disabled={paperQuestions.length < 2}>
                       <ArrowUpDown className="w-3.5 h-3.5" />
                       按难度排序
@@ -2417,7 +2435,7 @@ export default function ExamPaperEditorPage() {
                   );
                 })}
               </div>
-            ) : paperQuestions.length === 0 ? (
+            ) : paperQuestions.length === 0 && !(layoutMode === "flat" && projects.length > 0) ? (
               <EmptyState
                 icon={<FileText className="w-10 h-10 text-ink-200" />}
                 title="试卷暂无题目"
@@ -2566,52 +2584,132 @@ export default function ExamPaperEditorPage() {
                 })}
               </div>
             ) : (
-              <div className="space-y-3">
-                {paperQuestions.map((paperQuestion, index) => (
-                  <div key={paperQuestion.id} className="space-y-1">
-                    <EditQuestionRow
-                      pq={paperQuestion}
-                      index={index}
-                      total={paperQuestions.length}
-                      onMoveUp={() => handleMove(index, "up")}
-                      onMoveDown={() => handleMove(index, "down")}
-                      onRemove={() => handleRemoveQuestion(paperQuestion.id)}
-                      structureLocked={isEditingLocked}
-                      sidebar={(
-                        <EditQuestionCatalogPanel
-                          pq={paperQuestion}
-                          index={index}
-                          question={paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined}
-                          schoolId={schoolId}
-                          chapterTree={chapterTree}
-                          knowledgeTree={knowledgeTree}
-                          onChapterTreeChange={setChapterTree}
-                          onKnowledgeTreeChange={setKnowledgeTree}
-                          chapterNameMap={chapterNameMap}
-                          knowledgeNameMap={knowledgeNameMap}
-                          onUpdateCatalogs={handleUpdateQuestionCatalogs}
-                          onReplace={(replacement) => replacePaperQuestionAt(index, replacement)}
-                          onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
-                          progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
-                          excludedQuestionIds={paperQuestionIds}
-                          structureLocked={isEditingLocked}
-                        />
+              <div className="space-y-5">
+                {projectSections.map((section, sectionIndex) => {
+                  const project = section.project;
+                  const projectIndex = project ? projects.findIndex((item) => item.id === project.id) : -1;
+                  const projectScore = section.questions.reduce((sum, item) => sum + item.score, 0);
+                  return (
+                    <section key={project?.id || "ungrouped"} className="space-y-3">
+                      {(project || projects.length > 0) && (
+                        <div className="flex flex-wrap items-center gap-2 border-b border-ink-200 pb-2">
+                          {project ? (
+                            <>
+                              <span className="text-sm font-bold text-ink-800">{sectionNumerals[projectIndex] || projectIndex + 1}、</span>
+                              <input
+                                aria-label={`项目名称 ${projectIndex + 1}`}
+                                className="min-w-24 max-w-56 rounded border border-transparent bg-transparent px-1 py-1 text-sm font-semibold text-ink-800 hover:border-ink-200 focus:border-gold-400"
+                                value={project.name}
+                                onChange={(event) => setProjects((previous) => previous.map((item) =>
+                                  item.id === project.id ? { ...item, name: event.target.value } : item,
+                                ))}
+                                onBlur={() => setProjects((previous) => previous.map((item) =>
+                                  item.id === project.id ? { ...item, name: item.name.trim() || `项目 ${projectIndex + 1}` } : item,
+                                ))}
+                                disabled={isEditingLocked}
+                              />
+                              {!isEditingLocked && (
+                                <div className="flex items-center gap-1">
+                                  <button type="button" aria-label={`上移项目 ${project.name}`} title="上移项目" disabled={projectIndex === 0}
+                                    className="p-1 text-ink-500 disabled:opacity-25" onClick={() => setProjects((previous) => {
+                                      const next = [...previous];
+                                      [next[projectIndex - 1], next[projectIndex]] = [next[projectIndex], next[projectIndex - 1]];
+                                      return next;
+                                    })}><ChevronUp className="h-4 w-4" /></button>
+                                  <button type="button" aria-label={`下移项目 ${project.name}`} title="下移项目" disabled={projectIndex === projects.length - 1}
+                                    className="p-1 text-ink-500 disabled:opacity-25" onClick={() => setProjects((previous) => {
+                                      const next = [...previous];
+                                      [next[projectIndex], next[projectIndex + 1]] = [next[projectIndex + 1], next[projectIndex]];
+                                      return next;
+                                    })}><ChevronDown className="h-4 w-4" /></button>
+                                  <button type="button" aria-label={`删除项目 ${project.name}`} title="删除项目（题目移至未分组）"
+                                    className="p-1 text-ink-500 hover:text-red-600" onClick={() => {
+                                      setProjects((previous) => previous.filter((item) => item.id !== project.id));
+                                      setPaperQuestions((previous) => previous.map((item) => item.projectId === project.id
+                                        ? { ...item, projectId: undefined } : item));
+                                    }}><Trash2 className="h-4 w-4" /></button>
+                                </div>
+                              )}
+                            </>
+                          ) : <h2 className="text-sm font-semibold text-ink-800">未分组</h2>}
+                          <span className="text-xs text-ink-500">{section.questions.length} 题 · {projectScore} 分</span>
+                          {!isEditingLocked && <Button variant="outline" size="sm" className="ml-auto" onClick={() => openAddQuestion(project
+                            ? { kind: "project", projectId: project.id, label: project.name }
+                            : null)}>
+                            <Plus className="h-3.5 w-3.5" /> 添加题目
+                          </Button>}
+                        </div>
                       )}
-                    />
-                    {prepTaskId && (
-                      <div className="flex justify-end">
-                        <ResourceCommentButton
-                          taskId={prepTaskId}
-                          targetId={paperQuestion.id}
-                          targetLabel={`第 ${index + 1} 题`}
-                          password={prepPassword || undefined}
-                          comments={prepComments}
-                          onCommentsChange={setPrepComments}
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      {section.questions.map((paperQuestion, itemIndex) => {
+                        const index = paperQuestions.findIndex((item) => item.id === paperQuestion.id);
+                        const displayIndex = flatDisplayQuestions.findIndex((item) => item.id === paperQuestion.id);
+                        return (
+                          <div key={paperQuestion.id} className="space-y-1">
+                            {projects.length > 0 && !isEditingLocked && (
+                              <label className="flex items-center gap-2 text-xs text-ink-500">
+                                所属项目
+                                <select
+                                  aria-label={`第 ${displayIndex + 1} 题所属项目`}
+                                  value={project?.id || ""}
+                                  onChange={(event) => setPaperQuestions((previous) => previous.map((item) => item.id === paperQuestion.id
+                                    ? { ...item, projectId: event.target.value || undefined } : item))}
+                                  className="rounded border border-ink-200 bg-white px-2 py-1 text-xs text-ink-700"
+                                >
+                                  <option value="">未分组</option>
+                                  {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                </select>
+                              </label>
+                            )}
+                            <EditQuestionRow
+                              pq={paperQuestion}
+                              index={displayIndex}
+                              markMultiple
+                              total={paperQuestions.length}
+                              canMoveUp={itemIndex > 0}
+                              canMoveDown={itemIndex < section.questions.length - 1}
+                              onMoveUp={() => handleMoveWithinProject(paperQuestion.id, project?.id, "up")}
+                              onMoveDown={() => handleMoveWithinProject(paperQuestion.id, project?.id, "down")}
+                              onRemove={() => handleRemoveQuestion(paperQuestion.id)}
+                              structureLocked={isEditingLocked}
+                              sidebar={(
+                                <EditQuestionCatalogPanel
+                                  pq={paperQuestion}
+                                  index={displayIndex}
+                                  question={paperQuestion.questionId ? questions[paperQuestion.questionId] : undefined}
+                                  schoolId={schoolId}
+                                  chapterTree={chapterTree}
+                                  knowledgeTree={knowledgeTree}
+                                  onChapterTreeChange={setChapterTree}
+                                  onKnowledgeTreeChange={setKnowledgeTree}
+                                  chapterNameMap={chapterNameMap}
+                                  knowledgeNameMap={knowledgeNameMap}
+                                  onUpdateCatalogs={handleUpdateQuestionCatalogs}
+                                  onReplace={(replacement) => replacePaperQuestionAt(index, replacement)}
+                                  onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
+                                  progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
+                                  excludedQuestionIds={paperQuestionIds}
+                                  structureLocked={isEditingLocked}
+                                />
+                              )}
+                            />
+                            {prepTaskId && (
+                              <div className="flex justify-end">
+                                <ResourceCommentButton
+                                  taskId={prepTaskId}
+                                  targetId={paperQuestion.id}
+                                  targetLabel={`第 ${displayIndex + 1} 题`}
+                                  password={prepPassword || undefined}
+                                  comments={prepComments}
+                                  onCommentsChange={setPrepComments}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </section>
+                  );
+                })}
               </div>
             )}
           </Card>
@@ -2657,7 +2755,7 @@ export default function ExamPaperEditorPage() {
               <div className="pt-3 border-t border-ink-100 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-ink-500">当前编排</span>
-                  <span className="font-medium text-ink-800">{layoutMode === "grouped" ? "按题型" : "无题型"}</span>
+                  <span className="font-medium text-ink-800">{layoutMode === "grouped" ? "按题型" : "按项目"}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-ink-500">考试时长</span>
@@ -3026,6 +3124,24 @@ export default function ExamPaperEditorPage() {
           </div>
         )}
 
+        {replaceIdx === null && layoutMode === "flat" && !isStructuredExtract && projects.length > 0 && (
+          <div className="mb-3 flex items-center gap-2 text-sm text-ink-600">
+            <label htmlFor="add-question-project">添加到项目</label>
+            <select
+              id="add-question-project"
+              value={addTarget?.kind === "project" ? addTarget.projectId : ""}
+              onChange={(event) => {
+                const project = projects.find((item) => item.id === event.target.value);
+                setAddTarget(project ? { kind: "project", projectId: project.id, label: project.name } : null);
+              }}
+              className="rounded border border-ink-200 bg-white px-2 py-1.5 text-sm"
+            >
+              <option value="">未分组</option>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          </div>
+        )}
+
         {addSource === "choose" && (
           <div className="rounded-lg border border-dashed border-ink-200 px-4 py-12 text-center text-sm text-ink-400">
             请选择题目来源
@@ -3203,21 +3319,6 @@ export default function ExamPaperEditorPage() {
           </div>
         )}
       </Modal>
-
-      {/* 发布弹窗 */}
-      <PublishModal
-        open={publishOpen}
-        onClose={() => setPublishOpen(false)}
-        classes={classes}
-        selectedClassIds={publishTargetClassIds}
-        onClassChange={setPublishTargetClassIds}
-        password={publishPassword}
-        onPasswordChange={setPublishPassword}
-        unlockAt={publishUnlockAt}
-        onUnlockAtChange={setPublishUnlockAt}
-        onPublish={handlePublish}
-        publishing={publishing}
-      />
 
       {audienceModal}
 
@@ -3783,10 +3884,11 @@ function PreviewQuestionDetails({
 
 // ===== 预览模式的题目项 =====
 function PreviewQuestionItem({
-  pq, index, expanded: controlledExpanded, onExpandedChange,
+  pq, index, markMultiple = false, expanded: controlledExpanded, onExpandedChange,
 }: {
   pq: ExamPaperQuestion;
   index: number;
+  markMultiple?: boolean;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
@@ -3807,6 +3909,9 @@ function PreviewQuestionItem({
             className="flex cursor-pointer items-start gap-1 text-sm leading-relaxed text-ink-900 transition-colors hover:text-gold-700"
           >
             <span className="flex-shrink-0 font-mono font-bold text-ink-400">{index + 1}.</span>
+            {markMultiple && needsMultipleChoiceMarker(pq.type === "multiple", pq.stem) && (
+              <strong className="flex-shrink-0">（多选）</strong>
+            )}
             <MathHtml className="min-w-0 flex-1 text-sm leading-relaxed text-ink-900">{pq.stem}</MathHtml>
           </div>
           {/* 选项（按数量自适应列数；答案高亮仅在展开时显示） */}
@@ -3882,12 +3987,13 @@ function QuestionProgressBadge({ progress }: { progress?: QuestionProgress }) {
 
 // ===== 编辑模式的题目行 =====
 function EditQuestionRow({
-  pq, index, total, canMoveUp, canMoveDown,
+  pq, index, total, markMultiple = false, canMoveUp, canMoveDown,
   onMoveUp, onMoveDown, onRemove, structureLocked = false, sidebar,
 }: {
   pq: ExamPaperQuestion;
   index: number;
   total: number;
+  markMultiple?: boolean;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onMoveUp: () => void;
@@ -3928,9 +4034,12 @@ function EditQuestionRow({
           {/* 题干 */}
           <div
             onClick={() => setExpanded(!expanded)}
-            className="cursor-pointer transition-colors hover:text-gold-700"
+            className="flex cursor-pointer items-start gap-1 transition-colors hover:text-gold-700"
           >
-            <MathHtml className="whitespace-pre-wrap text-sm text-ink-900">{pq.stem}</MathHtml>
+            {markMultiple && needsMultipleChoiceMarker(pq.type === "multiple", pq.stem) && (
+              <strong className="flex-shrink-0 text-sm">（多选）</strong>
+            )}
+            <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap text-sm text-ink-900">{pq.stem}</MathHtml>
           </div>
           {/* 选项（始终显示，按数量自适应列数；答案高亮仅在展开时显示） */}
           {pq.options && pq.options.length > 0 && (
@@ -4019,112 +4128,5 @@ function BasketQuestionList({
       answeredQuestionIds={answeredQuestionIds}
       emptyText="当前资源篮暂无可选题目"
     />
-  );
-}
-
-// ===== 发布弹窗 =====
-function PublishModal({
-  open, onClose, classes, selectedClassIds, onClassChange,
-  password, onPasswordChange, unlockAt, onUnlockAtChange, onPublish, publishing,
-}: {
-  open: boolean;
-  onClose: () => void;
-  classes: AnyClass[];
-  selectedClassIds: string[];
-  onClassChange: (ids: string[]) => void;
-  password: string;
-  onPasswordChange: (v: string) => void;
-  unlockAt: string;
-  onUnlockAtChange: (v: string) => void;
-  onPublish: () => void;
-  publishing: boolean;
-}) {
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="md"
-      title="发布试卷"
-      description="选择发布班级，可选设置密码保护和到期日期"
-      footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>取消</Button>
-          <Button variant="gold" onClick={onPublish} loading={publishing}>
-            <Send className="w-4 h-4" />
-            确认发布
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-4">
-        {/* 发布班级 */}
-        <div>
-          <div className="text-sm font-medium text-ink-700 mb-2 flex items-center gap-1.5">
-            <Users className="w-4 h-4 text-emerald-500" />
-            发布班级
-          </div>
-          <div className="space-y-1.5 max-h-48 overflow-y-auto">
-            {classes.length === 0 ? (
-              <div className="text-center py-4 text-xs text-ink-400">暂无班级</div>
-            ) : (
-              classes.map((c) => {
-                const checked = selectedClassIds.includes(c.id);
-                return (
-                  <label key={c.id} className={cn(
-                    "flex items-center gap-2 p-2 rounded-md border cursor-pointer transition-colors",
-                    checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
-                  )}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (e.target.checked) onClassChange([...selectedClassIds, c.id]);
-                        else onClassChange(selectedClassIds.filter((id) => id !== c.id));
-                      }}
-                      className="rounded border-ink-300 text-gold-500"
-                    />
-                    <GraduationCap className="w-3.5 h-3.5 text-ink-400" />
-                    <span className="text-sm text-ink-800 flex-1">{c.name}</span>
-                    {c.type === "personal" && <Badge variant="teal">个人</Badge>}
-                  </label>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* 正规考试选项 */}
-        <div className="pt-3 border-t border-ink-100 space-y-3">
-          <div className="text-xs text-ink-500 flex items-start gap-1.5">
-            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-            设置密码或到期日期后，试卷将作为正规考试发布，到期前其他老师无法查看题目，关联题目自动从题库隐藏。
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-600 mb-1 flex items-center gap-1">
-              <Lock className="w-3.5 h-3.5" />
-              查看密码（可选）
-            </label>
-            <Input
-              type="text"
-              value={password}
-              onChange={(e) => onPasswordChange(e.target.value)}
-              placeholder="留空则无密码"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-600 mb-1 flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5" />
-              到期日期（可选）
-            </label>
-            <Input
-              type="datetime-local"
-              value={unlockAt}
-              onChange={(e) => onUnlockAtChange(e.target.value)}
-            />
-            <div className="text-[10px] text-ink-400 mt-1">到期后题目自动解锁</div>
-          </div>
-        </div>
-      </div>
-    </Modal>
   );
 }

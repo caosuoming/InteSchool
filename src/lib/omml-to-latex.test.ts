@@ -394,6 +394,16 @@ y=2
     `)).toBe(String.raw`\overgroup{AB}`);
   });
 
+  it("decodes Symbol-font private-use glyphs inside OMML math runs", () => {
+    expect(ommlToLatex(`
+      <m:oMath xmlns:m="${MATH_NS}" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <m:r><m:t>M</m:t></m:r>
+        <m:r><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr><m:t></m:t></m:r>
+        <m:r><m:t>Q</m:t></m:r>
+      </m:oMath>
+    `)).toBe(String.raw`M\subset Q`);
+  });
+
   it.each([
     ["⊊", "B\\subsetneq A"],
     ["⫋", "B\\subsetneqq A"],

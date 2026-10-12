@@ -9,7 +9,7 @@ import type {
 } from "../types/index.js";
 import { resolveClassAverageOptions } from "./grade-class-average.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
-import { totalRankingGroupKey } from "./grade-statistics.js";
+import { participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
 import { ELECTIVE_GRADE_SUBJECTS, inferStatisticSubjectsFromSelections } from "./grade-statistics.js";
 
 export type GradeAcademicTrackClassification = GradeAcademicTrack | "unclassified";
@@ -245,7 +245,7 @@ export function buildGradeTotalScoreSegmentReport(
   const classOptions = resolveClassAverageOptions(exam, context, classAverageTemplate?.classAverageOptions);
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const recordsByClass = new Map<string, GradeScoreRecord[]>();
-  exam.records.forEach((record) => {
+  participatingGradeRecords(exam.records).forEach((record) => {
     const current = recordsByClass.get(record.classId) || [];
     current.push(record);
     recordsByClass.set(record.classId, current);

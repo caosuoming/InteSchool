@@ -68,6 +68,67 @@ describe("document resource metadata", () => {
     });
   });
 
+  it("publishes only created answer sheets and locks document content until withdrawal", async () => {
+    const state: AppState = {
+      teachers: [], currentTeacherId: null, examPapers: [], lectures: [], reflections: [],
+    };
+    await runWithState(state, async () => {
+      const paper = await examPaperService.createPaper("teacher-1", "school-1", {
+        title: "试题", chapterIds: [], knowledgePointIds: [], grade: "高一", schoolYear: "2026-2027",
+        duration: 60, totalScore: 0, questions: [],
+      });
+      const lecture = await lectureService.createLecture("teacher-1", "school-1", {
+        title: "讲义", chapterIds: [], knowledgePointIds: [], grade: "高一", schoolYear: "2026-2027",
+        classIds: [], studentIds: [], sections: [],
+      });
+      await expect(examPaperService.publishAnswerSheet(paper.id)).rejects.toThrow("请先制作答题卡");
+      await expect(lectureService.publishAnswerSheet(lecture.id)).rejects.toThrow("请先制作答题卡");
+      await examPaperService.markAnswerSheetCreated(paper.id);
+      await lectureService.markAnswerSheetCreated(lecture.id);
+      expect(await examPaperService.listPublishedAnswerSheets()).toEqual([]);
+      expect(await lectureService.listPublishedAnswerSheets()).toEqual([]);
+      expect(await examPaperService.getPublishedAnswerSheet(paper.id)).toBeNull();
+      expect(await lectureService.getPublishedAnswerSheet(lecture.id)).toBeNull();
+
+      const settings = {
+        paperSize: "A4" as const, mode: "blank" as const,
+        studentNumberDigits: 8, choiceLayout: "inline" as const,
+      };
+      const publishedPaper = await examPaperService.publishAnswerSheet(paper.id, settings);
+      const publishedLecture = await lectureService.publishAnswerSheet(lecture.id, settings);
+      expect(publishedPaper.answerSheetPublishedAt).toBeTruthy();
+      expect(publishedLecture.answerSheetPublishedAt).toBeTruthy();
+      expect((await examPaperService.listPublishedAnswerSheets()).map((item) => item.id)).toEqual([paper.id]);
+      expect((await lectureService.listPublishedAnswerSheets()).map((item) => item.id)).toEqual([lecture.id]);
+      expect(await examPaperService.getPublishedAnswerSheet(paper.id)).toMatchObject({ answerSheetSettings: settings });
+      expect(await lectureService.getPublishedAnswerSheet(lecture.id)).toMatchObject({ answerSheetSettings: settings });
+
+      await expect(examPaperService.updatePaper(paper.id, { title: "修改" })).rejects.toThrow("撤回发布");
+      await expect(lectureService.updateLecture(lecture.id, { title: "修改" })).rejects.toThrow("撤回发布");
+      await expect(examPaperService.deletePaper(paper.id)).rejects.toThrow("撤回发布");
+      await expect(examPaperService.convertToLecture(paper.id)).rejects.toThrow("撤回发布");
+      await expect(lectureService.convertToExamPaper(lecture.id)).rejects.toThrow("撤回发布");
+      await expect(examPaperService.createExtractCopy(paper.id)).rejects.toThrow("撤回发布");
+      await expect(lectureService.createExtractCopy(lecture.id)).rejects.toThrow("撤回发布");
+      await expect(lectureService.deleteLecture(lecture.id)).rejects.toThrow("撤回发布");
+      await expect(examPaperService.markAnswerSheetCreated(paper.id, { ...settings, studentNumberDigits: 10 }))
+        .rejects.toThrow("撤回发布");
+      await expect(lectureService.markAnswerSheetCreated(lecture.id, { ...settings, studentNumberDigits: 10 }))
+        .rejects.toThrow("撤回发布");
+      expect((await examPaperService.duplicatePaper(paper.id)).answerSheetPublishedAt).toBeUndefined();
+      expect((await lectureService.duplicateLecture(lecture.id)).answerSheetPublishedAt).toBeUndefined();
+
+      await examPaperService.unpublishAnswerSheet(paper.id);
+      await lectureService.unpublishAnswerSheet(lecture.id);
+      expect(await examPaperService.getPublishedAnswerSheet(paper.id)).toBeNull();
+      expect(await lectureService.getPublishedAnswerSheet(lecture.id)).toBeNull();
+      expect(await examPaperService.listPublishedAnswerSheets()).toEqual([]);
+      expect(await lectureService.listPublishedAnswerSheets()).toEqual([]);
+      await expect(examPaperService.updatePaper(paper.id, { title: "修改成功" })).resolves.toMatchObject({ title: "修改成功" });
+      await expect(lectureService.updateLecture(lecture.id, { title: "修改成功" })).resolves.toMatchObject({ title: "修改成功" });
+    });
+  });
+
   it("stores configured types and filters papers and lectures by type", async () => {
     const state: AppState = {
       teachers: [],

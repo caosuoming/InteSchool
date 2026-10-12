@@ -587,7 +587,7 @@ export default function LecturePreviewPage() {
               下载
             </Button>
             {!lecture.isExtractCopy && (
-              <Button variant="outline" onClick={() => openPage(`/lectures/${id}/edit`)}>
+              <Button variant="outline" onClick={() => openPage(`/lectures/${id}/edit`)} disabled={Boolean(lecture.answerSheetPublishedAt)} title={lecture.answerSheetPublishedAt ? "请先撤回发布答题卡" : undefined}>
                 <Edit3 className="w-4 h-4" />
                 编辑讲义
               </Button>

@@ -8,6 +8,7 @@ import {
   type GradeClassStatisticsOptions,
 } from "@/lib/grade-class-statistics";
 import type { GradeExam } from "@/types";
+import { isAssignableGradeSubject } from "@/lib/grade-subjects";
 
 interface GradeClassStatisticsTableProps {
   exam: GradeExam;
@@ -63,7 +64,7 @@ export function GradeClassStatisticsTable({
           <div>
             <div className="font-medium text-ink-900">表六、各班成绩统计</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              每个学生固定展示班级、姓名和各科成绩；可追加单科排名、原始/赋分总分及相应排名，并与勾选的历史考试并列比较。年级排名按单独排名和统一排名分组计算。
+              每个学生固定展示班级、姓名和各科成绩；可选择选修科目原始分/赋分、单科排名、总分及排名，并与历史考试对比。年级排名按单独排名和统一排名分组计算。
             </div>
           </div>
         </div>
@@ -83,6 +84,26 @@ export function GradeClassStatisticsTable({
         <div>
           <div className="text-xs font-medium text-ink-700">可选字段</div>
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink-700">
+            {exam.subjects.some(isAssignableGradeSubject) && (
+              <>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={options.showRawSubjectScores}
+                    onChange={(event) => patchOptions({ showRawSubjectScores: event.target.checked })}
+                  />
+                  显示原始分
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={options.showAssignedSubjectScores}
+                    onChange={(event) => patchOptions({ showAssignedSubjectScores: event.target.checked })}
+                  />
+                  显示赋分
+                </label>
+              </>
+            )}
             <label className="inline-flex items-center gap-2">
               <input
                 type="checkbox"
