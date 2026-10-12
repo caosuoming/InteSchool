@@ -46,6 +46,19 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("decodes legacy Symbol-font subsets in multiple-choice questions and solutions", async () => {
+    const data = await makeDocx(`
+      <w:p><w:r><w:t>A. M</w:t></w:r><w:r><w:sym w:font="Symbol" w:char="F0CC"/></w:r><w:r><w:t>Q</w:t></w:r></w:p>
+      <w:p><w:r><w:t>C. Q</w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr><w:t></w:t></w:r><w:r><w:t>M</w:t></w:r></w:p>
+      <w:p><w:r><w:t>解析中 M</w:t></w:r><w:r><w:sym w:font="Symbol" w:char="00CD"/></w:r><w:r><w:t>Q</w:t></w:r></w:p>
+      <w:p><w:r><w:t>严格真子集 M</w:t></w:r><w:r><w:sym w:font="Cambria Math" w:char="228A"/></w:r><w:r><w:t>Q</w:t></w:r></w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "A. $M\\subset Q$\nC. $Q\\subset M$\n解析中 $M\\subseteq Q$\n严格真子集 $M\\subsetneq Q$",
+    );
+  });
+
   it("canonicalizes plain Word math expressions during ingestion", async () => {
     const data = await makeDocx(`
       <w:p>

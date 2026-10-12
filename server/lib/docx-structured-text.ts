@@ -3,6 +3,7 @@ import { DOMParser } from "@xmldom/xmldom";
 import { extname, posix } from "node:path";
 import { ommlToLatex } from "../../src/lib/omml-to-latex.js";
 import { normalizePlainMathText } from "../../src/lib/plain-math.js";
+import { decodeWordSymbol, normalizeWordSymbolText } from "../../src/lib/word-symbol.js";
 import {
   renderDocumentTableStructuredCell,
   serializeDocumentTable,
@@ -200,6 +201,18 @@ function elementChildren(node: Node): Element[] {
   );
 }
 
+function wordRunFont(element: Element): string {
+  const properties = elementChildren(element).find(
+    (child) => child.namespaceURI === WORD_NS && child.localName === "rPr",
+  );
+  const fonts = properties && elementChildren(properties).find(
+    (child) => child.namespaceURI === WORD_NS && child.localName === "rFonts",
+  );
+  return fonts?.getAttributeNS(WORD_NS, "hAnsi")
+    || fonts?.getAttributeNS(WORD_NS, "ascii")
+    || "";
+}
+
 function wordRunVerticalAlign(element: Element): string {
   const properties = elementChildren(element).find(
     (child) => child.namespaceURI === WORD_NS && child.localName === "rPr",
@@ -352,16 +365,17 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
       .filter((child) => child !== properties)
       .map((child) => extractInlineContent(child, imageUrl))
       .join("");
+    const decodedContent = normalizeWordSymbolText(content, wordRunFont(element));
     if (wordRunIsUnderlined(element)) {
-      const blank = underlinedBlank(content);
+      const blank = underlinedBlank(decodedContent);
       if (blank) return blank;
     }
     const bold = wordRunIsBold(element);
-    const styledContent = bold && /^[A-Za-z0]$/.test(content)
-      ? mathVariableMarkup(content, true)
+    const styledContent = bold && /^[A-Za-z0]$/.test(decodedContent)
+      ? mathVariableMarkup(decodedContent, true)
       : wordRunIsItalic(element)
-        ? mathVariableMarkup(content, bold)
-        : content;
+        ? mathVariableMarkup(decodedContent, bold)
+        : decodedContent;
     if (styledContent && verticalValue === "superscript") {
       return `<sup>${mathVariableMarkup(styledContent)}</sup>`;
     }
@@ -395,6 +409,11 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
     return id ? `![文档图片](${imageUrl(id, imageDisplaySize(element))})` : "";
   }
   if (element.namespaceURI === WORD_NS) {
+    if (element.localName === "sym") {
+      const font = element.getAttributeNS(WORD_NS, "font") || "";
+      const code = element.getAttributeNS(WORD_NS, "char") || "";
+      return decodeWordSymbol(font, code) || "";
+    }
     if (element.localName === "t") return element.textContent || "";
     if (element.localName === "tab") return "\t";
     if (["br", "cr"].includes(element.localName)) return "\n";
