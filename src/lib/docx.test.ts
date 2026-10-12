@@ -196,6 +196,17 @@ describe("generateExamPaperDocx", () => {
     expect(answersXml).not.toContain("A、C 均满足条件。");
   });
 
+  it("does not duplicate a multiple-choice marker already present in the stem", async () => {
+    const markedPaper: ExamPaper = {
+      ...structuredPaper, layoutMode: "flat", contentBlocks: [],
+      questions: [{ ...structuredPaper.questions[0], type: "multiple", stem: "<p>（多选）以下哪些命题正确？</p>" }],
+    };
+    const blob = await buildExamPaperDocxBlob(markedPaper, {}, { mode: "student" });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml.match(/（多选）/g)).toHaveLength(1);
+  });
+
   it("omits paper descriptions from downloaded documents", async () => {
     const paper: ExamPaper = {
       ...structuredPaper,
