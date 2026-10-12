@@ -22,6 +22,7 @@ import {
   MIN_STUDENT_NUMBER_DIGITS,
   normalizeStudentNumberDigits,
   type AnswerSheetBoxStyle,
+  type AnswerSheetOptionBreak,
   type AnswerSheetChoiceLayout,
   type AnswerSheetPaperSize,
   type AnswerSheetQuestion,
@@ -30,6 +31,7 @@ import {
   type AnswerSheetWideColumns,
 } from "@/lib/answer-sheet";
 import { decorateFillBlankAnswerAreas } from "@/lib/fill-blank";
+import { layoutChoiceOptions } from "@/lib/answer-sheet-choice-options";
 import type { AnswerSheetImageLayout } from "@/lib/answer-sheet";
 import { EssayImages } from "./EssayImages";
 
@@ -256,6 +258,7 @@ function AnswerBox({
   hideNumber = false,
   boxStyle,
   compact = false,
+  lined = false,
   editable,
   height,
   width,
@@ -268,6 +271,7 @@ function AnswerBox({
   hideNumber?: boolean;
   boxStyle: AnswerSheetBoxStyle;
   compact?: boolean;
+  lined?: boolean;
   editable: boolean;
   height?: number;
   width?: number;
@@ -305,6 +309,7 @@ function AnswerBox({
           {children}
         </div>
       )}
+      {lined && <span className="answer-sheet-fill-rule" data-testid="fill-answer-rule" aria-hidden="true" />}
       <div
         className="pointer-events-none absolute bottom-0 right-0 flex h-[9mm] w-[13mm] items-center justify-center border-l border-t border-ink-800 bg-white text-[8px] text-ink-500"
         aria-label={`第${number}题评分框`}
@@ -377,8 +382,128 @@ function DraggableQuestionContent({
   );
 }
 
-function InlineChoiceQuestion({ question, number, editable }: NumberedQuestion & { editable: boolean }) {
-  const options = question.options?.length ? question.options : Array.from({ length: 4 }, () => "");
+interface ChoiceQuestionProps extends NumberedQuestion {
+  editable: boolean;
+  breaks?: Record<number, AnswerSheetOptionBreak>;
+  onBreakChange: (index: number, value: AnswerSheetOptionBreak | "auto") => void;
+}
+
+/** Measures rendered option widths, including rich text and mathematical notation. */
+function ChoiceOptions({
+  question,
+  number,
+  editable,
+  breaks,
+  onBreakChange,
+  labelStyle,
+}: ChoiceQuestionProps & { labelStyle: "brackets" | "dots" }) {
+  const options = useMemo(
+    () => question.options?.length ? question.options : (labelStyle === "brackets" ? Array(4).fill("") as string[] : []),
+    [question.options, labelStyle],
+  );
+  const rootRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef(new Map<number, HTMLDivElement>());
+  const [measurements, setMeasurements] = useState<{ width: number; widths: number[] }>({
+    width: 0,
+    widths: [],
+  });
+
+  const measure = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const width = root.clientWidth || root.getBoundingClientRect().width || 0;
+    const widths = options.map((_, index) => {
+      const element = optionRefs.current.get(index);
+      return element ? (element.scrollWidth || element.getBoundingClientRect().width || 0) : 0;
+    });
+    setMeasurements((previous) => (
+      previous.width === width && sameNumberArray(previous.widths, widths)
+        ? previous
+        : { width, widths }
+    ));
+  }, [options]);
+
+  useLayoutEffect(() => {
+    measure();
+  }, [measure]);
+
+  const rows = layoutChoiceOptions(
+    measurements.widths.length === options.length ? measurements.widths : options.map(() => 0),
+    measurements.width,
+    breaks,
+  );
+  const rowKey = rows.map((row) => row.join(",")).join("|");
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(measure);
+    if (rootRef.current) observer.observe(rootRef.current);
+    optionRefs.current.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [measure, rowKey]);
+
+  if (!options.length) return null;
+
+  return (
+    <div className="pl-7">
+      <div ref={rootRef} className="space-y-1.5" data-testid="choice-option-layout">
+        {rows.map((row) => (
+          <div key={row[0]} className="flex min-w-0 items-start gap-2" data-testid="choice-option-row">
+            {row.map((index) => {
+              const label = String.fromCharCode(65 + index);
+              return (
+                <div
+                  key={index}
+                  ref={(element) => {
+                    if (element) optionRefs.current.set(index, element);
+                    else optionRefs.current.delete(index);
+                  }}
+                  className="answer-sheet-choice-option inline-flex w-max shrink-0 items-start gap-1.5 text-xs text-ink-800"
+                  data-testid="choice-option"
+                >
+                  <span className="shrink-0 font-mono font-semibold">
+                    {labelStyle === "brackets" ? `[${label}]` : `${label}.`}
+                  </span>
+                  {options[index] && (
+                    <DraggableQuestionContent className="answer-sheet-choice-option-content w-max" editable={editable}>
+                      {options[index]}
+                    </DraggableQuestionContent>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {editable && options.length > 1 && (
+        <div className="no-print mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-ink-500">
+          {options.slice(1).map((_, offset) => {
+            const index = offset + 1;
+            const label = String.fromCharCode(65 + index);
+            return (
+              <label key={index} className="inline-flex items-center gap-1">
+                {label}:
+                <select
+                  aria-label={`第${number}题选项${label}排列方式`}
+                  className="rounded border border-ink-300 bg-white px-1 py-0.5 text-[10px] text-ink-700"
+                  value={breaks?.[index] ?? "auto"}
+                  onChange={(event) => onBreakChange(index, event.target.value as AnswerSheetOptionBreak | "auto")}
+                >
+                  <option value="auto">自动</option>
+                  <option value="new-line">另起一行</option>
+                  <option value="same-line">接上一项</option>
+                </select>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InlineChoiceQuestion(props: ChoiceQuestionProps) {
+  const { question, number, editable } = props;
   return (
     <div className="space-y-2" data-testid="inline-choice-question" data-answer-sheet-question>
       <div className="flex items-start gap-2 text-xs text-ink-800">
@@ -387,27 +512,13 @@ function InlineChoiceQuestion({ question, number, editable }: NumberedQuestion &
           {question.stem}
         </DraggableQuestionContent>
       </div>
-      <div className="grid gap-1.5 pl-7 sm:grid-cols-2">
-        {options.map((option, index) => {
-          const label = String.fromCharCode(65 + index);
-          return (
-            <div key={`${label}-${index}`} className="flex min-w-0 items-start gap-1.5 text-xs text-ink-800">
-              <span className="shrink-0 font-mono font-semibold">[{label}]</span>
-              {option && (
-                <DraggableQuestionContent className="min-w-0 flex-1" editable={editable}>
-                  {option}
-                </DraggableQuestionContent>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <ChoiceOptions {...props} labelStyle="brackets" />
     </div>
   );
 }
 
-function ChoiceQuestionText({ question, number, editable }: NumberedQuestion & { editable: boolean }) {
-  const options = question.options || [];
+function ChoiceQuestionText(props: ChoiceQuestionProps) {
+  const { question, number, editable } = props;
   return (
     <div className="space-y-1.5" data-testid="concentrated-choice-question" data-answer-sheet-question>
       <div className="flex items-start gap-2 text-xs text-ink-800">
@@ -416,18 +527,7 @@ function ChoiceQuestionText({ question, number, editable }: NumberedQuestion & {
           {question.stem}
         </DraggableQuestionContent>
       </div>
-      {options.length > 0 && (
-        <div className="grid gap-1 pl-7 sm:grid-cols-2">
-          {options.map((option, index) => (
-            <div key={index} className="flex min-w-0 gap-1 text-xs text-ink-700">
-              <span className="shrink-0 font-mono font-semibold">{String.fromCharCode(65 + index)}.</span>
-              <DraggableQuestionContent className="min-w-0 flex-1" editable={editable}>
-                {option}
-              </DraggableQuestionContent>
-            </div>
-          ))}
-        </div>
-      )}
+      <ChoiceOptions {...props} labelStyle="dots" />
     </div>
   );
 }
@@ -491,6 +591,7 @@ function AnswerField({
       hideNumber={hideNumber}
       boxStyle={boxStyle}
       compact={isFillQuestion(question)}
+      lined={isFillQuestion(question)}
       editable={editable}
       height={height}
       onHeightChange={onHeightChange}
@@ -554,6 +655,7 @@ function QuestionWithAnswer({
             hideNumber={Boolean(displayStem)}
             boxStyle={boxStyle}
             compact={isFillQuestion(question)}
+            lined={isFillQuestion(question)}
             editable={editable}
             height={height}
             onHeightChange={onHeightChange}
@@ -674,6 +776,20 @@ export function AnswerSheetComposer({
         ...current,
         answerBoxWidths: { ...current.answerBoxWidths, [questionId]: width },
       };
+      onSettingsChange?.(next);
+      return next;
+    });
+  };
+
+  const updateChoiceOptionBreak = (questionId: string, index: number, value: AnswerSheetOptionBreak | "auto") => {
+    setSettings((current) => {
+      const perQuestion = { ...current.choiceOptionBreaks?.[questionId] };
+      if (value === "auto") delete perQuestion[index];
+      else perQuestion[index] = value;
+      const choiceOptionBreaks = { ...current.choiceOptionBreaks };
+      if (Object.keys(perQuestion).length) choiceOptionBreaks[questionId] = perQuestion;
+      else delete choiceOptionBreaks[questionId];
+      const next = { ...current, choiceOptionBreaks };
       onSettingsChange?.(next);
       return next;
     });
@@ -914,9 +1030,13 @@ export function AnswerSheetComposer({
 
     if (isChoiceQuestion(question)) {
       if (settings.choiceLayout === "inline") {
-        return <InlineChoiceQuestion {...item} editable={!isPreview} />;
+        return <InlineChoiceQuestion {...item} editable={!isPreview}
+          breaks={settings.choiceOptionBreaks?.[question.id]}
+          onBreakChange={(index, value) => updateChoiceOptionBreak(question.id, index, value)} />;
       }
-      return <ChoiceQuestionText {...item} editable={!isPreview} />;
+      return <ChoiceQuestionText {...item} editable={!isPreview}
+        breaks={settings.choiceOptionBreaks?.[question.id]}
+        onBreakChange={(index, value) => updateChoiceOptionBreak(question.id, index, value)} />;
     }
 
     if (isFillQuestion(question)) {
@@ -972,6 +1092,7 @@ export function AnswerSheetComposer({
             number={flowItem.item.number}
             boxStyle={settings.answerBoxStyle}
             compact
+            lined
             editable={!isPreview}
             resizableBoth
             height={settings.answerBoxHeights?.[flowItem.item.question.id]}

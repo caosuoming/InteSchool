@@ -6,6 +6,7 @@ export type AnswerSheetMode = "blank" | "with-questions";
 export type AnswerSheetChoiceLayout = "inline" | "concentrated";
 export type AnswerSheetWideColumns = 2 | 3;
 export type AnswerSheetBoxStyle = "solid" | "dashed";
+export type AnswerSheetOptionBreak = "new-line" | "same-line";
 
 export interface AnswerSheetImageLayout {
   x: number;
@@ -23,6 +24,7 @@ export interface AnswerSheetSettings {
   answerBoxStyle: AnswerSheetBoxStyle;
   answerBoxHeights?: Record<string, number>;
   answerBoxWidths?: Record<string, number>;
+  choiceOptionBreaks?: Record<string, Record<number, AnswerSheetOptionBreak>>;
   essayImageLayouts?: Record<string, AnswerSheetImageLayout[]>;
 }
 

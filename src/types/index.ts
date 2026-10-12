@@ -1641,6 +1641,7 @@ export interface ExamPaper {
     answerBoxStyle?: "solid" | "dashed";
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   createdAt: string;
@@ -2246,6 +2247,7 @@ export interface Lecture {
     answerBoxStyle?: "solid" | "dashed";
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   /** 排版设置 */
