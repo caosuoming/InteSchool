@@ -1638,6 +1638,7 @@ export interface ExamPaper {
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
     answerBoxHeights?: Record<string, number>;
+    answerBoxWidths?: Record<string, number>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   createdAt: string;
@@ -2242,6 +2243,7 @@ export interface Lecture {
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
     answerBoxHeights?: Record<string, number>;
+    answerBoxWidths?: Record<string, number>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   /** 排版设置 */
