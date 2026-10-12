@@ -79,6 +79,7 @@ interface ExtractReviewModalProps {
 
 type Phase = "extracting" | "review" | "confirming";
 type SolutionField = "answer" | "analysis" | "summary";
+type MergeTarget = "content" | "analysis" | "summary";
 
 interface DuplicateCheck {
   candidate: Question;
@@ -293,6 +294,7 @@ export function ExtractReviewModal({
   const [blocks, setBlocks] = useState<DocBlock[]>(initialBlocks || []);
   const [preservedScoreLabelBlockIds, setPreservedScoreLabelBlockIds] = useState<Set<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [mergeTargets, setMergeTargets] = useState<Record<string, MergeTarget>>({});
   const [duplicateChecks, setDuplicateChecks] = useState<Record<string, DuplicateCheck>>({});
   const [showKeywordConfig, setShowKeywordConfig] = useState(false);
   const [newKeywordValue, setNewKeywordValue] = useState("");
@@ -314,6 +316,7 @@ export function ExtractReviewModal({
     setBlocks([]);
     setPreservedScoreLabelBlockIds(new Set());
     setEditingBlockId(null);
+    setMergeTargets({});
     setDuplicateChecks({});
 
     if (!teacher) {
@@ -380,6 +383,7 @@ export function ExtractReviewModal({
       setBlocks(initialBlocks);
       setPreservedScoreLabelBlockIds(new Set());
       setEditingBlockId(null);
+      setMergeTargets({});
       setDuplicateChecks({});
       return;
     }
@@ -594,14 +598,17 @@ export function ExtractReviewModal({
     setBlocks(newBlocks);
   };
 
-  const mergeWithPrevious = (id: string) => {
+  const mergeWithPrevious = (id: string, requestedTarget: MergeTarget = "content") => {
     const idx = blocks.findIndex((b) => b.id === id);
     if (idx <= 0) return;
     const prev = blocks[idx - 1];
     const curr = blocks[idx];
+    const target = prev.type === "question" ? requestedTarget : "content";
+    const append = (existing: string | undefined, incoming: string) =>
+      [existing, incoming].filter(Boolean).join("\n\n");
     const merged: DocBlock = {
       ...prev,
-      content: `${prev.content}\n\n${curr.content}`,
+      [target]: append(prev[target], curr.content),
       status: "edited",
     };
     if (curr.options) {
@@ -611,10 +618,10 @@ export function ExtractReviewModal({
       merged.answer = curr.answer;
     }
     if (curr.analysis) {
-      merged.analysis = prev.analysis ? `${prev.analysis}\n\n${curr.analysis}` : curr.analysis;
+      merged.analysis = append(merged.analysis, curr.analysis);
     }
     if (curr.summary) {
-      merged.summary = prev.summary ? `${prev.summary}\n\n${curr.summary}` : curr.summary;
+      merged.summary = append(merged.summary, curr.summary);
     }
     const newBlocks = [...blocks];
     newBlocks[idx - 1] = merged;
@@ -919,6 +926,7 @@ export function ExtractReviewModal({
   ];
 
   const renderDocumentBlock = (block: DocBlock) => {
+    const previousBlock = blocks[blocks.findIndex((item) => item.id === block.id) - 1];
     const isEditing = editingBlockId === block.id;
     const duplicateCheck = duplicateChecks[block.id];
     const scoreLabelCleanup = block.type === "question"
@@ -1096,12 +1104,30 @@ export function ExtractReviewModal({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => mergeWithPrevious(block.id)}
-              disabled={block.order === 0}
+              onClick={() => mergeWithPrevious(block.id, mergeTargets[block.id])}
+              disabled={!previousBlock}
             >
               <Merge className="h-3.5 w-3.5" />
               与上一块合并
             </Button>
+            {previousBlock?.type === "question" && (
+              <label className="flex items-center gap-1.5 text-xs text-ink-600">
+                合并至
+                <select
+                  aria-label={`第${block.order + 1}块合并到上一题的部分`}
+                  value={mergeTargets[block.id] || "content"}
+                  onChange={(event) => setMergeTargets((current) => ({
+                    ...current,
+                    [block.id]: event.target.value as MergeTarget,
+                  }))}
+                  className="h-8 rounded-lg border border-ink-200 bg-paper px-2 text-xs text-ink-700 outline-none focus:border-gold-400"
+                >
+                  <option value="content">题干</option>
+                  <option value="analysis">解析</option>
+                  <option value="summary">总结</option>
+                </select>
+              </label>
+            )}
             <Button
               size="sm"
               variant="outline"
