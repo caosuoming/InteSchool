@@ -138,7 +138,7 @@ describe("grade service", () => {
         studentType: "resumed",
         includeInStatistics: false,
       });
-      const excluded = (await gradeService.getExam(exam.id))!.records[0];
+      const excluded = (await gradeService.getExam(exam.id, undefined, appState.teachers[0]))!.records[0];
       expect(excluded).toMatchObject({
         scores: { 数学: 95 }, includeInStatistics: false, gradeRank: 0, classRank: 0,
       });
@@ -146,7 +146,7 @@ describe("grade service", () => {
         studentType: "resumed", includeInStatistics: false, isExternal: false,
       });
       await classService.updateStudent("student-1", { includeInStatistics: true });
-      expect((await gradeService.getExam(exam.id))!.records[0]).toMatchObject({
+      expect((await gradeService.getExam(exam.id, undefined, appState.teachers[0]))!.records[0]).toMatchObject({
         includeInStatistics: true, gradeRank: 1, classRank: 1,
       });
     });
@@ -186,7 +186,7 @@ describe("grade service", () => {
       expect(query.exams[0].subjectAverages.数学).toBeNull();
       expect(query.exams[0].classSummaries.find((row) => row.classId === "class-1")?.studentCount).toBe(0);
       expect(query.exams[0].records[0].scores.数学).toBe(95);
-      expect((await gradeService.getExam(exam.id))!.records[0]).toMatchObject({
+      expect((await gradeService.getExam(exam.id, undefined, appState.teachers[0]))!.records[0]).toMatchObject({
         includeInStatistics: false, gradeRank: 0,
       });
     });
