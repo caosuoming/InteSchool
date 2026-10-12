@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   listPersonalClasses: vi.fn(),
   listStudentsByClass: vi.fn(),
   listPublications: vi.fn(),
-  publishExam: vi.fn(),
   listExamPaperTypes: vi.fn(),
   listSettings: vi.fn(),
   getChapterTree: vi.fn(),
@@ -85,7 +84,6 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/examPublish", () => ({
   examPublishService: {
     listPublications: mocks.listPublications,
-    publishExam: mocks.publishExam,
     revokePublication: vi.fn(),
   },
 }));
@@ -660,7 +658,7 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(toolbar).getByRole("button", { name: "添加使用对象" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "发送到我的课件" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
-    expect(within(toolbar).getByRole("button", { name: "发布试卷" })).toBeInTheDocument();
+    expect(within(toolbar).queryByRole("button", { name: "发布试卷" })).not.toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "创建副本" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "一键显示答案" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "下载" })).toBeInTheDocument();
@@ -990,7 +988,7 @@ describe("ExamPaperEditorPage preview", () => {
     const toolbar = screen.getByRole("toolbar", { name: "试卷辅助操作" });
     expect(within(toolbar).getByRole("button", { name: "添加到集体备课" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
-    expect(within(toolbar).getByRole("button", { name: "发布试卷" })).toBeInTheDocument();
+    expect(within(toolbar).queryByRole("button", { name: "发布试卷" })).not.toBeInTheDocument();
     expect(toolbar.previousElementSibling).toContainElement(
       screen.getByRole("heading", { name: `编辑：${paper.title}` }),
     );
