@@ -70,6 +70,12 @@ function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+/** Classes with the same separately ranked subjects share one total-score ranking pool. */
+export function totalRankingGroupKey(settings: GradeExamSettings, classId: string): string {
+  const separatelyRanked = settings.classSubjects.find((item) => item.classId === classId)?.separateRankSubjects || [];
+  return JSON.stringify([...new Set(separatelyRanked)].sort());
+}
+
 export function inferClassSubjectAvailability(
   records: Array<{
     classId: string;
@@ -656,14 +662,10 @@ export function calculateGradeRecords(
     );
     assignSubjectScores(unifiedRecords, subject, rules);
 
-    const separateByClass = new Map<string, GradeScoreRecord[]>();
-    records.forEach((record) => {
-      if (!(classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject)) return;
-      const group = separateByClass.get(record.classId) || [];
-      group.push(record);
-      separateByClass.set(record.classId, group);
-    });
-    separateByClass.forEach((group) => assignSubjectScores(group, subject, rules));
+    const separateRecords = records.filter((record) =>
+      (classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject),
+    );
+    assignSubjectScores(separateRecords, subject, rules);
   }
 
   normalizedSubjects.forEach((subject) => {
@@ -682,36 +684,28 @@ export function calculateGradeRecords(
       record.subjectRankScopes![subject] = "cohort";
     });
 
-    const separateByClass = new Map<string, GradeScoreRecord[]>();
-    records.forEach((record) => {
-      if (typeof record.assignedScores[subject] !== "number") return;
-      const separateSubjects = classSettings.get(record.classId)?.separateRankSubjects || [];
-      if (!separateSubjects.includes(subject)) return;
-      const group = separateByClass.get(record.classId) || [];
-      group.push(record);
-      separateByClass.set(record.classId, group);
-    });
-    separateByClass.forEach((group) => {
-      const ranks = competitionRanks(
-        group,
-        (record) => record.assignedScores[subject] as number,
-        (record) => record.studentNo,
-      );
-      ranks.forEach((rank, record) => {
-        record.subjectRanks![subject] = rank;
-        record.subjectRankScopes![subject] = "class";
-      });
+    const separateRecords = records.filter((record) =>
+      typeof record.assignedScores[subject] === "number"
+      && (classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject),
+    );
+    const separateRanks = competitionRanks(
+      separateRecords,
+      (record) => record.assignedScores[subject] as number,
+      (record) => record.studentNo,
+    );
+    separateRanks.forEach((rank, record) => {
+      record.subjectRanks![subject] = rank;
+      record.subjectRankScopes![subject] = "separate";
     });
   });
 
-  const nonUnifiedSubjects = new Set(
-    settings.classSubjects.flatMap((item) => item.separateRankSubjects || []),
-  );
   records.forEach((record) => {
-    const configured = classSettings.get(record.classId)?.statisticSubjects || normalizedSubjects;
-    const statisticSubjects = configured.filter((subject) =>
-      normalizedSubjects.includes(subject) && !nonUnifiedSubjects.has(subject),
-    );
+    const classSetting = classSettings.get(record.classId);
+    const configured = [
+      ...(classSetting?.statisticSubjects || normalizedSubjects),
+      ...(classSetting?.separateRankSubjects || []),
+    ];
+    const statisticSubjects = unique(configured).filter((subject) => normalizedSubjects.includes(subject));
     record.rawTotal = statisticSubjects.reduce((total, subject) => {
       const value = record.scores[subject];
       return total + (typeof value === "number" ? value : 0);
@@ -724,7 +718,18 @@ export function calculateGradeRecords(
     record.assignedTotal = Math.round(record.assignedTotal * 100) / 100;
   });
 
-  const gradeRanks = competitionRanks(records, (record) => record.assignedTotal, (record) => record.studentNo);
+  const gradeRanks = new Map<GradeScoreRecord, number>();
+  const totalRankingGroups = new Map<string, GradeScoreRecord[]>();
+  records.forEach((record) => {
+    const key = totalRankingGroupKey(settings, record.classId);
+    const group = totalRankingGroups.get(key) || [];
+    group.push(record);
+    totalRankingGroups.set(key, group);
+  });
+  totalRankingGroups.forEach((group) => {
+    competitionRanks(group, (record) => record.assignedTotal, (record) => record.studentNo)
+      .forEach((rank, record) => gradeRanks.set(record, rank));
+  });
   const classGroups = new Map<string, GradeScoreRecord[]>();
   records.forEach((record) => {
     const current = classGroups.get(record.classId) || [];

@@ -160,7 +160,7 @@ describe("grade statistics", () => {
     expect(normalized.assignmentRules.历史).toBeUndefined();
   });
 
-  it("ranks non-unified subjects inside each class and keeps them out of that class total", () => {
+  it("ranks separately configured subjects in their own pool and includes them in each class total", () => {
     const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1", "class-2"]);
     settings.classSubjects = settings.classSubjects.map((item) => item.classId === "class-1"
       ? { ...item, separateRankSubjects: ["化学"] }
@@ -187,16 +187,62 @@ describe("grade statistics", () => {
 
     expect(normalized.classSubjects.find((item) => item.classId === "class-1")?.statisticSubjects)
       .toEqual(["数学"]);
-    expect(firstClassTop.rawTotal).toBe(100);
-    expect(secondClassTop.rawTotal).toBe(80);
+    expect(firstClassTop.rawTotal).toBe(190);
+    expect(secondClassTop.rawTotal).toBe(150);
     expect(firstClassTop.assignedScores.化学).toBe(100);
     expect(secondClassTop.assignedScores.化学).toBe(100);
     expect(firstClassTop.subjectRanks?.化学).toBe(1);
     expect(firstClassSecond.subjectRanks?.化学).toBe(2);
-    expect(firstClassTop.subjectRankScopes?.化学).toBe("class");
+    expect(firstClassTop.subjectRankScopes?.化学).toBe("separate");
     expect(secondClassTop.subjectRanks?.化学).toBe(1);
     expect(secondClassSecond.subjectRanks?.化学).toBe(2);
     expect(secondClassTop.subjectRankScopes?.化学).toBe("cohort");
+  });
+
+  it("pools several separate classes, keeps other classes together, and partitions total ranks", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学"], ["c1", "c2", "c3", "c4"]);
+    settings.assignmentRules = {};
+    settings.classSubjects = settings.classSubjects.map((item) => ["c1", "c2"].includes(item.classId)
+      ? { ...item, separateRankSubjects: ["化学"] }
+      : item);
+    const normalized = normalizeGradeSettings(settings, ["数学", "化学"], ["c1", "c2", "c3", "c4"]);
+    const values = [
+      ["c1", 50, 60], ["c2", 70, 90], ["c3", 80, 100], ["c4", 90, 80],
+    ] as const;
+    const records = calculateGradeRecords(values.map(([classId, math, chemistry], index) => ({
+      id: `r${index}`,
+      studentId: `s${index}`,
+      studentName: `学生${index}`,
+      studentNo: `${index}`,
+      classId,
+      className: classId,
+      scores: { 数学: math, 化学: chemistry },
+    })), ["数学", "化学"], normalized);
+    const byClass = Object.fromEntries(records.map((record) => [record.classId, record]));
+
+    expect([byClass.c1.subjectRanks?.化学, byClass.c2.subjectRanks?.化学]).toEqual([2, 1]);
+    expect([byClass.c3.subjectRanks?.化学, byClass.c4.subjectRanks?.化学]).toEqual([1, 2]);
+    expect([byClass.c1.gradeRank, byClass.c2.gradeRank, byClass.c3.gradeRank, byClass.c4.gradeRank])
+      .toEqual([2, 1, 1, 2]);
+    expect([byClass.c1.rawTotal, byClass.c2.rawTotal, byClass.c3.rawTotal, byClass.c4.rawTotal])
+      .toEqual([110, 160, 180, 170]);
+  });
+
+  it("separates total rank pools for distinct combinations of separately ranked subjects", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学", "生物"], ["c1", "c2", "c3"]);
+    settings.assignmentRules = {};
+    settings.classSubjects = settings.classSubjects.map((item) => ({
+      ...item,
+      separateRankSubjects: item.classId === "c1" ? ["化学"] : item.classId === "c2" ? ["生物"] : [],
+    }));
+    const records = calculateGradeRecords(["c1", "c2", "c3"].map((classId, index) => ({
+      id: `r${index}`, studentId: `s${index}`, studentName: `学生${index}`,
+      studentNo: `${index}`, classId, className: classId,
+      scores: { 数学: 80, 化学: 80, 生物: 80 },
+    })), ["数学", "化学", "生物"], normalizeGradeSettings(settings, ["数学", "化学", "生物"], ["c1", "c2", "c3"]));
+
+    expect(records.map((record) => record.gradeRank)).toEqual([1, 1, 1]);
+    expect(records.map((record) => record.assignedTotal)).toEqual([240, 240, 240]);
   });
 
   it("migrates legacy subject-wide teachers into every class", () => {

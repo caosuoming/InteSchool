@@ -187,4 +187,29 @@ describe("buildGradeTotalScoreRankingReport", () => {
     expect(report.tables[0].rows.map((row) => row.studentName)).toEqual(["甲"]);
     expect(report.tables[1].rows.map((row) => row.studentName)).toEqual(["乙"]);
   });
+
+  it("creates separate total-score leaderboards for flagged classes and remaining classes", () => {
+    const groupedExam: GradeExam = {
+      ...exam,
+      records: exam.records.map((record, index) => ({
+        ...record,
+        classId: `c${index + 1}`,
+        className: `${index + 1}班`,
+      })),
+      settings: {
+        ...exam.settings,
+        classSubjects: exam.records.map((_, index) => ({
+          classId: `c${index + 1}`, examSubjects: ["数学"], statisticSubjects: ["数学"],
+          separateRankSubjects: index < 2 ? ["数学"] : [],
+        })),
+      },
+    };
+    const report = buildGradeTotalScoreRankingReport(groupedExam, {
+      ...template, totalScoreSegmentOptions: { totalScoreTopN: 1 },
+    }, { ...context, classProfiles: {} });
+    expect(report.tables.map((item) => item.key)).toEqual(["separate-数学", "all"]);
+    expect(report.tables.map((item) => item.rows.map((row) => row.studentName))).toEqual([["甲"], ["丙"]]);
+    expect(report.tables[0].title).toContain("单独排名");
+    expect(report.tables[1].title).toContain("统一排名");
+  });
 });

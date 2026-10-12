@@ -116,7 +116,7 @@ export function GradeTotalScoreRankingTable({
           <div>
             <div className="font-medium text-ink-900">表五、总分前{report.topN}名（{report.scoreModeLabel}）</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              文理科均存在且所有学生都能识别科类时分别排名，否则按全年级统一排名；总分和各科成绩类型与表二保持一致。
+              单独排名科目的班级另组排名，其余班级统一排名；组内文理科均存在且能识别时继续分科排名。总分和各科成绩类型与表二保持一致。
             </div>
           </div>
         </div>

@@ -415,7 +415,8 @@ function StudentTrend({
                         {item.exam.subjects.flatMap((subject) => {
                           const rank = item.record.subjectRanks?.[subject];
                           if (typeof rank !== "number") return [];
-                          const scope = item.record.subjectRankScopes?.[subject] === "class" ? "班内" : "年级";
+                          const rankScope = item.record.subjectRankScopes?.[subject];
+                          const scope = rankScope === "separate" ? "单独组" : rankScope === "class" ? "班内" : "年级";
                           return [(
                             <span key={subject} className="rounded bg-ink-50 px-2 py-1 text-ink-600">
                               {subject} · {scope}第 {rank}

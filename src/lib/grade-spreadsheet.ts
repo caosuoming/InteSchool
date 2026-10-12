@@ -913,7 +913,8 @@ function totalScoreRankingWorkbookSheets(
 ): CombinedWorkbookSheet[] {
   return report.tables.map((table) => {
     const headers = ["名次", "学号", "姓名", "班级", ...report.subjects, `总分（${report.scoreModeLabel}）`];
-    const sheetLabel = table.key === "science" ? "理科" : table.key === "arts" ? "文科" : "总分排名";
+    const sheetLabel = table.key === "science" ? "理科" : table.key === "arts" ? "文科"
+      : table.key === "all" ? "总分排名" : table.key;
     return {
       sheet: uniqueWorkbookSheetName(`${sheetPrefix}${sheetLabel}`, usedNames),
       data: [

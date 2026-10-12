@@ -1,5 +1,4 @@
 import type {
-  GradeAcademicTrack,
   GradeExam,
   GradeImportContext,
   GradeScoreMode,
@@ -13,6 +12,7 @@ import {
   type GradeAcademicTrackClassification,
 } from "./grade-total-score-segment.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
+import { totalRankingGroupKey } from "./grade-statistics.js";
 
 export const DEFAULT_TOTAL_SCORE_TOP_N = 50;
 
@@ -28,7 +28,7 @@ export interface GradeTotalScoreRankingRow {
 }
 
 export interface GradeTotalScoreRankingTable {
-  key: "all" | GradeAcademicTrack;
+  key: string;
   title: string;
   rows: GradeTotalScoreRankingRow[];
 }
@@ -123,15 +123,6 @@ export function buildGradeTotalScoreRankingReport(
     }
     return classTracks.get(record.classId) || "unclassified";
   };
-  const classifiedRecords = records.map((record) => ({
-    record,
-    track: trackForRecord(record),
-  }));
-  const hasScience = classifiedRecords.some((item) => item.track === "science");
-  const hasArts = classifiedRecords.some((item) => item.track === "arts");
-  const hasUnclassified = classifiedRecords.some((item) => item.track === "unclassified");
-  const splitByTrack = hasScience && hasArts && !hasUnclassified;
-
   const table = (
     key: GradeTotalScoreRankingTable["key"],
     label: string,
@@ -142,12 +133,34 @@ export function buildGradeTotalScoreRankingReport(
     rows: rankedRows(source, effectiveTemplate, subjects, classLabels, topN),
   });
 
-  const tables = splitByTrack
-    ? [
-        table("science", `理科总分前${topN}名`, classifiedRecords.filter((item) => item.track === "science").map((item) => item.record)),
-        table("arts", `文科总分前${topN}名`, classifiedRecords.filter((item) => item.track === "arts").map((item) => item.record)),
-      ]
-    : [table("all", `总分前${topN}名`, records)];
+  const rankedGroups = new Map<string, GradeScoreRecord[]>();
+  records.forEach((record) => {
+    const key = totalRankingGroupKey(exam.settings, record.classId);
+    const group = rankedGroups.get(key) || [];
+    group.push(record);
+    rankedGroups.set(key, group);
+  });
+  const hasSeparateGroups = [...rankedGroups.keys()].some((key) => key !== "[]");
+  const tables: GradeTotalScoreRankingTable[] = [];
+  rankedGroups.forEach((groupRecords, groupKey) => {
+    const separateSubjects = JSON.parse(groupKey) as string[];
+    const groupLabel = !hasSeparateGroups ? ""
+      : separateSubjects.length ? `单独排名（${separateSubjects.join("、")}）` : "统一排名";
+    const keySuffix = separateSubjects.length ? `separate-${separateSubjects.join("-")}` : "all";
+    const classifiedRecords = groupRecords.map((record) => ({ record, track: trackForRecord(record) }));
+    const hasScience = classifiedRecords.some((item) => item.track === "science");
+    const hasArts = classifiedRecords.some((item) => item.track === "arts");
+    const hasUnclassified = classifiedRecords.some((item) => item.track === "unclassified");
+    if (hasScience && hasArts && !hasUnclassified) {
+      (["science", "arts"] as const).forEach((track) => {
+        const trackRecords = classifiedRecords.filter((item) => item.track === track).map((item) => item.record);
+        const trackName = track === "science" ? "理科" : "文科";
+        tables.push(table(hasSeparateGroups ? `${track}-${keySuffix}` : track, `${trackName}${groupLabel}总分前${topN}名`, trackRecords));
+      });
+    } else {
+      tables.push(table(keySuffix, `${groupLabel}总分前${topN}名`, groupRecords));
+    }
+  });
 
   return {
     reportDate: exam.examDate || exam.createdAt.slice(0, 10),
