@@ -1,3 +1,4 @@
+import { studentTypeOf } from "../../src/lib/student-type.js";
 import type {
   SchoolClass,
   SchoolGrade,
@@ -518,6 +519,7 @@ export const schoolRosterService = {
           gender: row.gender,
           subjectSelection: row.subjectSelection,
           isExternal: row.isExternal,
+          studentType: row.isExternal ? "visiting" : "regular",
           contacts: rosterContacts(undefined, row),
           status: "active",
         });
@@ -535,6 +537,7 @@ export const schoolRosterService = {
         gender: row.gender ?? matched.gender,
         subjectSelection: row.subjectSelection,
         isExternal: row.isExternal,
+        studentType: row.isExternal ? "visiting" : studentTypeOf(matched) === "visiting" ? "regular" : studentTypeOf(matched),
         contacts: rosterContacts(matched, row),
         classHistory: classChanged
           ? [

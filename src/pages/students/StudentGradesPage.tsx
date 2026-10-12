@@ -355,7 +355,8 @@ function StudentTrend({
         : null;
     return [{ exam, record, metricValue, metricLabel: typeof record.assignedTotal === "number" ? "赋分总分" : visibleSubject || "成绩" }];
   });
-  const maxRank = Math.max(1, ...rows.map((item) => item.record.gradeRank));
+  const ranks = rows.map((item) => item.record.gradeRank > 0 ? item.record.gradeRank : null);
+  const maxRank = Math.max(1, ...ranks.filter((rank): rank is number => rank !== null));
 
   return (
     <div className="space-y-4">
@@ -383,7 +384,7 @@ function StudentTrend({
         </div>
         <TrendChart
           labels={rows.map((item) => item.exam.name)}
-          primary={rows.map((item) => item.record.gradeRank)}
+          primary={ranks}
           primaryLabel="年级名次"
           invert
         />
@@ -402,13 +403,13 @@ function StudentTrend({
             </thead>
             <tbody className="divide-y divide-ink-100">
               {rows.map((item, index) => {
-                const previous = rows[index - 1]?.record.gradeRank;
-                const change = typeof previous === "number" ? previous - item.record.gradeRank : null;
+                const previous = ranks[index - 1];
+                const change = previous != null && ranks[index] != null ? previous - ranks[index]! : null;
                 return (
                   <tr key={item.exam.id}>
                     <td className="px-4 py-3 font-medium text-ink-900">{item.exam.name}</td>
                     <td className="px-4 py-3 text-ink-500">{examDateLabel(item.exam)}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gold-700">{item.record.gradeRank}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gold-700">{ranks[index] ?? "—"}</td>
                     <td className="px-4 py-3 text-right"><Delta value={change} /></td>
                     <td className="px-4 py-3">
                       <div className="flex min-w-52 flex-wrap gap-1.5">

@@ -565,6 +565,10 @@ export function normalizeGradeSettings(
   };
 }
 
+export function participatingGradeRecords<T extends { includeInStatistics?: boolean }>(records: T[]): T[] {
+  return records.filter((record) => record.includeInStatistics !== false);
+}
+
 interface BaseGradeRecord {
   id: string;
   studentId: string;
@@ -574,6 +578,7 @@ interface BaseGradeRecord {
   className: string;
   subjectSelection?: string;
   classType?: string;
+  includeInStatistics?: boolean;
   scores: Record<string, number | null>;
   sourceAssignedScores?: Record<string, number | null>;
 }
@@ -682,21 +687,23 @@ export function calculateGradeRecords(
     };
   });
 
+  const participating = participatingGradeRecords(records);
+
   for (const [subject, rules] of Object.entries(settings.assignmentRules)) {
     if (!normalizedSubjects.includes(subject)) continue;
-    const unifiedRecords = records.filter((record) =>
+    const unifiedRecords = participating.filter((record) =>
       !(classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject),
     );
     assignSubjectScores(unifiedRecords, subject, rules);
 
-    const separateRecords = records.filter((record) =>
+    const separateRecords = participating.filter((record) =>
       (classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject),
     );
     assignSubjectScores(separateRecords, subject, rules);
   }
 
   normalizedSubjects.forEach((subject) => {
-    const unifiedRecords = records.filter((record) => {
+    const unifiedRecords = participating.filter((record) => {
       if (typeof record.assignedScores[subject] !== "number") return false;
       const separateSubjects = classSettings.get(record.classId)?.separateRankSubjects || [];
       return !separateSubjects.includes(subject);
@@ -711,7 +718,7 @@ export function calculateGradeRecords(
       record.subjectRankScopes![subject] = "cohort";
     });
 
-    const separateRecords = records.filter((record) =>
+    const separateRecords = participating.filter((record) =>
       typeof record.assignedScores[subject] === "number"
       && (classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject),
     );
@@ -747,7 +754,7 @@ export function calculateGradeRecords(
 
   const gradeRanks = new Map<GradeScoreRecord, number>();
   const totalRankingGroups = new Map<string, GradeScoreRecord[]>();
-  records.forEach((record) => {
+  participating.forEach((record) => {
     const key = totalRankingGroupKey(settings, record.classId);
     const group = totalRankingGroups.get(key) || [];
     group.push(record);
@@ -758,7 +765,7 @@ export function calculateGradeRecords(
       .forEach((rank, record) => gradeRanks.set(record, rank));
   });
   const classGroups = new Map<string, GradeScoreRecord[]>();
-  records.forEach((record) => {
+  participating.forEach((record) => {
     const current = classGroups.get(record.classId) || [];
     current.push(record);
     classGroups.set(record.classId, current);
@@ -773,5 +780,5 @@ export function calculateGradeRecords(
     record.gradeRank = gradeRanks.get(record) || 0;
     record.classRank = classRanks.get(record) || 0;
   });
-  return records.sort((left, right) => left.gradeRank - right.gradeRank || left.studentNo.localeCompare(right.studentNo));
+  return records.sort((left, right) => (left.gradeRank || Infinity) - (right.gradeRank || Infinity) || left.studentNo.localeCompare(right.studentNo));
 }

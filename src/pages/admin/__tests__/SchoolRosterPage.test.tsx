@@ -319,6 +319,8 @@ describe("SchoolRosterPage", () => {
     fireEvent.change(screen.getByLabelText("选科"), { target: { value: "物化地" } });
     fireEvent.change(screen.getByLabelText("年级"), { target: { value: "高三" } });
     fireEvent.change(screen.getByLabelText("性别"), { target: { value: "female" } });
+    fireEvent.change(screen.getByLabelText("学生类型"), { target: { value: "resumed" } });
+    fireEvent.change(screen.getByLabelText("是否参与成绩汇总统计"), { target: { value: "no" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
 
     await waitFor(() => {
@@ -328,6 +330,8 @@ describe("SchoolRosterPage", () => {
         subjectSelection: "物化地",
         grade: "高三",
         gender: "female",
+        studentType: "resumed",
+        includeInStatistics: false,
       });
     });
   });
@@ -340,6 +344,7 @@ describe("SchoolRosterPage", () => {
     fireEvent.change(screen.getByLabelText("学号"), { target: { value: " 20260002 " } });
     fireEvent.change(screen.getByLabelText("选科"), { target: { value: "物化地" } });
     fireEvent.change(screen.getByLabelText("性别"), { target: { value: "female" } });
+    fireEvent.change(screen.getByLabelText("学生类型"), { target: { value: "visiting" } });
     fireEvent.click(screen.getByRole("button", { name: "添加学生" }));
 
     await waitFor(() => {
@@ -349,6 +354,7 @@ describe("SchoolRosterPage", () => {
         grade: "高二",
         gender: "female",
         subjectSelection: "物化地",
+        studentType: "visiting",
       });
     });
   });

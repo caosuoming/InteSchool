@@ -1,3 +1,4 @@
+import { participatingGradeRecords } from "./grade-statistics.js";
 import type {
   GradeBandRule,
   GradeExam,
@@ -46,7 +47,7 @@ export function averageGradeValues(values: Array<number | null | undefined>): nu
 
 export function buildGradeClassAverages(exam: GradeExam): GradeClassAverage[] {
   const groups = new Map<string, GradeScoreRecord[]>();
-  exam.records.forEach((record) => {
+  participatingGradeRecords(exam.records).forEach((record) => {
     const current = groups.get(record.classId) || [];
     current.push(record);
     groups.set(record.classId, current);
@@ -136,7 +137,7 @@ export function buildElectiveGradeDistribution(
       const rules = exam.settings.assignmentRules[subject];
       const counts = Object.fromEntries(rules.map((rule) => [rule.label, 0]));
       let total = 0;
-      exam.records.forEach((record) => {
+      participatingGradeRecords(exam.records).forEach((record) => {
         const value = record.assignedScores[subject];
         if (typeof value !== "number") return;
         const label = assignedGradeLabel(value, rules);
@@ -156,7 +157,7 @@ export function buildGradeReportTable(
     return {
       headers: columns.map((column) => column.name),
       widths: columns.map((column) => column.width || 14),
-      rows: [...exam.records]
+      rows: [...participatingGradeRecords(exam.records)]
         .sort((left, right) => left.gradeRank - right.gradeRank || left.studentNo.localeCompare(right.studentNo))
         .map((record) => columns.map((column) => {
           try {
@@ -173,7 +174,7 @@ export function buildGradeReportTable(
   }
 
   if (template.kind === "studentRanking") {
-    const records = [...exam.records].sort((left, right) => left.gradeRank - right.gradeRank);
+    const records = [...participatingGradeRecords(exam.records)].sort((left, right) => left.gradeRank - right.gradeRank);
     return {
       headers: ["年级名次", "班级名次", "班级", "学号", "姓名", ...template.subjects, "模板总分"],
       widths: [10, 10, 16, 16, 12, ...template.subjects.map(() => 12), 14],
@@ -190,9 +191,9 @@ export function buildGradeReportTable(
   }
 
   if (template.kind === "classAverage") {
-    const classIds = [...new Set(exam.records.map((record) => record.classId))];
+    const classIds = [...new Set(participatingGradeRecords(exam.records).map((record) => record.classId))];
     const rows = classIds.map((classId) => {
-      const records = exam.records.filter((record) => record.classId === classId);
+      const records = participatingGradeRecords(exam.records).filter((record) => record.classId === classId);
       const subjectAverages = template.subjects.map((subject) => averageGradeValues(records.map((record) =>
         recordSubjectValue(record, subject, template.scoreMode),
       )));
@@ -230,7 +231,7 @@ export function buildGradeReportTable(
     };
   }
 
-  const values = exam.records.map((record) => gradeTemplateTotal(record, template));
+  const values = participatingGradeRecords(exam.records).map((record) => gradeTemplateTotal(record, template));
   const segments = buildGradeScoreSegments(values, template.segmentSize || 10);
   return {
     headers: ["分数段", "人数", "比例"],

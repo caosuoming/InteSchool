@@ -9,7 +9,7 @@ import type {
   GradeStatisticsTemplate,
 } from "../types/index.js";
 import { averageGradeValues } from "./grade-reports.js";
-import { expectedGradeSubjectCount } from "./grade-statistics.js";
+import { expectedGradeSubjectCount, participatingGradeRecords } from "./grade-statistics.js";
 import { isAssignableGradeSubject } from "./grade-subjects.js";
 
 export interface GradeClassAverageScorePair {
@@ -363,10 +363,10 @@ export function buildGradeClassAverageReport(
   const options = resolveClassAverageOptions(exam, context, template.classAverageOptions, template.scoreMode);
   const subjects = template.subjects.filter((subject) => exam.subjects.includes(subject));
   const effectiveSubjects = subjects.length > 0 ? subjects : [...exam.subjects];
-  const expectedCount = expectedGradeSubjectCount(exam.subjects, exam.records);
+  const expectedCount = expectedGradeSubjectCount(exam.subjects, participatingGradeRecords(exam.records));
   const hiddenClassIds = new Set(options.hiddenClassIds || []);
   const recordsByClass = new Map<string, GradeScoreRecord[]>();
-  exam.records.forEach((record) => {
+  participatingGradeRecords(exam.records).forEach((record) => {
     const current = recordsByClass.get(record.classId) || [];
     current.push(record);
     recordsByClass.set(record.classId, current);

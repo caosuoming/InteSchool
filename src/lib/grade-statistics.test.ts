@@ -40,6 +40,32 @@ const baseRecords = [
 ];
 
 describe("grade statistics", () => {
+  it("keeps excluded students' scores without using them in ranks or grade conversion", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1", "class-2"]);
+    const scores = calculateGradeRecords([
+      baseRecords[0],
+      { ...baseRecords[1], includeInStatistics: false, scores: { 数学: 999, 化学: 99 } },
+      baseRecords[2],
+    ], ["数学", "化学"], settings);
+    const included = scores.find((record) => record.studentId === "student-1")!;
+    const excluded = scores.find((record) => record.studentId === "student-2")!;
+    const otherClass = scores.find((record) => record.studentId === "student-3")!;
+
+    expect(scores).toHaveLength(3);
+    expect(excluded.scores.数学).toBe(999);
+    expect(excluded.rawTotal).toBe(1098);
+    expect(excluded.gradeRank).toBe(0);
+    expect(excluded.classRank).toBe(0);
+    expect(excluded.subjectRanks?.数学).toBeNull();
+    expect(included.gradeRank).toBe(1);
+    expect(included.classRank).toBe(1);
+    expect(otherClass.gradeRank).toBe(2);
+    expect(included.subjectRanks?.数学).toBe(1);
+    expect(otherClass.subjectRanks?.数学).toBe(2);
+    expect(excluded.assignedScores.化学).toBe(99);
+    expect(included.assignedScores.化学).toBe(100);
+  });
+
   it("presets unified ranking subjects from the class elective combination", () => {
     const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
     const preset = inferStatisticSubjectsFromSelections(subjects, ["史政地"]);

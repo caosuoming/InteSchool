@@ -1,3 +1,4 @@
+import { participatingGradeRecords } from "./grade-statistics.js";
 import type {
   GradeBandRule,
   GradeExam,
@@ -98,7 +99,7 @@ export function buildGradeElectiveScoreSegmentReport(
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const classNames = new Map(context.classes.map((classItem) => [classItem.id, classItem.name]));
   const recordsByClass = new Map<string, typeof exam.records>();
-  exam.records.forEach((record) => {
+  participatingGradeRecords(exam.records).forEach((record) => {
     const current = recordsByClass.get(record.classId) || [];
     current.push(record);
     recordsByClass.set(record.classId, current);
@@ -109,7 +110,7 @@ export function buildGradeElectiveScoreSegmentReport(
     .filter((subject) => exam.subjects.includes(subject))
     .map((subject) => {
       const thresholds = resolveGradeElectiveScoreThresholds(template, subject);
-      const hasImportedAssignedScores = exam.records.some(
+      const hasImportedAssignedScores = participatingGradeRecords(exam.records).some(
         (record) => typeof record.sourceAssignedScores?.[subject] === "number",
       );
       const usesAssignedScores = (classOptions.classOrder || []).some((classId) => {

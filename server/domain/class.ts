@@ -1,13 +1,15 @@
 import type {
   SchoolClass, PersonalClass, PersonalClassStudentCandidate, Student, AnyClass, ClassroomChoice, Teacher,
   ClassTypeCategory, StudentArchiveOverview, StudentArchiveRecord, StudentArchiveStatus,
-  StudentArchiveStatusInput, StudentContactInfo,
+  StudentArchiveStatusInput, StudentContactInfo, StudentType,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { schoolRosterService } from "./school-roster.js";
 import { getStudentArchiveStatus } from "../../src/lib/student-archive.js";
 import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
+import { studentTypeOf } from "../../src/lib/student-type.js";
+import { refreshStudentGradeParticipation } from "./grade.js";
 
 export interface StudentInput {
   name: string;
@@ -16,6 +18,8 @@ export interface StudentInput {
   gender?: "male" | "female";
   subjectSelection?: string;
   isExternal?: boolean;
+  studentType?: StudentType;
+  includeInStatistics?: boolean;
   externalSchool?: string;
 }
 
@@ -263,6 +267,12 @@ export const classService = {
     const studentNo = input.studentNo.trim();
     if (!name) throw new Error("请填写学生姓名");
     if (!studentNo) throw new Error("请填写学生学号");
+    if (input.studentType !== undefined && !(["regular", "visiting", "resumed"] as const).includes(input.studentType)) {
+      throw new Error("无效的学生类型");
+    }
+    if (input.includeInStatistics !== undefined && typeof input.includeInStatistics !== "boolean") {
+      throw new Error("是否参与成绩汇总必须为布尔值");
+    }
     if (schoolClass) {
       const duplicate = db.read("students").find((item) =>
         item.schoolId === schoolId
@@ -280,10 +290,12 @@ export const classService = {
       grade: input.grade?.trim() || schoolClass?.grade || "",
       gender: input.gender,
       subjectSelection: cleanOptional(input.subjectSelection),
-      isExternal: input.isExternal,
+      isExternal: input.studentType ? input.studentType === "visiting" : input.isExternal,
+      studentType: input.studentType || (input.isExternal ? "visiting" : "regular"),
+      includeInStatistics: input.includeInStatistics ?? true,
       externalSchool: cleanOptional(input.externalSchool),
       status: "active",
-      archiveStatus: input.isExternal ? "visiting" : "attending",
+      archiveStatus: studentTypeOf({ studentType: input.studentType, isExternal: input.isExternal }) === "visiting" ? "visiting" : "attending",
     };
     db.update("students", (list) => [...list, student]);
     // 更新班级学生数
@@ -311,6 +323,8 @@ export const classService = {
       grade: input.grade || "",
       gender: input.gender,
       isExternal: true,
+      studentType: "visiting",
+      includeInStatistics: input.includeInStatistics ?? true,
       externalSchool: input.externalSchool,
       status: "active",
       archiveStatus: "visiting",
@@ -587,6 +601,7 @@ export const classService = {
         archiveStatus,
         archiveStatusBeforeLeave,
         isExternal,
+        studentType: isExternal ? "visiting" : studentTypeOf(item) === "visiting" ? "regular" : studentTypeOf(item),
         externalSchool: ["studyAway", "visiting"].includes(input.status)
           ? externalSchool
           : input.status === "attending"
@@ -747,18 +762,32 @@ export const classService = {
    */
   async updateStudent(
     studentId: string,
-    patch: Partial<Pick<Student, "name" | "studentNo" | "grade" | "gender" | "subjectSelection" | "externalSchool">>,
+    patch: Partial<Pick<Student, "name" | "studentNo" | "grade" | "gender" | "subjectSelection" | "externalSchool" | "studentType" | "includeInStatistics">>,
   ): Promise<Student | null> {
     await delay(250);
     maybeThrowError();
-    let updated: Student | null = null;
-    db.update("students", (list) =>
-      list.map((s) => {
-        if (s.id !== studentId) return s;
-        updated = { ...s, ...patch };
-        return updated;
-      }),
-    );
+    if (patch.studentType !== undefined && !(["regular", "visiting", "resumed"] as const).includes(patch.studentType)) {
+      throw new Error("无效的学生类型");
+    }
+    if (patch.includeInStatistics !== undefined && typeof patch.includeInStatistics !== "boolean") {
+      throw new Error("是否参与成绩汇总必须为布尔值");
+    }
+    const previous = db.read("students").find((student) => student.id === studentId);
+    if (!previous) return null;
+    const typeChanged = patch.studentType !== undefined && patch.studentType !== studentTypeOf(previous);
+    const updated: Student = {
+      ...previous,
+      ...patch,
+      ...(typeChanged ? {
+        isExternal: patch.studentType === "visiting",
+        archiveStatus: patch.studentType === "visiting" ? "visiting" : "attending",
+        externalSchool: patch.studentType === "visiting" ? patch.externalSchool ?? previous.externalSchool : undefined,
+      } : {}),
+    };
+    db.update("students", (list) => list.map((student) => student.id === studentId ? updated : student));
+    if (patch.includeInStatistics !== undefined && patch.includeInStatistics !== (previous.includeInStatistics !== false)) {
+      refreshStudentGradeParticipation(studentId, patch.includeInStatistics);
+    }
     return updated;
   },
 

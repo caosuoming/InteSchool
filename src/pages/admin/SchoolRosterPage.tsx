@@ -32,6 +32,7 @@ import {
   readStudentRosterFile,
 } from "@/lib/student-roster-spreadsheet";
 import { cn } from "@/lib/utils";
+import { STUDENT_TYPE_OPTIONS, studentTypeLabel, studentTypeOf } from "@/lib/student-type";
 import { classTypeMatchesReference, classTypeReferenceMap } from "@/lib/class-type";
 import { authService } from "@/services/auth";
 import { classService } from "@/services/class";
@@ -44,6 +45,7 @@ import type {
   SchoolGrade,
   SchoolRosterRecycleBin,
   Student,
+  StudentType,
   StudentRosterImportRow,
   Teacher,
 } from "@/types";
@@ -237,12 +239,15 @@ export default function SchoolRosterPage() {
   const [editStudentSubjectSelection, setEditStudentSubjectSelection] = useState("");
   const [editStudentGrade, setEditStudentGrade] = useState("");
   const [editStudentGender, setEditStudentGender] = useState<"male" | "female">("male");
+  const [editStudentType, setEditStudentType] = useState<StudentType>("regular");
+  const [editStudentIncluded, setEditStudentIncluded] = useState(true);
   const [editStudentTransferClassId, setEditStudentTransferClassId] = useState("");
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [newStudentName, setNewStudentName] = useState("");
   const [newStudentNo, setNewStudentNo] = useState("");
   const [newStudentSubjectSelection, setNewStudentSubjectSelection] = useState("");
   const [newStudentGender, setNewStudentGender] = useState<"male" | "female">("male");
+  const [newStudentType, setNewStudentType] = useState<StudentType>("regular");
 
   const load = useCallback(async () => {
     if (!schoolId) return;
@@ -322,7 +327,7 @@ export default function SchoolRosterPage() {
     [classStudents],
   );
   const commonStudentType = useMemo(
-    () => majorityValue(classStudents.map((item) => item.isExternal ? "external" : "internal")),
+    () => majorityValue(classStudents.map((item) => studentTypeOf(item))),
     [classStudents],
   );
 
@@ -363,6 +368,7 @@ export default function SchoolRosterPage() {
     setNewStudentNo("");
     setNewStudentSubjectSelection("");
     setNewStudentGender("male");
+    setNewStudentType("regular");
     setAddStudentOpen(true);
   };
 
@@ -387,6 +393,7 @@ export default function SchoolRosterPage() {
       studentNo,
       grade: selectedClass.grade,
       gender: newStudentGender,
+      studentType: newStudentType,
       subjectSelection: newStudentSubjectSelection.trim() || undefined,
     });
     toast.success(`已将“${name}”加入“${selectedClass.name}”`);
@@ -586,6 +593,8 @@ export default function SchoolRosterPage() {
     setEditStudentSubjectSelection(item.subjectSelection || "");
     setEditStudentGrade(item.grade || selectedGrade?.grade || "");
     setEditStudentGender(item.gender || "male");
+    setEditStudentType(studentTypeOf(item));
+    setEditStudentIncluded(item.includeInStatistics !== false);
     setEditStudentTransferClassId("");
     setEditStudentOpen(true);
   };
@@ -621,6 +630,8 @@ export default function SchoolRosterPage() {
       subjectSelection: editStudentSubjectSelection.trim() || undefined,
       grade: editStudentGrade,
       gender: editStudentGender,
+      studentType: editStudentType,
+      includeInStatistics: editStudentIncluded,
     });
     toast.success(`已更新学生“${name}”`);
     closeEditStudent();
@@ -992,7 +1003,7 @@ export default function SchoolRosterPage() {
                   <tbody className="divide-y divide-ink-100">
                     {classStudents.map((item) => {
                       const subjectValue = item.subjectSelection?.trim() || "__empty__";
-                      const studentTypeValue = item.isExternal ? "external" : "internal";
+                      const studentTypeValue = studentTypeOf(item);
                       const subjectIsDifferent = commonSubjectSelection !== null && subjectValue !== commonSubjectSelection;
                       const studentTypeIsDifferent = commonStudentType !== null && studentTypeValue !== commonStudentType;
                       return (
@@ -1014,7 +1025,7 @@ export default function SchoolRosterPage() {
                           <td className="px-4 py-3">
                             <span title={studentTypeIsDifferent ? "与本班多数学生的类型不同" : undefined}>
                               <Badge variant={studentTypeIsDifferent ? "amber" : "default"}>
-                                {item.isExternal ? "借读生" : "本校生"}
+                                {studentTypeLabel(item)}
                               </Badge>
                             </span>
                           </td>
@@ -1353,6 +1364,12 @@ export default function SchoolRosterPage() {
               ]}
             />
           </div>
+          <Select
+            label="学生类型"
+            value={newStudentType}
+            onChange={(event) => setNewStudentType(event.target.value as StudentType)}
+            options={STUDENT_TYPE_OPTIONS}
+          />
         </div>
       </Modal>
 
@@ -1390,6 +1407,21 @@ export default function SchoolRosterPage() {
               ]}
             />
           </div>
+          <Select
+            label="学生类型"
+            value={editStudentType}
+            onChange={(event) => setEditStudentType(event.target.value as StudentType)}
+            options={STUDENT_TYPE_OPTIONS}
+          />
+          <Select
+            label="是否参与成绩汇总统计"
+            value={editStudentIncluded ? "yes" : "no"}
+            onChange={(event) => setEditStudentIncluded(event.target.value === "yes")}
+            options={[{ value: "yes", label: "是" }, { value: "no", label: "否" }]}
+          />
+          {!editStudentIncluded && (
+            <p className="text-xs text-ink-500">该生仅保留在班级成绩中，不参与平均分、分数段、赋分和各类排名。</p>
+          )}
           <div className="border-t border-ink-100 pt-4">
             <div className="mb-3">
               <div className="text-sm font-medium text-ink-800">学籍操作</div>
