@@ -22,6 +22,7 @@ export interface AnswerSheetSettings {
   a4Columns: 1 | 2;
   answerBoxStyle: AnswerSheetBoxStyle;
   answerBoxHeights?: Record<string, number>;
+  answerBoxWidths?: Record<string, number>;
   essayImageLayouts?: Record<string, AnswerSheetImageLayout[]>;
 }
 
