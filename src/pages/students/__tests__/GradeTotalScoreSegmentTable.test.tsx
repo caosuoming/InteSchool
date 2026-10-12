@@ -232,4 +232,49 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(screen.getByLabelText("文科高分1达线统计")).toHaveTextContent("1人（50.0%）");
     expect(screen.getByLabelText("文科一本达线统计")).toHaveTextContent("2人（100.0%）");
   });
+
+  it("edits and saves separate ranking group thresholds and restores track fallback", async () => {
+    const user = userEvent.setup();
+    const onAutoSave = vi.fn();
+    const separateSettings = {
+      ...exam.settings,
+      classSubjects: [
+        { classId: "class-1", examSubjects: ["数学"], statisticSubjects: [], separateRankSubjects: ["数学"] },
+      ],
+    };
+
+    function Harness() {
+      const [settings, setSettings] = useState(separateSettings);
+      return (
+        <GradeTotalScoreSegmentTable
+          exam={exam}
+          settings={settings}
+          template={template}
+          classAverageTemplate={classAverageTemplate}
+          context={context}
+          onChange={setSettings}
+          onAutoSave={onAutoSave}
+        />
+      );
+    }
+
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "调整分数段" }));
+    expect(screen.getByTestId("separate-standard-groups")).toHaveTextContent("单独排名（数学）");
+    const input = screen.getByRole("spinbutton", { name: "单独排名（数学）高分1标准" });
+    expect(input).toHaveValue(null);
+    expect(screen.getByLabelText("单独排名（数学）高分1达线统计")).toHaveTextContent("1人（100.0%）");
+    await user.type(input, "95");
+    await user.tab();
+    expect(screen.getByLabelText("单独排名（数学）高分1达线统计")).toHaveTextContent("0人（0.0%）");
+    expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
+      ?.totalScoreSegmentOptions?.separateRankThresholds?.['["数学"]']?.highScore1).toBe(95);
+    expect(screen.getByTestId("track-standard-summary")).toHaveTextContent("单独排名（数学）：高分1 95分");
+
+    await user.clear(input);
+    await user.tab();
+    expect(screen.getByLabelText("单独排名（数学）高分1达线统计")).toHaveTextContent("1人（100.0%）");
+    expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
+      ?.totalScoreSegmentOptions?.separateRankThresholds?.['["数学"]']?.highScore1).toBeUndefined();
+  });
 });

@@ -305,6 +305,23 @@ describe("grade statistics", () => {
     expect(options?.reportDate).toBeUndefined();
   });
 
+  it("preserves valid separate ranking standards when normalizing grade settings", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学", "生物"], ["class-1"]);
+    const template = settings.templates.find((item) => item.kind === "totalScoreSegment")!;
+    template.totalScoreSegmentOptions = {
+      separateRankThresholds: {
+        '["生物","化学"]': { highScore1: 920, firstTier: -20, highScore2: 3000 },
+        '["已删除科目"]': { highScore1: 300 },
+        invalid: { highScore1: 100 },
+      },
+    };
+    const normalized = normalizeGradeSettings(settings, ["数学", "化学", "生物"], ["class-1"]);
+    expect(normalized.templates.find((item) => item.kind === "totalScoreSegment")
+      ?.totalScoreSegmentOptions?.separateRankThresholds).toEqual({
+      '["化学","生物"]': { highScore1: 920, highScore2: 2000, firstTier: 0, undergraduate: undefined },
+    });
+  });
+
   it("assigns elective scores and produces grade and class competition ranks", () => {
     const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1", "class-2"]);
     const records = calculateGradeRecords(baseRecords, ["数学", "化学"], settings);

@@ -227,4 +227,90 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       __total__: 1,
     });
   });
+
+  it("applies separate standards to classes sharing a ranking subject combination", () => {
+    const separateExam: GradeExam = {
+      ...exam,
+      settings: {
+        ...exam.settings,
+        classSubjects: [
+          { classId: "class-1", examSubjects: ["数学", "化学", "生物"], statisticSubjects: ["数学"], separateRankSubjects: ["生物", "化学"] },
+          { classId: "class-2", examSubjects: ["数学", "化学", "生物"], statisticSubjects: ["数学"], separateRankSubjects: ["化学", "生物"] },
+        ],
+      },
+    };
+    const commonOptions = {
+      trackThresholds: {
+        science: { highScore1: 90, firstTier: 90 },
+        arts: { highScore1: 99, firstTier: 99 },
+      },
+    };
+    const separateContext: GradeImportContext = {
+      ...context,
+      classProfiles: {
+        "class-1": { subjectSelections: ["物化生"], scoreSubjects: ["数学"], hasImportedScores: true },
+        "class-2": { subjectSelections: ["史政地"], scoreSubjects: ["数学"], hasImportedScores: true },
+      },
+    };
+    const report = buildGradeTotalScoreSegmentReport(
+      separateExam,
+      {
+        ...template,
+        totalScoreSegmentOptions: {
+          ...commonOptions,
+          separateRankThresholds: { '["化学","生物"]': { highScore1: 95 } },
+        },
+      },
+      separateContext,
+      classAverageTemplate,
+    );
+    expect(report.separateStandards).toEqual([{
+      key: '["化学","生物"]',
+      label: "单独排名（化学、生物）",
+      classIds: ["class-1", "class-2"],
+      classLabels: ["一班", "二班"],
+      thresholds: { highScore1: 95, highScore2: null, firstTier: null, undergraduate: null },
+    }]);
+    const highScore = report.summaryRows.find((row) => row.key === "highScore1Count");
+    expect(highScore?.values).toMatchObject({
+      "class-1": 1,
+      "class-2": 1,
+      __science_subtotal__: 1,
+      __arts_subtotal__: 1,
+      __total__: 2,
+    });
+    const firstTier = report.summaryRows.find((row) => row.key === "firstTierCount");
+    expect(firstTier?.values).toMatchObject({ "class-1": 1, "class-2": 1, __total__: 2 });
+
+    const withoutOverrides = buildGradeTotalScoreSegmentReport(
+      separateExam,
+      { ...template, totalScoreSegmentOptions: commonOptions },
+      separateContext,
+      classAverageTemplate,
+    );
+    expect(withoutOverrides.summaryRows.find((row) => row.key === "highScore1Count")?.values)
+      .toMatchObject({ "class-1": 1, "class-2": 1, __total__: 2 });
+    expect(withoutOverrides.separateStandards[0].thresholds.highScore1).toBeNull();
+  });
+
+  it("leaves ordinary classes on track standards when a separate group has custom standards", () => {
+    const rankSettings = {
+      ...exam.settings,
+      classSubjects: [
+        { classId: "class-1", examSubjects: ["数学"], statisticSubjects: [], separateRankSubjects: ["数学"] },
+        { classId: "class-2", examSubjects: ["数学"], statisticSubjects: ["数学"], separateRankSubjects: [] },
+      ],
+    };
+    const report = buildGradeTotalScoreSegmentReport(exam, {
+      ...template,
+      totalScoreSegmentOptions: {
+        highScore1Threshold: 90,
+        separateRankThresholds: { '["数学"]': { highScore1: 100 } },
+      },
+    }, context, classAverageTemplate, rankSettings);
+    expect(report.summaryRows.find((row) => row.key === "highScore1Count")?.values)
+      .toMatchObject({ "class-1": 0, "class-2": 1, __total__: 1 });
+    expect(report.separateStandards).toHaveLength(1);
+    expect(report.separateStandards[0].classIds).toEqual(["class-1"]);
+  });
 });

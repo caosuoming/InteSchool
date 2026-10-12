@@ -1054,6 +1054,8 @@ export interface GradeTotalScoreSegmentOptions {
   undergraduateThreshold?: number;
   /** 物理类（理科）和历史类（文科）分别使用的总分达线标准。 */
   trackThresholds?: Partial<Record<GradeAcademicTrack, GradeTotalScoreTrackThresholds>>;
+  /** 单独排名科目组合对应的达线标准；未设置项继续沿用文理科标准。 */
+  separateRankThresholds?: Record<string, GradeTotalScoreTrackThresholds>;
   /** 表三、表四各单科累计分数段，可按学科独立调整。 */
   subjectScoreSegmentThresholds?: Record<string, number[]>;
   /** 各班级随届保存的高分、一本和本科目标人数。 */

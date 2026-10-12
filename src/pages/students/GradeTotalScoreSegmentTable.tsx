@@ -69,8 +69,9 @@ export function GradeTotalScoreSegmentTable({
       effectiveTemplate,
       context,
       effectiveClassAverageTemplate,
+      settings,
     ),
-    [context, effectiveClassAverageTemplate, effectiveTemplate, exam],
+    [context, effectiveClassAverageTemplate, effectiveTemplate, exam, settings],
   );
   const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";
   const standardStats = (track: GradeAcademicTrack, targetKey: GradeTotalScoreTargetKey) => {
@@ -82,6 +83,13 @@ export function GradeTotalScoreSegmentTable({
     return `${count}人（${typeof candidates === "number" && candidates > 0
       ? `${((count / candidates) * 100).toFixed(1)}%`
       : "—"}）`;
+  };
+  const separateStandardStats = (classIds: string[], targetKey: GradeTotalScoreTargetKey) => {
+    const counts = report.summaryRows.find((row) => row.key === `${targetKey}Count`)?.values;
+    const candidates = report.summaryRows.find((row) => row.key === "candidateCount")?.values;
+    const count = classIds.reduce((sum, classId) => sum + (typeof counts?.[classId] === "number" ? counts[classId] as number : 0), 0);
+    const total = classIds.reduce((sum, classId) => sum + (typeof candidates?.[classId] === "number" ? candidates[classId] as number : 0), 0);
+    return total > 0 ? `${count}人（${((count / total) * 100).toFixed(1)}%）` : "—人（—）";
   };
 
   const updateTemplate = (patch: Partial<GradeStatisticsTemplate>) => {
@@ -134,6 +142,19 @@ export function GradeTotalScoreSegmentTable({
         ...options.trackThresholds,
         [track]: {
           ...options.trackThresholds?.[track],
+          [targetKey]: optionalNumber(value),
+        },
+      },
+    });
+  };
+
+  const updateSeparateThreshold = (groupKey: string, targetKey: GradeTotalScoreTargetKey, value: string) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    updateSegmentOptions({
+      separateRankThresholds: {
+        ...options.separateRankThresholds,
+        [groupKey]: {
+          ...options.separateRankThresholds?.[groupKey],
           [targetKey]: optionalNumber(value),
         },
       },
@@ -300,8 +321,39 @@ export function GradeTotalScoreSegmentTable({
               </Button>
             </div>
           </div>
+          {report.separateStandards.length > 0 && (
+            <div data-testid="separate-standard-groups" className="mt-3 space-y-3 border-t border-ink-200 pt-3">
+              {report.separateStandards.map((group) => (
+                <div key={group.key} className="flex flex-wrap items-end gap-3">
+                  <div className="w-44 shrink-0 text-xs text-ink-700">
+                    <div className="font-semibold">{group.label}</div>
+                    <div className="mt-1 text-ink-500">{group.classLabels.join("、")}</div>
+                  </div>
+                  {TOTAL_SCORE_STANDARD_LABELS.map(([targetKey, label]) => (
+                    <div key={targetKey} className="flex items-end gap-2">
+                      <div className="w-32">
+                        <Input
+                          label={`${group.label}${label}标准`}
+                          type="number"
+                          min={0}
+                          max={2000}
+                          placeholder="沿用文理科标准"
+                          value={group.thresholds[targetKey] ?? ""}
+                          onChange={(event) => updateSeparateThreshold(group.key, targetKey, event.target.value)}
+                          onBlur={() => void autoSave()}
+                        />
+                      </div>
+                      <output aria-label={`${group.label}${label}达线统计`} className="mb-2 whitespace-nowrap text-xs tabular-nums text-ink-600">
+                        {separateStandardStats(group.classIds, targetKey)}
+                      </output>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-x-3 text-[11px] text-ink-400">
-            <span>含物理的选科归入理科，含历史的选科归入文科；两类达线标准分别保存到当前届年级。</span>
+            <span>含物理的选科归入理科，含历史的选科归入文科；单独排名组可配置专门标准，留空则沿用文理科标准。修改保存到当前届年级。</span>
             {autoSaving && <span className="text-emerald-700">正在自动保存…</span>}
           </div>
         </div>
@@ -365,6 +417,17 @@ export function GradeTotalScoreSegmentTable({
                             {label} {report.trackStandards[track][key] === null
                               ? "未设置"
                               : `${report.trackStandards[track][key]}分`}
+                          </span>
+                        ))}
+                      </span>
+                    ))}
+                    {report.separateStandards.map((group) => (
+                      <span key={group.key} className="whitespace-nowrap">
+                        <span className="font-semibold text-ink-900">{group.label}：</span>
+                        {TOTAL_SCORE_STANDARD_LABELS.map(([key, label], index) => (
+                          <span key={key}>
+                            {index > 0 && <span className="mx-1.5 text-ink-300">|</span>}
+                            {label} {group.thresholds[key] === null ? "沿用文理科标准" : `${group.thresholds[key]}分`}
                           </span>
                         ))}
                       </span>

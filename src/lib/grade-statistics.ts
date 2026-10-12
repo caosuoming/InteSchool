@@ -355,6 +355,25 @@ function normalizeTotalScoreSegmentOptions(
       undergraduate: normalizeThreshold(source.undergraduate),
     }]];
   }));
+  const separateRankThresholds = Object.fromEntries(
+    Object.entries(options.separateRankThresholds || {}).flatMap(([groupKey, thresholds]) => {
+      let subjects: unknown;
+      try {
+        subjects = JSON.parse(groupKey);
+      } catch {
+        return [];
+      }
+      if (!Array.isArray(subjects) || subjects.length === 0
+        || subjects.some((subject) => typeof subject !== "string" || !subjectSet.has(subject))) return [];
+      const key = JSON.stringify([...new Set(subjects)].sort());
+      return [[key, {
+        highScore1: normalizeThreshold(thresholds?.highScore1),
+        highScore2: normalizeThreshold(thresholds?.highScore2),
+        firstTier: normalizeThreshold(thresholds?.firstTier),
+        undergraduate: normalizeThreshold(thresholds?.undergraduate),
+      }]];
+    }),
+  );
   const subjectScoreSegmentThresholds = Object.fromEntries(
     Object.entries(options.subjectScoreSegmentThresholds || {})
       .filter(([subject]) => subjectSet.has(subject))
@@ -375,6 +394,7 @@ function normalizeTotalScoreSegmentOptions(
     firstTierThreshold: normalizeThreshold(options.firstTierThreshold),
     undergraduateThreshold: normalizeThreshold(options.undergraduateThreshold),
     trackThresholds: normalizeTrackThresholds(options.trackThresholds),
+    separateRankThresholds,
     subjectScoreSegmentThresholds,
     classTargets,
     totalScoreTopN: Number.isFinite(options.totalScoreTopN)
