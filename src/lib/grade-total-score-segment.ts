@@ -10,6 +10,7 @@ import type {
 import { resolveClassAverageOptions } from "./grade-class-average.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
 import { totalRankingGroupKey } from "./grade-statistics.js";
+import { ELECTIVE_GRADE_SUBJECTS, inferStatisticSubjectsFromSelections } from "./grade-statistics.js";
 
 export type GradeAcademicTrackClassification = GradeAcademicTrack | "unclassified";
 
@@ -62,6 +63,7 @@ export interface GradeTotalScoreSegmentReport {
   columns: GradeTotalScoreSegmentColumn[];
   rows: GradeTotalScoreSegmentRow[];
   summaryRows: GradeTotalScoreSummaryRow[];
+  validTotalCounts: Record<string, number>;
 }
 
 export const DEFAULT_TOTAL_SCORE_SEGMENT_MAX = 700;
@@ -122,6 +124,18 @@ export function inferGradeAcademicTrackFromSelection(value: string): GradeAcadem
 function finiteSubjectScore(record: GradeScoreRecord, subject: string): boolean {
   return typeof record.scores[subject] === "number"
     || typeof record.assignedScores[subject] === "number";
+}
+
+function hasCompleteTotal(
+  record: GradeScoreRecord,
+  subjects: string[],
+  mode: GradeStatisticsTemplate["scoreMode"],
+): boolean {
+  const values = mode === "raw" ? record.scores : record.assignedScores;
+  return subjects.length > 0 && subjects.every((subject) =>
+    typeof record.scores[subject] === "number" && Number.isFinite(record.scores[subject])
+    && typeof values[subject] === "number" && Number.isFinite(values[subject]),
+  );
 }
 
 export function inferGradeClassAcademicTrack(
@@ -260,9 +274,35 @@ export function buildGradeTotalScoreSegmentReport(
   ];
   const columns = buildColumns(classes);
 
+  const studentSelections = new Map(context.students.map((student) => [student.id, student.subjectSelection || ""]));
+  const electiveSubjects = new Set<string>(ELECTIVE_GRADE_SUBJECTS);
+  const requiredCoreSubjects = effectiveTemplate.subjects.filter((subject) => !electiveSubjects.has(subject));
+  const availableElectives = effectiveTemplate.subjects.filter((subject) => electiveSubjects.has(subject));
+  const expectedSubjectCount = requiredCoreSubjects.length + Math.min(3, availableElectives.length);
   const totalsByClass = new Map(classes.map((classItem) => [
     classItem.classId,
-    (recordsByClass.get(classItem.classId) || []).map((record) => gradeTemplateTotal(record, effectiveTemplate)),
+    (recordsByClass.get(classItem.classId) || []).flatMap((record) => {
+      const selected = inferStatisticSubjectsFromSelections(effectiveTemplate.subjects, [
+        record.subjectSelection || studentSelections.get(record.studentId) || "",
+      ]);
+      const required = selected?.length ? [...new Set([...requiredCoreSubjects, ...selected])] : null;
+      if (required && required.length >= expectedSubjectCount) {
+        return hasCompleteTotal(record, required, effectiveTemplate.scoreMode)
+          ? [gradeTemplateTotal(record, effectiveTemplate)] : [];
+      }
+      const modeScores = effectiveTemplate.scoreMode === "raw" ? record.scores : record.assignedScores;
+      const attended = effectiveTemplate.subjects.filter((subject) =>
+        typeof record.scores[subject] === "number" && Number.isFinite(record.scores[subject])
+        && typeof modeScores[subject] === "number" && Number.isFinite(modeScores[subject]),
+      );
+      return expectedSubjectCount > 0 && requiredCoreSubjects.every((subject) => attended.includes(subject))
+        && attended.length >= expectedSubjectCount
+        ? [gradeTemplateTotal(record, effectiveTemplate)] : [];
+    }),
+  ]));
+  const validTotalCounts = Object.fromEntries(columns.map((column) => [
+    column.key,
+    column.classIds.reduce((sum, classId) => sum + (totalsByClass.get(classId)?.length || 0), 0),
   ]));
 
   const rows: GradeTotalScoreSegmentRow[] = [];
@@ -378,7 +418,7 @@ export function buildGradeTotalScoreSegmentReport(
 
   const candidatePerClass = Object.fromEntries(classes.map((classItem) => [
     classItem.classId,
-    totalsByClass.get(classItem.classId)?.length || 0,
+    recordsByClass.get(classItem.classId)?.length || 0,
   ]));
   const summaryRows: GradeTotalScoreSummaryRow[] = [
     {
@@ -415,5 +455,6 @@ export function buildGradeTotalScoreSegmentReport(
     columns,
     rows,
     summaryRows,
+    validTotalCounts,
   };
 }

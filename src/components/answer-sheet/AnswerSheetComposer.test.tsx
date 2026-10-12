@@ -47,8 +47,8 @@ describe("AnswerSheetComposer", () => {
     const qrPosition = screen.getByTestId("answer-sheet-qr-position");
 
     expect(identityArea).toHaveClass("flex");
-    expect(identityFields.nextElementSibling).toHaveAttribute("aria-hidden", "true");
-    expect(identityFields.nextElementSibling?.nextElementSibling).toBe(studentNumberColumn);
+    expect(identityFields.nextElementSibling).toHaveClass("contents");
+    expect(identityFields.nextElementSibling?.firstElementChild).toHaveAttribute("aria-hidden", "true");
     expect(studentNumberColumn.nextElementSibling).toBe(qrPosition);
     expect(studentNumberColumn).toHaveClass("border-l");
     expect(qrPosition).toHaveClass("border-l");
@@ -56,10 +56,10 @@ describe("AnswerSheetComposer", () => {
     expect(identityFields).toContainElement(screen.getByLabelText("姓名签名填写区"));
     expect(studentNumberColumn).toContainElement(screen.getByTestId("student-number-grid"));
     expect(identityArea).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
-    expect(identityFields).toHaveClass("w-[45mm]");
+    expect(identityFields).toHaveClass("w-[75mm]");
     expect(studentNumberColumn).toHaveClass("w-[52mm]");
     expect(qrPosition).toHaveClass("w-[24mm]");
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[30mm]", "h-[26mm]", "shrink-0");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[60mm]", "h-[13mm]", "shrink-0");
     expect(screen.getByTestId("student-number-grid")).toHaveClass("w-[46mm]", "shrink-0");
     expect(screen.getAllByTestId("student-number-row")[0].firstElementChild).toHaveClass("w-[4mm]", "h-[4mm]", "shrink-0");
     expect(screen.getByLabelText("试卷答题卡二维码")).toHaveStyle({ width: "20mm", height: "20mm" });
@@ -89,11 +89,11 @@ describe("AnswerSheetComposer", () => {
     expect(paper()).toHaveAttribute("data-paper-columns", "1");
     expect(paper()).toHaveAttribute("data-layout-columns", "2");
     expect(paper().style.width).toBe("190mm");
-    expect(paper().style.height).toMatch(/^calc\(/);
-    expect(screen.getByTestId("answer-sheet-editor-header").style.width).toBe("370mm");
+    expect(paper().style.height).toBe("260mm");
+    expect(paper()).toContainElement(screen.getByTestId("answer-sheet-page-header"));
     expect(paper()).toHaveClass("overflow-hidden");
     expect(paper().querySelectorAll(".answer-sheet-preview-column")).toHaveLength(1);
-    expect(paper()).not.toContainElement(screen.getByTestId("answer-sheet-page-header"));
+    expect(paper()).toContainElement(screen.getByTestId("answer-sheet-page-header"));
 
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(screen.getByRole("heading", { name: "预览答题卡" })).toBeInTheDocument();
@@ -108,8 +108,8 @@ describe("AnswerSheetComposer", () => {
     expect(paper()).toHaveAttribute("data-paper-columns", "1");
     expect(paper()).toHaveAttribute("data-layout-columns", "2");
     expect(paper().style.width).toBe("215mm");
-    expect(paper().style.height).toMatch(/^calc\(/);
-    expect(screen.getByTestId("answer-sheet-editor-header").style.width).toBe("420mm");
+    expect(paper().style.height).toBe("297mm");
+    expect(paper()).toContainElement(screen.getByTestId("answer-sheet-page-header"));
 
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A4" } });
     expect(screen.getByLabelText("题目栏数")).toHaveValue("2");
@@ -168,13 +168,13 @@ describe("AnswerSheetComposer", () => {
       const editor = screen.getByTestId("answer-sheet-editor-pages");
       const editedColumns = container.querySelectorAll<HTMLElement>(".answer-sheet-editor-page");
       expect(editedColumns).toHaveLength(3);
-      expect(screen.getByTestId("answer-sheet-editor-header")).toContainElement(screen.getByTestId("answer-sheet-page-header"));
-      const firstColumnHeight = Number(editedColumns[0].style.height.match(/[\d.]+/)?.[0]);
-      const thirdColumnHeight = Number(editedColumns[2].style.height.match(/[\d.]+/)?.[0]);
-      expect(firstColumnHeight).toBeCloseTo(297 * 96 / 25.4 - 200, 1);
-      expect(thirdColumnHeight).toBeCloseTo(firstColumnHeight, 1);
+      expect(editedColumns[0]).toContainElement(screen.getByTestId("answer-sheet-page-header"));
+      expect(editedColumns[1].querySelector("header")).toBeNull();
+      expect(editedColumns[0].style.height).toBe("297mm");
+      expect(editedColumns[2].style.height).toBe("297mm");
       expect(editedColumns[0].style.width).toMatch(/^146\.6/);
       expect(editor.querySelectorAll(".answer-sheet-preview-column")).toHaveLength(3);
+      expect(Array.from(screen.getAllByTestId("answer-sheet-column-page-number"), (node) => node.textContent)).toEqual(["1", "2", "3"]);
       editedColumns.forEach((column, index) => {
         expect(column).toHaveAttribute("data-paper-columns", "1");
         expect(column).toHaveAttribute("data-editor-page", String(index + 1));
@@ -189,6 +189,7 @@ describe("AnswerSheetComposer", () => {
       expect(previewSheets[0].querySelectorAll(".answer-sheet-preview-column")).toHaveLength(3);
       expect(screen.getByTestId("answer-sheet-preview-pages").querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(3);
       expect(screen.getAllByTestId("answer-sheet-page-header")).toHaveLength(1);
+      expect(Array.from(screen.getAllByTestId("answer-sheet-column-page-number"), (node) => node.textContent)).toEqual(["1", "2", "3"]);
 
       fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
       expect(container.querySelectorAll(".answer-sheet-editor-page")).toHaveLength(3);
@@ -235,7 +236,7 @@ describe("AnswerSheetComposer", () => {
     expect(screen.queryByTestId("fill-answer-region")).not.toBeInTheDocument();
   });
 
-  it("keeps the title, identity area, and QR code above all columns of a wide preview", () => {
+  it("puts the title, identity area, and QR only on the first wide-paper column", () => {
     const { container } = renderComposer({
       initialViewMode: "preview",
       initialSettings: { paperSize: "A3", widePaperColumns: 3 },
@@ -253,11 +254,14 @@ describe("AnswerSheetComposer", () => {
 
     const pageHeader = screen.getByTestId("answer-sheet-page-header");
     expect(paper).toContainElement(pageHeader);
-    expect(columnFlow).not.toContainElement(pageHeader);
+    expect(columnFlow.firstElementChild).toContainElement(pageHeader);
+    expect(columnFlow.children[1].querySelector("header")).toBeNull();
+    expect(columnFlow.children[2].querySelector("header")).toBeNull();
+    expect(Array.from(screen.getAllByTestId("answer-sheet-column-page-number"), (node) => node.textContent)).toEqual(["1", "2", "3"]);
     expect(pageHeader).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
     expect(pageHeader).toContainElement(screen.getByLabelText("姓名签名填写区"));
-    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("w-[45mm]");
-    expect(screen.getByTestId("answer-sheet-student-number-column")).toHaveClass("w-[52mm]");
+    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("w-full");
+    expect(screen.getByTestId("answer-sheet-student-number-column")).toHaveClass("shrink-0");
     expect(screen.getByTestId("answer-sheet-qr-position")).toHaveClass("w-[24mm]");
     expect(screen.getByLabelText("姓名签名填写区")).toHaveAttribute("data-signature-history-limit", "10");
   });
@@ -285,6 +289,59 @@ describe("AnswerSheetComposer", () => {
     } finally {
       measurement.mockRestore();
     }
+  });
+
+  it("reserves the wide header only on the first column and numbers across sheets", () => {
+    const measurement = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const height = this.dataset.testid === "answer-sheet-page-header" ? 200
+        : this.dataset.answerSheetFlowItem === "question" ? 420
+        : this.dataset.answerSheetFlowItem ? 20 : 0;
+      return { height } as DOMRect;
+    });
+
+    try {
+      const { container } = renderComposer({
+        initialViewMode: "preview",
+        initialSettings: { paperSize: "8K", widePaperColumns: 2 },
+        questions: Array.from({ length: 5 }, (_, index) => ({
+          id: `q${index}`, type: "single" as const, stem: String(index),
+        })),
+      });
+      const columns = container.querySelectorAll(".answer-sheet-preview-column");
+      expect(columns).toHaveLength(4);
+      expect(columns[0].querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(1);
+      expect(columns[1].querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(2);
+      expect(columns[2].querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(2);
+      expect(columns[0]).toContainElement(screen.getByTestId("answer-sheet-page-header"));
+      expect(columns[1].querySelector("header")).toBeNull();
+      expect(Array.from(screen.getAllByTestId("answer-sheet-column-page-number"), (node) => node.textContent))
+        .toEqual(["1", "2", "3", "4"]);
+    } finally {
+      measurement.mockRestore();
+    }
+  });
+
+  it("persists both width and height when resizing concentrated fill areas", () => {
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+      onSettingsChange,
+    });
+    const fillZone = screen.getByTestId("concentrated-fill-area").closest('[data-answer-sheet-flow-item="zone-heading"]')!.nextElementSibling!;
+    const box = fillZone.querySelector<HTMLElement>('[data-testid="answer-box"]')!;
+    expect(box.style.resize).toBe("both");
+    expect(box).toHaveStyle({ maxWidth: "100%", minWidth: "32mm" });
+    vi.spyOn(box, "getBoundingClientRect").mockReturnValue({ width: 220, height: 130 } as DOMRect);
+    fireEvent.pointerUp(box);
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({
+      answerBoxWidths: { q3: 220 },
+      answerBoxHeights: { q3: 130 },
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    const savedBox = screen.getByTestId("concentrated-fill-area").closest('[data-answer-sheet-flow-item="zone-heading"]')!.nextElementSibling!
+      .querySelector<HTMLElement>('[data-testid="answer-box"]')!;
+    expect(savedBox).toHaveStyle({ width: "220px", height: "130px", resize: "none" });
   });
 
   it("moves essay images into the answer box and removes empty stem lines", () => {

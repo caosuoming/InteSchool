@@ -9,6 +9,7 @@ import type {
   GradeStatisticsTemplate,
 } from "../types/index.js";
 import { averageGradeValues } from "./grade-reports.js";
+import { expectedGradeSubjectCount } from "./grade-statistics.js";
 import { isAssignableGradeSubject } from "./grade-subjects.js";
 
 export interface GradeClassAverageScorePair {
@@ -222,7 +223,16 @@ function recordTotal(
   record: GradeScoreRecord,
   subjects: string[],
   scoreMode: GradeScoreMode,
+  examSubjects: string[],
+  expectedCount: number,
 ): number | null {
+  const attendedSubjects = examSubjects.filter((subject) =>
+    typeof record.scores[subject] === "number" && Number.isFinite(record.scores[subject]),
+  );
+  if (expectedCount === 0 || attendedSubjects.length < expectedCount) return null;
+  if (scoreMode === "assigned" && attendedSubjects.some((subject) =>
+    typeof record.assignedScores[subject] !== "number" || !Number.isFinite(record.assignedScores[subject]),
+  )) return null;
   const values = subjects
     .map((subject) => recordSubjectValue(record, subject, scoreMode))
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
@@ -232,6 +242,8 @@ function recordTotal(
 function summaryForRecords(
   records: GradeScoreRecord[],
   subjects: string[],
+  examSubjects: string[],
+  expectedCount: number,
 ): GradeClassAverageSummary {
   return {
     subjectValues: Object.fromEntries(subjects.map((subject) => [
@@ -242,8 +254,8 @@ function summaryForRecords(
       },
     ])),
     totalValues: {
-      raw: averageGradeValues(records.map((record) => recordTotal(record, subjects, "raw"))),
-      assigned: averageGradeValues(records.map((record) => recordTotal(record, subjects, "assigned"))),
+      raw: averageGradeValues(records.map((record) => recordTotal(record, subjects, "raw", examSubjects, expectedCount))),
+      assigned: averageGradeValues(records.map((record) => recordTotal(record, subjects, "assigned", examSubjects, expectedCount))),
     },
   };
 }
@@ -337,6 +349,7 @@ export function buildGradeClassAverageReport(
   const options = resolveClassAverageOptions(exam, context, template.classAverageOptions, template.scoreMode);
   const subjects = template.subjects.filter((subject) => exam.subjects.includes(subject));
   const effectiveSubjects = subjects.length > 0 ? subjects : [...exam.subjects];
+  const expectedCount = expectedGradeSubjectCount(exam.subjects, exam.records);
   const hiddenClassIds = new Set(options.hiddenClassIds || []);
   const recordsByClass = new Map<string, GradeScoreRecord[]>();
   exam.records.forEach((record) => {
@@ -351,7 +364,7 @@ export function buildGradeClassAverageReport(
     .map((classId) => {
       const records = recordsByClass.get(classId) || [];
       const className = contextClassNames.get(classId) || records[0]?.className || "未知班级";
-      const summary = summaryForRecords(records, effectiveSubjects);
+      const summary = summaryForRecords(records, effectiveSubjects, exam.subjects, expectedCount);
       return {
         classId,
         className,
@@ -384,7 +397,7 @@ export function buildGradeClassAverageReport(
       category,
       rows,
       difference: differenceForRows(rows, effectiveSubjects),
-      average: summaryForRecords(groupRecords, effectiveSubjects),
+      average: summaryForRecords(groupRecords, effectiveSubjects, exam.subjects, expectedCount),
       subjectScoreModes: combinedSubjectScoreModes(rows, effectiveSubjects, template.scoreMode),
     } satisfies GradeClassAverageGroup;
   });
@@ -396,7 +409,7 @@ export function buildGradeClassAverageReport(
     subjects: effectiveSubjects,
     options,
     groups,
-    overallAverage: summaryForRecords(reportRecords, effectiveSubjects),
+    overallAverage: summaryForRecords(reportRecords, effectiveSubjects, exam.subjects, expectedCount),
     overallSubjectScoreModes: combinedSubjectScoreModes(classRows, effectiveSubjects, template.scoreMode),
   };
 }
