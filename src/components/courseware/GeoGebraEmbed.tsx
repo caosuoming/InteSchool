@@ -1,48 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Spinner } from "@/components/ui/Spinner";
 
-interface GeoGebraAppletInstance {
-  inject: (elementId: string) => void;
-}
-
-interface GeoGebraAppletConstructor {
-  new (parameters: Record<string, unknown>, useBrowserForJavaScript?: boolean): GeoGebraAppletInstance;
-}
-
-declare global {
-  interface Window {
-    GGBApplet?: GeoGebraAppletConstructor;
-  }
-}
-
-let geoGebraLoader: Promise<GeoGebraAppletConstructor> | null = null;
-
-function loadGeoGebra(): Promise<GeoGebraAppletConstructor> {
-  if (window.GGBApplet) return Promise.resolve(window.GGBApplet);
-  if (geoGebraLoader) return geoGebraLoader;
-
-  geoGebraLoader = new Promise<GeoGebraAppletConstructor>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-inteschool-geogebra="true"]');
-    const script = existing || document.createElement("script");
-    const handleLoad = () => {
-      if (window.GGBApplet) resolve(window.GGBApplet);
-      else reject(new Error("GeoGebra 加载器不可用"));
-    };
-    script.addEventListener("load", handleLoad, { once: true });
-    script.addEventListener("error", () => reject(new Error("GeoGebra 在线组件加载失败")), { once: true });
-    if (!existing) {
-      script.src = "https://www.geogebra.org/apps/deployggb.js";
-      script.async = true;
-      script.dataset.inteschoolGeogebra = "true";
-      document.head.appendChild(script);
-    }
-  }).catch((error) => {
-    geoGebraLoader = null;
-    throw error;
-  });
-
-  return geoGebraLoader;
-}
+import { loadGeoGebra } from "@/lib/geogebra";
 
 interface GeoGebraEmbedProps {
   fileUrl: string;

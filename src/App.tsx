@@ -26,6 +26,7 @@ const PlatformResourcesPage = lazy(() => import("@/pages/resources/PlatformResou
 const UploadPage = lazy(() => import("@/pages/resources/UploadPage"));
 const ResourcePreviewPage = lazy(() => import("@/pages/resources/ResourcePreviewPage"));
 const CoursewarePreviewPage = lazy(() => import("@/pages/resources/CoursewarePreviewPage"));
+const GeoGebraEditorPage = lazy(() => import("@/pages/resources/GeoGebraEditorPage"));
 const BatchSharePage = lazy(() => import("@/pages/resources/BatchSharePage"));
 const KnowledgeTreePage = lazy(() => import("@/pages/knowledge-tree/KnowledgeTreePage"));
 const BasketsPage = lazy(() => import("@/pages/baskets/BasketsPage"));
@@ -162,6 +163,8 @@ export default function App() {
             <Route path="/exam-papers/:id/answer-sheet" element={<ExamPaperAnswerSheetPage />} />
             <Route path="/resources/preview/:id" element={<ResourcePreviewPage />} />
             <Route path="/coursewares/:id" element={<CoursewarePreviewPage />} />
+            <Route path="/geogebra/new" element={<GeoGebraEditorPage />} />
+            <Route path="/geogebra/:id/edit" element={<GeoGebraEditorPage />} />
             <Route path="/shared-resources/:batchId" element={<BatchSharePage />} />
             <Route path="/import" element={<Navigate to="/upload" replace />} />
 

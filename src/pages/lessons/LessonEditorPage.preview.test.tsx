@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   listIgnoredStudentIds: vi.fn(),
   getKnowledgeMastery: vi.fn(),
   uploadFile: vi.fn(),
+  listLibraryCoursewares: vi.fn(),
 }));
 
 const teacher = {
@@ -55,6 +56,9 @@ const courseware = {
 
 vi.mock("@/stores/auth", () => ({
   useAuthStore: () => ({ teacher }),
+}));
+vi.mock("@/services/courseware", () => ({
+  coursewareService: { listCoursewares: mocks.listLibraryCoursewares },
 }));
 vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
@@ -132,6 +136,27 @@ describe("LessonEditorPage preview query", () => {
     mocks.listIgnoredStudentIds.mockResolvedValue([]);
     mocks.getKnowledgeMastery.mockResolvedValue([]);
     mocks.uploadFile.mockResolvedValue({ url: "/uploads/pasted.png" });
+    mocks.listLibraryCoursewares.mockResolvedValue([]);
+  });
+
+  it("inserts an existing GGB courseware slide and persists its file reference", async () => {
+    mocks.listLibraryCoursewares.mockResolvedValue([{
+      id: "ggb-courseware", type: "ggb", teacherId: teacher.id, title: "交互圆",
+      fileUrl: "/api/files/circle", onlineAccessToken: "token-123",
+      fileName: "circle.ggb", content: "圆", tags: [],
+    }]);
+    renderPage("/my-lessons/lesson-courseware-1/edit");
+    fireEvent.click(await screen.findByRole("button", { name: "插入 GGB 课件" }));
+    fireEvent.click(await screen.findByRole("button", { name: "插入" }));
+    const saveButton = screen.getByRole("button", { name: "保存" });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalled());
+    const slides = mocks.updateCourseware.mock.calls.at(-1)?.[1].slides as LessonCourseware["slides"];
+    expect(slides[1]).toMatchObject({
+      type: "courseware", title: "交互圆", coursewareType: "ggb",
+      fileUrl: "/api/files/circle", onlineAccessToken: "token-123",
+    });
   });
 
   it("disables save while clean and can undo unsaved courseware changes", async () => {
