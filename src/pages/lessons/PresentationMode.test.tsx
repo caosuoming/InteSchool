@@ -703,7 +703,7 @@ describe("PresentationMode", () => {
       );
 
       fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
-      const lotteryButton = screen.getByRole("button", { name: "摇号" });
+      const lotteryButton = screen.getByRole("button", { name: "摇人" });
       expect(lotteryButton).toBeEnabled();
       expect(screen.getByText("学生甲")).toBeInTheDocument();
       expect(screen.getByText("学生乙")).toBeInTheDocument();
@@ -739,11 +739,11 @@ describe("PresentationMode", () => {
       );
 
       fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
-      const lotteryButton = screen.getByRole("button", { name: "摇号" });
+      const lotteryButton = screen.getByRole("button", { name: "摇人" });
       expect(lotteryButton).toBeEnabled();
       fireEvent.click(lotteryButton);
 
-      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("正在摇号");
+      expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("正在摇人");
       expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("普通同学");
 
       await act(async () => {
@@ -780,7 +780,7 @@ describe("PresentationMode", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
       expect(screen.queryByText("不关注同学")).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "摇号" }));
+      fireEvent.click(screen.getByRole("button", { name: "摇人" }));
       expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("普通同学");
 
       await act(async () => {
@@ -788,6 +788,106 @@ describe("PresentationMode", () => {
       });
       expect(screen.getByTestId("student-lottery-overlay")).toHaveTextContent("普通同学");
       expect(screen.getByTestId("student-lottery-overlay")).not.toHaveTextContent("不关注同学");
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("sorts recently drawn students first and retains exclusive mastery marks after redrawing", async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      render(
+        <PresentationMode
+          slides={[questionSlide]}
+          initialIndex={0}
+          students={[
+            { id: "first", name: "学生甲" },
+            { id: "second", name: "学生乙" },
+            { id: "third", name: "学生丙" },
+          ]}
+          relatedQuestionsById={{}}
+          onExit={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      expect(screen.queryByText("不关注学生不参与；关注学生抽中权重为普通学生的 2 倍。")).not.toBeInTheDocument();
+      expect(screen.queryByRole("group", { name: "学生丙掌握情况" })).not.toBeInTheDocument();
+
+      const draw = async () => {
+        fireEvent.click(screen.getByRole("button", { name: "摇人" }));
+        await act(async () => vi.advanceTimersByTime(5000));
+      };
+      const listedIds = () => screen.getAllByTestId(/^lottery-student-/).map((element) => element.dataset.testid);
+
+      await draw();
+      expect(listedIds()).toEqual(["lottery-student-third", "lottery-student-first", "lottery-student-second"]);
+      const thirdMastery = within(screen.getByRole("group", { name: "学生丙掌握情况" }));
+      fireEvent.click(thirdMastery.getByRole("button", { name: "半对" }));
+      expect(thirdMastery.getByRole("button", { name: "半对" })).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(thirdMastery.getByRole("button", { name: "做错" }));
+      expect(thirdMastery.getByRole("button", { name: "半对" })).toHaveAttribute("aria-pressed", "false");
+      expect(thirdMastery.getByRole("button", { name: "做错" })).toHaveAttribute("aria-pressed", "true");
+
+      random.mockReturnValue(0);
+      await draw();
+      expect(listedIds()).toEqual(["lottery-student-first", "lottery-student-third", "lottery-student-second"]);
+      fireEvent.click(within(screen.getByRole("group", { name: "学生甲掌握情况" }))
+        .getByRole("button", { name: "全对" }));
+
+      random.mockReturnValue(0.99);
+      await draw();
+      expect(listedIds()).toEqual(["lottery-student-third", "lottery-student-first", "lottery-student-second"]);
+      expect(within(screen.getByRole("group", { name: "学生丙掌握情况" }))
+        .getByRole("button", { name: "做错" })).toHaveAttribute("aria-pressed", "true");
+      expect(within(screen.getByRole("group", { name: "学生甲掌握情况" }))
+        .getByRole("button", { name: "全对" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getAllByTestId("lottery-student-third")).toHaveLength(1);
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("isolates drawn students by slide and drops marks after presentation unmounts", async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const props = {
+        slides: [questionSlide, { ...questionSlide, id: "another-question" }],
+        initialIndex: 0,
+        students: [{ id: "first", name: "学生甲" }, { id: "second", name: "学生乙" }],
+        relatedQuestionsById: {},
+        onExit: vi.fn(),
+      };
+      const view = render(<PresentationMode {...props} />);
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      fireEvent.click(screen.getByRole("button", { name: "摇人" }));
+      await act(async () => vi.advanceTimersByTime(5000));
+      fireEvent.click(within(screen.getByRole("group", { name: "学生甲掌握情况" }))
+        .getByRole("button", { name: "全对" }));
+
+      fireEvent.click(screen.getByRole("button", { name: "右侧下一页" }));
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      expect(screen.queryByRole("group", { name: "学生甲掌握情况" })).not.toBeInTheDocument();
+
+      random.mockReturnValue(0.99);
+      fireEvent.click(screen.getByRole("button", { name: "摇人" }));
+      await act(async () => vi.advanceTimersByTime(5000));
+      expect(screen.getByRole("group", { name: "学生乙掌握情况" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "右侧上一页" }));
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      expect(within(screen.getByRole("group", { name: "学生甲掌握情况" }))
+        .getByRole("button", { name: "全对" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.queryByRole("group", { name: "学生乙掌握情况" })).not.toBeInTheDocument();
+
+      view.unmount();
+      render(<PresentationMode {...props} />);
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      expect(screen.queryByRole("group", { name: "学生甲掌握情况" })).not.toBeInTheDocument();
     } finally {
       random.mockRestore();
       vi.useRealTimers();
