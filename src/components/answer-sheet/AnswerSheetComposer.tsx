@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type ReactNode,
   useCallback,
   useEffect,
@@ -20,6 +21,7 @@ import {
   DEFAULT_ANSWER_SHEET_SETTINGS,
   MAX_STUDENT_NUMBER_DIGITS,
   MIN_STUDENT_NUMBER_DIGITS,
+  normalizeAnswerSheetStemFontSize,
   normalizeStudentNumberDigits,
   type AnswerSheetBoxStyle,
   type AnswerSheetChoiceLayout,
@@ -381,9 +383,9 @@ function InlineChoiceQuestion({ question, number, editable }: NumberedQuestion &
   const options = question.options?.length ? question.options : Array.from({ length: 4 }, () => "");
   return (
     <div className="space-y-2" data-testid="inline-choice-question" data-answer-sheet-question>
-      <div className="flex items-start gap-2 text-xs text-ink-800">
-        <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
-        <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+      <div className="flex items-start gap-0 text-xs text-ink-800">
+        <span className="shrink-0 font-mono font-semibold">{number}.</span>
+        <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
           {question.stem}
         </DraggableQuestionContent>
       </div>
@@ -410,9 +412,9 @@ function ChoiceQuestionText({ question, number, editable }: NumberedQuestion & {
   const options = question.options || [];
   return (
     <div className="space-y-1.5" data-testid="concentrated-choice-question" data-answer-sheet-question>
-      <div className="flex items-start gap-2 text-xs text-ink-800">
-        <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
-        <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+      <div className="flex items-start gap-0 text-xs text-ink-800">
+        <span className="shrink-0 font-mono font-semibold">{number}.</span>
+        <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
           {question.stem}
         </DraggableQuestionContent>
       </div>
@@ -439,9 +441,9 @@ function FillQuestionInline({ question, number, editable }: NumberedQuestion & {
   );
 
   return (
-    <div className="flex items-start gap-2 text-xs text-ink-800" data-testid="inline-fill-question" data-answer-sheet-question>
-      <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
-      <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+    <div className="flex items-start gap-0 text-xs text-ink-800" data-testid="inline-fill-question" data-answer-sheet-question>
+      <span className="shrink-0 font-mono font-semibold">{number}.</span>
+      <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
         {decoratedStem}
       </DraggableQuestionContent>
     </div>
@@ -450,9 +452,9 @@ function FillQuestionInline({ question, number, editable }: NumberedQuestion & {
 
 function QuestionStemOnly({ question, number, editable }: NumberedQuestion & { editable: boolean }) {
   return (
-    <div className="flex items-start gap-2 text-xs text-ink-800" data-testid="concentrated-fill-question" data-answer-sheet-question>
-      <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
-      <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+    <div className="flex items-start gap-0 text-xs text-ink-800" data-testid="concentrated-fill-question" data-answer-sheet-question>
+      <span className="shrink-0 font-mono font-semibold">{number}.</span>
+      <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
         {question.stem}
       </DraggableQuestionContent>
     </div>
@@ -534,11 +536,11 @@ function QuestionWithAnswer({
     <div className="space-y-1.5" data-answer-sheet-question>
       {displayStem && (
         <div
-          className="flex items-start gap-2 text-xs text-ink-700"
+          className="flex items-start gap-0 text-xs text-ink-700"
           data-testid={question.type === "essay" ? "essay-question-stem" : undefined}
         >
-          <span className="w-7 shrink-0 font-mono font-semibold text-ink-800">{number}.</span>
-          <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+          <span className="shrink-0 font-mono font-semibold text-ink-800">{number}.</span>
+          <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
             {displayStem}
           </DraggableQuestionContent>
         </div>
@@ -598,6 +600,9 @@ function buildInitialSettings(initialSettings?: Partial<AnswerSheetSettings>): A
     widePaperColumns: initialSettings?.widePaperColumns === 3 ? 3 : 2,
     a4Columns: initialSettings?.a4Columns === 2 ? 2 : 1,
     answerBoxStyle: initialSettings?.answerBoxStyle === "dashed" ? "dashed" : "solid",
+    stemFontSize: normalizeAnswerSheetStemFontSize(
+      initialSettings?.stemFontSize ?? DEFAULT_ANSWER_SHEET_SETTINGS.stemFontSize,
+    ),
   };
 }
 
@@ -607,7 +612,6 @@ function sameNumberArray(left: number[], right: number[]): boolean {
 
 export function AnswerSheetComposer({
   title,
-  description,
   resourceType,
   resourceId,
   resourceLabel,
@@ -800,7 +804,8 @@ export function AnswerSheetComposer({
     recalculatePagination();
   }, [
     columnWidthMm, pageStarts, recalculatePagination, settings.answerBoxStyle,
-    settings.answerBoxHeights, settings.answerBoxWidths, settings.studentNumberDigits, viewMode,
+    settings.answerBoxHeights, settings.answerBoxWidths, settings.studentNumberDigits,
+    settings.stemFontSize, viewMode,
   ]);
 
   useEffect(() => {
@@ -837,47 +842,42 @@ export function AnswerSheetComposer({
       ref={headerRef}
       data-testid="answer-sheet-page-header"
     >
-      <div>
-        <h1 className="mb-1 text-center font-serif text-xl font-bold">{title}</h1>
-        {description && <div className="mb-3 text-center text-xs text-ink-500">{description}</div>}
-      </div>
+      <h1 className="mb-1 text-center font-serif text-xl font-bold">{title}</h1>
 
       <div
-        className={`min-w-0 border border-ink-900 ${isWidePaper ? "flex flex-col" : "flex items-stretch"}`}
+        className="flex min-w-0 items-stretch border border-ink-900"
         data-testid="answer-sheet-identity-area"
       >
         <div
-          className={isWidePaper ? "w-full p-2" : "w-[75mm] shrink-0 p-2.5"}
+          className={isWidePaper ? "w-[38mm] shrink-0 p-[1mm]" : "w-[75mm] shrink-0 p-2.5"}
           data-testid="answer-sheet-identity-fields"
         >
-          <div className="mb-2 flex items-center gap-2 text-sm">
+          <div className={isWidePaper ? "mb-1 flex items-center gap-1 text-xs" : "mb-2 flex items-center gap-2 text-sm"}>
             <span className="shrink-0">班级：</span>
             <span className="h-5 min-w-10 flex-1 border-b border-ink-700" aria-label="班级填写区" />
           </div>
-          <div className={isWidePaper ? "flex items-center gap-2 text-sm" : "text-sm"}>
+          <div className={isWidePaper ? "flex items-center gap-1 text-xs" : "text-sm"}>
             <div className={isWidePaper ? "shrink-0" : "mb-1"}>姓名：</div>
             <span
-              className="block h-[13mm] w-[60mm] shrink-0 border border-dashed border-ink-700"
+              className="block h-[13mm] w-[20mm] shrink-0 border border-dashed border-ink-700"
               aria-label="姓名签名填写区"
               data-answer-sheet-field="signature"
               data-signature-history-limit="10"
             />
           </div>
         </div>
-        <div className={isWidePaper ? "flex min-w-0 items-center justify-between gap-1 border-t border-ink-900 px-2 py-1.5" : "contents"}>
+        <div className="contents">
           {!isWidePaper && <div className="min-w-0 flex-1" aria-hidden="true" />}
           <div
             className={isWidePaper
-              ? "flex shrink-0 items-center"
+              ? "flex w-[49mm] shrink-0 items-center border-l border-ink-900 p-[1mm]"
               : "flex w-[52mm] shrink-0 items-center border-l border-ink-900 p-2"}
             data-testid="answer-sheet-student-number-column"
           >
             <StudentNumberGrid digits={settings.studentNumberDigits} />
           </div>
           <div
-            className={`answer-sheet-qr flex shrink-0 flex-col items-center justify-center p-1.5 ${
-              isWidePaper ? "w-[24mm]" : "w-[24mm] border-l border-ink-900"
-            }`}
+            className="answer-sheet-qr flex w-[24mm] shrink-0 flex-col items-center justify-center border-l border-ink-900 p-1.5"
             data-testid="answer-sheet-qr-position"
           >
             <QRCodeSVG
@@ -1050,7 +1050,10 @@ export function AnswerSheetComposer({
   );
 
   return (
-    <div className="min-h-screen bg-ink-100 px-4 py-8">
+    <div
+      className="min-h-screen bg-ink-100 px-4 py-8"
+      style={{ "--answer-sheet-stem-font-size": `${settings.stemFontSize}px` } as CSSProperties}
+    >
       <div className="mx-auto max-w-[460mm]">
         <div className="no-print">
           <PageHeader
@@ -1083,7 +1086,7 @@ export function AnswerSheetComposer({
 
           {!isPreview && (
             <Card className="mb-6 p-4">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-[1.2fr_1.1fr_0.65fr_0.65fr_0.65fr_0.8fr_auto] 2xl:items-end">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-[1.2fr_1.1fr_0.65fr_0.65fr_0.65fr_0.8fr_0.8fr_auto] 2xl:items-end">
                 <div>
                   <div className="mb-2 text-sm font-medium text-ink-700">答题卡内容</div>
                   <div className="flex h-[42px] items-center gap-5">
@@ -1149,6 +1152,17 @@ export function AnswerSheetComposer({
                     { value: "solid", label: "实线" },
                     { value: "dashed", label: "虚线" },
                   ]}
+                />
+                <Input
+                  label="题干字号（px）"
+                  type="number"
+                  min={10}
+                  max={20}
+                  value={settings.stemFontSize}
+                  disabled={settings.mode !== "with-questions"}
+                  onChange={(event) => updateSettings({
+                    stemFontSize: normalizeAnswerSheetStemFontSize(Number(event.target.value)),
+                  })}
                 />
                 <Input
                   label="学号位数"

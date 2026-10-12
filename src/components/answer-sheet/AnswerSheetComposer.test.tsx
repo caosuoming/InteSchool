@@ -59,11 +59,77 @@ describe("AnswerSheetComposer", () => {
     expect(identityFields).toHaveClass("w-[75mm]");
     expect(studentNumberColumn).toHaveClass("w-[52mm]");
     expect(qrPosition).toHaveClass("w-[24mm]");
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[60mm]", "h-[13mm]", "shrink-0");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[20mm]", "h-[13mm]", "shrink-0");
     expect(screen.getByTestId("student-number-grid")).toHaveClass("w-[46mm]", "shrink-0");
     expect(screen.getAllByTestId("student-number-row")[0].firstElementChild).toHaveClass("w-[4mm]", "h-[4mm]", "shrink-0");
     expect(screen.getByLabelText("试卷答题卡二维码")).toHaveStyle({ width: "20mm", height: "20mm" });
     expect(screen.getByLabelText("姓名签名填写区").previousElementSibling).toHaveTextContent("姓名：");
+  });
+
+  it("fits the 8K three-column identity row and keeps signature width on every paper size", () => {
+    const { container } = renderComposer({ initialSettings: { paperSize: "8K", widePaperColumns: 3 } });
+    const paper = container.querySelector<HTMLElement>(".answer-sheet-paper")!;
+    const area = screen.getByTestId("answer-sheet-identity-area");
+    const fields = screen.getByTestId("answer-sheet-identity-fields");
+    const student = screen.getByTestId("answer-sheet-student-number-column");
+    const qr = screen.getByTestId("answer-sheet-qr-position");
+
+    expect(paper.style.width).toBe("130mm");
+    expect(area).toHaveClass("flex", "items-stretch");
+    expect(area).not.toHaveClass("flex-col");
+    expect(fields).toHaveClass("w-[38mm]");
+    expect(student).toHaveClass("w-[49mm]", "border-l");
+    expect(qr).toHaveClass("w-[24mm]", "border-l");
+    expect(fields.nextElementSibling).toHaveClass("contents");
+    expect(fields.nextElementSibling?.firstElementChild).toBe(student);
+    expect(student.nextElementSibling).toBe(qr);
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    // 38 + 49 + 24 = 111 mm, less than the 114 mm usable width of an 8K three-column page.
+    expect(38 + 49 + 24).toBeLessThan((370 - 2 * 8 - 2 * 6) / 3);
+    expect(screen.getByTestId("answer-sheet-page-header")).not.toHaveTextContent("高一 · 2026-2027学年");
+
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A4" } });
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A3" } });
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+  });
+
+  it("controls and persists question stem font size without spacing after question numbers", () => {
+    const onSettingsChange = vi.fn();
+    const { container } = renderComposer({
+      initialSettings: { mode: "with-questions", paperSize: "8K", widePaperColumns: 3 },
+      onSettingsChange,
+    });
+    const fontInput = screen.getByLabelText("题干字号（px）");
+    expect(fontInput).toHaveValue(12);
+    const stems = container.querySelectorAll(".answer-sheet-question-stem");
+    expect(stems.length).toBeGreaterThan(0);
+    stems.forEach((stem) => {
+      expect(stem.parentElement).toHaveClass("gap-0");
+      expect(stem.previousElementSibling).not.toHaveClass("w-7");
+    });
+
+    fireEvent.change(fontInput, { target: { value: "16" } });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ stemFontSize: 16 }));
+    expect(container.firstElementChild).toHaveStyle({ "--answer-sheet-stem-font-size": "16px" });
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(container.firstElementChild).toHaveStyle({ "--answer-sheet-stem-font-size": "16px" });
+    expect(container.querySelectorAll(".answer-sheet-question-stem").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
+    expect(screen.getByLabelText("题干字号（px）")).toHaveValue(16);
+    fireEvent.change(screen.getByLabelText("附题干答题区布局"), { target: { value: "concentrated" } });
+    expect(screen.getAllByTestId("concentrated-choice-question")[0].querySelector(".answer-sheet-question-stem")?.parentElement).toHaveClass("gap-0");
+  });
+
+  it("normalizes legacy and out-of-range stem font settings", () => {
+    const { unmount } = renderComposer({ initialSettings: { mode: "with-questions", stemFontSize: 80 } });
+    expect(screen.getByLabelText("题干字号（px）")).toHaveValue(20);
+    unmount();
+    renderComposer({ initialSettings: { mode: "with-questions", stemFontSize: 9 } });
+    expect(screen.getByLabelText("题干字号（px）")).toHaveValue(10);
   });
 
   it("keeps A4 editing at full width and uses single-column editing for 8K/A3", () => {
@@ -260,7 +326,9 @@ describe("AnswerSheetComposer", () => {
     expect(Array.from(screen.getAllByTestId("answer-sheet-column-page-number"), (node) => node.textContent)).toEqual(["1", "2", "3"]);
     expect(pageHeader).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
     expect(pageHeader).toContainElement(screen.getByLabelText("姓名签名填写区"));
-    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("w-full");
+    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("w-[38mm]", "shrink-0");
+    expect(screen.getByTestId("answer-sheet-identity-area")).not.toHaveClass("flex-col");
+    expect(screen.getByTestId("answer-sheet-student-number-column")).toHaveClass("w-[49mm]", "border-l");
     expect(screen.getByTestId("answer-sheet-student-number-column")).toHaveClass("shrink-0");
     expect(screen.getByTestId("answer-sheet-qr-position")).toHaveClass("w-[24mm]");
     expect(screen.getByLabelText("姓名签名填写区")).toHaveAttribute("data-signature-history-limit", "10");

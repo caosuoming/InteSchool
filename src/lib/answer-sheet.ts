@@ -21,6 +21,7 @@ export interface AnswerSheetSettings {
   widePaperColumns: AnswerSheetWideColumns;
   a4Columns: 1 | 2;
   answerBoxStyle: AnswerSheetBoxStyle;
+  stemFontSize: number;
   answerBoxHeights?: Record<string, number>;
   answerBoxWidths?: Record<string, number>;
   essayImageLayouts?: Record<string, AnswerSheetImageLayout[]>;
@@ -46,7 +47,13 @@ export const DEFAULT_ANSWER_SHEET_SETTINGS: AnswerSheetSettings = {
   widePaperColumns: 2,
   a4Columns: 1,
   answerBoxStyle: "solid",
+  stemFontSize: 12,
 };
+
+export function normalizeAnswerSheetStemFontSize(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_ANSWER_SHEET_SETTINGS.stemFontSize;
+  return Math.min(20, Math.max(10, Math.round(value)));
+}
 
 export function normalizeStudentNumberDigits(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_STUDENT_NUMBER_DIGITS;

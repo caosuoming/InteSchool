@@ -1639,6 +1639,7 @@ export interface ExamPaper {
     widePaperColumns?: 2 | 3;
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
+    stemFontSize?: number;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
@@ -2244,6 +2245,7 @@ export interface Lecture {
     widePaperColumns?: 2 | 3;
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
+    stemFontSize?: number;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
