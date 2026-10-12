@@ -1577,7 +1577,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       .filter((paper) => paper.hasAnswerSheet)
       .map((paper) => ({
         id: `examPaper:${paper.id}`,
-        title: paper.title,
+        title: `${paper.title}（答题卡）`,
         sourceId: paper.id,
         sourceType: "examPaper" as const,
         sourceTitle: paper.title,
@@ -1593,7 +1593,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       .filter((lecture) => lecture.hasAnswerSheet)
       .map((lecture) => ({
         id: `lecture:${lecture.id}`,
-        title: lecture.title,
+        title: `${lecture.title}（答题卡）`,
         sourceId: lecture.id,
         sourceType: "lecture" as const,
         sourceTitle: lecture.title,
@@ -3528,7 +3528,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               {activeTab === "answerSheet" && (paginatedResourceData as AnswerSheetLibraryItem[]).map((item) => (
                 <ResourceCard
                   key={item.id}
-                  title="答题卡"
+                  title={item.title}
                   description={`${item.sourceType === "examPaper" ? "试卷" : "讲义"}：${item.sourceTitle}`}
                   titleIcon={<Layout className="h-4 w-4 text-gold-600" />}
                   titleActions={(
