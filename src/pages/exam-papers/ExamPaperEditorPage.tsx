@@ -4,9 +4,9 @@ import { useAutosave } from "@/hooks/useAutosave";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
-  FileSpreadsheet, GraduationCap, Users, Send,
+  FileSpreadsheet, Users,
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered, Copy,
-  AlertCircle, Lock, Calendar, Layout,
+  Lock, Layout,
   Sparkles, BookOpen, Lightbulb, Download,
   CheckSquare, ArrowUpDown, RotateCcw,
 } from "lucide-react";
@@ -289,7 +289,6 @@ export default function ExamPaperEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedDraft, setSavedDraft] = useState<ExamPaperSaveState | null>(null);
-  const [publishing, setPublishing] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [downloadModes, setDownloadModes] = useState<DocumentDownloadMode[]>(["teacher"]);
@@ -337,12 +336,7 @@ export default function ExamPaperEditorPage() {
   // 试题篮
   const [baskets, setBaskets] = useState<Basket[]>([]);
 
-  // 发布弹窗
-  const [publishOpen, setPublishOpen] = useState(false);
   const [classes, setClasses] = useState<AnyClass[]>([]);
-  const [publishTargetClassIds, setPublishTargetClassIds] = useState<string[]>([]);
-  const [publishPassword, setPublishPassword] = useState("");
-  const [publishUnlockAt, setPublishUnlockAt] = useState("");
 
   // 发布记录
   const [publications, setPublications] = useState<ExamPublication[]>([]);
@@ -1347,41 +1341,6 @@ export default function ExamPaperEditorPage() {
     }
   };
 
-  // 发布
-  const handlePublish = async () => {
-    if (!paper || !teacher) return;
-    if (publishTargetClassIds.length === 0) {
-      toast.error("请选择发布班级");
-      return;
-    }
-    setPublishing(true);
-    try {
-      const qIds = paperQuestions.map((pq) => pq.questionId).filter(Boolean) as string[];
-      await examPublishService.publishExam({
-        examPaperId: paper.id,
-        publisherId: teacher.id,
-        publisherSchoolId: schoolId,
-        title: paper.title,
-        targetType: "schoolClass",
-        targetClassIds: publishTargetClassIds,
-        targetStudentIds: [],
-        isFormalExam: !!publishPassword || !!publishUnlockAt,
-        viewPassword: publishPassword || undefined,
-        unlockAt: publishUnlockAt || undefined,
-        questionIds: qIds,
-      });
-      toast.success("试卷已发布");
-      setPublishOpen(false);
-      setPublishTargetClassIds([]);
-      setPublishPassword("");
-      setPublishUnlockAt("");
-    } catch (e: any) {
-      toast.error("发布失败", e?.message);
-    } finally {
-      setPublishing(false);
-    }
-  };
-
   // 撤回发布
   const handleRevoke = async (pubId: string) => {
     setRevoking(true);
@@ -1706,12 +1665,6 @@ export default function ExamPaperEditorPage() {
               {paper?.hasAnswerSheet ? "预览答题卡" : "制作答题卡"}
             </Button>
           )}
-          {!prepTaskId && (
-            <Button variant="outline" onClick={() => setPublishOpen(true)}>
-              <Send className="w-4 h-4" />
-              发布试卷
-            </Button>
-          )}
           {!prepTaskId && paper?.teacherId === teacher?.id && (
             <Button variant="outline" onClick={handleDuplicate} loading={duplicating}>
               <Copy className="w-4 h-4" />
@@ -2010,20 +1963,6 @@ export default function ExamPaperEditorPage() {
           </div>
         </div>
         </div>
-        {/* 发布弹窗 */}
-        <PublishModal
-          open={publishOpen}
-          onClose={() => setPublishOpen(false)}
-          classes={classes}
-          selectedClassIds={publishTargetClassIds}
-          onClassChange={setPublishTargetClassIds}
-          password={publishPassword}
-          onPasswordChange={setPublishPassword}
-          unlockAt={publishUnlockAt}
-          onUnlockAtChange={setPublishUnlockAt}
-          onPublish={handlePublish}
-          publishing={publishing}
-        />
         <DocumentDownloadModeModal
           open={downloadModalOpen}
           onClose={() => setDownloadModalOpen(false)}
@@ -2148,10 +2087,6 @@ export default function ExamPaperEditorPage() {
           <Button variant="outline" onClick={() => openPage(`/exam-papers/${id}/answer-sheet`)}>
             <Layout className="w-4 h-4" />
             制作答题卡
-          </Button>
-          <Button variant="outline" onClick={() => setPublishOpen(true)}>
-            <Send className="w-4 h-4" />
-            发布试卷
           </Button>
         </div>
       )}
@@ -3385,21 +3320,6 @@ export default function ExamPaperEditorPage() {
         )}
       </Modal>
 
-      {/* 发布弹窗 */}
-      <PublishModal
-        open={publishOpen}
-        onClose={() => setPublishOpen(false)}
-        classes={classes}
-        selectedClassIds={publishTargetClassIds}
-        onClassChange={setPublishTargetClassIds}
-        password={publishPassword}
-        onPasswordChange={setPublishPassword}
-        unlockAt={publishUnlockAt}
-        onUnlockAtChange={setPublishUnlockAt}
-        onPublish={handlePublish}
-        publishing={publishing}
-      />
-
       {audienceModal}
 
       {paper && (
@@ -4208,112 +4128,5 @@ function BasketQuestionList({
       answeredQuestionIds={answeredQuestionIds}
       emptyText="当前资源篮暂无可选题目"
     />
-  );
-}
-
-// ===== 发布弹窗 =====
-function PublishModal({
-  open, onClose, classes, selectedClassIds, onClassChange,
-  password, onPasswordChange, unlockAt, onUnlockAtChange, onPublish, publishing,
-}: {
-  open: boolean;
-  onClose: () => void;
-  classes: AnyClass[];
-  selectedClassIds: string[];
-  onClassChange: (ids: string[]) => void;
-  password: string;
-  onPasswordChange: (v: string) => void;
-  unlockAt: string;
-  onUnlockAtChange: (v: string) => void;
-  onPublish: () => void;
-  publishing: boolean;
-}) {
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="md"
-      title="发布试卷"
-      description="选择发布班级，可选设置密码保护和到期日期"
-      footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>取消</Button>
-          <Button variant="gold" onClick={onPublish} loading={publishing}>
-            <Send className="w-4 h-4" />
-            确认发布
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-4">
-        {/* 发布班级 */}
-        <div>
-          <div className="text-sm font-medium text-ink-700 mb-2 flex items-center gap-1.5">
-            <Users className="w-4 h-4 text-emerald-500" />
-            发布班级
-          </div>
-          <div className="space-y-1.5 max-h-48 overflow-y-auto">
-            {classes.length === 0 ? (
-              <div className="text-center py-4 text-xs text-ink-400">暂无班级</div>
-            ) : (
-              classes.map((c) => {
-                const checked = selectedClassIds.includes(c.id);
-                return (
-                  <label key={c.id} className={cn(
-                    "flex items-center gap-2 p-2 rounded-md border cursor-pointer transition-colors",
-                    checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
-                  )}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (e.target.checked) onClassChange([...selectedClassIds, c.id]);
-                        else onClassChange(selectedClassIds.filter((id) => id !== c.id));
-                      }}
-                      className="rounded border-ink-300 text-gold-500"
-                    />
-                    <GraduationCap className="w-3.5 h-3.5 text-ink-400" />
-                    <span className="text-sm text-ink-800 flex-1">{c.name}</span>
-                    {c.type === "personal" && <Badge variant="teal">个人</Badge>}
-                  </label>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* 正规考试选项 */}
-        <div className="pt-3 border-t border-ink-100 space-y-3">
-          <div className="text-xs text-ink-500 flex items-start gap-1.5">
-            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-            设置密码或到期日期后，试卷将作为正规考试发布，到期前其他老师无法查看题目，关联题目自动从题库隐藏。
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-600 mb-1 flex items-center gap-1">
-              <Lock className="w-3.5 h-3.5" />
-              查看密码（可选）
-            </label>
-            <Input
-              type="text"
-              value={password}
-              onChange={(e) => onPasswordChange(e.target.value)}
-              placeholder="留空则无密码"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-600 mb-1 flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5" />
-              到期日期（可选）
-            </label>
-            <Input
-              type="datetime-local"
-              value={unlockAt}
-              onChange={(e) => onUnlockAtChange(e.target.value)}
-            />
-            <div className="text-[10px] text-ink-400 mt-1">到期后题目自动解锁</div>
-          </div>
-        </div>
-      </div>
-    </Modal>
   );
 }
