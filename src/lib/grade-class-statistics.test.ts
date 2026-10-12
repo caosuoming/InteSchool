@@ -82,6 +82,69 @@ describe("grade class statistics", () => {
     expect(report.classes[0].rows[0].values["current:subject:化学"]).toBe(90);
   });
 
+  it("shows raw and assigned elective scores independently without duplicating core subjects", () => {
+    const baseOptions = { ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS };
+    const rawOnly = buildGradeClassStatisticsReport(current, [], {
+      ...baseOptions,
+      showRawSubjectScores: true,
+    });
+    expect(rawOnly.columns.map((column) => column.label)).toEqual([
+      "班级", "姓名", "语文", "化学（原始分）",
+    ]);
+    expect(rawOnly.classes[0].rows[0].values["current:subjectRaw:化学"]).toBe(80);
+
+    const assignedOnly = buildGradeClassStatisticsReport(current, [], {
+      ...baseOptions,
+      showAssignedSubjectScores: true,
+    });
+    expect(assignedOnly.columns.map((column) => column.label)).toEqual([
+      "班级", "姓名", "语文", "化学（赋分）",
+    ]);
+    expect(assignedOnly.classes[0].rows[0].values["current:subjectAssigned:化学"]).toBe(90);
+
+    const both = buildGradeClassStatisticsReport(current, [previous], {
+      ...baseOptions,
+      showRawSubjectScores: true,
+      showAssignedSubjectScores: true,
+      showSubjectClassRanks: true,
+      comparisonExamIds: ["previous"],
+    });
+    expect(both.columns.map((column) => column.label)).toEqual([
+      "班级", "姓名", "语文", "语文班级排名", "化学（原始分）", "化学（赋分）",
+      "化学班级排名", "期中考试·语文", "期中考试·语文班级排名",
+      "期中考试·化学（原始分）", "期中考试·化学（赋分）", "期中考试·化学班级排名",
+    ]);
+    const zhang = both.classes[0].rows[0].values;
+    expect(zhang["current:subjectRaw:化学"]).toBe(80);
+    expect(zhang["current:subjectAssigned:化学"]).toBe(90);
+    expect(zhang["current:subjectClassRank:化学"]).toBe(1);
+    expect(zhang["previous:subjectRaw:化学"]).toBe(70);
+    expect(zhang["previous:subjectAssigned:化学"]).toBe(82);
+    const wang = both.classes[1].rows[0].values;
+    expect(wang["previous:subjectRaw:化学"]).toBeNull();
+    expect(wang["previous:subjectAssigned:化学"]).toBeNull();
+  });
+
+  it("keeps absent, zero, and missing assigned elective scores distinct", () => {
+    const records = [
+      { ...current.records[0], scores: { 语文: 110, 化学: 0 }, assignedScores: { 语文: 110, 化学: 0 } },
+      { ...current.records[1], scores: { 语文: 100, 化学: 65 }, assignedScores: { 语文: 100, 化学: null } },
+      { ...current.records[2], scores: { 语文: 120, 化学: null }, assignedScores: { 语文: 120, 化学: 85 } },
+    ];
+    const report = buildGradeClassStatisticsReport({ ...current, records }, [], {
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      showRawSubjectScores: true,
+      showAssignedSubjectScores: true,
+    });
+    const rows = new Map(report.classes.flatMap((table) => table.rows).map((row) => [row.studentId, row.values]));
+    expect(rows.get("s1")?.["current:subjectRaw:化学"]).toBe(0);
+    expect(rows.get("s1")?.["current:subjectAssigned:化学"]).toBe(0);
+    expect(rows.get("s2")?.["current:subjectRaw:化学"]).toBe(65);
+    expect(rows.get("s2")?.["current:subjectAssigned:化学"]).toBeNull();
+    expect(rows.get("s3")?.["current:subjectRaw:化学"]).toBeNull();
+    expect(rows.get("s3")?.["current:subjectAssigned:化学"]).toBe(85);
+  });
+
   it("calculates subject, raw-total and assigned-total class/grade competition ranks", () => {
     const report = buildGradeClassStatisticsReport(current, [], {
       ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,

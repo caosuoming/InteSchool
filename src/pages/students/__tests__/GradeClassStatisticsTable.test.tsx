@@ -98,6 +98,38 @@ describe("GradeClassStatisticsTable", () => {
     expect(screen.queryByText("张三")).not.toBeInTheDocument();
   });
 
+  it("toggles raw and assigned elective score columns", async () => {
+    const user = userEvent.setup();
+    const elective = {
+      ...current,
+      subjects: ["语文", "化学"],
+      records: current.records.map((record, index) => ({
+        ...record,
+        scores: { ...record.scores, 化学: index === 0 ? 80 : 75 },
+        assignedScores: { ...record.assignedScores, 化学: index === 0 ? 90 : 88 },
+      })),
+    };
+    function ElectiveHarness() {
+      const [options, setOptions] = useState<GradeClassStatisticsOptions>(DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS);
+      return <GradeClassStatisticsTable exam={elective} comparisonExams={[]} options={options} onOptionsChange={setOptions} />;
+    }
+    render(<ElectiveHarness />);
+    expect(screen.getByRole("columnheader", { name: "化学" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "显示原始分" }));
+    expect(screen.getByRole("columnheader", { name: "化学（原始分）" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "化学（赋分）" })).not.toBeInTheDocument();
+    expect(within(screen.getByText("张三").closest("tr")!).getByText("80")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "显示赋分" }));
+    expect(screen.getByRole("columnheader", { name: "化学（赋分）" })).toBeInTheDocument();
+    expect(within(screen.getByText("张三").closest("tr")!).getByText("90")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "显示原始分" }));
+    expect(screen.queryByRole("columnheader", { name: "化学（原始分）" })).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "化学（赋分）" })).toBeInTheDocument();
+  });
+
   it("adds subject ranks and selected previous exam columns", async () => {
     const user = userEvent.setup();
     render(<Harness />);
