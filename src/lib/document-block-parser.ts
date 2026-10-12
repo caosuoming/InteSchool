@@ -385,6 +385,7 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
 function questionKeywordPrefixes(config: DocumentParseConfig): string[] {
   return [...new Set([
     ...config.questionKeywords,
+    "延伸探究",
     "跟踪训练",
     "训练",
     "巩固题",
@@ -1368,6 +1369,21 @@ function looksLikeImplicitQuestion(
   return config.essayKeywords.some((keyword) => keyword && text.includes(keyword));
 }
 
+function continuesSharedStemExtendedInquiry(
+  line: string,
+  block: Partial<DocumentBlock>,
+  field: QuestionField,
+  config: DocumentParseConfig,
+): boolean {
+  if (field !== "content" || block.type !== "question" || !/^延伸\s*探究/.test(line)) return false;
+  const content = block.content?.trim() || "";
+  if (!content || /^延伸\s*探究/.test(content)) return false;
+  const remainder = topLevelQuestionRemainder(content, config);
+  if (!remainder?.text.trim()) return false;
+  const markers = scanExtendedInquiryMarkers(content);
+  return leadingNestedSubQuestionIndex(line) === (markers.at(-1)?.index || 0) + 1;
+}
+
 function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const blocks: DocumentBlock[] = [];
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
@@ -1492,7 +1508,9 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       continue;
     }
 
-    if (isQuestionStart(line, config)) {
+    if (isQuestionStart(line, config) && !continuesSharedStemExtendedInquiry(
+      line, currentBlock, currentQuestionField, config,
+    )) {
       submitCurrent();
       independentSubQuestionNextIndex = startsIndependentSubQuestionGroup(line, config) ? 2 : undefined;
       const inline = splitQuestionAndInlineOptions(
