@@ -1,3 +1,5 @@
+import { decodeWordSymbol, normalizeWordSymbolText } from "./word-symbol.js";
+
 /**
  * OMML (Office Math Markup Language) 到 LaTeX 的转换器
  *
@@ -228,12 +230,22 @@ function convertChildren(el: Element): string {
 }
 
 function convertRun(el: Element): string {
+  const wordNs = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const fonts = el.getElementsByTagNameNS(wordNs, "rFonts")[0];
+  const font = fonts?.getAttributeNS(wordNs, "hAnsi")
+    || fonts?.getAttributeNS(wordNs, "ascii")
+    || "";
   let result = "";
   for (const child of Array.from(el.childNodes)) {
     if (child.nodeType === ELEMENT_NODE) {
       const childEl = child as Element;
       if (childEl.localName === "t") {
-        result += escapeLatex(childEl.textContent || "");
+        result += escapeLatex(normalizeWordSymbolText(childEl.textContent || "", font));
+      } else if (childEl.namespaceURI === wordNs && childEl.localName === "sym") {
+        result += escapeLatex(decodeWordSymbol(
+          childEl.getAttributeNS(wordNs, "font") || "",
+          childEl.getAttributeNS(wordNs, "char") || "",
+        ) || "");
       } else if (!isPropertyElement(childEl.localName)) {
         result += convertNode(child);
       }
