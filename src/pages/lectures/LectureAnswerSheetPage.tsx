@@ -53,6 +53,7 @@ export default function LectureAnswerSheetPage() {
             : null;
           return {
             id: section.id,
+            label: section.customLabel,
             type: question?.type || "essay",
             stem: question?.stem || section.content || section.title,
             options: question?.options,
@@ -98,6 +99,13 @@ export default function LectureAnswerSheetPage() {
       questions={questions}
       initialSettings={lecture.answerSheetSettings}
       initialViewMode={initialViewMode}
+      published={Boolean(lecture.answerSheetPublishedAt)}
+      onPublicationChange={async (publish, settings) => {
+        const updated = publish
+          ? await lectureService.publishAnswerSheet(lecture.id, settings)
+          : await lectureService.unpublishAnswerSheet(lecture.id);
+        setLecture(updated);
+      }}
       onSettingsChange={(settings) => {
         setLecture((current) => current ? { ...current, answerSheetSettings: settings } : current);
         void lectureService.markAnswerSheetCreated(lecture.id, settings).catch((error) => {

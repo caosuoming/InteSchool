@@ -60,6 +60,13 @@ export default function ExamPaperAnswerSheetPage() {
 
   if (!paper) return null;
 
+  const originalLabels = new Map(paper.contentBlocks?.filter((block) => block.type === "question" && block.examPaperQuestionId)
+    .map((block) => [block.examPaperQuestionId!, block.customLabel]));
+  const answerQuestions = paper.questions.map((question) => ({
+    ...question,
+    label: originalLabels.get(question.id),
+  }));
+
   return (
     <AnswerSheetComposer
       title={paper.title}
@@ -67,10 +74,17 @@ export default function ExamPaperAnswerSheetPage() {
       resourceType="exam-paper"
       resourceId={paper.id}
       resourceLabel="试卷"
-      questions={paper.questions}
+      questions={answerQuestions}
       totalScore={paper.totalScore}
       initialSettings={paper.answerSheetSettings}
       initialViewMode={initialViewMode}
+      published={Boolean(paper.answerSheetPublishedAt)}
+      onPublicationChange={async (publish, settings) => {
+        const updated = publish
+          ? await examPaperService.publishAnswerSheet(paper.id, settings)
+          : await examPaperService.unpublishAnswerSheet(paper.id);
+        setPaper(updated);
+      }}
       onSettingsChange={(settings) => {
         setPaper((current) => current ? { ...current, answerSheetSettings: settings } : current);
         void examPaperService.markAnswerSheetCreated(paper.id, settings).catch((error) => {

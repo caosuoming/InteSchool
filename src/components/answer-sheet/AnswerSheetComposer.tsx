@@ -7,7 +7,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Eye, FileSpreadsheet, Pencil, Printer } from "lucide-react";
+import { Download, Eye, FileSpreadsheet, Pencil, Printer } from "lucide-react";
+import { toast } from "@/stores/ui";
 import { QRCodeSVG } from "qrcode.react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/Badge";
@@ -70,7 +71,6 @@ const typeLabels: Record<string, string> = {
   comprehensive: "综合题",
 };
 
-const preferredTypeOrder = ["single", "multiple", "judge", "short", "conceptFill", "essay", "comprehensive"];
 const chineseNumerals = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
 
 function chineseSectionNumber(number: number): string {
@@ -99,20 +99,14 @@ function groupScoreLabel(group: QuestionGroup): string {
     if (scores.every((score) => score === scores[0])) {
       return `${scores.length}题，每题${scores[0]}分`;
     }
-    return scores.map((score, index) => `第${group.items[index].number}题${score}分`).join("，");
+    return scores.map((score, index) => `第${group.items[index].question.label || group.items[index].number}题${score}分`).join("，");
   }
   const knownScores = group.items
     .filter(({ question }) => typeof question.score === "number" && Number.isFinite(question.score))
-    .map(({ question, number }) => `第${number}题${question.score}分`);
+    .map(({ question, number }) => `第${question.label || number}题${question.score}分`);
   return knownScores.length
     ? `${group.items.length}题，${knownScores.join("，")}`
     : `${group.items.length}题`;
-}
-
-interface QuestionGroupDraft {
-  type: string;
-  label: string;
-  questions: AnswerSheetQuestion[];
 }
 
 interface FlowItem {
@@ -142,30 +136,21 @@ function isFillQuestion(question: AnswerSheetQuestion): boolean {
 }
 
 function groupQuestions(questions: AnswerSheetQuestion[]): QuestionGroup[] {
-  const groups = new Map<string, QuestionGroupDraft>();
-  questions.forEach((question) => {
-    const current = groups.get(question.type) || {
-      type: question.type,
-      label: typeLabels[question.type] || question.type,
-      questions: [],
-    };
-    current.questions.push(question);
-    groups.set(question.type, current);
+  const groups: QuestionGroup[] = [];
+  questions.forEach((question, index) => {
+    const last = groups[groups.length - 1];
+    const type = question.type;
+    if (last?.type === type) {
+      last.items.push({ question, number: index + 1 });
+    } else {
+      groups.push({
+        type,
+        label: typeLabels[type] || type,
+        items: [{ question, number: index + 1 }],
+      });
+    }
   });
-
-  const known = preferredTypeOrder
-    .map((type) => groups.get(type))
-    .filter((group): group is QuestionGroupDraft => Boolean(group));
-  const unknown = Array.from(groups.values()).filter(
-    (group) => !preferredTypeOrder.includes(group.type),
-  );
-
-  let nextNumber = 1;
-  return [...known, ...unknown].map((group) => ({
-    type: group.type,
-    label: group.label,
-    items: group.questions.map((question) => ({ question, number: nextNumber++ })),
-  }));
+  return groups;
 }
 
 function StudentNumberGrid({ digits }: { digits: number }) {
@@ -225,7 +210,7 @@ function splitEssayStemContent(stem: string): EssayStemContent {
   };
 }
 
-function ChoiceAnswer({ number, optionCount }: { number: number; optionCount: number }) {
+function ChoiceAnswer({ number, optionCount }: { number: number | string; optionCount: number }) {
   const count = Math.min(8, Math.max(2, optionCount || 4));
   return (
     <div className="flex items-center gap-2">
@@ -241,7 +226,7 @@ function ChoiceAnswer({ number, optionCount }: { number: number; optionCount: nu
   );
 }
 
-function JudgeAnswer({ number, hideNumber = false }: { number: number; hideNumber?: boolean }) {
+function JudgeAnswer({ number, hideNumber = false }: { number: number | string; hideNumber?: boolean }) {
   return (
     <div className="flex items-center gap-2 text-xs text-ink-900">
       {!hideNumber && <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>}
@@ -264,7 +249,7 @@ function AnswerBox({
   onWidthChange,
   children,
 }: {
-  number: number;
+  number: number | string;
   hideNumber?: boolean;
   boxStyle: AnswerSheetBoxStyle;
   compact?: boolean;
@@ -382,7 +367,7 @@ function InlineChoiceQuestion({ question, number, editable }: NumberedQuestion &
   return (
     <div className="space-y-2" data-testid="inline-choice-question" data-answer-sheet-question>
       <div className="flex items-start gap-2 text-xs text-ink-800">
-        <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
+        <span className="w-7 shrink-0 font-mono font-semibold">{question.label || number}.</span>
         <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
           {question.stem}
         </DraggableQuestionContent>
@@ -411,7 +396,7 @@ function ChoiceQuestionText({ question, number, editable }: NumberedQuestion & {
   return (
     <div className="space-y-1.5" data-testid="concentrated-choice-question" data-answer-sheet-question>
       <div className="flex items-start gap-2 text-xs text-ink-800">
-        <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
+        <span className="w-7 shrink-0 font-mono font-semibold">{question.label || number}.</span>
         <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
           {question.stem}
         </DraggableQuestionContent>
@@ -440,7 +425,7 @@ function FillQuestionInline({ question, number, editable }: NumberedQuestion & {
 
   return (
     <div className="flex items-start gap-2 text-xs text-ink-800" data-testid="inline-fill-question" data-answer-sheet-question>
-      <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
+      <span className="w-7 shrink-0 font-mono font-semibold">{question.label || number}.</span>
       <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
         {decoratedStem}
       </DraggableQuestionContent>
@@ -451,7 +436,7 @@ function FillQuestionInline({ question, number, editable }: NumberedQuestion & {
 function QuestionStemOnly({ question, number, editable }: NumberedQuestion & { editable: boolean }) {
   return (
     <div className="flex items-start gap-2 text-xs text-ink-800" data-testid="concentrated-fill-question" data-answer-sheet-question>
-      <span className="w-7 shrink-0 font-mono font-semibold">{number}.</span>
+      <span className="w-7 shrink-0 font-mono font-semibold">{question.label || number}.</span>
       <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
         {question.stem}
       </DraggableQuestionContent>
@@ -479,15 +464,15 @@ function AnswerField({
   onImageLayoutChange: (index: number, layout: AnswerSheetImageLayout) => void;
 }) {
   if (isChoiceQuestion(question)) {
-    return <ChoiceAnswer number={number} optionCount={question.options?.length || 4} />;
+    return <ChoiceAnswer number={question.label || number} optionCount={question.options?.length || 4} />;
   }
-  if (question.type === "judge") return <JudgeAnswer number={number} hideNumber={hideNumber} />;
+  if (question.type === "judge") return <JudgeAnswer number={question.label || number} hideNumber={hideNumber} />;
   const essayContent = question.type === "essay"
     ? splitEssayStemContent(question.stem)
     : null;
   return (
     <AnswerBox
-      number={number}
+      number={question.label || number}
       hideNumber={hideNumber}
       boxStyle={boxStyle}
       compact={isFillQuestion(question)}
@@ -537,7 +522,7 @@ function QuestionWithAnswer({
           className="flex items-start gap-2 text-xs text-ink-700"
           data-testid={question.type === "essay" ? "essay-question-stem" : undefined}
         >
-          <span className="w-7 shrink-0 font-mono font-semibold text-ink-800">{number}.</span>
+          <span className="w-7 shrink-0 font-mono font-semibold text-ink-800">{question.label || number}.</span>
           <DraggableQuestionContent className="min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
             {displayStem}
           </DraggableQuestionContent>
@@ -545,12 +530,12 @@ function QuestionWithAnswer({
       )}
       {question.type === "judge" ? (
         <div className={displayStem ? "pl-7" : undefined}>
-          <JudgeAnswer number={number} hideNumber={Boolean(displayStem)} />
+          <JudgeAnswer number={question.label || number} hideNumber={Boolean(displayStem)} />
         </div>
       ) : (
         <div className={displayStem && question.type !== "essay" ? "pl-7" : undefined}>
           <AnswerBox
-            number={number}
+            number={question.label || number}
             hideNumber={Boolean(displayStem)}
             boxStyle={boxStyle}
             compact={isFillQuestion(question)}
@@ -584,6 +569,8 @@ interface AnswerSheetComposerProps {
   totalScore?: number;
   initialSettings?: Partial<AnswerSheetSettings>;
   initialViewMode?: "edit" | "preview";
+  published?: boolean;
+  onPublicationChange?: (publish: boolean, settings: AnswerSheetSettings) => Promise<void>;
   onSettingsChange?: (settings: AnswerSheetSettings) => void;
   onBack: () => void;
 }
@@ -615,12 +602,15 @@ export function AnswerSheetComposer({
   totalScore,
   initialSettings,
   initialViewMode = "edit",
+  published = false,
+  onPublicationChange,
   onSettingsChange,
   onBack,
 }: AnswerSheetComposerProps) {
   const [settings, setSettings] = useState<AnswerSheetSettings>(() => buildInitialSettings(initialSettings));
   const [viewMode, setViewMode] = useState<"edit" | "preview">(initialViewMode);
   const [pageStarts, setPageStarts] = useState<number[]>([0]);
+  const [publishing, setPublishing] = useState(false);
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
   const headerRef = useRef<HTMLElement>(null);
 
@@ -643,11 +633,26 @@ export function AnswerSheetComposer({
   const paperColumns = settings.paperSize === "A4" ? settings.a4Columns : settings.widePaperColumns;
   const columnWidthMm = (paperSize.physicalWidthMm - PAGE_PADDING_MM * 2 - COLUMN_GAP_MM * (paperColumns - 1)) / paperColumns;
   const pageContentHeightPx = (paperSize.heightMm - PAGE_PADDING_MM * 2) * MM_TO_CSS_PX;
-  const isPreview = viewMode === "preview";
+  const isPreview = viewMode === "preview" || published;
   const isWidePaper = settings.paperSize !== "A4";
   const wideEditor = !isPreview && isWidePaper;
 
+  const changePublication = async (publish: boolean, print = false) => {
+    if (!onPublicationChange || publishing) return;
+    setPublishing(true);
+    try {
+      await onPublicationChange(publish, settings);
+      toast.success(publish ? "答题卡已发布" : "已撤回发布");
+      if (print) window.print();
+    } catch (error) {
+      toast.error("答题卡操作失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const updateSettings = (patch: Partial<AnswerSheetSettings>) => {
+    if (published) return;
     setSettings((current) => {
       const next = { ...current, ...patch };
       onSettingsChange?.(next);
@@ -656,6 +661,7 @@ export function AnswerSheetComposer({
   };
 
   const updateAnswerBoxHeight = (questionId: string, height: number) => {
+    if (published) return;
     setSettings((current) => {
       if (current.answerBoxHeights?.[questionId] === height) return current;
       const next = {
@@ -668,6 +674,7 @@ export function AnswerSheetComposer({
   };
 
   const updateAnswerBoxWidth = (questionId: string, width: number) => {
+    if (published) return;
     setSettings((current) => {
       if (current.answerBoxWidths?.[questionId] === width) return current;
       const next = {
@@ -680,6 +687,7 @@ export function AnswerSheetComposer({
   };
 
   const updateEssayImageLayout = (questionId: string, index: number, layout: AnswerSheetImageLayout) => {
+    if (published) return;
     setSettings((current) => {
       const positions = [...(current.essayImageLayouts?.[questionId] || [])];
       positions[index] = layout;
@@ -735,7 +743,7 @@ export function AnswerSheetComposer({
 
     groups.forEach((group, groupIndex) => {
       items.push({
-        key: `group-heading-${group.type}`,
+        key: `group-heading-${groupIndex}`,
         kind: "group-heading",
         group,
         groupIndex,
@@ -955,7 +963,7 @@ export function AnswerSheetComposer({
           data-answer-sheet-question
         >
           <ChoiceAnswer
-            number={flowItem.item.number}
+            number={flowItem.item.question.label || flowItem.item.number}
             optionCount={flowItem.item.question.options?.length || 4}
           />
         </div>
@@ -969,7 +977,7 @@ export function AnswerSheetComposer({
           data-answer-sheet-question
         >
           <AnswerBox
-            number={flowItem.item.number}
+            number={flowItem.item.question.label || flowItem.item.number}
             boxStyle={settings.answerBoxStyle}
             compact
             editable={!isPreview}
@@ -1062,11 +1070,20 @@ export function AnswerSheetComposer({
                 <Button variant="outline" onClick={onBack}>返回预览</Button>
                 {isPreview ? (
                   <>
-                    <Button variant="outline" onClick={() => setViewMode("edit")}>
+                    <Button variant="outline" onClick={() => setViewMode("edit")} disabled={published}>
                       <Pencil className="h-4 w-4" />
                       编辑答题卡
                     </Button>
-                    <Button variant="gold" onClick={() => window.print()}>
+                    {onPublicationChange && (
+                      <Button variant="outline" loading={publishing} onClick={() => void changePublication(!published)}>
+                        {published ? "撤回发布" : "发布答题卡"}
+                      </Button>
+                    )}
+                    <Button variant="gold" disabled={publishing} onClick={() => void (published ? Promise.resolve().then(() => window.print()) : changePublication(true, true))}>
+                      <Download className="h-4 w-4" />
+                      下载答题卡
+                    </Button>
+                    <Button variant="outline" disabled={publishing} onClick={() => void (published ? Promise.resolve().then(() => window.print()) : changePublication(true, true))}>
                       <Printer className="h-4 w-4" />
                       打印答题卡
                     </Button>
@@ -1196,7 +1213,7 @@ export function AnswerSheetComposer({
                   height: `${paperSize.heightMm}mm`,
                 }}
                 data-paper-size={settings.paperSize}
-                data-paper-view={viewMode}
+                data-paper-view={isPreview ? "preview" : "edit"}
                 data-paper-columns={paperColumns}
                 data-paper-page={sheetIndex + 1}
               >

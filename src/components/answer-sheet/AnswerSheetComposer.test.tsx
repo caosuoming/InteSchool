@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AnswerSheetComposer } from "./AnswerSheetComposer";
 
@@ -25,6 +25,52 @@ function renderComposer(props: Partial<React.ComponentProps<typeof AnswerSheetCo
 }
 
 describe("AnswerSheetComposer", () => {
+  it("keeps the source order and question numbers even when concentrated answer areas move to the front", () => {
+    const { container } = renderComposer({
+      questions: [
+        { id: "fill", label: "例1", type: "short", stem: "填空", score: 4 },
+        { id: "choice1", type: "single", stem: "选择第一", score: 4 },
+        { id: "essay", type: "essay", stem: "证明", score: 8 },
+        { id: "choice2", type: "single", stem: "选择第二", score: 4 },
+      ],
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+    });
+    const originalRows = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="question"]'), (item) => item.textContent || "");
+    expect(originalRows.map((row) => [row.includes("填空"), row.includes("选择第一"), row.includes("证明"), row.includes("选择第二")]))
+      .toEqual([[true, false, false, false], [false, true, false, false], [false, false, true, false], [false, false, false, true]]);
+    expect(originalRows[0]).toContain("例1.");
+    expect(originalRows[1]).toContain("2.");
+    expect(originalRows[2]).toContain("3.");
+    expect(originalRows[3]).toContain("4.");
+    const choices = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="zone-choice"]'), (item) => item.textContent || "");
+    expect(choices).toHaveLength(2);
+    expect(choices[0]).toContain("2.");
+    expect(choices[1]).toContain("4.");
+    expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"]')).toHaveTextContent("例1.");
+  });
+
+  it("publishes before download, prevents editing while published, and supports withdrawal", async () => {
+    const onPublicationChange = vi.fn().mockResolvedValue(undefined);
+    const print = vi.spyOn(window, "print").mockImplementation(() => {});
+    try {
+      const { rerender } = renderComposer({
+        initialViewMode: "preview",
+        onPublicationChange,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "下载答题卡" }));
+      await waitFor(() => expect(onPublicationChange).toHaveBeenCalledWith(true, expect.objectContaining({ paperSize: "A4" })));
+      await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+      rerender(<AnswerSheetComposer title="期中" resourceType="exam-paper" resourceId="paper-1" resourceLabel="试卷"
+        questions={questions} published initialViewMode="preview" onPublicationChange={onPublicationChange} onBack={vi.fn()} />);
+      expect(screen.getByRole("button", { name: "撤回发布" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "编辑答题卡" })).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "撤回发布" }));
+      await waitFor(() => expect(onPublicationChange).toHaveBeenCalledWith(false, expect.anything()));
+    } finally {
+      print.mockRestore();
+    }
+  });
+
   it("uses an 8-digit student number by default and renders a real QR code", () => {
     const { container } = renderComposer();
 

@@ -102,6 +102,44 @@ export const examPaperService = {
     return paper ? withDerivedKnowledgePoints(paper) : null;
   },
 
+  async listPublishedAnswerSheets(): Promise<ExamPaper[]> {
+    return db.read("examPapers")
+      .filter((item) => Boolean(item.hasAnswerSheet && item.answerSheetPublishedAt))
+      .map(withDerivedKnowledgePoints);
+  },
+
+  async getPublishedAnswerSheet(id: string): Promise<ExamPaper | null> {
+    const item = db.read("examPapers").find((entry) => entry.id === id);
+    return item?.hasAnswerSheet && item.answerSheetPublishedAt ? withDerivedKnowledgePoints(item) : null;
+  },
+
+  async publishAnswerSheet(id: string, settings?: ExamPaper["answerSheetSettings"]): Promise<ExamPaper> {
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      if (!item.hasAnswerSheet) throw new Error("请先制作答题卡");
+      updated = item.answerSheetPublishedAt ? item : {
+        ...item,
+        ...(settings ? { answerSheetSettings: settings } : {}),
+        answerSheetPublishedAt: new Date().toISOString(),
+      };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async unpublishAnswerSheet(id: string): Promise<ExamPaper> {
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      updated = { ...item, answerSheetPublishedAt: undefined };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
   async markAnswerSheetCreated(
     id: string,
     settings?: ExamPaper["answerSheetSettings"],
@@ -111,6 +149,9 @@ export const examPaperService = {
     const now = new Date().toISOString();
     db.update("examPapers", (list) => list.map((paper) => {
       if (paper.id !== id) return paper;
+      if (paper.answerSheetPublishedAt && settings && JSON.stringify(settings) !== JSON.stringify(paper.answerSheetSettings)) {
+        throw new Error("答题卡已发布，请先撤回发布再编辑");
+      }
       updated = {
         ...paper,
         hasAnswerSheet: true,
@@ -168,6 +209,9 @@ export const examPaperService = {
     await delay(300);
     maybeThrowError();
     assertDocumentNotUsed(id);
+    if (db.read("examPapers").some((item) => item.id === id && item.answerSheetPublishedAt)) {
+      throw new Error("答题卡已发布，请先撤回发布再编辑试卷");
+    }
     let updated: ExamPaper | null = null;
     let addedQuestionIds: string[] = [];
     db.update("examPapers", (list) =>
@@ -195,6 +239,9 @@ export const examPaperService = {
 
   async deletePaper(id: string): Promise<void> {
     await delay(200);
+    if (db.read("examPapers").some((item) => item.id === id && item.answerSheetPublishedAt)) {
+      throw new Error("答题卡已发布，请先撤回发布再删除试卷");
+    }
     db.update("examPapers", (list) => list.filter((p) => p.id !== id));
   },
 
@@ -233,6 +280,7 @@ export const examPaperService = {
       extractStatus: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetPublishedAt: undefined,
       answerSheetSettings: undefined,
       createdAt: now,
       updatedAt: now,
@@ -259,6 +307,7 @@ export const examPaperService = {
     maybeThrowError();
     const paper = db.read("examPapers").find((p) => p.id === paperId);
     if (!paper) throw new Error("试卷不存在");
+    if (paper.answerSheetPublishedAt) throw new Error("答题卡已发布，请先撤回发布再编辑试卷");
 
     const createdQuestionIds: string[] = [];
     const updatedQuestions: ExamPaperQuestion[] = [];
@@ -310,6 +359,7 @@ export const examPaperService = {
     maybeThrowError();
     const source = db.read("examPapers").find((p) => p.id === sourceId);
     if (!source) throw new Error("源试卷不存在");
+    if (source.answerSheetPublishedAt) throw new Error("答题卡已发布，请先撤回发布再拆解试卷");
     assertResourceCapacity(source.teacherId, "examPaper");
     const subject = (db.read("teachers") || []).find((teacher) => teacher.id === source.teacherId)?.subject;
     const now = new Date().toISOString();
@@ -363,6 +413,7 @@ export const examPaperService = {
       originalFileSize: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetPublishedAt: undefined,
       answerSheetSettings: undefined,
       status: "draft",
       createdAt: now,

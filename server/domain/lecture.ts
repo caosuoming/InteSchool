@@ -138,6 +138,44 @@ export const lectureService = {
     return lecture ? withDerivedKnowledgePoints(lecture) : null;
   },
 
+  async listPublishedAnswerSheets(): Promise<Lecture[]> {
+    return db.read("lectures")
+      .filter((item) => Boolean(item.hasAnswerSheet && item.answerSheetPublishedAt))
+      .map(withDerivedKnowledgePoints);
+  },
+
+  async getPublishedAnswerSheet(id: string): Promise<Lecture | null> {
+    const item = db.read("lectures").find((entry) => entry.id === id);
+    return item?.hasAnswerSheet && item.answerSheetPublishedAt ? withDerivedKnowledgePoints(item) : null;
+  },
+
+  async publishAnswerSheet(id: string, settings?: Lecture["answerSheetSettings"]): Promise<Lecture> {
+    let updated: Lecture | undefined;
+    db.update("lectures", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      if (!item.hasAnswerSheet) throw new Error("请先制作答题卡");
+      updated = item.answerSheetPublishedAt ? item : {
+        ...item,
+        ...(settings ? { answerSheetSettings: settings } : {}),
+        answerSheetPublishedAt: new Date().toISOString(),
+      };
+      return updated;
+    }));
+    if (!updated) throw new Error("讲义不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async unpublishAnswerSheet(id: string): Promise<Lecture> {
+    let updated: Lecture | undefined;
+    db.update("lectures", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      updated = { ...item, answerSheetPublishedAt: undefined };
+      return updated;
+    }));
+    if (!updated) throw new Error("讲义不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
   async markAnswerSheetCreated(
     id: string,
     settings?: Lecture["answerSheetSettings"],
@@ -147,6 +185,9 @@ export const lectureService = {
     const now = new Date().toISOString();
     db.update("lectures", (list) => list.map((lecture) => {
       if (lecture.id !== id) return lecture;
+      if (lecture.answerSheetPublishedAt && settings && JSON.stringify(settings) !== JSON.stringify(lecture.answerSheetSettings)) {
+        throw new Error("答题卡已发布，请先撤回发布再编辑");
+      }
       updated = {
         ...lecture,
         hasAnswerSheet: true,
@@ -264,6 +305,9 @@ export const lectureService = {
     await delay(300);
     maybeThrowError();
     assertDocumentNotUsed(id);
+    if (db.read("lectures").some((item) => item.id === id && item.answerSheetPublishedAt)) {
+      throw new Error("答题卡已发布，请先撤回发布再编辑讲义");
+    }
     let updated: Lecture | null = null;
     db.update("lectures", (list) =>
       list.map((l) => {
@@ -287,6 +331,9 @@ export const lectureService = {
 
   async deleteLecture(id: string): Promise<void> {
     await delay(200);
+    if (db.read("lectures").some((item) => item.id === id && item.answerSheetPublishedAt)) {
+      throw new Error("答题卡已发布，请先撤回发布再删除讲义");
+    }
     db.update("lectures", (list) => list.filter((l) => l.id !== id));
   },
 
@@ -328,6 +375,7 @@ export const lectureService = {
       hasPreview: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetPublishedAt: undefined,
       answerSheetSettings: undefined,
       createdAt: now,
       updatedAt: now,
@@ -351,6 +399,7 @@ export const lectureService = {
     await delay(200);
     const lecture = db.read("lectures").find((l) => l.id === lectureId);
     if (!lecture) throw new Error("讲义不存在");
+    if (lecture.answerSheetPublishedAt) throw new Error("答题卡已发布，请先撤回发布再编辑讲义");
     const question = db.read("questions").find((q) => q.id === questionId);
     if (!question) throw new Error("题目不存在");
 
@@ -467,6 +516,7 @@ export const lectureService = {
     maybeThrowError();
     const source = db.read("lectures").find((l) => l.id === sourceId);
     if (!source) throw new Error("源讲义不存在");
+    if (source.answerSheetPublishedAt) throw new Error("答题卡已发布，请先撤回发布再拆解讲义");
     assertResourceCapacity(source.teacherId, "lecture");
     const now = new Date().toISOString();
     const normalizedBlocks = contentBlocks.map((block) => ({
@@ -540,6 +590,7 @@ export const lectureService = {
       hasOrigin: true,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetPublishedAt: undefined,
       answerSheetSettings: undefined,
       status: "draft",
       createdAt: now,

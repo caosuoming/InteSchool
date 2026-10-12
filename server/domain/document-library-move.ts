@@ -174,6 +174,7 @@ function paperToLecture(paper: ExamPaper, root: ExamPaper, now: string): Lecture
     hasOrigin: paper.isExtractCopy ? Boolean(root.originalFileUrl) : undefined,
     hasAnswerSheet: paper.hasAnswerSheet,
     answerSheetCreatedAt: paper.answerSheetCreatedAt,
+    answerSheetPublishedAt: paper.answerSheetPublishedAt,
     answerSheetSettings: paper.answerSheetSettings,
     createdAt: paper.createdAt,
     updatedAt: now,
@@ -221,6 +222,7 @@ function lectureToPaper(lecture: Lecture, now: string): ExamPaper {
     extractStatus: lecture.extractStatus,
     hasAnswerSheet: lecture.hasAnswerSheet,
     answerSheetCreatedAt: lecture.answerSheetCreatedAt,
+    answerSheetPublishedAt: lecture.answerSheetPublishedAt,
     answerSheetSettings: lecture.answerSheetSettings,
     createdAt: lecture.createdAt,
     updatedAt: now,
@@ -305,6 +307,9 @@ export function moveExamPaperToLecture(paperId: string): { lectureId: string } {
   const family = papers.filter((paper) => (
     paper.id === rootId || (paper.isExtractCopy && paper.sourceResourceId === rootId)
   ));
+  if (family.some((item) => item.answerSheetPublishedAt)) {
+    throw new Error("答题卡已发布，请先撤回发布再转换试卷");
+  }
   const movedIds = new Set(family.map((paper) => paper.id));
   const lectures = (db.read("lectures") || []) as Lecture[];
   assertNoTargetIdCollision(lectures, movedIds, "讲义库");
@@ -330,6 +335,9 @@ export function moveLectureToExamPaper(lectureId: string): { paperId: string } {
   const family = lectures.filter((lecture) => (
     lecture.id === rootId || (lecture.isExtractCopy && lecture.sourceResourceId === rootId)
   ));
+  if (family.some((item) => item.answerSheetPublishedAt)) {
+    throw new Error("答题卡已发布，请先撤回发布再转换讲义");
+  }
   const movedIds = new Set(family.map((lecture) => lecture.id));
   const papers = (db.read("examPapers") || []) as ExamPaper[];
   assertNoTargetIdCollision(papers, movedIds, "试卷库");

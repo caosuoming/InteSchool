@@ -274,7 +274,8 @@ export default function ExamPaperEditorPage() {
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [paper, setPaper] = useState<ExamPaper | null>(null);
-  const [isUsedDocument, setIsUsedDocument] = useState(false);
+  const [hasAnswerRecords, setIsUsedDocument] = useState(false);
+  const isUsedDocument = hasAnswerRecords || Boolean(paper?.answerSheetPublishedAt);
   const isStructureLocked = isDocumentStructureLocked(paper);
   const isEditingLocked = isStructureLocked || isUsedDocument;
   const [questions, setQuestions] = useState<Record<string, Question>>({});
@@ -1687,6 +1688,8 @@ export default function ExamPaperEditorPage() {
           <Button
             variant="gold"
             onClick={() => navigateWithDraft(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
+            disabled={Boolean(paper?.answerSheetPublishedAt)}
+            title={paper?.answerSheetPublishedAt ? "请先撤回发布答题卡" : undefined}
           >
             <Edit3 className="w-4 h-4" />
             编辑试卷
@@ -2050,7 +2053,7 @@ export default function ExamPaperEditorPage() {
       {isUsedDocument && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
           <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>该文档已录入学生答题记录，现已锁定，不能再编辑。</span>
+          <span>{paper?.answerSheetPublishedAt ? "答题卡已发布，请先撤回发布才能编辑。" : "该文档已录入学生答题记录，现已锁定，不能再编辑。"}</span>
         </div>
       )}
 
