@@ -71,7 +71,7 @@ describe("AppLayout", () => {
     expect(screen.queryByText("个人教学班")).not.toBeInTheDocument();
   });
 
-  it("shows 我的教学 and orders 我的学生 before 我的教室", () => {
+  it("shows 作业考试 after 我的教学 and before 我的学生", () => {
     const { container } = render(
       <MemoryRouter initialEntries={["/dashboard"]}>
         <AppLayout>
@@ -86,8 +86,19 @@ describe("AppLayout", () => {
     const nav = container.querySelector("nav");
     expect(nav).not.toBeNull();
     const labels = Array.from(nav!.children).map((item) => item.textContent?.trim());
-    expect(labels.indexOf("我的学生")).toBe(labels.indexOf("我的教学") + 1);
+    expect(labels.indexOf("作业考试")).toBe(labels.indexOf("我的教学") + 1);
+    expect(labels.indexOf("我的学生")).toBe(labels.indexOf("作业考试") + 1);
     expect(labels.indexOf("我的教室")).toBe(labels.indexOf("我的学生") + 1);
+  });
+
+  it("shows both management links when 作业考试 is expanded", () => {
+    render(
+      <MemoryRouter initialEntries={["/homework-exams/exams"]}>
+        <AppLayout><div>页面内容</div></AppLayout>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: "作业管理" })).toHaveAttribute("href", "/homework-exams/homework");
+    expect(screen.getByRole("link", { name: "考试管理" })).toHaveAttribute("href", "/homework-exams/exams");
   });
 
   it("shows the three exam sections in the requested order", () => {

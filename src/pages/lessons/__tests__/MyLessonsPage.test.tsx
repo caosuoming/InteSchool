@@ -488,6 +488,19 @@ describe("MyLessonsPage classroom publishing", () => {
     });
   });
 
+  it("opens the named homework editor from the management deep link", async () => {
+    const titled = { ...createdHomework, title: "函数专项练习" };
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([titled]);
+    render(
+      <MemoryRouter initialEntries={[`/my-lessons?tab=homework&edit=${titled.id}`]}>
+        <MyLessonsPage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("button", { name: "保存作业修改" })).toBeInTheDocument();
+    expect(screen.getByLabelText("作业名称")).toHaveValue("函数专项练习");
+    expect(screen.getByLabelText("作业内容")).toHaveValue(titled.content);
+  });
+
   it("publishes a timed notice and previews the current class display", async () => {
     const user = userEvent.setup();
     render(
