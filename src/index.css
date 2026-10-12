@@ -337,6 +337,10 @@
   column-rule: 1px solid #cbd5e1;
 }
 
+.answer-sheet-question-stem {
+  font-size: var(--answer-sheet-stem-font-size, 12px);
+}
+
 .answer-sheet-floating-image {
   max-width: 45%;
   height: auto;

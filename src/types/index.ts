@@ -1661,6 +1661,7 @@ export interface ExamPaper {
     widePaperColumns?: 2 | 3;
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
+    stemFontSize?: number;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
@@ -2269,6 +2270,7 @@ export interface Lecture {
     widePaperColumns?: 2 | 3;
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
+    stemFontSize?: number;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
