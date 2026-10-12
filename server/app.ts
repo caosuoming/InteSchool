@@ -1,5 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
+import type { IncomingMessage, Server as HttpServer, ServerResponse } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
 import compress from "@fastify/compress";
@@ -82,10 +83,13 @@ export interface BuiltApp {
 
 export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<BuiltApp> {
   const config = loadConfig(overrides);
-  const app = Fastify({
+  const trustProxy = config.trustProxy;
+  const app = Fastify<HttpServer, IncomingMessage, ServerResponse>({
     logger: config.logger,
     bodyLimit: 5 * 1024 * 1024,
-    trustProxy: config.trustProxy,
+    trustProxy: typeof trustProxy === "number"
+      ? (_address, hop) => hop < trustProxy
+      : trustProxy,
   });
   const store = await DatabaseStore.open(config);
 
