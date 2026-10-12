@@ -66,6 +66,17 @@ export function inferStatisticSubjectsFromSelections(
   return unique([...coreSubjects, ...commonElectives]);
 }
 
+export function expectedGradeSubjectCount(subjects: string[], records: GradeScoreRecord[]): number {
+  const selectionCounts = records.flatMap((record) => {
+    const selected = inferStatisticSubjectsFromSelections(subjects, [record.subjectSelection || ""]);
+    return selected?.length ? [selected.length] : [];
+  });
+  const electiveCount = subjects.filter((subject) =>
+    ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]),
+  ).length;
+  return Math.max(subjects.length - electiveCount + Math.min(3, electiveCount), ...selectionCounts);
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }

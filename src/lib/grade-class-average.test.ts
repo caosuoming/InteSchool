@@ -240,6 +240,83 @@ describe("grade class average report", () => {
     expect(report.overallAverage).toEqual(group.average);
   });
 
+  it("excludes partially absent students from both total averages without excluding individual scores", () => {
+    const partialExam: GradeExam = {
+      ...exam,
+      records: exam.records.map((record) => record.id === "record-2" ? {
+        ...record,
+        scores: { 数学: 80, 英语: null },
+        assignedScores: { 数学: 85, 英语: 95 },
+      } : record.id === "record-1" ? {
+        ...record,
+        assignedScores: { 数学: 110, 英语: 90 },
+      } : record),
+    };
+    const report = buildGradeClassAverageReport(partialExam, template, context);
+    const group = report.groups[0];
+
+    expect(group.rows[0].studentCount).toBe(2);
+    expect(group.rows[0].subjectAverages).toEqual({
+      数学: { raw: 90, assigned: 97.5 },
+      英语: { raw: 90, assigned: 92.5 },
+    });
+    expect(group.rows[0].totalAverages).toEqual({ raw: 190, assigned: 200 });
+    expect(group.difference.totalValues).toEqual({ raw: 20, assigned: 30 });
+    expect(group.average.totalValues).toEqual({ raw: 180, assigned: 185 });
+    expect(report.overallAverage.totalValues).toEqual({ raw: 180, assigned: 185 });
+
+    const subsetReport = buildGradeClassAverageReport(partialExam, {
+      ...template,
+      subjects: ["数学"],
+    }, context);
+    expect(subsetReport.groups[0].rows[0].totalAverages).toEqual({ raw: 100, assigned: 110 });
+  });
+
+  it("counts real zero scores but not absent or assigned-only scores", () => {
+    const partialExam: GradeExam = {
+      ...exam,
+      records: [
+        { ...exam.records[0], scores: { 数学: 0, 英语: 90 }, assignedScores: { 数学: 0, 英语: 90 } },
+        { ...exam.records[1], scores: { 数学: null, 英语: null }, assignedScores: { 数学: 80, 英语: 70 } },
+        { ...exam.records[2], scores: { 数学: 70, 英语: 100 }, assignedScores: { 数学: 70, 英语: null } },
+      ],
+    };
+    const report = buildGradeClassAverageReport(partialExam, template, context);
+
+    expect(report.groups[0].rows[0].totalAverages).toEqual({ raw: 90, assigned: 90 });
+    expect(report.groups[0].rows[1].totalAverages).toEqual({ raw: 170, assigned: null });
+    expect(report.groups[0].average.totalValues).toEqual({ raw: 130, assigned: 90 });
+
+    const allAbsent = { ...partialExam, records: partialExam.records.map((record) => ({
+      ...record,
+      scores: { 数学: null, 英语: null },
+    })) };
+    expect(buildGradeClassAverageReport(allAbsent, template, context).overallAverage.totalValues)
+      .toEqual({ raw: null, assigned: null });
+  });
+
+  it("keeps complete students with different elective combinations in total averages", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+    const studentScores = (electives: string[], absent?: string) => Object.fromEntries(subjects.map((subject) => [
+      subject,
+      ["语文", "数学", "英语", ...electives].includes(subject) && subject !== absent ? 100 : null,
+    ]));
+    const mixedExam: GradeExam = {
+      ...exam,
+      subjects,
+      records: [
+        { ...exam.records[0], subjectSelection: "物化生", scores: studentScores(["物理", "化学", "生物"]), assignedScores: studentScores(["物理", "化学", "生物"]) },
+        { ...exam.records[1], subjectSelection: "史政地", scores: studentScores(["历史", "政治", "地理"]), assignedScores: studentScores(["历史", "政治", "地理"]) },
+        { ...exam.records[2], subjectSelection: "物化生", scores: studentScores(["物理", "化学", "生物"], "化学"), assignedScores: studentScores(["物理", "化学", "生物"], "化学") },
+      ],
+    };
+    const report = buildGradeClassAverageReport(mixedExam, { ...template, subjects }, context);
+
+    expect(report.groups[0].rows[0].totalAverages).toEqual({ raw: 600, assigned: 600 });
+    expect(report.groups[0].rows[1].totalAverages).toEqual({ raw: null, assigned: null });
+    expect(report.overallAverage.totalValues).toEqual({ raw: 600, assigned: 600 });
+  });
+
   it("uses grade-bound homeroom names ahead of organization defaults", () => {
     const settings = {
       ...exam.settings,
