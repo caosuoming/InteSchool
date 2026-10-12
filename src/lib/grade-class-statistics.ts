@@ -1,5 +1,6 @@
 import type { GradeExam, GradeScoreRecord } from "../types/index.js";
 import { expectedGradeSubjectCount, totalRankingGroupKey } from "./grade-statistics.js";
+import { inferGradeAcademicTrackFromSelection } from "./grade-total-score-segment.js";
 
 export interface GradeClassStatisticsOptions {
   showSubjectClassRanks: boolean;
@@ -167,11 +168,27 @@ function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRan
     subject,
     ranksByClass(exam.records, (record) => finalSubjectScore(record, subject)),
   ]));
-  const totalGroupKey = (record: GradeScoreRecord) => totalRankingGroupKey(exam.settings, record.classId);
+  // Split total-score ranking pools only for exams that actually contain both tracks.
+  // Non-exam subjects are null, while a score of zero still indicates attendance.
+  const hasPhysics = (record: GradeScoreRecord) => finite(record.scores["物理"]) !== null;
+  const hasHistory = (record: GradeScoreRecord) => finite(record.scores["历史"]) !== null;
+  const splitByTrack = exam.subjects.includes("物理") && exam.subjects.includes("历史")
+    && exam.records.some((record) => hasPhysics(record) && !hasHistory(record))
+    && exam.records.some((record) => hasHistory(record) && !hasPhysics(record));
+  const trackForRecord = (record: GradeScoreRecord) => {
+    if (hasPhysics(record) && !hasHistory(record)) return "science";
+    if (hasHistory(record) && !hasPhysics(record)) return "arts";
+    return inferGradeAcademicTrackFromSelection(record.subjectSelection || "");
+  };
+  const rankingKey = (baseKey: string, record: GradeScoreRecord) =>
+    splitByTrack ? JSON.stringify([baseKey, trackForRecord(record)]) : baseKey;
+  const totalGroupKey = (record: GradeScoreRecord) =>
+    rankingKey(totalRankingGroupKey(exam.settings, record.classId), record);
+  const totalClassKey = (record: GradeScoreRecord) => rankingKey(record.classId, record);
   const rawTotalGradeRanks = ranksByGroup(exam.records, (record) => totals.get(record.studentId)?.raw ?? null, totalGroupKey);
-  const rawTotalClassRanks = ranksByClass(exam.records, (record) => totals.get(record.studentId)?.raw ?? null);
+  const rawTotalClassRanks = ranksByGroup(exam.records, (record) => totals.get(record.studentId)?.raw ?? null, totalClassKey);
   const assignedTotalGradeRanks = ranksByGroup(exam.records, (record) => totals.get(record.studentId)?.assigned ?? null, totalGroupKey);
-  const assignedTotalClassRanks = ranksByClass(exam.records, (record) => totals.get(record.studentId)?.assigned ?? null);
+  const assignedTotalClassRanks = ranksByGroup(exam.records, (record) => totals.get(record.studentId)?.assigned ?? null, totalClassKey);
 
   return new Map(exam.records.map((record) => [record.studentId, {
     rawTotal: totals.get(record.studentId)?.raw ?? null,

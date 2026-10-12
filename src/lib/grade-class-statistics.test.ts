@@ -336,4 +336,42 @@ describe("grade class statistics", () => {
     });
   });
 
+  it("ranks physics and history exam totals separately within each total-rank pool", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "历史", "化学", "政治", "生物", "地理"];
+    const mixedRecord = (id: string, classId: string, physics: boolean, primary: number, assigned: number) => {
+      const scores = { 语文: 80, 数学: 80, 英语: 80, 物理: physics ? primary : null,
+        历史: physics ? null : primary, 化学: physics ? 80 : null, 政治: physics ? null : 80,
+        生物: physics ? 80 : null, 地理: physics ? null : 80 };
+      const assignedScores = { ...scores, 物理: physics ? assigned : null, 历史: physics ? null : assigned };
+      return { ...record(id, classId, classId, id, id, 0, 0, 0, 0, 0), scores, assignedScores };
+    };
+    const mixed = {
+      ...current,
+      subjects,
+      records: [
+        mixedRecord("s1", "c1", true, 90, 85),
+        mixedRecord("a1", "c1", false, 100, 95),
+        mixedRecord("s2", "c2", true, 70, 105),
+        mixedRecord("a2", "c2", false, 60, 110),
+      ],
+    };
+    const options = { ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS, showRawTotal: true, showAssignedTotal: true };
+    const rows = new Map(buildGradeClassStatisticsReport(mixed, [], options).classes.flatMap((table) => table.rows)
+      .map((row) => [row.studentId, row.values]));
+    expect(rows.get("s1")).toMatchObject({ "current:rawTotalGradeRank": 1, "current:rawTotalClassRank": 1,
+      "current:assignedTotalGradeRank": 2, "current:assignedTotalClassRank": 1 });
+    expect(rows.get("s2")).toMatchObject({ "current:rawTotalGradeRank": 2, "current:assignedTotalGradeRank": 1 });
+    expect(rows.get("a1")).toMatchObject({ "current:rawTotalGradeRank": 1, "current:rawTotalClassRank": 1,
+      "current:assignedTotalGradeRank": 2, "current:assignedTotalClassRank": 1 });
+    expect(rows.get("a2")).toMatchObject({ "current:rawTotalGradeRank": 2, "current:assignedTotalGradeRank": 1 });
+
+    // A uniform-subject exam must retain the ordinary combined ranking.
+    const ordinary = { ...mixed, subjects: ["语文", "数学"], records: mixed.records.map((item) => ({
+      ...item, scores: { 语文: item.scores.语文, 数学: item.scores.数学 },
+      assignedScores: { 语文: item.assignedScores.语文, 数学: item.assignedScores.数学 },
+    })) };
+    const ordinaryRows = buildGradeClassStatisticsReport(ordinary, [], options).classes.flatMap((table) => table.rows);
+    ordinaryRows.forEach((row) => expect(row.values["current:rawTotalGradeRank"]).toBe(1));
+  });
+
 });
