@@ -34,6 +34,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { needsMultipleChoiceMarker } from "@/lib/multiple-choice-marker";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
 import { RelatedQuestionReplacementPanel } from "@/components/question/RelatedQuestionReplacementPanel";
@@ -1969,6 +1970,7 @@ export default function ExamPaperEditorPage() {
                         <PreviewQuestionItem
                           pq={paperQuestion}
                           index={index}
+                          markMultiple
                           expanded={expandedPreviewQuestionIds.has(paperQuestion.id)}
                           onExpandedChange={(expanded) => setPreviewQuestionExpanded(paperQuestion.id, expanded)}
                         />
@@ -2723,6 +2725,7 @@ export default function ExamPaperEditorPage() {
                             <EditQuestionRow
                               pq={paperQuestion}
                               index={displayIndex}
+                              markMultiple
                               total={paperQuestions.length}
                               canMoveUp={itemIndex > 0}
                               canMoveDown={itemIndex < section.questions.length - 1}
@@ -3958,10 +3961,11 @@ function PreviewQuestionDetails({
 
 // ===== 预览模式的题目项 =====
 function PreviewQuestionItem({
-  pq, index, expanded: controlledExpanded, onExpandedChange,
+  pq, index, markMultiple = false, expanded: controlledExpanded, onExpandedChange,
 }: {
   pq: ExamPaperQuestion;
   index: number;
+  markMultiple?: boolean;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
@@ -3982,6 +3986,9 @@ function PreviewQuestionItem({
             className="flex cursor-pointer items-start gap-1 text-sm leading-relaxed text-ink-900 transition-colors hover:text-gold-700"
           >
             <span className="flex-shrink-0 font-mono font-bold text-ink-400">{index + 1}.</span>
+            {markMultiple && needsMultipleChoiceMarker(pq.type === "multiple", pq.stem) && (
+              <strong className="flex-shrink-0">（多选）</strong>
+            )}
             <MathHtml className="min-w-0 flex-1 text-sm leading-relaxed text-ink-900">{pq.stem}</MathHtml>
           </div>
           {/* 选项（按数量自适应列数；答案高亮仅在展开时显示） */}
@@ -4057,12 +4064,13 @@ function QuestionProgressBadge({ progress }: { progress?: QuestionProgress }) {
 
 // ===== 编辑模式的题目行 =====
 function EditQuestionRow({
-  pq, index, total, canMoveUp, canMoveDown,
+  pq, index, total, markMultiple = false, canMoveUp, canMoveDown,
   onMoveUp, onMoveDown, onRemove, structureLocked = false, sidebar,
 }: {
   pq: ExamPaperQuestion;
   index: number;
   total: number;
+  markMultiple?: boolean;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onMoveUp: () => void;
@@ -4103,9 +4111,12 @@ function EditQuestionRow({
           {/* 题干 */}
           <div
             onClick={() => setExpanded(!expanded)}
-            className="cursor-pointer transition-colors hover:text-gold-700"
+            className="flex cursor-pointer items-start gap-1 transition-colors hover:text-gold-700"
           >
-            <MathHtml className="whitespace-pre-wrap text-sm text-ink-900">{pq.stem}</MathHtml>
+            {markMultiple && needsMultipleChoiceMarker(pq.type === "multiple", pq.stem) && (
+              <strong className="flex-shrink-0 text-sm">（多选）</strong>
+            )}
+            <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap text-sm text-ink-900">{pq.stem}</MathHtml>
           </div>
           {/* 选项（始终显示，按数量自适应列数；答案高亮仅在展开时显示） */}
           {pq.options && pq.options.length > 0 && (

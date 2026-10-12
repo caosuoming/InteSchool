@@ -11,6 +11,7 @@ import katex from "katex";
 import { mml2omml } from "mathml2omml";
 import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
+import { needsMultipleChoiceMarker } from "@/lib/multiple-choice-marker";
 import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
 import { normalizePlainMathText } from "@/lib/plain-math";
 import {
@@ -1055,7 +1056,7 @@ async function appendExamQuestion(
     new Paragraph({
       children: [
         textRun(`${number}. `, { bold: true, size: 24 }),
-        ...(markMultiple && (question.type === "multiple" || linkedQuestion?.type === "multiple")
+        ...(markMultiple && needsMultipleChoiceMarker(question.type === "multiple" || linkedQuestion?.type === "multiple", stem)
           ? [textRun("（多选）", { bold: true, size: 24 })]
           : []),
         ...await documentRichChildren(stem, { size: 24 }),

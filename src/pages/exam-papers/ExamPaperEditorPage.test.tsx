@@ -1070,6 +1070,41 @@ describe("ExamPaperEditorPage preview", () => {
     })));
   });
 
+  it("marks only unmarked multiple-choice stems in project editor and preview without changing stored stems", async () => {
+    const flatPaper = {
+      ...paper, isExtractCopy: false, contentBlocks: [], layoutMode: "flat" as const,
+      questions: [
+        { ...paper.questions[0], type: "multiple", stem: "选出所有正确答案" },
+        { ...paper.questions[0], id: "paper-question-2", type: "multiple", stem: "<p>（多选）选择正确结论</p>" },
+        { ...paper.questions[0], id: "paper-question-3", type: "single", stem: "仅选一项" },
+      ],
+    };
+    mocks.getPaper.mockResolvedValue(flatPaper);
+
+    renderEditorPage();
+    await screen.findByLabelText("文档名");
+    const expectMarkers = () => {
+      const missing = screen.getByText("选出所有正确答案").closest(".cursor-pointer");
+      const existing = screen.getByText("（多选）选择正确结论").closest(".cursor-pointer");
+      const single = screen.getByText("仅选一项").closest(".cursor-pointer");
+      expect(missing?.textContent).toContain("（多选）选出所有正确答案");
+      expect(missing?.textContent?.match(/（多选）/g)).toHaveLength(1);
+      expect(existing?.textContent?.match(/（多选）/g)).toHaveLength(1);
+      expect(single).not.toHaveTextContent("（多选）");
+    };
+
+    expectMarkers();
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    await screen.findByTestId("exam-paper-preview");
+    expectMarkers();
+    expect(mocks.updatePaper).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑试卷" }));
+    await screen.findByLabelText("文档名");
+    fireEvent.click(screen.getByRole("button", { name: "按题型" }));
+    expect(screen.getByText("选出所有正确答案").closest(".cursor-pointer")).not.toHaveTextContent("（多选）");
+  });
+
   it("allows adding questions directly into an empty project", async () => {
     const flatPaper = { ...paper, isExtractCopy: false, contentBlocks: [], layoutMode: "flat" as const,
       questions: [], projects: [{ id: "prj-a", name: "计算题" }] };
