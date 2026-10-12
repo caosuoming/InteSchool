@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GradeTotalScoreSegmentTable } from "@/pages/students/GradeTotalScoreSegmentTable";
 import type {
   GradeExam,
+  GradeExamSettings,
   GradeImportContext,
   GradeStatisticsTemplate,
 } from "@/types";
@@ -236,7 +237,7 @@ describe("GradeTotalScoreSegmentTable", () => {
   it("edits and saves separate ranking group thresholds and restores track fallback", async () => {
     const user = userEvent.setup();
     const onAutoSave = vi.fn();
-    const separateSettings = {
+    const separateSettings: GradeExamSettings = {
       ...exam.settings,
       classSubjects: [
         { classId: "class-1", examSubjects: ["数学"], statisticSubjects: [], separateRankSubjects: ["数学"] },
