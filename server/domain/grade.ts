@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type {
   GradeCohort,
   GradeCohortSettings,
@@ -54,6 +54,88 @@ interface GradePublicationRecord {
   publishedByTeacherId: string;
   publishedByName: string;
   report: GradePublishedReportBundle;
+}
+
+interface GradeExamAccessRecord {
+  id: string;
+  schoolId: string;
+  examId: string;
+  passwordSalt?: string;
+  passwordHash?: string;
+  exemptTeacherIds: string[];
+  oneTimeCodes: Array<{ salt: string; hash: string }>;
+  revision: string;
+}
+
+interface GradeExamAccessGrant {
+  id: string;
+  schoolId: string;
+  examId: string;
+  teacherId: string;
+  tokenHash: string;
+  revision: string;
+  expiresAt: string;
+}
+
+function examAccess(examId: string): GradeExamAccessRecord | undefined {
+  return readList<GradeExamAccessRecord>("gradeExamAccess").find((item) => item.examId === examId);
+}
+
+function credentialHash(secret: string, salt: string): string {
+  return scryptSync(secret, salt, 32).toString("hex");
+}
+
+function verifyCredential(secret: string, salt?: string, hash?: string): boolean {
+  if (!salt || !hash || typeof secret !== "string") return false;
+  const stored = Buffer.from(hash, "hex");
+  const proposed = Buffer.from(credentialHash(secret, salt), "hex");
+  return stored.length === proposed.length && timingSafeEqual(stored, proposed);
+}
+
+function ownerOrExempt(exam: GradeExam, teacher: Teacher, access?: GradeExamAccessRecord): boolean {
+  return exam.schoolId === teacher.schoolId && (
+    exam.teacherId === teacher.id || access?.exemptTeacherIds.includes(teacher.id) === true
+  );
+}
+
+function checkExamAccess(exam: GradeExam, actor?: Teacher, token?: string): boolean {
+  if (actor?.schoolId !== exam.schoolId) return false;
+  const access = examAccess(exam.id);
+  if (!access?.passwordHash || (actor && ownerOrExempt(exam, actor, access))) return true;
+  if (!actor || !token) return false;
+  const tokenHash = credentialHash(token, `grade-grant:${exam.id}`);
+  return readList<GradeExamAccessGrant>("gradeExamAccessGrants").some((grant) =>
+    grant.examId === exam.id && grant.teacherId === actor.id
+    && grant.revision === access.revision && grant.tokenHash === tokenHash
+    && Date.parse(grant.expiresAt) > Date.now(),
+  );
+}
+
+function examForViewer(exam: GradeExam, actor?: Teacher, token?: string): GradeExam {
+  const access = examAccess(exam.id);
+  const accessible = checkExamAccess(exam, actor, token);
+  return {
+    ...exam,
+    records: accessible ? exam.records : [],
+    scoreAdjustments: accessible ? exam.scoreAdjustments : [],
+    accessControl: {
+      passwordProtected: Boolean(access?.passwordHash),
+      locked: !accessible,
+      ...(actor?.id === exam.teacherId ? { exemptTeacherIds: access?.exemptTeacherIds || [] } : {}),
+    },
+  };
+}
+
+function secureExamMutationResult(exam: GradeExam, actor?: Teacher): GradeExam {
+  return actor ? examForViewer(exam, actor) : exam;
+}
+
+function consumeOneTimeCode(access: GradeExamAccessRecord, secret: string): boolean {
+  const index = access.oneTimeCodes.findIndex((code) => verifyCredential(secret, code.salt, code.hash));
+  if (index === -1) return false;
+  const updated = { ...access, oneTimeCodes: access.oneTimeCodes.filter((_, i) => i !== index) };
+  db.update("gradeExamAccess", (items: GradeExamAccessRecord[]) => items.map((item) => item.examId === access.examId ? updated : item));
+  return true;
 }
 
 function cohortKeyForClass(item: SchoolClass): string {
@@ -472,7 +554,7 @@ function buildQueryData(teacher: Teacher): GradeQueryData {
   const targetClassSet = new Set(targetClassIds);
   const targetCohorts = new Set(targetClassIds.map((id) => classMap.get(id)).filter(Boolean).map((item) => cohortKeyForClass(item!)));
   const schoolExams = readList<GradeExam>("gradeExams")
-    .filter((exam) => exam.schoolId === schoolId)
+    .filter((exam) => exam.schoolId === schoolId && !exam.deletedAt && checkExamAccess(exam, teacher))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   const queryableExams = scope === "school" || scope === "grade"
     ? schoolExams
@@ -610,9 +692,15 @@ export const gradeService = {
     return buildCohorts(schoolId);
   },
 
-  async getImportContext(schoolId: string, cohortKey: string): Promise<GradeImportContext> {
+  async getImportContext(schoolId: string, cohortKey: string, actor?: Teacher): Promise<GradeImportContext> {
     await delay(150);
-    return requireContext(schoolId, cohortKey);
+    const context = requireContext(schoolId, cohortKey);
+    const latest = readList<GradeExam>("gradeExams")
+      .filter((item) => item.schoolId === schoolId && item.cohortKey === cohortKey && !item.deletedAt)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    return latest && actor && !checkExamAccess(latest, actor)
+      ? { ...context, sampleRecords: [] }
+      : context;
   },
 
   async getCohortTemplateProfile(
@@ -764,16 +852,99 @@ export const gradeService = {
     );
   },
 
-  async listExams(schoolId: string, cohortKey?: string): Promise<GradeExam[]> {
+  async listExams(schoolId: string, cohortKey?: string, actor?: Teacher): Promise<GradeExam[]> {
     await delay(150);
     return readList<GradeExam>("gradeExams")
       .filter((item) => item.schoolId === schoolId && !item.deletedAt && (!cohortKey || item.cohortKey === cohortKey))
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map((item) => examForViewer(item, actor));
   },
 
-  async getExam(examId: string): Promise<GradeExam | null> {
+  async getExam(examId: string, accessToken?: string, actor?: Teacher): Promise<GradeExam | null> {
     await delay(100);
-    return readList<GradeExam>("gradeExams").find((item) => item.id === examId && !item.deletedAt) || null;
+    const exam = readList<GradeExam>("gradeExams").find((item) => item.id === examId && !item.deletedAt);
+    if (!exam) return null;
+    if (!checkExamAccess(exam, actor, accessToken)) throw new Error("成绩统计需要访问密码");
+    return examForViewer(exam, actor, accessToken);
+  },
+
+  async setExamAccess(
+    examId: string,
+    patch: { password?: string | null; exemptTeacherIds?: string[] },
+    actor: Teacher,
+  ): Promise<GradeExam> {
+    const exam = readList<GradeExam>("gradeExams").find((item) => item.id === examId && !item.deletedAt);
+    if (!exam) throw new Error("成绩考试不存在");
+    if (exam.teacherId !== actor.id || exam.schoolId !== actor.schoolId) throw new Error("仅上传者可设置访问控制");
+    const current = examAccess(examId);
+    const next: GradeExamAccessRecord = {
+      id: examId,
+      schoolId: exam.schoolId,
+      examId,
+      passwordSalt: current?.passwordSalt,
+      passwordHash: current?.passwordHash,
+      exemptTeacherIds: current?.exemptTeacherIds || [],
+      oneTimeCodes: current?.oneTimeCodes || [],
+      revision: randomBytes(16).toString("hex"),
+    };
+    if (patch.password !== undefined) {
+      if (patch.password !== null && (patch.password.length < 6 || patch.password.length > 128)) {
+        throw new Error("访问密码长度须为 6 至 128 个字符");
+      }
+      next.passwordSalt = patch.password === null ? undefined : randomBytes(16).toString("hex");
+      next.passwordHash = next.passwordSalt ? credentialHash(patch.password!, next.passwordSalt) : undefined;
+      next.oneTimeCodes = [];
+    }
+    if (patch.exemptTeacherIds !== undefined) {
+      if (!Array.isArray(patch.exemptTeacherIds) || patch.exemptTeacherIds.length > 200 ||
+        !patch.exemptTeacherIds.every((id) => typeof id === "string")) throw new Error("免密用户列表无效");
+      const allowed = new Set(teacherOptions(exam.schoolId).map((item) => item.id));
+      const ids = [...new Set(patch.exemptTeacherIds)];
+      if (ids.some((id) => !allowed.has(id))) throw new Error("免密用户必须属于当前学校");
+      next.exemptTeacherIds = ids.filter((id) => id !== actor.id);
+    }
+    db.update("gradeExamAccess", (items: GradeExamAccessRecord[] = []) => [
+      ...items.filter((item) => item.examId !== examId), next,
+    ]);
+    db.update("gradeExamAccessGrants", (items: GradeExamAccessGrant[] = []) => items.filter((item) => item.examId !== examId));
+    return examForViewer(exam, actor);
+  },
+
+  async createExamOneTimePassword(examId: string, actor: Teacher): Promise<string> {
+    const exam = readList<GradeExam>("gradeExams").find((item) => item.id === examId && !item.deletedAt);
+    if (!exam || exam.teacherId !== actor.id || exam.schoolId !== actor.schoolId) throw new Error("仅上传者可生成一次性密码");
+    const access = examAccess(examId);
+    if (!access?.passwordHash) throw new Error("请先设置常规访问密码");
+    const password = randomBytes(12).toString("base64url");
+    const salt = randomBytes(16).toString("hex");
+    const next = { ...access, oneTimeCodes: [...access.oneTimeCodes, { salt, hash: credentialHash(password, salt) }].slice(-30) };
+    db.update("gradeExamAccess", (items: GradeExamAccessRecord[]) => items.map((item) => item.examId === examId ? next : item));
+    return password;
+  },
+
+  async unlockExam(examId: string, password: string, actor: Teacher): Promise<string> {
+    const exam = readList<GradeExam>("gradeExams").find((item) => item.id === examId && !item.deletedAt);
+    if (!exam || exam.schoolId !== actor.schoolId) throw new Error("成绩考试不存在");
+    const access = examAccess(examId);
+    if (!access?.passwordHash) throw new Error("该成绩统计无需密码");
+    if (typeof password !== "string" || password.length > 128) throw new Error("密码错误");
+    if (!verifyCredential(password, access.passwordSalt, access.passwordHash) && !consumeOneTimeCode(access, password)) {
+      throw new Error("密码错误或一次性密码已失效");
+    }
+    const token = randomBytes(32).toString("base64url");
+    const grant: GradeExamAccessGrant = {
+      id: randomBytes(16).toString("hex"),
+      schoolId: exam.schoolId,
+      examId,
+      teacherId: actor.id,
+      tokenHash: credentialHash(token, `grade-grant:${examId}`),
+      revision: access.revision,
+      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+    };
+    db.update("gradeExamAccessGrants", (items: GradeExamAccessGrant[] = []) => [
+      ...items.filter((item) => Date.parse(item.expiresAt) > Date.now()), grant,
+    ]);
+    return token;
   },
 
   async importExam(
@@ -953,7 +1124,7 @@ export const gradeService = {
       settings,
       actor,
     );
-    return readList<GradeExam>("gradeExams").find((item) => item.id === examId)!;
+    return secureExamMutationResult(readList<GradeExam>("gradeExams").find((item) => item.id === examId)!, actor);
   },
 
   async updateExamMetadata(examId: string, patch: GradeExamMetadataPatch, actor?: Teacher): Promise<GradeExam> {
@@ -973,7 +1144,7 @@ export const gradeService = {
       updatedAt: new Date().toISOString(),
     };
     db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
-    return updated;
+    return secureExamMutationResult(updated, actor);
   },
 
   async adjustExamScore(
@@ -1002,7 +1173,7 @@ export const gradeService = {
     const previousValue = kind === "raw"
       ? record.scores[subject] ?? null
       : record.assignedScores[subject] ?? null;
-    if (previousValue === nextValue) return current;
+    if (previousValue === nextValue) return secureExamMutationResult(current, teacher);
 
     const baseRecords = examBaseRecords(current.records).map((item) => {
       if (item.studentId !== studentId) return item;
@@ -1049,7 +1220,7 @@ export const gradeService = {
       updatedAt: now,
     };
     db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
-    return updated;
+    return secureExamMutationResult(updated, teacher);
   },
 
   async publishExamResults(
@@ -1062,7 +1233,7 @@ export const gradeService = {
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
     if (!current || current.deletedAt) throw new Error("成绩考试不存在");
     if (!canModifyExamRecord(current.teacherId, current.schoolId, teacher)) throw new Error("无权修改其他教师的成绩统计");
-    if (current.publication) return current;
+    if (current.publication) return secureExamMutationResult(current, teacher);
 
     const publishedAt = new Date().toISOString();
     const shareToken = randomBytes(24).toString("base64url");
@@ -1100,7 +1271,7 @@ export const gradeService = {
       updatedAt: publishedAt,
     };
     db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
-    return updated;
+    return secureExamMutationResult(updated, teacher);
   },
 
   async unpublishExamResults(examId: string, actor?: Teacher): Promise<GradeExam> {
@@ -1109,7 +1280,7 @@ export const gradeService = {
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
     if (!current || current.deletedAt) throw new Error("成绩考试不存在");
     if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权修改其他教师的成绩统计");
-    if (!current.publication) return current;
+    if (!current.publication) return secureExamMutationResult(current, actor);
 
     db.update("gradePublications", (items: GradePublicationRecord[] | undefined) => (
       Array.isArray(items) ? items.filter((item) => item.examId !== examId) : []
@@ -1120,10 +1291,10 @@ export const gradeService = {
       updatedAt: new Date().toISOString(),
     };
     db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
-    return updated;
+    return secureExamMutationResult(updated, actor);
   },
 
-  async getPublishedReportByToken(token: string): Promise<GradePublishedReportBundle> {
+  async getPublishedReportByToken(token: string, password?: string): Promise<GradePublishedReportBundle> {
     await delay(80);
     const normalized = token?.trim();
     if (!normalized) throw new Error("成绩分享链接无效");
@@ -1133,6 +1304,11 @@ export const gradeService = {
     const exam = readList<GradeExam>("gradeExams").find((item) => item.id === publication.examId);
     if (!exam?.publication || exam.deletedAt || exam.publication.shareToken !== normalized) {
       throw new Error("成绩发布已撤回或分享链接无效");
+    }
+    const access = examAccess(exam.id);
+    if (access?.passwordHash) {
+      if (!password || (!verifyCredential(password, access.passwordSalt, access.passwordHash)
+        && !consumeOneTimeCode(access, password))) throw new Error("成绩统计需要访问密码或密码错误");
     }
     return structuredClone(publication.report);
   },
@@ -1157,7 +1333,8 @@ export const gradeService = {
     if (!isExamRecordAdmin(actor, schoolId)) throw new Error("仅学校管理员可查看成绩统计回收站");
     return readList<GradeExam>("gradeExams")
       .filter((item) => item.schoolId === schoolId && Boolean(item.deletedAt))
-      .sort((left, right) => String(right.deletedAt).localeCompare(String(left.deletedAt)));
+      .sort((left, right) => String(right.deletedAt).localeCompare(String(left.deletedAt)))
+      .map((item) => examForViewer(item, actor));
   },
 
   async restoreExam(examId: string, actor: Teacher): Promise<GradeExam> {
@@ -1169,6 +1346,6 @@ export const gradeService = {
     const { deletedAt: _deletedAt, ...rest } = current;
     const restored: GradeExam = { ...rest, updatedAt: new Date().toISOString() };
     db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? restored : item));
-    return restored;
+    return secureExamMutationResult(restored, actor);
   },
 };

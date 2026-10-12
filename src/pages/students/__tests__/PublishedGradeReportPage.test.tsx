@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PublishedGradeReportPage from "@/pages/students/PublishedGradeReportPage";
@@ -184,6 +184,19 @@ afterEach(() => {
 });
 
 describe("PublishedGradeReportPage", () => {
+  it("requests a password before showing a protected shared report", async () => {
+    const fetch = vi.spyOn(gradeService, "getPublishedReportByToken")
+      .mockRejectedValueOnce(new Error("成绩统计需要访问密码或密码错误"))
+      .mockResolvedValueOnce(bundle);
+    renderPage();
+    expect(await screen.findByText("请输入成绩统计访问密码")).toBeInTheDocument();
+    expect(screen.queryByText("期末考试班级平均分统计表")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("访问密码"), { target: { value: "one-time-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "验证并查看" }));
+    expect(await screen.findByText("期末考试班级平均分统计表")).toBeInTheDocument();
+    await waitFor(() => expect(fetch).toHaveBeenLastCalledWith("public-token", "one-time-code"));
+  });
+
   it("matches the platform tables for teachers, standards, zero counts, and summary rows", async () => {
     vi.spyOn(gradeService, "getPublishedReportByToken").mockResolvedValue(bundle);
     renderPage();

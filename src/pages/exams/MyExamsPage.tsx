@@ -33,7 +33,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Select } from "@/components/ui/Input";
+import { Input, Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import { isSchoolExamAdmin } from "@/lib/exam-permissions";
@@ -194,6 +194,8 @@ function GradePreprocessing({
   const [exams, setExams] = useState<GradeExam[]>([]);
   const [recycleBin, setRecycleBin] = useState<GradeExam[]>([]);
   const [selectedExamId, setSelectedExamId] = useState("");
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
   const [subjects, setSubjects] = useState<string[]>([]);
   const [draft, setDraft] = useState<GradeExamSettings | null>(null);
   const [copySource, setCopySource] = useState("");
@@ -292,7 +294,7 @@ function GradePreprocessing({
     if (!selectedExam) return [];
     const selectedTimestamp = gradeExamTimestamp(selectedExam);
     return exams
-      .filter((item) => item.id !== selectedExam.id && gradeExamTimestamp(item) < selectedTimestamp)
+      .filter((item) => item.id !== selectedExam.id && !item.accessControl?.locked && gradeExamTimestamp(item) < selectedTimestamp)
       .sort((left, right) => gradeExamTimestamp(right) - gradeExamTimestamp(left));
   }, [exams, selectedExam]);
   const classAverageTemplate = useMemo(
@@ -313,6 +315,34 @@ function GradePreprocessing({
         : { ...current, comparisonExamIds };
     });
   }, [previousExams]);
+
+  useEffect(() => {
+    if (!selectedExam?.accessControl?.locked) return;
+    const token = sessionStorage.getItem(`grade-access:${teacherId}:${selectedExam.id}`);
+    if (!token) return;
+    let active = true;
+    gradeService.getExam(selectedExam.id, token).then((exam) => {
+      if (active && exam) setExams((items) => items.map((item) => item.id === exam.id ? exam : item));
+    }).catch(() => sessionStorage.removeItem(`grade-access:${teacherId}:${selectedExam.id}`));
+    return () => { active = false; };
+  }, [selectedExam?.id, selectedExam?.accessControl?.locked, teacherId]);
+
+  const unlockSelectedExam = async () => {
+    if (!selectedExam || !unlockPassword.trim()) return;
+    setUnlocking(true);
+    try {
+      const token = await gradeService.unlockExam(selectedExam.id, unlockPassword);
+      const full = await gradeService.getExam(selectedExam.id, token);
+      if (!full) throw new Error("成绩考试不存在");
+      sessionStorage.setItem(`grade-access:${teacherId}:${selectedExam.id}`, token);
+      setExams((items) => items.map((item) => item.id === full.id ? full : item));
+      setUnlockPassword("");
+    } catch (error) {
+      toast.error("验证访问密码失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setUnlocking(false);
+    }
+  };
 
   const handleImported = (exam: GradeExam) => {
     setImportOpen(false);
@@ -629,6 +659,20 @@ function GradePreprocessing({
               </div>
             </div>
           </Card>
+          {selectedExam?.accessControl?.locked ? (
+            <Card className="p-5 space-y-4">
+              <h2 className="font-medium text-ink-900">成绩统计已设置访问密码</h2>
+              <p className="text-sm text-ink-500">请输入上传者设置的访问密码或一次性密码，验证后才能查看成绩。</p>
+              <div className="flex items-end gap-3">
+                <div className="max-w-sm flex-1"><Input label="访问密码" type="password" value={unlockPassword}
+                  onChange={(event) => setUnlockPassword(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") void unlockSelectedExam(); }} /></div>
+                <Button variant="gold" disabled={!unlockPassword.trim()} loading={unlocking}
+                  onClick={() => void unlockSelectedExam()}>解锁成绩统计</Button>
+              </div>
+            </Card>
+          ) : (
+            <>
           {selectedExam && (
             <GradeExamAdjustmentPanel
               exam={selectedExam}
@@ -639,6 +683,8 @@ function GradePreprocessing({
                 ? printTablesOneToFive
                 : undefined}
               readOnly={readOnly}
+              canManageAccess={selectedExam.teacherId === teacherId}
+              teachers={context?.teachers || []}
             />
           )}
           <div className="grade-summary-print-root space-y-4">
@@ -699,6 +745,8 @@ function GradePreprocessing({
               options={classStatisticsOptions}
               onOptionsChange={setClassStatisticsOptions}
             />
+          )}
+            </>
           )}
         </>
       )}
