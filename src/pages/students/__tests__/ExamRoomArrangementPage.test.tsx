@@ -331,7 +331,7 @@ describe("ExamRoomArrangementPage", () => {
       renderPage();
       await screen.findByText("考试组合使用考场");
       expect(screen.queryByRole("dialog", { name: "考试组合人数与位置" })).not.toBeInTheDocument();
-      expect(observed).not.toBeNull();
+      await waitFor(() => expect(observed).not.toBeNull());
 
       callback?.([
         { isIntersecting: true, target: observed } as IntersectionObserverEntry,
