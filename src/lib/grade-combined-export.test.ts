@@ -215,6 +215,32 @@ describe("combined grade exports", () => {
     expect(tableFive.data[2].every((cell) => cell?.align === "center")).toBe(true);
   });
 
+  it("exports separate ranking group standards alongside the summary counts", async () => {
+    const separateSettings = {
+      ...settings,
+      classSubjects: settings.classSubjects.map((item) => item.classId === "class-1"
+        ? { ...item, separateRankSubjects: ["化学"] }
+        : item),
+    };
+    const report = buildGradeTotalScoreSegmentReport(exam, {
+      ...totalScoreSegmentTemplate,
+      totalScoreSegmentOptions: {
+        ...totalScoreSegmentTemplate.totalScoreSegmentOptions,
+        highScore1Threshold: 190,
+        separateRankThresholds: { '["化学"]': { highScore1: 215 } },
+      },
+    }, context, classAverageTemplate, separateSettings);
+    await exportGradeTotalScoreSegmentReport(report);
+    const rows = writeXlsxFile.mock.calls[0][0] as Array<Array<null | { value?: string | number; columnSpan?: number }>>;
+    const groupRow = rows.find((row) => String(row[0]?.value).includes("单独排名（化学）"))!;
+    expect(groupRow[0]?.value).toContain("高分1 215分");
+    expect(groupRow[0]?.columnSpan).toBe(groupRow.length);
+    expect(groupRow.slice(1).every((cell) => cell === null)).toBe(true);
+    const countRow = rows.find((row) => row[0]?.value === "高分1达线数")!;
+    expect(countRow[1]?.value).toBeUndefined();
+    expect(countRow.slice(1).some((cell) => cell?.value === 1)).toBe(true);
+  });
+
   it("names standalone exports from the exam name plus table type", async () => {
     const classAverageReport = buildGradeClassAverageReport(exam, classAverageTemplate, context, settings);
     const totalScoreSegmentReport = buildGradeTotalScoreSegmentReport(

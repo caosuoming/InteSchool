@@ -741,6 +741,17 @@ function totalScoreSegmentWorkbookSheet(
     }),
     ...Array.from({ length: report.columns.length }, () => null),
   ]);
+  report.separateStandards.forEach((group) => {
+    const display = (value: number | null) => value === null ? "沿用文理科标准" : `${value}分`;
+    const values = group.thresholds;
+    rows.push([
+      combinedWorkbookCell(
+        `${group.label}（${group.classLabels.join("、")}）：高分1 ${display(values.highScore1)} | 高分2 ${display(values.highScore2)} | 一本 ${display(values.firstTier)} | 二本 ${display(values.undergraduate)}`,
+        { fontWeight: "bold", backgroundColor: "#FFFBEB", columnSpan: report.columns.length + 1, height: 34, wrap: true },
+      ),
+      ...Array.from({ length: report.columns.length }, () => null),
+    ]);
+  });
   report.summaryRows.forEach((row) => {
     rows.push([
       combinedWorkbookCell(row.label, { fontWeight: "bold" }),
@@ -956,6 +967,7 @@ export async function exportGradeTablesOneToFive(params: {
     totalScoreSegmentTemplate,
     context,
     classAverageTemplate,
+    settings,
   );
   const subjectScoreSegmentReport = buildGradeSubjectScoreSegmentReport(
     exam,

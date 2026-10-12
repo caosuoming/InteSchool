@@ -1,6 +1,7 @@
 import type {
   GradeAcademicTrack,
   GradeExam,
+  GradeExamSettings,
   GradeImportContext,
   GradeScoreRecord,
   GradeStatisticsTemplate,
@@ -8,6 +9,7 @@ import type {
 } from "../types/index.js";
 import { resolveClassAverageOptions } from "./grade-class-average.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
+import { totalRankingGroupKey } from "./grade-statistics.js";
 import { ELECTIVE_GRADE_SUBJECTS, inferStatisticSubjectsFromSelections } from "./grade-statistics.js";
 
 export type GradeAcademicTrackClassification = GradeAcademicTrack | "unclassified";
@@ -50,6 +52,13 @@ export interface GradeTotalScoreSegmentReport {
   segmentMin: number;
   segmentSize: number;
   trackStandards: Record<GradeAcademicTrack, Record<GradeTotalScoreTargetKey, number | null>>;
+  separateStandards: Array<{
+    key: string;
+    label: string;
+    classIds: string[];
+    classLabels: string[];
+    thresholds: Record<GradeTotalScoreTargetKey, number | null>;
+  }>;
   classes: GradeTotalScoreSegmentClass[];
   columns: GradeTotalScoreSegmentColumn[];
   rows: GradeTotalScoreSegmentRow[];
@@ -230,6 +239,7 @@ export function buildGradeTotalScoreSegmentReport(
   template: GradeStatisticsTemplate,
   context: GradeImportContext,
   classAverageTemplate?: GradeStatisticsTemplate,
+  rankSettings: GradeExamSettings = exam.settings,
 ): GradeTotalScoreSegmentReport {
   const { segmentMax, segmentMin, segmentSize } = resolveTotalScoreSegmentRange(template);
   const classOptions = resolveClassAverageOptions(exam, context, classAverageTemplate?.classAverageOptions);
@@ -311,6 +321,22 @@ export function buildGradeTotalScoreSegmentReport(
   }
 
   const segmentOptions = template.totalScoreSegmentOptions || {};
+  const separateGroups = new Map<string, GradeTotalScoreSegmentClass[]>();
+  classes.forEach((classItem) => {
+    const groupKey = totalRankingGroupKey(rankSettings, classItem.classId);
+    if (groupKey === "[]") return;
+    separateGroups.set(groupKey, [...(separateGroups.get(groupKey) || []), classItem]);
+  });
+  const separateStandards = [...separateGroups].map(([key, groupClasses]) => ({
+    key,
+    label: `单独排名（${(JSON.parse(key) as string[]).join("、")}）`,
+    classIds: groupClasses.map((classItem) => classItem.classId),
+    classLabels: groupClasses.map((classItem) => classItem.classLabel),
+    thresholds: Object.fromEntries(TARGET_KEYS.map((targetKey) => [
+      targetKey,
+      segmentOptions.separateRankThresholds?.[key]?.[targetKey] ?? null,
+    ])) as Record<GradeTotalScoreTargetKey, number | null>,
+  }));
   const trackStandards = Object.fromEntries((["science", "arts"] as const).map((track) => [
     track,
     Object.fromEntries(TARGET_KEYS.map((key) => [
@@ -325,7 +351,9 @@ export function buildGradeTotalScoreSegmentReport(
   const lineCounts = Object.fromEntries(TARGET_KEYS.map((key) => [
     key,
     Object.fromEntries(classes.map((classItem) => {
-      const threshold = thresholdForTrack(template, classItem.track, key);
+      const groupKey = totalRankingGroupKey(rankSettings, classItem.classId);
+      const threshold = (groupKey === "[]" ? undefined : segmentOptions.separateRankThresholds?.[groupKey]?.[key])
+        ?? thresholdForTrack(template, classItem.track, key);
       return [
         classItem.classId,
         typeof threshold === "number"
@@ -422,6 +450,7 @@ export function buildGradeTotalScoreSegmentReport(
     segmentMin,
     segmentSize,
     trackStandards,
+    separateStandards,
     classes,
     columns,
     rows,
