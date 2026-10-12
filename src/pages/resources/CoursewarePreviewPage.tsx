@@ -165,6 +165,11 @@ export default function CoursewarePreviewPage() {
               <ExternalLink className="w-4 h-4" />在线编辑
             </Button>
           )}
+          {courseware.type === "ggb" && (
+            <Button variant="outline" onClick={() => navigate("/geogebra/" + courseware.id + "/edit")}>
+              <Pencil className="w-4 h-4" />编辑 GGB
+            </Button>
+          )}
           {courseware.type === "ppt" && (
             <Button variant="outline" onClick={() => void openCoursewareInWps(courseware)}>
               <MonitorPlay className="w-4 h-4" />本机 WPS 打开

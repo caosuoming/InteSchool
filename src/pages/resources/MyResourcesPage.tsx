@@ -3350,6 +3350,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               )}
               {activeTab === "courseware" && (
                 <>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/geogebra/new?mode=classic")}>
+                    <Plus className="w-3.5 h-3.5" />制作 GGB
+                  </Button>
                   <Button variant="gold" size="sm" onClick={handleCreateBlankCourseware}>
                     <Plus className="w-3.5 h-3.5" />
                     做课件
@@ -3361,10 +3364,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 </>
               )}
               {activeTab === "material" && (
-                <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=material")}>
-                  <Upload className="w-3.5 h-3.5" />
-                  上传素材
-                </Button>
+                <>
+                  <Button variant="gold" size="sm" onClick={() => openPage("/geogebra/new?mode=geometry")}>
+                    <Plus className="w-3.5 h-3.5" />制作几何画板
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/geogebra/new?mode=classic")}>
+                    <Plus className="w-3.5 h-3.5" />制作 GGB
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => openPage("/upload?type=material")}>
+                    <Upload className="w-3.5 h-3.5" />上传素材
+                  </Button>
+                </>
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap w-full">
