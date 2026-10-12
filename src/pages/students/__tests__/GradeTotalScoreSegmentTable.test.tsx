@@ -232,4 +232,40 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(screen.getByLabelText("文科高分1达线统计")).toHaveTextContent("1人（50.0%）");
     expect(screen.getByLabelText("文科一本达线统计")).toHaveTextContent("2人（100.0%）");
   });
+  it("shows standards as a proportion of students with complete totals", async () => {
+    const incompleteExam: GradeExam = {
+      ...exam,
+      subjects: ["数学", "语文"],
+      records: [
+        { ...exam.records[0], scores: { 数学: 90, 语文: 80 }, assignedScores: { 数学: 90, 语文: 80 } },
+        { ...exam.records[0], id: "record-2", studentId: "student-2", studentNo: "002",
+          scores: { 数学: 90, 语文: null }, assignedScores: { 数学: 90, 语文: null } },
+      ],
+    };
+    const incompleteTemplate = {
+      ...template,
+      subjects: ["数学", "语文"],
+      totalScoreSegmentOptions: {
+        ...template.totalScoreSegmentOptions,
+        highScore1Threshold: 90,
+        trackThresholds: { science: { highScore1: 90 } },
+      },
+    };
+    render(
+      <GradeTotalScoreSegmentTable
+        exam={incompleteExam}
+        settings={{ ...exam.settings, templates: [classAverageTemplate, incompleteTemplate] }}
+        template={incompleteTemplate}
+        classAverageTemplate={classAverageTemplate}
+        context={context}
+        onChange={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "调整分数段" }));
+    expect(screen.getByLabelText("理科高分1达线统计")).toHaveTextContent("1人（100.0%）");
+    expect(within(screen.getByRole("row", { name: /考生人数/ })).getAllByRole("cell", { name: "2" })).toHaveLength(3);
+    expect(within(screen.getByRole("row", { name: /一本率/ })).getAllByRole("cell", { name: "100.0%" })).toHaveLength(3);
+  });
+
 });

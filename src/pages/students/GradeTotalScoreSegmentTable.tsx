@@ -77,7 +77,7 @@ export function GradeTotalScoreSegmentTable({
     const column = report.columns.find((item) => item.kind === "subtotal" && item.track === track);
     if (!column) return "—人（—）";
     const count = report.summaryRows.find((row) => row.key === `${targetKey}Count`)?.values[column.key];
-    const candidates = report.summaryRows.find((row) => row.key === "candidateCount")?.values[column.key];
+    const candidates = report.validTotalCounts[column.key];
     if (typeof count !== "number") return "—人（—）";
     return `${count}人（${typeof candidates === "number" && candidates > 0
       ? `${((count / candidates) * 100).toFixed(1)}%`
@@ -410,7 +410,7 @@ export function GradeTotalScoreSegmentTable({
             </tbody>
           </table>
           <div className="mt-2 text-xs text-ink-400">
-            本科人数和本科率分别按理科、文科的“二本标准”统计；目标人数修改后自动保存到当前届年级。
+            本科人数和本科率分别按理科、文科的“二本标准”统计；达线比例以无缺考科目、有有效总分的学生为分母；目标人数修改后自动保存到当前届年级。
           </div>
         </div>
       )}

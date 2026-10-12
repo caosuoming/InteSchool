@@ -227,4 +227,100 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       __total__: 1,
     });
   });
+  it("uses only complete totals for threshold counts and rates, per class and subtotal", () => {
+    const reportExam: GradeExam = {
+      ...exam,
+      subjects: ["数学", "语文"],
+      settings: { ...exam.settings, classSubjects: [
+        { classId: "class-1", examSubjects: ["数学"], statisticSubjects: ["数学"] },
+        { classId: "class-2", examSubjects: ["数学", "语文"], statisticSubjects: ["数学", "语文"] },
+      ] },
+      records: exam.records.map((record, index) => ({
+        ...record,
+        scores: { 数学: record.scores.数学, 语文: index % 2 === 0 ? 100 : null },
+        assignedScores: { 数学: record.assignedScores.数学, 语文: index % 2 === 0 ? 100 : null },
+      })),
+    };
+    const report = buildGradeTotalScoreSegmentReport(
+      reportExam,
+      {
+        ...template,
+        subjects: ["数学", "语文"],
+        segmentMax: 100,
+        segmentMin: 80,
+        totalScoreSegmentOptions: { highScore1Threshold: 80, firstTierThreshold: 80, undergraduateThreshold: 80 },
+      },
+      { ...context, classProfiles: {
+        "class-1": { subjectSelections: ["物化生"], scoreSubjects: ["数学", "语文"], hasImportedScores: true },
+        "class-2": { subjectSelections: ["史政地"], scoreSubjects: ["数学", "语文"], hasImportedScores: true },
+      } },
+      classAverageTemplate,
+    );
+    const byKey = Object.fromEntries(report.summaryRows.map((row) => [row.key, row]));
+    expect(byKey.candidateCount.values).toEqual({
+      "class-1": 2, "class-2": 2, __science_subtotal__: 2, __arts_subtotal__: 2, __total__: 4,
+    });
+    expect(report.validTotalCounts).toEqual({
+      "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
+    });
+    expect(report.rows[0].counts).toEqual({
+      "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
+    });
+    expect(byKey.highScore1Count.values).toEqual({
+      "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
+    });
+    expect(byKey.firstTierRate.values).toEqual({
+      "class-1": "100.0%", "class-2": "100.0%",
+      __science_subtotal__: "100.0%", __arts_subtotal__: "100.0%", __total__: "100.0%",
+    });
+  });
+
+  it("uses the student's chosen electives and excludes assigned-only or zero-subject scores", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "历史", "政治", "地理"];
+    const makeRecord = (id: string, selection: string, present: string[]) => {
+      const scores = Object.fromEntries(subjects.map((subject) => [subject, present.includes(subject) ? 90 : null]));
+      return {
+        ...exam.records[0],
+        id,
+        studentId: id,
+        subjectSelection: selection,
+        scores,
+        assignedScores: { ...scores },
+      };
+    };
+    const full = makeRecord("complete", "物化生", ["语文", "数学", "英语", "物理", "化学", "生物"]);
+    const absent = makeRecord("absent", "史政地", ["语文", "数学", "英语", "历史", "政治"]);
+    absent.assignedScores.地理 = 80;
+    const reportExam = {
+      ...exam,
+      subjects,
+      records: [full, absent],
+      settings: { ...exam.settings, classSubjects: [{
+        classId: "class-1", examSubjects: subjects, statisticSubjects: subjects,
+      }] },
+    };
+    const report = buildGradeTotalScoreSegmentReport(
+      reportExam,
+      { ...template, subjects, totalScoreSegmentOptions: { firstTierThreshold: 500 } },
+      context,
+      classAverageTemplate,
+    );
+    expect(report.validTotalCounts["class-1"]).toBe(1);
+    expect(report.validTotalCounts.__total__).toBe(1);
+    expect(report.summaryRows.find((row) => row.key === "firstTierRate")?.values.__total__).toBe("100.0%");
+  });
+
+  it("does not display a rate when every student has an incomplete total", () => {
+    const report = buildGradeTotalScoreSegmentReport(
+      { ...exam, records: exam.records.map((record) => ({
+        ...record, scores: { 数学: null }, assignedScores: { 数学: null },
+      })) },
+      { ...template, totalScoreSegmentOptions: { firstTierThreshold: 50 } },
+      context,
+      classAverageTemplate,
+    );
+    expect(report.validTotalCounts.__total__).toBe(0);
+    expect(report.summaryRows.find((row) => row.key === "firstTierRate")?.values.__total__).toBeNull();
+  });
+
 });
