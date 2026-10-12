@@ -48,6 +48,7 @@ const PrepWorkspacePage = lazy(() => import("@/pages/prep/PrepWorkspacePage"));
 const PrepTaskDetailPage = lazy(() => import("@/pages/prep/PrepTaskDetailPage"));
 const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
 const MyClassroomsPage = lazy(() => import("@/pages/lessons/MyClassroomsPage"));
+const HomeworkExamManagementPage = lazy(() => import("@/pages/homework-exams/HomeworkExamManagementPage"));
 const LessonEditorPage = lazy(() => import("@/pages/lessons/LessonEditorPage"));
 const ClassroomPage = lazy(() => import("@/pages/lessons/ClassroomPage"));
 const MyStudentsPage = lazy(() => import("@/pages/students/MyStudentsPage"));
@@ -117,6 +118,9 @@ export default function App() {
             <Route path="/my-lessons" element={<MyLessonsPage />} />
             <Route path="/my-lessons/:id/edit" element={<LessonEditorPage />} />
             <Route path="/my-classrooms" element={<MyClassroomsPage />} />
+            <Route path="/homework-exams" element={<Navigate to="/homework-exams/homework" replace />} />
+            <Route path="/homework-exams/homework" element={<HomeworkExamManagementPage section="homework" />} />
+            <Route path="/homework-exams/exams" element={<HomeworkExamManagementPage section="exams" />} />
             {/* 我的学生 */}
             <Route path="/my-students" element={<MyStudentsPage />} />
             <Route path="/my-students/interaction" element={<MyStudentsPage />} />

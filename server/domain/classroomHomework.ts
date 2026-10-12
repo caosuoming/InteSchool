@@ -8,6 +8,7 @@ import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { db } from "../runtime-db.js";
 
 export interface ClassroomHomeworkInput {
+  title?: string;
   content: string;
   attachments?: ClassroomHomeworkAttachment[];
   classIds: string[];
@@ -79,6 +80,9 @@ function matchesFilter(item: ClassroomHomework, filter: ClassroomHomeworkFilter)
 }
 
 function validateInput(input: ClassroomHomeworkInput): ClassroomHomeworkAttachment[] {
+  if (input.title !== undefined && (typeof input.title !== "string" || input.title.trim().length > 120)) {
+    throw new Error("作业名称不能超过 120 字");
+  }
   const attachments = normalizeAttachments(input.attachments);
   if (!input.content.trim() && attachments.length === 0) throw new Error("请输入作业内容或添加附件");
   if (input.content.trim().length > 4000) throw new Error("作业内容不能超过 4000 字");
@@ -145,6 +149,7 @@ export const classroomHomeworkService = {
       teacherName: teacher.name,
       schoolId,
       subject: affiliation?.subject || teacher.subject || "其他学科",
+      title: input.title?.trim() || undefined,
       content: input.content.trim(),
       attachments,
       classIds: uniqueClassIds,
@@ -202,6 +207,7 @@ export const classroomHomeworkService = {
     const updated: ClassroomHomework = {
       ...existing,
       subject: affiliation?.subject || teacher.subject || "其他学科",
+      title: input.title?.trim() || undefined,
       content: input.content.trim(),
       attachments,
       classIds: uniqueClassIds,

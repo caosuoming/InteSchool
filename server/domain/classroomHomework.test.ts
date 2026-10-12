@@ -93,6 +93,7 @@ describe("classroomHomeworkService", () => {
 
     await runWithState(state, async () => {
       const created = await classroomHomeworkService.createHomework("teacher-1", "school-1", {
+        title: "  章节复习作业  ",
         content: "  完成课本第 42 页第 1—6 题  ",
         classIds: ["class-1", "class-1"],
         assignedDate: "2026-08-02",
@@ -102,6 +103,7 @@ describe("classroomHomeworkService", () => {
       expect(created).toMatchObject({
         teacherName: "王老师",
         subject: "数学",
+        title: "章节复习作业",
         content: "完成课本第 42 页第 1—6 题",
         classIds: ["class-1"],
       });
@@ -245,6 +247,19 @@ describe("classroomHomeworkService", () => {
       await classroomHomeworkService.deleteHomework("homework-1");
       expect(state.classroomHomeworks).toEqual([]);
       await expect(classroomHomeworkService.deleteHomework("missing")).rejects.toThrow("作业不存在");
+    });
+  });
+
+  it("rejects homework names longer than 120 characters", async () => {
+    const state = createState();
+    await runWithState(state, async () => {
+      await expect(classroomHomeworkService.createHomework("teacher-1", "school-1", {
+        title: "作".repeat(121),
+        content: "完成课后作业",
+        classIds: ["class-1"],
+        assignedDate: "2026-08-02",
+        publishAt: "2026-08-02T08:00:00.000Z",
+      })).rejects.toThrow("作业名称不能超过 120 字");
     });
   });
 

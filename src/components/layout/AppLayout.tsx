@@ -6,7 +6,7 @@ import {
   ChevronLeft, School, User, Settings, Users,
   FolderOpen, Download,
   ChevronDown, ChevronRight, Building2, Cloud,
-  BookOpen, Check, Crown, ClipboardCheck, ClipboardList, MapPinned, FileSpreadsheet, CalendarRange,
+  BookOpen, BookCheck, Check, Crown, ClipboardCheck, ClipboardList, MapPinned, FileSpreadsheet, CalendarRange,
   CircleHelp, Monitor,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -42,6 +42,15 @@ const allNavItems: NavItem[] = [
     path: "/my-lessons",
     label: "我的教学",
     icon: BookOpen,
+  },
+  {
+    path: "/homework-exams",
+    label: "作业考试",
+    icon: BookCheck,
+    children: [
+      { path: "/homework-exams/homework", label: "作业管理", icon: BookCheck },
+      { path: "/homework-exams/exams", label: "考试管理", icon: ClipboardList },
+    ],
   },
   { path: "/my-students", label: "我的学生", icon: Users },
   { path: "/my-classrooms", label: "我的教室", icon: Monitor },
@@ -150,8 +159,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const toggleMenu = (path: string) => {
     setExpandedMenus((prev) => {
       const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
+      const expanded = prev.has(path) || (isActive(path) && !prev.has(`closed:${path}`));
+      if (expanded) {
+        next.delete(path);
+        next.add(`closed:${path}`);
+      } else {
+        next.add(path);
+        next.delete(`closed:${path}`);
+      }
       return next;
     });
   };
@@ -288,7 +303,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             const Icon = item.icon;
             const active = isActive(item.path);
             const hasChildren = !!item.children;
-            const expanded = expandedMenus.has(item.path);
+            const expanded = expandedMenus.has(item.path) || (active && !expandedMenus.has(`closed:${item.path}`));
 
             if (hasChildren && !sidebarCollapsed) {
               return (

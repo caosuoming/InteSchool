@@ -2974,6 +2974,8 @@ export interface ClassroomHomeworkAttachment {
 /** 教师发布到“我要上课”教室屏的作业。 */
 export interface ClassroomHomework {
   id: string;
+  /** 可选作业名称；历史记录以内容首行展示。 */
+  title?: string;
   teacherId: string;
   teacherName: string;
   schoolId: string;
