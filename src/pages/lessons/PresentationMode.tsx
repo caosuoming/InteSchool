@@ -76,6 +76,18 @@ type Tool = "none" | "select" | "eraser" | DrawingToolId;
 type Side = "left" | "right";
 type SideTab = "display" | "ask" | "related";
 type QuestionRevealSection = "answer" | "analysis";
+type StudentMastery = "correct" | "partial" | "incorrect";
+
+interface PickedStudent {
+  id: string;
+  mastery: StudentMastery | null;
+}
+
+const STUDENT_MASTERY_OPTIONS: { value: StudentMastery; label: string }[] = [
+  { value: "correct", label: "全对" },
+  { value: "partial", label: "半对" },
+  { value: "incorrect", label: "做错" },
+];
 
 interface DrawingPreset {
   id: DrawingToolId;
@@ -1068,6 +1080,7 @@ export function PresentationMode({
     phase: "rolling" | "winner";
     name: string;
   } | null>(null);
+  const [pickedStudentsBySlide, setPickedStudentsBySlide] = useState<Record<string, PickedStudent[]>>({});
   const lotteryIntervalRef = useRef<number | null>(null);
   const lotteryFinishTimeoutRef = useRef<number | null>(null);
   const lotteryDismissTimeoutRef = useRef<number | null>(null);
@@ -1130,6 +1143,11 @@ export function PresentationMode({
   const presetAskableStudentIds = currentSlide?.askableStudentIds || [];
   const eligibleStudents = eligibleLotteryStudents(students, ignoredStudentIds);
   const askableStudents = eligibleLotteryStudents(students, ignoredStudentIds, presetAskableStudentIds);
+  const pickedStudents = pickedStudentsBySlide[currentSlideStateKey] || [];
+  const pickedById = new Map(pickedStudents.map((student, index) => [student.id, { ...student, index }]));
+  const orderedAskableStudents = [...askableStudents].sort((a, b) => (
+    (pickedById.get(a.id)?.index ?? pickedStudents.length) - (pickedById.get(b.id)?.index ?? pickedStudents.length)
+  ));
 
   const clearStudentLotteryTimers = useCallback(() => {
     if (lotteryIntervalRef.current !== null) {
@@ -1169,12 +1187,31 @@ export function PresentationMode({
         return;
       }
       setStudentLottery({ phase: "winner", name: winner.name });
+      setPickedStudentsBySlide((current) => {
+        const previous = current[currentSlideStateKey] || [];
+        return {
+          ...current,
+          [currentSlideStateKey]: [
+            { id: winner.id, mastery: previous.find((student) => student.id === winner.id)?.mastery ?? null },
+            ...previous.filter((student) => student.id !== winner.id),
+          ],
+        };
+      });
       lotteryDismissTimeoutRef.current = window.setTimeout(() => {
         setStudentLottery(null);
         lotteryDismissTimeoutRef.current = null;
       }, 2200);
     }, studentLotteryDurationMs());
-  }, [askableStudents, clearStudentLotteryTimers, eligibleStudents, followedStudentIds]);
+  }, [askableStudents, clearStudentLotteryTimers, currentSlideStateKey, eligibleStudents, followedStudentIds]);
+
+  const markStudentMastery = (studentId: string, mastery: StudentMastery) => {
+    setPickedStudentsBySlide((current) => ({
+      ...current,
+      [currentSlideStateKey]: (current[currentSlideStateKey] || []).map((student) => (
+        student.id === studentId ? { ...student, mastery } : student
+      )),
+    }));
+  };
   const relatedQuestions = (currentSlide?.relatedQuestionIds || [])
     .map((id) => relatedQuestionsById[id])
     .filter((question): question is Question => Boolean(question));
@@ -2174,43 +2211,71 @@ export function PresentationMode({
     if (tab === "ask") {
       return (
         <div>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-ink-900">提问学生</h2>
-              <p className="mt-1 text-xs text-ink-400">不关注学生不参与；关注学生抽中权重为普通学生的 2 倍。</p>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-ink-900">提问学生</h2>
             <button
               type="button"
               onClick={startStudentLottery}
               disabled={askableStudents.length === 0 || studentLottery?.phase === "rolling"}
               className="inline-flex h-8 flex-shrink-0 items-center gap-1 rounded-lg border border-gold-300 bg-gold-50 px-2.5 text-xs font-medium text-gold-800 transition-colors hover:bg-gold-100 disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="摇号"
+              aria-label="摇人"
               title={askableStudents.length === 0
-                ? "当前没有可参与摇号的学生"
+                ? "当前没有可参与摇人的学生"
                 : presetAskableStudentIds.length === 0
                   ? "随机滚动 3–5 秒后，从当前班级可参与学生中抽取一人"
                   : "随机滚动 3–5 秒后，从当前页面可参与候选学生中抽取一人"}
             >
               <Dices className="h-3.5 w-3.5" />
-              摇号
+              摇人
             </button>
           </div>
           <div className="mt-3 max-h-80 space-y-1.5 overflow-y-auto">
             {askableStudents.length === 0 ? (
-              <div className="rounded-lg bg-mist px-3 py-5 text-center text-xs text-ink-400">暂无可参与摇号的学生</div>
-            ) : askableStudents.map((student) => (
-              <button
-                key={student.id}
-                type="button"
-                onClick={() => toastRandom(student.name)}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-ink-800 hover:bg-gold-50"
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gold-100 text-xs font-semibold text-gold-700">
-                  {student.name.slice(0, 1)}
-                </span>
-                {student.name}
-              </button>
-            ))}
+              <div className="rounded-lg bg-mist px-3 py-5 text-center text-xs text-ink-400">暂无可参与摇人的学生</div>
+            ) : orderedAskableStudents.map((student) => {
+              const picked = pickedById.get(student.id);
+              return (
+                <div
+                  key={student.id}
+                  data-testid={`lottery-student-${student.id}`}
+                  className={cn("rounded-lg", picked && "border border-gold-200 bg-gold-50/60")}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toastRandom(student.name)}
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-ink-800 hover:bg-gold-50"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold-100 text-xs font-semibold text-gold-700">
+                        {student.name.slice(0, 1)}
+                      </span>
+                      <span className="truncate">{student.name}</span>
+                    </button>
+                    {picked && <span className="shrink-0 pr-2 text-[10px] text-gold-800">已摇到</span>}
+                  </div>
+                  {picked && (
+                    <div role="group" aria-label={`${student.name}掌握情况`} className="flex gap-1 px-2 pb-2">
+                      {STUDENT_MASTERY_OPTIONS.map(({ value, label }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={picked.mastery === value}
+                          onClick={() => markStudentMastery(student.id, value)}
+                          className={cn(
+                            "flex-1 rounded-md border px-1 py-1 text-xs transition-colors",
+                            picked.mastery === value
+                              ? "border-gold-400 bg-gold-400 font-semibold text-ink-900"
+                              : "border-ink-100 bg-paper text-ink-600 hover:border-gold-300",
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       );
@@ -2647,7 +2712,7 @@ export function PresentationMode({
                 : "border-white/70 bg-paper/95 text-ink-900",
             )}>
               <div className="text-xs font-medium tracking-[0.2em] opacity-60">
-                {studentLottery.phase === "winner" ? "抽中学生" : "正在摇号"}
+                {studentLottery.phase === "winner" ? "抽中学生" : "正在摇人"}
               </div>
               <div className="mt-2 font-serif text-4xl font-bold tracking-wide">{studentLottery.name}</div>
             </div>
