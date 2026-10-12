@@ -170,7 +170,7 @@ function groupQuestions(questions: AnswerSheetQuestion[]): QuestionGroup[] {
 function StudentNumberGrid({ digits }: { digits: number }) {
   return (
     <div
-      className="min-w-0 space-y-0.5 overflow-hidden bg-white"
+      className="w-[46mm] shrink-0 space-y-0.5 bg-white"
       aria-label={`${digits}位学号涂填区`}
       data-testid="student-number-grid"
     >
@@ -179,7 +179,7 @@ function StudentNumberGrid({ digits }: { digits: number }) {
           {Array.from({ length: 10 }, (_, digit) => (
             <span
               key={digit}
-              className="flex h-[15px] min-w-[16px] flex-1 items-center justify-center border border-ink-700 font-mono text-[8px] leading-none text-ink-700"
+              className="flex h-[4mm] w-[4mm] shrink-0 items-center justify-center border border-ink-700 font-mono text-[8px] leading-none text-ink-700"
             >
               [{digit}]
             </span>
@@ -608,6 +608,7 @@ export function AnswerSheetComposer({
   const [settings, setSettings] = useState<AnswerSheetSettings>(() => buildInitialSettings(initialSettings));
   const [viewMode, setViewMode] = useState<"edit" | "preview">(initialViewMode);
   const [pageStarts, setPageStarts] = useState<number[]>([0]);
+  const [headerHeightPx, setHeaderHeightPx] = useState(0);
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
   const headerRef = useRef<HTMLElement>(null);
 
@@ -631,6 +632,7 @@ export function AnswerSheetComposer({
   const columnWidthMm = (paperSize.physicalWidthMm - PAGE_PADDING_MM * 2 - COLUMN_GAP_MM * (paperColumns - 1)) / paperColumns;
   const pageContentHeightPx = (paperSize.heightMm - PAGE_PADDING_MM * 2) * MM_TO_CSS_PX;
   const isPreview = viewMode === "preview";
+  const wideEditor = !isPreview && settings.paperSize !== "A4";
 
   const updateSettings = (patch: Partial<AnswerSheetSettings>) => {
     setSettings((current) => {
@@ -742,7 +744,9 @@ export function AnswerSheetComposer({
     const nextStarts = [0];
     let usedHeight = 0;
     let columnIndex = 0;
-    const firstSheetHeight = pageContentHeightPx - (headerRef.current?.getBoundingClientRect().height || 0);
+    const measuredHeaderHeight = headerRef.current?.getBoundingClientRect().height || 0;
+    setHeaderHeightPx((current) => current === measuredHeaderHeight ? current : measuredHeaderHeight);
+    const firstSheetHeight = Math.max(0, pageContentHeightPx - measuredHeaderHeight);
 
     for (let index = 0; index < flowItems.length; index += 1) {
       const height = heights[index] || 0;
@@ -821,7 +825,7 @@ export function AnswerSheetComposer({
           <div className="text-sm">
             <div className="mb-1">姓名：</div>
             <span
-              className="block h-[13mm] w-[4em] border border-dashed border-ink-700"
+              className="block h-[26mm] w-[30mm] shrink-0 border border-dashed border-ink-700"
               aria-label="姓名签名填写区"
               data-answer-sheet-field="signature"
               data-signature-history-limit="10"
@@ -1106,7 +1110,39 @@ export function AnswerSheetComposer({
 
         <div className="answer-sheet-print-shell overflow-x-auto pb-8">
           <div className="space-y-6" data-testid={isPreview ? "answer-sheet-preview-pages" : "answer-sheet-editor-pages"}>
-            {sheets.map((sheetColumns, sheetIndex) => (
+            {wideEditor && (
+              <div
+                className="answer-sheet-editor-header mx-auto box-border bg-white p-[8mm] text-ink-950 shadow-xl"
+                style={{ width: `${paperSize.physicalWidthMm}mm` }}
+                data-testid="answer-sheet-editor-header"
+              >
+                {renderHeader()}
+              </div>
+            )}
+            {wideEditor ? logicalPages.map((indices, columnIndex) => (
+              <article
+                key={columnIndex}
+                className={`answer-sheet-paper answer-sheet-editor-page ${paperSize.className} relative mx-auto box-border overflow-hidden bg-white p-[8mm] text-ink-950 shadow-xl`}
+                style={{
+                  width: `${columnWidthMm + PAGE_PADDING_MM * 2}mm`,
+                  height: columnIndex < paperColumns
+                    ? `calc(${paperSize.heightMm}mm - ${headerHeightPx}px)`
+                    : `${paperSize.heightMm}mm`,
+                }}
+                data-paper-size={settings.paperSize}
+                data-paper-view="edit"
+                data-paper-columns="1"
+                data-layout-columns={paperColumns}
+                data-editor-page={columnIndex + 1}
+              >
+                <section
+                  className="answer-sheet-preview-column box-border h-full min-w-0 overflow-hidden"
+                  style={{ width: `${columnWidthMm}mm` }}
+                >
+                  {renderPageContent(indices)}
+                </section>
+              </article>
+            )) : sheets.map((sheetColumns, sheetIndex) => (
               <article
                 key={sheetIndex}
                 className={`answer-sheet-paper ${isPreview ? "answer-sheet-preview-sheet" : "answer-sheet-editor-page"} ${paperSize.className} relative mx-auto flex box-border flex-col overflow-hidden bg-white p-[8mm] text-ink-950 shadow-xl`}
