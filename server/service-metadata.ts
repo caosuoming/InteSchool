@@ -692,7 +692,8 @@ export const serviceParameters = {
     ],
     "getImportContext": [
       "schoolId",
-      "cohortKey"
+      "cohortKey",
+      "teacher"
     ],
     "getCohortTemplateProfile": [
       "schoolId",
@@ -727,10 +728,27 @@ export const serviceParameters = {
     ],
     "listExams": [
       "schoolId",
-      "cohortKey"
+      "cohortKey",
+      "teacher"
     ],
     "getExam": [
-      "examId"
+      "examId",
+      "accessToken",
+      "teacher"
+    ],
+    "setExamAccess": [
+      "examId",
+      "patch",
+      "teacher"
+    ],
+    "createExamOneTimePassword": [
+      "examId",
+      "teacher"
+    ],
+    "unlockExam": [
+      "examId",
+      "password",
+      "teacher"
     ],
     "importExam": [
       "schoolId",
@@ -765,7 +783,8 @@ export const serviceParameters = {
       "teacher"
     ],
     "getPublishedReportByToken": [
-      "token"
+      "token",
+      "password"
     ],
     "deleteExam": [
       "examId",

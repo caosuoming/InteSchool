@@ -85,8 +85,20 @@ export const gradeService = {
     return rpcCall("grade", "listExams", [schoolId, cohortKey]) as Promise<GradeExam[]>;
   },
 
-  async getExam(examId: string): Promise<GradeExam | null> {
-    return rpcCall("grade", "getExam", [examId]) as Promise<GradeExam | null>;
+  async getExam(examId: string, accessToken?: string): Promise<GradeExam | null> {
+    return rpcCall("grade", "getExam", [examId, accessToken]) as Promise<GradeExam | null>;
+  },
+
+  async setExamAccess(examId: string, patch: { password?: string | null; exemptTeacherIds?: string[] }): Promise<GradeExam> {
+    return rpcCall("grade", "setExamAccess", [examId, patch]) as Promise<GradeExam>;
+  },
+
+  async createExamOneTimePassword(examId: string): Promise<string> {
+    return rpcCall("grade", "createExamOneTimePassword", [examId]) as Promise<string>;
+  },
+
+  async unlockExam(examId: string, password: string): Promise<string> {
+    return rpcCall("grade", "unlockExam", [examId, password]) as Promise<string>;
   },
 
   async importExam(schoolId: string, teacherId: string, input: GradeExamImportInput): Promise<GradeExam> {
@@ -128,8 +140,8 @@ export const gradeService = {
     return rpcCall("grade", "unpublishExamResults", [examId]) as Promise<GradeExam>;
   },
 
-  async getPublishedReportByToken(token: string): Promise<GradePublishedReportBundle> {
-    return rpcCall("grade", "getPublishedReportByToken", [token]) as Promise<GradePublishedReportBundle>;
+  async getPublishedReportByToken(token: string, password?: string): Promise<GradePublishedReportBundle> {
+    return rpcCall("grade", "getPublishedReportByToken", [token, password]) as Promise<GradePublishedReportBundle>;
   },
 
   async deleteExam(examId: string): Promise<void> {

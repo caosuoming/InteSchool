@@ -1203,6 +1203,8 @@ export interface GradeExam {
   records: GradeScoreRecord[];
   /** 成绩统计页手工微调的审计记录，按修改时间追加。 */
   scoreAdjustments?: GradeScoreAdjustment[];
+  /** 只包含公开的访问控制状态，不包含密码或验证凭据。 */
+  accessControl?: { passwordProtected: boolean; locked: boolean; exemptTeacherIds?: string[] };
   /** 当前有效的成绩发布；撤回后清空，重新发布会生成新链接。 */
   publication?: GradeExamPublication;
   settings: GradeExamSettings;

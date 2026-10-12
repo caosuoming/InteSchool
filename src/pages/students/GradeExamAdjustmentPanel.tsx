@@ -10,6 +10,7 @@ import type {
   GradeExam,
   GradeScoreAdjustmentKind,
   GradeScoreRecord,
+  GradeTeacherOption,
 } from "@/types";
 
 interface GradeExamAdjustmentPanelProps {
@@ -19,6 +20,8 @@ interface GradeExamAdjustmentPanelProps {
   onDownloadClassStatistics?: () => Promise<void>;
   onPrintTablesOneToFive?: () => void;
   readOnly?: boolean;
+  teachers?: GradeTeacherOption[];
+  canManageAccess?: boolean;
 }
 
 function scoreText(value: number | null | undefined): string {
@@ -135,10 +138,16 @@ export function GradeExamAdjustmentPanel({
   onDownloadClassStatistics,
   onPrintTablesOneToFive,
   readOnly = false,
+  teachers = [],
+  canManageAccess = false,
 }: GradeExamAdjustmentPanelProps) {
   const [examName, setExamName] = useState(exam.name);
   const [examDate, setExamDate] = useState(exam.examDate || "");
   const [metadataSaving, setMetadataSaving] = useState(false);
+  const [accessPassword, setAccessPassword] = useState("");
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [oneTimePassword, setOneTimePassword] = useState("");
+  const [exemptTeacherId, setExemptTeacherId] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
   const [savingScore, setSavingScore] = useState<string | null>(null);
@@ -154,6 +163,8 @@ export function GradeExamAdjustmentPanel({
     setExamName(exam.name);
     setExamDate(exam.examDate || "");
     setPublishToParents(Boolean(exam.publication?.publishToParents));
+    setAccessPassword("");
+    setOneTimePassword("");
   }, [exam.id, exam.name, exam.examDate, exam.publication?.publishToParents]);
 
   useEffect(() => {
@@ -211,6 +222,32 @@ export function GradeExamAdjustmentPanel({
       toast.error("保存考试信息失败", error instanceof Error ? error.message : undefined);
     } finally {
       setMetadataSaving(false);
+    }
+  };
+
+  const saveAccess = async (patch: { password?: string | null; exemptTeacherIds?: string[] }) => {
+    setAccessSaving(true);
+    try {
+      const updated = await gradeService.setExamAccess(exam.id, patch);
+      onExamUpdated(updated);
+      setAccessPassword("");
+      setOneTimePassword("");
+      toast.success("访问控制已保存");
+    } catch (error) {
+      toast.error("访问控制保存失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setAccessSaving(false);
+    }
+  };
+
+  const generateOneTime = async () => {
+    setAccessSaving(true);
+    try {
+      setOneTimePassword(await gradeService.createExamOneTimePassword(exam.id));
+    } catch (error) {
+      toast.error("生成一次性密码失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setAccessSaving(false);
     }
   };
 
@@ -298,14 +335,88 @@ export function GradeExamAdjustmentPanel({
   };
 
   return (
-    <Card className="overflow-hidden p-0">
+    <>
+      <Card className="overflow-hidden p-0">
+        <div className="border-b border-ink-100 p-5">
+          <h2 className="font-medium text-ink-900">考试信息</h2>
+          <p className="mt-1 text-xs text-ink-500">管理考试基本信息与成绩访问权限。</p>
+        </div>
+      <div className="grid gap-3 border-b border-ink-100 p-5 md:grid-cols-[minmax(0,1fr)_13rem_auto] md:items-end">
+        <Input
+          label="考试名称"
+          value={examName}
+          disabled={published || readOnly}
+          onChange={(event) => setExamName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void saveMetadata();
+          }}
+        />
+        <Input
+          label="考试时间"
+          type="date"
+          value={examDate}
+          disabled={published || readOnly}
+          onChange={(event) => setExamDate(event.target.value)}
+        />
+        <Button variant="outline" onClick={() => void saveMetadata()} loading={metadataSaving} disabled={published || readOnly}>
+          保存考试信息
+        </Button>
+      </div>
+
+        <div className="space-y-4 border-t border-ink-100 p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium text-ink-900">访问控制</h3>
+            <span className="text-xs text-ink-500">{exam.accessControl?.passwordProtected ? "已启用密码" : "未设置密码"}</span>
+          </div>
+          {canManageAccess ? (
+            <>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-56 flex-1"><Input label="访问密码（设置或修改）" type="password" autoComplete="new-password" value={accessPassword}
+                  placeholder="至少 6 个字符" onChange={(event) => setAccessPassword(event.target.value)} /></div>
+                <Button variant="outline" disabled={accessSaving || accessPassword.length < 6}
+                  onClick={() => void saveAccess({ password: accessPassword })}>保存密码</Button>
+                {exam.accessControl?.passwordProtected && <Button variant="ghost" disabled={accessSaving}
+                  onClick={() => void saveAccess({ password: null })}>删除密码</Button>}
+              </div>
+              {exam.accessControl?.passwordProtected && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" disabled={accessSaving} onClick={() => void generateOneTime()}>生成一次性密码</Button>
+                  {oneTimePassword && <code className="rounded bg-ink-50 px-3 py-2 font-mono text-sm select-all">{oneTimePassword}</code>}
+                  <p className="w-full text-xs text-ink-500">每个一次性密码只能验证一次。关闭网页后重新打开，需要输入新密码。</p>
+                </div>
+              )}
+              <label className="block text-sm font-medium text-ink-700">免密访问用户</label>
+              <div className="flex items-end gap-2">
+                <div className="min-w-56 flex-1"><Select value={exemptTeacherId} placeholder="选择本校教师" options={teachers
+                  .filter((teacher) => teacher.id !== exam.teacherId && !exam.accessControl?.exemptTeacherIds?.includes(teacher.id))
+                  .map((teacher) => ({ value: teacher.id, label: `${teacher.name} · ${teacher.subject}` }))}
+                  onChange={(event) => setExemptTeacherId(event.target.value)} /></div>
+                <Button variant="outline" disabled={!exemptTeacherId || accessSaving} onClick={() => {
+                  void saveAccess({ exemptTeacherIds: [...(exam.accessControl?.exemptTeacherIds || []), exemptTeacherId] });
+                  setExemptTeacherId("");
+                }}>添加</Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(exam.accessControl?.exemptTeacherIds || []).map((id) => (
+                  <span key={id} className="inline-flex items-center gap-2 rounded border border-ink-100 px-2 py-1 text-xs">
+                    {teachers.find((teacher) => teacher.id === id)?.name || id}
+                    <button type="button" aria-label={`移除免密用户 ${id}`} disabled={accessSaving}
+                      onClick={() => void saveAccess({ exemptTeacherIds: (exam.accessControl?.exemptTeacherIds || []).filter((value) => value !== id) })}>×</button>
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : <p className="text-sm text-ink-500">仅上传者可以修改访问控制。</p>}
+        </div>
+      </Card>
+      <Card className="overflow-hidden p-0">
       <div className="border-b border-ink-100 px-5 py-4">
         <div className="flex items-start gap-3">
           <div className="rounded-lg bg-amber-50 p-2 text-amber-700">
             <SlidersHorizontal className="h-4 w-4" />
           </div>
           <div>
-            <div className="font-medium text-ink-900">考试信息与学生成绩微调</div>
+            <div className="font-medium text-ink-900">学生成绩微调与发布</div>
             <div className="mt-0.5 text-xs text-ink-500">
               {readOnly
                 ? "当前成绩统计为只读；仅创建者或学校管理员可以修改。"
@@ -389,28 +500,6 @@ export function GradeExamAdjustmentPanel({
             </Button>
           </div>
         )}
-      </div>
-
-      <div className="grid gap-3 border-b border-ink-100 p-5 md:grid-cols-[minmax(0,1fr)_13rem_auto] md:items-end">
-        <Input
-          label="考试名称"
-          value={examName}
-          disabled={published || readOnly}
-          onChange={(event) => setExamName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void saveMetadata();
-          }}
-        />
-        <Input
-          label="考试时间"
-          type="date"
-          value={examDate}
-          disabled={published || readOnly}
-          onChange={(event) => setExamDate(event.target.value)}
-        />
-        <Button variant="outline" onClick={() => void saveMetadata()} loading={metadataSaving} disabled={published || readOnly}>
-          保存考试信息
-        </Button>
       </div>
 
       <div className="space-y-4 border-b border-ink-100 p-5">
@@ -558,5 +647,6 @@ export function GradeExamAdjustmentPanel({
         )}
       </div>
     </Card>
+    </>
   );
 }

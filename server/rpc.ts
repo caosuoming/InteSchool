@@ -39,6 +39,8 @@ const EXAM_MANAGER_MUTATIONS = new Set([
   "copyCohortSettings",
   "updateExamSettings",
   "updateExamMetadata",
+  "setExamAccess",
+  "createExamOneTimePassword",
   "adjustExamScore",
   "publishExamResults",
   "unpublishExamResults",
