@@ -84,10 +84,12 @@ function finalSubjectScore(record: GradeScoreRecord, subject: string): number | 
   return finite(record.assignedScores[subject]) ?? finite(record.scores[subject]);
 }
 
-function completeTotal(record: GradeScoreRecord, subjects: string[], mode: "raw" | "assigned"): number | null {
-  if (subjects.length === 0) return null;
+function completeTotal(record: GradeScoreRecord, subjects: string[], expectedCount: number, mode: "raw" | "assigned"): number | null {
+  if (expectedCount === 0) return null;
+  const attended = subjects.filter((subject) => finite(record.scores[subject]) !== null);
+  if (attended.length < expectedCount) return null;
   const scores = mode === "raw" ? record.scores : record.assignedScores;
-  const values = subjects.map((subject) => finite(scores[subject]));
+  const values = attended.map((subject) => finite(scores[subject]));
   if (values.some((value) => value === null)) return null;
   return Math.round(values.reduce((total, value) => total + (value ?? 0), 0) * 100) / 100;
 }
@@ -143,31 +145,23 @@ function ranksByClass(
 }
 
 function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRankedRecord> {
-  const subjectsByClass = new Map(exam.settings.classSubjects.map((item) => [item.classId, new Set(item.examSubjects)]));
-  exam.records.forEach((record) => {
-    const classSubjects = subjectsByClass.get(record.classId) || new Set<string>();
-    exam.subjects.forEach((subject) => {
-      if (finite(record.scores[subject]) !== null || finite(record.assignedScores[subject]) !== null) {
-        classSubjects.add(subject);
-      }
-    });
-    subjectsByClass.set(record.classId, classSubjects);
+  const selectionCounts = exam.records.flatMap((record) => {
+    const selected = inferStatisticSubjectsFromSelections(exam.subjects, [record.subjectSelection || ""]);
+    return selected?.length ? [selected.length] : [];
   });
-  const totals = new Map(exam.records.map((record) => {
-    const classSubjects = exam.subjects.filter((subject) => subjectsByClass.get(record.classId)?.has(subject));
-    const selectionSubjects = inferStatisticSubjectsFromSelections(classSubjects, [record.subjectSelection || ""]);
-    const selectedElectives = selectionSubjects?.filter((subject) => ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]));
-    const totalSubjects = selectedElectives?.length === 3 && selectionSubjects
-      ? classSubjects.filter((subject) => (
-        !ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number])
-        || selectionSubjects.includes(subject)
-      ))
-      : classSubjects;
-    return [record.studentId, {
-      raw: completeTotal(record, totalSubjects, "raw"),
-      assigned: completeTotal(record, totalSubjects, "assigned"),
-    }] as const;
-  }));
+  // Use the exam's subject structure, not the current scores: clearing the last
+  // complete student's grade must not lower the required number of subjects.
+  const electiveCount = exam.subjects.filter((subject) =>
+    ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]),
+  ).length;
+  const expectedCount = Math.max(
+    exam.subjects.length - electiveCount + Math.min(3, electiveCount),
+    ...selectionCounts,
+  );
+  const totals = new Map(exam.records.map((record) => [record.studentId, {
+    raw: completeTotal(record, exam.subjects, expectedCount, "raw"),
+    assigned: completeTotal(record, exam.subjects, expectedCount, "assigned"),
+  }] as const));
   const separateByClass = new Map(exam.settings.classSubjects.map((item) => [
     item.classId, new Set(item.separateRankSubjects || []),
   ]));

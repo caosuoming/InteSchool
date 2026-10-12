@@ -247,6 +247,62 @@ describe("grade class statistics", () => {
     expect(values["previous:assignedTotal"]).toBe(272);
   });
 
+  it("counts different elective combinations without subject selections, preserving zeros and absence", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+    const makeScores = (electives: string[], missing?: string) => Object.fromEntries(subjects.map((subject) => [
+      subject,
+      ["语文", "数学", "英语", ...electives].includes(subject) && subject !== missing ? 80 : null,
+    ]));
+    const first = makeScores(["物理", "化学", "生物"]);
+    const second = makeScores(["历史", "政治", "地理"]);
+    const third = makeScores(["物理", "化学", "生物"], "化学");
+    const zero = { ...makeScores(["物理", "化学", "生物"]), 生物: 0 };
+    const reportExam: GradeExam = {
+      ...current,
+      subjects,
+      records: [first, second, third, zero].map((scores, index) => ({
+        ...record(String(index), "c1", "一班", String(index), String(index), 0, 0, 0, 0, 0),
+        scores,
+        assignedScores: index === 0 ? { ...scores, 化学: 92 } : scores,
+      })),
+      settings: { ...current.settings, classSubjects: [{ classId: "c1", examSubjects: subjects, statisticSubjects: subjects }] },
+    };
+    const options = { ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS, showRawTotal: true, showAssignedTotal: true };
+    const rows = buildGradeClassStatisticsReport(reportExam, [], options).classes[0].rows;
+    expect(rows[0].values).toMatchObject({ "current:rawTotal": 480, "current:assignedTotal": 492, "current:rawTotalClassRank": 1 });
+    expect(rows[1].values).toMatchObject({ "current:rawTotal": 480, "current:assignedTotal": 480 });
+    expect(rows[2].values).toMatchObject({ "current:rawTotal": null, "current:assignedTotal": null, "current:rawTotalGradeRank": null });
+    expect(rows[3].values).toMatchObject({ "current:rawTotal": 400, "current:assignedTotal": 400 });
+
+    const allAbsent = {
+      ...reportExam,
+      records: reportExam.records.map((item) => ({
+        ...item,
+        scores: { ...item.scores, 语文: null },
+        assignedScores: { ...item.assignedScores, 语文: null },
+      })),
+    };
+    buildGradeClassStatisticsReport(allAbsent, [], options).classes[0].rows.forEach((row) => {
+      expect(row.values["current:rawTotal"]).toBeNull();
+      expect(row.values["current:assignedTotal"]).toBeNull();
+    });
+  });
+
+  it("does not count an imported assigned-only subject as an attended raw exam", () => {
+    const reportExam = { ...current, records: [{
+      ...current.records[0],
+      scores: { 语文: 100, 化学: null },
+      assignedScores: { 语文: 100, 化学: 95 },
+    }] };
+    const values = buildGradeClassStatisticsReport(reportExam, [], {
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      showRawTotal: true,
+      showAssignedTotal: true,
+    }).classes[0].rows[0].values;
+    expect(values["current:rawTotal"]).toBeNull();
+    expect(values["current:assignedTotal"]).toBeNull();
+  });
+
   it("uses each student's six selected subjects in a mixed-elective class", () => {
     const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "历史", "政治", "地理"];
     const makeMixed = (id: string, subjectSelection: string, electives: string[]) => {

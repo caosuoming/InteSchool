@@ -59,11 +59,14 @@ describe("AnswerSheetComposer", () => {
     expect(identityFields).toHaveClass("w-[45mm]");
     expect(studentNumberColumn).toHaveClass("w-[52mm]");
     expect(qrPosition).toHaveClass("w-[24mm]");
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[4em]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[30mm]", "h-[26mm]", "shrink-0");
+    expect(screen.getByTestId("student-number-grid")).toHaveClass("w-[46mm]", "shrink-0");
+    expect(screen.getAllByTestId("student-number-row")[0].firstElementChild).toHaveClass("w-[4mm]", "h-[4mm]", "shrink-0");
+    expect(screen.getByLabelText("试卷答题卡二维码")).toHaveStyle({ width: "20mm", height: "20mm" });
     expect(screen.getByLabelText("姓名签名填写区").previousElementSibling).toHaveTextContent("姓名：");
   });
 
-  it("supports A4 dual columns and edits every paper at its physical size", () => {
+  it("keeps A4 editing at full width and uses single-column editing for 8K/A3", () => {
     const { container } = renderComposer();
     const paper = () => container.querySelector<HTMLElement>(".answer-sheet-paper")!;
 
@@ -83,10 +86,14 @@ describe("AnswerSheetComposer", () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "8K" } });
     expect(paper()).toHaveAttribute("data-paper-view", "edit");
-    expect(paper()).toHaveAttribute("data-paper-columns", "2");
-    expect(paper().style.width).toBe("370mm");
-    expect(paper().style.height).toBe("260mm");
+    expect(paper()).toHaveAttribute("data-paper-columns", "1");
+    expect(paper()).toHaveAttribute("data-layout-columns", "2");
+    expect(paper().style.width).toBe("190mm");
+    expect(paper().style.height).toMatch(/^calc\(/);
+    expect(screen.getByTestId("answer-sheet-editor-header").style.width).toBe("370mm");
     expect(paper()).toHaveClass("overflow-hidden");
+    expect(paper().querySelectorAll(".answer-sheet-preview-column")).toHaveLength(1);
+    expect(paper()).not.toContainElement(screen.getByTestId("answer-sheet-page-header"));
 
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(screen.getByRole("heading", { name: "预览答题卡" })).toBeInTheDocument();
@@ -98,9 +105,11 @@ describe("AnswerSheetComposer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A3" } });
-    expect(paper()).toHaveAttribute("data-paper-columns", "2");
-    expect(paper().style.width).toBe("420mm");
-    expect(paper().style.height).toBe("297mm");
+    expect(paper()).toHaveAttribute("data-paper-columns", "1");
+    expect(paper()).toHaveAttribute("data-layout-columns", "2");
+    expect(paper().style.width).toBe("215mm");
+    expect(paper().style.height).toMatch(/^calc\(/);
+    expect(screen.getByTestId("answer-sheet-editor-header").style.width).toBe("420mm");
 
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A4" } });
     expect(screen.getByLabelText("题目栏数")).toHaveValue("2");
@@ -109,6 +118,83 @@ describe("AnswerSheetComposer", () => {
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(paper()).toHaveAttribute("data-paper-columns", "2");
     expect(paper().style.width).toBe("210mm");
+  });
+
+  it("flows the A4 content left to right without mixing it with the identity header", () => {
+    const measurement = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const height = this.dataset.testid === "answer-sheet-page-header" ? 200
+        : this.dataset.answerSheetFlowItem === "question" ? 300
+        : this.dataset.answerSheetFlowItem ? 20 : 0;
+      return { height } as DOMRect;
+    });
+
+    try {
+      const { container } = renderComposer({
+        initialSettings: { paperSize: "A4", a4Columns: 2 },
+        questions: [
+          { id: "a", type: "single", stem: "A" },
+          { id: "b", type: "single", stem: "B" },
+          { id: "c", type: "single", stem: "C" },
+          { id: "d", type: "single", stem: "D" },
+        ],
+      });
+      const columns = container.querySelectorAll(".answer-sheet-preview-column");
+      expect(columns).toHaveLength(2);
+      expect(Array.from(columns[0].querySelectorAll('[data-answer-sheet-flow-item="question"]'))).toHaveLength(2);
+      expect(Array.from(columns[1].querySelectorAll('[data-answer-sheet-flow-item="question"]'))).toHaveLength(2);
+      expect(columns[0].textContent).toContain("1.");
+      expect(columns[0].textContent).toContain("2.");
+      expect(columns[0].textContent).not.toContain("3.");
+      expect(columns[1].textContent).toContain("3.");
+      expect(columns[1].textContent).toContain("4.");
+      expect(columns[0]).not.toContainElement(screen.getByTestId("answer-sheet-page-header"));
+    } finally {
+      measurement.mockRestore();
+    }
+  });
+
+  it("stitches three separately edited wide-paper columns into one physical preview", () => {
+    const measurement = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const height = this.dataset.testid === "answer-sheet-page-header" ? 200
+        : this.dataset.answerSheetFlowItem === "question" ? 600
+        : this.dataset.answerSheetFlowItem ? 20 : 0;
+      return { height } as DOMRect;
+    });
+
+    try {
+      const { container } = renderComposer({
+        initialSettings: { paperSize: "A3", widePaperColumns: 3 },
+      });
+      const editor = screen.getByTestId("answer-sheet-editor-pages");
+      const editedColumns = container.querySelectorAll<HTMLElement>(".answer-sheet-editor-page");
+      expect(editedColumns).toHaveLength(3);
+      expect(screen.getByTestId("answer-sheet-editor-header")).toContainElement(screen.getByTestId("answer-sheet-page-header"));
+      const firstColumnHeight = Number(editedColumns[0].style.height.match(/[\d.]+/)?.[0]);
+      const thirdColumnHeight = Number(editedColumns[2].style.height.match(/[\d.]+/)?.[0]);
+      expect(firstColumnHeight).toBeCloseTo(297 * 96 / 25.4 - 200, 1);
+      expect(thirdColumnHeight).toBeCloseTo(firstColumnHeight, 1);
+      expect(editedColumns[0].style.width).toMatch(/^146\.6/);
+      expect(editor.querySelectorAll(".answer-sheet-preview-column")).toHaveLength(3);
+      editedColumns.forEach((column, index) => {
+        expect(column).toHaveAttribute("data-paper-columns", "1");
+        expect(column).toHaveAttribute("data-editor-page", String(index + 1));
+        expect(column.querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(1);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+      const previewSheets = container.querySelectorAll<HTMLElement>(".answer-sheet-preview-sheet");
+      expect(previewSheets).toHaveLength(1);
+      expect(previewSheets[0]).toHaveAttribute("data-paper-columns", "3");
+      expect(previewSheets[0].style.width).toBe("420mm");
+      expect(previewSheets[0].querySelectorAll(".answer-sheet-preview-column")).toHaveLength(3);
+      expect(screen.getByTestId("answer-sheet-preview-pages").querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(3);
+      expect(screen.getAllByTestId("answer-sheet-page-header")).toHaveLength(1);
+
+      fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
+      expect(container.querySelectorAll(".answer-sheet-editor-page")).toHaveLength(3);
+    } finally {
+      measurement.mockRestore();
+    }
   });
 
   it("supports inline and concentrated choice fill areas while keeping choice options visible", () => {

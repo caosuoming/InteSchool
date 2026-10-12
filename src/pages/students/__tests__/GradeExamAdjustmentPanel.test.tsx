@@ -210,6 +210,34 @@ describe("GradeExamAdjustmentPanel", () => {
     expect(chemistry).toHaveClass("w-fit", "shrink-0");
   });
 
+  it("shows missing subject editors and distinguishes a blank score from zero", async () => {
+    const user = userEvent.setup();
+    const initial = buildExam();
+    const exam: GradeExam = {
+      ...initial,
+      subjects: ["数学", "化学"],
+      records: initial.records.map((item) => ({
+        ...item,
+        scores: { 数学: item.scores.数学, 化学: null },
+        assignedScores: { 数学: item.scores.数学, 化学: null },
+      })),
+    };
+    vi.mocked(gradeService.adjustExamScore).mockResolvedValue(exam);
+    render(<Harness initial={exam} />);
+    await user.selectOptions(screen.getByLabelText("选择学生"), "student-1");
+
+    const missing = within(screen.getByLabelText("化学成绩")).getByRole("spinbutton", { name: "成绩" });
+    expect(missing).toHaveValue(null);
+    await user.type(missing, "0");
+    await user.tab();
+    await waitFor(() => expect(gradeService.adjustExamScore).toHaveBeenCalledWith("exam-1", "student-1", "化学", "raw", 0));
+
+    const math = within(screen.getByLabelText("数学成绩")).getByRole("spinbutton", { name: "成绩" });
+    await user.clear(math);
+    await user.tab();
+    await waitFor(() => expect(gradeService.adjustExamScore).toHaveBeenCalledWith("exam-1", "student-1", "数学", "raw", null));
+  });
+
   it("publishes, exposes a share link, locks editing, and withdraws publication", async () => {
     const user = userEvent.setup();
     const initial = buildExam();

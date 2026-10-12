@@ -349,7 +349,8 @@ describe("classroomDeviceService", () => {
       expect(first).not.toHaveProperty("activeCoursewareSession");
 
       const storedDevice = (state.classroomDevices as Array<Record<string, any>>)[0];
-      storedDevice.activeCoursewareSession.startedAt = new Date(Date.now() - 31 * 60_000).toISOString();
+      const sessionStartedAt = new Date(Date.now() - 31 * 60_000).toISOString();
+      storedDevice.activeCoursewareSession.startedAt = sessionStartedAt;
       storedDevice.activeCoursewareSession.lastSeenAt = new Date(Date.now() - 15_000).toISOString();
 
       await classroomDeviceService.reportHeartbeat(TOKEN_1, {
@@ -361,7 +362,7 @@ describe("classroomDeviceService", () => {
 
       const subject = state.teachers.find((item) => item.id === "subject") as any;
       expect(subject.teachingPlan.actualRecords).toEqual([expect.objectContaining({
-        date: localDateValue(new Date(storedDevice.activeCoursewareSession.startedAt)),
+        date: localDateValue(new Date(sessionStartedAt)),
         coursewareId: "lesson-1",
         coursewareTitle: "函数的单调性",
         classId: "class-1",
