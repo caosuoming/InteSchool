@@ -361,7 +361,7 @@ describe("classroomDeviceService", () => {
 
       const subject = state.teachers.find((item) => item.id === "subject") as any;
       expect(subject.teachingPlan.actualRecords).toEqual([expect.objectContaining({
-        date: localDateValue(),
+        date: localDateValue(new Date(storedDevice.activeCoursewareSession.startedAt)),
         coursewareId: "lesson-1",
         coursewareTitle: "函数的单调性",
         classId: "class-1",

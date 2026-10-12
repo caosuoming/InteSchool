@@ -974,11 +974,11 @@ export interface GradeClassSubjectSetting {
   examSubjects: string[];
   /** 参与总分、排名和班级统计的科目。 */
   statisticSubjects: string[];
-  /** 该班使用单独试卷、仅在班内排名的科目。 */
+  /** 该班参与单独排名组的科目；选择同一科目的班级合并排名。 */
   separateRankSubjects?: string[];
 }
 
-export type GradeSubjectRankScope = "cohort" | "class";
+export type GradeSubjectRankScope = "cohort" | "class" | "separate";
 
 export type GradeTemplateKind =
   | "studentRanking"
@@ -1142,7 +1142,7 @@ export interface GradeScoreRecord {
   assignedTotal: number;
   gradeRank: number;
   classRank: number;
-  /** 每个科目的名次；统考科目按年级排名，非统考科目按班级单独排名。 */
+  /** 每个科目的名次；统一排名班级与单独排名班级分别形成排名组。 */
   subjectRanks?: Record<string, number | null>;
   subjectRankScopes?: Record<string, GradeSubjectRankScope>;
 }

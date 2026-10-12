@@ -102,6 +102,30 @@ describe("grade class statistics", () => {
     expect(zhang.values["current:assignedTotalGradeRank"]).toBe(2);
   });
 
+  it("uses shared separated and unified pools for subject and total grade ranks", () => {
+    const tested = exam("grouped", "分组测试", "2026-07-01", [
+      record("s1", "c1", "1班", "001", "甲", 60, 50, 50, 110, 110),
+      record("s2", "c2", "2班", "002", "乙", 70, 80, 80, 150, 150),
+      record("s3", "c3", "3班", "003", "丙", 80, 90, 90, 170, 170),
+      record("s4", "c4", "4班", "004", "丁", 90, 60, 60, 150, 150),
+    ]);
+    tested.settings.classSubjects = ["c1", "c2", "c3", "c4"].map((classId) => ({
+      classId, examSubjects: ["语文", "化学"], statisticSubjects: ["语文", "化学"],
+      separateRankSubjects: ["c1", "c2"].includes(classId) ? ["化学"] : [],
+    }));
+    const report = buildGradeClassStatisticsReport(tested, [], {
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      showSubjectGradeRanks: true, showRawTotal: true, showAssignedTotal: true,
+    });
+    const values = Object.fromEntries(report.classes.flatMap((item) => item.rows).map((row) => [row.studentId, row.values]));
+    expect(["s1", "s2", "s3", "s4"].map((id) => values[id]["grouped:subjectGradeRank:化学"]))
+      .toEqual([2, 1, 1, 2]);
+    expect(["s1", "s2", "s3", "s4"].map((id) => values[id]["grouped:rawTotalGradeRank"]))
+      .toEqual([2, 1, 1, 2]);
+    expect(["s1", "s2", "s3", "s4"].map((id) => values[id]["grouped:assignedTotalGradeRank"]))
+      .toEqual([2, 1, 1, 2]);
+  });
+
   it("adds selected previous exams side by side and leaves missing students blank", () => {
     const report = buildGradeClassStatisticsReport(current, [previous], {
       ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
@@ -176,7 +200,7 @@ describe("grade class statistics", () => {
       "current:rawTotal": 450,
       "current:assignedTotal": 450,
       "current:rawTotalGradeRank": 1,
-      "current:assignedTotalGradeRank": 2,
+      "current:assignedTotalGradeRank": 1,
     });
   });
 

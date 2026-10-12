@@ -1,5 +1,5 @@
 import type { GradeExam, GradeScoreRecord } from "../types/index.js";
-import { ELECTIVE_GRADE_SUBJECTS, inferStatisticSubjectsFromSelections } from "./grade-statistics.js";
+import { ELECTIVE_GRADE_SUBJECTS, inferStatisticSubjectsFromSelections, totalRankingGroupKey } from "./grade-statistics.js";
 
 export interface GradeClassStatisticsOptions {
   showSubjectClassRanks: boolean;
@@ -116,21 +116,30 @@ function competitionRanks(
   return result;
 }
 
-function ranksByClass(
+function ranksByGroup(
   records: GradeScoreRecord[],
   score: (record: GradeScoreRecord) => number | null,
+  groupKey: (record: GradeScoreRecord) => string,
 ): Map<string, number> {
   const grouped = new Map<string, GradeScoreRecord[]>();
   records.forEach((record) => {
-    const current = grouped.get(record.classId) || [];
+    const key = groupKey(record);
+    const current = grouped.get(key) || [];
     current.push(record);
-    grouped.set(record.classId, current);
+    grouped.set(key, current);
   });
   const result = new Map<string, number>();
   grouped.forEach((group) => {
     competitionRanks(group, score).forEach((rank, studentId) => result.set(studentId, rank));
   });
   return result;
+}
+
+function ranksByClass(
+  records: GradeScoreRecord[],
+  score: (record: GradeScoreRecord) => number | null,
+): Map<string, number> {
+  return ranksByGroup(records, score, (record) => record.classId);
 }
 
 function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRankedRecord> {
@@ -159,17 +168,25 @@ function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRan
       assigned: completeTotal(record, totalSubjects, "assigned"),
     }] as const;
   }));
+  const separateByClass = new Map(exam.settings.classSubjects.map((item) => [
+    item.classId, new Set(item.separateRankSubjects || []),
+  ]));
   const subjectGradeRanks = Object.fromEntries(subjects.map((subject) => [
     subject,
-    competitionRanks(exam.records, (record) => finalSubjectScore(record, subject)),
+    ranksByGroup(
+      exam.records,
+      (record) => finalSubjectScore(record, subject),
+      (record) => separateByClass.get(record.classId)?.has(subject) ? "separate" : "unified",
+    ),
   ]));
   const subjectClassRanks = Object.fromEntries(subjects.map((subject) => [
     subject,
     ranksByClass(exam.records, (record) => finalSubjectScore(record, subject)),
   ]));
-  const rawTotalGradeRanks = competitionRanks(exam.records, (record) => totals.get(record.studentId)?.raw ?? null);
+  const totalGroupKey = (record: GradeScoreRecord) => totalRankingGroupKey(exam.settings, record.classId);
+  const rawTotalGradeRanks = ranksByGroup(exam.records, (record) => totals.get(record.studentId)?.raw ?? null, totalGroupKey);
   const rawTotalClassRanks = ranksByClass(exam.records, (record) => totals.get(record.studentId)?.raw ?? null);
-  const assignedTotalGradeRanks = competitionRanks(exam.records, (record) => totals.get(record.studentId)?.assigned ?? null);
+  const assignedTotalGradeRanks = ranksByGroup(exam.records, (record) => totals.get(record.studentId)?.assigned ?? null, totalGroupKey);
   const assignedTotalClassRanks = ranksByClass(exam.records, (record) => totals.get(record.studentId)?.assigned ?? null);
 
   return new Map(exam.records.map((record) => [record.studentId, {
