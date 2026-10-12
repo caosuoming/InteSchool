@@ -1011,10 +1011,14 @@ export const gradeService = {
         return {
           ...item,
           scores: { ...item.scores, [subject]: nextValue },
+          ...(nextValue === null && item.sourceAssignedScores
+            ? { sourceAssignedScores: { ...item.sourceAssignedScores, [subject]: null } }
+            : {}),
         };
       }
       return {
         ...item,
+        ...(nextValue === null ? { scores: { ...item.scores, [subject]: null } } : {}),
         sourceAssignedScores: {
           ...(item.sourceAssignedScores || {}),
           [subject]: nextValue,
