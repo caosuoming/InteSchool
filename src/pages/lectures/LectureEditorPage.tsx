@@ -263,7 +263,8 @@ export default function LectureEditorPage() {
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester, ready: resourceOptionsReady } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [lecture, setLecture] = useState<Lecture | null>(null);
-  const [isUsedDocument, setIsUsedDocument] = useState(false);
+  const [hasAnswerRecords, setIsUsedDocument] = useState(false);
+  const isUsedDocument = hasAnswerRecords || Boolean(lecture?.answerSheetPublishedAt);
   const isStructureLocked = isDocumentStructureLocked(lecture);
   const isEditingLocked = isStructureLocked || isUsedDocument;
   const [loading, setLoading] = useState(true);
@@ -2201,7 +2202,7 @@ export default function LectureEditorPage() {
       {isUsedDocument && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
           <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>该文档已录入学生答题记录，现已锁定，不能再编辑。</span>
+          <span>{lecture?.answerSheetPublishedAt ? "答题卡已发布，请先撤回发布才能编辑。" : "该文档已录入学生答题记录，现已锁定，不能再编辑。"}</span>
         </div>
       )}
 

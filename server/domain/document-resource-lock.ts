@@ -48,9 +48,14 @@ export function sanitizeExamPaperPatch(
   current: ExamPaper,
   patch: Partial<ExamPaper>,
 ): Partial<ExamPaper> {
-  if (!isDocumentStructureLocked(current)) return patch;
+  const metadataSafePatch = { ...patch };
+  delete metadataSafePatch.hasAnswerSheet;
+  delete metadataSafePatch.answerSheetCreatedAt;
+  delete metadataSafePatch.answerSheetPublishedAt;
+  delete metadataSafePatch.answerSheetSettings;
+  if (!isDocumentStructureLocked(current)) return metadataSafePatch;
 
-  const safePatch = { ...patch };
+  const safePatch = metadataSafePatch;
   delete safePatch.originalFileUrl;
   delete safePatch.originalFileName;
   delete safePatch.originalFileType;
@@ -92,7 +97,12 @@ export function sanitizeLecturePatch(
   current: Lecture,
   patch: Partial<Lecture>,
 ): Partial<Lecture> {
-  if (!isDocumentStructureLocked(current)) return patch;
+  const metadataSafePatch = { ...patch };
+  delete metadataSafePatch.hasAnswerSheet;
+  delete metadataSafePatch.answerSheetCreatedAt;
+  delete metadataSafePatch.answerSheetPublishedAt;
+  delete metadataSafePatch.answerSheetSettings;
+  if (!isDocumentStructureLocked(current)) return metadataSafePatch;
 
   if (patch.sections && !sameJsonStructure(current.sections, patch.sections)) {
     throw new Error("上传原稿和拆解稿不能编辑、删除或调整讲义内容顺序");
@@ -101,7 +111,7 @@ export function sanitizeLecturePatch(
     throw new Error("上传原稿和拆解稿不能编辑文档内容结构");
   }
 
-  const safePatch = { ...patch };
+  const safePatch = metadataSafePatch;
   delete safePatch.originalFileUrl;
   delete safePatch.originalFileName;
   delete safePatch.originalFileType;

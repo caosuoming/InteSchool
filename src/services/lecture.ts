@@ -45,6 +45,22 @@ export const lectureService = {
     return rpcCall("lecture", "getLecture", [id]) as any;
   },
 
+  async listPublishedAnswerSheets(): Promise<Lecture[]> {
+    return rpcCall("lecture", "listPublishedAnswerSheets", []) as any;
+  },
+
+  async getPublishedAnswerSheet(id: string): Promise<Lecture | null> {
+    return rpcCall("lecture", "getPublishedAnswerSheet", [id]) as any;
+  },
+
+  async publishAnswerSheet(id: string, settings?: Lecture["answerSheetSettings"]): Promise<Lecture> {
+    return rpcCall("lecture", "publishAnswerSheet", [id, settings]) as any;
+  },
+
+  async unpublishAnswerSheet(id: string): Promise<Lecture> {
+    return rpcCall("lecture", "unpublishAnswerSheet", [id]) as any;
+  },
+
   async markAnswerSheetCreated(
     id: string,
     settings?: Lecture["answerSheetSettings"],

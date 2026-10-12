@@ -28,6 +28,7 @@ export interface AnswerSheetSettings {
 
 export interface AnswerSheetQuestion {
   id: string;
+  label?: string;
   type: QuestionType;
   stem: string;
   options?: string[];

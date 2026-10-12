@@ -827,6 +827,11 @@ export const serviceParameters = {
     "listPapers": [
       "filter"
     ],
+    "listPublishedAnswerSheets": [],
+    "getPublishedAnswerSheet": ["id"],
+    "publishAnswerSheet": ["id", "settings"],
+    "unpublishAnswerSheet": ["id"],
+    "markAnswerSheetCreated": ["id", "settings"],
     "getPaper": [
       "id"
     ],
@@ -1007,6 +1012,11 @@ export const serviceParameters = {
     "listLectures": [
       "filter"
     ],
+    "listPublishedAnswerSheets": [],
+    "getPublishedAnswerSheet": ["id"],
+    "publishAnswerSheet": ["id", "settings"],
+    "unpublishAnswerSheet": ["id"],
+    "markAnswerSheetCreated": ["id", "settings"],
     "getLecture": [
       "id"
     ],

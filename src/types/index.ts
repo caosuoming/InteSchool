@@ -1650,6 +1650,8 @@ export interface ExamPaper {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 答题卡发布时间；撤回后清除，独立于资源本身的发布状态。 */
+  answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
   answerSheetSettings?: {
     paperSize: "A4" | "A3" | "8K";
@@ -2256,6 +2258,8 @@ export interface Lecture {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 答题卡发布时间；撤回后清除，独立于资源本身的发布状态。 */
+  answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
   answerSheetSettings?: {
     paperSize: "A4" | "A3" | "8K";
