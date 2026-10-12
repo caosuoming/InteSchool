@@ -1,5 +1,5 @@
 import type { GradeExam, GradeScoreRecord } from "../types/index.js";
-import { ELECTIVE_GRADE_SUBJECTS, inferStatisticSubjectsFromSelections, totalRankingGroupKey } from "./grade-statistics.js";
+import { expectedGradeSubjectCount, totalRankingGroupKey } from "./grade-statistics.js";
 
 export interface GradeClassStatisticsOptions {
   showSubjectClassRanks: boolean;
@@ -145,19 +145,9 @@ function ranksByClass(
 }
 
 function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRankedRecord> {
-  const selectionCounts = exam.records.flatMap((record) => {
-    const selected = inferStatisticSubjectsFromSelections(exam.subjects, [record.subjectSelection || ""]);
-    return selected?.length ? [selected.length] : [];
-  });
   // Use the exam's subject structure, not the current scores: clearing the last
   // complete student's grade must not lower the required number of subjects.
-  const electiveCount = exam.subjects.filter((subject) =>
-    ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]),
-  ).length;
-  const expectedCount = Math.max(
-    exam.subjects.length - electiveCount + Math.min(3, electiveCount),
-    ...selectionCounts,
-  );
+  const expectedCount = expectedGradeSubjectCount(exam.subjects, exam.records);
   const totals = new Map(exam.records.map((record) => [record.studentId, {
     raw: completeTotal(record, exam.subjects, expectedCount, "raw"),
     assigned: completeTotal(record, exam.subjects, expectedCount, "assigned"),
