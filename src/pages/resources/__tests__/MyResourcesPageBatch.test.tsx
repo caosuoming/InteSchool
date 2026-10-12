@@ -446,7 +446,9 @@ describe("MyResourcesPage batch actions", () => {
     renderPage("answerSheet");
 
     expect(await screen.findByText("试卷：函数单元测验")).toBeInTheDocument();
+    expect(screen.getByText("函数单元测验（答题卡）")).toBeInTheDocument();
     expect(screen.getByText("讲义：函数复习讲义")).toBeInTheDocument();
+    expect(screen.getByText("函数复习讲义（答题卡）")).toBeInTheDocument();
     expect(screen.queryByText("试卷：函数综合测验")).not.toBeInTheDocument();
 
     const materialTab = screen.getByRole("button", { name: "素材库" });
