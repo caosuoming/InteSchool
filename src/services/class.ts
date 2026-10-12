@@ -6,6 +6,7 @@ import type {
   PersonalClass,
   PersonalClassStudentCandidate,
   Student,
+  StudentType,
   AnyClass,
   ClassroomChoice,
   StudentRosterImportRow,
@@ -24,6 +25,8 @@ export interface StudentInput {
   gender?: "male" | "female";
   subjectSelection?: string;
   isExternal?: boolean;
+  studentType?: StudentType;
+  includeInStatistics?: boolean;
   externalSchool?: string;
 }
 
@@ -191,7 +194,7 @@ export const classService = {
     return rpcCall("class", "getStudent", [studentId]) as any;
   },
 
-  async updateStudent(studentId: string, patch: Partial<Pick<Student, "name" | "studentNo" | "grade" | "gender" | "subjectSelection" | "externalSchool">>): Promise<Student | null> {
+  async updateStudent(studentId: string, patch: Partial<Pick<Student, "name" | "studentNo" | "grade" | "gender" | "subjectSelection" | "externalSchool" | "studentType" | "includeInStatistics">>): Promise<Student | null> {
     return rpcCall("class", "updateStudent", [studentId, patch]) as any;
   },
 

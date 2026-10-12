@@ -12,7 +12,7 @@ import {
   type GradeAcademicTrackClassification,
 } from "./grade-total-score-segment.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
-import { totalRankingGroupKey } from "./grade-statistics.js";
+import { participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
 
 export const DEFAULT_TOTAL_SCORE_TOP_N = 50;
 
@@ -103,7 +103,7 @@ export function buildGradeTotalScoreRankingReport(
   );
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const classLabels = classOptions.classLabels || {};
-  const records = exam.records.filter((record) => !hiddenClassIds.has(record.classId));
+  const records = participatingGradeRecords(exam.records).filter((record) => !hiddenClassIds.has(record.classId));
   const subjects = [...exam.subjects];
   const topN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreTopN);
   const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";

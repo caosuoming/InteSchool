@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GradeExam, GradeStatisticsTemplate } from "../types/index.js";
-import { buildGradeReportTable } from "./grade-reports.js";
+import { buildGradeClassAverages, buildGradeReportTable } from "./grade-reports.js";
 
 const template: GradeStatisticsTemplate = {
   id: "custom",
@@ -67,6 +67,27 @@ const exam: GradeExam = {
 };
 
 describe("grade report tables", () => {
+  it("excludes flagged rows from averages, ranking tables and custom report exports", () => {
+    const filtered = {
+      ...exam,
+      records: exam.records.map((record) => record.studentId === "student-1"
+        ? { ...record, includeInStatistics: false }
+        : record),
+    };
+    expect(filtered.records).toHaveLength(2);
+    expect(buildGradeClassAverages(filtered)[0]).toMatchObject({
+      studentCount: 1,
+      rawTotalAverage: 360,
+      assignedTotalAverage: 390,
+    });
+    expect(buildGradeReportTable(filtered, template).rows).toHaveLength(1);
+    const ranking = buildGradeReportTable(filtered, {
+      ...template, kind: "studentRanking", columns: undefined,
+    });
+    expect(ranking.rows).toHaveLength(1);
+    expect(ranking.rows[0][4]).toBe("乙");
+  });
+
   it("renders custom formula columns in grade-rank order", () => {
     const report = buildGradeReportTable(exam, template);
 

@@ -249,9 +249,38 @@ function examBaseRecords(records: GradeScoreRecord[]) {
     className: record.className,
     subjectSelection: record.subjectSelection,
     classType: record.classType,
+    includeInStatistics: record.includeInStatistics,
     scores: record.scores,
     sourceAssignedScores: record.sourceAssignedScores,
   }));
+}
+
+/** Refresh rankings and statistics eligibility without deleting historical grade rows. */
+export function refreshStudentGradeParticipation(studentId: string, included: boolean): void {
+  const publishedReports = new Map<string, GradePublishedReportBundle>();
+  db.update("gradeExams", (items: GradeExam[] | undefined) => (items || []).map((exam) => {
+    if (exam.deletedAt || !exam.records.some((row) => row.studentId === studentId)) return exam;
+    const base = examBaseRecords(exam.records).map((record) => record.studentId === studentId
+      ? { ...record, includeInStatistics: included }
+      : record);
+    const updated = {
+      ...exam,
+      records: calculateGradeRecords(base, exam.subjects, exam.settings),
+      updatedAt: new Date().toISOString(),
+    };
+    if (exam.publication) {
+      publishedReports.set(exam.id, buildGradePublishedReportBundle(
+        updated, requireContext(exam.schoolId, exam.cohortKey), exam.publication.publishedAt,
+      ));
+    }
+    return updated;
+  }));
+  if (publishedReports.size) {
+    db.update("gradePublications", (items: GradePublicationRecord[] | undefined) => (items || []).map((item) => ({
+      ...item,
+      report: publishedReports.get(item.examId) || item.report,
+    })));
+  }
 }
 
 function defaultOrNormalizedSettings(
@@ -516,12 +545,16 @@ function buildQueryData(teacher: Teacher): GradeQueryData {
       : scope === "grade"
         ? exam.records.filter((record) => fullClassSet.has(record.classId))
         : exam.records;
+    const statisticalRecords = aggregateRecords.filter((record) => record.includeInStatistics !== false);
     const subjectAverages = Object.fromEntries(subjects.map((item) => [
       item,
-      averageGradeValues(aggregateRecords.map((record) => record.assignedScores[item])),
+      averageGradeValues(statisticalRecords.map((record) => record.assignedScores[item])),
     ]));
     const byClass = new Map<string, GradeScoreRecord[]>();
     aggregateRecords.forEach((record) => {
+      if (!byClass.has(record.classId)) byClass.set(record.classId, []);
+    });
+    statisticalRecords.forEach((record) => {
       const current = byClass.get(record.classId) || [];
       current.push(record);
       byClass.set(record.classId, current);
@@ -807,6 +840,7 @@ export const gradeService = {
       className: string;
       subjectSelection?: string;
       classType?: string;
+      includeInStatistics?: boolean;
       scores: Record<string, number | null>;
       sourceAssignedScores?: Record<string, number | null>;
     }> = [];
@@ -866,6 +900,7 @@ export const gradeService = {
         className: classItem.name,
         subjectSelection: row.subjectSelection?.trim() || undefined,
         classType: row.classType?.trim() || undefined,
+        includeInStatistics: student.includeInStatistics,
         scores: normalizeScores(row.scores, subjects, sourceRowNumber),
         sourceAssignedScores: row.assignedScores
           ? normalizeScores(row.assignedScores, subjects, sourceRowNumber)

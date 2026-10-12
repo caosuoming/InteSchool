@@ -577,6 +577,8 @@ export interface StudentArchiveOverview {
   records: StudentArchiveRecord[];
 }
 
+export type StudentType = "regular" | "visiting" | "resumed";
+
 export interface Student {
   id: string;
   name: string;
@@ -588,6 +590,10 @@ export interface Student {
   /** 学生的选科组合，例如“物化生”。 */
   subjectSelection?: string;
   isExternal?: boolean;
+  /** 在校类型，旧记录根据 isExternal 推导。 */
+  studentType?: StudentType;
+  /** 是否参与成绩汇总、赋分及排名；旧记录默认参与。 */
+  includeInStatistics?: boolean;
   externalSchool?: string;
   /** 学生状态：在读 / 挂起 / 已毕业 / 已转校 */
   status: StudentStatus;
@@ -1134,6 +1140,8 @@ export interface GradeScoreRecord {
   className: string;
   /** 成绩表中的学生选科组合或科类。 */
   subjectSelection?: string;
+  /** 不参与汇总的学生仍保留在班级成绩记录中。 */
+  includeInStatistics?: boolean;
   /** 成绩表中的班型描述。 */
   classType?: string;
   scores: Record<string, number | null>;

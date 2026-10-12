@@ -1,3 +1,4 @@
+import { participatingGradeRecords } from "./grade-statistics.js";
 import type {
   GradeExam,
   GradeExamSettings,
@@ -70,7 +71,7 @@ export function buildGradeSubjectScoreSegmentReport(
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const classNames = new Map(context.classes.map((classItem) => [classItem.id, classItem.name]));
   const recordsByClass = new Map<string, typeof exam.records>();
-  exam.records.forEach((record) => {
+  participatingGradeRecords(exam.records).forEach((record) => {
     const current = recordsByClass.get(record.classId) || [];
     current.push(record);
     recordsByClass.set(record.classId, current);
