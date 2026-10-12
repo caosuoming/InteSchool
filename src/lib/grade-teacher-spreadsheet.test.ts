@@ -137,6 +137,23 @@ describe("grade teacher spreadsheet", () => {
     expect(imported.classSubjectTeacherNames?.["class-2"]?.英语).toEqual(["周老师"]);
   });
 
+  it("never fills unassigned class teachers from the subject-wide list", async () => {
+    const current = settings();
+    current.classSubjectTeacherIds = {};
+    const plan = buildGradeTeacherImportPlan(current, context, [{
+      className: "高三(1)班",
+      teacherNamesBySubject: { 数学: ["王老师"] },
+    }]);
+    const imported = applyGradeTeacherImportPlan(current, context, ["数学", "英语"], plan);
+    expect(imported.classSubjectTeacherIds?.["class-1"]?.数学).toEqual(["math-wang"]);
+    expect(imported.classSubjectTeacherIds?.["class-2"]?.数学).toEqual([]);
+
+    await downloadGradeTeacherTemplate("2026届高三", ["数学"], current, context);
+    const rows = writeXlsxFile.mock.calls[0][0][0].data as Array<Array<{ value: string }>>;
+    expect(rows[1][3].value).toBe("");
+    expect(rows[2][3].value).toBe("");
+  });
+
   it("exports a cohort template prefilled with class type, homeroom teacher, and current subject teachers", async () => {
     await downloadGradeTeacherTemplate("2026届高三", ["数学", "英语"], settings(), context);
 

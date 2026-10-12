@@ -361,9 +361,7 @@ function TeacherSettings({
                   </td>
                   {subjects.map((subject) => {
                     const teachers = context.teachers.filter((teacher) => teacher.subject === subject);
-                    const selected = settings.classSubjectTeacherIds?.[classItem.id]?.[subject]
-                      || settings.subjectTeacherIds[subject]
-                      || [];
+                    const selected = settings.classSubjectTeacherIds?.[classItem.id]?.[subject] || [];
                     const manualNames = settings.classSubjectTeacherNames?.[classItem.id]?.[subject] || [];
                     return (
                       <td key={subject} className="px-4 py-3">

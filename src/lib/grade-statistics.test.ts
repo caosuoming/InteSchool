@@ -245,9 +245,10 @@ describe("grade statistics", () => {
     expect(records.map((record) => record.assignedTotal)).toEqual([240, 240, 240]);
   });
 
-  it("migrates legacy subject-wide teachers into every class", () => {
+  it("does not infer class teachers from subject-wide legacy selections", () => {
     const settings = normalizeGradeSettings({
       subjectTeacherIds: { 数学: ["teacher-math"] },
+      classSubjectTeacherIds: { "class-1": { 数学: ["teacher-math"] } },
       assignmentRules: {},
       classSubjects: [],
       templates: [],
@@ -255,8 +256,21 @@ describe("grade statistics", () => {
 
     expect(settings.classSubjectTeacherIds).toEqual({
       "class-1": { 数学: ["teacher-math"] },
-      "class-2": { 数学: ["teacher-math"] },
+      "class-2": { 数学: [] },
     });
+  });
+
+  it("only preselects teachers assigned to the specific class", () => {
+    const settings = buildDefaultGradeSettings(["数学"], ["class-1", "class-2"], [
+      { id: "unassigned", name: "未分配老师", subject: "数学" },
+      { id: "assigned", name: "指定老师", subject: "数学", teachingClassIds: ["class-1"] },
+    ]);
+
+    expect(settings.classSubjectTeacherIds).toEqual({
+      "class-1": { 数学: ["assigned"] },
+      "class-2": { 数学: [] },
+    });
+    expect(settings.subjectTeacherIds.数学).toEqual(["assigned"]);
   });
 
   it("normalizes manually entered class teachers", () => {

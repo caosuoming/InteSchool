@@ -123,9 +123,6 @@ function addSubject(
   subject: string,
   context: GradeImportContext,
 ): GradeExamSettings {
-  const teacherIds = context.teachers
-    .filter((teacher) => teacher.subject === subject)
-    .map((teacher) => teacher.id);
   const classSubjectTeacherIds = Object.fromEntries(context.classes.map((classItem) => [
     classItem.id,
     {
@@ -133,7 +130,7 @@ function addSubject(
       [subject]: context.teachers
         .filter((teacher) => (
           teacher.subject === subject
-          && (!teacher.teachingClassIds?.length || teacher.teachingClassIds.includes(classItem.id))
+          && teacher.teachingClassIds?.includes(classItem.id)
         ))
         .map((teacher) => teacher.id),
     },
@@ -152,7 +149,8 @@ function addSubject(
     ...current,
     subjectTeacherIds: {
       ...current.subjectTeacherIds,
-      [subject]: teacherIds,
+      [subject]: [...new Set(Object.values(classSubjectTeacherIds)
+        .flatMap((classTeachers) => classTeachers[subject] || []))],
     },
     classSubjectTeacherIds,
     classSubjectTeacherNames,

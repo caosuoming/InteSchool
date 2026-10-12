@@ -723,8 +723,7 @@ export const gradeService = {
       classMappings.map(({ targetClass, sourceClass }) => [
         targetClass.id,
         structuredClone(
-          (sourceClass && source.settings.classSubjectTeacherIds?.[sourceClass.id])
-            || source.settings.subjectTeacherIds,
+          (sourceClass && source.settings.classSubjectTeacherIds?.[sourceClass.id]) || {},
         ),
       ]),
     );
