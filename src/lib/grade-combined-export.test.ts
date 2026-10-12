@@ -272,6 +272,8 @@ describe("combined grade exports", () => {
     const classStatisticsReport = buildGradeClassStatisticsReport(exam, [], {
       showSubjectClassRanks: false,
       showSubjectGradeRanks: false,
+      showRawSubjectScores: false,
+      showAssignedSubjectScores: false,
       showRawTotal: false,
       showAssignedTotal: false,
       comparisonExamIds: [],
@@ -298,6 +300,8 @@ describe("combined grade exports", () => {
     const report = buildGradeClassStatisticsReport(exam, [], {
       showSubjectClassRanks: true,
       showSubjectGradeRanks: true,
+      showRawSubjectScores: true,
+      showAssignedSubjectScores: true,
       showRawTotal: true,
       showAssignedTotal: true,
       comparisonExamIds: [],
@@ -309,6 +313,28 @@ describe("combined grade exports", () => {
     const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string }>;
     expect(sheets.map((sheet) => sheet.sheet)).toEqual(["高三（1）班", "高三（2）班"]);
     expect(toFile).toHaveBeenCalledWith("期末考试各班成绩统计.xlsx");
+  });
+
+  it("exports separate raw and assigned elective values into the table-six workbook", async () => {
+    const report = buildGradeClassStatisticsReport(exam, [], {
+      showSubjectClassRanks: false,
+      showSubjectGradeRanks: false,
+      showRawSubjectScores: true,
+      showAssignedSubjectScores: true,
+      showRawTotal: false,
+      showAssignedTotal: false,
+      comparisonExamIds: [],
+    });
+    await exportGradeClassStatisticsReport(report, exam.name);
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
+      data: Array<Array<{ value?: string | number }>>;
+    }>;
+    expect(sheets[0].data[0].map((cell) => cell.value)).toEqual([
+      "班级", "姓名", "语文", "化学（原始分）", "化学（赋分）",
+    ]);
+    expect(sheets[0].data[1].map((cell) => cell.value)).toEqual([
+      "高三（1）班", "张三", 120, 80, 90,
+    ]);
   });
 
   it("includes every subject score in the standalone table-five export", async () => {

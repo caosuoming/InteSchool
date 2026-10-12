@@ -1,10 +1,13 @@
 import type { GradeExam, GradeScoreRecord } from "../types/index.js";
 import { expectedGradeSubjectCount, totalRankingGroupKey } from "./grade-statistics.js";
 import { inferGradeAcademicTrackFromSelection } from "./grade-total-score-segment.js";
+import { isAssignableGradeSubject } from "./grade-subjects.js";
 
 export interface GradeClassStatisticsOptions {
   showSubjectClassRanks: boolean;
   showSubjectGradeRanks: boolean;
+  showRawSubjectScores: boolean;
+  showAssignedSubjectScores: boolean;
   showRawTotal: boolean;
   showAssignedTotal: boolean;
   comparisonExamIds: string[];
@@ -13,6 +16,8 @@ export interface GradeClassStatisticsOptions {
 export const DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS: GradeClassStatisticsOptions = {
   showSubjectClassRanks: false,
   showSubjectGradeRanks: false,
+  showRawSubjectScores: false,
+  showAssignedSubjectScores: false,
   showRawTotal: false,
   showAssignedTotal: false,
   comparisonExamIds: [],
@@ -22,6 +27,8 @@ export type GradeClassStatisticsColumnKind =
   | "className"
   | "studentName"
   | "subjectScore"
+  | "subjectRawScore"
+  | "subjectAssignedScore"
   | "subjectClassRank"
   | "subjectGradeRank"
   | "rawTotal"
@@ -67,6 +74,8 @@ export interface GradeClassStatisticsReport {
 
 interface ExamRankedRecord {
   subjectScores: Record<string, number | null>;
+  rawSubjectScores: Record<string, number | null>;
+  assignedSubjectScores: Record<string, number | null>;
   rawTotal: number | null;
   assignedTotal: number | null;
   subjectClassRanks: Record<string, number | null>;
@@ -194,6 +203,8 @@ function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRan
     rawTotal: totals.get(record.studentId)?.raw ?? null,
     assignedTotal: totals.get(record.studentId)?.assigned ?? null,
     subjectScores: Object.fromEntries(subjects.map((subject) => [subject, finalSubjectScore(record, subject)])),
+    rawSubjectScores: Object.fromEntries(subjects.map((subject) => [subject, finite(record.scores[subject])])),
+    assignedSubjectScores: Object.fromEntries(subjects.map((subject) => [subject, finite(record.assignedScores[subject])])),
     subjectClassRanks: Object.fromEntries(subjects.map((subject) => [
       subject,
       subjectClassRanks[subject].get(record.studentId) ?? null,
@@ -226,14 +237,39 @@ function buildColumns(
   includedExams.forEach((exam) => {
     const prefix = exam.id === currentExam.id ? "" : `${exam.name}·`;
     subjects.forEach((subject) => {
-      columns.push({
-        key: metricKey(exam.id, `subject:${subject}`),
-        label: `${prefix}${subject}`,
-        kind: "subjectScore",
-        examId: exam.id,
-        subject,
-        width: Math.max(10, Math.min(22, `${prefix}${subject}`.length + 4)),
-      });
+      const showSeparateScores = isAssignableGradeSubject(subject)
+        && (options.showRawSubjectScores || options.showAssignedSubjectScores);
+      if (!showSeparateScores) {
+        columns.push({
+          key: metricKey(exam.id, `subject:${subject}`),
+          label: `${prefix}${subject}`,
+          kind: "subjectScore",
+          examId: exam.id,
+          subject,
+          width: Math.max(10, Math.min(22, `${prefix}${subject}`.length + 4)),
+        });
+      } else {
+        if (options.showRawSubjectScores) {
+          columns.push({
+            key: metricKey(exam.id, `subjectRaw:${subject}`),
+            label: `${prefix}${subject}（原始分）`,
+            kind: "subjectRawScore",
+            examId: exam.id,
+            subject,
+            width: Math.max(14, Math.min(28, `${prefix}${subject}（原始分）`.length + 4)),
+          });
+        }
+        if (options.showAssignedSubjectScores) {
+          columns.push({
+            key: metricKey(exam.id, `subjectAssigned:${subject}`),
+            label: `${prefix}${subject}（赋分）`,
+            kind: "subjectAssignedScore",
+            examId: exam.id,
+            subject,
+            width: Math.max(14, Math.min(28, `${prefix}${subject}（赋分）`.length + 4)),
+          });
+        }
+      }
       if (options.showSubjectClassRanks) {
         columns.push({
           key: metricKey(exam.id, `subjectClassRank:${subject}`),
@@ -282,6 +318,14 @@ function fillExamValues(
 ): void {
   subjects.forEach((subject) => {
     values[metricKey(examId, `subject:${subject}`)] = ranked?.subjectScores[subject] ?? null;
+    if (isAssignableGradeSubject(subject)) {
+      if (options.showRawSubjectScores) {
+        values[metricKey(examId, `subjectRaw:${subject}`)] = ranked?.rawSubjectScores[subject] ?? null;
+      }
+      if (options.showAssignedSubjectScores) {
+        values[metricKey(examId, `subjectAssigned:${subject}`)] = ranked?.assignedSubjectScores[subject] ?? null;
+      }
+    }
     if (options.showSubjectClassRanks) {
       values[metricKey(examId, `subjectClassRank:${subject}`)] = ranked?.subjectClassRanks[subject] ?? null;
     }
