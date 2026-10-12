@@ -123,6 +123,30 @@ beforeEach(() => {
 });
 
 describe("generateExamPaperDocx", () => {
+  it("exports project headings and preserves displayed numbering in the answer-only variant", async () => {
+    const flatPaper: ExamPaper = {
+      ...structuredPaper, contentBlocks: [], isExtractCopy: false, layoutMode: "flat",
+      projects: [{ id: "p1", name: "运算练习" }, { id: "p2", name: "拓展练习" }],
+      questions: [
+        { ...structuredPaper.questions[0], id: "q2", projectId: "p2", stem: "拓展问题" },
+        { ...structuredPaper.questions[0], id: "q1", projectId: "p1", stem: "基础问题" },
+      ],
+    };
+    const student = await buildExamPaperDocxBlob(flatPaper, {}, { mode: "student" });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(student));
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain("运算练习");
+    expect(xml).toContain("拓展练习");
+    expect(xml.indexOf("基础问题")).toBeLessThan(xml.indexOf("拓展问题"));
+
+    const answers = await buildExamPaperDocxBlob(flatPaper, {}, { mode: "answers" });
+    const answersZip = await JSZip.loadAsync(await blobToArrayBuffer(answers));
+    const answersXml = await answersZip.file("word/document.xml")!.async("string");
+    expect(answersXml).not.toContain("运算练习");
+    expect(answersXml).toContain("1.");
+    expect(answersXml).toContain("2.");
+  });
+
   it("supports student, normal, and answer-only paper variants", async () => {
     const multiplePaper: ExamPaper = {
       ...structuredPaper,

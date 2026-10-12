@@ -1548,8 +1548,16 @@ export interface SchoolSetting {
 /** 试卷状态 */
 export type ExamPaperStatus = "draft" | "published";
 
+/** 按项目编排试卷时的项目，允许先创建空项目。 */
+export interface ExamPaperProject {
+  id: string;
+  name: string;
+}
+
 /** 试卷题目项 */
 export interface ExamPaperQuestion {
+  /** 按项目编排时所属项目；未指定表示未分组。 */
+  projectId?: string;
   id: string;
   questionId?: string; // 关联题库中的题目（拆解后填入）
   stem: string;
@@ -1605,8 +1613,10 @@ export interface ExamPaper {
   questionSourceType?: string;
   /** 上传文档拆解为题目时使用的题类。 */
   questionCategory?: string;
-  /** 题目编排方式：按题型分组或不分题型 */
+  /** 题目编排方式：按题型分组或按项目（允许不分组）。 */
   layoutMode?: "grouped" | "flat";
+  /** 按项目模式中用户创建的有序项目，支持空项目。 */
+  projects?: ExamPaperProject[];
   /** 使用班级 ID；文档级使用对象只精确到班级。 */
   classIds?: string[];
   /** 旧数据兼容字段；新的文档级使用对象以 classIds 为准。 */
@@ -1641,6 +1651,7 @@ export interface ExamPaper {
     answerBoxStyle?: "solid" | "dashed";
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   createdAt: string;
@@ -2246,6 +2257,7 @@ export interface Lecture {
     answerBoxStyle?: "solid" | "dashed";
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
   };
   /** 排版设置 */

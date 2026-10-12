@@ -1,3 +1,4 @@
+import { getProjectSections } from "@/pages/exam-papers/project-sections";
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   AlignmentType, Tab, TabStopPosition, TabStopType,
@@ -1174,7 +1175,16 @@ export async function buildExamPaperDocxBlob(
         },
       ));
     }
-    for (const [index, question] of paper.questions.entries()) {
+    const projectSections = paper.layoutMode === "flat"
+      ? getProjectSections(paper.questions, paper.projects || [])
+      : [{ project: null, questions: paper.questions }];
+    let questionNumber = 0;
+    for (const section of projectSections) {
+      if (section.project && mode !== "answers") {
+        children.push(createHeading(plainDocumentText(section.project.name)));
+      }
+      for (const question of section.questions) {
+      const index = questionNumber++;
       const linkedQuestion = question.questionId ? questionsById[question.questionId] : undefined;
       solutions.push({
         number: index + 1,
@@ -1190,6 +1200,7 @@ export async function buildExamPaperDocxBlob(
           mode,
           markMultiple,
         );
+      }
       }
     }
   }

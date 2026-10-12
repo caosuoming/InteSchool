@@ -1,9 +1,7 @@
 import type {
   ExamPaper,
   ExamPaperQuestion,
-  ExtractedDocumentBlock,
   Lecture,
-  LectureSection,
 } from "../../src/types/index.js";
 import { isDocumentStructureLocked } from "../../src/lib/document-resource.js";
 import { db } from "../runtime-db.js";
@@ -40,8 +38,8 @@ function samePaperQuestionStructure(
 }
 
 function sameJsonStructure(
-  current: readonly ExtractedDocumentBlock[] | readonly LectureSection[] | undefined,
-  incoming: readonly ExtractedDocumentBlock[] | readonly LectureSection[] | undefined,
+  current: readonly unknown[] | undefined,
+  incoming: readonly unknown[] | undefined,
 ): boolean {
   return JSON.stringify(current || []) === JSON.stringify(incoming || []);
 }
@@ -81,8 +79,12 @@ export function sanitizeExamPaperPatch(
   if (patch.layoutMode !== undefined && patch.layoutMode !== current.layoutMode) {
     throw new Error("上传原稿和拆解稿不能调整题目编排方式");
   }
+  if (patch.projects && !sameJsonStructure(current.projects, patch.projects)) {
+    throw new Error("上传原稿和拆解稿不能调整项目编排");
+  }
   delete safePatch.contentBlocks;
   delete safePatch.layoutMode;
+  delete safePatch.projects;
   return safePatch;
 }
 
