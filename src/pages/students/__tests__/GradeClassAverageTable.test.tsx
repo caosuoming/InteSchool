@@ -126,6 +126,25 @@ const context: GradeImportContext = {
 };
 
 describe("GradeClassAverageTable", () => {
+  it("shows the separately ranked class note beside the school-wide mean", () => {
+    const settings = {
+      ...exam.settings,
+      classSubjects: [
+        { classId: "class-1", examSubjects: ["数学", "化学"], statisticSubjects: ["数学"], separateRankSubjects: ["化学"] },
+        { classId: "class-2", examSubjects: ["数学", "化学"], statisticSubjects: ["数学", "化学"], separateRankSubjects: [] },
+      ],
+    };
+    render(<GradeClassAverageTable exam={exam} settings={settings} template={template} context={context} onChange={vi.fn()} />);
+
+    const meanCell = screen.getByRole("cell", {
+      name: "全校平均（不参与统一排名：化学：1班；总分：1班）",
+    });
+    const row = meanCell.closest("tr")!;
+    expect(row).toHaveTextContent("76.00");
+    expect(row).toHaveTextContent("156.00");
+    expect(row).toHaveTextContent("85.00");
+  });
+
   it("renders uploaded scores and persists user layout adjustments", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

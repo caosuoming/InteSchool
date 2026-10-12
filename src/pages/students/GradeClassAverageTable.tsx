@@ -19,6 +19,7 @@ import {
   buildDefaultClassAverageOptions,
   buildGradeClassAverageReport,
   classAverageScoreCellValue,
+  classAverageOverallLabel,
   formatGradeClassRangeLabel,
   resolveClassAverageOptions,
 } from "@/lib/grade-class-average";
@@ -560,7 +561,7 @@ export function GradeClassAverageTable({
               })}
               {report.options.showOverallAverage && (
                 <tr className="bg-ink-100/70">
-                  <td colSpan={3} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold text-ink-900">全校平均</td>
+                  <td colSpan={3} className="border border-ink-300 px-2 py-1.5 text-center font-bold text-ink-900">{classAverageOverallLabel(report)}</td>
                   {report.subjects.map((subject) => (
                     <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                       {displayScore(
@@ -580,7 +581,7 @@ export function GradeClassAverageTable({
             </tbody>
           </table>
           <div className="mt-2 text-xs text-ink-400">
-            均分按实际有分数的学生计算；分组平均和全校平均按学生人数加权，分差为同类别班级均分的最大值减最小值。
+            均分按实际有分数的学生计算；分组平均和全校平均按学生人数加权；全校平均仅计算各科或总分统一排名组的学生，分差为同类别班级均分的最大值减最小值。
           </div>
         </div>
       )}
