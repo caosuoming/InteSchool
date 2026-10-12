@@ -362,6 +362,57 @@ describe("grade service", () => {
     });
   });
 
+  it("clears imported assigned scores when marking a subject absent, and restores a numeric zero", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const context = await gradeService.getImportContext("school-1", "grad-2026");
+      const subjects = ["数学", "化学"];
+      const settings = { ...buildDefaultGradeSettings(subjects, context.classes.map((item) => item.id)), assignmentRules: {} };
+      const exam = await gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "缺考微调",
+        sourceFileName: "scores.xlsx",
+        sourceSheetName: "成绩",
+        subjects,
+        settings,
+        rows: [{
+          rowKey: "absent-row",
+          sourceRowNumber: 2,
+          sourceName: "旧姓名",
+          sourceStudentNo: "202601",
+          sourceClassName: "高三(1)班",
+          studentId: "student-1",
+          scores: { 数学: 100, 化学: 80 },
+          assignedScores: { 化学: 95 },
+        }],
+      });
+      const teacher = appState.teachers[0] as any;
+      const clearedAssigned = await gradeService.adjustExamScore(exam.id, "student-1", "化学", "assigned", null, teacher);
+      expect(clearedAssigned.records[0]).toMatchObject({
+        scores: { 数学: 100, 化学: null },
+        assignedScores: { 数学: 100, 化学: null },
+      });
+      await gradeService.adjustExamScore(exam.id, "student-1", "化学", "raw", 80, teacher);
+      const absent = await gradeService.adjustExamScore(exam.id, "student-1", "化学", "raw", null, teacher);
+      expect(absent.records[0]).toMatchObject({
+        scores: { 数学: 100, 化学: null },
+        sourceAssignedScores: { 化学: null },
+        assignedScores: { 数学: 100, 化学: null },
+      });
+      expect(absent.scoreAdjustments?.at(-1)).toMatchObject({ kind: "raw", previousValue: 80, nextValue: null });
+
+      const zero = await gradeService.adjustExamScore(exam.id, "student-1", "化学", "raw", 0, teacher);
+      expect(zero.records[0]).toMatchObject({
+        scores: { 数学: 100, 化学: 0 },
+        assignedScores: { 数学: 100, 化学: 0 },
+      });
+      expect(zero.scoreAdjustments?.at(-1)).toMatchObject({ kind: "raw", previousValue: null, nextValue: 0 });
+
+      const assignedAbsent = await gradeService.adjustExamScore(exam.id, "student-1", "数学", "raw", null, teacher);
+      expect(assignedAbsent.records[0].scores.数学).toBeNull();
+    });
+  });
+
   it("updates exam metadata and audits score adjustments while recalculating ranks", async () => {
     const appState = state();
 

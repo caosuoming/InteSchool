@@ -121,14 +121,11 @@ function inferSelectedSubjects(subjectSelection: string | undefined): Set<string
 
 function visibleSubjectsForRecord(exam: GradeExam, record: GradeScoreRecord): string[] {
   const subjectSelection = record.subjectSelection?.trim();
+  if (!subjectSelection) return exam.subjects;
   const selected = inferSelectedSubjects(subjectSelection);
-  const visible = exam.subjects.filter((subject) =>
-    hasNumericScore(record, subject) || (Boolean(subjectSelection) && selected.has(subject)),
+  return exam.subjects.filter((subject) =>
+    selected.has(subject) || hasNumericScore(record, subject),
   );
-  if (visible.length > 0) return visible;
-
-  const classSetting = exam.settings.classSubjects.find((item) => item.classId === record.classId);
-  return exam.subjects.filter((subject) => classSetting?.examSubjects.includes(subject));
 }
 
 export function GradeExamAdjustmentPanel({
@@ -424,7 +421,7 @@ export function GradeExamAdjustmentPanel({
               ? "当前成绩统计为只读；可查看学生成绩和修改记录。"
               : published
                 ? "当前成绩已发布；请先撤回发布，再继续修改学生成绩。"
-                : "可下拉选择或搜索学生。修改分数后失焦即保存；系统按规则计算的赋分不显示，只能修改原始分；导入表中已有的赋分可直接调整。"}
+                : "可下拉选择或搜索学生。缺考科目留空，填 0 表示实际得 0 分；修改后失焦即保存。系统按规则计算的赋分不显示，导入表中已有的赋分可直接调整。"}
           </div>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
