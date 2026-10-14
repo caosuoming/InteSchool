@@ -327,6 +327,7 @@ function currentClassroomContent(
   const allHomeworks = (db.read("classroomHomeworks") as ClassroomHomework[])
     .filter((item) => (
       item.schoolId === device.schoolId
+      && item.managementCategory !== "exam"
       && item.classIds.includes(classId)
       && new Date(item.publishAt).getTime() <= nowMs
     ))

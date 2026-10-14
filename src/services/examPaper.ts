@@ -24,6 +24,9 @@ export interface ExamPaperInput {
   questionCategory?: string;
   layoutMode?: "grouped" | "flat";
   classIds?: string[];
+  managementCategory?: "homework" | "exam";
+  assignedDate?: string;
+  assignedEndDate?: string;
   status?: "draft" | "published";
   originalFileUrl?: string;
   originalFileName?: string;

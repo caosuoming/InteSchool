@@ -67,11 +67,28 @@ export interface ExamPaperInput {
   questionCategory?: string;
   layoutMode?: "grouped" | "flat";
   classIds?: string[];
+  managementCategory?: "homework" | "exam";
+  assignedDate?: string;
+  assignedEndDate?: string;
   status?: "draft" | "published";
   originalFileUrl?: string;
   originalFileName?: string;
   originalFileType?: "word" | "pdf";
   originalFileSize?: number;
+}
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function validateManagementFields(value: Pick<ExamPaper, "managementCategory" | "assignedDate" | "assignedEndDate">): void {
+  if (value.managementCategory && value.managementCategory !== "homework" && value.managementCategory !== "exam") {
+    throw new Error("管理目录不正确");
+  }
+  if (value.assignedDate && !DATE_PATTERN.test(value.assignedDate)) throw new Error("作业开始日期格式不正确");
+  if (value.assignedEndDate) {
+    if (!value.assignedDate || !DATE_PATTERN.test(value.assignedEndDate) || value.assignedEndDate < value.assignedDate) {
+      throw new Error("作业结束日期不正确");
+    }
+  }
 }
 
 function referencedQuestionIds(questions: readonly ExamPaperQuestion[]): string[] {
@@ -171,6 +188,7 @@ export const examPaperService = {
     await delay(400);
     maybeThrowError();
     assertResourceCapacity(teacherId, "examPaper");
+    validateManagementFields(input);
     const now = new Date().toISOString();
     const paper: ExamPaper = {
       id: genId("exam"),
@@ -191,6 +209,9 @@ export const examPaperService = {
       questionCategory: input.questionCategory,
       layoutMode: input.layoutMode || "grouped",
       classIds: input.classIds || [],
+      managementCategory: input.managementCategory || "homework",
+      assignedDate: input.assignedDate,
+      assignedEndDate: input.assignedEndDate,
       studentIds: [],
       status: input.status || "draft",
       originalFileUrl: input.originalFileUrl,
@@ -218,6 +239,7 @@ export const examPaperService = {
       list.map((p) => {
         if (p.id === id) {
           const safePatch = sanitizeExamPaperPatch(p, patch);
+          validateManagementFields({ ...p, ...safePatch });
           delete safePatch.knowledgePointIds;
           if (safePatch.questions) {
             addedQuestionIds = newlyReferencedQuestionIds(p.questions, safePatch.questions);
@@ -268,6 +290,9 @@ export const examPaperService = {
       id: genId("exam"),
       title: newTitle || `${source.title}（副本）`,
       status: "draft",
+      managementCategory: "homework",
+      assignedDate: undefined,
+      assignedEndDate: undefined,
       questions: copiedQuestions,
       knowledgePointIds: [],
       contentBlocks: undefined,
@@ -400,6 +425,9 @@ export const examPaperService = {
       ...source,
       id: genId("exam"),
       title: `${source.title}（拆解版）`,
+      managementCategory: "homework",
+      assignedDate: undefined,
+      assignedEndDate: undefined,
       questions: copiedQuestions,
       knowledgePointIds: [],
       totalScore: copiedQuestions.reduce((sum, question) => sum + question.score, 0),

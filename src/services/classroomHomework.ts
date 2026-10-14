@@ -6,6 +6,7 @@ import type {
 import { rpcCall } from "./api";
 
 export interface ClassroomHomeworkInput {
+  managementCategory?: "homework" | "exam";
   title?: string;
   content: string;
   attachments?: ClassroomHomeworkAttachment[];

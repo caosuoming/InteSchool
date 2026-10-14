@@ -332,7 +332,7 @@ export function MyLessonsPage() {
       );
       const preferred = activeClasses.map((item) => item.id);
       setClasses(activeClasses);
-      setHomeworks(homeworkItems);
+      setHomeworks(homeworkItems.filter((item) => item.managementCategory !== "exam"));
       setNotices(noticeItems);
       setSelectedClassIds((current) => {
         const availableIds = new Set(activeClasses.map((item) => item.id));

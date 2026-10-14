@@ -1627,6 +1627,11 @@ export interface ExamPaper {
   layoutMode?: "grouped" | "flat";
   /** 按项目模式中用户创建的有序项目，支持空项目。 */
   projects?: ExamPaperProject[];
+  /** 作业/考试管理中的归属；旧试卷按作业处理。 */
+  managementCategory?: "homework" | "exam";
+  /** 作业展示区间，未设置时表示尚未布置。 */
+  assignedDate?: string;
+  assignedEndDate?: string;
   /** 使用班级 ID；文档级使用对象只精确到班级。 */
   classIds?: string[];
   /** 旧数据兼容字段；新的文档级使用对象以 classIds 为准。 */
@@ -3008,6 +3013,8 @@ export interface ClassroomHomework {
   teacherName: string;
   schoolId: string;
   subject: string;
+  /** 作业/考试管理中的归属；历史记录默认归作业。 */
+  managementCategory?: "homework" | "exam";
   content: string;
   attachments?: ClassroomHomeworkAttachment[];
   classIds: string[];

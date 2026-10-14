@@ -1,6 +1,6 @@
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import {
   Search, FileQuestion, BookOpen, Lightbulb,
   Calendar, Eye, Presentation, FileBox,
@@ -568,6 +568,8 @@ function ResourceFolderHeader({
 
 export default function MyResourcesPage({ initialTab = "question" }: MyResourcesPageProps) {
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const shortcutStarted = useRef(false);
   const { teacher } = useAuthStore();
   const [activeTab, setActiveTab] = useState<MyResourceTab>(initialTab);
   const [loading, setLoading] = useState(true);
@@ -804,7 +806,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const schoolId = teacher?.schoolId || "sch-1";
   const resourceOptionsSchoolId = activeTab === "question" ? null : schoolId;
-  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(resourceOptionsSchoolId);
+  const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester, ready: resourceOptionsReady } = useSchoolResourceOptions(resourceOptionsSchoolId);
   const {
     examPaperTypes,
     lectureTypes,
@@ -812,6 +814,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     lectureTypeOptions,
     defaultExamPaperTypeId,
     defaultLectureTypeId,
+    ready: documentTypesReady,
     getExamPaperTypeLabel,
     getLectureTypeLabel,
   } = useDocumentTypeOptions(resourceOptionsSchoolId);
@@ -1492,11 +1495,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   };
 
   // 创建空白试卷并进入编辑页面
-  const handleCreateBlankExamPaper = async () => {
+  const handleCreateBlankExamPaper = useCallback(async (fromHomeworkManagement = false) => {
     if (!teacher) return;
     try {
       const created = await examPaperService.createPaper(teacher.id, schoolId, {
-        title: "未命名试卷",
+        title: fromHomeworkManagement ? "未命名作业" : "未命名试卷",
+        managementCategory: "homework",
         description: "",
         chapterIds: [],
         knowledgePointIds: [],
@@ -1513,7 +1517,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     } catch (e: any) {
       toast.error("创建试卷失败", e?.message);
     }
-  };
+  }, [teacher, schoolId, defaultGrade, defaultSchoolYear, defaultSemester, defaultExamPaperTypeId, navigate]);
+
+  useEffect(() => {
+    if (new URLSearchParams(search).get("create") !== "homework"
+      || shortcutStarted.current || !resourceOptionsReady || !documentTypesReady || !teacher) return;
+    shortcutStarted.current = true;
+    void handleCreateBlankExamPaper(true);
+  }, [search, resourceOptionsReady, documentTypesReady, teacher, handleCreateBlankExamPaper]);
 
   // 创建空白讲义并进入编辑页面
   const handleCreateBlankLecture = async () => {
@@ -3326,7 +3337,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <div className="ml-auto flex items-center gap-2">
               {activeTab === "examPaper" && (
                 <>
-                  <Button variant="gold" size="sm" onClick={handleCreateBlankExamPaper}>
+                  <Button variant="gold" size="sm" onClick={() => void handleCreateBlankExamPaper()}>
                     <Plus className="w-3.5 h-3.5" />
                     出试卷
                   </Button>
