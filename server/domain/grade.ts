@@ -26,7 +26,6 @@ import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
   inferClassSubjectAvailability,
-  inferStatisticSubjectsFromSelections,
   normalizeGradeSettings,
 } from "../../src/lib/grade-statistics.js";
 import { averageGradeValues } from "../../src/lib/grade-reports.js";
@@ -214,12 +213,8 @@ function requireContext(schoolId: string, cohortKey: string): GradeImportContext
     .filter((item) => item.schoolId === schoolId && item.cohortKey === cohortKey)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
   const latestRecords = latestExam?.records || [];
-  const classStudentCounts = Object.fromEntries(classes.map((classItem) => [
-    classItem.id,
-    students.filter((student) => student.classId === classItem.id).length,
-  ]));
   const scoreAvailability = latestExam
-    ? inferClassSubjectAvailability(latestRecords, latestExam.subjects, classStudentCounts)
+    ? inferClassSubjectAvailability(latestRecords, latestExam.subjects)
     : {};
   const classTypes = new Map(
     readList<ClassTypeCategory>("classTypeCategories")
@@ -370,14 +365,12 @@ function defaultOrNormalizedSettings(
   subjects: string[],
   context: GradeImportContext,
   classSubjectAvailability: Record<string, string[]> = {},
-  classStatisticSubjectPresets: Record<string, string[]> = {},
 ): GradeExamSettings {
   const defaults = buildDefaultGradeSettings(
     subjects,
     context.classes.map((item) => item.id),
     context.teachers,
     classSubjectAvailability,
-    classStatisticSubjectPresets,
   );
   const baseSettings = settings || defaults;
   const inheritedDefaults = context.templateProfile
@@ -1080,30 +1073,11 @@ export const gradeService = {
     });
 
     const preset = cohortSettingsFor(schoolId, input.cohortKey);
-    const importedClassCounts = Object.fromEntries(context.classes.map((classItem) => [
-      classItem.id,
-      context.students.filter((student) => student.classId === classItem.id).length
-        + newStudents.filter((student) => student.classId === classItem.id).length,
-    ]));
-    const classSelections = new Map<string, string[]>();
-    baseRecords.forEach((record) => {
-      const selection = record.subjectSelection?.trim();
-      if (!selection) return;
-      classSelections.set(record.classId, [...(classSelections.get(record.classId) || []), selection]);
-    });
-    const classStatisticSubjectPresets = Object.fromEntries(context.classes.flatMap((classItem) => {
-      const selections = classSelections.get(classItem.id)
-        || context.classProfiles?.[classItem.id]?.subjectSelections
-        || [];
-      const subjectPreset = inferStatisticSubjectsFromSelections(subjects, selections);
-      return subjectPreset ? [[classItem.id, subjectPreset]] : [];
-    }));
     const settings = defaultOrNormalizedSettings(
       input.settings || preset?.settings,
       subjects,
       context,
-      inferClassSubjectAvailability(baseRecords, subjects, importedClassCounts),
-      classStatisticSubjectPresets,
+      inferClassSubjectAvailability(baseRecords, subjects),
     );
     const records = calculateGradeRecords(baseRecords, subjects, settings);
     const now = new Date().toISOString();

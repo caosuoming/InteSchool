@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import {
   classAverageScoreCellValue,
+  classAverageOverallLabel,
   formatGradeClassRangeLabel,
   type GradeClassAverageScorePair,
 } from "@/lib/grade-class-average";
@@ -155,7 +156,7 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
             })}
             {report.options.showOverallAverage && (
               <tr className="bg-ink-100/70">
-                <td colSpan={3} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold text-ink-900">全校平均</td>
+                <td colSpan={3} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold text-ink-900">{classAverageOverallLabel(report)}</td>
                 {report.subjects.map((subject) => (
                   <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                     {scoreText(report.overallAverage.subjectValues[subject], report.overallSubjectScoreModes[subject])}

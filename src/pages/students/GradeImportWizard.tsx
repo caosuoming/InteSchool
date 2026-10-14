@@ -51,7 +51,6 @@ import {
   buildDefaultGradeSettings,
   DEFAULT_ASSIGNMENT_RULES,
   inferClassSubjectAvailability,
-  inferStatisticSubjectsFromSelections,
   normalizeGradeSettings,
 } from "@/lib/grade-statistics";
 import {
@@ -330,11 +329,6 @@ export function GradeImportWizard({
       const studentClassIds = new Map<string, string>(
         context.students.map((student): [string, string] => [student.id, student.classId]),
       );
-      const classStudentCounts = Object.fromEntries(context.classes.map((classItem) => [
-        classItem.id,
-        context.students.filter((student) => student.classId === classItem.id).length
-          + matched.filter((row) => row.createStudent?.classId === classItem.id).length,
-      ]));
       const classSubjectAvailability = inferClassSubjectAvailability(
         matched.flatMap((row) => {
           const classId: string | undefined = row.createStudent?.classId
@@ -342,29 +336,12 @@ export function GradeImportWizard({
           return classId ? [{ classId, scores: row.scores, assignedScores: row.assignedScores }] : [];
         }),
         importedSubjects,
-        classStudentCounts,
       );
-      const classSelections = new Map<string, string[]>();
-      matched.forEach((row) => {
-        const classId = row.createStudent?.classId
-          || (row.studentId ? studentClassIds.get(row.studentId) : undefined);
-        const selection = row.subjectSelection?.trim();
-        if (!classId || !selection) return;
-        classSelections.set(classId, [...(classSelections.get(classId) || []), selection]);
-      });
-      const classStatisticSubjectPresets = Object.fromEntries(context.classes.flatMap((classItem) => {
-        const selections = classSelections.get(classItem.id)
-          || context.classProfiles?.[classItem.id]?.subjectSelections
-          || [];
-        const preset = inferStatisticSubjectsFromSelections(importedSubjects, selections);
-        return preset ? [[classItem.id, preset]] : [];
-      }));
       const defaults = buildDefaultGradeSettings(
         importedSubjects,
         context.classes.map((item) => item.id),
         context.teachers,
         classSubjectAvailability,
-        classStatisticSubjectPresets,
       );
       const formulaDefaults = context.templateProfile
         ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }

@@ -137,7 +137,7 @@ describe("GradeClassAverageTable", () => {
     render(<GradeClassAverageTable exam={exam} settings={settings} template={template} context={context} onChange={vi.fn()} />);
 
     const meanCell = screen.getByRole("cell", {
-      name: "全校平均（不参与统一排名：化学：1班；总分：1班）",
+      name: "全校平均（部分）",
     });
     const row = meanCell.closest("tr")!;
     expect(row).toHaveTextContent("76.00");

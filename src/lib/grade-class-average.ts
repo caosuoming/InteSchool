@@ -316,16 +316,9 @@ function combinedSubjectScoreModes(
 }
 
 export function classAverageOverallLabel(report: GradeClassAverageReport): string {
-  const excluded = [
-    ...report.subjects.map((subject) => {
-      const classes = report.overallExcludedClasses.subjects[subject];
-      return classes.length ? `${subject}：${classes.join("、")}` : "";
-    }).filter(Boolean),
-    ...(report.overallExcludedClasses.total.length
-      ? [`总分：${report.overallExcludedClasses.total.join("、")}`]
-      : []),
-  ];
-  return excluded.length ? `全校平均（不参与统一排名：${excluded.join("；")}）` : "全校平均";
+  const hasExcluded = report.overallExcludedClasses.total.length > 0
+    || report.subjects.some((subject) => report.overallExcludedClasses.subjects[subject].length > 0);
+  return hasExcluded ? "全校平均（部分）" : "全校平均";
 }
 
 export function classAverageScoreCellValue(
@@ -421,11 +414,16 @@ export function buildGradeClassAverageReport(
     const setting = classSettings.get(classId);
     return Boolean(setting && (
       (setting.separateRankSubjects || []).includes(subject)
-      || !setting.statisticSubjects.includes(subject)
+      || (setting.examSubjects.includes(subject) && !setting.statisticSubjects.includes(subject))
     ));
   };
-  const excludedFromTotal = (classId: string): boolean =>
-    (classSettings.get(classId)?.separateRankSubjects || []).length > 0;
+  const excludedFromTotal = (classId: string): boolean => {
+    const setting = classSettings.get(classId);
+    return Boolean(setting && (
+      (setting.separateRankSubjects || []).length > 0
+      || setting.examSubjects.some((subject) => !setting.statisticSubjects.includes(subject))
+    ));
+  };
   const overallExcludedClasses = {
     subjects: Object.fromEntries(effectiveSubjects.map((subject) => [
       subject,

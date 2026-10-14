@@ -675,9 +675,6 @@ function classAverageWorkbookSheet(
         fontWeight: "bold",
         backgroundColor: "#F3F4F6",
         wrap: true,
-        height: report.overallExcludedClasses.total.length
-          || report.subjects.some((subject) => report.overallExcludedClasses.subjects[subject].length)
-          ? 48 : undefined,
       }),
       null,
       null,

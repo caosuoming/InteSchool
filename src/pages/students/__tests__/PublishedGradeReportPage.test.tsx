@@ -197,6 +197,16 @@ describe("PublishedGradeReportPage", () => {
     await waitFor(() => expect(fetch).toHaveBeenLastCalledWith("public-token", "one-time-code"));
   });
 
+  it("marks partial school averages on a shared grade report", async () => {
+    const partial = structuredClone(bundle);
+    if (!partial.classAverage) throw new Error("missing class average");
+    partial.classAverage.overallExcludedClasses.subjects.化学 = ["1班"];
+    vi.spyOn(gradeService, "getPublishedReportByToken").mockResolvedValue(partial);
+    renderPage();
+
+    expect(await screen.findByText("全校平均（部分）")).toBeInTheDocument();
+  });
+
   it("matches the platform tables for teachers, standards, zero counts, and summary rows", async () => {
     vi.spyOn(gradeService, "getPublishedReportByToken").mockResolvedValue(bundle);
     renderPage();

@@ -66,7 +66,7 @@ describe("grade statistics", () => {
     expect(included.assignedScores.化学).toBe(100);
   });
 
-  it("presets unified ranking subjects from the class elective combination", () => {
+  it("defaults all examined class subjects to unified ranking regardless of elective presets", () => {
     const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
     const preset = inferStatisticSubjectsFromSelections(subjects, ["史政地"]);
 
@@ -77,16 +77,15 @@ describe("grade statistics", () => {
       ["class-1"],
       [],
       { "class-1": subjects },
-      { "class-1": preset! },
     );
     expect(settings.classSubjects[0]).toMatchObject({
       examSubjects: subjects,
-      statisticSubjects: ["语文", "数学", "英语", "政治", "历史", "地理"],
+      statisticSubjects: subjects,
       separateRankSubjects: [],
     });
   });
 
-  it("infers complete score subjects for each class", () => {
+  it("infers all examined subjects even when some students lack a score", () => {
     const availability = inferClassSubjectAvailability([
       { classId: "class-1", scores: { 数学: 100, 化学: 90 } },
       { classId: "class-1", scores: { 数学: 80, 化学: null } },
@@ -96,15 +95,11 @@ describe("grade statistics", () => {
         scores: { 数学: 88, 化学: null },
         assignedScores: { 数学: 88, 化学: 92 },
       },
-    ], ["数学", "化学"], {
-      "class-1": 2,
-      "class-2": 2,
-      "class-3": 1,
-    });
+    ], ["数学", "化学"]);
 
     expect(availability).toEqual({
-      "class-1": ["数学"],
-      "class-2": [],
+      "class-1": ["数学", "化学"],
+      "class-2": ["数学", "化学"],
       "class-3": ["数学", "化学"],
     });
   });
@@ -223,6 +218,23 @@ describe("grade statistics", () => {
     expect(secondClassTop.subjectRanks?.化学).toBe(1);
     expect(secondClassSecond.subjectRanks?.化学).toBe(2);
     expect(secondClassTop.subjectRankScopes?.化学).toBe("cohort");
+  });
+
+  it("excludes unchecked subjects from cohort ranks while retaining their imported scores", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1", "class-2"]);
+    settings.assignmentRules = {};
+    settings.classSubjects[0].statisticSubjects = ["数学"];
+    const normalized = normalizeGradeSettings(settings, ["数学", "化学"], ["class-1", "class-2"]);
+    const records = calculateGradeRecords(baseRecords, ["数学", "化学"], normalized);
+
+    const byStudent = Object.fromEntries(records.map((record) => [record.studentId, record]));
+    expect(byStudent["student-1"].scores.化学).toBe(90);
+    expect(byStudent["student-1"].assignedScores.化学).toBe(90);
+    expect(byStudent["student-1"].subjectRanks?.化学).toBeNull();
+    expect(byStudent["student-2"].subjectRanks?.化学).toBeNull();
+    expect(byStudent["student-3"].subjectRanks?.化学).toBe(1);
+    expect([1, 2, 3].map((id) => byStudent[`student-${id}`].subjectRanks?.数学)).toEqual([1, 2, 3]);
+    expect([1, 2, 3].map((id) => byStudent[`student-${id}`].rawTotal)).toEqual([100, 90, 130]);
   });
 
   it("pools several separate classes, keeps other classes together, and partitions total ranks", () => {
