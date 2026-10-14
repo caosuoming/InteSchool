@@ -28,6 +28,7 @@ interface NavItem {
   /** 是否仅学校身份可见（个人身份隐藏） */
   schoolOnly?: boolean;
   examManagerOnly?: boolean;
+  examViewerOnly?: boolean;
   children?: { path: string; label: string; icon: typeof LayoutDashboard }[];
 }
 
@@ -57,6 +58,7 @@ const allNavItems: NavItem[] = [
   { path: "/school-resources", label: "校本资源", icon: Building2, schoolOnly: true },
   { path: "/platform-resources", label: "平台资源", icon: Cloud },
   { path: "/prep", label: "集体备课", icon: Users, schoolOnly: true },
+  { path: "/my-exams/grades", label: "成绩统计", icon: FileSpreadsheet, schoolOnly: true, examViewerOnly: true },
   {
     path: "/my-exams",
     label: "我的教务",
@@ -93,6 +95,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const navItems = allNavItems.filter((item) => {
     if (item.schoolOnly && isPersonalIdentity) return false;
     if (item.examManagerOnly && !canManageExams) return false;
+    if (item.examViewerOnly && canManageExams) return false;
     return true;
   });
 

@@ -136,7 +136,7 @@ export default function App() {
             <Route path="/my-exams" element={<RequireExamManager><MyExamsPage /></RequireExamManager>} />
             <Route path="/my-exams/rooms" element={<RequireExamManager><MyExamsPage section="rooms" /></RequireExamManager>} />
             <Route path="/my-exams/invigilation" element={<RequireExamManager><MyExamsPage section="invigilation" /></RequireExamManager>} />
-            <Route path="/my-exams/grades" element={<RequireExamManager><MyExamsPage section="grades" /></RequireExamManager>} />
+            <Route path="/my-exams/grades" element={<MyExamsPage section="grades" />} />
             <Route path="/my-exams/schedule" element={<RequireExamManager><MyExamsPage section="schedule" /></RequireExamManager>} />
 
             <Route path="/school-resources" element={<SchoolResourcesPage />} />
