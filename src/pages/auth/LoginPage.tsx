@@ -44,7 +44,6 @@ export default function LoginPage({
   const [personalOnly, setPersonalOnly] = useState(false);
   const [accessSettings, setAccessSettings] = useState<PlatformAccessSettings>({ registrationMode: "open", schoolCreationMode: "review" });
   const [schoolName, setSchoolName] = useState("");
-  const [schoolCode, setSchoolCode] = useState("");
   const [schoolCity, setSchoolCity] = useState("");
   const [schoolDescription, setSchoolDescription] = useState("");
   const [showRecoveryHelp, setShowRecoveryHelp] = useState(false);
@@ -153,7 +152,7 @@ export default function LoginPage({
       roles,
       requestSchoolAdmin,
       ...(!personalOnly && createSchool
-        ? { newSchool: { name: schoolName, code: schoolCode, city: schoolCity, description: schoolDescription } }
+        ? { newSchool: { name: schoolName, city: schoolCity, description: schoolDescription } }
         : !personalOnly && selectedSchool
           ? { schoolId: selectedSchool.id }
           : {}),
@@ -326,7 +325,6 @@ export default function LoginPage({
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Input label="学校名称" value={schoolName} onChange={(event) => setSchoolName(event.target.value)} required />
-                      <Input label="学校代码" value={schoolCode} onChange={(event) => setSchoolCode(event.target.value)} required placeholder="如 NJUHS" />
                       <Input label="所在城市" value={schoolCity} onChange={(event) => setSchoolCity(event.target.value)} required />
                       <Textarea label="学校简介（可选）" value={schoolDescription} onChange={(event) => setSchoolDescription(event.target.value)} />
                     </div>

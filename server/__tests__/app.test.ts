@@ -716,7 +716,7 @@ describe("production backend", () => {
         password: "StrongPass123",
         name: "直建学校教师",
         phone: newSchoolPhone,
-        newSchool: { name: "直接创建测试校", code: "DIRECT1", city: "南京" },
+        newSchool: { name: "直接创建测试校", city: "南京" },
         subject: "数学",
       },
     });
@@ -724,7 +724,11 @@ describe("production backend", () => {
     const directTeacher = directSchool.json<{ teacher: { schoolId: string | null } }>().teacher;
     expect(directTeacher.schoolId).toEqual(expect.any(String));
     expect(built.store.loadState().schools).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: directTeacher.schoolId, name: "直接创建测试校", code: "DIRECT1" }),
+      expect.objectContaining({
+        id: directTeacher.schoolId,
+        name: "直接创建测试校",
+        code: expect.stringMatching(/^SCH-[A-F0-9]{16}$/),
+      }),
     ]));
   });
 
@@ -1015,7 +1019,7 @@ describe("production backend", () => {
         password: "StrongPass123",
         name: "新校教师",
         phone: newSchoolPhone,
-        newSchool: { name: "南京测试新校", code: "NJTST", city: "南京", description: "测试学校" },
+        newSchool: { name: "南京测试新校", city: "南京", description: "测试学校" },
         subject: "化学",
         teachingGrades: ["高一"],
         roles: ["teacher", "gradeLeader"],
@@ -1034,7 +1038,7 @@ describe("production backend", () => {
     const creationApplication = (afterNewSchoolRegistration.schoolCreationApplications as Array<Record<string, unknown>>)
       .find((item) => item.name === "南京测试新校");
     expect(creationApplication).toMatchObject({
-      code: "NJTST",
+      code: expect.stringMatching(/^SCH-[A-F0-9]{16}$/),
       status: "pending",
       schoolId: expect.any(String),
       registrationApplicationId: expect.any(String),

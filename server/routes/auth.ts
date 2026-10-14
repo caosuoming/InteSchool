@@ -5,6 +5,7 @@ import type { DatabaseStore } from "../database.js";
 import type { ServerConfig } from "../config.js";
 import type { AppState, SessionUser, TeacherRecord } from "../types.js";
 import { withSerializedState } from "../rpc.js";
+import { generateSchoolCode } from "../lib/school-code.js";
 import { canManageTeachingProfiles } from "../../src/lib/teaching-profile-permissions.js";
 import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 import { normalizeTeacherRoles, TEACHER_ROLES } from "../../src/lib/teacher-roles.js";
@@ -56,7 +57,7 @@ const optionalEmailSchema = z.preprocess(
 
 const schoolDraftSchema = z.object({
   name: z.string().trim().min(2).max(100),
-  code: z.string().trim().min(2).max(30).regex(/^[A-Za-z0-9_-]+$/),
+  code: z.string().trim().min(2).max(24).regex(/^[A-Za-z0-9_-]+$/).optional(),
   city: z.string().trim().min(2).max(50),
   description: z.string().trim().max(300).optional().default(""),
 });
@@ -519,6 +520,7 @@ export async function registerAuthRoutes(
     const schoolAffiliationId = randomUUID();
     let schoolId: string | null = null;
     let schoolName: string | null = null;
+    let newSchoolCode: string | null = null;
     let directNewSchool: {
       id: string;
       name: string;
@@ -533,7 +535,11 @@ export async function registerAuthRoutes(
 
     if (input.newSchool) {
       const normalizedName = input.newSchool.name.toLowerCase();
-      const normalizedCode = input.newSchool.code.toLowerCase();
+      newSchoolCode = input.newSchool.code?.toUpperCase() || generateSchoolCode(
+        state.schools as Array<{ code: string }>,
+        state.schoolCreationApplications as Array<{ code: string; status: string }>,
+      );
+      const normalizedCode = newSchoolCode.toLowerCase();
       const schoolConflict = (state.schools as Array<{ name: string; code: string }>).some((school) =>
         school.name.trim().toLowerCase() === normalizedName
         || school.code.trim().toLowerCase() === normalizedCode);
@@ -549,7 +555,7 @@ export async function registerAuthRoutes(
         directNewSchool = {
           id: schoolId,
           name: schoolName,
-          code: input.newSchool.code.toUpperCase(),
+          code: newSchoolCode,
           logo: schoolName.charAt(0) || "校",
           description: input.newSchool.description || "由新用户注册时创建",
           teacherCount: 1,
@@ -678,7 +684,7 @@ export async function registerAuthRoutes(
             requesterId: teacherId,
             requesterName: input.name,
             name: input.newSchool.name,
-            code: input.newSchool.code.toUpperCase(),
+            code: newSchoolCode,
             city: input.newSchool.city,
             description: input.newSchool.description || "由新用户注册时申请新增",
             schoolId,

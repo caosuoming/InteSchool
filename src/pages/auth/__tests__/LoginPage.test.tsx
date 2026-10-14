@@ -130,7 +130,7 @@ describe("LoginPage", () => {
     await user.type(screen.getByLabelText("手机号"), "13900139000");
     await user.type(screen.getByLabelText("所在学校"), "南京新校");
     await user.click(screen.getByRole("button", { name: /没有我的学校，申请新增/ }));
-    await user.type(screen.getByLabelText("学校代码"), "NJNEW");
+    expect(screen.queryByLabelText("学校代码")).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("所在城市"), "南京");
     await user.click(screen.getByRole("checkbox", { name: "高一" }));
     await user.click(screen.getByRole("checkbox", { name: "年级组长" }));
@@ -139,7 +139,7 @@ describe("LoginPage", () => {
 
     expect(authState.register).toHaveBeenCalledWith(expect.objectContaining({
       phone: "13900139000",
-      newSchool: expect.objectContaining({ name: "南京新校", code: "NJNEW", city: "南京" }),
+      newSchool: { name: "南京新校", city: "南京", description: "" },
       teachingGrades: ["高一"],
       roles: ["teacher", "gradeLeader"],
     }));
