@@ -6,6 +6,7 @@ import { buildGradeTotalScoreSegmentReport } from "./grade-total-score-segment";
 import { buildGradeSubjectScoreSegmentReport } from "./grade-subject-score-segment";
 import { buildGradeElectiveScoreSegmentReport } from "./grade-elective-score-segment";
 import {
+  exportGradeExam,
   exportGradeClassAverageReport,
   exportGradeClassStatisticsReport,
   exportGradeElectiveScoreSegmentReport,
@@ -116,6 +117,23 @@ const context: GradeImportContext = {
   teachers: [],
 };
 
+type ExportRow = Array<null | {
+  value?: string | number;
+  columnSpan?: number;
+  align?: string;
+  alignVertical?: string;
+}>;
+
+function expectCenteredMergedTitle(row: ExportRow, title: string) {
+  expect(row[0]).toMatchObject({
+    columnSpan: row.length,
+    align: "center",
+    alignVertical: "center",
+  });
+  expect(row[0]?.value).toContain(title);
+  expect(row.slice(1)).toEqual(Array.from({ length: row.length - 1 }, () => null));
+}
+
 describe("combined grade exports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -177,6 +195,11 @@ describe("combined grade exports", () => {
     expect(sheets.every((sheet) => sheet.data.every((row) => row.every(
       (cell) => cell === null || cell.align === "center",
     )))).toBe(true);
+
+    for (const sheet of sheets) {
+      expectCenteredMergedTitle(sheet.data[0], "期末考试");
+      expect(sheet.data[0][0]?.value).toContain("2026.07.01");
+    }
 
     const tableOne = sheets.find((sheet) => sheet.sheet.startsWith("表一"))!;
     const firstCategoryRow = tableOne.data.slice(2).find((row) => row[0]?.rowSpan);
@@ -320,6 +343,13 @@ describe("combined grade exports", () => {
       "期末考试总分前50名.xlsx",
       "期末考试各班成绩统计.xlsx",
     ]);
+
+    for (const [index, [workbook]] of writeXlsxFile.mock.calls.entries()) {
+      const rowsBySheet = index < 2
+        ? [workbook as ExportRow[]]
+        : (workbook as Array<{ data: ExportRow[] }>).map((sheet) => sheet.data);
+      rowsBySheet.forEach((rows) => expectCenteredMergedTitle(rows[0], "期末考试"));
+    }
   });
 
   it("places every class from table six in its own sheet", async () => {
@@ -336,8 +366,12 @@ describe("combined grade exports", () => {
     await exportGradeClassStatisticsReport(report, exam.name);
 
     expect(writeXlsxFile).toHaveBeenCalledTimes(1);
-    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string }>;
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string; data: ExportRow[]; stickyRowsCount: number }>;
     expect(sheets.map((sheet) => sheet.sheet)).toEqual(["高三（1）班", "高三（2）班"]);
+    for (const sheet of sheets) {
+      expectCenteredMergedTitle(sheet.data[0], sheet.sheet);
+      expect(sheet.stickyRowsCount).toBe(2);
+    }
     expect(toFile).toHaveBeenCalledWith("期末考试各班成绩统计.xlsx");
   });
 
@@ -355,12 +389,29 @@ describe("combined grade exports", () => {
     const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
       data: Array<Array<{ value?: string | number }>>;
     }>;
-    expect(sheets[0].data[0].map((cell) => cell.value)).toEqual([
+    expect(sheets[0].data[1].map((cell) => cell.value)).toEqual([
       "班级", "姓名", "语文", "化学（原始分）", "化学（赋分）",
     ]);
-    expect(sheets[0].data[1].map((cell) => cell.value)).toEqual([
+    expect(sheets[0].data[2].map((cell) => cell.value)).toEqual([
       "高三（1）班", "张三", 120, 80, 90,
     ]);
+  });
+
+  it("adds a merged title above each custom score template", async () => {
+    await exportGradeExam({
+      ...exam,
+      settings: { ...settings, templates: [{ ...classAverageTemplate, enabled: true }] },
+    });
+
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
+      data: ExportRow[];
+      stickyRowsCount: number;
+    }>;
+    expect(sheets).toHaveLength(1);
+    expectCenteredMergedTitle(sheets[0].data[0], "期末考试");
+    expect(sheets[0].data[0][0]?.value).toContain("2026.07.01");
+    expect(sheets[0].data[1][0]?.value).toBe("班级");
+    expect(sheets[0].stickyRowsCount).toBe(2);
   });
 
   it("includes every subject score in the standalone table-five export", async () => {

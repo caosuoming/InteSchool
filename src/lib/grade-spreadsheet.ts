@@ -399,10 +399,11 @@ export async function exportGradeExam(exam: GradeExam): Promise<void> {
     return {
       sheet: safeSheetName(template.name, index),
       data: [
+        titleRow(`${exam.name}${template.name}`, report.headers.length, exam.examDate),
         report.headers.map(header),
         ...report.rows.map((row) => row.map(valueCell)),
       ],
-      stickyRowsCount: 1,
+      stickyRowsCount: 2,
       columns: report.headers.map((_, columnIndex) => ({
         width: Math.max(8, Math.min(40, report.widths?.[columnIndex] || 14)),
       })),
@@ -535,15 +536,17 @@ function uniqueWorkbookSheetName(name: string, usedNames: Set<string>): string {
 }
 
 function titleRow(title: string, columnCount: number, reportDate?: string): CombinedWorkbookRow {
-  return Array.from({ length: columnCount }, (_, index) => {
-    if (index === 0) {
-      return combinedWorkbookCell(title, { fontWeight: "bold", fontSize: 15 });
-    }
-    if (reportDate && index === columnCount - 1) {
-      return combinedWorkbookCell(reportDate.replace(/-/g, "."), { fontWeight: "bold" });
-    }
-    return combinedWorkbookCell(null);
-  });
+  const displayTitle = reportDate ? `${title}（${reportDate.replace(/-/g, ".")}）` : title;
+  return [
+    combinedWorkbookCell(displayTitle, {
+      columnSpan: columnCount,
+      fontWeight: "bold",
+      fontSize: 15,
+      height: 30,
+      wrap: true,
+    }),
+    ...Array.from({ length: columnCount - 1 }, () => null),
+  ];
 }
 
 function headingCell(value: string, options: Record<string, unknown> = {}): CombinedWorkbookCell {
@@ -1012,10 +1015,11 @@ export async function exportGradeClassStatisticsReport(
   const sheets: CombinedWorkbookSheet[] = report.classes.map((classTable) => ({
     sheet: uniqueWorkbookSheetName(classTable.className, usedNames),
     data: [
+      titleRow(`${report.title} - ${classTable.className}`, report.columns.length),
       headingRow(report.columns.map((column) => column.label)),
       ...classTable.rows.map((row) => report.columns.map((column) => combinedWorkbookCell(row.values[column.key]))),
     ],
-    stickyRowsCount: 1,
+    stickyRowsCount: 2,
     columns: report.columns.map((column) => ({ width: column.width })),
   }));
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
