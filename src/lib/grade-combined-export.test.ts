@@ -374,8 +374,8 @@ describe("combined grade exports", () => {
       data: Array<Array<{ value?: string | number }>>;
     }>;
     expect(sheets.map((sheet) => sheet.data[0][0].value)).toEqual([
-      "期末考试单独排名（化学）总分前2名（赋分）",
-      "期末考试统一排名总分前1名（赋分）",
+      "期末考试单独排名（化学）总分前2名（赋分）（2026.07.01）",
+      "期末考试统一排名总分前1名（赋分）（2026.07.01）",
     ]);
     expect(toFile).toHaveBeenCalledWith("期末考试总分排名.xlsx");
   });

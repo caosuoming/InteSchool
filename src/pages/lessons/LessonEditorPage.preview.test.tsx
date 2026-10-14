@@ -360,7 +360,7 @@ describe("LessonEditorPage preview query", () => {
     renderPage(`/my-lessons/${courseware.id}/edit`);
 
     fireEvent.click(await screen.findByRole("button", { name: "跨页复制文本" }));
-    fireEvent.click(screen.getByRole("button", { name: "复制元素" }));
+    fireEvent.click(await screen.findByRole("button", { name: "复制元素" }));
     fireEvent.click(screen.getByText("目标页"));
 
     const pasteButton = screen.getByRole("button", { name: "粘贴元素" });
@@ -404,7 +404,7 @@ describe("LessonEditorPage preview query", () => {
     renderPage(`/my-lessons/${courseware.id}/edit`);
 
     fireEvent.click(await screen.findByRole("button", { name: "待剪切图片" }));
-    fireEvent.click(screen.getByRole("button", { name: "剪切元素" }));
+    fireEvent.click(await screen.findByRole("button", { name: "剪切元素" }));
     fireEvent.click(screen.getByText("剪切目标页"));
     fireEvent.click(screen.getByRole("button", { name: "粘贴元素" }));
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
