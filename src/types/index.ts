@@ -1663,6 +1663,7 @@ export interface ExamPaper {
     mode: "blank" | "with-questions";
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
+    concentratedChoiceDirection?: "horizontal" | "vertical";
     widePaperColumns?: 2 | 3;
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
@@ -2272,6 +2273,7 @@ export interface Lecture {
     mode: "blank" | "with-questions";
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
+    concentratedChoiceDirection?: "horizontal" | "vertical";
     widePaperColumns?: 2 | 3;
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
