@@ -178,14 +178,15 @@ describe("live directory counts", () => {
     const appState = state();
     await runWithState(appState, async () => {
       const chapterTree = await knowledgeService.getChapterTree("school-a");
-      expect(findNode(chapterTree, "ch-parent").count).toBe(3);
-      expect(findNode(chapterTree, "ch-child").count).toBe(2);
+      expect(findNode(chapterTree, "ch-parent")).toMatchObject({ count: 3, directCount: 2 });
+      expect(findNode(chapterTree, "ch-child")).toMatchObject({ count: 2, directCount: 2 });
 
       const knowledgeTree = await knowledgeService.getKnowledgeTree("school-a");
-      expect(findNode(knowledgeTree, "kp-alias-a")).toMatchObject({ count: 3 });
+      expect(findNode(knowledgeTree, "kp-group-a")).toMatchObject({ count: 3, directCount: 0 });
+      expect(findNode(knowledgeTree, "kp-alias-a")).toMatchObject({ count: 3, directCount: 3 });
       expect(findNode(knowledgeTree, "kp-alias-a").description).toBeUndefined();
       expect(findNode(knowledgeTree, "kp-alias-a").chapterId).toBeUndefined();
-      expect(findNode(knowledgeTree, "kp-alias-b").count).toBe(3);
+      expect(findNode(knowledgeTree, "kp-alias-b")).toMatchObject({ count: 3, directCount: 3 });
       expect(knowledgeTree.count).toBe(3);
 
       (appState.questions as Question[]).push(
@@ -193,8 +194,8 @@ describe("live directory counts", () => {
       );
 
       const refreshedChapterTree = await knowledgeService.getChapterTree("school-a");
-      expect(findNode(refreshedChapterTree, "ch-parent").count).toBe(4);
-      expect(findNode(refreshedChapterTree, "ch-child").count).toBe(3);
+      expect(findNode(refreshedChapterTree, "ch-parent")).toMatchObject({ count: 4, directCount: 2 });
+      expect(findNode(refreshedChapterTree, "ch-child")).toMatchObject({ count: 3, directCount: 3 });
     });
   });
 
@@ -238,7 +239,10 @@ describe("live directory counts", () => {
         { start: "2026-01-01T00:00:00.000Z", end: "2026-12-31T23:59:59.999Z" },
       );
 
-      expect(findNode(annotated, "ch-parent")).toMatchObject({ count: 3, doneCount: 2, masteryRate: 0.75 });
+      expect(findNode(annotated, "ch-parent")).toMatchObject({
+        count: 3, directCount: 2, doneCount: 2, directDoneCount: 1,
+        masteryRate: 0.75, directMasteryRate: 1,
+      });
       expect(findNode(annotated, "ch-child")).toMatchObject({ count: 2, doneCount: 1, masteryRate: 0.5 });
     });
   });

@@ -50,12 +50,14 @@ vi.mock("@/components/tree/SearchableTree", () => ({
     editable = false,
     onDataChange,
     cascadeCheck = true,
+    includeDescendantCounts = true,
     headerActions,
   }: {
     data: TreeNode;
     editable?: boolean;
     onDataChange?: (data: TreeNode) => void;
     cascadeCheck?: boolean;
+    includeDescendantCounts?: boolean;
     headerActions?: import("react").ReactNode;
   }) => (
     <div
@@ -63,6 +65,7 @@ vi.mock("@/components/tree/SearchableTree", () => ({
       data-editable={String(editable)}
       data-has-data-change={String(Boolean(onDataChange))}
       data-cascade-check={String(cascadeCheck)}
+      data-include-descendant-counts={String(includeDescendantCounts)}
     >
       目录
       {headerActions}
@@ -281,6 +284,7 @@ describe("QuestionBankPage personal resource scope", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "包含" }));
     expect(screen.getByTestId("searchable-tree-knowledge")).toHaveAttribute("data-cascade-check", "false");
+    expect(screen.getByTestId("searchable-tree-knowledge")).toHaveAttribute("data-include-descendant-counts", "false");
   });
 
   it("queries personal questions by teacher while keeping class context on the active school", async () => {

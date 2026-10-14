@@ -127,6 +127,18 @@ describe("SearchableTree", () => {
     expect(onCheck).toHaveBeenCalledWith(["chapter-1"]);
   });
 
+  it("forwards direct-only counts to the tree while leaving directory selection unchanged", () => {
+    const data: TreeNode = {
+      ...tree,
+      children: [{ ...tree.children[0], count: 5, directCount: 1, children: [] }],
+    };
+    const { rerender } = render(<SearchableTree data={data} title="章节目录" />);
+    expect(screen.getByText("第一章 集合与函数").parentElement).toHaveTextContent("5");
+
+    rerender(<SearchableTree data={data} title="章节目录" includeDescendantCounts={false} />);
+    expect(screen.getByText("第一章 集合与函数").parentElement).toHaveTextContent("1");
+  });
+
   it("shows an empty state when no node matches", () => {
     render(<SearchableTree data={tree} title="知识点目录" />);
 

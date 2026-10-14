@@ -19,7 +19,9 @@ function buildKnowledgeAliasMap(points: KnowledgePoint[]): Map<string, Set<strin
 
 /**
  * Derive directory counts from the current question collection.
- * Parent counts include descendants, while each question is counted at most once.
+ * Parent counts include descendants; direct counts exclude them.
+ * Knowledge-point aliases with the same name are treated as one logical point.
+ * Each question is counted at most once per node.
  */
 export function annotateTreeWithQuestionCounts(
   tree: TreeNode,
@@ -44,55 +46,66 @@ export function annotateTreeWithQuestionCounts(
     }
   }
 
-  const annotate = (node: TreeNode): { node: TreeNode; subtreeIds: Set<string> } => {
-    const annotatedChildren = node.children.map(annotate);
-    const subtreeIds = new Set<string>();
-    if (node.id !== "root") subtreeIds.add(node.id);
-    for (const child of annotatedChildren) {
-      for (const id of child.subtreeIds) subtreeIds.add(id);
-    }
-
-    const matchingIds = new Set(subtreeIds);
+  const matchingQuestionIds = (ids: ReadonlySet<string>): Set<string> => {
+    const matchingIds = new Set(ids);
     if (type === "knowledge") {
-      for (const id of subtreeIds) {
+      for (const id of ids) {
         for (const aliasId of aliasesById.get(id) ?? []) matchingIds.add(aliasId);
       }
     }
-
-    const matchedQuestionIds = new Set<string>();
+    const matched = new Set<string>();
     for (const id of matchingIds) {
-      for (const questionId of questionIdsByDirectoryId.get(id) ?? []) {
-        matchedQuestionIds.add(questionId);
-      }
+      for (const questionId of questionIdsByDirectoryId.get(id) ?? []) matched.add(questionId);
     }
+    return matched;
+  };
+
+  const getProgress = (ids: ReadonlySet<string>) => {
     let doneCount: number | undefined;
     if (doneQuestionIds) {
       doneCount = 0;
-      for (const questionId of matchedQuestionIds) {
-        if (doneQuestionIds.has(questionId)) doneCount += 1;
+      for (const id of ids) {
+        if (doneQuestionIds.has(id)) doneCount += 1;
       }
     }
-
     let masteryRate: number | undefined;
     if (scoredProgressByQuestionId) {
       let correct = 0;
       let total = 0;
-      for (const questionId of matchedQuestionIds) {
-        const progress = scoredProgressByQuestionId.get(questionId);
+      for (const id of ids) {
+        const progress = scoredProgressByQuestionId.get(id);
         if (!progress) continue;
         correct += progress.correct;
         total += progress.total;
       }
       if (total > 0) masteryRate = correct / total;
     }
+    return { doneCount, masteryRate };
+  };
+
+  const annotate = (node: TreeNode): { node: TreeNode; subtreeIds: Set<string> } => {
+    const annotatedChildren = node.children.map(annotate);
+    const directIds = new Set(node.id === "root" ? [] : [node.id]);
+    const subtreeIds = new Set(directIds);
+    for (const child of annotatedChildren) {
+      for (const id of child.subtreeIds) subtreeIds.add(id);
+    }
+
+    const directQuestionIds = matchingQuestionIds(directIds);
+    const subtreeQuestionIds = matchingQuestionIds(subtreeIds);
+    const directProgress = getProgress(directQuestionIds);
+    const subtreeProgress = getProgress(subtreeQuestionIds);
 
     return {
       subtreeIds,
       node: {
         ...node,
-        count: matchedQuestionIds.size,
-        doneCount,
-        masteryRate,
+        count: subtreeQuestionIds.size,
+        directCount: directQuestionIds.size,
+        doneCount: subtreeProgress.doneCount,
+        directDoneCount: directProgress.doneCount,
+        masteryRate: subtreeProgress.masteryRate,
+        directMasteryRate: directProgress.masteryRate,
         children: annotatedChildren.map((child) => child.node),
       },
     };

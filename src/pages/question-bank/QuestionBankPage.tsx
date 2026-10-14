@@ -984,6 +984,7 @@ export default function QuestionBankPage({
                   checkedIds={displayCheckedIds}
                   onCheck={setDisplayCheckedIds}
                   cascadeCheck={includeDescendants}
+                  includeDescendantCounts={includeDescendants}
                   showDoneCount={selectedStudentIds.length > 0}
                   expandLevel={1}
                   searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : "搜索知识点..."}

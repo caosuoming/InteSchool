@@ -1348,9 +1348,13 @@ export interface TreeNode {
   name: string;
   type: TreeNodeType;
   count: number;
+  /** 仅直接关联本节点（不含子节点）的题目数。 */
+  directCount?: number;
   doneCount?: number;
+  directDoneCount?: number;
   /** 选中学生在该目录已评分答题中的正确率，范围 0~1。 */
   masteryRate?: number;
+  directMasteryRate?: number;
   children: TreeNode[];
   expanded?: boolean;
   description?: string;
