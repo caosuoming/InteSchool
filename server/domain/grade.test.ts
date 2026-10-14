@@ -284,7 +284,7 @@ describe("grade service", () => {
     });
   });
 
-  it("presets unified ranking from the imported class subject selection", async () => {
+  it("defaults all imported exam subjects to unified ranking, regardless of elective selection", async () => {
     const appState = state();
     const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 
@@ -309,7 +309,7 @@ describe("grade service", () => {
       });
 
       expect(exam.settings.classSubjects.find((item) => item.classId === "class-1")?.statisticSubjects)
-        .toEqual(["语文", "数学", "英语", "政治", "历史", "地理"]);
+        .toEqual(subjects);
     });
   });
 
