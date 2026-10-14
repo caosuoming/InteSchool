@@ -36,7 +36,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input, Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
-import { isSchoolExamAdmin } from "@/lib/exam-permissions";
+import { canManageSchoolExams, isSchoolExamAdmin } from "@/lib/exam-permissions";
 import {
   ASSIGNMENT_GRADE_SUBJECTS,
   buildDefaultGradeSettings,
@@ -80,9 +80,11 @@ function gradeExamTimestamp(exam: GradeExam): number {
 function ExamSectionTabs({
   section,
   quota,
+  canManageExams,
 }: {
   section: MyExamsSection;
   quota: UserQuotaSnapshot | null;
+  canManageExams: boolean;
 }) {
   return (
     <div className="mb-5 flex gap-1 rounded-xl border border-ink-100 bg-paper p-1.5 shadow-sm">
@@ -91,7 +93,7 @@ function ExamSectionTabs({
         ["invigilation", "/my-exams/invigilation", "监考表", ClipboardCheck, "invigilation"],
         ["grades", "/my-exams/grades", "成绩统计", FileSpreadsheet, "gradeStatistics"],
         ["schedule", "/my-exams/schedule", "排课表", CalendarRange, null],
-      ] as const).map(([value, path, label, Icon, usageKey]) => (
+      ] as const).filter(([value]) => canManageExams || value === "grades").map(([value, path, label, Icon, usageKey]) => (
         <Link
           key={value}
           to={path}
@@ -181,6 +183,7 @@ function GradePreprocessing({
   cohortKey,
   onCohortChange,
   isSchoolAdmin = false,
+  canManageExams = true,
 }: {
   schoolId: string;
   teacherId: string;
@@ -188,6 +191,7 @@ function GradePreprocessing({
   cohortKey: string;
   onCohortChange: (value: string) => void;
   isSchoolAdmin?: boolean;
+  canManageExams?: boolean;
 }) {
   const [context, setContext] = useState<GradeImportContext | null>(null);
   const [record, setRecord] = useState<GradeCohortSettings | null>(null);
@@ -287,9 +291,9 @@ function GradePreprocessing({
     [exams, selectedExamId],
   );
   const canEditSelected = Boolean(
-    selectedExam && (selectedExam.teacherId === teacherId || isSchoolAdmin),
+    canManageExams && selectedExam && (selectedExam.teacherId === teacherId || isSchoolAdmin),
   );
-  const readOnly = Boolean(selectedExam && !canEditSelected);
+  const readOnly = !canManageExams || Boolean(selectedExam && !canEditSelected);
   const previousExams = useMemo(() => {
     if (!selectedExam) return [];
     const selectedTimestamp = gradeExamTimestamp(selectedExam);
@@ -552,7 +556,7 @@ function GradePreprocessing({
               label: `${item.label}（${item.studentCount} 人）`,
             }))}
           />
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          {canManageExams && <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <Select
               label="从其他年级复制"
               value={copySource}
@@ -563,15 +567,15 @@ function GradePreprocessing({
             <Button variant="outline" onClick={copy} disabled={!copySource || readOnly} loading={copying}>
               <Copy className="h-4 w-4" />复制并适配
             </Button>
-          </div>
-          <div className="flex gap-2">
+          </div>}
+          {canManageExams && <div className="flex gap-2">
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4" />导入成绩
             </Button>
             <Button variant="gold" onClick={save} loading={saving} disabled={readOnly}>
               <Save className="h-4 w-4" />保存年级配置
             </Button>
-          </div>
+          </div>}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 pt-4 text-xs text-ink-500">
           <Badge variant={record ? "green" : "amber"}>{record ? "已保存" : "尚未保存"}</Badge>
@@ -626,11 +630,11 @@ function GradePreprocessing({
             icon={<TableProperties className="h-8 w-8" />}
             title="尚未上传该年级成绩"
             description="导入成绩后，系统会在这里自动生成可调整的班级平均分和总分分数段统计表。"
-            action={(
+            action={canManageExams ? (
               <Button variant="outline" onClick={() => setImportOpen(true)}>
                 <Upload className="h-4 w-4" />导入成绩
               </Button>
-            )}
+            ) : undefined}
           />
         </Card>
       ) : (
@@ -677,8 +681,8 @@ function GradePreprocessing({
             <GradeExamAdjustmentPanel
               exam={selectedExam}
               onExamUpdated={handleExamUpdated}
-              onDownloadTablesOneToFive={downloadTablesOneToFive}
-              onDownloadClassStatistics={downloadClassStatistics}
+              onDownloadTablesOneToFive={canManageExams ? downloadTablesOneToFive : undefined}
+              onDownloadClassStatistics={canManageExams ? downloadClassStatistics : undefined}
               onPrintTablesOneToFive={classAverageTemplate && totalScoreSegmentTemplate
                 ? printTablesOneToFive
                 : undefined}
@@ -778,7 +782,7 @@ function GradePreprocessing({
         </Card>
       )}
 
-      <GradeSettingsEditor
+      {canManageExams && <GradeSettingsEditor
         settings={draft}
         subjects={subjects}
         context={context}
@@ -786,16 +790,16 @@ function GradePreprocessing({
         onTeacherImport={saveTeacherImport}
         section="settings"
         records={selectedExam?.records || []}
-      />
+      />}
 
-      <GradeImportWizard
+      {canManageExams && <GradeImportWizard
         open={importOpen}
         schoolId={schoolId}
         teacherId={teacherId}
         cohorts={cohorts}
         onClose={() => setImportOpen(false)}
         onImported={handleImported}
-      />
+      />}
     </div>
   );
 }
@@ -805,6 +809,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
   const affiliation = getCurrentAffiliation();
   const schoolId = affiliation?.schoolId || null;
   const isAdmin = Boolean(teacher && isSchoolExamAdmin(teacher, affiliation));
+  const canManageExams = Boolean(teacher && canManageSchoolExams(teacher, affiliation));
   const [searchParams, setSearchParams] = useSearchParams();
   const [cohorts, setCohorts] = useState<GradeCohort[]>([]);
   const [loading, setLoading] = useState(true);
@@ -866,10 +871,10 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
     <div className={cn(section === "grades" && "grade-summary-page")}>
       <PageHeader
         title="我的教务"
-        description="统一管理考场布置、监考表、成绩统计和全校排课"
+        description={canManageExams ? "统一管理考场布置、监考表、成绩统计和全校排课" : "查看本校成绩统计与已授权的考试成绩"}
         icon={<ClipboardList className="h-5 w-5" />}
       />
-      <ExamSectionTabs section={section} quota={quota} />
+      <ExamSectionTabs section={section} quota={quota} canManageExams={canManageExams} />
 
       {!schoolId || !teacher ? (
         <Card><EmptyState title="请切换到学校身份" description="我的教务仅对已认证学校的管理身份开放。" /></Card>
@@ -896,6 +901,7 @@ export default function MyExamsPage({ section = "rooms" }: { section?: MyExamsSe
           cohortKey={cohortKey}
           onCohortChange={changeCohort}
           isSchoolAdmin={isAdmin}
+          canManageExams={canManageExams}
         />
       ) : (
         <TeachingScheduleSection

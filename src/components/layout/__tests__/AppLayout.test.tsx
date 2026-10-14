@@ -71,6 +71,17 @@ describe("AppLayout", () => {
     expect(screen.queryByText("个人教学班")).not.toBeInTheDocument();
   });
 
+  it("offers ordinary school teachers a grade-viewing link without management navigation", () => {
+    render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <AppLayout><div>页面内容</div></AppLayout>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "成绩统计" })).toHaveAttribute("href", "/my-exams/grades");
+    expect(screen.queryByRole("link", { name: "我的教务" })).not.toBeInTheDocument();
+  });
+
   it("shows 作业考试 after 我的教学 and before 我的学生", () => {
     const { container } = render(
       <MemoryRouter initialEntries={["/dashboard"]}>

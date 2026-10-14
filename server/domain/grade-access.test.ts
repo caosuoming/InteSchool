@@ -50,9 +50,17 @@ describe("grade exam access control", () => {
       await expect(gradeService.getExam("exam-1", token, teacher("exempt"))).rejects.toThrow();
       await gradeService.setExamAccess("exam-1", { exemptTeacherIds: ["exempt"] }, teacher("owner"));
       expect((await gradeService.listExams("school-1", undefined, teacher("exempt")))[0].records).toHaveLength(1);
+      expect((await gradeService.getExam("exam-1", undefined, teacher("exempt")))?.records[0].scores.数学).toBe(88);
+      expect((await gradeService.getExam("exam-1", undefined, teacher("owner")))?.accessControl?.exemptTeacherIds)
+        .toEqual(["exempt"]);
+      expect((state.gradeExamAccess as Array<{ exemptTeacherIds: string[] }>)[0].exemptTeacherIds)
+        .toEqual(["exempt"]);
       await expect(gradeService.getExam("exam-1", token, teacher("guest"))).rejects.toThrow();
       await expect(gradeService.setExamAccess("exam-1", { exemptTeacherIds: ["stranger"] }, teacher("owner")))
         .rejects.toThrow("当前学校");
+      await gradeService.setExamAccess("exam-1", { exemptTeacherIds: [] }, teacher("owner"));
+      expect((await gradeService.listExams("school-1", undefined, teacher("exempt")))[0].accessControl?.locked).toBe(true);
+      await expect(gradeService.getExam("exam-1", undefined, teacher("exempt"))).rejects.toThrow("访问密码");
       await gradeService.setExamAccess("exam-1", { password: null }, teacher("owner"));
       expect((await gradeService.getExam("exam-1", undefined, teacher("guest")))?.records).toHaveLength(1);
     });

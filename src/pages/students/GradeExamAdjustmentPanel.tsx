@@ -148,6 +148,7 @@ export function GradeExamAdjustmentPanel({
   const [accessSaving, setAccessSaving] = useState(false);
   const [oneTimePassword, setOneTimePassword] = useState("");
   const [exemptTeacherId, setExemptTeacherId] = useState("");
+  const [exemptTeacherIds, setExemptTeacherIds] = useState<string[]>(exam.accessControl?.exemptTeacherIds || []);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
   const [savingScore, setSavingScore] = useState<string | null>(null);
@@ -158,6 +159,14 @@ export function GradeExamAdjustmentPanel({
   const shareUrl = exam.publication
     ? `${window.location.origin}/grade-reports/${exam.publication.shareToken}`
     : "";
+  const savedExemptTeacherIds = exam.accessControl?.exemptTeacherIds || [];
+  const exemptChanged = exemptTeacherIds.length !== savedExemptTeacherIds.length
+    || exemptTeacherIds.some((id) => !savedExemptTeacherIds.includes(id));
+
+  useEffect(() => {
+    setExemptTeacherIds([...(exam.accessControl?.exemptTeacherIds || [])]);
+    setExemptTeacherId("");
+  }, [exam.id, exam.accessControl?.exemptTeacherIds]);
 
   useEffect(() => {
     setExamName(exam.name);
@@ -386,24 +395,30 @@ export function GradeExamAdjustmentPanel({
                 </div>
               )}
               <label className="block text-sm font-medium text-ink-700">免密访问用户</label>
+              <p className="text-xs text-ink-500">名单中的本校教师可以直接查看该成绩统计，无需输入访问密码。修改名单后请保存。</p>
               <div className="flex items-end gap-2">
-                <div className="min-w-56 flex-1"><Select value={exemptTeacherId} placeholder="选择本校教师" options={teachers
-                  .filter((teacher) => teacher.id !== exam.teacherId && !exam.accessControl?.exemptTeacherIds?.includes(teacher.id))
+                <div className="min-w-56 flex-1"><Select aria-label="选择免密用户" value={exemptTeacherId} placeholder="选择本校教师" options={teachers
+                  .filter((teacher) => teacher.id !== exam.teacherId && !exemptTeacherIds.includes(teacher.id))
                   .map((teacher) => ({ value: teacher.id, label: `${teacher.name} · ${teacher.subject}` }))}
                   onChange={(event) => setExemptTeacherId(event.target.value)} /></div>
                 <Button variant="outline" disabled={!exemptTeacherId || accessSaving} onClick={() => {
-                  void saveAccess({ exemptTeacherIds: [...(exam.accessControl?.exemptTeacherIds || []), exemptTeacherId] });
+                  setExemptTeacherIds((ids) => [...ids, exemptTeacherId]);
                   setExemptTeacherId("");
                 }}>添加</Button>
               </div>
               <div className="flex flex-wrap gap-2">
-                {(exam.accessControl?.exemptTeacherIds || []).map((id) => (
+                {exemptTeacherIds.map((id) => (
                   <span key={id} className="inline-flex items-center gap-2 rounded border border-ink-100 px-2 py-1 text-xs">
                     {teachers.find((teacher) => teacher.id === id)?.name || id}
                     <button type="button" aria-label={`移除免密用户 ${id}`} disabled={accessSaving}
-                      onClick={() => void saveAccess({ exemptTeacherIds: (exam.accessControl?.exemptTeacherIds || []).filter((value) => value !== id) })}>×</button>
+                      onClick={() => setExemptTeacherIds((ids) => ids.filter((value) => value !== id))}>×</button>
                   </span>
                 ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" disabled={!exemptChanged || accessSaving} loading={accessSaving}
+                  onClick={() => void saveAccess({ exemptTeacherIds })}>保存免密用户</Button>
+                {exemptChanged && <span className="text-xs text-amber-700">有未保存的修改</span>}
               </div>
             </>
           ) : <p className="text-sm text-ink-500">仅上传者可以修改访问控制。</p>}

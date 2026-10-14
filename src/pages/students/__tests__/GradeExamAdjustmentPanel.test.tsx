@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildDefaultGradeSettings } from "@/lib/grade-statistics";
 import { GradeExamAdjustmentPanel } from "@/pages/students/GradeExamAdjustmentPanel";
 import { gradeService } from "@/services/grade";
-import type { GradeExam } from "@/types";
+import type { GradeExam, GradeTeacherOption } from "@/types";
 
 vi.mock("@/services/grade", () => ({
   gradeService: {
@@ -13,6 +13,7 @@ vi.mock("@/services/grade", () => ({
     adjustExamScore: vi.fn(),
     publishExamResults: vi.fn(),
     unpublishExamResults: vi.fn(),
+    setExamAccess: vi.fn(),
   },
 }));
 
@@ -104,6 +105,76 @@ describe("GradeExamAdjustmentPanel", () => {
         examDate: "2026-08-12",
       });
     });
+  });
+
+  it("saves a passwordless user list explicitly, including later removals", async () => {
+    const user = userEvent.setup();
+    const initial: GradeExam = {
+      ...buildExam(),
+      accessControl: { passwordProtected: true, locked: false, exemptTeacherIds: [] },
+    };
+    const teachers: GradeTeacherOption[] = [
+      { id: "teacher-1", name: "上传者", subject: "数学" },
+      { id: "teacher-2", name: "语文教师", subject: "语文" },
+      { id: "teacher-3", name: "英语教师", subject: "英语" },
+    ];
+    vi.mocked(gradeService.setExamAccess).mockImplementation(async (_examId, patch) => ({
+      ...initial,
+      accessControl: { ...initial.accessControl!, exemptTeacherIds: patch.exemptTeacherIds || [] },
+    }));
+    function AccessHarness() {
+      const [exam, setExam] = useState(initial);
+      return <GradeExamAdjustmentPanel exam={exam} onExamUpdated={setExam} canManageAccess teachers={teachers} />;
+    }
+    render(<AccessHarness />);
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "选择免密用户" }), "teacher-2");
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "选择免密用户" }), "teacher-3");
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    expect(gradeService.setExamAccess).not.toHaveBeenCalled();
+    expect(screen.getByText("有未保存的修改")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "保存免密用户" }));
+    await waitFor(() => expect(gradeService.setExamAccess).toHaveBeenCalledWith("exam-1", {
+      exemptTeacherIds: ["teacher-2", "teacher-3"],
+    }));
+    expect(screen.getByRole("button", { name: "保存免密用户" })).toBeDisabled();
+    expect(screen.getByText("语文教师")).toBeInTheDocument();
+    expect(screen.getByText("英语教师")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "移除免密用户 teacher-2" }));
+    await user.click(screen.getByRole("button", { name: "保存免密用户" }));
+    await waitFor(() => expect(gradeService.setExamAccess).toHaveBeenLastCalledWith("exam-1", {
+      exemptTeacherIds: ["teacher-3"],
+    }));
+  });
+
+  it("keeps an unsaved exemption draft after a failed save for retry", async () => {
+    const user = userEvent.setup();
+    const initial: GradeExam = {
+      ...buildExam(),
+      accessControl: { passwordProtected: true, locked: false, exemptTeacherIds: [] },
+    };
+    vi.mocked(gradeService.setExamAccess)
+      .mockRejectedValueOnce(new Error("网络暂不可用"))
+      .mockResolvedValueOnce({
+        ...initial,
+        accessControl: { passwordProtected: true, locked: false, exemptTeacherIds: ["teacher-2"] },
+      });
+    render(<GradeExamAdjustmentPanel exam={initial} onExamUpdated={vi.fn()} canManageAccess
+      teachers={[{ id: "teacher-2", name: "语文教师", subject: "语文" }]} />);
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "选择免密用户" }), "teacher-2");
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("button", { name: "保存免密用户" }));
+    await waitFor(() => expect(gradeService.setExamAccess).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("有未保存的修改")).toBeInTheDocument();
+    expect(screen.getByText("语文教师")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "保存免密用户" }));
+    await waitFor(() => expect(gradeService.setExamAccess).toHaveBeenCalledTimes(2));
+    expect(gradeService.setExamAccess).toHaveBeenLastCalledWith("exam-1", { exemptTeacherIds: ["teacher-2"] });
   });
 
   it("keeps subject score editors in one compact horizontally scrollable row", () => {

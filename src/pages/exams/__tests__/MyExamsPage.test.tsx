@@ -150,6 +150,34 @@ describe("MyExamsPage", () => {
     expect(await screen.findByTestId("grade-settings-editor")).toHaveAttribute("data-section", "settings");
   });
 
+  it("allows ordinary school teachers to view grades without exam-management controls", async () => {
+    const viewerAffiliation = { ...affiliation, roles: ["teacher"] as TeacherAffiliation["roles"] };
+    useAuthStore.setState({
+      teacher: {
+        id: "teacher-2",
+        name: "普通教师",
+        schoolId: "school-1",
+        subject: "语文",
+        role: "teacher",
+        roles: ["teacher"],
+      } as Teacher,
+      getCurrentAffiliation: () => viewerAffiliation,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/my-exams/grades"]}>
+        <MyExamsPage section="grades" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("尚未上传该年级成绩")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /成绩统计/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /考场布置/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导入成绩" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存年级配置" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("grade-settings-editor")).not.toBeInTheDocument();
+  });
+
   it("shows 排课表 after grade statistics and uses 我的教务 as the page title", async () => {
     render(
       <MemoryRouter initialEntries={["/my-exams/invigilation"]}>
