@@ -117,4 +117,40 @@ describe("SchoolAuthPage", () => {
       );
     });
   });
+
+  it("submits a new school without asking for a school code", async () => {
+    const user = userEvent.setup();
+    vi.mocked(schoolService.searchSchools).mockResolvedValue([]);
+    vi.mocked(schoolService.submitSchoolCreationApplication).mockResolvedValue({
+      id: "new-school-application",
+      requesterId: teacher.id,
+      requesterName: teacher.name,
+      name: "新建测试学校",
+      code: "SCH-1234567890ABCDEF",
+      city: "南京",
+      description: "由用户申请新增",
+      status: "pending",
+      createdAt: "2026-10-14T12:00:00.000Z",
+    });
+    render(
+      <MemoryRouter>
+        <SchoolAuthPage />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByPlaceholderText("搜索学校名称、代码或城市"), "新建测试学校");
+    await user.click(await screen.findByRole("button", { name: /申请新增“新建测试学校”/ }));
+    expect(screen.queryByLabelText("学校代码")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("所在城市"), "南京");
+    await user.click(screen.getByRole("button", { name: "提交审核" }));
+
+    await waitFor(() => {
+      expect(schoolService.submitSchoolCreationApplication).toHaveBeenCalledWith({
+        name: "新建测试学校",
+        city: "南京",
+        description: "",
+      });
+    });
+  });
+
 });

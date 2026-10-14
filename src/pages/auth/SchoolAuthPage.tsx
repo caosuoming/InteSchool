@@ -46,7 +46,6 @@ export default function SchoolAuthPage() {
   const [creationApplications, setCreationApplications] = useState<SchoolCreationApplication[]>([]);
   const [schoolDraft, setSchoolDraft] = useState({
     name: "",
-    code: "",
     city: "",
     description: "",
   });
@@ -104,8 +103,8 @@ export default function SchoolAuthPage() {
   };
 
   const handleCreateSchoolApplication = async () => {
-    if (!schoolDraft.name.trim() || !schoolDraft.code.trim() || !schoolDraft.city.trim()) {
-      toast.error("请填写学校名称、代码和所在城市");
+    if (!schoolDraft.name.trim() || !schoolDraft.city.trim()) {
+      toast.error("请填写学校名称和所在城市");
       return;
     }
     setCreationSubmitting(true);
@@ -113,7 +112,7 @@ export default function SchoolAuthPage() {
       const application = await schoolService.submitSchoolCreationApplication(schoolDraft);
       setCreationApplications((items) => [application, ...items]);
       setCreationOpen(false);
-      setSchoolDraft({ name: "", code: "", city: "", description: "" });
+      setSchoolDraft({ name: "", city: "", description: "" });
       toast.success("新增学校申请已提交", "平台超级管理员审核通过后，该学校会出现在搜索结果中");
     } catch (error) {
       toast.error("提交失败", error instanceof Error ? error.message : undefined);
@@ -497,14 +496,6 @@ export default function SchoolAuthPage() {
             maxLength={100}
             onChange={(event) => setSchoolDraft((draft) => ({ ...draft, name: event.target.value }))}
             placeholder="例如：南京市第一中学"
-          />
-          <Input
-            label="学校代码"
-            value={schoolDraft.code}
-            maxLength={24}
-            onChange={(event) => setSchoolDraft((draft) => ({ ...draft, code: event.target.value.toUpperCase() }))}
-            placeholder="例如：NJYZ"
-            hint="2-24 位字母、数字、下划线或短横线"
           />
           <Input
             label="所在城市"

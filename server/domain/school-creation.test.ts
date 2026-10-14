@@ -87,6 +87,37 @@ describe("school creation applications", () => {
     });
   });
 
+  it("generates distinct school codes when no code is supplied", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const first = await schoolService.submitSchoolCreationApplication({
+        name: "申请新校一",
+        city: "南京",
+      }, teacher("applicant"));
+      const second = await schoolService.submitSchoolCreationApplication({
+        name: "申请新校二",
+        city: "南京",
+      }, teacher("applicant"));
+      expect(first.code).toMatch(/^SCH-[A-F0-9]{16}$/);
+      expect(second.code).toMatch(/^SCH-[A-F0-9]{16}$/);
+      expect(second.code).not.toBe(first.code);
+
+      await expect(schoolService.submitSchoolCreationApplication({
+        name: "申请新校一",
+        city: "南京",
+      }, teacher("applicant"))).rejects.toThrow("已有待审核申请");
+
+      const approved = await schoolService.reviewSchoolCreationApplication(
+        first.id, true, teacher("admin", "platform_admin"),
+      );
+      expect(appState.schools).toContainEqual(expect.objectContaining({
+        id: approved.schoolId,
+        name: "申请新校一",
+        code: first.code,
+      }));
+    });
+  });
+
   it("rejects existing schools and duplicate pending applications", async () => {
     const appState = state();
     await runWithState(appState, async () => {

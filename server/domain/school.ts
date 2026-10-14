@@ -6,13 +6,14 @@ import type {
 import type { TeacherRecord } from "../types.js";
 import { db } from "../runtime-db.js";
 import { delay } from "../domain-shared.js";
+import { generateSchoolCode } from "../lib/school-code.js";
 import { createNotification, platformAdminTeacherIds } from "./notification.js";
 import { isTeacherRole, normalizeTeacherRoles } from "../../src/lib/teacher-roles.js";
 import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 
 interface SchoolCreationInput {
   name: string;
-  code: string;
+  code?: string;
   city: string;
   description?: string;
 }
@@ -39,7 +40,9 @@ function schoolApplications(): SchoolCreationApplication[] {
 
 function validateSchoolInput(input: SchoolCreationInput): Required<SchoolCreationInput> {
   const name = input.name.trim();
-  const code = input.code.trim().toUpperCase();
+  const code = input.code?.trim().toUpperCase() || generateSchoolCode(
+    db.read("schools") as School[], schoolApplications(),
+  );
   const city = input.city.trim();
   const description = input.description?.trim() || "由用户申请新增";
   if (name.length < 2 || name.length > 100) throw new Error("学校名称应为 2-100 个字符");

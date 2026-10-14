@@ -17,7 +17,7 @@ export const schoolService = {
 
   async submitSchoolCreationApplication(input: {
     name: string;
-    code: string;
+    code?: string;
     city: string;
     description?: string;
   }): Promise<SchoolCreationApplication> {

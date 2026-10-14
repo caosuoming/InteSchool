@@ -66,7 +66,7 @@ export const authService = {
       name: string;
       phone: string;
       schoolId?: string;
-      newSchool?: { name: string; code: string; city: string; description?: string };
+      newSchool?: { name: string; code?: string; city: string; description?: string };
       subject: string;
       teachingGrades?: string[];
       roles?: TeacherRole[];
