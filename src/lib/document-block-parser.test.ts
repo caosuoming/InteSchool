@@ -851,6 +851,62 @@ describe("document block parser", () => {
     ]);
   });
 
+  it("splits numbered 考法 sections into separate knowledge blocks between questions", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例1 求集合 A 的元素个数。",
+        "解析：逐个数出元素即可。",
+        "考法1 集合的表示方法",
+        "列举法适用于元素较少的集合。",
+        "考法２：集合间的关系",
+        "子集关系具有传递性。",
+        "【考法三】集合运算",
+        "交集是两个集合的公共元素构成的集合。",
+        "例2 求 A 与 B 的交集。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual([
+      "question", "knowledge", "knowledge", "knowledge", "question",
+    ]);
+    expect(blocks.slice(1, 4).map((block) => block.content)).toEqual([
+      "考法1 集合的表示方法\n列举法适用于元素较少的集合。",
+      "考法２：集合间的关系\n子集关系具有传递性。",
+      "【考法三】集合运算\n交集是两个集合的公共元素构成的集合。",
+    ]);
+    expect(blocks.slice(1, 4).map((block) => block.knowledgeTitle)).toEqual([
+      "考法1 集合的表示方法",
+      "考法２：集合间的关系",
+      "【考法三】集合运算",
+    ]);
+  });
+
+  it.each([
+    "考法1",
+    "考 法 2：分类讨论",
+    "考法第十、综合应用",
+    "【考法１０】分类讨论",
+  ])("recognizes numbered 考法 label %s at a knowledge boundary", (label) => {
+    const blocks = parseDocumentBlocks(
+      ["探究1 基本性质", "性质说明。", label, "具体考法的讲解。"].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual(["knowledge", "knowledge"]);
+    expect(blocks[1].content).toBe(`${label}\n具体考法的讲解。`);
+  });
+
+  it("does not split ordinary prose merely mentioning 考法", () => {
+    const blocks = parseDocumentBlocks(
+      ["考法分析应结合具体情境。", "本段介绍考法1的适用条件。"].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ type: "knowledge" });
+  });
+
   it("separates document title and information before structured content", () => {
     const blocks = parseDocumentBlocks(
       [
